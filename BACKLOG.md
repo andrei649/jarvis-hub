@@ -1505,6 +1505,36 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   / `/metrics` stay probe-safe; a `*` in the list refuses boot. No WebSocket route exists today; a future one must call
   `host_accepted` itself, since the HTTP middleware would not cover it. Tests: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. **Breaking default on upgrade, packeted
   for the owner** → P25.
+- [x] ✅ **HA-5c — the deep model finishes the hard question; cloud budgets are honest.** The local
+  thinking models (qwen3, deepseek-r1, gpt-oss) were killed at the flat two-minute ceiling on exactly
+  the hard questions and came back as `[jarvis timeout]` or a blank bubble, and every cloud tool
+  loop compacted against a 32k guess on a 200k–1M model. **A reasoning-aware timeout floor**
+  (`Orchestrator._agent_call_timeout(route_name=…, model=…)` → `(seconds, floor)`): the `local-deep`
+  route, or any model of a reasoning family (`moe_routing.REASONING_FAMILIES`,
+  `is_reasoning_model`, vendor prefix stripped), gets `agents.reasoning_timeout_seconds` (600,
+  never below the flat `agents.agent_timeout_seconds`, never above 3,600 — both seeded in a new
+  `agents` settings category the HUD renders as it is); the tool loop's own deadline follows the
+  turn's through `wall_seconds`; a hit names the budget (`[jarvis timeout: reasoning budget 600s]`)
+  and the floor is recorded per agent beside the latencies. Finite and setting-bounded by design: a
+  wedged local backend holds the turn lease for at most the setting, under the e-stop. **Cloud
+  families in the compaction window table** (`context_compressor.MODEL_WINDOWS`, `WINDOWS_VERIFIED`):
+  Claude 4 / 3 at 200k, Gemini 2.x / 3 at 1M, GPT-5 400k, GPT-4.1 1M, GPT-4o 128k, o3 / o4 200k,
+  DeepSeek V3 / chat / reasoner 128k, Grok 4 256k, Llama 4 1M (both spellings), GPT-5-chat 128k — vendor-documented,
+  dated, a `vendor/` prefix stripped before matching, the table split into local and cloud
+  halves so the conservative-default test still measures the local median, and the
+  unknown-local default stays 32k; Qwen3-235B is deliberately absent — its 131k is YaRN-only,
+  32k native, and the prefix strip would have handed a wrong-large figure to a local route.
+  **A thinking-exhausted guard** (`llm/base.py`): a generation cut at `max_tokens` that produced
+  reasoning but no visible answer now returns a named `⚠️` reply instead of an empty string —
+  degraded by the H23.12 contract (no learning review, zero memory reward, a failed
+  interaction, never mistaken for an answer) and never leaking the reasoning; warm-up treats it
+  as a loaded model; the Ollama stream now reads its native `thinking` key. Covers LM Studio
+  (generate, stream, tool turn) and the Ollama stream; the two non-streaming Ollama paths still
+  answer blank on the same condition — named. Stated cost of the floor: a deep turn longer than
+  the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
+  included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
+  done: the continuation chain and the one empty retry (they change the tool-loop message
+  shape), admin slash commands ahead of the lease. Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. **Not proven on the RTX box** → P26.
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist

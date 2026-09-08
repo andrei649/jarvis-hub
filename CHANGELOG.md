@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 5c: the deep model finishes the hard question
+
+- **Reasoning-aware timeout floor** (`agents/core/orchestrator.py`, `agents/core/llm/moe_routing.py`,
+  `agents/core/agent.py`, `agents/core/agent_runtime.py`, `agents/core/settings_db.py`). One flat
+  `agents.agent_timeout_seconds` (120) used to cut every route, so the local thinking models
+  (qwen3, deepseek-r1, gpt-oss) died at two minutes on exactly the hard questions. Now
+  `_agent_call_timeout(route_name=…, model=…)` returns `(seconds, floor)`: the `local-deep` route,
+  or a model whose family is in `REASONING_FAMILIES` (`is_reasoning_model`, vendor prefix and
+  `:tag` tolerated), gets `agents.reasoning_timeout_seconds` (600), never below the flat value and
+  never above 3,600 s; the tool loop's deadline follows the turn's (`wall_seconds`, capped the same
+  way); a timeout reply names the budget; `_last_timeout_floor` is recorded per agent. Both settings
+  are seeded in a new `agents` category the HUD settings panel renders with no frontend change.
+  Finite and setting-bounded on purpose: a wedged local backend holds the turn lease for at most
+  the setting, under the e-stop.
+- **Cloud model families in the compaction window table** (`agents/core/context_compressor.py`).
+  Since HA-0.3 the tool loop budgets its transcript from `window_for(model)`, and the table knew
+  seven local families only, so every Claude / Gemini / GPT tool loop compacted against ~24k of a
+  200k–1M window. Added, vendor-documented and dated (`WINDOWS_VERIFIED`): `claude-opus-4`,
+  `claude-sonnet-4`, `claude-haiku-4`, `claude-3` 200,000; `gemini-2.5`, `gemini-3`, `gemini-2.0`
+  1,048,576; `gpt-5` 400,000; `gpt-4.1` 1,047,576; `gpt-4o` 128,000; `o3`, `o4` 200,000;
+  `deepseek-v3`, `deepseek-chat`, `deepseek-reasoner` 128,000; `grok-4`
+  256,000; `llama-4` / `llama4` 1,000,000; `gpt-5-chat` 128,000. A `vendor/` prefix (OpenRouter
+  style) is stripped before matching; the table is split into `LOCAL_WINDOWS` and `CLOUD_WINDOWS`
+  so the conservative-default test keeps measuring the local median; the unknown-local default
+  stays 32,000. Qwen3-235B is deliberately absent: its 131,072 is YaRN-only (32,768 native) and
+  the prefix strip would have handed a wrong-large figure to a local LM Studio route.
+- **Thinking-exhausted guard** (`agents/core/llm/base.py`). A generation that hit `max_tokens`
+  with reasoning but no visible answer returned `""` — a blank bubble indistinguishable from
+  "the model said nothing". It now returns `THINKING_EXHAUSTED_REPLY`, a `⚠️` reply that names the
+  cause and the remedy; degraded by the H23.12 contract — scored as a failed generation (no
+  learning review, zero living-memory reward, a failed interaction), never mistaken for an
+  answer — and never leaking the chain of thought. Warm-up treats it as a loaded model (the one
+  token went to reasoning, so the weights are resident). The Ollama stream now reads Ollama's
+  native `thinking` key beside `reasoning_content`, so the guard fires on a real Ollama stream.
+  Coverage: LM Studio generate / stream / tool turn and the Ollama stream; the two non-streaming
+  Ollama paths still answer blank on the same condition — named, not done. The clean-finish
+  reasoning-only branch and the repetition-flood branch are unchanged. Also named and not done:
+  the continuation chain and the one empty retry.
+- **Stated cost of the reasoning floor.** A deep turn longer than the turn lease's 180 s wait
+  makes a second message on the same channel session — `/stop` included — answer busy until the
+  deep turn ends; `nerva estop` and the API stay reachable. Dispatching the admin slash commands
+  ahead of the lease is the named follow-up. The floor is decided on the prompt the agent
+  actually routes on and the model the router returns, not on the raw user text.
+- Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. Not proven on the RTX box against a real thinking model —
+  `docs/OWNER_TASKS.md` P26.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 5b: the front door refuses by default
 
 > **Breaking default on upgrade.** An existing Telegram install with a bot token, no

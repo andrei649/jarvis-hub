@@ -1597,6 +1597,41 @@ def _streamed_orchestrator_for(agent, backend=None):
     return orchestrator, backend, completion_calls, turns
 
 
+@pytest.mark.asyncio
+async def test_streamed_orchestrator_passes_the_reasoning_floor_to_the_agent():
+    """Hermes absorption 5c: a stream turn on the local deep slot hands the agent the
+    reasoning budget, and records which floor applied — the same contract as the
+    parallel path. Fails before 5c: no wall_seconds kwarg, no floor record."""
+    seam_calls = []
+
+    class _SeamAgent:
+        id = "jarvis"
+        name = "Jarvis"
+        soul = {"content": "agent system"}
+        config = {"model": "configured-model"}
+
+        def build_prompt(self, text, context):
+            return f"User said: {text}\nRespond as Jarvis."
+
+        async def generate_response(self, **kwargs):
+            seam_calls.append(kwargs)
+            kwargs["on_token"]("deep answer")
+            return "deep answer"
+
+    orchestrator, backend, _completion_calls, _turns = _streamed_orchestrator_for(_SeamAgent())
+    orchestrator.llm_router.select_backend = lambda agent_id, prompt: (
+        backend,
+        "deepseek-r1:32b",
+        "local-deep",
+    )
+    answer = await orchestrator.handle_input_stream(
+        "prove it", channel="web", on_token=lambda _t: None, session_id="deep-session"
+    )
+    assert answer == "deep answer"
+    assert seam_calls[0]["wall_seconds"] == 600.0
+    assert orchestrator._last_timeout_floor["jarvis"] == {"floor": "reasoning", "seconds": 600.0}
+
+
 def test_orchestrator_defers_context_cache_until_router_detection(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GEMINI_API_KEYS", "profile-one,profile-two")
@@ -1650,6 +1685,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",
         "system": "agent system",
+        "wall_seconds": 120.0,
         "max_tokens": 777,
         "temperature": 0.15,
         "on_token": on_token,

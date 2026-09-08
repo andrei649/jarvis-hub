@@ -30,9 +30,12 @@ import hashlib
 import pytest
 
 from agents.core.context_compressor import (
+    CLOUD_WINDOWS,
     DEFAULT_WINDOW,
     IMAGE_TOKEN_COST,
+    LOCAL_WINDOWS,
     MODEL_WINDOWS,
+    WINDOWS_VERIFIED,
     CompactionPolicy,
     ContextCompressor,
     lineage_row,
@@ -177,10 +180,62 @@ def _summarizer(text: str):
 
 @pytest.mark.parametrize(
     ("model", "window"),
-    [("llama3.1:8b", 128_000), ("llama3:latest", 8_192), ("qwen3", 32_768)],
+    [
+        ("llama3.1:8b", 128_000), ("llama3:latest", 8_192), ("qwen3", 32_768),
+        # Hermes absorption 5c: the cloud families a route can be pointed at.
+        # Without them every cloud tool loop compacted against ~24k on a
+        # 200k–1M model — a budget that was simply lying.
+        ("claude-sonnet-4-6", 200_000),
+        ("anthropic/claude-opus-4-1", 200_000),
+        ("gemini-2.5-pro", 1_048_576),
+        ("gpt-5-mini", 400_000),
+        # gpt-5-chat-latest has its own page and a smaller window (128k); the
+        # longer key must keep it from inheriting the 400k GPT-5 figure.
+        ("gpt-5-chat-latest", 128_000),
+        ("deepseek-reasoner", 128_000),
+        # The local deepseek-r1 family keeps its own figure: "deepseek-reasoner"
+        # must not swallow it (longest prefix, and the names diverge at "r").
+        ("deepseek-r1:14b", 65_536),
+        # The 235B MoE's model card says 32,768 natively and 131,072 only with
+        # YaRN enabled on the server; a local route must never be budgeted
+        # against the opt-in figure, so the qwen3 family figure applies — with
+        # or without the vendor segment an LM Studio id carries.
+        ("qwen3-235b-a22b", 32_768),
+        ("qwen/qwen3-235b-a22b", 32_768),
+        ("qwen3:32b", 32_768),
+        # Ollama spells the family "llama4" (no hyphen); the cloud "llama-4"
+        # key alone left every local Llama 4 tag at the 32k default.
+        ("llama4:scout", 1_000_000),
+        # A "-7b" suffix on an unknown name is still an unknown name.
+        ("mymodel-7b", 32_000),
+    ],
 )
 async def test_the_window_is_matched_on_the_model_family(model, window):
     assert window_for(model) == window
+
+
+async def test_a_vendor_prefix_is_stripped_before_matching():
+    """Hermes absorption 5c: a routed cloud model arrives as "vendor/model"; the
+    vendor segment used to hide the family prefix and drop a 200k model to the
+    32k default — the worst possible direction to be wrong on a cloud route."""
+    assert window_for("anthropic/claude-opus-4-1") == MODEL_WINDOWS["claude-opus-4"]
+    assert window_for("openai/gpt-4o-mini") == MODEL_WINDOWS["gpt-4o"]
+    assert window_for("google/gemini-2.5-flash") == MODEL_WINDOWS["gemini-2.5"]
+    # Only the LAST segment is the model: a vendor that looks like a family
+    # name must not match on its own.
+    assert window_for("qwen3/") == DEFAULT_WINDOW
+    assert window_for("vendor/some-unknown-model") == DEFAULT_WINDOW
+
+
+async def test_windows_verified_is_a_date():
+    """Hermes absorption 5c: the cloud figures are copied from vendor pages and
+    go stale; the table carries the date it was last checked so the staleness
+    is visible instead of implied."""
+    import datetime as _dt
+
+    parsed = _dt.date.fromisoformat(WINDOWS_VERIFIED)
+    assert parsed.isoformat() == WINDOWS_VERIFIED
+    assert parsed >= _dt.date(2026, 9, 7)
 
 
 async def test_the_longest_prefix_wins():
@@ -200,10 +255,27 @@ async def test_the_default_window_is_a_conservative_guess_not_an_average():
     truncates the TAIL, which is the half that says what is happening now. So the
     default must sit at or below the middle of what we know about, never near the
     top. Asserting it equals its own constant would prove nothing."""
-    known = sorted(MODEL_WINDOWS.values())
-    median = known[len(known) // 2]
+    # Hermes absorption 5c: measured over the LOCAL families only. The cloud
+    # figures (200k–1M) would otherwise lift the median to 128k and let the
+    # local default quadruple without this test noticing — and the local
+    # default is exactly what MOONSHOT §5 keeps conservative.
+    known = sorted(LOCAL_WINDOWS.values())
+    # Lower middle on an even count: the conservative side of the median, so a
+    # single large local family (Llama 4) cannot lift the bar on its own.
+    median = known[(len(known) - 1) // 2]
     assert median >= DEFAULT_WINDOW
-    assert max(known) > DEFAULT_WINDOW
+    assert max(MODEL_WINDOWS.values()) > DEFAULT_WINDOW
+
+
+async def test_the_lookup_table_is_the_local_and_cloud_halves_kept_apart():
+    """Hermes absorption 5c: the split is what lets the conservative-default
+    test above mean something. A key in both halves would make the merge
+    order decide the figure; a key in neither would be unreachable."""
+    assert set(LOCAL_WINDOWS).isdisjoint(CLOUD_WINDOWS)
+    assert dict(MODEL_WINDOWS) == {**LOCAL_WINDOWS, **CLOUD_WINDOWS}
+    # The cloud half is where the big figures live; every one of them is a
+    # provider window, so none may be below the local default.
+    assert min(CLOUD_WINDOWS.values()) >= DEFAULT_WINDOW
 
 
 async def test_an_unknown_model_actually_compacts_where_a_large_one_would_not():

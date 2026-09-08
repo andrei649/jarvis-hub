@@ -499,7 +499,7 @@ async def test_recall_taint_survives_the_orchestrators_agent_gather():
     orch._history_for_prompt = _history
     orch._format_plugin_data = lambda _d: ""
     orch._recall_block = _recall
-    orch._agent_call_timeout = lambda: 5.0
+    orch._agent_call_timeout = lambda **_kw: (5.0, "flat")  # (seconds, floor) since 5c
     orch._runtime_state_block = lambda: ""
     orch._language_block = lambda: ""
     orch._data_grounding_block = lambda _d: ""

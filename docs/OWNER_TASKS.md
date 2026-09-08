@@ -375,7 +375,7 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P25** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P26** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
@@ -824,6 +824,25 @@ built on your Windows box:
       another LAN machine, `curl -H 'Host: evil.example' http://<box-ip>:8000/api/status` must
       answer 400, and the same request with the box's IP as Host must not. Tell me which of the
       four held, and whether the pairing-on default cost you anything you did not expect.
+
+- [ ] **P26 — The deep model finishes a hard question, and the cloud loop stops compacting at 24k**
+      *(covers `HA-5c`)*
+      Built against fake backends and a frozen clock. On the RTX box, with qwen3 or deepseek-r1
+      loaded: ask something genuinely hard (a multi-step proof, a design trade-off with numbers).
+      Expect a finished answer within ten minutes, or the named reply
+      `[jarvis timeout: reasoning budget 600s]` — never a blank bubble and never the bare
+      `[jarvis timeout]` at two minutes. Settings → agents shows both ceilings
+      (`agent_timeout_seconds` 120, `reasoning_timeout_seconds` 600); lower the second to 30, ask
+      again, and the reply must name `30s`. Then force the other failure: set `llm.max_tokens` to
+      64 and ask the same question — expect the `⚠️` "spent its whole answer budget thinking" reply,
+      and confirm it does not show up later in memory recall. Last, with a Claude or Gemini route
+      and the tool loop on, ask a question that needs three or four tool calls: the cognition trace
+      must show the 200k (Claude) or 1M (Gemini) window, not 32k, and no compaction event before
+      the transcript is genuinely large. One thing to know while it thinks: a second message on
+      the same Telegram session during a deep turn longer than three minutes (`/stop` included)
+      gets the busy reply until the turn ends — `nerva estop` and the HUD stay live. Tell me the
+      wall-clock time the hard question took and whether ten minutes is the right ceiling for
+      your machine.
 
 ## Parking lot (decisions, no rush)
 

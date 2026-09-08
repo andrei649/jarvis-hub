@@ -3,7 +3,7 @@
 import pytest
 
 from agents.core.llm import tool_protocol
-from agents.core.llm.base import LLMBackend, LMStudioBackend
+from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, LLMBackend, LMStudioBackend
 from agents.core.llm.tool_protocol import (
     ToolCall,
     ToolSpec,
@@ -534,9 +534,11 @@ async def test_lmstudio_content_only_response_becomes_final_tool_turn():
             "Visible answer",
         ),
         (
+            # Hermes absorption 5c: reasoning with no visible answer at max_tokens is
+            # the named exhausted-budget reply on both paths, never a blank.
             {"content": "", "reasoning_content": "truncated private reasoning"},
             "length",
-            "",
+            THINKING_EXHAUSTED_REPLY,
         ),
     ],
 )

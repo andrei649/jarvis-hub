@@ -141,6 +141,12 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="inbound_actuation", value=False,                  label="Offer gated (approval-bound) tools to the owner on inbound channels", kind="toggle"),
     dict(category="llm",     key="internal_actuation", value=False,                 label="Offer gated (approval-bound) tools to unattended turns (heartbeats, jobs)", kind="toggle"),
     dict(category="llm",     key="model_pull_max_gb", value=20,                    label="Local model pull size cap (GB) — a governed Ollama pull whose layers exceed it is refused", kind="number"),
+    # agents — per-agent model-call ceilings (Hermes absorption 5c). The flat ceiling
+    # was read by the orchestrator but never seeded, so the HUD could not see it; the
+    # reasoning ceiling is the floor a thinking model gets on the local deep route.
+    # Both stay finite: the orchestrator clamps them to 1..3600 s (containment).
+    dict(category="agents",  key="agent_timeout_seconds",     value=120, label="Per-agent model-call ceiling (s)", kind="number"),
+    dict(category="agents",  key="reasoning_timeout_seconds", value=600, label="Ceiling for the local deep / thinking route (s); 0 = default 600", kind="number"),
     # voice
     dict(category="voice",   key="stt_model_size",   value="medium",              label="STT model size",     kind="select",  opts=["tiny","base","small","medium","large"]),
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),

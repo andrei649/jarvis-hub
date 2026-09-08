@@ -172,6 +172,18 @@ def test_the_automatic_budget_derives_from_the_model_window():
     assert broken._context_budget("phi4", 0) == int(16_384 * 0.75)
 
 
+def test_a_claude_route_budget_is_no_longer_24k():
+    """Hermes absorption 5c: the automatic budget is window * 0.75 - reserve, and
+    an unrecognised cloud model fell to the 32k default — so every cloud tool
+    loop compacted against ~24k on a 200k model. A named cloud family now earns
+    its real window; an unknown model stays at the conservative default."""
+    runtime = AgentToolRuntime(ToolRPCServer())
+
+    assert runtime._context_budget("claude-sonnet-4-6", 8_192) >= 100_000
+    assert runtime._context_budget("claude-sonnet-4-6", 8_192) == int(200_000 * 0.75) - 8_192
+    assert runtime._context_budget("some-unknown-model", 0) == int(32_000 * 0.75)
+
+
 def test_the_truncation_envelope_keeps_its_original_notice():
     envelope = json.loads(
         _bounded_result_envelope('{"ok":true}', tool_name="t", ok=True, reason=None, max_bytes=400)

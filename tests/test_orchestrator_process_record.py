@@ -255,24 +255,26 @@ def test_record_channel_defaults_to_web(orch):
 
 
 # ── CDX-6: per-agent call timeout is a tunable setting, not a hard-coded 120s ──
+# Since Hermes absorption 5c the helper returns ``(seconds, floor)``; with no route
+# and no model it is the flat ceiling, so these pin the same seconds as before.
 
 def test_agent_call_timeout_defaults_to_120(orch):
-    assert orch._agent_call_timeout() == 120.0
+    assert orch._agent_call_timeout() == (120.0, "flat")
 
 
 def test_agent_call_timeout_honors_setting(orch, monkeypatch):
     monkeypatch.setattr(orch, "get_setting",
                         lambda k, d=None: 7 if k == "agents.agent_timeout_seconds" else d)
-    assert orch._agent_call_timeout() == 7.0
+    assert orch._agent_call_timeout() == (7.0, "flat")
 
 
 def test_agent_call_timeout_clamps_to_at_least_one(orch, monkeypatch):
     monkeypatch.setattr(orch, "get_setting",
                         lambda k, d=None: 0 if k == "agents.agent_timeout_seconds" else d)
-    assert orch._agent_call_timeout() == 1.0  # a 0/negative config can't disable the timeout
+    assert orch._agent_call_timeout() == (1.0, "flat")  # a 0/negative config can't disable the timeout
 
 
 def test_agent_call_timeout_falls_back_on_non_numeric(orch, monkeypatch):
     monkeypatch.setattr(orch, "get_setting",
                         lambda k, d=None: "banana" if k == "agents.agent_timeout_seconds" else d)
-    assert orch._agent_call_timeout() == 120.0  # bad config → safe default, never raises
+    assert orch._agent_call_timeout() == (120.0, "flat")  # bad config → safe default, never raises

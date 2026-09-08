@@ -106,6 +106,11 @@ _MIN_CONTEXT_BUDGET = 2_048
 _CONTEXT_WINDOW_FRACTION = 0.75
 _COMPACTED_NOTICE = "TOOL RESULT COMPACTED"
 _TRUNCATED_NOTICE = "TOOL RESULT TRUNCATED"
+# Hermes absorption 5c — the caller-supplied wall clock for one run() is clamped to
+# these bounds, visibly: a turn may raise the loop deadline to the reasoning floor,
+# never past an hour and never below one second (a containment control).
+WALL_SECONDS_MIN = 1.0
+WALL_SECONDS_CAP = 3600.0
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
@@ -232,13 +237,27 @@ class AgentToolRuntime:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         event_sink: ToolEventSink | None = None,
+        wall_seconds: float | None = None,
     ) -> str:
         """Run one bounded tool-enabled model turn to a final answer.
 
         Deadlines bound response latency, not in-process coroutine lifetime. A coroutine
         that suppresses cancellation is detached and blocks ``can_run`` until it exits,
         preventing repeated turns from accumulating unbounded orphan work.
+
+        ``wall_seconds`` lets the turn that owns this run set the loop's deadline — the
+        orchestrator's reasoning floor on a thinking route — so the loop is not cut at
+        its constructor default while the turn still has budget. ``None`` keeps the
+        constructor default untouched; a value is clamped to
+        ``WALL_SECONDS_MIN..WALL_SECONDS_CAP`` and stays finite (Hermes absorption 5c).
         """
+        # None, a bool, a non-number, a non-finite or a non-positive value all keep
+        # the constructor's own deadline; only a real value is clamped into the range.
+        parsed = 0.0 if isinstance(wall_seconds, bool) else _safe_float(wall_seconds, default=0.0)
+        if wall_seconds is None or parsed <= 0:
+            effective_wall_seconds = self._max_wall_seconds
+        else:
+            effective_wall_seconds = min(max(WALL_SECONDS_MIN, parsed), WALL_SECONDS_CAP)
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -256,7 +275,7 @@ class AgentToolRuntime:
         turn_context = contextvars.copy_context()
         try:
             return await self._await_owned(
-                loop, timeout=self._max_wall_seconds, context=turn_context,
+                loop, timeout=effective_wall_seconds, context=turn_context,
             )
         except _OwnedTimeout:
             return _DEADLINE_REPLY

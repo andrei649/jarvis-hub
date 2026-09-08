@@ -97,9 +97,10 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
-| `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama (both tool-capable) | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter` |
+| `agents/core/llm/base.py` | Abstract backend + LMStudio + Ollama (both tool-capable); a length-truncated generation with reasoning but no visible answer returns the named `THINKING_EXHAUSTED_REPLY` (degraded, never persisted) | `LLMBackend`, `LMStudioBackend`, `OllamaBackend`, `strip_thinking`, `ThinkingStreamFilter`, `THINKING_EXHAUSTED_REPLY`, `is_degraded_reply` |
 | `agents/core/llm/router.py` | Auto-detect LMStudio → Ollama | `LLMRouter.detect` |
 | `agents/core/llm/hybrid_router.py` | Multi-tier routing engine | `HybridRouter.select_backend`, `is_heavy_request`, `LOCAL_ONLY_AGENTS`, `CLAUDE_AGENTS`, `DEEP_THINK_AGENTS` |
+| `agents/core/llm/moe_routing.py` | Thinking-mode routing decision for hybrid MoE models, and `is_reasoning_model` — the families (`REASONING_FAMILIES`) whose turns get the reasoning timeout floor | `route_moe`, `decide_thinking_mode`, `is_reasoning_model`, `REASONING_FAMILIES`, `MOE_MODELS` |
 | `agents/core/llm/lmstudio_control.py` | Start LM Studio server + load/unload models via `lms` CLI (no-shell, probed); refreshes live router; `enabled` kill-switch makes mutating ops no-ops | `LMStudioController.start_server/load_model/unload_model/status/set_enabled` |
 | `agents/core/llm/ollama_control.py` | Start Ollama via fixed no-shell argv; load/pin and unload via localhost `keep_alive`; validate/probe/refresh with injectable I/O | `OllamaController.start_server/load_model/unload_model/status` |
 | `agents/core/llm_control.py` + orchestrator chat control | Detect LM Studio/Ollama requests, enforce identity/permission/contract/kernel/audit before mutation, and narrate the real result | `detect_llm_control`, `authorize_local_model_lifecycle`, `run_llm_control`, `_run_llm_control` |
@@ -126,7 +127,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 |------|---------|-------------|
 | `agents/core/memory/manager.py` | Memory orchestration | `MemoryManager`, `embed`, `remember`, `recall`, `hybrid_search`, `add_turn` |
 | `agents/core/memory/conversation.py` | Session history (JSONL, disk) | `ConversationMemory`, `Turn`, `add_turn`, `get_context` |
-| `agents/core/context_compressor.py` | Hot-path context compression **+ the compaction policy**: two tiers over the model's OWN window (soft 0.6 drops images, hard 0.85 summarises), head and tail never summarised, below soft byte-identical, images counted in the budget and given up first with a visible placeholder, a conservative default window (guessing high means the *provider* truncates — and it truncates the tail), a `nerva.context-compaction.v1` lineage row per compaction, and the tighter of the window and `memory.compression_max_tokens` winning so a shipped setting stays live | `compact`, `compress`, `CompactionPolicy`, `window_for`, `lineage_row`, `MODEL_WINDOWS` |
+| `agents/core/context_compressor.py` | Hot-path context compression **+ the compaction policy**: two tiers over the model's OWN window (soft 0.6 drops images, hard 0.85 summarises), head and tail never summarised, below soft byte-identical, images counted in the budget and given up first with a visible placeholder, a conservative default window (guessing high means the *provider* truncates — and it truncates the tail), a `nerva.context-compaction.v1` lineage row per compaction, and the tighter of the window and `memory.compression_max_tokens` winning so a shipped setting stays live; the window table carries the local families and the vendor-documented cloud families (`WINDOWS_VERIFIED`), a `vendor/` prefix is stripped before the longest-prefix match, and an unknown name still gets the conservative default | `compact`, `compress`, `CompactionPolicy`, `window_for`, `lineage_row`, `MODEL_WINDOWS`, `WINDOWS_VERIFIED` |
 | `agents/core/memory/store.py` | In-memory vector store | `InMemoryVectorStore`, `VectorStore`, `VectorRecord` |
 | `agents/core/memory/recall_admission.py` | **E3.2** — why each recalled fact was let in or held back. Answers "why did it not use the thing I told it": a dropped hit is invisible by construction, and a missing / stale / withheld memory look identical. Closed vocabulary, no `rejected_other`; `admitted` is a reason not an absence; taint ≠ privacy; **abstained ≠ rejected**. Carries a reference, never the recalled text. `evaluation_only` — no floor moves | `RecallAdmission`, `admit`, `reject`, `abstain`, `summarise`, `explain`, `ADMISSION_REASONS` |
 | `agents/core/memory/qdrant_store.py` | Qdrant vector store | `QdrantVectorStore` |
@@ -315,7 +316,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/checkpoint.py` | SQLite checkpoints + session records | `CheckpointManager.save/restore/initialize` |
-| `agents/core/settings_db.py` | SQLite runtime settings | `get_all`, `get_category`, `put_category`, `init_db`, `DEFAULTS` |
+| `agents/core/settings_db.py` | SQLite runtime settings (categories incl. the `agents` timeouts: `agent_timeout_seconds`, `reasoning_timeout_seconds`) | `get_all`, `get_category`, `put_category`, `init_db`, `DEFAULTS` |
 | `agents/core/bench.py` | Latency/throughput benchmarks | `LatencyBenchmark.record`, `get_summary` |
 | `agents/core/sandbox.py` | Docker + subprocess code execution | `Sandbox.execute_python`, `execute_shell` |
 | `agents/core/plugin_gate.py` | Per-agent plugin permission | `PermissionGate.check_call` |

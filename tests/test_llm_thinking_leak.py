@@ -13,7 +13,8 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.base import (
-    LLMBackend, LMStudioBackend, OllamaBackend, strip_thinking,
+    THINKING_EXHAUSTED_REPLY, LLMBackend, LMStudioBackend, OllamaBackend,
+    strip_thinking,
 )
 from core.llm.anthropic import ClaudeBackend
 from core.llm.gemini import GeminiBackend
@@ -120,8 +121,12 @@ def test_finalize_prefers_emitted():
 
 
 def test_finalize_drops_truncated_reasoning():
-    # finish == length and no emitted answer → truncated mid-thought, suppress
-    assert LLMBackend._finalize_stream("", "half a thought, cut", "length", "m") == ""
+    # finish == length and no emitted answer → truncated mid-thought: the
+    # reasoning is suppressed and (Hermes absorption 5c) the owner gets the
+    # named degraded reply instead of a blank bubble.
+    out = LLMBackend._finalize_stream("", "half a thought, cut", "length", "m")
+    assert out == THINKING_EXHAUSTED_REPLY
+    assert "half a thought" not in out
 
 
 def test_finalize_surfaces_reasoning_when_finished():
@@ -137,7 +142,9 @@ async def test_generate_truncated_reasoning_not_leaked():
         "message": {"content": "", "reasoning_content": "user wants... *Drafting:* ... Wait"},
         "finish_reason": "length",
     }]})
-    assert await b.generate("m", "hi") == ""
+    out = await b.generate("m", "hi")
+    assert out == THINKING_EXHAUSTED_REPLY   # Hermes absorption 5c: named, not blank
+    assert "Drafting" not in out
 
 
 async def test_generate_reasoning_as_answer_when_finished():
@@ -170,8 +177,11 @@ async def test_stream_reasoning_only_truncated_not_leaked():
     b.client = _FakeStreamClient(lines)
     tokens, on_token = _collect()
     out = await b.generate_stream("m", "hi", on_token=on_token)
-    assert out == ""                 # nothing leaks as the return value
-    assert "".join(tokens) == ""     # nothing was streamed to the user either
+    # Hermes absorption 5c: the return value names the exhausted budget; the
+    # reasoning itself never leaks, and nothing was streamed to the user live.
+    assert out == THINKING_EXHAUSTED_REPLY
+    assert "thinking hard" not in out
+    assert "".join(tokens) == ""
 
 
 async def test_stream_emits_answer_after_think():
@@ -213,7 +223,22 @@ async def test_ollama_stream_drops_truncated_reasoning():
     b = OllamaBackend()
     b.client = _FakeStreamClient(lines)
     out = await b.generate_stream("m", "hi")
-    assert out == ""
+    assert out == THINKING_EXHAUSTED_REPLY   # Hermes absorption 5c: named, not blank
+
+
+async def test_ollama_stream_reads_its_native_thinking_key():
+    """Ollama spells chain-of-thought "thinking", not reasoning_content; a stream that
+    only ever carried the native key used to look like "no reasoning at all" and the
+    exhausted-budget guard never fired. Fails before the fix with an empty string."""
+    lines = [
+        '{"thinking":"let me reason about"}',
+        '{"response":"","done":true,"done_reason":"length"}',
+    ]
+    b = OllamaBackend()
+    b.client = _FakeStreamClient(lines)
+    out = await b.generate_stream("m", "hi")
+    assert out == THINKING_EXHAUSTED_REPLY
+    assert "let me reason" not in out
 
 
 # ── Cloud backends (Gemini / Claude) parity ──────────────────────────────

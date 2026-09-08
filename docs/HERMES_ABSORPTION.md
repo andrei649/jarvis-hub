@@ -438,6 +438,38 @@ că middleware-ul HTTP n-ar acoperi-o.
 Teste: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. *Implicit care se schimbă la upgrade, cu pachet pentru owner* →
 **P25**.
 
+**Livrat 2026-09-07 (5c — modelul local termină întrebarea grea).** Modelele locale care
+gândesc (qwen3, deepseek-r1, gpt-oss) erau tăiate la plafonul plat de două minute exact pe
+întrebările grele și se întorceau ca `[jarvis timeout]` sau ca o bulă goală, iar orice buclă de
+unelte pe cloud compacta după o presupunere de 32k pe un model de 200k–1M. **Un prag de timeout
+conștient de raționament** (`_agent_call_timeout(route_name=…, model=…)` → `(secunde, prag)`): ruta
+`local-deep` sau orice model dintr-o familie de raționament (`REASONING_FAMILIES`,
+`is_reasoning_model`, prefixul de vendor scos) primește `agents.reasoning_timeout_seconds` (600,
+niciodată sub valoarea plată `agents.agent_timeout_seconds`, niciodată peste 3.600 — ambele
+însămânțate într-o categorie nouă `agents` pe care HUD-ul o redă așa cum e); termenul propriu al
+buclei de unelte urmează termenul turei (`wall_seconds`); o depășire numește bugetul
+(`[jarvis timeout: reasoning budget 600s]`), iar pragul e înregistrat per agent lângă latențe.
+Finit și mărginit de setare prin design: un backend local blocat ține lease-ul turei cel mult cât
+spune setarea, sub e-stop. **Familiile cloud în tabelul de ferestre al compactării**
+(`MODEL_WINDOWS`, `WINDOWS_VERIFIED`): Claude 4 / 3 la 200k, Gemini 2.x / 3 la 1M, GPT-5 400k,
+GPT-4.1 1M, GPT-4o 128k, o3 / o4 200k, DeepSeek V3 / chat / reasoner 128k, Grok 4 256k, Llama 4
+1M, GPT-5-chat 128k — documentate de vendor, datate, prefixul `vendor/` scos înainte de
+potrivire, tabelul împărțit în jumătatea locală și cea cloud ca testul de implicit conservator
+să măsoare în continuare mediana locală, iar implicitul pentru un nume local necunoscut rămâne
+32k; Qwen3-235B lipsește deliberat — 131k e doar cu YaRN, 32k nativ, și scoaterea prefixului
+ar fi dat o cifră prea mare unei rute locale. **Un guard de gândire
+epuizată** (`llm/base.py`): o generare tăiată la `max_tokens` care a produs raționament dar niciun
+răspuns vizibil întoarce acum un răspuns `⚠️` numit în loc de un șir gol — degradat prin
+contractul H23.12 (fără review de învățare, recompensă zero în memorie, interacțiune eșuată,
+niciodată luat drept răspuns) și fără să scurgă raționamentul; warm-up-ul îl tratează ca model
+încărcat, iar fluxul Ollama citește acum cheia lui nativă `thinking`. Acoperă LM Studio (generate,
+flux, tură cu unelte) și fluxul Ollama; cele două căi Ollama fără flux răspund încă gol pe
+aceeași condiție — numit. Costul declarat al pragului: o tură profundă mai lungă decât
+așteptarea de 180 s a lease-ului de tură face ca un al doilea mesaj pe aceeași sesiune de canal,
+`/stop` inclus, să primească „ocupat" până se termină; `nerva estop` și API-ul rămân la îndemână.
+Numite și nefăcute: lanțul de continuare și reîncercarea pe răspuns gol (schimbă forma mesajelor
+buclei de unelte), comenzile slash de admin înaintea lease-ului. Teste: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. *Nedovedit pe cutia RTX cu un model care gândește* → **P26**.
+
 ---
 
 ## Ce nu se schimbă

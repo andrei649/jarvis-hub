@@ -165,10 +165,22 @@ class Agent:
         max_tokens,
         temperature,
         on_token=None,
+        wall_seconds: float | None = None,
     ) -> str:
-        """Generate through the optional tool loop or the legacy backend path."""
+        """Generate through the optional tool loop or the legacy backend path.
+
+        ``wall_seconds`` is the turn's per-agent ceiling as the orchestrator chose it
+        (the reasoning floor on a thinking route, the flat value otherwise). It reaches
+        only the tool loop, whose own deadline must move in step with the turn's or a
+        deep answer is cut at the loop's default long before the turn's budget runs
+        out; the legacy backend path has no deadline of its own to align
+        (Hermes absorption 5c).
+        """
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
+            # Forwarded only when a ceiling was given, so a caller without one keeps
+            # the loop's constructor default and the pre-5c call shape byte-identical.
+            budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,
@@ -177,6 +189,7 @@ class Agent:
                 system=system,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                **budget,
             )
             if on_token is not None and (response or "").strip():
                 emitted = on_token(response)
@@ -253,6 +266,9 @@ class Agent:
                     system=system_prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    # The orchestrator's per-agent ceiling rides in on the context
+                    # (Hermes absorption 5c); absent, the tool loop keeps its default.
+                    wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
                 )
             latency = time.monotonic() - start
             self._last_latency = latency

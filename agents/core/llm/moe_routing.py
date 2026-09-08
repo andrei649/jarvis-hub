@@ -45,3 +45,38 @@ def route_moe(prompt: str, model: str = "gpt-oss-20b",
             "max_tokens": 8192 if thinking else 1024,
             "directive": "/think" if thinking else "/no_think",
             "collapses_tiers": supports}
+
+
+# Hermes absorption 5c — model families that spend tokens thinking before they
+# answer. A name that starts with one of these (after the vendor prefix is
+# dropped) gets the reasoning timeout floor in the orchestrator; the tuple is
+# data, so a new family is one entry here, not a code path.
+# Prefixes of the model names that think before they answer. The bare "phi4" is not
+# a family here, so it never fires: a prefix test is order-independent and only the
+# spelled-out reasoning variants are listed.
+REASONING_FAMILIES = (
+    "qwen3", "deepseek-r1", "gpt-oss", "qwq", "magistral",
+    "phi4-reasoning", "phi4-mini-reasoning",
+)
+
+
+def is_reasoning_model(model: str | None) -> bool:
+    """True when this model name belongs to a thinking / reasoning family.
+
+    Why: a reasoning model on the deep slot spends its first minutes on
+    chain-of-thought, so the flat per-agent timeout kills it on exactly the hard
+    questions. The orchestrator asks this before choosing the timeout floor.
+    Pure and offline: lower-case, strip whitespace, drop a vendor prefix
+    ("vendor/name" → "name"), then match a family prefix (an Ollama ":tag"
+    suffix rides along untouched) or an MoE entry that supports thinking.
+    Hermes absorption 5c.
+    """
+    if not model or not isinstance(model, str):
+        return False
+    name = model.strip().lower()
+    if not name:
+        return False
+    name = name.rsplit("/", 1)[-1]
+    if any(name.startswith(family) for family in REASONING_FAMILIES):
+        return True
+    return MOE_MODELS.get(name, {}).get("supports_thinking") is True
