@@ -5,9 +5,9 @@
 > **owner-out-of-loop**. `selfdev-policy.json` is the machine-readable autonomy contract and
 > `scripts/selfdev_policy.py` is its stdlib-only validator/classifier. The hourly auto-merge workflow
 > evaluates candidate PRs with the trusted policy/script already on `main`; normal product/code/test
-> changes may merge unattended, while the small root-of-trust control plane may not self-authorize
-> changes to itself. This does not restore the old R0–R3 ceremony, review bureaucracy, or a blanket
-> manual gate for Nerva work.
+> changes may merge unattended only after their reported automated checks have finished green, while
+> the small root-of-trust control plane may not self-authorize changes to itself. This does not
+> restore the old R0–R3 ceremony, review bureaucracy, or a blanket manual gate for Nerva work.
 
 ## Safe task start
 
@@ -72,17 +72,21 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 ## Delivery workflow
 
 - Work on a feature branch and use a PR into `main`. The hourly auto-merge sweep may merge any
-  **non-draft** PR that GitHub reports `CLEAN` when the changed-file set is classified
-  `autonomous_merge=true` by the trusted `main` copy of `scripts/selfdev_policy.py`. Branch names —
-  including `nerva2/*` — are not manual gates anymore.
+  **non-draft** PR only when the same head satisfies all three conditions: GitHub reports `CLEAN`,
+  the changed-file set is classified `autonomous_merge=true` by the trusted `main` copy of
+  `scripts/selfdev_policy.py`, and **at least one automated check is reported with every reported
+  check completed as success/neutral/skipped**. Pending, failed, cancelled, empty or unreadable
+  check state does not merge. Branch names — including `nerva2/*` — are not manual gates anymore.
 - A candidate touching a protected root-of-trust path is classified `control_plane` and skipped by
-  unattended merge. That includes the self-development policy/classifier, auto-merge/release/security
-  workflows, Action Kernel/security roots, and the other paths named in `selfdev-policy.json`.
+  unattended merge. That includes the self-development policy/classifier, **all GitHub workflows
+  and actions**, Action Kernel/security roots, and the other paths named in `selfdev-policy.json`.
   Routine feature, refactor, test and documentation work outside that boundary does **not** wait for
   owner approval.
-- The existing PR checks (`test` incl. test-count drift, `hud-v2-build`, security scans,
-  `lockfile-drift`) remain useful evidence. `mergeStateStatus == CLEAN` and the selfdev classifier
-  are the current unattended-merge inputs; do not claim a check is GitHub-required unless the
+- The automated-check rule is enforced by the auto-merge workflow itself and does not depend on
+  whether branch-protection settings happen to mark a check "required". The existing PR checks
+  (`test` incl. test-count drift, `hud-v2-build`, security scans, `lockfile-drift`, and any future
+  check that reports on the candidate SHA) therefore become real inputs to autonomous merge rather
+  than advisory decoration. Do not claim a check is GitHub branch-protection-required unless the
   repository settings actually make it required.
 - Before non-trivial implementation, record goal, non-goals, likely paths, tests, rollback,
   and dependencies. Prefer one coherent rollback unit over arbitrary micro-commits or push-per-step
@@ -95,12 +99,13 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 - `selfdev-policy.json` expresses the owner's standing authorization for routine AI-operated
   engineering. Do not add an owner click merely because a change was AI-generated.
-- The autonomous lane may create branches/PRs, implement code, update tests, accept independent AI
-  review, merge eligible work, and — once the deployment slice exists — release/canary/promote or
-  roll back eligible changes without waiting for Andrei.
+- The autonomous lane may create branches/PRs, implement code, update tests and merge eligible work
+  once machine gates pass. Enforced independent AI review and autonomous release/canary/promote/
+  rollback are recorded as **targets**, not claimed live until their #1054 enforcement slices land.
 - The lane may **not** use the same change it is evaluating to weaken the classifier, root-of-trust
-  path set, deployment credential isolation, rollback authority, security workflow, Action Kernel,
-  or emergency-stop/control-plane mechanisms. Those paths are evaluated using the trusted base.
+  path set, deployment credential isolation, rollback authority, any GitHub workflow/action,
+  security boundary, Action Kernel, or emergency-stop/control-plane mechanisms. Those paths are
+  evaluated using the trusted base.
 - Builder/reviewer separation and provenance remain product requirements of #1054 even though the
   first policy/auto-merge slice does not yet implement the whole self-development loop.
 
