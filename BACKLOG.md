@@ -1584,6 +1584,31 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   CWD-relative paths (`orchestrator.py:352`) so `$JARVIS_HOME` does not relocate them and pairing
   state is written inside the git checkout, and the "runtime state is inside the checkout" warning
   does not fire for them because `is_inside_repo()` only inspects `data_root()`.
+- [x] ✅ **HA-6 — the two ledgers are queryable, so nobody pays 176K tokens to read three rows.**
+  `BACKLOG.md` is ~957 KB and the Hermes absorption ledger 1.4 MB; between them they are larger than
+  every other document in this repo combined, and neither is ever needed whole.
+  [`docs/AI_CONTEXT.md`](docs/AI_CONTEXT.md) has said "do not load `BACKLOG.md` whole" since the
+  2026-08-27 re-measure and it kept being loaded whole anyway — advice without a tool is not
+  followable, because there was no other way to answer "what is still open". Now there is:
+  **`scripts/backlog.py`** (`counts` · `open [--section]` · `show <ID|Lnnn>` · `sections` ·
+  `find <regex> [--open-only]`) parses the file's own grammar — a row is a column-0 checkbox, its
+  body the indented lines under it, its id the first `PREFIX-nn` in the leading bold span, and rows
+  without an id (owner credential lines, caveats written as checkboxes) stay addressable by line
+  number. Lettered families (`SEC-B5`, `GAP-4`) are ids too — an id pattern demanding a digit after
+  the dash filed them under "(no id)" and made them unaddressable. **`scripts/ledger.py`**
+  (`stats` · `clusters` · `list --cluster --decision --effort` · `show <name>`) does the same for the
+  JSON, where "work" means `copy` + `update` and never `keep` / `skip`. Measured: every open backlog
+  row is **3.7 KB against 957 KB (258×)**; the ledger's totals plus all 20 clusters are **1.1 KB
+  against 1.4 MB**. Output is bounded by construction — one line per row, `show` is the only
+  subcommand that prints a body — and both pipe into `head` without a traceback, since a tool that
+  crashes on `| head` sends its reader straight back to opening the file.
+  `CLAUDE.md`, `AGENTS.md` and `docs/AI_CONTEXT.md` now say query-first with the numbers attached.
+  Tests: `tests/test_context_query_tools.py` (20), which pin the parser against a plain grep of the
+  real file and pin the size ratios themselves, so a regression that starts dumping bodies fails CI
+  rather than quietly restoring the old cost. Named and not done: the ledger has no per-row `status`
+  field, so neither tool can answer "how many of the 476 are already delivered" — that is the
+  separate status pass.
+
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist

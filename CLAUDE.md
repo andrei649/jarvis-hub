@@ -12,9 +12,13 @@ redus, design inline în PR); non-negociabilele din `MOONSHOT.md` §5 rămân in
 **Context mare (Fable 5 / 1M tokens):** `docs/AI_CONTEXT.md` — ce fișiere încarci, în ce ordine,
 pe tier-uri și bundle-uri per task, cu estimări de tokeni. Nu încărca repo-ul brut (~2M tokeni).
 
-**Esențial:** când se discută "backlog"/"priorități"/"ce urmează" → citește și actualizează `BACKLOG.md`
-(include secțiunea **Competitive-Gap Roadmap** — cele ~48 teme din planul de produs, cu status DONE/PARTIAL/
-SEED/MISSING; analiza de cod e în `docs/research/2026-06-21-roadmap-vs-codebase-audit.md`).
+**Esențial:** când se discută "backlog"/"priorități"/"ce urmează" → **interoghează** `BACKLOG.md`, nu-l
+încărca: `scripts/backlog.py counts | open | show <ID> | sections | find <regex>`. Fișierul are ~957 KB
+(~176K tokeni) — lista completă a rândurilor deschise costă sub 4 KB prin unealtă. Deschide-l direct doar
+când **scrii** în el, și atunci sari la secțiunea pe care ți-o dă `sections`. Ledgerul de absorbție Hermes
+(1,4 MB JSON) are aceeași regulă: `scripts/ledger.py stats | clusters | list | show`.
+(Include secțiunea **Competitive-Gap Roadmap** — cele ~48 teme din planul de produs, cu status DONE/PARTIAL/
+SEED/MISSING; analiza de cod e în `docs/research/2026-06-21-roadmap-vs-codebase-audit.md`.)
 **Întotdeauna când mergi (sau tocmai s-a mergeuit) un PR → reîmprospătează `BACKLOG.md`** în aceeași
 mișcare: bifează `✅` itemii livrați + actualizează contorul de teste. De preferat în *același* PR
 (înainte de merge); dacă PR-ul e deja mergeuit, fă un commit/PR de catch-up imediat. (Regula completă:

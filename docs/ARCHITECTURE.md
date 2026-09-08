@@ -659,6 +659,27 @@ Key env vars loaded at startup:
 
 ## 8. How-to Recipes
 
+### Find out what is open, or what Hermes had, without loading a ledger
+
+`BACKLOG.md` (~957 KB) and `docs/research/2026-09-07-hermes-absorption-ledger.json` (1.4 MB) are
+bigger than the rest of this repo's prose put together and are never needed whole. Query them:
+
+```bash
+python scripts/backlog.py counts                 # done / open, and open per id prefix
+python scripts/backlog.py open --section hermes  # open rows under one heading, one line each
+python scripts/backlog.py show HA-4i SEC-B5      # those rows in full, with their line numbers
+python scripts/backlog.py sections               # every heading + line number + open count
+python scripts/backlog.py find "taint" --open-only
+
+python scripts/ledger.py stats                   # 697 capabilities, 476 of them work rows
+python scripts/ledger.py clusters                # work rows per cluster
+python scripts/ledger.py list --cluster cli --effort S
+python scripts/ledger.py show "nerva doctor"
+```
+
+Open `BACKLOG.md` itself only when *writing* to it, and go straight to the line `sections` gives
+you. Both tools pipe cleanly into `head`. See `docs/AI_CONTEXT.md` for the measured cost ratios.
+
 ### Personalize an agent (SOUL.local.md overlay)
 
 The repo ships **generic template souls**. Personal specifics never go into `SOUL.md` /

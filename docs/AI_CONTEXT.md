@@ -15,6 +15,26 @@
 
 ---
 
+## Query before you load — the two files that dominate everything else
+
+Two documents are larger than the rest of the repo's prose put together, and neither is ever needed
+whole. Reading them to answer a question is the single most expensive habit available here, so both
+have a query tool. Use it; open the file only when you are *writing* to it.
+
+| Instead of | Run | Costs |
+|---|---|---|
+| reading `BACKLOG.md` (957 KB, **176K tokens**) | `scripts/backlog.py counts` · `open` · `show HA-4i SEC-B5` · `sections` · `find "taint"` | every open row ≈ **3.7 KB** — a 258× reduction |
+| reading the Hermes ledger (1.4 MB, **~355K tokens**) | `scripts/ledger.py stats` · `clusters` · `list --cluster cli --effort S` · `show "nerva doctor"` | totals + all 20 clusters ≈ **1.1 KB** |
+
+`backlog.py sections` prints every heading with its line number and open-row count — that is how you
+find the ~40 lines to open when you do need to edit the file. `show` takes ids (`HA-4i`, `SEC-B5`) or
+line refs (`L1587`); both tools pipe cleanly into `head`. Pinned by `tests/test_context_query_tools.py`,
+including the size ratios above, so a regression that starts dumping bodies fails CI rather than
+quietly restoring the old cost.
+
+The same reflex applies past these two: `grep`/`rg` for a symbol beats reading a module, and
+`git show --stat` beats reading a diff you only need the shape of.
+
 ## TL;DR for an assistant with 1M context
 
 The whole tracked repo as text is **~6.9M tokens** — do NOT load it raw. Load **Tier 0 + Tier 1**

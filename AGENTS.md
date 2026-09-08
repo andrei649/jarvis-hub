@@ -50,8 +50,14 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 - Start with this file and the relevant section of
   `docs/ARCHITECTURE.md`; do not load the repository indiscriminately.
-- Read `BACKLOG.md` when prioritizing, changing delivery scope, or updating roadmap status. Modify
-  it only when the requested work actually changes that ledger and the mutation is authorized.
+- `BACKLOG.md` is the priority truth when prioritizing, changing delivery scope, or updating
+  roadmap status. **Query it, do not load it** — it is ~957 KB (~176K tokens), and a whole read to
+  answer "what is open" costs more than every other document here combined:
+  `scripts/backlog.py counts | open | show <ID> | sections | find <regex>`. Listing every open row
+  costs under 4 KB. Open the file itself only when you are *writing* to it, and then go to the one
+  section `sections` names. Modify it only when the requested work actually changes that ledger and
+  the mutation is authorized. The Hermes absorption ledger (1.4 MB of JSON) has the same rule and
+  the same shape of tool: `scripts/ledger.py stats | clusters | list | show`.
 - Use `docs/AI_CONTEXT.md` to select task-specific bundles. Treat `.opencode/summary.md`,
   `.opencode/plans/dev-methodology.md`, and `docs/SPRINT.md` as historical context, never as live
   instructions or current delivery truth.
