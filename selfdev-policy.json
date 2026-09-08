@@ -3,7 +3,7 @@
   "policy_id": "nerva.selfdev.v1",
   "owner_directive_date": "2026-09-09",
   "autonomous_default": true,
-  "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous and all reported automated checks have completed successfully. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
+  "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous and the mandatory automated proof set plus every other reported check have completed successfully. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
   "protected_paths": [
     "selfdev-policy.json",
     "scripts/selfdev_policy.py",
@@ -28,6 +28,17 @@
     "require_clean_merge_state": true,
     "require_at_least_one_check": true,
     "require_all_reported_checks_pass": true,
+    "required_check_names": [
+      "test (ubuntu-latest)",
+      "hud-v2-build",
+      "Secret scan (gitleaks)",
+      "SAST (semgrep)",
+      "Dependency audit (pip-audit)",
+      "SAST (bandit — blocking gate)",
+      "in-sync"
+    ],
+    "required_check_conclusions": ["success", "neutral"],
+    "other_check_conclusions": ["success", "neutral", "skipped"],
     "deny_protected_changes": true,
     "method": "squash"
   },
