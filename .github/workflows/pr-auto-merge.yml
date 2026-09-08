@@ -1,29 +1,28 @@
 name: Hourly PR Auto-Merge
 
-# Conductor-agent automation (AGENTS.md "Pattern conductor agent" /
-# docs/AGENT_WORKFLOW.md): an hourly sweep of open PRs that merges only the
-# ones GitHub itself already reports as fully ready. It never makes that
-# judgement call itself — it trusts `mergeStateStatus` (computed server-side
-# from branch protection: required checks, conflicts, required reviews).
+# Nerva's routine engineering lane is owner-out-of-loop. A non-draft PR that
+# GitHub reports CLEAN may merge unattended when the trusted self-development
+# policy classifies every changed path as autonomous.
 #
-# Safety rules (do not weaken without updating AGENTS.md too):
-#   - draft PRs are a file lock owned by their author — never touched.
-#   - only mergeStateStatus == CLEAN is merged. BLOCKED/DIRTY/BEHIND/UNSTABLE
-#     are left for the next hourly run — no force-push, no conflict
-#     resolution, no rebasing someone else's branch.
-#   - re-checked immediately before merging (a same-run earlier merge can
-#     turn a CLEAN PR into BEHIND/DIRTY if it touched the same files).
-#   - --match-head-commit guards against a push landing between list and
-#     merge.
-#   - branches are never deleted post-merge (matches this repo's existing
-#     convention of keeping merged feature branches around).
-#   - squash merge, one commit per PR — matches this repo's existing history.
+# The important boundary is where the policy is evaluated: this workflow checks
+# out `main` and runs `scripts/selfdev_policy.py` from that trusted checkout.
+# Candidate PRs never get to supply the classifier that judges themselves.
+# Changes to the policy, this workflow, release/security workflows, the Action
+# Kernel and the other root-of-trust paths are therefore skipped rather than
+# self-authorized. Everything else may flow through unattended.
+#
+# Safety rules:
+#   - draft PRs are never touched;
+#   - only mergeStateStatus == CLEAN is eligible;
+#   - the head SHA is re-checked immediately before merge;
+#   - every changed filename is fetched through the paginated REST endpoint;
+#   - protected-path classification is fail-closed;
+#   - squash merge keeps one rollback unit per PR;
+#   - no force-push, conflict resolution or branch deletion occurs here.
 
 on:
   workflow_dispatch: {}
   schedule:
-    # :13 past the hour — off the round-number mark so this doesn't land on
-    # GitHub's scheduler at the same instant as everyone else's "hourly" jobs.
     - cron: "13 * * * *"
 
 concurrency:
@@ -38,31 +37,27 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     steps:
-      - name: Merge PRs that are fully green
+      - name: Checkout trusted self-development policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validate trusted policy
+        run: python3 scripts/selfdev_policy.py validate
+
+      - name: Merge autonomous CLEAN PRs
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          readonly NERVA_BRANCH_PREFIX="nerva2/"
-          readonly NERVA_START_MARKER="<!-- NERVA2:MOVEMENT-ATTESTATION:START -->"
-
-          nerva_manual_status() {
-            local record="$1"
-            jq -e \
-              --arg prefix "$NERVA_BRANCH_PREFIX" \
-              --arg marker "$NERVA_START_MARKER" \
-              '(.headRefName | startswith($prefix)) or (.body | contains($marker))' \
-              <<<"$record" >/dev/null 2>&1
-          }
-
           list_raw=""
           list_status=0
           list_raw="$(gh pr list --repo "$REPO" --state open --limit 100 \
-            --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
-            2>/dev/null)" \
-            || list_status=$?
+            --json number,isDraft,mergeStateStatus,headRefOid \
+            2>/dev/null)" || list_status=$?
           if [ "$list_status" -ne 0 ]; then
             printf 'Failed to list pull requests; refusing to merge.\n' >&2
             exit "$list_status"
@@ -79,10 +74,7 @@ jobs:
               and ((.isDraft | type) == "boolean")
               and ((.mergeStateStatus | type) == "string")
               and ((.headRefOid | type) == "string")
-              and (.headRefOid | test("^[0-9a-f]{40}$"))
-              and ((.headRefName | type) == "string")
-              and ((.headRefName | length) > 0)
-              and ((.body | type) == "string");
+              and (.headRefOid | test("^[0-9a-f]{40}$"));
 
             if length != 1 then
               error("expected exactly one list document")
@@ -113,20 +105,6 @@ jobs:
             state="$(jq -r '.mergeStateStatus' <<<"$pr")"
             sha="$(jq -r '.headRefOid' <<<"$pr")"
 
-            manual_status=0
-            nerva_manual_status "$pr" || manual_status=$?
-            case "$manual_status" in
-              0)
-                printf '#%s: manual Nerva integration required — skipped\n' "$number"
-                continue
-                ;;
-              1) ;;
-              *)
-                printf 'Fatal Nerva policy evaluation error for PR #%s.\n' "$number" >&2
-                exit "$manual_status"
-                ;;
-            esac
-
             if [ "$draft" = "true" ]; then
               printf '#%s: draft — skipped\n' "$number"
               continue
@@ -136,14 +114,11 @@ jobs:
               continue
             fi
 
-            # Re-check right before merging: an earlier merge in this same
-            # run may have turned this PR's overlapping-file state stale.
             recheck_raw=""
             recheck_status=0
             recheck_raw="$(gh pr view "$number" --repo "$REPO" \
-              --json number,isDraft,mergeStateStatus,headRefOid,headRefName,body \
-              2>/dev/null)" \
-              || recheck_status=$?
+              --json number,isDraft,mergeStateStatus,headRefOid \
+              2>/dev/null)" || recheck_status=$?
             if [ "$recheck_status" -ne 0 ]; then
               printf '#%s: recheck failed; refusing to merge.\n' "$number" >&2
               exit "$recheck_status"
@@ -160,10 +135,7 @@ jobs:
                 and ((.isDraft | type) == "boolean")
                 and ((.mergeStateStatus | type) == "string")
                 and ((.headRefOid | type) == "string")
-                and (.headRefOid | test("^[0-9a-f]{40}$"))
-                and ((.headRefName | type) == "string")
-                and ((.headRefName | length) > 0)
-                and ((.body | type) == "string");
+                and (.headRefOid | test("^[0-9a-f]{40}$"));
 
               if length != 1 then
                 error("expected exactly one recheck document")
@@ -179,29 +151,14 @@ jobs:
             fi
 
             recheck_number="$(jq -r '.number' <<<"$recheck")"
-            if [ "$recheck_number" != "$number" ]; then
-              printf '#%s: recheck identity mismatch; refusing to merge.\n' "$number" >&2
-              exit 1
-            fi
-
-            manual_status=0
-            nerva_manual_status "$recheck" || manual_status=$?
-            case "$manual_status" in
-              0)
-                printf '#%s: manual Nerva integration required at recheck — skipped\n' "$number"
-                continue
-                ;;
-              1) ;;
-              *)
-                printf 'Fatal Nerva policy evaluation error for PR #%s.\n' "$number" >&2
-                exit "$manual_status"
-                ;;
-            esac
-
             recheck_draft="$(jq -r '.isDraft' <<<"$recheck")"
             recheck_state="$(jq -r '.mergeStateStatus' <<<"$recheck")"
             recheck_sha="$(jq -r '.headRefOid' <<<"$recheck")"
 
+            if [ "$recheck_number" != "$number" ]; then
+              printf '#%s: recheck identity mismatch; refusing to merge.\n' "$number" >&2
+              exit 1
+            fi
             if [ "$recheck_draft" = "true" ]; then
               printf '#%s: draft at recheck — skipped\n' "$number"
               continue
@@ -215,7 +172,36 @@ jobs:
               continue
             fi
 
-            printf '#%s: CLEAN at validated head — merging (squash)\n' "$number"
+            files=""
+            files_status=0
+            files="$(gh api --paginate \
+              "repos/$REPO/pulls/$number/files?per_page=100" \
+              --jq '.[].filename' 2>/dev/null)" || files_status=$?
+            if [ "$files_status" -ne 0 ]; then
+              printf '#%s: changed-file enumeration failed; refusing to merge.\n' "$number" >&2
+              exit "$files_status"
+            fi
+
+            classification=""
+            classification_status=0
+            classification="$(printf '%s\n' "$files" | \
+              python3 scripts/selfdev_policy.py classify --stdin \
+              2>/dev/null)" || classification_status=$?
+            if [ "$classification_status" -ne 0 ]; then
+              printf '#%s: self-development policy failed closed.\n' "$number" >&2
+              exit "$classification_status"
+            fi
+
+            autonomous="$(jq -r '.autonomous_merge' <<<"$classification")"
+            if [ "$autonomous" != "true" ]; then
+              reason="$(jq -r '.reason' <<<"$classification")"
+              hits="$(jq -r '[.protected_hits[].path] | join(", ")' <<<"$classification")"
+              printf '#%s: control-plane change (%s)%s — skipped\n' \
+                "$number" "$reason" "${hits:+: $hits}"
+              continue
+            fi
+
+            printf '#%s: CLEAN + autonomous policy PASS — merging (squash)\n' "$number"
             if ! gh pr merge "$number" --repo "$REPO" --squash \
               --match-head-commit "$sha" >/dev/null 2>&1; then
               printf '#%s: merge command failed.\n' "$number" >&2
