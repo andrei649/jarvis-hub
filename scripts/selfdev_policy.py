@@ -12,9 +12,9 @@ considers a candidate PR. A candidate therefore cannot authorize itself by
 changing this file or ``selfdev-policy.json`` in the same transaction.
 
 The policy distinguishes live enforcement from target state. In v1 autonomous
-merge is live and waits for reported automation to finish green; independent
-AI-review enforcement and autonomous canary deploy remain explicit targets
-until their later #1054 slices land.
+merge is live and waits for a pinned minimum proof set plus all other reported
+automation to finish green; independent AI-review enforcement and autonomous
+canary deploy remain explicit targets until their later #1054 slices land.
 
 Examples::
 
@@ -107,6 +107,17 @@ def _require_bool(section: dict[str, Any], key: str) -> bool:
     return value
 
 
+def _require_string_list(section: dict[str, Any], key: str) -> list[str]:
+    value = section.get(key)
+    if not isinstance(value, list) or not value:
+        raise PolicyError(f"{key} must be a non-empty list")
+    if not all(isinstance(item, str) and item for item in value):
+        raise PolicyError(f"{key} must contain only non-empty strings")
+    if len(value) != len(set(value)):
+        raise PolicyError(f"{key} must not contain duplicates")
+    return value
+
+
 def validate_policy(policy: dict[str, Any]) -> None:
     """Reject policy states that could accidentally erase the autonomy boundary."""
     if policy.get("schema_version") != 1:
@@ -134,6 +145,15 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise PolicyError("merge must require at least one reported automated check")
     if merge.get("require_all_reported_checks_pass") is not True:
         raise PolicyError("merge must wait for every reported automated check to pass or skip")
+    _require_string_list(merge, "required_check_names")
+    required_conclusions = _require_string_list(merge, "required_check_conclusions")
+    other_conclusions = _require_string_list(merge, "other_check_conclusions")
+    if set(required_conclusions) - {"success", "neutral"}:
+        raise PolicyError("required checks may conclude only success or neutral")
+    if not set(required_conclusions).issubset(set(other_conclusions)):
+        raise PolicyError("other_check_conclusions must include required check conclusions")
+    if set(other_conclusions) - {"success", "neutral", "skipped"}:
+        raise PolicyError("other checks may conclude only success, neutral, or skipped")
     if merge.get("method") != "squash":
         raise PolicyError("merge.method must be squash")
 
@@ -234,6 +254,10 @@ def selftest(policy: dict[str, Any]) -> None:
         "scripts/selfdev_policy.py",
         ".github/workflows/ci.yml",
         ".github/workflows/anything-new.yml",
+        "MOONSHOT.md",
+        "NERVA_VISION.md",
+        "LICENSE",
+        "docs/legal/LICENSE-APACHE-2.0-staged.txt",
         "agents/core/kernel/budget.py",
         "agents/core/security/taint.py",
         "AGENTS.md",
@@ -270,6 +294,15 @@ def selftest(policy: dict[str, Any]) -> None:
         pass
     else:
         raise PolicyError("selftest: automated-check merge invariant was removable")
+
+    no_required_checks = copy.deepcopy(policy)
+    no_required_checks["merge"]["required_check_names"] = []
+    try:
+        validate_policy(no_required_checks)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: mandatory proof set was removable")
 
     no_rollback = copy.deepcopy(policy)
     no_rollback["deploy"]["auto_rollback_on_regression"] = False
