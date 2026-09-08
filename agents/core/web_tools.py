@@ -276,7 +276,15 @@ def _turn_read_untrusted() -> bool:
     """True when this turn has already *read* untrusted content — the origin carries the
     tainted-recall label a fenced tool result or a tainted memory hit raises. Narrower
     than :func:`_turn_is_tainted` on purpose: an inbound channel keeps its own label, so
-    on Telegram the first search of a turn still runs. A read that fails counts as read."""
+    on Telegram the first search of a turn still runs. A read that fails counts as read.
+
+    What this does NOT gate, stated because the difference is easy to assume away: the
+    tool loop fences a whole *batch* of calls after it has run them, so two searches the
+    model emits in one assistant turn both execute and neither sees a tainted origin.
+    That is the honest boundary of the rule — everything in one batch was composed before
+    any untrusted byte reached the model, so none of it can be a fetch a page asked for —
+    and the refusal starts at the next iteration.
+    """
     try:
         return current_action_origin() == TAINTED_RECALL_ORIGIN
     except Exception as exc:

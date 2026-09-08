@@ -52,6 +52,12 @@ class Agent:
         # runtime setting is enabled. ``None`` preserves legacy duck-typed
         # backends without probing for tool capabilities.
         self.tool_runtime = None
+        # Where the tool loop's own trail goes. ``None`` means the process-wide
+        # ``TOOL_EVENTS`` log; a test (or a future per-agent tracer) can set its own.
+        # Before this the loop was run with no sink at all, so every event it emits —
+        # including the 5a ``tool_result_untrusted`` that says the fence fired — was
+        # discarded the moment it was built.
+        self.tool_event_sink = None
         self._failures = 0
         self._last_latency = 0.0
         self._checkpoint_manager = None
@@ -156,6 +162,18 @@ class Agent:
             f"You can also hand off to another agent with '[handoff:agent_id]'."
         )
 
+    def _tool_event_sink(self):
+        """The bounded log every tool event lands in, unless a caller injected its own.
+
+        Resolved per call rather than at construction so a test's sink, or a tracer
+        wired later in a boot, is honoured without re-creating the agent.
+        """
+        if self.tool_event_sink is not None:
+            return self.tool_event_sink
+        from .observability.tool_events import TOOL_EVENTS
+
+        return TOOL_EVENTS.record
+
     async def generate_response(
         self,
         backend,
@@ -189,6 +207,7 @@ class Agent:
                 system=system,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                event_sink=self._tool_event_sink(),
                 **budget,
             )
             if on_token is not None and (response or "").strip():

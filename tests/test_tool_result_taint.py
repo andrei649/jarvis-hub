@@ -522,3 +522,71 @@ async def test_recall_taint_survives_the_orchestrators_agent_gather():
         assert current_action_origin() == INBOUND_ACTION_ORIGIN
     finally:
         reset_action_origin(token)
+
+
+# ── the fence's granularity is the iteration, not the call ──────────────────
+
+@pytest.mark.asyncio
+async def test_the_taint_fence_is_per_iteration_not_per_call():
+    """Two untrusted calls the model emits in ONE assistant turn both run: the batch is
+    gathered concurrently and fenced afterwards, so neither sees a tainted origin. That
+    is deliberate — both were composed before any untrusted byte reached the model — and
+    it is pinned here so the boundary is a decision rather than an accident. The refusal
+    the docs promise starts at the NEXT iteration, which the second half asserts.
+    """
+    origins: list[str] = []
+    server = ToolRPCServer()
+
+    async def fetch(args):
+        # what the turn's origin looks like at the moment the handler runs
+        origins.append(current_action_origin())
+        return {"page": f"body-{args.get('n')}"}
+
+    server.register_tool("fetch", fetch, input_schema=_SCHEMA, untrusted_output=True)
+
+    class _TwoThenOne:
+        supports_tools = True
+
+        def __init__(self):
+            self.turns = 0
+
+        async def generate_tool_turn(self, **kwargs):
+            self.turns += 1
+            if self.turns == 1:                      # both in the SAME assistant turn
+                return ToolTurn(
+                    tool_calls=(
+                        ToolCall(id="a", name="fetch", raw_arguments='{"n": 1}',
+                                 arguments={"n": 1}),
+                        ToolCall(id="b", name="fetch", raw_arguments='{"n": 2}',
+                                 arguments={"n": 2}),
+                    ),
+                    finish_reason="tool_calls",
+                )
+            if self.turns == 2:                      # the next iteration
+                return ToolTurn(
+                    tool_calls=(ToolCall(id="c", name="fetch", raw_arguments='{"n": 3}',
+                                         arguments={"n": 3}),),
+                    finish_reason="tool_calls",
+                )
+            return ToolTurn(content="done", finish_reason="stop")
+
+    runtime = AgentToolRuntime(server, enabled=lambda: True, max_iterations=lambda: 6)
+    backend = _TwoThenOne()
+    events: list[dict] = []
+    token = bind_action_origin("generated")
+    try:
+        assert await _run(runtime, backend, events) == "done"
+        assert current_action_origin() == TAINTED_RECALL_ORIGIN
+    finally:
+        reset_action_origin(token)
+
+    # Both calls of the first batch ran, and both saw a still-clean turn.
+    assert origins[:2] == ["generated", "generated"], origins
+    # The third ran too — the loop does not refuse an untrusted tool on a tainted turn;
+    # refusing is the individual tool's own rule (web_extract's `tainted_turn`), and the
+    # loop's job is only to fence and mark. What must hold is that by then the turn was
+    # already marked, which is what a tool's own gate reads.
+    assert origins[2] == TAINTED_RECALL_ORIGIN, origins
+
+    fenced = [event for event in events if event["event"] == "tool_result_untrusted"]
+    assert [event["call_id"] for event in fenced] == ["a", "b", "c"]

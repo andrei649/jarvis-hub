@@ -366,6 +366,20 @@ With pairing on, the unauthenticated `POST /api/channels/pairing/request` door i
 may answer anyone. Prints a `[SECURITY]` line at boot. Applies to every listed inbound channel
 at once — there is no per-channel form; set it only on a box that talks to nobody but you.
 
+### `JARVIS_CA_BUNDLE`
+
+**Default: unset** (`agents/core/http_client.py`). A PEM file of extra certificate
+authorities to trust for plugin egress. Every plugin client is built `trust_env=False` — so a
+hostile environment cannot silently redirect egress through a proxy nobody chose — and
+therefore verifies against certifi alone. Behind a TLS-inspecting proxy or a private CA that
+means every outbound call fails, the search backend swallows the error, and `web_search`
+answers `count: 0`: indistinguishable from "nothing found". Point this at the inspecting
+proxy's root and it works and stays verified. `SSL_CERT_FILE` is honoured as a second
+spelling. **It can only ADD.** There is no value of either variable that turns certificate
+checking off, and none that removes an anchor the box already trusted; a path that does not
+exist, or a bundle that will not load, degrades to the default store with a warning — the
+stricter side of the mistake. On a home LAN you will never need it.
+
 ### `JARVIS_TRUSTED_PROXIES`
 
 **Default: unset** (`agents/core/proxy_trust.py`). Comma-separated networks or addresses
@@ -416,6 +430,7 @@ must call `host_accepted` itself, since the HTTP middleware would not cover it.
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
 | `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |
+| `JARVIS_CA_BUNDLE` | unset (`http_client.py`) | Extra CA roots for plugin egress (adds only; verification always on) | A root you add is trusted for every plugin fetch — point it at your own proxy's CA, nothing else | Unset + restart: back to certifi alone |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers believed only from these networks; XFF walked right-to-left | A listed peer can name any client address — list only proxies you run; a malformed list refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 

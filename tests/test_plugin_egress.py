@@ -20,6 +20,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.plugin_gate import host_in_allowlist
 from agents.core.http_client import PluginHTTPClient, PluginEgressError
+from datetime import UTC
 
 
 # ── gate matching (anchored host/sub-domain) ─────────────────────────────────
@@ -242,3 +243,112 @@ def test_matrix_channel_registers_its_config_host():
         assert "matrix.example.org" in pg.dynamic_domains("channel_matrix")
     finally:
         pg._DYNAMIC_DOMAINS.pop("channel_matrix", None)
+
+
+# ── the owner's TLS trust anchor (JARVIS_CA_BUNDLE) ──────────────────────────
+# Every plugin client is built `trust_env=False`, so it verifies against certifi alone
+# and a TLS-inspecting proxy or a private CA makes every outbound call fail silently
+# (web_search answers count: 0). The anchor names the missing root. It may only ADD.
+
+def _self_signed_ca(tmp_path):
+    """A throwaway CA PEM whose subject we can look for in the loaded context."""
+    from datetime import datetime, timedelta, timezone
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "nerva-test-anchor")])
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name).issuer_name(name).public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1)).not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    path = tmp_path / "extra-ca.pem"
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return path
+
+
+def test_no_anchor_configured_keeps_the_default_trust_store(monkeypatch):
+    from agents.core.http_client import CA_BUNDLE_ENV, tls_verify
+
+    monkeypatch.delenv(CA_BUNDLE_ENV, raising=False)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    assert tls_verify() is True          # httpx's own default: certifi
+
+
+def test_the_anchor_is_added_to_the_default_store_never_swapped_for_it(monkeypatch, tmp_path):
+    import ssl
+
+    from agents.core.http_client import CA_BUNDLE_ENV, tls_verify
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setenv(CA_BUNDLE_ENV, str(_self_signed_ca(tmp_path)))
+    context = tls_verify()
+
+    assert isinstance(context, ssl.SSLContext)
+    subjects = [
+        value
+        for cert in context.get_ca_certs()
+        for rdn in cert.get("subject", ())
+        for _key, value in rdn
+    ]
+    assert "nerva-test-anchor" in subjects, "the owner's anchor is missing"
+    # and the anchors the box already trusted are still there — this ADDS
+    assert len(context.get_ca_certs()) > 1, "the default store was replaced, not extended"
+
+
+def test_verification_stays_on_for_every_value_the_variable_can_take(monkeypatch, tmp_path):
+    """There must be no spelling of this knob that turns certificate checking off —
+    a knob that could would make every SSRF and egress guard in the module decorative."""
+    import ssl
+
+    from agents.core.http_client import CA_BUNDLE_ENV, tls_verify
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    for value in ("0", "false", "off", "no", "none", "-1", "/dev/null",
+                  "/nope/missing.pem", str(_self_signed_ca(tmp_path)), " "):
+        monkeypatch.setenv(CA_BUNDLE_ENV, value)
+        verdict = tls_verify()
+        assert verdict is not False, value
+        if isinstance(verdict, ssl.SSLContext):
+            assert verdict.verify_mode == ssl.CERT_REQUIRED, value
+            assert verdict.check_hostname is True, value
+        else:
+            assert verdict is True, value
+
+
+def test_an_unreadable_or_malformed_bundle_degrades_to_the_default_and_says_so(
+    monkeypatch, tmp_path, caplog,
+):
+    from agents.core.http_client import CA_BUNDLE_ENV, tls_verify
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setenv(CA_BUNDLE_ENV, str(tmp_path / "does-not-exist.pem"))
+    with caplog.at_level("WARNING"):
+        assert tls_verify() is True
+    assert any(CA_BUNDLE_ENV in record.getMessage() for record in caplog.records)
+
+    junk = tmp_path / "junk.pem"
+    junk.write_text("not a certificate", encoding="utf-8")
+    monkeypatch.setenv(CA_BUNDLE_ENV, str(junk))
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        assert tls_verify() is True
+    assert any(CA_BUNDLE_ENV in record.getMessage() for record in caplog.records)
+
+
+def test_ssl_cert_file_is_the_second_spelling(monkeypatch, tmp_path):
+    import ssl
+
+    from agents.core.http_client import CA_BUNDLE_ENV, tls_verify
+
+    monkeypatch.delenv(CA_BUNDLE_ENV, raising=False)
+    monkeypatch.setenv("SSL_CERT_FILE", str(_self_signed_ca(tmp_path)))
+    assert isinstance(tls_verify(), ssl.SSLContext)

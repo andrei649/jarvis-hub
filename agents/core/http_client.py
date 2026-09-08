@@ -18,10 +18,12 @@ Usage:
 
 import asyncio
 import logging
+import ssl
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
@@ -169,6 +171,55 @@ def _record_egress(plugin: str, host: str, method: str, *, allowed: bool, local:
         )
 
 
+#: The owner's extra TLS trust anchor. Every client below is built ``trust_env=False``
+#: (so a hostile environment cannot silently redirect egress through a proxy nobody
+#: chose), and therefore verifies against certifi alone — which means that behind a
+#: TLS-inspecting proxy or a private CA every outbound call fails, the search backend
+#: swallows the error, and ``web_search`` answers ``count: 0``: indistinguishable from
+#: "nothing found". This names the missing root instead. ``SSL_CERT_FILE`` is honoured
+#: as a second spelling because it is the one the rest of the world already sets.
+CA_BUNDLE_ENV = "JARVIS_CA_BUNDLE"
+_CA_BUNDLE_FALLBACK_ENV = "SSL_CERT_FILE"
+
+
+def tls_verify():
+    """What httpx verifies against: the default trust store, plus the owner's anchor.
+
+    Only ever ADDS. There is no value of either variable that turns verification off,
+    and none that removes an anchor the box already trusted: an inspecting proxy or a
+    private CA needs its root trusted, not the check skipped, and a knob that could
+    skip it would quietly make every SSRF and egress guard in this module decorative.
+    A path that does not exist, or a bundle that will not load, degrades to the default
+    store with a warning — the stricter side of the mistake, and a visible one.
+    """
+    from agents.core.env_config import env_str
+
+    extra = env_str(CA_BUNDLE_ENV) or env_str(_CA_BUNDLE_FALLBACK_ENV)
+    if not extra:
+        return True
+    if not Path(extra).is_file():
+        logger.warning(
+            "%s does not name a readable file; keeping the default trust store", CA_BUNDLE_ENV,
+        )
+        return True
+    try:
+        context = ssl.create_default_context()
+        try:
+            import certifi
+
+            context.load_verify_locations(cafile=certifi.where())
+        except Exception:   # pragma: no cover - certifi ships with httpx
+            logger.debug("certifi anchors unavailable; system store only")
+        context.load_verify_locations(cafile=extra)
+        return context
+    except Exception as exc:
+        logger.warning(
+            "%s could not be loaded (type=%s); keeping the default trust store",
+            CA_BUNDLE_ENV, type(exc).__name__,
+        )
+        return True
+
+
 def strict_egress_enabled() -> bool:
     """SEC-5: egress is strict by default; opt out only with an explicit falsy
     ``JARVIS_STRICT_EGRESS``. CDX-12: the hardened profile forces strict and
@@ -275,6 +326,7 @@ class PluginHTTPClient:
             self._client = httpx.AsyncClient(
                 timeout=self.timeouts.to_httpx_timeout(),
                 trust_env=False,
+                verify=tls_verify(),
             )
         return self._client
 
@@ -441,6 +493,9 @@ class PluginHTTPClient:
                 timeout=self.timeouts.to_httpx_timeout(),
                 follow_redirects=False,
                 trust_env=False,
+                # An injected transport decides its own TLS (that is what makes the
+                # SSRF tests hermetic); only a real dial consults the trust store.
+                **({} if transport is not None else {"verify": tls_verify()}),
                 transport=transport,
             )
             self._pinned_clients[target.pool_key] = client

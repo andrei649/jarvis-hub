@@ -420,6 +420,13 @@ class AgentToolRuntime:
                 repeated=repeated,
                 capped=capped,
             )
+            # The fence's granularity is this loop, not the individual call: the batch
+            # above ran concurrently and every call in it was composed from a transcript
+            # that carried no untrusted byte yet, so none of them can be "a fetch the page
+            # asked for". They are fenced here, together, and only the NEXT iteration sees
+            # a tainted turn. Deliberate — pinned by
+            # tests/test_tool_result_taint.py::test_the_taint_fence_is_per_iteration_not_per_call
+            # — and the reason the owner packet says "the next turn", not "the next call".
             for call, (result, raw) in zip(bounded_calls, observations, strict=True):
                 # Fenced and marked from the loop's own context (never a child task), so
                 # the recall taint lands on the turn. The stub is keyed on the RAW bytes so

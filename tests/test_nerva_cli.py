@@ -84,7 +84,7 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "status", "config", "approvals", "kernel", "logs", "estop", "jobs", "sessions", "chat", "completion",
+        "doctor", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "completion",
     }
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
@@ -478,3 +478,57 @@ def test_jobs_verbs_ride_the_admin_routes():
 def test_jobs_is_in_the_tree_and_the_completion():
     assert command_tree()["jobs"] == ["blueprints", "create", "delete", "list", "pause", "resume", "run", "runs"]
     assert "jobs) COMPREPLY" in completion_script("bash")
+
+
+# ── `nerva tools` — the reader for the tool loop's trail ─────────────────────
+# Before this the loop ran with no event sink at all, so the 5a fence fired and left
+# no trace anywhere the owner could look.
+
+_TRAIL = [
+    {"at": "2026-09-08T06:11:02+00:00", "agent_id": "jarvis", "event": "tool_requested",
+     "tool": "web_search", "status": "requested", "call_id": "c1"},
+    {"at": "2026-09-08T06:11:09+00:00", "agent_id": "stark", "event": "tool_result_untrusted",
+     "tool": "osint_enrich", "status": "fenced", "reasons": ["untrusted_tool"],
+     "injection_flags": [], "suspicious": False},
+]
+
+
+def _tools_hub(events=None, counts=None, limit=20):
+    return _FakeHub(routes={
+        f"GET /api/admin/tool-events?limit={limit}": {
+            "events": _TRAIL if events is None else events,
+            "counts": counts if counts is not None else {},
+        },
+    })
+
+
+def test_tools_prints_the_trail_and_the_since_boot_tally():
+    hub = _tools_hub(counts={"tool_requested": 4, "tool_result_untrusted": 1})
+    code, out, _err, hub = _run(["tools"], hub=hub)
+    assert code == EXIT_OK
+    assert "tool_result_untrusted" in out and "osint_enrich" in out
+    assert "reasons=untrusted_tool" in out
+    assert "5 events, 1 fenced as untrusted" in out
+    assert any("/api/admin/tool-events" in call[1] for call in hub.calls)
+
+
+def test_tools_filters_by_agent_and_by_fenced_only():
+    code, out, _err, _hub = _run(["tools", "--agent", "stark"], hub=_tools_hub())
+    assert code == EXIT_OK and "osint_enrich" in out and "web_search" not in out
+
+    code, out, _err, _hub = _run(["tools", "--untrusted"], hub=_tools_hub())
+    assert code == EXIT_OK and "osint_enrich" in out and "tool_requested" not in out
+
+
+def test_tools_says_so_when_nothing_has_used_the_loop():
+    code, out, _err, _hub = _run(["tools"], hub=_tools_hub(events=[]))
+    assert code == EXIT_OK and "no tool events yet" in out
+
+
+def test_tools_bounds_the_number_of_events_it_asks_for():
+    """A caller cannot ask the hub for an unbounded page, or for none."""
+    for asked, sent in ((5, 5), (99999, 500), (0, 1)):
+        hub = _tools_hub(events=[], limit=sent)
+        code, _out, _err, hub = _run(["tools", "-n", str(asked)], hub=hub)
+        assert code == EXIT_OK, (asked, hub.calls)
+        assert any(f"limit={sent}" in call[1] for call in hub.calls), (asked, hub.calls)

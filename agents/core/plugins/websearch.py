@@ -5,6 +5,7 @@ Supports DuckDuckGo (no-API) and optional Tavily / SearXNG.
 
 import logging
 from typing import Optional
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
@@ -31,6 +32,56 @@ PAGE_READ_CHUNK_BYTES = 65_536
 # archive, a missing declaration) is refused rather than decoded into noise that
 # would then be cached and handed to the model as "the page".
 PAGE_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml", "text/plain"})
+
+# DuckDuckGo's HTML endpoint does not hand back a result's own address. It hands back
+# its own redirector — `//duckduckgo.com/l/?uddg=<percent-encoded target>&rut=…`,
+# protocol-relative, no scheme. That is useless to a reader: `web_extract` refuses it
+# as `bad_args` because it carries no scheme, so with the keyless backend the model
+# could search and never open what it found, and the tainted-turn rule ("only a URL
+# `web_search` returned may be read") allowed an empty set in practice. The unwrap
+# lives here, at the parser, so every backend hands the same shape upwards.
+_REDIRECT_HOSTS = frozenset({"duckduckgo.com", "html.duckduckgo.com"})
+_REDIRECT_PATH = "/l/"
+_REDIRECT_PARAM = "uddg"
+_RESULT_SCHEMES = frozenset({"http", "https"})
+#: Longest result address kept. Matches ``web_tools.MAX_URL_CHARS`` — a longer one
+#: would be refused by the reader's preflight anyway, so dropping it here is honest.
+MAX_RESULT_URL_CHARS = 2048
+
+
+def _unwrap_result_url(href: object) -> str:
+    """The result's own http(s) address, or ``""`` when the href is not one.
+
+    Handles the three shapes the HTML endpoint emits: the protocol-relative
+    redirector, the same with a scheme, and the occasional direct link. Anything
+    else — a relative path, a ``javascript:`` href, a redirector whose target is
+    itself not http(s), a redirector pointing at another redirector — comes back
+    empty rather than as a string the reader would refuse later under a less honest
+    reason. ``parse_qs`` already percent-decodes, so the target is never decoded
+    twice (decoding twice would turn a literal ``%2520`` inside a URL into ``%20``).
+    """
+    raw = str(href or "").strip()
+    if not raw or len(raw) > MAX_RESULT_URL_CHARS:
+        return ""
+    if raw.startswith("//"):
+        raw = f"https:{raw}"
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return ""
+    if (parts.hostname or "").lower() in _REDIRECT_HOSTS and parts.path.startswith(_REDIRECT_PATH):
+        # One hop only, on purpose: a redirector whose target is another redirector
+        # is not a search result, and following the chain is someone else's job.
+        raw = (parse_qs(parts.query).get(_REDIRECT_PARAM) or [""])[0].strip()
+        if not raw or len(raw) > MAX_RESULT_URL_CHARS:
+            return ""
+        try:
+            parts = urlsplit(raw)
+        except ValueError:
+            return ""
+    if parts.scheme.lower() not in _RESULT_SCHEMES or not parts.hostname:
+        return ""
+    return raw
 
 
 class WebSearchPlugin:
@@ -118,7 +169,7 @@ class WebSearchPlugin:
                 if title_el:
                     results.append({
                         "title": title_el.get_text(strip=True),
-                        "url": title_el.get("href", ""),
+                        "url": _unwrap_result_url(title_el.get("href", "")),
                         "snippet": snippet_el.get_text(strip=True) if snippet_el else "",
                     })
             return results

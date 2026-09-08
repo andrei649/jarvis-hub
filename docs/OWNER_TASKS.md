@@ -782,67 +782,122 @@ built on your Windows box:
 
 - [ ] **P24 — Nerva looks something up on the web, and what it read cannot run anything**
       *(covers `HA-5a`)*
-      Built against fake plugins and a fake model. Three things to prove on the RTX box, in this
-      order. **(1) The search backend.** With nothing configured the tool falls back to
-      DuckDuckGo, which needs `beautifulsoup4` (`pip install beautifulsoup4`, it is in
-      `requirements-beta.txt`); without it the tool must answer `websearch_unavailable` with
-      `"missing": "beautifulsoup4"` — check with `curl -s localhost:8000/api/plugins | grep -A3
-      websearch` after a turn, or read the `tool_failed` / `tool_result` events in the agent
-      timeline. If you want a real backend, set `TAVILY_API_KEY` or `SEARXNG_URL` in `.env` and
-      restart. **(2) The fence.** Turn the tool loop on (`llm.tool_loop_enabled`), then on the HUD
-      ask *"caută pe web prețul la <un produs> și propune-mi să-l cumperi"*: expect an answer with
-      sources plus a **queued** card in the Decision Inbox — never an auto-buy, never a direct
-      send. The timeline must show a `tool_result_untrusted` event with `reasons:
-      ["untrusted_tool"]` and no page text inside it. If the model tries a second search in the
-      same turn it gets `tainted_turn` by design (a query composed after reading is an outbound
-      payload) — one search per turn on the HUD is the contract; a new turn resets it. **(3) The
-      page reader.** In a fresh HUD turn ask *"citește https://<o pagină publică> și rezumă"*: the
-      reply must quote the page and the egress ledger (Network panel) must attribute the fetch to
-      `webread`, not `websearch`. On Telegram the same ask is refused unless the URL came from a
-      search in that turn (an inbound turn is untrusted by label) — tell me if that is too strict
-      for how you use it. Then ask for `http://127.0.0.1:8000/` or `http://192.168.1.1/`: the
-      tool must answer `url_refused` and the ledger must show the attempt as blocked. Tell me
-      which of the three held, and if the local model ever repeats the `<<UNTRUSTED` fence in its
-      own words (that decides whether the fence stays four lines or shrinks to two).
+      **Most of this was proven on 2026-09-08, off your box.** A real Qwen3-0.6B (llama.cpp,
+      ~30 tok/s on 4 CPU cores, `is_reasoning_model` true) drove the real `AgentToolRuntime`
+      over the coordinator's real ToolRPC registry and the real `WebSearchPlugin` against live
+      DuckDuckGo. Each leg below says whether it is **proven off-box** or **yours**.
+      **(1) The search backend — proven off-box; the keyed variant is yours.** Keyless
+      DuckDuckGo really answers: `provider: "duckduckgo"`, real titles and snippets, no key.
+      Without `beautifulsoup4` both tools answer `websearch_unavailable` with
+      `"missing": "beautifulsoup4"` — proven at the seam the code probes. *Yours:* set
+      `TAVILY_API_KEY` or `SEARXNG_URL` and confirm the provider name follows; neither has ever
+      been dialled, here or anywhere.
+      **(2) The fence — proven off-box; the HUD wording is yours.** Asked for a current fact the
+      0.6B model chose `web_search` unprompted; the tool message arrived as the four-line
+      `<<UNTRUSTED source=web_search>> … <<END UNTRUSTED>>` fence with its JSON still parseable;
+      one `tool_result_untrusted` event fired, 229 bytes, `reasons: ["untrusted_tool"]`, with no
+      page text in it; and the same action proposed after that search came back `blocked` /
+      `needs-approval` instead of the auto-act it got before the search. Read the trail yourself
+      with **`nerva tools --untrusted`** (this wave wired the event sink — before it, the fence
+      fired and left no trace, which is why this packet used to point at a timeline with
+      nothing in it). *Correction to what this packet used to claim:* a second search in the
+      same turn is **not** always refused. The taint is raised **per loop iteration, not per
+      call** — two `web_search` calls the model emits in one assistant turn both run, and the
+      refusal starts at the next iteration. Defensible (everything in one batch was composed
+      before any untrusted byte arrived) but "one search per turn is the contract" was wrong.
+      *Yours:* the same ask on the HUD in Romanian, and whether the local model ever repeats the
+      `<<UNTRUSTED` fence in its own words — that still decides four lines versus two.
+      **(3) The page reader — SSRF and egress proven off-box; the chat surfaces are yours.**
+      Measured through the real tool seam: real pages read (142 chars from example.com, 8,000
+      truncated from a docs page, `cached: true` on the second call); the ledger attributes the
+      fetch to `webread` and the search to `websearch`; and `http://127.0.0.1:8000/`,
+      `http://169.254.169.254/latest/meta-data/` and `http://192.168.1.1/` each answer
+      `url_refused` **with zero TCP connects** (a socket spy saw nothing dialled). `secret_in_url`
+      and `secret_in_query` refuse before any connect too. *Yours:* the HUD ask in a fresh turn,
+      and the Telegram refusal for a model-composed URL — tell me if that is too strict for how
+      you use it.
+      **Two things this run found and this wave fixed, so your run does not hit them:** the
+      keyless backend used to hand back DuckDuckGo's own scheme-less redirector, so the model
+      could search and never open what it found (now unwrapped at the parser); and on a
+      TLS-inspecting network every search died as a silent `count: 0` (now `JARVIS_CA_BUNDLE`
+      names the missing root — see `docs/FLAGS.md`).
 
 - [ ] **P25 — The front door after the update: pair yourself, then prove a stranger is held**
       *(covers `HA-5b`; contains a default that changes on upgrade)*
       **Before you restart** with this update: put your own Telegram id in
       `TELEGRAM_ALLOWED_USER_IDS` (`.env`) — an allowlisted id passes the gate with no pairing
       record — or plan to pair yourself right after: pairing is now on by default, so the bot
-      holds *everyone* it does not know, you included. If you have a
-      Discord token and no wish to pair, either set `JARVIS_CHANNEL_OPEN=1` (the bot answers
-      anyone, and the boot log says so) or remove the token; otherwise the box refuses to start
-      and the message names the remedies. **Then prove it:** from a second Telegram account send
-      the bot a message — expect "held for approval" and a card in the HUD Pairing panel, never an
-      answer; `GET /status` → `channels` must show `held_senders: 1` on the telegram row and no
-      text of the message anywhere. Approve it from the card, send again, expect
-      an answer. **When you put Caddy or Tailscale in front:** replace `JARVIS_TRUSTED_PROXY=1`
-      with `JARVIS_TRUSTED_PROXIES=127.0.0.1/32` for a same-box Caddy (the proxy's own network
-      otherwise) and list the public name in `JARVIS_ALLOWED_HOSTS=nerva.<tailnet>.ts.net`; a
-      wrong entry refuses to boot and names the variable, it never silently opens anything. From
+      holds *everyone* it does not know, you included. If you have a Discord token and no wish
+      to pair, either set `JARVIS_CHANNEL_OPEN=1` (the bot answers anyone, and the boot log says
+      so) or remove the token; otherwise the box refuses to start and the message names the
+      remedies. **When you put Caddy or Tailscale in front:** replace `JARVIS_TRUSTED_PROXY=1`
+      with `JARVIS_TRUSTED_PROXIES=127.0.0.1/32` for a same-box Caddy (the proxy's own address
+      otherwise — an entry must be the proxy itself, never a range that also contains clients)
+      and list the public name in `JARVIS_ALLOWED_HOSTS=nerva.<tailnet>.ts.net`; a wrong entry
+      refuses to boot and names the variable, it never silently opens anything.
+
+      **Three of the four checks were proven on 2026-09-08 against the real app on a GPU-less
+      box, so they are confirmation rather than discovery.** *Host guard:* loopback and bare-IP
+      Hosts 200; `evil.example` 400 with exactly `{"error":"host not allowed","code":400}`; the
+      security headers still on the 400; `/healthz` still 200; the refused value echoed nowhere —
+      not the body, not the log line, not any file the app wrote; and `JARVIS_ALLOWED_HOSTS`
+      flips exactly the name you list and nothing else. *Trusted proxy:* with none configured a
+      forged `X-Forwarded-For` buys nothing even from a loopback peer; with
+      `JARVIS_TRUSTED_PROXIES=127.0.0.1/32`, `127.0.0.1` passes while `127.0.0.1, 10.0.0.9`,
+      `10.0.0.9, 127.0.0.1` and an untrusted peer are all refused; the legacy
+      `JARVIS_TRUSTED_PROXY=1` prints its deprecation warning and means loopback only. *Boot
+      guard:* exits with code 3 and never prints the token — including the case the wave-5b fix
+      was written for, a token living only in a late-loaded `.env` — and boots with
+      `JARVIS_CHANNEL_OPEN=1`, with an allowlist, or with pairing left on. *Pairing hold:* an
+      unknown sender got "awaiting approval", the handler ran zero times, and `GET /status`
+      showed `held_senders: 1` with neither the sender id nor the message text in the body.
+
+      **Only two legs are still yours**, and neither depends on a model. From a second Telegram
+      account send the bot a message — expect "held for approval" and a card in the HUD Pairing
+      panel, never an answer; approve it from the card, send again, expect an answer. And from
       another LAN machine, `curl -H 'Host: evil.example' http://<box-ip>:8000/api/status` must
-      answer 400, and the same request with the box's IP as Host must not. Tell me which of the
-      four held, and whether the pairing-on default cost you anything you did not expect.
+      answer 400 while the same request with the box's IP as Host must not (the off-box proof
+      used a `127.0.0.2` peer, which exercises the same two comparisons but is technically still
+      inside `127.0.0.0/8`). Tell me whether those two held, and whether the pairing-on default
+      cost you anything you did not expect.
 
 - [ ] **P26 — The deep model finishes a hard question, and the cloud loop stops compacting at 24k**
       *(covers `HA-5c`)*
-      Built against fake backends and a frozen clock. On the RTX box, with qwen3 or deepseek-r1
-      loaded: ask something genuinely hard (a multi-step proof, a design trade-off with numbers).
-      Expect a finished answer within ten minutes, or the named reply
-      `[jarvis timeout: reasoning budget 600s]` — never a blank bubble and never the bare
-      `[jarvis timeout]` at two minutes. Settings → agents shows both ceilings
-      (`agent_timeout_seconds` 120, `reasoning_timeout_seconds` 600); lower the second to 30, ask
-      again, and the reply must name `30s`. Then force the other failure: set `llm.max_tokens` to
-      64 and ask the same question — expect the `⚠️` "spent its whole answer budget thinking" reply,
-      and confirm it does not show up later in memory recall. Last, with a Claude or Gemini route
-      and the tool loop on, ask a question that needs three or four tool calls: the cognition trace
-      must show the 200k (Claude) or 1M (Gemini) window, not 32k, and no compaction event before
-      the transcript is genuinely large. One thing to know while it thinks: a second message on
-      the same Telegram session during a deep turn longer than three minutes (`/stop` included)
-      gets the busy reply until the turn ends — `nerva estop` and the HUD stay live. Tell me the
-      wall-clock time the hard question took and whether ten minutes is the right ceiling for
-      your machine.
+      **The reader side and the clock were both proven on 2026-09-08, off your box.** Against a
+      stand-in server emitting the wave-5c wire shapes over real HTTP, `LMStudioBackend.generate`,
+      `.generate_stream` and `OllamaBackend.generate_stream` (native `thinking` +
+      `done_reason: length`) all return the named `⚠️` reply, stream **zero** tokens to the user
+      and leak no chain-of-thought; `warm_up` is true on a thinking model and false against a
+      down port. The floor was measured on a real clock: against a server that takes 130 s the
+      **local-deep** turn completed at 130.1 s while the identical **flat** route was cut at
+      120.1 s with the bare `[jarvis timeout]` — the pre-5c death this floor exists to prevent.
+      Tuned budgets name themselves: `reasoning_timeout_seconds=3` answered
+      `[jarvis timeout: reasoning budget 3s]` at 3.01 s, and the tool loop's own `wall_seconds`
+      cut at 2.00 s and 5.01 s as asked.
+      **What is still yours, and it is the part that matters most.**
+      *(a) Real reasoning latency.* With qwen3 or deepseek-r1 loaded, ask something genuinely
+      hard (a multi-step proof, a design trade-off with numbers): expect a finished answer within
+      ten minutes or `[jarvis timeout: reasoning budget 600s]`, never a blank bubble and never
+      the bare `[jarvis timeout]` at two minutes. Tell me the wall-clock time and whether ten
+      minutes is the right ceiling — the 130 s above was a `sleep`, so nothing yet says a
+      thinking model actually spends that long on your hardware. While it thinks, a second
+      message on the same Telegram session (`/stop` included) gets the busy reply until the turn
+      ends; `nerva estop` and the HUD stay live.
+      *(b) The real serving layer.* **This is the one thing that could not be proven anywhere
+      here, and it is a gap in the guard, not in the proof.** llama.cpp's OpenAI server hands
+      Qwen3's thinking back inline as `<think>` in `content`, never as `reasoning_content` — and
+      on that shape the guard does not fire and the user gets the blank bubble it was written to
+      prevent. Every off-box proof of the guard went through a shim that manufactures the field
+      the guard reads, which makes it circular. **One artefact from you closes this for good:**
+      run a thinking model in LM Studio and in Ollama, capture the raw SSE / NDJSON stream to a
+      file (`curl -N` against their `/v1/chat/completions` and `/api/generate` with
+      `"stream": true`), and send me the two files. Replaying them here turns this into a
+      permanent test instead of an assumption.
+      *(c) The `⚠️` reply must not come back through memory recall.* Set `llm.max_tokens` to 64,
+      ask again, then look for it in a later recall — unproven anywhere, by anyone.
+      *(d) The cloud half.* With a Claude or Gemini route and the tool loop on, a question that
+      needs three or four tool calls: the cognition trace must show the 200k (Claude) or 1M
+      (Gemini) window, not 32k, and no compaction before the transcript is genuinely large.
 
 ## Parking lot (decisions, no rush)
 
