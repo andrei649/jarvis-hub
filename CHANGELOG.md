@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-08b — the two ledgers answer questions instead of being read
+
+`BACKLOG.md` (~957 KB, ~176K tokens) and the Hermes absorption ledger (1.4 MB JSON,
+~355K tokens) are together larger than every other document in this repo, and neither is
+ever needed whole. `docs/AI_CONTEXT.md` has said so since the 2026-08-27 re-measure, and
+the files kept being read whole regardless — there was no other way to answer "what is
+still open".
+
+**Added**
+
+- `scripts/backlog.py` — `counts`, `open [--section]`, `show <ID|Lnnn>`, `sections`,
+  `find <regex> [--open-only]`. Parses the file's own grammar: a column-0 checkbox is a
+  row, the indented lines under it are its body, its id is the first `PREFIX-nn` in the
+  leading bold span. Lettered families (`SEC-B5`, `GAP-4`) count as ids; rows without one
+  stay addressable by line number.
+- `scripts/ledger.py` — `stats`, `clusters`, `list --cluster --decision --effort`,
+  `show <name>` over the absorption ledger, where "work" means `copy` + `update` only.
+- `tests/test_context_query_tools.py` (20) — pins both parsers against a plain grep of the
+  real documents, and pins the size ratios themselves, so a regression that starts printing
+  bodies fails CI instead of quietly restoring the old cost.
+
+**Measured**
+
+- Every open backlog row: **3.7 KB vs 957 KB — 258×**.
+- Ledger totals plus all 20 clusters: **1.1 KB vs 1.4 MB**.
+
+**Changed**
+
+- `CLAUDE.md`, `AGENTS.md`, `docs/AI_CONTEXT.md` and `docs/ARCHITECTURE.md` now say
+  query-first, with the measured numbers attached rather than a bare instruction.
+
+**Known limit**
+
+- The absorption ledger has no per-row `status` field, so neither tool can say how many of
+  the 476 work rows are already delivered. That needs a separate status pass.
+
+
 ### Wave 2026-09-08 — what the off-box proof run found
 
 The wave-5 packets said "not proven on the RTX box". Most of them turned out not to need
