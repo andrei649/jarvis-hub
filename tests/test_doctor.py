@@ -7,6 +7,7 @@ root stands in for the checkout, and the smoke is a fake runner. No network, no 
 import hashlib
 import io
 import json
+import subprocess
 import sys
 import urllib.error
 from pathlib import Path
@@ -120,6 +121,43 @@ def test_repo_locks_are_in_sync_by_the_same_rule_as_lock_deps_sh():
     """The doctor's rule is scripts/lock_deps.sh --check re-derived in Python; the real
     repo must pass it (otherwise CI's lockfile guard would already be red)."""
     assert doctor.check_locks(repo_root).reason == "locks_ok"
+
+
+def test_autocrlf_checkout_preserves_lock_source_hashes(tmp_path):
+    """Exercise Git's Windows-style checkout conversion on any test host.
+
+    The lock headers hash the repository's LF source bytes. A CRLF checkout must
+    not turn an unchanged dependency set into a broken-install diagnostic.
+    """
+    index_root = tmp_path / "index"
+    index_root.mkdir()
+    names = [".gitattributes"]
+    for source in doctor.LOCK_SOURCES:
+        names.extend((source, source.removesuffix(".txt") + ".lock"))
+    for name in names:
+        canonical = (repo_root / name).read_bytes().replace(b"\r\n", b"\n")
+        (index_root / name).write_bytes(canonical)
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(index_root), *args],
+            check=True, capture_output=True, timeout=15,
+        )
+
+    git("init")
+    git("-c", "core.autocrlf=false", "add", "--", *names)
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    git("-c", "core.autocrlf=true", "checkout-index", "--all",
+        f"--prefix={checkout.as_posix()}/")
+
+    assert doctor.check_locks(checkout).reason == "locks_ok"
+    for source in doctor.LOCK_SOURCES:
+        assert (checkout / source).read_bytes() == (index_root / source).read_bytes()
+    # Preserving line endings must not weaken detection of a real dependency edit.
+    source = checkout / doctor.LOCK_SOURCES[0]
+    source.write_bytes(source.read_bytes() + b"new-dependency==1\n")
+    assert doctor.check_locks(checkout).reason == "lock_stale:requirements.lock"
 
 
 @pytest.mark.parametrize("env, status, reason", [

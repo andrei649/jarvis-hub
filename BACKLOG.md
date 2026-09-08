@@ -12,6 +12,24 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Windows portability — 2026-09-08 (run `copper-ember`)
+
+- [x] **WIN-1 — preserve dependency hashes and portable host/path fixtures.** The latest
+  push-to-main CI run (`34225122597`, Windows job `102057245227`) had four failures.
+  Git's `core.autocrlf=true` changed the requirement-source bytes and made `doctor` report
+  `lock_stale` on an unchanged install. `.gitattributes` now pins the three root requirement
+  sources and their locks to LF; the raw-byte SHA-256 check and dependency hashes are unchanged.
+  A regression exercises a real Git index/checkout with autocrlf enabled on any OS, then proves
+  that a real source edit is still rejected. The desktop test now probes an explicitly headless
+  host; bootstrap and report-export tests use native absolute paths while retaining every
+  environment-scrubbing and outside-scope assertion. No production driver, export contract,
+  CI gate or dependency version changed. The four targeted modules pass locally (96 tests).
+  The full backend run collected 9,339: 9,305 passed, 21 skipped, 13 failed. All 13 failures
+  reproduce on unmodified base `8b3fa1e7a3be`: three require public DNS unavailable in this runner;
+  ten require a non-root UID mapping its container does not provide. Lint, lock drift and tracked
+  test-count checks pass. Native Windows execution remains a post-merge CI check; no owner
+  hardware is needed.
+
 <!-- WAVE:2026-09-06-OPUS-INTEGRATION:START -->
 ## 🌊 Wave 2026-09-06 — 17 builder slices landed (run `opus-integration`, PR #1039)
 
