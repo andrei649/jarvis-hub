@@ -12,8 +12,9 @@ considers a candidate PR. A candidate therefore cannot authorize itself by
 changing this file or ``selfdev-policy.json`` in the same transaction.
 
 The policy distinguishes live enforcement from target state. In v1 autonomous
-merge is live; independent AI-review enforcement and autonomous canary deploy
-remain explicit targets until their later #1054 slices land.
+merge is live and waits for reported automation to finish green; independent
+AI-review enforcement and autonomous canary deploy remain explicit targets
+until their later #1054 slices land.
 
 Examples::
 
@@ -129,6 +130,10 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise PolicyError("merge must require a non-draft PR")
     if merge.get("require_clean_merge_state") is not True:
         raise PolicyError("merge must require CLEAN GitHub merge state")
+    if merge.get("require_at_least_one_check") is not True:
+        raise PolicyError("merge must require at least one reported automated check")
+    if merge.get("require_all_reported_checks_pass") is not True:
+        raise PolicyError("merge must wait for every reported automated check to pass or skip")
     if merge.get("method") != "squash":
         raise PolicyError("merge.method must be squash")
 
@@ -256,6 +261,15 @@ def selftest(policy: dict[str, Any]) -> None:
         pass
     else:
         raise PolicyError("selftest: workflow root-of-trust protection was removable")
+
+    no_checks = copy.deepcopy(policy)
+    no_checks["merge"]["require_all_reported_checks_pass"] = False
+    try:
+        validate_policy(no_checks)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: automated-check merge invariant was removable")
 
     no_rollback = copy.deepcopy(policy)
     no_rollback["deploy"]["auto_rollback_on_regression"] = False
