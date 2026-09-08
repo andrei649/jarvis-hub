@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Classify autonomous Nerva development changes against the trusted control plane.
 
-The normal development posture is owner-out-of-loop: an AI-built change may be
-reviewed, merged and eventually deployed automatically. The exception is the
-small set of files that define *whether* autonomous development is allowed to
-do that. Those paths are the root of trust and may not self-authorize their own
-relaxation.
+Routine engineering is owner-out-of-loop when the trusted policy says a change
+is eligible. The exception is the small control plane that defines whether an
+autonomous change may merge or deploy at all. Those paths are the root of trust
+and may not self-authorize their own relaxation.
 
-This module is deliberately stdlib-only so the auto-merge workflow can run it
-from a clean checkout of ``main`` before it decides whether a candidate PR is
-eligible for unattended merge.
+This module is deliberately stdlib-only. The hourly auto-merge workflow checks
+out ``main`` and executes *that trusted copy* of this classifier before it
+considers a candidate PR. A candidate therefore cannot authorize itself by
+changing this file or ``selfdev-policy.json`` in the same transaction.
+
+The policy distinguishes live enforcement from target state. In v1 autonomous
+merge is live; independent AI-review enforcement and autonomous canary deploy
+remain explicit targets until their later #1054 slices land.
 
 Examples::
 
     python scripts/selfdev_policy.py validate
+    python scripts/selfdev_policy.py selftest
     python scripts/selfdev_policy.py classify agents/core/foo.py tests/test_foo.py
     gh pr view 123 --json files --jq '.files[].path' | \
         python scripts/selfdev_policy.py classify --stdin
@@ -22,6 +27,7 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import copy
 import fnmatch
 import json
 import sys
@@ -31,16 +37,18 @@ from typing import Any
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY = REPO / "selfdev-policy.json"
 
-# These are architectural invariants, not a second configurable list. A policy
-# edit that removes any of them is invalid. The auto-merge workflow evaluates a
-# candidate with the policy/script already present on trusted ``main``.
+# Architectural invariants, not a second configurable policy. The policy may
+# protect these with a broader pattern (for example `.github/workflows/**`).
+# Removing coverage for any of them invalidates the policy before classification.
 MANDATORY_PROTECTED_PATHS = (
     "selfdev-policy.json",
     "scripts/selfdev_policy.py",
+    ".github/workflows/ci.yml",
     ".github/workflows/pr-auto-merge.yml",
     ".github/workflows/release.yml",
     ".github/workflows/security.yml",
     "agents/core/kernel/__init__.py",
+    "agents/core/security/taint.py",
 )
 
 
@@ -91,6 +99,13 @@ def protected_pattern(path: str, patterns: list[str]) -> str | None:
     return None
 
 
+def _require_bool(section: dict[str, Any], key: str) -> bool:
+    value = section.get(key)
+    if not isinstance(value, bool):
+        raise PolicyError(f"{key} must be boolean")
+    return value
+
+
 def validate_policy(policy: dict[str, Any]) -> None:
     """Reject policy states that could accidentally erase the autonomy boundary."""
     if policy.get("schema_version") != 1:
@@ -106,7 +121,7 @@ def validate_policy(policy: dict[str, Any]) -> None:
             raise PolicyError(f"mandatory root-of-trust path is not protected: {required}")
 
     merge = policy.get("merge")
-    if not isinstance(merge, dict) or merge.get("enabled") is not True:
+    if not isinstance(merge, dict) or _require_bool(merge, "enabled") is not True:
         raise PolicyError("merge.enabled must be true")
     if merge.get("deny_protected_changes") is not True:
         raise PolicyError("merge must deny protected-path changes")
@@ -114,22 +129,34 @@ def validate_policy(policy: dict[str, Any]) -> None:
         raise PolicyError("merge must require a non-draft PR")
     if merge.get("require_clean_merge_state") is not True:
         raise PolicyError("merge must require CLEAN GitHub merge state")
+    if merge.get("method") != "squash":
+        raise PolicyError("merge.method must be squash")
 
     deploy = policy.get("deploy")
-    if not isinstance(deploy, dict) or deploy.get("enabled") is not True:
-        raise PolicyError("deploy.enabled must be true")
+    if not isinstance(deploy, dict):
+        raise PolicyError("deploy must be an object")
+    _require_bool(deploy, "enabled")
+    if deploy.get("target_enabled") is not True:
+        raise PolicyError("autonomous deploy must remain an explicit target")
     if deploy.get("deny_protected_changes") is not True:
         raise PolicyError("deploy must deny protected-path changes")
     if deploy.get("strategy") != "staged_canary":
         raise PolicyError("deploy.strategy must be staged_canary")
+    if deploy.get("require_versioned_artifact") is not True:
+        raise PolicyError("deploy must require a versioned artifact")
     if deploy.get("require_post_deploy_probe") is not True:
         raise PolicyError("deploy must require a post-deploy probe")
+    if deploy.get("auto_promote_on_green") is not True:
+        raise PolicyError("deploy must automatically promote a green canary")
     if deploy.get("auto_rollback_on_regression") is not True:
         raise PolicyError("deploy must automatically roll back regressions")
 
     review = policy.get("review")
-    if not isinstance(review, dict) or review.get("independent_reviewer_required") is not True:
-        raise PolicyError("an independent reviewer is required")
+    if not isinstance(review, dict):
+        raise PolicyError("review must be an object")
+    _require_bool(review, "independent_reviewer_required")
+    if review.get("target_independent_reviewer_required") is not True:
+        raise PolicyError("independent reviewer enforcement must remain a target")
     if review.get("builder_may_clear_own_findings") is not False:
         raise PolicyError("the builder may not clear its own reviewer findings")
 
@@ -151,10 +178,12 @@ def validate_policy(policy: dict[str, Any]) -> None:
     required_fields = provenance.get("required_fields")
     if not isinstance(required_fields, list) or not required_fields:
         raise PolicyError("provenance.required_fields must be a non-empty list")
+    if not all(isinstance(field, str) and field for field in required_fields):
+        raise PolicyError("every provenance field must be a non-empty string")
 
 
 def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
-    """Classify a candidate change using only machine-readable policy.
+    """Classify a candidate change using only machine-readable trusted policy.
 
     No paths is intentionally non-autonomous: a merge decision without a known
     diff is not a successful classification.
@@ -177,6 +206,7 @@ def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
         "protected_hits": hits,
         "autonomous_merge": autonomous and policy["merge"]["enabled"],
         "autonomous_deploy": autonomous and policy["deploy"]["enabled"],
+        "independent_review_enforced": policy["review"]["independent_reviewer_required"],
         "decision": "autonomous" if autonomous else "control_plane",
         "reason": (
             "protected_path" if protected else "no_paths" if not has_paths else "policy_disabled"
@@ -184,11 +214,72 @@ def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def selftest(policy: dict[str, Any]) -> None:
+    """Fast stdlib regression pack used by the dedicated CI workflow."""
+    validate_policy(policy)
+
+    normal = classify(["agents/core/agent.py", "tests/test_agent.py"], policy)
+    if normal["decision"] != "autonomous" or normal["autonomous_merge"] is not True:
+        raise PolicyError("selftest: normal product change must be autonomous-merge eligible")
+    if normal["autonomous_deploy"] is not False:
+        raise PolicyError("selftest: deploy must not be claimed live before its slice lands")
+
+    for path in (
+        "selfdev-policy.json",
+        "scripts/selfdev_policy.py",
+        ".github/workflows/ci.yml",
+        ".github/workflows/anything-new.yml",
+        "agents/core/kernel/budget.py",
+        "agents/core/security/taint.py",
+        "AGENTS.md",
+        "MAX.md",
+    ):
+        result = classify([path], policy)
+        if result["decision"] != "control_plane" or result["autonomous_merge"] is not False:
+            raise PolicyError(f"selftest: root-of-trust path self-authorized: {path}")
+
+    mixed = classify(["frontend/src/app.tsx", "agents/core/kernel/registry.py"], policy)
+    if mixed["autonomous_merge"] is not False or not mixed["protected_hits"]:
+        raise PolicyError("selftest: one protected path must block a mixed candidate")
+
+    empty = classify([], policy)
+    if empty["reason"] != "no_paths" or empty["autonomous_merge"] is not False:
+        raise PolicyError("selftest: an unknown/empty diff must fail closed")
+
+    weakened = copy.deepcopy(policy)
+    weakened["protected_paths"] = [
+        item for item in weakened["protected_paths"] if item != ".github/workflows/**"
+    ]
+    try:
+        validate_policy(weakened)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: workflow root-of-trust protection was removable")
+
+    no_rollback = copy.deepcopy(policy)
+    no_rollback["deploy"]["auto_rollback_on_regression"] = False
+    try:
+        validate_policy(no_rollback)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: rollback invariant was removable")
+
+    try:
+        classify(["../release.yml"], policy)
+    except PolicyError:
+        pass
+    else:
+        raise PolicyError("selftest: parent traversal path was accepted")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("validate", help="validate policy invariants")
+    sub.add_parser("selftest", help="run the stdlib policy regression pack")
     classify_parser = sub.add_parser("classify", help="classify changed repository paths")
     classify_parser.add_argument("paths", nargs="*")
     classify_parser.add_argument(
@@ -207,6 +298,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "validate":
             validate_policy(policy)
             print(f"valid {policy['policy_id']}")
+            return 0
+        if args.command == "selftest":
+            selftest(policy)
+            print(f"selftest ok {policy['policy_id']}")
             return 0
 
         paths = list(args.paths)
