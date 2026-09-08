@@ -4,22 +4,26 @@ name: Hourly PR Auto-Merge
 # merge unattended only when ALL of these are true at one validated head:
 #   1) GitHub reports the merge state CLEAN;
 #   2) the trusted-main self-development policy classifies every changed path
-#      as autonomous; and
-#   3) at least one automated check is reported and every reported check has
-#      completed with success/neutral/skipped — pending/fail/cancel never merge.
+#      as autonomous;
+#   3) every check in policy.merge.required_check_names exists, is completed,
+#      and has an allowed required conclusion; and
+#   4) every other reported check is also completed with an allowed conclusion.
 #
 # The important boundary is where policy is evaluated: this workflow checks out
-# `main` and runs `scripts/selfdev_policy.py` from that trusted checkout.
-# Candidate PRs never get to supply the classifier that judges themselves.
-# Changes to the policy, ANY workflow/action, the Action Kernel/security roots,
-# and the other root-of-trust paths are skipped rather than self-authorized.
+# `main` and runs `scripts/selfdev_policy.py` + `selfdev-policy.json` from that
+# trusted checkout. Candidate PRs never get to supply the classifier, mandatory
+# check set, or allowed conclusions that judge themselves.
+#
+# Changes to the policy, ANY workflow/action, owner north-star/legal files, the
+# Action Kernel/security roots, and the other root-of-trust paths are skipped
+# rather than self-authorized.
 #
 # Safety rules:
 #   - draft PRs are never touched;
 #   - the head SHA is re-checked immediately before policy/check evaluation;
 #   - every changed filename is fetched through the paginated REST endpoint;
 #   - every check-run for that exact SHA is fetched through the paginated REST endpoint;
-#   - empty/unknown policy or check state fails closed;
+#   - missing mandatory checks, pending/fail/cancel, or unreadable state fail closed;
 #   - --match-head-commit closes the final race between evaluation and merge;
 #   - squash merge keeps one rollback unit per PR;
 #   - no force-push, conflict resolution or branch deletion occurs here.
@@ -221,19 +225,21 @@ jobs:
               continue
             fi
 
+            # Every reported check must be finished with a conclusion permitted
+            # by the trusted policy. New checks therefore become conservative
+            # merge inputs automatically, even before they join the pinned floor.
             checks_ready=true
             while IFS=$'\t' read -r check_name check_state check_conclusion; do
               if [ -z "$check_name" ] || [ "$check_state" != "completed" ]; then
                 checks_ready=false
                 break
               fi
-              case "$check_conclusion" in
-                success|neutral|skipped) ;;
-                *)
-                  checks_ready=false
-                  break
-                  ;;
-              esac
+              if ! jq -e --arg conclusion "$check_conclusion" \
+                '.merge.other_check_conclusions | index($conclusion) != null' \
+                selfdev-policy.json >/dev/null; then
+                checks_ready=false
+                break
+              fi
             done <<<"$checks"
 
             if [ "$checks_ready" != "true" ]; then
@@ -241,7 +247,40 @@ jobs:
               continue
             fi
 
-            printf '#%s: CLEAN + autonomous policy + all checks PASS — merging (squash)\n' "$number"
+            # Registration race protection: the known minimum proof set is
+            # pinned in trusted policy. A PR with only one fast check cannot
+            # merge before CI/Security/Lockfiles have even registered.
+            required_ready=true
+            while IFS= read -r required_name; do
+              required_found=false
+              while IFS=$'\t' read -r check_name check_state check_conclusion; do
+                if [ "$check_name" != "$required_name" ]; then
+                  continue
+                fi
+                required_found=true
+                if [ "$check_state" != "completed" ]; then
+                  required_ready=false
+                  break
+                fi
+                if ! jq -e --arg conclusion "$check_conclusion" \
+                  '.merge.required_check_conclusions | index($conclusion) != null' \
+                  selfdev-policy.json >/dev/null; then
+                  required_ready=false
+                  break
+                fi
+              done <<<"$checks"
+              if [ "$required_found" != "true" ] || [ "$required_ready" != "true" ]; then
+                required_ready=false
+                break
+              fi
+            done < <(jq -r '.merge.required_check_names[]' selfdev-policy.json)
+
+            if [ "$required_ready" != "true" ]; then
+              printf '#%s: mandatory automated proof set missing/not green — skipped\n' "$number"
+              continue
+            fi
+
+            printf '#%s: CLEAN + autonomous policy + mandatory/all checks PASS — merging (squash)\n' "$number"
             if ! gh pr merge "$number" --repo "$REPO" --squash \
               --match-head-commit "$sha" >/dev/null 2>&1; then
               printf '#%s: merge command failed.\n' "$number" >&2
