@@ -375,7 +375,7 @@ built on your Windows box:
 > first version of this section claimed a completeness it did not have. P11–P14 close that gap:
 > **P11** WorldView (live feeds + the rescoped scale gates), **P12** the WLED strip, **P13** the
 > docker quickstart, **P14** the Nerva 2.0 rows that need a *reviewer attestation* rather than
-> hardware. **P15**–**P23** (2026-09-07) are the first packets from the Hermes absorption: the
+> hardware. **P15**–**P26** (2026-09-07) are the first packets from the Hermes absorption: the
 > tool loop on each cloud provider and on Ollama, built from documented contracts and never sent
 > to a real one; the Telegram group gate, never exercised in a real group; the `nerva`
 > command plus the chat slash commands, never pointed at a running hub; the owner's
@@ -779,6 +779,70 @@ built on your Windows box:
       escalation (a task that needs you while the HUD is closed): it must arrive on the phone
       too. A message with `**bold**` must arrive as plain words. If the server needs a token,
       set `NTFY_TOKEN` and repeat; a 403 in the log with the token set is a server finding.
+
+- [ ] **P24 — Nerva looks something up on the web, and what it read cannot run anything**
+      *(covers `HA-5a`)*
+      Built against fake plugins and a fake model. Three things to prove on the RTX box, in this
+      order. **(1) The search backend.** With nothing configured the tool falls back to
+      DuckDuckGo, which needs `beautifulsoup4` (`pip install beautifulsoup4`, it is in
+      `requirements-beta.txt`); without it the tool must answer `websearch_unavailable` with
+      `"missing": "beautifulsoup4"` — check with `curl -s localhost:8000/api/plugins | grep -A3
+      websearch` after a turn, or read the `tool_failed` / `tool_result` events in the agent
+      timeline. If you want a real backend, set `TAVILY_API_KEY` or `SEARXNG_URL` in `.env` and
+      restart. **(2) The fence.** Turn the tool loop on (`llm.tool_loop_enabled`), then on the HUD
+      ask *"caută pe web prețul la <un produs> și propune-mi să-l cumperi"*: expect an answer with
+      sources plus a **queued** card in the Decision Inbox — never an auto-buy, never a direct
+      send. The timeline must show a `tool_result_untrusted` event with `reasons:
+      ["untrusted_tool"]` and no page text inside it. If the model tries a second search in the
+      same turn it gets `tainted_turn` by design (a query composed after reading is an outbound
+      payload) — one search per turn on the HUD is the contract; a new turn resets it. **(3) The
+      page reader.** In a fresh HUD turn ask *"citește https://<o pagină publică> și rezumă"*: the
+      reply must quote the page and the egress ledger (Network panel) must attribute the fetch to
+      `webread`, not `websearch`. On Telegram the same ask is refused unless the URL came from a
+      search in that turn (an inbound turn is untrusted by label) — tell me if that is too strict
+      for how you use it. Then ask for `http://127.0.0.1:8000/` or `http://192.168.1.1/`: the
+      tool must answer `url_refused` and the ledger must show the attempt as blocked. Tell me
+      which of the three held, and if the local model ever repeats the `<<UNTRUSTED` fence in its
+      own words (that decides whether the fence stays four lines or shrinks to two).
+
+- [ ] **P25 — The front door after the update: pair yourself, then prove a stranger is held**
+      *(covers `HA-5b`; contains a default that changes on upgrade)*
+      **Before you restart** with this update: put your own Telegram id in
+      `TELEGRAM_ALLOWED_USER_IDS` (`.env`) — an allowlisted id passes the gate with no pairing
+      record — or plan to pair yourself right after: pairing is now on by default, so the bot
+      holds *everyone* it does not know, you included. If you have a
+      Discord token and no wish to pair, either set `JARVIS_CHANNEL_OPEN=1` (the bot answers
+      anyone, and the boot log says so) or remove the token; otherwise the box refuses to start
+      and the message names the remedies. **Then prove it:** from a second Telegram account send
+      the bot a message — expect "held for approval" and a card in the HUD Pairing panel, never an
+      answer; `GET /status` → `channels` must show `held_senders: 1` on the telegram row and no
+      text of the message anywhere. Approve it from the card, send again, expect
+      an answer. **When you put Caddy or Tailscale in front:** replace `JARVIS_TRUSTED_PROXY=1`
+      with `JARVIS_TRUSTED_PROXIES=127.0.0.1/32` for a same-box Caddy (the proxy's own network
+      otherwise) and list the public name in `JARVIS_ALLOWED_HOSTS=nerva.<tailnet>.ts.net`; a
+      wrong entry refuses to boot and names the variable, it never silently opens anything. From
+      another LAN machine, `curl -H 'Host: evil.example' http://<box-ip>:8000/api/status` must
+      answer 400, and the same request with the box's IP as Host must not. Tell me which of the
+      four held, and whether the pairing-on default cost you anything you did not expect.
+
+- [ ] **P26 — The deep model finishes a hard question, and the cloud loop stops compacting at 24k**
+      *(covers `HA-5c`)*
+      Built against fake backends and a frozen clock. On the RTX box, with qwen3 or deepseek-r1
+      loaded: ask something genuinely hard (a multi-step proof, a design trade-off with numbers).
+      Expect a finished answer within ten minutes, or the named reply
+      `[jarvis timeout: reasoning budget 600s]` — never a blank bubble and never the bare
+      `[jarvis timeout]` at two minutes. Settings → agents shows both ceilings
+      (`agent_timeout_seconds` 120, `reasoning_timeout_seconds` 600); lower the second to 30, ask
+      again, and the reply must name `30s`. Then force the other failure: set `llm.max_tokens` to
+      64 and ask the same question — expect the `⚠️` "spent its whole answer budget thinking" reply,
+      and confirm it does not show up later in memory recall. Last, with a Claude or Gemini route
+      and the tool loop on, ask a question that needs three or four tool calls: the cognition trace
+      must show the 200k (Claude) or 1M (Gemini) window, not 32k, and no compaction event before
+      the transcript is genuinely large. One thing to know while it thinks: a second message on
+      the same Telegram session during a deep turn longer than three minutes (`/stop` included)
+      gets the busy reply until the turn ends — `nerva estop` and the HUD stay live. Tell me the
+      wall-clock time the hard question took and whether ten minutes is the right ceiling for
+      your machine.
 
 ## Parking lot (decisions, no rush)
 

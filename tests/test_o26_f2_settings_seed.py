@@ -144,3 +144,23 @@ def test_values_round_trip_json(isolated_db):
         "SELECT value FROM settings WHERE category='memory' AND key='recall_top_k'"
     ).fetchone()[0]
     assert json.loads(raw) == 9
+
+
+# ── Hermes absorption 5c: the per-agent timeouts are seeded, so the HUD can see them ──
+
+def test_defaults_seed_the_agents_timeout_category():
+    """``agents.agent_timeout_seconds`` was read by the orchestrator (CDX-6) but never
+    seeded, so the SettingsPanel could not show it; the reasoning ceiling ships with it."""
+    rows = {(r["category"], r["key"]): r for r in settings_db.DEFAULTS}
+    flat = rows[("agents", "agent_timeout_seconds")]
+    deep = rows[("agents", "reasoning_timeout_seconds")]
+    assert flat["kind"] == "number" and flat["value"] == 120
+    assert deep["kind"] == "number" and deep["value"] == 600
+    assert deep["value"] > flat["value"], "the reasoning ceiling is a floor above the flat one"
+
+
+def test_fresh_db_serves_the_agents_category(isolated_db):
+    assert _value("agents", "agent_timeout_seconds") == 120
+    assert _value("agents", "reasoning_timeout_seconds") == 600
+    assert settings_db.validate_category("agents", {"reasoning_timeout_seconds": 900}) == []
+    assert settings_db.validate_category("agents", {"reasoning_timeout_seconds": "lots"}) != []

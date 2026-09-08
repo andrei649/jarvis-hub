@@ -339,6 +339,57 @@ targets outside `data_root()` are refused by name; a misspelled value stays off
 (AUD-14).
 **Cost:** none when off — the module is only imported by tests.
 
+## Wave 2026-09-07 — the front door (HA-5b)
+
+Four variables, three doors. One of them is the exception to this page's rule: it ships
+**default ON**, because it is a guard, not a capability — switching it off is what costs.
+
+### `JARVIS_CHANNEL_PAIRING`
+
+**Default: ON** (`agents/core/channels/pairing.py`, `env_flag(..., True)`). An unknown sender on a
+chat channel is held until the owner pairs them (HUD Pairing card, or the single-use
+`t.me/<bot>?start=<token>` deeplink). **What `0` changes:** every sender is admitted — and the
+boot guard `assert_guarded_channels` then refuses to start a channel whose token is set unless
+an allowlist names at least one id or `JARVIS_CHANNEL_OPEN=1` acknowledges an open bot. A typo
+refuses boot like the other posture flags. The guard runs twice: early, and again from the
+lifespan once `.env` is loaded (`assert_front_door`), so a token that lives only in `.env` is
+seen. The doors it counts: the Telegram and Discord bots, the webhook map, the IMAP inbox
+(whose sender is the `From` address — forgeable without DMARC, so a paired address is a held
+stranger let in, not an authenticated owner). **Cost of ON:** on upgrade the owner must pair
+themselves once — or set `TELEGRAM_ALLOWED_USER_IDS`, which now passes the gate on its own.
+With pairing on, the unauthenticated `POST /api/channels/pairing/request` door is live too
+(bounded pending list, store-wide code-guess budget, the rate limiter); `0` closes it.
+
+### `JARVIS_CHANNEL_OPEN`
+
+**Default: OFF.** The acknowledgement that a chat bot with no allowlist and pairing switched off
+may answer anyone. Prints a `[SECURITY]` line at boot. Applies to every listed inbound channel
+at once — there is no per-channel form; set it only on a box that talks to nobody but you.
+
+### `JARVIS_TRUSTED_PROXIES`
+
+**Default: unset** (`agents/core/proxy_trust.py`). Comma-separated networks or addresses
+(`127.0.0.1/32`, `10.0.0.5`, `fd00::/64`) of the reverse proxies whose forwarding headers may
+be believed. An entry is the proxy's **own address**, never a range that also contains
+clients — a client inside a listed range can name any client it likes; an entry wider than
+/24 (v6: /64) is warned about at boot by position. The chain is walked right-to-left and an
+all-trusted chain yields the hop the proxy saw, never a typed leftmost value. Unset:
+forwarding headers are ignored — a request that carries them fails the localhost gate
+closed and is rate-limited by its socket address. `*`, `/0` and more than 64 entries refuse
+boot naming the variable. Set in `.env` like everything else: the lifespan re-checks the
+list once `.env` is loaded. The old `JARVIS_TRUSTED_PROXY=1` is deprecated and
+now means *loopback only* (a same-box Caddy) with a one-time warning; it never widens past
+that.
+
+### `JARVIS_ALLOWED_HOSTS`
+
+**Default: unset** (`agents/core/host_policy.py`). Names that may appear in the `Host`
+header besides the ones always accepted (loopback names, IP literals, the bind and server
+address): `nerva.<tailnet>.ts.net`, the Caddy site name. Any other name is `400 host not
+allowed` — that is the DNS-rebinding defence. `*` and leading-dot wildcards refuse boot.
+`/healthz`, `/readyz`, `/metrics` are exempt. No WebSocket route exists today; a future one
+must call `host_accepted` itself, since the HTTP middleware would not cover it.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -363,6 +414,10 @@ targets outside `data_root()` are refused by name; a misspelled value stays off
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | off (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses inherit only `STDIO_ENV_ALLOWLIST` plus the per-server `env` — never the hub's API keys, tokens or proxies | A server that relied on inheriting a hub credential stops seeing it; pass it explicitly in that server's `env` | Unset + reconnect: full parent env inherited again |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
+| `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
+| `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |
+| `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers believed only from these networks; XFF walked right-to-left | A listed peer can name any client address — list only proxies you run; a malformed list refuses boot | Unset + restart: headers ignored, fail closed |
+| `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
 Webhook channels cost no dependency, only configuration discipline.

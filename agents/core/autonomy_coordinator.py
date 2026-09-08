@@ -47,6 +47,8 @@ _TRUSTED_TOOL_RPC_KINDS = frozenset({
 })
 
 logger = logging.getLogger("jarvis.orchestrator")
+# Hermes absorption 5a — rows one research task hands back from the web search plugin.
+_RESEARCH_MAX_RESULTS = 5
 
 
 class AutonomyCoordinator:
@@ -661,6 +663,12 @@ class AutonomyCoordinator:
                 "additionalProperties": False,
             },
             capability_id="tool:osint_enrich",
+            # Hermes absorption 5a — its rows come from live lookups on
+            # attacker-influenceable indicators, so the loop fences them as data. Today
+            # the declaration is dormant: gated, the tool answers approval_required in the
+            # loop and its approved run lands in the task row, never in a transcript; it
+            # takes effect the day a gated result is fed back to the model.
+            untrusted_output=True,
         )
         server.register_tool(
             "echo",
@@ -704,6 +712,24 @@ class AutonomyCoordinator:
                 authorizer=action_kernel,
                 audit=getattr(self._orch, "intent_log", None),
             ),
+        )
+        # Hermes absorption 5a — the model can look things up and search its own memory.
+        # What it reads is declared data: the two web tools are registered
+        # untrusted_output, search_memory declares taint per hit, and the tool loop fences
+        # every such result and marks the turn. Who may ask is still the tool profile's
+        # decision (3b); the plugin and the memory manager are read per call, so a plugin
+        # that appears or disappears after boot is honoured without a re-wire.
+        from .web_tools import register_web_tools
+
+        register_web_tools(
+            server,
+            lambda: (getattr(self._orch, "plugins", None) or {}).get("websearch"),
+        )
+        from .memory.rag_tool import register_search_memory
+
+        register_search_memory(
+            server,
+            lambda: getattr(getattr(self._orch, "memory", None), "recall", None),
         )
 
         acquisition = AcquisitionRuntime(
@@ -786,11 +812,33 @@ class AutonomyCoordinator:
         """Wire task kinds to real capabilities, degrading gracefully."""
 
         async def _research(task):
+            # Hermes absorption 5a — the branch used to test for a ``handle`` attribute the
+            # plugin never had, so every research/search/monitor/scan/lookup/check task was
+            # a permanent noop. The plugin's ``search`` is the real surface; its rows keep
+            # the plugin's taint marks so a consumer still treats them as data. The log
+            # carries the exception type only, never the query or a result.
             query = (task.payload or {}).get("query") or task.title
-            ws = self._orch.plugins.get("websearch")
-            if ws and hasattr(ws, "handle"):
-                return {"status": "ok", "kind": "research", "output": await ws.handle(query)}
-            return {"status": "noop", "note": "websearch unavailable"}
+            ws = (getattr(self._orch, "plugins", None) or {}).get("websearch")
+            if ws is None or not callable(getattr(ws, "search", None)):
+                return {"status": "noop", "note": "websearch unavailable"}
+            # A research task auto-runs under policy (read-only tier) with nobody in the
+            # turn, so its egress must be one the owner set up: a configured backend
+            # (TAVILY_API_KEY / SEARXNG_URL). The keyless fallback stays with the
+            # interactive tool, where the owner asked and the tool loop is opt-in.
+            available = getattr(ws, "available", None)
+            if callable(available) and not available():
+                return {"status": "noop", "note": "websearch backend not configured"}
+            try:
+                results = await ws.search(query, max_results=_RESEARCH_MAX_RESULTS)
+            except Exception as exc:
+                logger.warning("research task search failed (type=%s)", type(exc).__name__)
+                return {"status": "failed", "note": "websearch error"}
+            rows = list(results or [])[:_RESEARCH_MAX_RESULTS]
+            return {
+                "status": "ok",
+                "kind": "research",
+                "output": {"query": query, "results": rows, "count": len(rows)},
+            }
 
         async def _llm(task):
             prompt = (task.payload or {}).get("prompt") or task.title

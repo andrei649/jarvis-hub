@@ -271,6 +271,28 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.tavily.com", "html.duckduckgo.com"],
         agents_served=["all"],
     ),
+    # Hermes absorption 5a: the page reader (``web_extract``) gets its own egress
+    # identity. No allowlist can describe "the public web", so the declaration is
+    # FULL and honest rather than a RESTRICTED manifest that would refuse every real
+    # page under strict egress. What still guards every fetch: SSRF resolution plus
+    # IP pinning on every redirect hop, the kernel's plugin.egress mediation (the
+    # e-stop), the per-plugin circuit breaker and the egress ledger. The scope is
+    # PROCESSED like the search it pairs with: a read, whose request carries the URL
+    # the model chose and nothing else — the same class as a search query — and the
+    # tools refuse a URL that carries a stored secret before it leaves. TRANSMITTED is
+    # reserved for the external-write surfaces the least-privilege profile fences
+    # (CDX-11); a reader is not one. Search keeps its narrow identity. The manifest is
+    # an egress identity of ``WebSearchPlugin.fetch_page``, not a separately wired
+    # plugin — the HUD resolves it through the search plugin (``plugins/honesty.py``).
+    "webread": PluginManifest(
+        id="webread",
+        name="Web Page Reader",
+        version="0.1.0",
+        description="Read one public web page named by the model or a task (web_extract)",
+        network_access=NetworkAccess.FULL,
+        data_scope=DataScope.PROCESSED,
+        agents_served=["all"],
+    ),
     "osint_enrich": PluginManifest(
         id="osint_enrich",
         name="OSINT Pivot Enrichment",

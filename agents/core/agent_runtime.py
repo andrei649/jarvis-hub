@@ -1,8 +1,31 @@
-"""Bounded model-directed execution over the governed ToolRPC allowlist."""
+"""Bounded model-directed execution over the governed ToolRPC allowlist.
+
+What the model reads is data (Hermes absorption 5a). The tool loop is an ingress: a web
+page, a search hit or a recalled memory that a tool returns lands in the transcript the
+model answers from, so it is the same category of content as an untrusted recall — and
+until now it crossed into the transcript unmarked, and an action built from it reached
+the kernel with a clean turn origin. Two mechanisms already existed for exactly this:
+the untrusted fence that ``security.quarantine`` puts around external text, and the
+recall taint that ``security.recall_taint`` raises on the turn's action origin so the
+kernel escalates a grant to approval. Both are applied here, at the one seam every result
+crosses (the observation loop in ``run``), for a tool that declared its output untrusted,
+for any result the injection scanner flags, and for a result that carries its own
+``tainted`` verdict. The mark is raised from the loop body itself, never from inside a
+ToolRPC handler: a handler runs in a child task, and a ContextVar written there never
+reaches the turn. The loop is itself a child task of ``run`` (the wall-clock deadline), so
+``run`` gives it an explicit context copy and, once it returns or times out, carries an
+untrusted origin found there into its own context — the context that awaits ``run``. It
+reaches no further: a caller that awaits ``run`` from its own child task (a gather of
+agents) must read ``current_action_origin`` there, after ``run`` returns, and raise its
+own turn's origin itself. The fence follows the tool, not the planning mode: the registry
+projection carries the ``untrusted_output`` declaration through, and a fenced result that
+is later compacted is folded on its payload and fenced again.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import json
 import logging
@@ -13,10 +36,18 @@ from contextlib import suppress
 from functools import partial
 from typing import Any
 
+from .action_origin import current_action_origin
 from .context_compressor import window_for
 from .iteration_budget import IterationBudget
 from .llm.tokenizer import estimate_messages
 from .llm.tool_protocol import MAX_PARSED_TOOL_CALLS, ToolCall, ToolSpec
+from .security.quarantine import (
+    fence_tool_result,
+    injection_flag_names,
+    split_fenced_tool_result,
+)
+from .security.recall_taint import mark_turn_recall_tainted
+from .security.taint import TAINTED_RECALL_ORIGIN, is_untrusted_source
 from .tool_rpc import ToolRPCServer
 
 logger = logging.getLogger("jarvis.agent_runtime")
@@ -75,6 +106,11 @@ _MIN_CONTEXT_BUDGET = 2_048
 _CONTEXT_WINDOW_FRACTION = 0.75
 _COMPACTED_NOTICE = "TOOL RESULT COMPACTED"
 _TRUNCATED_NOTICE = "TOOL RESULT TRUNCATED"
+# Hermes absorption 5c — the caller-supplied wall clock for one run() is clamped to
+# these bounds, visibly: a turn may raise the loop deadline to the reasoning floor,
+# never past an hour and never below one second (a containment control).
+WALL_SECONDS_MIN = 1.0
+WALL_SECONDS_CAP = 3600.0
 _DEFAULT_ITERATIONS = 8
 _MAX_ITERATIONS = 32
 _MAX_TOOL_CALLS_PER_TURN = MAX_PARSED_TOOL_CALLS - 1
@@ -201,13 +237,27 @@ class AgentToolRuntime:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         event_sink: ToolEventSink | None = None,
+        wall_seconds: float | None = None,
     ) -> str:
         """Run one bounded tool-enabled model turn to a final answer.
 
         Deadlines bound response latency, not in-process coroutine lifetime. A coroutine
         that suppresses cancellation is detached and blocks ``can_run`` until it exits,
         preventing repeated turns from accumulating unbounded orphan work.
+
+        ``wall_seconds`` lets the turn that owns this run set the loop's deadline — the
+        orchestrator's reasoning floor on a thinking route — so the loop is not cut at
+        its constructor default while the turn still has budget. ``None`` keeps the
+        constructor default untouched; a value is clamped to
+        ``WALL_SECONDS_MIN..WALL_SECONDS_CAP`` and stays finite (Hermes absorption 5c).
         """
+        # None, a bool, a non-number, a non-finite or a non-positive value all keep
+        # the constructor's own deadline; only a real value is clamped into the range.
+        parsed = 0.0 if isinstance(wall_seconds, bool) else _safe_float(wall_seconds, default=0.0)
+        if wall_seconds is None or parsed <= 0:
+            effective_wall_seconds = self._max_wall_seconds
+        else:
+            effective_wall_seconds = min(max(WALL_SECONDS_MIN, parsed), WALL_SECONDS_CAP)
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -218,10 +268,38 @@ class AgentToolRuntime:
             temperature=temperature,
             event_sink=event_sink,
         )
+        # The loop runs in a child task under the deadline, in this explicit copy of the
+        # turn's context; whatever recall taint the loop raised there is carried back into
+        # the caller's context below, on a normal return and on a deadline alike
+        # (Hermes absorption 5a).
+        turn_context = contextvars.copy_context()
         try:
-            return await self._await_owned(loop, timeout=self._max_wall_seconds)
+            return await self._await_owned(
+                loop, timeout=effective_wall_seconds, context=turn_context,
+            )
         except _OwnedTimeout:
             return _DEADLINE_REPLY
+        finally:
+            self._carry_turn_taint(turn_context)
+
+    @staticmethod
+    def _carry_turn_taint(turn_context: contextvars.Context) -> None:
+        """Raise the awaiting context's action origin when the loop's carries an untrusted one.
+
+        Escalate-only through ``mark_turn_recall_tainted``: an inbound origin keeps its own
+        label. The mark lands in the context that awaits ``run`` and no further up — a caller
+        that itself runs ``run`` in a child task reads the origin there once ``run`` returns. Reading the loop's context cannot collide with a straggler still running after
+        a deadline — the event loop is single-threaded, so no task is mid-step here — but a
+        read that fails for any reason marks anyway: a false escalation queues an action for
+        approval, a missed one would let it auto-execute (Hermes absorption 5a).
+        """
+        try:
+            loop_origin = turn_context.run(current_action_origin)
+        except Exception as exc:
+            logger.warning("tool loop origin read failed (%s); marking the turn", type(exc).__name__)
+            loop_origin = TAINTED_RECALL_ORIGIN
+        if is_untrusted_source(loop_origin):
+            mark_turn_recall_tainted()
 
     async def _run_loop(
         self,
@@ -276,6 +354,9 @@ class AgentToolRuntime:
             for tool in metadata
         ]
         gated_tools = {tool["name"]: bool(tool.get("gated")) for tool in metadata}
+        untrusted_tools = {
+            tool["name"] for tool in metadata if tool.get("untrusted_output") is True
+        }
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
@@ -339,10 +420,25 @@ class AgentToolRuntime:
                 repeated=repeated,
                 capped=capped,
             )
-            for call, (result, content) in zip(bounded_calls, observations, strict=True):
-                content = await self._dedupe_result(
-                    call, result, content, seen_results, agent_id=agent_id, event_sink=event_sink,
+            for call, (result, raw) in zip(bounded_calls, observations, strict=True):
+                # Fenced and marked from the loop's own context (never a child task), so
+                # the recall taint lands on the turn. The stub is keyed on the RAW bytes so
+                # identical payloads still dedupe; a "same as call N" stub is Nerva's own
+                # words and is never fenced. The mark and the event still fire for the
+                # repeat — idempotent and escalate-only.
+                content = await self._fence_result(
+                    call,
+                    result,
+                    raw,
+                    untrusted=call.name in untrusted_tools,
+                    agent_id=agent_id,
+                    event_sink=event_sink,
                 )
+                deduped = await self._dedupe_result(
+                    call, result, raw, seen_results, agent_id=agent_id, event_sink=event_sink,
+                )
+                if deduped != raw:
+                    content = deduped
                 messages.append(
                     {
                         "role": "tool",
@@ -462,6 +558,19 @@ class AgentToolRuntime:
         return not exhausted
 
     def _compacted_content(self, encoded: str) -> str:
+        """Fold one tool message into a bounded envelope; a fenced message stays fenced.
+
+        A fenced result is not JSON as a whole: folding it whole would report the envelope
+        as ``ok: false`` with no tool name and leave the fence as escaped text inside the
+        preview. So the payload is folded on its own — ``ok`` and ``tool`` come from the real
+        envelope — and the folded envelope is fenced again under the same source; the fence
+        is a fixed overhead on top of the byte bound (Hermes absorption 5a).
+        """
+        fenced = split_fenced_tool_result(encoded)
+        if fenced is not None:
+            source, payload = fenced
+            folded, _ = fence_tool_result(self._compacted_content(payload), source=source)
+            return folded
         try:
             parsed = json.loads(encoded)
         except ValueError:
@@ -524,6 +633,50 @@ class AgentToolRuntime:
             if limit > 0 and count > limit:
                 capped[call.id] = count
         return capped
+
+    async def _fence_result(
+        self,
+        call: ToolCall,
+        result: Mapping[str, Any],
+        content: str,
+        *,
+        untrusted: bool,
+        agent_id: str,
+        event_sink: ToolEventSink | None,
+    ) -> str:
+        """Fence an untrusted result as DATA and raise the turn's recall taint.
+
+        Three reasons, any one of which is enough (Hermes absorption 5a): the tool declared
+        its output untrusted and the result is a success (a not-ok envelope — a local
+        failure, a server refusal — and a handler's own ``ok: false`` refusal are Nerva's
+        own words about a fetch that did not happen, and never fenced for this reason);
+        the injection scanner flagged the encoded content; or the handler's own dict says
+        ``tainted`` (a tool that computed a per-hit verdict in its child task, which cannot
+        reach the turn's ContextVar from there). With no reason the content is returned
+        byte-identical. The event carries reasons and flag names, never the content.
+        """
+        reasons: list[str] = []
+        if untrusted and result.get("ok") is True and not _is_failed_result(result):
+            reasons.append("untrusted_tool")
+        fenced, flags = fence_tool_result(content, source=call.name)
+        if flags:
+            reasons.append("injection_flags")
+        if _declares_taint(result):
+            reasons.append("declared_taint")
+        if not reasons:
+            return content
+        mark_turn_recall_tainted()
+        await self._emit(
+            event_sink,
+            {
+                **self._event(call, agent_id, "tool_result_untrusted", "fenced"),
+                "source": _bounded_identity(call.name),
+                "reasons": reasons,
+                "injection_flags": injection_flag_names(flags),
+                "suspicious": bool(flags),
+            },
+        )
+        return fenced
 
     async def _dedupe_result(
         self,
@@ -684,6 +837,10 @@ class AgentToolRuntime:
                         "description": (description + context)[:1024],
                         "input_schema": inputs,
                         "capability_id": capability_id,
+                        # The fence follows the tool, not the planning mode: a declared-
+                        # untrusted tool stays declared under the registry projection;
+                        # an undeclared row is unchanged (Hermes absorption 5a).
+                        **({"untrusted_output": True} if tool.get("untrusted_output") is True else {}),
                     }
                 )
             return projected
@@ -922,8 +1079,9 @@ class AgentToolRuntime:
         coroutine: Coroutine[Any, Any, Any],
         *,
         timeout: float,
+        context: contextvars.Context | None = None,
     ) -> Any:
-        task = asyncio.create_task(coroutine)
+        task = asyncio.create_task(coroutine, context=context)
         try:
             done, _ = await asyncio.wait({task}, timeout=timeout)
         except BaseException:
@@ -960,6 +1118,12 @@ def _is_failed_result(result: Mapping[str, Any]) -> bool:
         return True
     inner = result.get("result")
     return isinstance(inner, dict) and inner.get("ok") is False
+
+
+def _declares_taint(result: Any) -> bool:
+    """A handler's own dict, wrapped under ``result``, says its content is tainted."""
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    return isinstance(inner, Mapping) and inner.get("tainted") is True
 
 
 def _failure_reason(result: Mapping[str, Any]) -> str:

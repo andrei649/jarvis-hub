@@ -365,6 +365,111 @@ nu e dependență declarată — rămâne decizia owner-ului. Teste: `tests/test
 (5). Rămân în 4i: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de plugin-uri,
 `nerva send` + `GET /api/commands`, kernelele de cod persistente și `image_generate`.
 
+**Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
+intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
+pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca
+`<<UNTRUSTED source=<unealtă>>> … <<END UNTRUSTED>>` — JSON-ul neatins, fără datamark, patru
+linii ca un model local mic să nu-l repete — și ridică taint-ul de recall al turei când unealta e
+declarată `untrusted_output` la înregistrare, când scanner-ul de injecție marchează conținutul,
+sau când handler-ul spune singur `tainted: true` (rulează într-un task copil, deci marcajul lui de
+context nu ajunge în tură). Marcajul e ridicat din contextul buclei, purtat în contextul care
+așteaptă `run()` și încă o dată de `Orchestrator._call_agents_parallel` peste gather-ul de agenți,
+ca tura care parsează handoff-urile și acțiunile să-l vadă. Doar escaladare: un rezultat curat de
+la o unealtă de încredere e identic byte cu byte, refuzul propriu al unei unelte nu e îngrădit,
+stub-ul „same as call N" se calculează pe bytes-ii bruți, un rezultat îngrădit pe care compactarea
+îl pliază e îngrădit din nou, un payload care scrie chiar marcajele gardului e semnalat, iar
+evenimentul `tool_result_untrusted` poartă motive și numele flag-urilor, niciodată conținut. Trei
+unelte ungated intră pe allowlist: `web_search` și `web_extract` (`web_tools.py`, peste
+`WebSearchPlugin` cu SSRF pinning — Tavily, SearXNG sau DuckDuckGo fără cheie; „indisponibil" e
+numit cu pachetul care lipsește, nu deghizat în „nimic găsit"; `max_chars` 256–20.000 și cel mult
+40 KB, pagina citită în flux cu plafon de 2 MB și doar tipuri de conținut text, cache de 15 minute
+per server care nu ține niciodată un refuz; două garduri în fața straturilor de egress, pentru că
+acelea decid *unde* pleacă o cerere, nu *ce duce*: un URL sau o interogare care poartă un secret
+cunoscut de broker e refuzat înainte să plece (`secret_in_url` / `secret_in_query`), într-o tură
+cu origine untrusted `web_extract` citește doar URL-uri întoarse de `web_search` — un motor de
+căutare nu poate fabrica un URL cu datele owner-ului, un model care tocmai a citit o pagină poate
+— iar odată ce tura a citit conținut untrusted `web_search` refuză o nouă interogare din același
+motiv (`tainted_turn`; canalul mai slab, deci pe eticheta mai îngustă: o tură inbound își
+păstrează prima căutare); paginile se citesc printr-o identitate de egress nouă, `webread` —
+primul manifest FULL din repo, pentru că niciun allowlist nu poate descrie „web-ul public", cu
+scop `PROCESSED` ca și căutarea pe care o însoțește; ce rămâne de pază: rezoluția SSRF și
+pinning-ul IP pe fiecare hop, hook-ul `plugin.egress` al kernelului, circuit breaker-ul și
+registrul de egress, plus bucla de unelte oprită implicit) și `search_memory` (`rag_tool.py`,
+unealta agentic-RAG deja întărită, peste `orch.memory.recall`: hit-urile fuzionate aplatizate,
+corpul trimis o singură dată și plafonat la 600 de caractere, metadatele trecute printr-un
+allowlist ca o redactare să nu poată fi ocolită, `tainted` calculat per rezultat). `osint_enrich`
+e declarat și el untrusted (inert până când un rezultat gated ajunge vreodată înapoi la model).
+Task-urile de research / search / monitor / scan / lookup / check testau o metodă pe care
+plugin-ul n-a avut-o niciodată și erau un `noop` permanent — acum caută, doar peste un backend
+configurat, pentru că rulează fără nimeni în tură. Un guest inbound vede în continuare doar
+`echo` / `time`. Rânduri din ledger închise: căutarea și citirea web-ului, `search_memory` ca
+unealtă, rezultatele untrusted împachetate ca date; rămâne numit flag-ul untrusted pe uneltele
+dobândite (`promotion.py`). Teste: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1).
+*Nedovedit pe un backend de căutare real și cu un model live care alege uneltele* → **P24**.
+
+**Livrat 2026-09-07 (5b — ușa din față refuză implicit).** Trei uși, o singură cusătură.
+**Pairing-ul e pornit dacă nu-l oprești** (`JARVIS_CHANNEL_PAIRING`): un străin care găsește
+bot-ul e reținut până când owner-ul îl împerechează (cardul din HUD sau deeplink-ul de 60 de
+secunde), acolo unde un `TELEGRAM_ALLOWED_USER_IDS` gol lăsa pe oricine să intre;
+`JARVIS_CHANNEL_PAIRING=0` îl oprește în continuare, dar atunci un guard nou de boot
+(`assert_guarded_channels`) refuză să pornească un canal de chat cu token și fără nicio pază — un
+allowlist cu cel puțin un id, pairing-ul, sau recunoașterea explicită `JARVIS_CHANNEL_OPEN=1`
+(tipărită ca linie `[SECURITY]`); refuzul numește canalul și cele trei remedii, niciodată
+token-ul; guard-ul rulează din nou din lifespan după ce `.env` e încărcat (`assert_front_door`),
+pentru că trecerea timpurie rulează înaintea lui și instalarea documentată pune token-urile
+acolo; harta de webhook-uri și inbox-ul IMAP sunt și ele uși din față, Slack e doar outbound
+azi, iar expeditorul de email e adresa goală din `From` (falsificabilă fără DMARC — reținut ca
+un străin, niciodată autentificat). Un owner din allowlist trece de poartă fără înregistrare de
+pairing, deci un upgrade cu `TELEGRAM_ALLOWED_USER_IDS` setat își păstrează owner-ul. Discord
+își trece de acum expeditorul mai departe, deci pairing-ul poate reține și un străin de pe
+Discord (nu putea), iar rândurile de canal din `/status` poartă `held_senders` — un număr de
+rețineri, niciodată un cuvânt din ce s-a spus. **Încrederea în reverse proxy e un allowlist mărginit de CIDR-uri**
+(`JARVIS_TRUSTED_PROXIES`): `X-Forwarded-For` e parcurs de la dreapta la stânga peste hop-urile
+de încredere și onorat doar de la un peer din listă — vechiul comutator `JARVIS_TRUSTED_PROXY=1`
+lăsa orice gazdă din LAN să se dea drept loopback și să treacă de bypass-ul de autentificare
+localhost și de throttle; acum înseamnă doar loopback, cu un avertisment de depreciere; o listă
+malformată refuză boot-ul numind variabila. **Un guard pe antetul Host** (`host_policy.py`, un
+middleware înaintea limitatorului de rată) răspunde 400 oricărui Host care nu e un nume de
+loopback, un literal IP, adresa de bind sau a serverului, ori o intrare din
+`JARVIS_ALLOWED_HOSTS` — pagina de pe `evil.example` al cărei nume a fost re-legat la adresa
+cutiei nu primește nimic; `/healthz` / `/readyz` / `/metrics` rămân sigure pentru probe; un `*`
+în listă refuză boot-ul. Nu există azi nicio rută WebSocket; una viitoare trebuie să apeleze singură `host_accepted`, pentru
+că middleware-ul HTTP n-ar acoperi-o.
+Teste: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. *Implicit care se schimbă la upgrade, cu pachet pentru owner* →
+**P25**.
+
+**Livrat 2026-09-07 (5c — modelul local termină întrebarea grea).** Modelele locale care
+gândesc (qwen3, deepseek-r1, gpt-oss) erau tăiate la plafonul plat de două minute exact pe
+întrebările grele și se întorceau ca `[jarvis timeout]` sau ca o bulă goală, iar orice buclă de
+unelte pe cloud compacta după o presupunere de 32k pe un model de 200k–1M. **Un prag de timeout
+conștient de raționament** (`_agent_call_timeout(route_name=…, model=…)` → `(secunde, prag)`): ruta
+`local-deep` sau orice model dintr-o familie de raționament (`REASONING_FAMILIES`,
+`is_reasoning_model`, prefixul de vendor scos) primește `agents.reasoning_timeout_seconds` (600,
+niciodată sub valoarea plată `agents.agent_timeout_seconds`, niciodată peste 3.600 — ambele
+însămânțate într-o categorie nouă `agents` pe care HUD-ul o redă așa cum e); termenul propriu al
+buclei de unelte urmează termenul turei (`wall_seconds`); o depășire numește bugetul
+(`[jarvis timeout: reasoning budget 600s]`), iar pragul e înregistrat per agent lângă latențe.
+Finit și mărginit de setare prin design: un backend local blocat ține lease-ul turei cel mult cât
+spune setarea, sub e-stop. **Familiile cloud în tabelul de ferestre al compactării**
+(`MODEL_WINDOWS`, `WINDOWS_VERIFIED`): Claude 4 / 3 la 200k, Gemini 2.x / 3 la 1M, GPT-5 400k,
+GPT-4.1 1M, GPT-4o 128k, o3 / o4 200k, DeepSeek V3 / chat / reasoner 128k, Grok 4 256k, Llama 4
+1M, GPT-5-chat 128k — documentate de vendor, datate, prefixul `vendor/` scos înainte de
+potrivire, tabelul împărțit în jumătatea locală și cea cloud ca testul de implicit conservator
+să măsoare în continuare mediana locală, iar implicitul pentru un nume local necunoscut rămâne
+32k; Qwen3-235B lipsește deliberat — 131k e doar cu YaRN, 32k nativ, și scoaterea prefixului
+ar fi dat o cifră prea mare unei rute locale. **Un guard de gândire
+epuizată** (`llm/base.py`): o generare tăiată la `max_tokens` care a produs raționament dar niciun
+răspuns vizibil întoarce acum un răspuns `⚠️` numit în loc de un șir gol — degradat prin
+contractul H23.12 (fără review de învățare, recompensă zero în memorie, interacțiune eșuată,
+niciodată luat drept răspuns) și fără să scurgă raționamentul; warm-up-ul îl tratează ca model
+încărcat, iar fluxul Ollama citește acum cheia lui nativă `thinking`. Acoperă LM Studio (generate,
+flux, tură cu unelte) și fluxul Ollama; cele două căi Ollama fără flux răspund încă gol pe
+aceeași condiție — numit. Costul declarat al pragului: o tură profundă mai lungă decât
+așteptarea de 180 s a lease-ului de tură face ca un al doilea mesaj pe aceeași sesiune de canal,
+`/stop` inclus, să primească „ocupat" până se termină; `nerva estop` și API-ul rămân la îndemână.
+Numite și nefăcute: lanțul de continuare și reîncercarea pe răspuns gol (schimbă forma mesajelor
+buclei de unelte), comenzile slash de admin înaintea lease-ului. Teste: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. *Nedovedit pe cutia RTX cu un model care gândește* → **P26**.
+
 ---
 
 ## Ce nu se schimbă

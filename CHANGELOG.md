@@ -2,6 +2,161 @@
 
 ## [Unreleased]
 
+### Wave 2026-09-07 — Hermes absorption, wave 5c: the deep model finishes the hard question
+
+- **Reasoning-aware timeout floor** (`agents/core/orchestrator.py`, `agents/core/llm/moe_routing.py`,
+  `agents/core/agent.py`, `agents/core/agent_runtime.py`, `agents/core/settings_db.py`). One flat
+  `agents.agent_timeout_seconds` (120) used to cut every route, so the local thinking models
+  (qwen3, deepseek-r1, gpt-oss) died at two minutes on exactly the hard questions. Now
+  `_agent_call_timeout(route_name=…, model=…)` returns `(seconds, floor)`: the `local-deep` route,
+  or a model whose family is in `REASONING_FAMILIES` (`is_reasoning_model`, vendor prefix and
+  `:tag` tolerated), gets `agents.reasoning_timeout_seconds` (600), never below the flat value and
+  never above 3,600 s; the tool loop's deadline follows the turn's (`wall_seconds`, capped the same
+  way); a timeout reply names the budget; `_last_timeout_floor` is recorded per agent. Both settings
+  are seeded in a new `agents` category the HUD settings panel renders with no frontend change.
+  Finite and setting-bounded on purpose: a wedged local backend holds the turn lease for at most
+  the setting, under the e-stop.
+- **Cloud model families in the compaction window table** (`agents/core/context_compressor.py`).
+  Since HA-0.3 the tool loop budgets its transcript from `window_for(model)`, and the table knew
+  seven local families only, so every Claude / Gemini / GPT tool loop compacted against ~24k of a
+  200k–1M window. Added, vendor-documented and dated (`WINDOWS_VERIFIED`): `claude-opus-4`,
+  `claude-sonnet-4`, `claude-haiku-4`, `claude-3` 200,000; `gemini-2.5`, `gemini-3`, `gemini-2.0`
+  1,048,576; `gpt-5` 400,000; `gpt-4.1` 1,047,576; `gpt-4o` 128,000; `o3`, `o4` 200,000;
+  `deepseek-v3`, `deepseek-chat`, `deepseek-reasoner` 128,000; `grok-4`
+  256,000; `llama-4` / `llama4` 1,000,000; `gpt-5-chat` 128,000. A `vendor/` prefix (OpenRouter
+  style) is stripped before matching; the table is split into `LOCAL_WINDOWS` and `CLOUD_WINDOWS`
+  so the conservative-default test keeps measuring the local median; the unknown-local default
+  stays 32,000. Qwen3-235B is deliberately absent: its 131,072 is YaRN-only (32,768 native) and
+  the prefix strip would have handed a wrong-large figure to a local LM Studio route.
+- **Thinking-exhausted guard** (`agents/core/llm/base.py`). A generation that hit `max_tokens`
+  with reasoning but no visible answer returned `""` — a blank bubble indistinguishable from
+  "the model said nothing". It now returns `THINKING_EXHAUSTED_REPLY`, a `⚠️` reply that names the
+  cause and the remedy; degraded by the H23.12 contract — scored as a failed generation (no
+  learning review, zero living-memory reward, a failed interaction), never mistaken for an
+  answer — and never leaking the chain of thought. Warm-up treats it as a loaded model (the one
+  token went to reasoning, so the weights are resident). The Ollama stream now reads Ollama's
+  native `thinking` key beside `reasoning_content`, so the guard fires on a real Ollama stream.
+  Coverage: LM Studio generate / stream / tool turn and the Ollama stream; the two non-streaming
+  Ollama paths still answer blank on the same condition — named, not done. The clean-finish
+  reasoning-only branch and the repetition-flood branch are unchanged. Also named and not done:
+  the continuation chain and the one empty retry.
+- **Stated cost of the reasoning floor.** A deep turn longer than the turn lease's 180 s wait
+  makes a second message on the same channel session — `/stop` included — answer busy until the
+  deep turn ends; `nerva estop` and the API stay reachable. Dispatching the admin slash commands
+  ahead of the lease is the named follow-up. The floor is decided on the prompt the agent
+  actually routes on and the model the router returns, not on the raw user text.
+- Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. Not proven on the RTX box against a real thinking model —
+  `docs/OWNER_TASKS.md` P26.
+
+### Wave 2026-09-07 — Hermes absorption, wave 5b: the front door refuses by default
+
+> **Breaking default on upgrade.** An existing Telegram install with a bot token, no
+> `TELEGRAM_ALLOWED_USER_IDS` and no `JARVIS_CHANNEL_PAIRING` setting used to answer
+> anyone; after this update it **holds unknown senders — the owner included — until they are
+> paired**. Before restarting: put your own id in `TELEGRAM_ALLOWED_USER_IDS`, or pair yourself
+> from the HUD Pairing card / the `t.me/<bot>?start=<token>` deeplink right after. A Discord
+> token with pairing switched off now refuses to boot unless `JARVIS_CHANNEL_OPEN=1` is
+> acknowledged. `docs/OWNER_TASKS.md` P25 has the exact steps.
+
+- **Pairing ON by default** (`agents/core/channels/pairing.py`, `agents/core/boot_guards.py`).
+  `pairing_enabled()` is `env_flag("JARVIS_CHANNEL_PAIRING", True)`; `JARVIS_CHANNEL_PAIRING=0`
+  turns it off, and a typo in either flag refuses boot like the other posture flags. A new boot
+  guard, `assert_guarded_channels`, refuses to start a chat channel whose token is set but nothing
+  guards it (an allowlist with at least one id, pairing, or the explicit acknowledgement
+  `JARVIS_CHANNEL_OPEN=1`, which prints a `[SECURITY]` line); the refusal names the channel and
+  the remedies, never the token. The guard runs again from the lifespan once `.env` is loaded
+  (`assert_front_door`, together with the two list parse checks), because the early pass runs
+  before `.env` and the documented install puts the tokens there. The webhook map and the IMAP
+  inbox count as front doors; Slack is outbound-only today; the email sender is the bare
+  address parsed from `From` (forgeable without DMARC — held like a stranger, never treated as
+  authenticated). An allowlisted owner passes the gate without a pairing record, so an upgrade
+  with `TELEGRAM_ALLOWED_USER_IDS` set keeps its owner reachable. Discord threads `sender` so
+  pairing can hold a Discord stranger; `/status` channel rows carry `held_senders` (a count of
+  holds, never a word of what was said); pairing-code guesses are budgeted store-wide.
+- **Reverse-proxy trust is a CIDR allowlist** (`agents/core/proxy_trust.py`). `JARVIS_TRUSTED_PROXIES`
+  (comma-separated networks or addresses; `*`, `/0` and more than 64 entries refused) replaces the
+  bare `JARVIS_TRUSTED_PROXY=1` switch, which let any LAN host that could set `X-Forwarded-For:
+  127.0.0.1` ride the localhost auth bypass and dodge the throttle. Forwarding headers are honoured
+  only from a peer inside the list; the chain is walked right-to-left past trusted hops (an
+  all-trusted chain yields the hop the proxy saw, never a typed leftmost value; every hop must
+  parse as an address); an untrusted peer with forwarding headers still fails closed for the
+  localhost gate and is bucketed by its socket address for the rate limiter. An entry must be
+  the proxy's own address: one wider than /24 (v6: /64) is warned about by position. The legacy flag now means "loopback only" and warns
+  once. A malformed list refuses boot naming the variable, never the value.
+- **Host-header guard** (`agents/core/host_policy.py`, a middleware ahead of the rate limiter).
+  DNS rebinding turns a page on the attacker's domain into a same-origin client of the local API;
+  the `Host` header carries the attacker's name and nothing legitimate ever does. Accepted: loopback
+  names, IP literals (a LAN install reached by its address keeps working with no configuration),
+  the bind and the server address, and `JARVIS_ALLOWED_HOSTS` entries (`nerva.<tailnet>.ts.net`,
+  a Caddy name). Everything else is `400 host not allowed` with the header never echoed;
+  `/healthz`, `/readyz`, `/metrics` are exempt; `*` and wildcards in the list refuse boot.
+  No WebSocket route exists today; a future one must call `host_accepted` itself, since the HTTP middleware would not cover it.
+- Tests: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. Not proven on the RTX box against a real proxy or a second Telegram
+  account — `docs/OWNER_TASKS.md` P25.
+
+### Wave 2026-09-07 — Hermes absorption, wave 5a: what the model reads is data
+
+- **Untrusted tool results are fenced and taint the turn** (`agents/core/agent_runtime.py`,
+  `agents/core/security/quarantine.py`, `agents/core/tool_rpc.py`). The tool loop is an ingress
+  like recall, but a tool result was spliced into the transcript as-is. `register_tool(...,
+  untrusted_output=True)` declares that a tool returns content from outside the box; the loop then
+  fences the result as `<<UNTRUSTED source=<tool>>> … <<END UNTRUSTED>>` (JSON verbatim — no
+  datamarking, the model must still parse it) and raises the turn's recall taint, so an action
+  built from it queues for approval. The same happens for any tool when the injection scanner
+  flags the content, and when a handler declares `tainted: true` in its result (the handler runs
+  in a child task, so its own context mark cannot reach the turn). The mark is raised from the
+  loop's own context, carried into the context that awaits `run()`, and carried once more by
+  `Orchestrator._call_agents_parallel` across its agent gather, so the turn that parses handoffs
+  and actions sees it. Escalate-only: a trusted, clean result is byte-identical to before; a
+  tool's own refusal (`ok: false`) is never fenced; duplicate-result stubs (HA-4f) are keyed on
+  the raw bytes; a fenced result that compaction folds is fenced again; a payload spelling the
+  fence's own markers is flagged; the `tool_result_untrusted` event carries reasons and flag
+  names, never content. The registry-planning projection keeps the declaration.
+- **`web_search` / `web_extract`** (`agents/core/web_tools.py`, new). Two ungated,
+  `untrusted_output` ToolRPC tools over the existing `WebSearchPlugin`: search (Tavily, SearXNG or
+  the keyless DuckDuckGo fallback; the missing `beautifulsoup4` is named as
+  `websearch_unavailable`, never an empty "nothing found") and one-page extraction
+  (`max_chars` 256–20,000 and at most 40 KB, a 15-minute per-server cache of 64 pages that never
+  caches a refusal; SSRF refusal, egress refusal, fetch failure and a non-text answer are all
+  `url_refused`). `fetch_page` now streams the body with a 2 MB read cap and a text-only
+  content-type allowlist, so a hostile page cannot buffer the box. Two fences sit in front of
+  the egress layers, because those bound *where* a request goes and not *what it carries*: a
+  URL or a query carrying a value the secret broker knows is refused before it leaves
+  (`secret_in_url` / `secret_in_query`); in a turn whose action origin is untrusted `web_extract`
+  reads only URLs `web_search` returned on this server (`tainted_turn` — a search engine cannot
+  mint a URL carrying the owner's data, a model that just read a page can); and once the turn
+  has read untrusted content `web_search` refuses a further query for the same reason (the
+  weaker channel, so gated on the narrower label: an inbound turn still gets its first search).
+  Page reads dial through a dedicated `webread` egress identity (`agents/core/plugin_gate.py`):
+  the first FULL-network manifest in the repo, because no allowlist can describe "the public
+  web"; scope `PROCESSED` like the search it pairs with (a read whose request carries the URL
+  and nothing else — `TRANSMITTED` stays reserved for the external-write surfaces the
+  least-privilege profile fences). What still governs every fetch is per-hop SSRF resolution
+  and IP pinning, the kernel's `plugin.egress` mediation (e-stop), the circuit breaker and the
+  egress ledger, and the tool loop itself stays default-off. The HUD resolves `webread` through
+  the search plugin (keyless, live). The tool-profile snapshot widens on purpose:
+  operator/owner, operator/guest, inbound/owner and internal/system see the three new read
+  tools; inbound/guest still sees `echo` and `time` only.
+- **`search_memory` on the allowlist** (`agents/core/memory/rag_tool.py`). The hardened
+  agentic-RAG tool (redaction of injection-flagged hits, per-hit taint verdict) is registered as
+  an ungated ToolRPC tool over `orch.memory.recall`; fused hits are flattened (the body shipped
+  once, capped at 600 chars and scanned in full before the cut; metadata forwarded through an
+  allowlist so a redaction cannot be defeated by the same body riding under `metadata`), the
+  result carries `tainted`, and the loop fences and marks the turn only when it is true — the
+  owner's own clean memory reads like before. Both `text` and `name` are scanned; a redaction
+  blanks them inside `metadata` / `properties` too.
+- **The research task kind works.** `AutonomyCoordinator.build_executor._research` tested
+  `hasattr(ws, "handle")`, a method the plugin never had, so every research / search / monitor /
+  scan / lookup / check task was a permanent `noop`. It now calls `search` and returns the tainted
+  rows — only over a configured backend (`TAVILY_API_KEY` / `SEARXNG_URL`): a task auto-runs
+  under policy with nobody in the turn, so the keyless fallback stays with the interactive tool,
+  where the owner asked and the tool loop is opt-in. `osint_enrich` is declared `untrusted_output`
+  as its description always promised (dormant until a gated result is ever fed back to the model).
+- Small hardening on the way: `PluginHTTPClient.close()` evicts only the registered instance;
+  the search backends' error logs carry the exception type, never the query.
+- Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). Not proven against a real search backend or with a live model choosing the
+  tools — `docs/OWNER_TASKS.md` P24.
+
 ### Wave 2026-09-07 — Hermes absorption, wave 3a: the model's hands
 
 - **`file_search`** (`agents/core/file_tools.py`, behind the same `JARVIS_FILE_TOOLS` flag).

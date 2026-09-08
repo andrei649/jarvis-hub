@@ -28,14 +28,25 @@ def test_client_ip_ignores_xff_unless_proxy_trusted(monkeypatch):
     # Audit 2026-07-15: X-Forwarded-For is attacker-controlled, so without a
     # configured trusted proxy the limiter must use the unspoofable socket peer
     # (else `X-Forwarded-For: 127.0.0.1` dodges the throttle).
-    monkeypatch.setattr(web, "TRUSTED_PROXY", False, raising=False)
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXIES", raising=False)
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXY", raising=False)
     assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"}, host="5.5.5.5")) == "5.5.5.5"
     assert web._client_ip(_Req(host="5.5.5.5")) == "5.5.5.5"
+    # Hermes absorption 5b: with a list configured, a peer OUTSIDE it is still
+    # keyed by its socket address — the header is not evidence from a stranger.
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "1.2.3.4/32")
+    assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"}, host="5.5.5.5")) == "5.5.5.5"
 
 
-def test_client_ip_prefers_first_xff_hop_when_proxy_trusted(monkeypatch):
-    monkeypatch.setattr(web, "TRUSTED_PROXY", True, raising=False)
-    assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"})) == "9.9.9.9"
+def test_client_ip_uses_the_hop_the_trusted_proxy_saw(monkeypatch):
+    # The default _Req peer 1.2.3.4 is the trusted proxy (Hermes absorption 5b:
+    # trust is the JARVIS_TRUSTED_PROXIES CIDR list, not a switch). The chain is
+    # walked right-to-left: 1.1.1.1 is the address that connected to the proxy,
+    # 9.9.9.9 is whatever that client typed — the old "first hop" read let a
+    # client pick its own bucket.
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "1.2.3.4/32")
+    assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9, 1.1.1.1"})) == "1.1.1.1"
+    assert web._client_ip(_Req({"x-forwarded-for": "9.9.9.9"})) == "9.9.9.9"
     assert web._client_ip(_Req(host="5.5.5.5")) == "5.5.5.5"
 
 

@@ -49,7 +49,10 @@ def hub(tmp_path, monkeypatch):
         get_setting=lambda key, default=None: "5" if key == "autonomy.owner_chat_id" else default,
     )
     store = JobStore(tmp_path / "jobs.db")
-    orch.jobs = JobRunner(store, orch=orch, scheduler=lambda: _Scheduler())
+    # The quiet-hours hold (HA-4e) reads the wall clock by default; a lifecycle test that
+    # expects delivery must not depend on the hour CI happens to run at (it went red at
+    # 22:03 UTC). The hold itself is proven in tests/test_job_quiet_hours.py.
+    orch.jobs = JobRunner(store, orch=orch, scheduler=lambda: _Scheduler(), quiet=lambda: False)
     with TestClient(web.app) as client:
         # The app lifespan builds the real orchestrator on startup and tears it down on
         # exit; the stand-in is bound only in between, or the routes resolve the real one

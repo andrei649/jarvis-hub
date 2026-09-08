@@ -10,9 +10,12 @@
     "file_write",
     "operator_plan",
     "osint_enrich",
+    "search_memory",
     "session_search",
     "terminal_run",
-    "time"
+    "time",
+    "web_extract",
+    "web_search"
   ],
   "postures": {
     "operator/owner": [
@@ -26,9 +29,12 @@
       "file_write",
       "operator_plan",
       "osint_enrich",
+      "search_memory",
       "session_search",
       "terminal_run",
-      "time"
+      "time",
+      "web_extract",
+      "web_search"
     ],
     "operator/guest": [
       "desktop_plan",
@@ -37,8 +43,11 @@
       "file_read",
       "file_search",
       "operator_plan",
+      "search_memory",
       "session_search",
-      "time"
+      "time",
+      "web_extract",
+      "web_search"
     ],
     "inbound/owner": [
       "desktop_plan",
@@ -47,8 +56,11 @@
       "file_read",
       "file_search",
       "operator_plan",
+      "search_memory",
       "session_search",
-      "time"
+      "time",
+      "web_extract",
+      "web_search"
     ],
     "inbound/guest": [
       "echo",
@@ -61,8 +73,11 @@
       "file_read",
       "file_search",
       "operator_plan",
+      "search_memory",
       "session_search",
-      "time"
+      "time",
+      "web_extract",
+      "web_search"
     ]
   }
 }

@@ -137,6 +137,19 @@ def is_model_unloaded_error(exc: BaseException) -> bool:
         return False
 
 
+# Hermes absorption 5c: what the owner sees when a reasoning model hit
+# max_tokens while still thinking and never wrote a visible answer. Starts with
+# "⚠️" on purpose: that is the H23.12 degraded-reply contract, so the text is
+# scored as a failed generation — no learning review is spawned, the living-
+# memory reward is zero, the interaction counts as failed — and is never read
+# back as an answer the model gave.
+THINKING_EXHAUSTED_REPLY = (
+    "⚠️ The model spent its whole answer budget thinking and produced no visible "
+    "answer. Ask again more narrowly, or raise llm.max_tokens (or load a "
+    "larger-context model)."
+)
+
+
 def is_degraded_reply(text: object) -> bool:
     """True if *text* is a backend failure/degraded reply, not a real answer.
 
@@ -343,8 +356,10 @@ class LLMBackend(ABC):
             out = await self.generate(model, ".", max_tokens=1, temperature=0.0)
             # generate() reports failures as a degraded reply string, not an
             # exception (H23.12 ``⚠️ …`` or a legacy ``[backend error: …]``) —
-            # treat those as a failed warm-up.
-            return not is_degraded_reply(out)
+            # treat those as a failed warm-up. One exception: a thinking model spends
+            # the single token on reasoning and answers THINKING_EXHAUSTED_REPLY,
+            # which proves the weights are resident — the whole point of the call.
+            return out == THINKING_EXHAUSTED_REPLY or not is_degraded_reply(out)
         except Exception:
             return False
 
@@ -357,6 +372,15 @@ class LLMBackend(ABC):
         the model — surface it only when generation finished cleanly — or (b)
         truncated at max_tokens mid-thought (finish == "length"), in which case
         there is no answer, only chain-of-thought, and we must not leak it.
+
+        Hermes absorption 5c: case (b) used to return "" whether or not the model
+        had reasoned at all, and a blank bubble is indistinguishable from "the
+        model said nothing". When there *is* reasoning behind the blank, the
+        owner now gets ``THINKING_EXHAUSTED_REPLY`` — a degraded reply by the
+        "⚠️" contract, so it is scored as a failed generation and never read
+        back as an answer the model gave — and the reasoning
+        itself still never leaves this function. A length finish with no
+        reasoning at all still returns "" (nothing happened worth naming).
         """
         answer = strip_thinking(emitted)
         if answer:
@@ -380,6 +404,8 @@ class LLMBackend(ABC):
                 "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
                 model,
             )
+            if strip_thinking(reasoning_full or "").strip():
+                return THINKING_EXHAUSTED_REPLY
             return ""
         return strip_thinking(reasoning_full)
 
@@ -413,7 +439,15 @@ def _finalize_lmstudio_message(
     finish_reason: Any,
     model: str,
 ) -> str:
-    """Prefer visible content, then a cleanly finished reasoning-only answer."""
+    """Prefer visible content, then a cleanly finished reasoning-only answer.
+
+    Hermes absorption 5c: a length finish with reasoning but no visible content
+    returns ``THINKING_EXHAUSTED_REPLY`` instead of "" — a blank bubble cannot
+    be told apart from "the model said nothing", while the named reply is a
+    degraded reply by the "⚠️" contract and so is scored as a failed generation
+    rather than read back as an answer the model gave.
+    The reasoning text itself is still never returned on a length finish.
+    """
     answer = strip_thinking(message.get("content", "") or "")
     if answer:
         if finish_reason == "length" and is_repetition_dominated(answer):
@@ -434,6 +468,8 @@ def _finalize_lmstudio_message(
             "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
             model,
         )
+        if strip_thinking(message.get("reasoning_content", "") or "").strip():
+            return THINKING_EXHAUSTED_REPLY
         return ""
     return strip_thinking(message.get("reasoning_content", "") or "")
 
@@ -761,7 +797,11 @@ class OllamaBackend(LLMBackend):
                         try:
                             data = json.loads(line)
                             content = data.get("response", "")
-                            reasoning = data.get("reasoning_content", "")
+                            # Ollama's native field for chain-of-thought is "thinking";
+                            # reasoning_content is the OpenAI-style spelling some
+                            # proxies use. Reading both is what lets the exhausted-
+                            # thinking guard fire on a real Ollama stream (5c).
+                            reasoning = data.get("thinking") or data.get("reasoning_content") or ""
                             if content:
                                 safe = sf.feed(content)
                                 if safe:

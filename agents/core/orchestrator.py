@@ -9,6 +9,7 @@ import contextvars
 import hashlib
 import inspect
 import logging
+import math
 import importlib
 import os
 import re
@@ -27,6 +28,7 @@ from .llm.gemini import GeminiBackend
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
 from .llm.gemini_context import GeminiRequestBinding
+from .llm.moe_routing import is_reasoning_model
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -36,12 +38,14 @@ from .autonomy_coordinator import AutonomyCoordinator
 from .action_origin import (
     bind_action_origin,
     bind_turn_action_origin,
+    current_action_origin,
     origin_for_channel,
     reset_action_origin,
 )
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
+
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
@@ -64,6 +68,8 @@ from .bench import LatencyBenchmark
 from .plugin_gate import PermissionGate
 from .security import GuardrailsEngine, bind_guardrails
 from .security.audit import AuditLogger
+from .security.recall_taint import mark_turn_recall_tainted
+from .security.taint import is_untrusted_source
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .env_config import env_flag, truthy
 from .log import log_error
@@ -204,6 +210,31 @@ _SESSION_UNSET = object()
 # Hermes absorption 0.5 — one turn at a time per session. A second message on the same
 # session used to start a concurrent turn on the same transcript; now it waits for the
 # lease, and after the wait bound it is answered "busy" rather than started.
+# Hermes absorption 5c — the per-agent model-call ceiling and its reasoning floor.
+# Every value the settings can produce is clamped into MIN..MAX, visibly, so a bad
+# or hostile config can neither disable the timeout nor stretch a turn past an hour.
+TIMEOUT_MIN_SECONDS = 1.0
+TIMEOUT_MAX_SECONDS = 3600.0
+DEFAULT_AGENT_TIMEOUT = 120.0
+DEFAULT_REASONING_TIMEOUT = 600.0
+# The route the hybrid router names for the local thinking slot (hybrid_router.py).
+REASONING_ROUTE = "local-deep"
+TIMEOUT_FLOOR_FLAT = "flat"
+TIMEOUT_FLOOR_REASONING = "reasoning"
+
+
+def _finite_seconds(value: object, default: float) -> float:
+    """One parser for both timeout settings: a bool, a NaN, an infinity or a value
+    that is not a number all read as the default — never as a one-second ceiling."""
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
 _TURN_LEASE_MAX_WAIT_SECONDS = 180.0
 _TURN_LEASE_TABLE_LIMIT = 1024
 TURN_BUSY_REPLY = (
@@ -1694,6 +1725,7 @@ class Orchestrator:
         # turn left behind, mislabeling locality for agents it never ran.
         self._last_routes = {}
         self._last_latencies = {}
+        self._last_timeout_floor = {}  # Hermes absorption 5c: per turn, like the two above
         # DRA-24: the per-turn cost inputs. `_record_interactions` used to write a
         # literal cached_tokens=0 / cache_hit=False on every turn and price the input at
         # `estimate_tokens(text)` — the user's raw words only. That under-reported what a
@@ -1733,7 +1765,19 @@ class Orchestrator:
                     # answer, so a small cap truncates mid-thought.
                     eff_max_tokens, temperature = self._agent_gen_params(agent, route_name)
                     cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
-                    logger.info(f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, max_tokens={cap_label})")
+                    # Hermes absorption 5c: the same per-agent ceiling the parallel path
+                    # applies, so the tool loop's deadline follows the reasoning floor
+                    # on a stream turn too. This path has no wait_for of its own.
+                    wall_seconds, timeout_floor = self._agent_call_timeout(
+                        route_name=route_name, model=model,
+                    )
+                    self._last_timeout_floor[agent_id] = {
+                        "floor": timeout_floor, "seconds": wall_seconds,
+                    }
+                    logger.info(
+                        f"Routing {agent_id} via {route_name} ({estimate_tokens(prompt)} tokens, "
+                        f"max_tokens={cap_label}, wall={int(wall_seconds)}s/{timeout_floor})"
+                    )
 
                     request_scope = nullcontext()
                     if isinstance(backend, GeminiBackend):
@@ -1842,6 +1886,7 @@ class Orchestrator:
                         max_tokens=eff_max_tokens,
                         temperature=temperature,
                         on_token=on_token,
+                        wall_seconds=wall_seconds,
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -1875,6 +1920,7 @@ class Orchestrator:
         if secondaries:
             primary_route = route_name or ""
             primary_latency = self._last_latencies.get(agent_id, 0.0)
+            primary_floor = self._last_timeout_floor.get(agent_id)
             primary_cached = self._last_cached_tokens.get(agent_id, 0)
             primary_prompt = self._last_prompt_tokens.get(agent_id, 0)
             secondary_responses = await self._call_agents_parallel(
@@ -1886,6 +1932,8 @@ class Orchestrator:
             # estimate: that path bills them uncached, which is what they are.
             self._last_routes[agent_id] = primary_route
             self._last_latencies[agent_id] = primary_latency
+            if primary_floor is not None:
+                self._last_timeout_floor[agent_id] = primary_floor
             self._last_cached_tokens[agent_id] = primary_cached
             self._last_prompt_tokens[agent_id] = primary_prompt
             responses = {agent_id: synthesized, **secondary_responses}
@@ -2458,18 +2506,89 @@ class Orchestrator:
         # the turn; never raises into the seam.
         self._spawn_background_review(text, synthesized, channel)
 
-    def _agent_call_timeout(self) -> float:
-        """CDX-6: the per-agent LLM-call ceiling, in seconds.
+    def _agent_call_timeout(
+        self, *, route_name: str | None = None, model: str | None = None,
+    ) -> tuple[float, str]:
+        """The per-agent model-call ceiling in seconds, and which floor chose it.
 
-        Was a hard-coded ``120.0`` shared invisibly across chat / deep-research /
-        autonomy / eval; now a visible ``agents.agent_timeout_seconds`` setting,
-        clamped to ≥1s and falling back to 120 on a non-numeric value so a bad
-        config can never disable the timeout entirely.
+        CDX-6 made the flat ceiling a setting (``agents.agent_timeout_seconds``,
+        default 120). Hermes absorption 5c adds a reasoning floor: a thinking model on
+        the local deep route spends its first minutes on chain-of-thought, so the flat
+        two minutes killed it on exactly the hard questions it was routed there to
+        answer. When the route is the local deep slot, or the model name belongs to a
+        reasoning family, the ceiling is raised to ``agents.reasoning_timeout_seconds``
+        (default 600) — never below the flat value, so the floor can only lengthen.
+
+        Both values stay finite and setting-bounded on purpose: the turn lease behind
+        a Telegram reply, the e-stop and the orphan-task accounting all rely on every
+        agent call ending on its own. The clamp to
+        ``TIMEOUT_MIN_SECONDS..TIMEOUT_MAX_SECONDS`` is the containment control; a
+        non-numeric, NaN or boolean setting falls back to the default rather than
+        raising, disabling the timeout or collapsing it to one second; a reasoning
+        setting of 0 means "the default". Returns ``(seconds, floor)`` with ``floor``
+        one of ``"flat"`` / ``"reasoning"`` so the reply and the log can name the budget.
+
+        Stated cost of the floor: a reasoning turn longer than the turn lease's wait
+        (``_TURN_LEASE_MAX_WAIT_SECONDS``) makes a second message on the same channel
+        session — ``/stop`` included — answer ``TURN_BUSY_REPLY`` until the deep turn
+        ends; the e-stop stays reachable through ``nerva estop`` and the API. Dispatching
+        the admin slash commands ahead of the lease is the named follow-up.
         """
-        try:
-            return max(1.0, float(self.get_setting("agents.agent_timeout_seconds", 120)))
-        except (TypeError, ValueError):
-            return 120.0
+        base = _finite_seconds(
+            self.get_setting("agents.agent_timeout_seconds", DEFAULT_AGENT_TIMEOUT),
+            DEFAULT_AGENT_TIMEOUT,
+        )
+        base = min(max(TIMEOUT_MIN_SECONDS, base), TIMEOUT_MAX_SECONDS)
+        if route_name != REASONING_ROUTE and not is_reasoning_model(model):
+            return base, TIMEOUT_FLOOR_FLAT
+        reasoning = _finite_seconds(
+            self.get_setting("agents.reasoning_timeout_seconds", DEFAULT_REASONING_TIMEOUT),
+            DEFAULT_REASONING_TIMEOUT,
+        )
+        if reasoning == 0:
+            reasoning = DEFAULT_REASONING_TIMEOUT   # the seed label says so: 0 = default
+        seconds = min(max(base, reasoning), TIMEOUT_MAX_SECONDS)
+        return seconds, TIMEOUT_FLOOR_REASONING
+
+    def _timeout_inputs_for(
+        self, agent_id: str, text: str, context: dict | None = None,
+    ) -> tuple[str, str]:
+        """The route and the model the timeout floor is decided on — the ones the agent
+        will actually run on.
+
+        ``Agent.process`` routes on the prompt it builds from the enriched turn text
+        (history, recall, plugin and runtime blocks included) and runs on the model the
+        router returns, so the floor asks the router the same question with the same
+        prompt: routing on the raw user text would call a turn flat while its history
+        made it heavy, and the thinking model would still die at two minutes. The
+        router's model wins over the agent's configured one for the same reason; the
+        configured one is the fallback. Never raises: an unknowable route or model is
+        ``""``, which the floor reads as flat — the conservative default
+        (Hermes absorption 5c).
+        """
+        agent = self.agents.get(agent_id)
+        router = getattr(self, "llm_router", None)
+        route_name, model = "", ""
+        if agent is not None and callable(getattr(router, "select_backend", None)):
+            try:
+                build = getattr(agent, "build_prompt", None)
+                prompt = build(text, dict(context or {})) if callable(build) else text
+            except Exception:
+                prompt = text
+            try:
+                res = router.select_backend(agent_id, prompt)
+            except Exception:
+                res = None
+            if isinstance(res, tuple) and len(res) == 3:
+                _backend, routed_model, route = res
+                route_name = str(route or "")
+                model = str(routed_model or "")
+        if not model:
+            try:
+                model = self._agent_default_model(agent_id, agent) or ""
+            except Exception:
+                model = ""
+        return route_name, model
 
     def _compression_summarizer(self):
         """Strict-local LLM summarizer for context compression, or ``None``.
@@ -2646,10 +2765,13 @@ class Orchestrator:
             self.get_setting("memory.context_window", 6))
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
-        agent_timeout = self._agent_call_timeout()  # CDX-6: tunable, not a hard-coded 120s
         runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
+        # Hermes absorption 5c: the per-agent timeout floor map is per turn, like the
+        # route / latency maps below — but it is reset BEFORE the gather, because each
+        # agent task records its own floor while it runs, not from the results.
+        self._last_timeout_floor = {}
 
-        async def _run_agent(agent_id: str) -> tuple[str, str, float]:
+        async def _run_agent(agent_id: str) -> tuple[str, str, float, str]:
             enriched_text = await self._build_agent_turn_text(
                 agent_id,
                 text,
@@ -2658,16 +2780,33 @@ class Orchestrator:
                 recall_block=recall_block,
                 runtime_block=runtime_block,
             )
+            # CDX-6 made the ceiling tunable; Hermes absorption 5c decides it per agent
+            # from the route and the model, so a thinking model on the deep slot gets
+            # the reasoning floor while a flat route keeps the flat value.
+            route_name, model = self._timeout_inputs_for(agent_id, enriched_text, context)
+            seconds, floor = self._agent_call_timeout(route_name=route_name, model=model)
+            self._last_timeout_floor[agent_id] = {"floor": floor, "seconds": seconds}
+            # A per-agent copy: the tool loop reads its wall clock from here, and the
+            # shared turn context must not carry one agent's budget into another's.
+            agent_context = dict(context or {})
+            agent_context["wall_seconds"] = seconds
             try:
                 resp = await asyncio.wait_for(
-                    self.agents[agent_id].process(enriched_text, context),
-                    timeout=agent_timeout,
+                    self.agents[agent_id].process(enriched_text, agent_context),
+                    timeout=seconds,
                 )
-                return agent_id, resp, self.agents[agent_id].last_latency
+                # The origin as this task saw it once the agent returned: the tool loop
+                # carries a recall taint into the context that awaits it, which is this
+                # task, not the turn's (Hermes absorption 5a).
+                return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
                 self.agents[agent_id]._record_failure("timeout")
-                log_error(logger, E_LLM_TIMEOUT, timeout=int(agent_timeout))
-                return agent_id, f"[{agent_id} timeout]", 0.0
+                log_error(logger, E_LLM_TIMEOUT, timeout=int(seconds), floor=floor)
+                if floor == TIMEOUT_FLOOR_REASONING:
+                    reply = f"[{agent_id} timeout: reasoning budget {int(seconds)}s]"
+                else:
+                    reply = f"[{agent_id} timeout]"
+                return agent_id, reply, 0.0, current_action_origin()
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
@@ -2680,8 +2819,8 @@ class Orchestrator:
                         "No language model is loaded yet. Start LM Studio (or Ollama) "
                         "and load a model, then try again — or enable DEMO mode in the "
                         "HUD to preview the interface."
-                    ), 0.0
-                return agent_id, f"[{agent_id} error: {e}]", 0.0
+                    ), 0.0, current_action_origin()
+                return agent_id, f"[{agent_id} error: {e}]", 0.0, current_action_origin()
 
         valid_ids = [aid for aid in agent_ids if aid in self.agents]
         for aid in agent_ids:
@@ -2690,6 +2829,13 @@ class Orchestrator:
 
         coros = [_run_agent(aid) for aid in valid_ids]
         results_list = await asyncio.gather(*coros)
+        # Hermes absorption 5a: each agent ran in its own gather task with a copied
+        # context, so a recall taint the tool loop raised there (a fenced web page, a
+        # tainted memory hit) died with that task. Carry it into this turn's context —
+        # escalate-only, an inbound label keeps its own name — before the reply is parsed
+        # for handoffs and actions, which is where the kernel reads the origin.
+        if any(is_untrusted_source(origin) for _aid, _resp, _lat, origin in results_list):
+            mark_turn_recall_tainted()
 
         results = {}
         self._last_latencies = {}
@@ -2710,7 +2856,7 @@ class Orchestrator:
         # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
         # /chat, MCP, rooms, webhooks, eval, workflows).
         self._last_routes = {}
-        for agent_id, resp, latency in results_list:
+        for agent_id, resp, latency, _origin in results_list:
             results[agent_id] = resp
             self._last_latencies[agent_id] = latency
             route = self._route_for_agent(agent_id, text)
@@ -2838,7 +2984,9 @@ class Orchestrator:
             if agent_id in self.agents and resp:
                 # Match the exact structured markers _call_agents_parallel emits:
                 #   error   → f"[{agent_id} error: {e}]"   (orchestrator.py ~:1641)
-                #   timeout → f"[{agent_id} timeout]"      (orchestrator.py ~:1637)
+                #   timeout → f"[{agent_id} timeout]" or, on the reasoning floor (5c),
+                #             f"[{agent_id} timeout: reasoning budget {N}s]" — the
+                #             regex's \b after "timeout" is what admits the colon
                 # A naive "error:" in resp false-positives on any normal answer
                 # that merely mentions the word "error:"; anchor to the marker.
                 success = not _is_failed_agent_reply(agent_id, resp)

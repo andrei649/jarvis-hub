@@ -14,8 +14,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from agents.core.env_config import env_flag, env_int, env_json_object, env_list
+from agents.core.env_config import env_flag, env_int, env_json_object, env_list, env_str
 from agents.core.cors_policy import normalize_cors_origins
+from agents.core.host_policy import allowed_hosts, host_accepted
+from agents.core.proxy_trust import forwarded_client, is_trusted_peer, trusted_proxies
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -100,28 +102,53 @@ def _admin_configured() -> bool:
 
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
-# require a token). Set JARVIS_TRUSTED_PROXY=1 ONLY when a trusted proxy populates
-# X-Forwarded-For; we then read the first hop as the real client IP for the gate.
-TRUSTED_PROXY = env_flag("JARVIS_TRUSTED_PROXY")
+# require a token). Hermes absorption 5b: trust is no longer a switch but the
+# JARVIS_TRUSTED_PROXIES CIDR list (agents/core/proxy_trust.py) — forwarding
+# headers count only when the socket peer sits inside it. TRUSTED_PROXY is kept
+# as an informational, read-only convenience ("is any proxy trusted at import
+# time?"); the functions below consult proxy_trust on every request, so tests
+# set the environment, not this name.
+try:
+    TRUSTED_PROXY = bool(trusted_proxies())
+except ValueError:
+    TRUSTED_PROXY = False  # malformed list — the boot guard refuses before serving
+
+_FORWARDING_HEADERS = ("x-forwarded-for", "x-real-ip", "forwarded")
+_malformed_proxy_list_warned = False
+
+
+def _warn_malformed_proxy_list_once() -> None:
+    """A malformed JARVIS_TRUSTED_PROXIES must never 500 a request: it is read as
+    "no trusted proxies" (the closed posture) and said once, by exception type."""
+    global _malformed_proxy_list_warned
+    if not _malformed_proxy_list_warned:
+        _malformed_proxy_list_warned = True
+        logger.warning("JARVIS_TRUSTED_PROXIES could not be parsed (ValueError); "
+                       "treating every peer as untrusted until it is fixed")
 
 
 def _real_client_host(request: Request) -> str:
-    """Origin host for the localhost-fallback gate (HF-7).
+    """Origin host for the localhost-fallback gate (HF-7, Hermes absorption 5b).
 
-    Behind a reverse proxy the socket peer is the proxy, so forwarding headers are
-    present. We do NOT trust them unless JARVIS_TRUSTED_PROXY is set: untrusted →
-    return "" so the localhost check fails closed (token required). Trusted → use
-    the first X-Forwarded-For hop (falling back to X-Real-IP) as the client IP.
+    No forwarding headers → the socket peer, which a direct client cannot spoof.
+    Forwarding headers present → the address a *trusted* proxy vouches for
+    (``proxy_trust.forwarded_client``: the X-Forwarded-For chain walked right-to-
+    left past trusted hops, X-Real-IP as the fallback). From a peer outside
+    JARVIS_TRUSTED_PROXIES the answer is "" so the localhost check fails closed —
+    a LAN host sending ``X-Forwarded-For: 127.0.0.1`` never becomes localhost.
     """
-    behind_proxy = any(h in request.headers for h in ("x-forwarded-for", "x-real-ip", "forwarded"))
-    if not behind_proxy:
-        return request.client.host if request.client else ""
-    if not TRUSTED_PROXY:
-        return ""  # untrusted proxy → never localhost → fail closed
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.headers.get("x-real-ip", "").strip()
+    peer = request.client.host if request.client else ""
+    if not any(h in request.headers for h in _FORWARDING_HEADERS):
+        return peer
+    try:
+        return forwarded_client(
+            peer,
+            xff=request.headers.get("x-forwarded-for", ""),
+            x_real_ip=request.headers.get("x-real-ip", ""),
+        )
+    except ValueError:
+        _warn_malformed_proxy_list_once()
+        return ""
 
 def _admin_credential_ok(supplied: str) -> bool:
     """True if *supplied* is a valid admin credential (AUD-6): a valid, unexpired
@@ -141,7 +168,8 @@ async def _admin_guard(request: Request):
     # No admin credential configured at all → dev posture: trust a direct-localhost
     # origin (so a fresh box can mint its first token), reject the network. Behind
     # an untrusted reverse proxy _real_client_host returns "" → fails closed
-    # (HF-7); JARVIS_TRUSTED_PROXY=1 trusts X-Forwarded-For from a known proxy.
+    # (HF-7); only a peer listed in JARVIS_TRUSTED_PROXIES may vouch for the client
+    # through X-Forwarded-For (the legacy JARVIS_TRUSTED_PROXY=1 means loopback only).
     if not _admin_configured():
         if _real_client_host(request) in _LOCALHOSTS:
             return
@@ -219,8 +247,8 @@ async def _user_guard(request: Request):
             return
         raise HTTPException(status_code=401, detail="user token required")
     # No token configured → only localhost may reach user routes. Fails closed
-    # behind an untrusted reverse proxy (HF-7); JARVIS_TRUSTED_PROXY=1 opts into
-    # trusting X-Forwarded-For from a known proxy.
+    # behind an untrusted reverse proxy (HF-7); only a peer listed in
+    # JARVIS_TRUSTED_PROXIES may vouch for the client through X-Forwarded-For.
     if _real_client_host(request) not in _LOCALHOSTS:
         raise HTTPException(
             status_code=403,
@@ -245,19 +273,27 @@ def _client_ip(request: Request) -> str:
     """Best-effort client IP for rate limiting.
 
     X-Forwarded-For is attacker-controlled unless a trusted reverse proxy sets
-    it, so only honor it when JARVIS_TRUSTED_PROXY is configured (same trust
-    model as _real_client_host); otherwise use the socket peer, which a direct
-    client cannot spoof. Trusting XFF blindly let any client send
+    it, so it is honoured only when the socket peer sits inside
+    JARVIS_TRUSTED_PROXIES (same trust model as _real_client_host; Hermes
+    absorption 5b); otherwise the socket peer, which a direct client cannot
+    spoof, is the bucket key. Trusting XFF blindly let any client send
     ``X-Forwarded-For: 127.0.0.1`` to dodge the HF-2 brute-force/DoS throttle
-    and rotate everyone's buckets (audit 2026-07-15)."""
-    if TRUSTED_PROXY:
-        xff = request.headers.get("x-forwarded-for", "")
-        if xff:
-            return xff.split(",")[0].strip()
-        real = request.headers.get("x-real-ip", "").strip()
-        if real:
-            return real
-    return request.client.host if request.client else ""
+    and rotate everyone's buckets (audit 2026-07-15). Both resolvers recognise
+    the same _FORWARDING_HEADERS as "behind a proxy"; the RFC 7239 ``Forwarded``
+    header itself is not parsed (named residual) — a trusted proxy that sends
+    only that header keys every client on its own address."""
+    peer = request.client.host if request.client else ""
+    if any(h in request.headers for h in _FORWARDING_HEADERS):
+        try:
+            if is_trusted_peer(peer):
+                return forwarded_client(
+                    peer,
+                    xff=request.headers.get("x-forwarded-for", ""),
+                    x_real_ip=request.headers.get("x-real-ip", ""),
+                ) or peer
+        except ValueError:
+            _warn_malformed_proxy_list_once()
+    return peer
 
 
 def _request_is_authed(request: Request) -> bool:
@@ -367,6 +403,14 @@ async def lifespan(application: FastAPI):
     gateway.register_channel("telegram")
 
     await orch.load_agents()
+
+    # Hermes absorption 5b: the early guard ran before the repo/user .env files were
+    # read (PluginManager.build loads them inside load_agents), so a bot token, a
+    # JARVIS_CHANNEL_PAIRING=0 or a proxy/host list that lives only there was invisible
+    # to it. Re-check the front door over the environment as it is now, before any
+    # channel is wired — a refusal here is the same SystemExit the early pass raises.
+    from core.boot_guards import assert_front_door
+    assert_front_door()
 
     # Load MCP servers from settings DB
     _load_mcp_config()
@@ -590,6 +634,58 @@ async def _rate_limit(request: Request, call_next):
                     headers={"Retry-After": str(int(_RATE_WINDOW))},
                 )
     return await call_next(request)
+
+
+# Hermes absorption 5b — the Host-header guard (agents/core/host_policy.py). A page
+# on a name the attacker has re-pointed at this box (DNS rebinding) reaches the API
+# from the victim's browser with a loopback origin; the only tell is the Host
+# header, which carries the attacker's name. Registered AFTER _rate_limit so that,
+# with Starlette's last-added-runs-first order, it runs BEFORE the limiter and every
+# route (a refused request never touches a rate bucket) and INSIDE _security_headers
+# and _golden_signals, so the 400 still carries the headers and is counted.
+# Residuals, named: @app.middleware("http") does not cover WebSocket scopes — there
+# are no WebSocket routes today, so a future one must call host_accepted() itself.
+# The probe paths (_PROBE_PATHS, including the unauthenticated /metrics scrape) are
+# exempt by design so a monitor reaching the box by any name keeps working; a
+# rebound page can therefore still read the golden-signal counters.
+_HOST_REFUSAL_LOG_FIRST = 10   # log every one of the first refusals …
+_HOST_REFUSAL_LOG_EVERY = 100  # … then one in this many, so a flood cannot fill the log
+_host_refusals = 0
+
+
+def _peer_trust_class(peer: str) -> str:
+    """Coarse label for a refusal log line: never the address, never the header."""
+    if peer in _LOCALHOSTS:
+        return "loopback"
+    try:
+        if is_trusted_peer(peer):
+            return "trusted-proxy"
+    except ValueError:
+        _warn_malformed_proxy_list_once()
+    return "network"
+
+
+@app.middleware("http")
+async def _host_guard(request: Request, call_next):
+    """Refuse a request whose Host header does not name this box (DNS rebinding)."""
+    global _host_refusals
+    if request.url.path in _PROBE_PATHS:
+        return await call_next(request)
+    server = request.scope.get("server") or ("", 0)
+    accepted = host_accepted(
+        request.headers.get("host", ""),
+        bind_host=env_str("JARVIS_HOST", "127.0.0.1"),
+        server_host=server[0] or "",
+        allowed=allowed_hosts(),
+    )
+    if accepted:
+        return await call_next(request)
+    _host_refusals += 1
+    if _host_refusals <= _HOST_REFUSAL_LOG_FIRST or _host_refusals % _HOST_REFUSAL_LOG_EVERY == 0:
+        peer = request.client.host if request.client else ""
+        logger.warning("Host header refused (refusal #%d, peer class %s) on %s",
+                       _host_refusals, _peer_trust_class(peer), log_safe(request.url.path))
+    return JSONResponse({"error": "host not allowed", "code": 400}, status_code=400)
 
 
 # AUD-3: security headers (clickjacking, MIME-sniff, and a CSP as defense-in-depth

@@ -621,7 +621,10 @@ class PluginHTTPClient:
                     pass
         self._pinned_clients.clear()
         self._pinned_targets.clear()
-        _clients.pop(self.plugin_name, None)
+        # Only the registered instance leaves the registry: a temporary client built
+        # under the same name (a test transport) must not evict the shared one.
+        if _clients.get(self.plugin_name) is self:
+            _clients.pop(self.plugin_name, None)
 
     async def __aenter__(self) -> "PluginHTTPClient":
         return self

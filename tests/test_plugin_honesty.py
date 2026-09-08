@@ -26,6 +26,18 @@ class TestHonestyFor:
         assert v["reason"] == "no setup required"
         assert v["needs"] == []
 
+    def test_webread_is_keyless_and_resolves_to_the_search_plugin(self):
+        """The page reader is an egress identity of the search plugin (HA-5a): the HUD
+        must not render it as a plugin awaiting a config it does not have."""
+        from types import SimpleNamespace
+
+        from agents.core.plugins.honesty import live_plugin_for
+
+        v = honesty_for("webread", True, "loaded")
+        assert v["status"] == "live" and v["needs"] == []
+        search = object()
+        assert live_plugin_for(SimpleNamespace(plugins={"websearch": search}), "webread") is search
+
     def test_configured_live(self):
         v = honesty_for("balance", True, "available()")
         assert v["status"] == "live" and v["reason"] == "configured"

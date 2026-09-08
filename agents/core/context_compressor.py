@@ -76,19 +76,70 @@ Do not invent details. Keep it under 150 words total.
 
 
 
-# Context windows, in tokens, for the models a local install actually runs. The
-# default is deliberately the SMALLEST plausible window rather than an average:
-# guessing high means the provider truncates instead of us, and a provider
-# truncates the tail — which is the half that says what is happening now.
+# Context windows, in tokens, for the models a local install actually runs and
+# for the cloud families a route can be pointed at. The default is deliberately
+# the SMALLEST plausible window rather than an average: guessing high means the
+# provider truncates instead of us, and a provider truncates the tail — which is
+# the half that says what is happening now. The local default stays conservative
+# on purpose; only a *named* cloud family earns its larger figure.
 DEFAULT_WINDOW = 32_000
-MODEL_WINDOWS: Mapping[str, int] = {
+
+# Hermes absorption 5c: the date the cloud figures below were checked against the
+# vendors' own model pages. A budget that is wrong-large on a cloud route is a
+# provider truncation of the tail, so a figure nobody has re-read for a while
+# should be re-read — this date is what says how stale the table is.
+WINDOWS_VERIFIED = "2026-09-07"
+
+# The two halves are kept apart on purpose (Hermes absorption 5c): the
+# conservative-default test measures DEFAULT_WINDOW against the LOCAL half
+# only, so the cloud figures can never drag the local default upward.
+LOCAL_WINDOWS: Mapping[str, int] = {
+    # ── local families (LM Studio / Ollama) ──
     "llama3": 8_192, "llama3.1": 128_000, "llama3.2": 128_000,
     "qwen2.5": 32_768, "qwen3": 32_768,
     "mistral": 32_768, "mixtral": 32_768,
     "gemma2": 8_192, "gemma3": 128_000,
     "phi3": 128_000, "phi4": 16_384,
     "deepseek-r1": 65_536, "command-r": 128_000,
+    # Ollama publishes Llama 4 as "llama4:scout" / "llama4:maverick" (no
+    # hyphen), so the cloud spelling below never matches a local tag. Ollama's
+    # library page lists 1M for the 128x17b build and 10M for the rest; the
+    # family figure is the smaller, so a Scout route is wrong-small.
+    "llama4": 1_000_000,
+    # NOT listed: "qwen3-235b". The Qwen3-235B-A22B model card says 32,768
+    # natively and 131,072 only with YaRN enabled on the server; a local route
+    # ("qwen/qwen3-235b-a22b" in LM Studio) must not be budgeted against a
+    # window it only has when the owner opted in, so the qwen3 figure applies.
 }
+
+CLOUD_WINDOWS: Mapping[str, int] = {
+    # ── cloud families (Hermes absorption 5c; verified WINDOWS_VERIFIED) ──
+    # Anthropic model overview page: every Claude 3.x / 4.x model lists 200k.
+    "claude-opus-4": 200_000, "claude-sonnet-4": 200_000,
+    "claude-haiku-4": 200_000, "claude-3": 200_000,
+    # Google AI "Gemini models" page: 2.0 / 2.5 / 3 list 1,048,576 input tokens.
+    "gemini-2.5": 1_048_576, "gemini-3": 1_048_576, "gemini-2.0": 1_048_576,
+    # OpenAI model pages: GPT-5 400k, GPT-4.1 1,047,576, GPT-4o 128k,
+    # o3 / o4 200k. gpt-5-chat-latest is the exception on its own page:
+    # 128k, so the longer key keeps it from inheriting the 400k figure.
+    "gpt-5": 400_000, "gpt-5-chat": 128_000, "gpt-4.1": 1_047_576,
+    "gpt-4o": 128_000,
+    "o3": 200_000, "o4": 200_000,
+    # DeepSeek API "Models & Pricing" page: V3 / chat / reasoner list 128k.
+    # "deepseek-reasoner" is the cloud name; the local "deepseek-r1" family
+    # above keeps its own smaller figure — the longest prefix keeps them apart.
+    "deepseek-v3": 128_000, "deepseek-chat": 128_000, "deepseek-reasoner": 128_000,
+    # xAI model page: Grok 4 lists 256k.
+    "grok-4": 256_000,
+    # Meta Llama 4 model card: Scout lists 10M and Maverick 1M; the family
+    # figure is the smaller of the two, so a Scout route is wrong-small, not
+    # wrong-large.
+    "llama-4": 1_000_000,
+}
+
+# The lookup table window_for() walks. Longest prefix wins, so a local key and
+# a cloud key that share a stem ("deepseek-r1" / "deepseek-reasoner") stay apart.
+MODEL_WINDOWS: Mapping[str, int] = {**LOCAL_WINDOWS, **CLOUD_WINDOWS}
 
 # What an image costs, in the same units the rest of this module counts in. The
 # figure is deliberately a floor: undercounting an image is how the accounting
@@ -105,6 +156,10 @@ def window_for(model: str | None) -> int:
     name = str(model or "").strip().lower()
     if not name:
         return DEFAULT_WINDOW
+    # Hermes absorption 5c: a routed cloud model often arrives as
+    # "vendor/model" ("anthropic/claude-opus-4-1"); the vendor segment would
+    # otherwise hide the family prefix and drop a 200k model to the default.
+    name = name.rsplit("/", 1)[-1]
     # Longest prefix wins, so "llama3.1" is not matched by "llama3".
     for family in sorted(MODEL_WINDOWS, key=len, reverse=True):
         if name.startswith(family):

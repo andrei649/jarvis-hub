@@ -1439,6 +1439,102 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   declared dependency — that stays the owner's call (P19 says how to check). Tests:
   `tests/test_file_read_documents.py` (5). Named and not done: `file_search` over document
   text (it would read every document in full on every search).
+- [x] ✅ **HA-5a — what the model reads is data; `web_search` / `web_extract` / `search_memory`
+  reach the model.** A tool result used to be spliced into the tool message as-is, with no fence
+  and no taint, while recalled memory had both. Now the loop (`agents/core/agent_runtime.py`)
+  fences a result as `<<UNTRUSTED source=<tool>>> … <<END UNTRUSTED>>` — the JSON verbatim, never
+  datamarked, four lines so a small local model does not echo it — and raises the turn's recall
+  taint when the tool is declared `untrusted_output`, when the injection scanner flags the
+  content, or when the handler itself says `tainted: true`; so a plan built from a web page lands
+  in the Decision Inbox instead of running. The mark is raised from the loop's own context and
+  carried into the context that awaits `run()` — and `Orchestrator._call_agents_parallel`
+  carries it once more across its agent gather, so the turn that parses handoffs and actions
+  sees it. Escalate-only: a trusted, clean result is byte-identical to before, a tool's own
+  refusal is never fenced, a "same as call N" stub is keyed on the raw bytes, a fenced result
+  that is later compacted is folded on its payload and fenced again, a payload spelling the
+  fence's own markers is flagged, and the `tool_result_untrusted` event carries reasons and flag
+  names, never content. Three ungated tools join the allowlist: `web_search`
+  (`agents/core/web_tools.py` over the SSRF-pinned `WebSearchPlugin` — Tavily, SearXNG or
+  keyless DuckDuckGo; "unavailable" named honestly with the missing package; every row tainted;
+  refused with `secret_in_query` when the query carries a stored secret and with `tainted_turn`
+  once the turn has read untrusted content, since the query is then a payload the model composed
+  after reading), `web_extract` (one public page, `max_chars` 256–20,000 and 40 KB, streamed
+  with a 2 MB read cap and a text-only content-type allowlist, a 15-minute per-server cache that
+  never caches a refusal; `secret_in_url` refused before any fetch; in a turn whose origin is
+  untrusted only URLs `web_search` returned may be read — a search engine cannot mint a URL
+  carrying the owner's data; dialing through a new `webread` egress identity, the first
+  FULL-network manifest, `PROCESSED` like the search it pairs with, guarded by per-hop SSRF
+  pinning, the kernel's `plugin.egress` hook, the circuit breaker and the egress ledger) and
+  `search_memory` (`agents/core/memory/rag_tool.py`: the hardened agentic-RAG tool over
+  `orch.memory.recall`; fused hits flattened, the body shipped once and capped at 600 chars,
+  metadata forwarded through an allowlist so a redaction cannot be defeated, `tainted` computed
+  per result). `osint_enrich` is declared untrusted too (dormant until a gated result is ever fed
+  back to the model). The research / search / monitor / scan / lookup / check task kinds tested a
+  plugin method that never existed and were a permanent `noop`; they now search — with a
+  configured backend only, since they run unattended. An inbound guest still sees only `echo` /
+  `time`. Tests: `tests/test_tool_result_taint.py` (20), `tests/test_web_tools.py` (22), `tests/test_cdx7_rag_tool_scan.py` (+21), `tests/test_web_tools_wiring.py` (5), `tests/test_websearch.py` (+4), `tests/test_plugin_honesty.py` (+1). **Not proven against a real search
+  backend or a live model choosing the tools** → P24.
+- [x] ✅ **HA-5b — the front door refuses by default.** Three doors, one seam. **Pairing is ON
+  unless switched off** (`JARVIS_CHANNEL_PAIRING`, `agents/core/channels/pairing.py`): a stranger who
+  finds the bot is held until the owner pairs them (HUD card or the 60-second deeplink), where
+  before an empty `TELEGRAM_ALLOWED_USER_IDS` admitted anyone; `JARVIS_CHANNEL_PAIRING=0` still
+  turns it off, and then a new boot guard (`boot_guards.assert_guarded_channels`) refuses to start a
+  chat channel whose token is set but nothing guards it — an allowlist with at least one id, pairing,
+  or the explicit `JARVIS_CHANNEL_OPEN=1` acknowledgement, printed as a `[SECURITY]` line; the
+  refusal names the channel and the three remedies, never the token; the guard runs again from
+  the lifespan once `.env` is loaded (`assert_front_door`), since the early pass runs before it
+  and the documented install puts the tokens there; the webhook map and the IMAP inbox are
+  front doors too, Slack is outbound-only today, the email sender is the bare `From` address
+  (forgeable without DMARC — held like a stranger, never authenticated). An allowlisted owner
+  passes the gate without a pairing record, so an upgrade with `TELEGRAM_ALLOWED_USER_IDS` set
+  keeps its owner. Discord threads its sender so pairing can hold a Discord stranger too (it
+  could not before); `/status` channel rows carry `held_senders` — a count of holds, never a
+  word of what was said; pairing-code guesses are budgeted store-wide so rotating ids cannot
+  brute-force a code. **Reverse-proxy trust is a bounded CIDR
+  allowlist** (`agents/core/proxy_trust.py`, `JARVIS_TRUSTED_PROXIES`): `X-Forwarded-For` is
+  walked right-to-left past trusted hops (an all-trusted chain yields the hop the proxy saw,
+  never a typed leftmost value), every hop must parse as an address, and headers are honoured
+  only from a peer inside the list — the old `JARVIS_TRUSTED_PROXY=1` switch let any LAN host
+  spoof loopback into the localhost auth bypass and the throttle; it now means loopback only,
+  with a deprecation warning; a malformed list refuses boot naming the variable, and an entry
+  wider than /24 (v6: /64) is warned about by position, because an entry must be the proxy's
+  own address, never a range that also contains clients. **A Host-header guard** (`agents/core/host_policy.py`, one
+  middleware ahead of the rate limiter) answers 400 to any Host that is not a loopback name, an IP
+  literal, the bind or server address, or an entry of `JARVIS_ALLOWED_HOSTS` — the page on
+  `evil.example` whose name was rebound to the box's address gets nothing; `/healthz` / `/readyz`
+  / `/metrics` stay probe-safe; a `*` in the list refuses boot. No WebSocket route exists today; a future one must call
+  `host_accepted` itself, since the HTTP middleware would not cover it. Tests: `tests/test_default_deny_front_door.py` (44), `tests/test_trusted_proxies.py` (15), `tests/test_host_header_guard.py` (23), `tests/test_o26_f6_boot_guards.py` (+6), plus the rewritten proxy cases in `tests/test_admin_guard_hf7.py`, `tests/test_rate_limit_hf2.py`, `tests/test_audit_fixes_2026_07.py`. **Breaking default on upgrade, packeted
+  for the owner** → P25.
+- [x] ✅ **HA-5c — the deep model finishes the hard question; cloud budgets are honest.** The local
+  thinking models (qwen3, deepseek-r1, gpt-oss) were killed at the flat two-minute ceiling on exactly
+  the hard questions and came back as `[jarvis timeout]` or a blank bubble, and every cloud tool
+  loop compacted against a 32k guess on a 200k–1M model. **A reasoning-aware timeout floor**
+  (`Orchestrator._agent_call_timeout(route_name=…, model=…)` → `(seconds, floor)`): the `local-deep`
+  route, or any model of a reasoning family (`moe_routing.REASONING_FAMILIES`,
+  `is_reasoning_model`, vendor prefix stripped), gets `agents.reasoning_timeout_seconds` (600,
+  never below the flat `agents.agent_timeout_seconds`, never above 3,600 — both seeded in a new
+  `agents` settings category the HUD renders as it is); the tool loop's own deadline follows the
+  turn's through `wall_seconds`; a hit names the budget (`[jarvis timeout: reasoning budget 600s]`)
+  and the floor is recorded per agent beside the latencies. Finite and setting-bounded by design: a
+  wedged local backend holds the turn lease for at most the setting, under the e-stop. **Cloud
+  families in the compaction window table** (`context_compressor.MODEL_WINDOWS`, `WINDOWS_VERIFIED`):
+  Claude 4 / 3 at 200k, Gemini 2.x / 3 at 1M, GPT-5 400k, GPT-4.1 1M, GPT-4o 128k, o3 / o4 200k,
+  DeepSeek V3 / chat / reasoner 128k, Grok 4 256k, Llama 4 1M (both spellings), GPT-5-chat 128k — vendor-documented,
+  dated, a `vendor/` prefix stripped before matching, the table split into local and cloud
+  halves so the conservative-default test still measures the local median, and the
+  unknown-local default stays 32k; Qwen3-235B is deliberately absent — its 131k is YaRN-only,
+  32k native, and the prefix strip would have handed a wrong-large figure to a local route.
+  **A thinking-exhausted guard** (`llm/base.py`): a generation cut at `max_tokens` that produced
+  reasoning but no visible answer now returns a named `⚠️` reply instead of an empty string —
+  degraded by the H23.12 contract (no learning review, zero memory reward, a failed
+  interaction, never mistaken for an answer) and never leaking the reasoning; warm-up treats it
+  as a loaded model; the Ollama stream now reads its native `thinking` key. Covers LM Studio
+  (generate, stream, tool turn) and the Ollama stream; the two non-streaming Ollama paths still
+  answer blank on the same condition — named. Stated cost of the floor: a deep turn longer than
+  the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
+  included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
+  done: the continuation chain and the one empty retry (they change the tool-loop message
+  shape), admin slash commands ahead of the lease. Tests: `tests/test_reasoning_timeout.py` (16), `tests/test_thinking_exhausted_guard.py` (9), `tests/test_context_compaction_policy.py` (+15), `tests/test_tool_loop_compaction.py` (+1), `tests/test_o26_f2_settings_seed.py` (+2), `tests/test_agent_runtime_v2.py` (+1, the stream turn), `tests/test_llm_thinking_leak.py` (+1), the reasoning-only row of `tests/test_llm_tool_protocol.py` rewritten to the named reply. **Not proven on the RTX box** → P26.
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
   now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist
@@ -1526,7 +1622,8 @@ vision doc stops reading as a status report for capabilities that are still seed
 - [x] ✅ **GAP-2d — SEC-B3 Telegram owner binding.** **Owner-binding half done** — the approval sink
   now checks owner chat id **and** user id and fails closed with neither configured, and
   `TELEGRAM_ALLOWED_USER_IDS` is parsed so the channel guards are reachable at all (they were
-  unreachable no-ops). *Still open:* channel pairing ON by default, which is the defaults lane.
+  unreachable no-ops). *Closed 2026-09-07 (HA-5b):* channel pairing is ON by default, with a boot
+  guard behind it.
 - [x] ✅ **GAP-3 — register the escaping action kinds.** **DONE** — `channel.reply` and `skill.install`
   are registered KERNEL in `ACTION_REGISTRY` + `tests/_snapshots/action_auth.json`, enumerated in
   `known_broker_action_kinds()` (from their own KIND constants, so the matrix discovers them), carry

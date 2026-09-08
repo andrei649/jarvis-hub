@@ -49,7 +49,7 @@ Auto: ✅ covered offline / ⚠️ partial / ❌ none · Severity: BLOCKER / MAJ
 3. **Admin ⊇ user.** A valid `X-Admin-Token` satisfies `_user_guard` (`_user_credential_ok`,
    `agents/web.py:126`). A valid `X-User-Token` must **never** satisfy an admin route.
 4. **Fail-closed behind a proxy (HF-7).** If any of `X-Forwarded-For` / `X-Real-IP` / `Forwarded` is
-   present and `JARVIS_TRUSTED_PROXY` is unset, `_real_client_host` returns `""` (`:88`) → the localhost
+   present and the peer is not listed in `JARVIS_TRUSTED_PROXIES`, `_real_client_host` returns `""` → the localhost
    fallback can never fire. So `curl -H "X-Forwarded-For: 127.0.0.1"` must **not** buy access.
 
 ---
@@ -111,9 +111,9 @@ Auto: ✅ covered offline / ⚠️ partial / ❌ none · Severity: BLOCKER / MAJ
 
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
-| SEC-008 | HF-7: forged XFF cannot fake localhost | with tokens **unset**, `curl -H "X-Forwarded-For: 127.0.0.1" $B/api/security/posture` | **403** `admin disabled from network …` — `_real_client_host` returns `""` when a forwarding header is present and `JARVIS_TRUSTED_PROXY` is off | **BLOCKER** | ✅`tests/test_admin_guard_hf7.py` |
+| SEC-008 | HF-7: forged XFF cannot fake localhost | with tokens **unset**, `curl -H "X-Forwarded-For: 127.0.0.1" $B/api/security/posture` | **403** `admin disabled from network …` — `_real_client_host` returns `""` when a forwarding header is present and the peer is not in `JARVIS_TRUSTED_PROXIES` | **BLOCKER** | ✅`tests/test_admin_guard_hf7.py` |
 | SEC-009 | Same for `X-Real-IP` and `Forwarded` | repeat SEC-008 with each header | same 403 | **BLOCKER** | ✅`tests/test_admin_guard_hf7.py` |
-| SEC-010 | Trusted-proxy mode honours the first hop | boot with `JARVIS_TRUSTED_PROXY=1`, tokens unset, `curl -H "X-Forwarded-For: 127.0.0.1, 10.0.0.9" $B/api/security/posture` | **200** — first hop is trusted, by explicit opt-in | MAJOR | ✅`tests/test_admin_guard_hf7.py` |
+| SEC-010 | A listed proxy vouches for the hop it saw, walked right-to-left | boot with `JARVIS_TRUSTED_PROXIES=127.0.0.1/32`, tokens unset; from the box `curl -H "X-Forwarded-For: 127.0.0.1, 10.0.0.9" $B/api/security/posture` → **403** (10.0.0.9 is the first untrusted hop from the right, so it is the client); `curl -H "X-Forwarded-For: 127.0.0.1"` → **200** (the only hop is loopback). From a LAN host the same headers are always 403 (peer not listed). The legacy `JARVIS_TRUSTED_PROXY=1` means loopback only and logs one deprecation warning | MAJOR | ✅`tests/test_trusted_proxies.py` |
 | SEC-011 | Trusted-proxy mode does not become a bypass for a *set* token | same boot, `JARVIS_ADMIN_TOKEN` set, forge `X-Forwarded-For: 127.0.0.1`, no token header | **401** — a configured credential is always required; the localhost fallback only exists when none is configured | **BLOCKER** | ⚠️`tests/test_admin_guard_hf7.py` |
 | SEC-012 | Exact-match comparison, no fuzzy acceptance | send the token (a) with a lower-case header name, (b) with one character changed, (c) with one character appended, (d) truncated by one | (a) **200** — header names are case-insensitive; (b)(c)(d) **401** — the check is an exact `secrets.compare_digest` (`agents/web.py:114`), constant-time and with no trimming or prefix matching. Surrounding whitespace in the *value* is stripped by the HTTP layer itself, not by the guard — record whichever result you observe rather than assuming | **BLOCKER** if any of (b)(c)(d) is accepted | ⚠️`tests/test_token_lifecycle.py` |
 
@@ -169,7 +169,7 @@ Set up: `export UA="X-User-Token: $JARVIS_USER_TOKEN"` and `export AA="X-Admin-T
 | SEC-034 | A **valid** token is exempt | same loop against `$B` with `-H "$UA"` | 130 × 200 | MAJOR | ✅`tests/test_rate_limit_hf2.py` |
 | SEC-035 | A **wrong** token is *not* exempt (brute-force damping) | loop against `$B` with `-H "X-User-Token: wrong"` | 429 kicks in — `_request_is_authed` requires a *valid* credential (`:236`) | **BLOCKER** — otherwise token guessing is unthrottled | ✅`tests/test_rate_limit_hf2.py` |
 | SEC-036 | Probes bypass the throttle | after triggering 429 on `/status`, immediately `curl -o /dev/null -w "%{http_code}\n" $B/readyz` and `$B/metrics` | **200** — `_PROBE_PATHS` is exempt (`:483`) so a monitor is never evicted | MAJOR | ⚠️`tests/test_rate_limit_hf2.py` |
-| SEC-037 | XFF cannot rotate buckets | while rate-limited, retry with `-H "X-Forwarded-For: 10.1.1.$RANDOM"` and `JARVIS_TRUSTED_PROXY` **unset** | still **429** — `_client_ip` ignores XFF unless the proxy is trusted (`:224`) | **BLOCKER** | ✅`tests/test_rate_limit_hf2.py` |
+| SEC-037 | XFF cannot rotate buckets | while rate-limited, retry with `-H "X-Forwarded-For: 10.1.1.$RANDOM"` and `JARVIS_TRUSTED_PROXIES` **unset** | still **429** — `_client_ip` ignores XFF unless the peer is a listed proxy | **BLOCKER** | ✅`tests/test_rate_limit_hf2.py` |
 | SEC-038 | Limiter is disable-able on purpose | reboot with `JARVIS_RATE_LIMIT=0`, repeat SEC-032 | no 429 ever | MINOR | ✅`tests/test_rate_limit_hf2.py` |
 | SEC-039 | Window really rolls | trigger 429, `sleep 61`, retry once | 200 | MINOR | ✅`tests/test_rate_limit_hf2.py` |
 | SEC-040 | Security headers on every response | `curl -sSI http://127.0.0.1:8080/` | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: no-referrer` | MAJOR | ✅`tests/test_hud_security_headers.py` |
@@ -494,7 +494,7 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 
 | ID | Check | Do | Expect | Fail | Auto |
 |----|-------|----|--------|------|------|
-| SEC-162 | Pairing off by default | `POST /api/channels/pairing/request` with pairing disabled | **404** `{"error":"pairing disabled"}` | MAJOR | ⚠️`tests/test_route_auth_matrix.py` |
+| SEC-162 | Pairing is ON by default; `JARVIS_CHANNEL_PAIRING=0` turns the request door off (Hermes absorption 5b: the guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1`) | `POST /api/channels/pairing/request` with pairing disabled | **404** `{"error":"pairing disabled"}` | MAJOR | ⚠️`tests/test_route_auth_matrix.py` |
 | SEC-163 | An unknown sender is held, never served | enable pairing, `POST /api/channels/pairing/request {"channel":"telegram","sender_id":"999","name":"stranger"}` | a **pending** record; nothing is minted, no agent runs (`agents/core/routers/pairing.py:50`); `GET /api/channels/pairing` (admin) shows it with `status: pending` and the SENDER PAIRING card renders an amber `pending` tag | **BLOCKER** if an unknown sender gets a reply | ⚠️`tests/test_route_auth_matrix.py` |
 | SEC-164 | A wrong pairing code does not auto-pair | set a code (`POST /api/channels/pairing/code`), then request with a wrong `code` | stays pending | **BLOCKER** | ❌ |
 | SEC-165 | Decide actions are admin-only and complete | `POST /api/channels/pairing/decide` with each of `approve`/`reject`/`block`/`unpair` as user then admin | 401 then 200; an unknown action → **400** `{"error":"unknown action"}` | MAJOR | ❌ |
