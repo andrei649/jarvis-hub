@@ -3,13 +3,12 @@
   "policy_id": "nerva.selfdev.v1",
   "owner_directive_date": "2026-09-09",
   "autonomous_default": true,
-  "description": "Routine Nerva engineering may be implemented, reviewed, merged and deployed without owner approval. A small root-of-trust control plane is excluded from autonomous self-authorization.",
+  "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
   "protected_paths": [
     "selfdev-policy.json",
     "scripts/selfdev_policy.py",
-    ".github/workflows/pr-auto-merge.yml",
-    ".github/workflows/release.yml",
-    ".github/workflows/security.yml",
+    ".github/workflows/**",
+    ".github/actions/**",
     ".github/CODEOWNERS",
     "AGENTS.md",
     "MAX.md",
@@ -26,7 +25,8 @@
     "method": "squash"
   },
   "deploy": {
-    "enabled": true,
+    "enabled": false,
+    "target_enabled": true,
     "strategy": "staged_canary",
     "deny_protected_changes": true,
     "require_versioned_artifact": true,
@@ -35,12 +35,13 @@
     "auto_rollback_on_regression": true
   },
   "review": {
-    "independent_reviewer_required": true,
+    "independent_reviewer_required": false,
+    "target_independent_reviewer_required": true,
     "builder_may_clear_own_findings": false,
     "security_review_patterns": [
       "agents/core/security/**",
       "agents/core/kernel/**",
-      ".github/workflows/security.yml"
+      ".github/workflows/**"
     ]
   },
   "budgets": {
