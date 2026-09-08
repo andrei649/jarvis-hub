@@ -1,22 +1,26 @@
 name: Hourly PR Auto-Merge
 
-# Nerva's routine engineering lane is owner-out-of-loop. A non-draft PR that
-# GitHub reports CLEAN may merge unattended when the trusted self-development
-# policy classifies every changed path as autonomous.
+# Nerva's routine engineering lane is owner-out-of-loop. A non-draft PR may
+# merge unattended only when ALL of these are true at one validated head:
+#   1) GitHub reports the merge state CLEAN;
+#   2) the trusted-main self-development policy classifies every changed path
+#      as autonomous; and
+#   3) at least one automated check is reported and every reported check has
+#      completed with success/neutral/skipped — pending/fail/cancel never merge.
 #
-# The important boundary is where the policy is evaluated: this workflow checks
-# out `main` and runs `scripts/selfdev_policy.py` from that trusted checkout.
+# The important boundary is where policy is evaluated: this workflow checks out
+# `main` and runs `scripts/selfdev_policy.py` from that trusted checkout.
 # Candidate PRs never get to supply the classifier that judges themselves.
-# Changes to the policy, this workflow, release/security workflows, the Action
-# Kernel and the other root-of-trust paths are therefore skipped rather than
-# self-authorized. Everything else may flow through unattended.
+# Changes to the policy, ANY workflow/action, the Action Kernel/security roots,
+# and the other root-of-trust paths are skipped rather than self-authorized.
 #
 # Safety rules:
 #   - draft PRs are never touched;
-#   - only mergeStateStatus == CLEAN is eligible;
-#   - the head SHA is re-checked immediately before merge;
+#   - the head SHA is re-checked immediately before policy/check evaluation;
 #   - every changed filename is fetched through the paginated REST endpoint;
-#   - protected-path classification is fail-closed;
+#   - every check-run for that exact SHA is fetched through the paginated REST endpoint;
+#   - empty/unknown policy or check state fails closed;
+#   - --match-head-commit closes the final race between evaluation and merge;
 #   - squash merge keeps one rollback unit per PR;
 #   - no force-push, conflict resolution or branch deletion occurs here.
 
@@ -32,6 +36,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  checks: read
 
 jobs:
   auto-merge:
@@ -46,7 +51,7 @@ jobs:
       - name: Validate trusted policy
         run: python3 scripts/selfdev_policy.py validate
 
-      - name: Merge autonomous CLEAN PRs
+      - name: Merge autonomous fully-green PRs
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -201,7 +206,42 @@ jobs:
               continue
             fi
 
-            printf '#%s: CLEAN + autonomous policy PASS — merging (squash)\n' "$number"
+            checks=""
+            checks_status=0
+            checks="$(gh api --paginate \
+              "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' \
+              2>/dev/null)" || checks_status=$?
+            if [ "$checks_status" -ne 0 ]; then
+              printf '#%s: check-run enumeration failed; refusing to merge.\n' "$number" >&2
+              exit "$checks_status"
+            fi
+            if [ -z "$checks" ]; then
+              printf '#%s: no automated checks reported — skipped\n' "$number"
+              continue
+            fi
+
+            checks_ready=true
+            while IFS=$'\t' read -r check_name check_state check_conclusion; do
+              if [ -z "$check_name" ] || [ "$check_state" != "completed" ]; then
+                checks_ready=false
+                break
+              fi
+              case "$check_conclusion" in
+                success|neutral|skipped) ;;
+                *)
+                  checks_ready=false
+                  break
+                  ;;
+              esac
+            done <<<"$checks"
+
+            if [ "$checks_ready" != "true" ]; then
+              printf '#%s: automated checks not fully green/completed — skipped\n' "$number"
+              continue
+            fi
+
+            printf '#%s: CLEAN + autonomous policy + all checks PASS — merging (squash)\n' "$number"
             if ! gh pr merge "$number" --repo "$REPO" --squash \
               --match-head-commit "$sha" >/dev/null 2>&1; then
               printf '#%s: merge command failed.\n' "$number" >&2
