@@ -617,7 +617,7 @@ function modeComponent(mode, t, ctx) {
   if (!isLive) return <ModeEmpty mode={mode} onDemo={onDemo} />;
   switch (mode) {
     case 'trust': return <TrustMode t={t} localPct={localPct} />;
-    case 'memory': return <MemoryMode t={t} />;
+    case 'memory': return <MemoryMode t={t} demo={!!demo} />;
     case 'autonomy': return <AutonomyMode t={t} />;
     case 'build': return <BuildMode t={t} />;
     case 'observe': return <ObserveMode t={t} />;

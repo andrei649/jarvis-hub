@@ -12,6 +12,21 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Darwin feature absorption — 2026-09-09
+
+- [x] **DW-1 — truthful read-only memory neighborhood.** Live Memory mode uses the
+  existing user-authenticated KG entity list/detail routes for search, selection and
+  connected-entity navigation. Reads have a ten-second deadline, one-MiB response bound
+  and at most 100 visible entities/relationships; obsolete selections are cancelled.
+  Empty/unavailable results never fall back to sample nodes, recalls or historical dates.
+  Explicit Demo retains the sample graph and slider; memory statistics remain intact.
+  No Darwin service, 3D renderer, semantic-distance claim, new backend or memory writes.
+  Native already supports entity list/detail; the navigation/bounds gap is H18.28.
+  Validation: 43 focused tests and the full 1,127-test frontend suite pass, alongside
+  typecheck, production build and independent source review. Chromium selection,
+  empty/error, explicit Demo and hard-refresh checks also pass with synthetic GETs.
+  This is no claim of a live owner-memory or Darwin-service proof.
+
 ## Windows portability — 2026-09-08 (run `copper-ember`)
 
 - [x] **WIN-2 — UTF-8 context queries on Windows.** Post-merge Windows run `34286680195`
@@ -6447,6 +6462,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.25 | **Native briefing wall** — the browser wall (`frontend/src/wall.tsx` + `burst.tsx`) is responsive down to phone widths, so a phone browser already gets the portrait layout and hold-to-talk; the **native** apps have neither. Port the field, the chip/edge-tab chrome and the push-to-talk control, carrying the same fail-closed mic rule (current trust evidence + exact `mic === 'on'`, stop on permission loss/unmount) and the default-hidden spoken line. | 5 | P3 | H18.5, H18.24 | PARITY.md |
 | H18.26 | **Native chat-command discovery** — list the live `GET /api/commands` catalog with usage, owner tier and unavailable state in the native chat UI. Keep execution on the existing guarded chat path. Browser quickbar discovery ships in HA-4i-catalog. | 2 | P3 | H18.1 | PARITY.md |
 | H18.27 | **Native generated images** — add local-generation status, an exact-prompt approval handoff and authenticated artifact previews/downloads to the native client. Distinguish queued, generating, failed and completed; configuration alone never means a working generator. Reuse HA-4i-image and existing approvals, without automatic generation or cloud fallback. | 3 | P3 | H18.11, HA-4i | PARITY.md |
+| H18.28 | **Native memory-neighborhood navigation** — extend the existing H18.17 entity list/detail with connected-entity navigation and bounded cancellable reads that ignore stale selections. Preserve real empty/unavailable states. Browser slice DW-1 uses the same KG reads; no new backend or graph writes. | 2 | P3 | H18.17 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 
