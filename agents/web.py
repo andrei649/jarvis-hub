@@ -485,7 +485,10 @@ async def lifespan(application: FastAPI):
 
     slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
     if slack_token:
-        slack_ch = SlackChannel(token=slack_token, handler=gateway.route)
+        slack_ch = SlackChannel(
+            token=slack_token, handler=gateway.route,
+            app_token=os.environ.get("SLACK_APP_TOKEN", ""),
+        )
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
 

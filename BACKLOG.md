@@ -1671,7 +1671,23 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   inbox target. Tests: `test_workspace_channel_replies.py`, existing channel/session/render/API
   suites, HUD inbox and mobile client regressions. **Live token streaming remains HA-4i:**
   the current approval covers a complete message, not unknown future output. Real Slack
-  event ingress is still the host `receive_event` seam; platform account delivery is unproven.
+  event ingress was still the host `receive_event` seam at that slice; platform account delivery is unproven.
+
+  **2026-09-09 — Slack Socket Mode ingress (HA-4i-socket).** Optional `SLACK_APP_TOKEN`
+  connects the official SDK to `receive_event` and the existing paired inbox. Human DMs
+  and explicit mentions only; authenticated workspace binding and `TEAM_ID:USER_ID`
+  pairing prevent reuse across workspaces (prior bare pairings need fresh approval).
+  Bot/subtype/malformed events are ignored, exact room/thread
+  identity is retained, event replay memory and SDK-to-async queue are bounded. Envelope
+  acknowledgment never implies processing or delivery. Stop closes the socket and cancels
+  pending dispatch. Bot-token-only hosts keep manual ingress; no new route or send bypass.
+  HUD and mobile consume the existing inbox. Setup and explicit live-test limits:
+  [`docs/SLACK_SETUP.md`](docs/SLACK_SETUP.md). Regressions use fake SDK lifecycle/events
+  and the real gateway/pairing/inbox. Fifty-one new cases include a native SDK 3.44.1
+  offline parser/callback/cleanup smoke; Slack/front-door checks passed with that SDK,
+  along with inbox/session/render, route/OpenAPI and app lifecycle checks. The real
+  SDK smoke skips when the optional package is absent. Live workspace
+  connectivity/delivery remains unproven.
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
