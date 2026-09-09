@@ -65,3 +65,26 @@ synthetic server received zero writes, and its preview was closed. Browser repor
 No live owner-memory, Neo4j, PWA or Darwin service was exercised. Next action: hand
 the clean memory-only commit to root for rebasing from the b806 dependency boundary
 onto the merged HUD base; preserve this test JSON for count verification.
+
+## Final integration — 2026-09-09T14:05:10Z
+
+Goal: the same truthful read-only memory neighborhood and explicit Demo boundary.
+Base: `e73ebee36ad59ecc21e1165b5c2dfe6542015879`, the merged image HUD #1066
+on top of the production approval repair #1067. The dependency source and squash
+trees were identical. Only the two memory-unit commits were replayed; the final
+head is recorded in the resulting PR. Changed paths: Memory API adapter/panel,
+mode and app wiring, Memory/a11y tests, built assets, BACKLOG, HUD/mobile parity,
+this plan and generated status. No backend or protected control-plane changes.
+
+After integrating the final HUD dependency, all 43 focused frontend cases,
+TypeScript and all 56 Python HUD/document/status checks passed again. The full
+saved frontend result verifies 1,127 passes and the reviewed asset hash above
+is unchanged. The rebase onto the identical merged dependency tree changed no
+source. Generated status retains the dependency's 9,695 backend and 137 mobile
+inventories, records 1,127 frontend tests and 479 routes. Status, measured test
+count and whitespace checks passed. Inventory is not a full local suite claim.
+
+Next action: create the memory-only PR, wait for every reported and required
+check, reclassify with the trusted main policy and squash merge the same green
+head. Rollback remains one frontend/documentation unit; no deployment, live
+owner-memory access or Darwin-service connection is part of this delivery.
