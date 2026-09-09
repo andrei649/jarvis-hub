@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "policy_id": "nerva.selfdev.v1",
+  "owner_directive_date": "2026-09-09",
+  "autonomous_default": true,
+  "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous and the mandatory automated proof set plus every other reported check have completed successfully. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
+  "protected_paths": [
+    "selfdev-policy.json",
+    "scripts/selfdev_policy.py",
+    ".github/workflows/**",
+    ".github/actions/**",
+    ".github/CODEOWNERS",
+    "AGENTS.md",
+    "MAX.md",
+    "MOONSHOT.md",
+    "NERVA_VISION.md",
+    "LICENSE",
+    "TRADEMARKS.md",
+    "docs/legal/**",
+    "agents/core/kernel/**",
+    "agents/core/security/**",
+    "agents/core/secrets/**",
+    "agents/core/secret*"
+  ],
+  "merge": {
+    "enabled": true,
+    "require_non_draft": true,
+    "require_clean_merge_state": true,
+    "require_at_least_one_check": true,
+    "require_all_reported_checks_pass": true,
+    "required_check_names": [
+      "test (ubuntu-latest)",
+      "hud-v2-build",
+      "Secret scan (gitleaks)",
+      "SAST (semgrep)",
+      "Dependency audit (pip-audit)",
+      "SAST (bandit — blocking gate)",
+      "in-sync"
+    ],
+    "required_check_conclusions": ["success", "neutral"],
+    "other_check_conclusions": ["success", "neutral", "skipped"],
+    "deny_protected_changes": true,
+    "method": "squash"
+  },
+  "deploy": {
+    "enabled": false,
+    "target_enabled": true,
+    "strategy": "staged_canary",
+    "deny_protected_changes": true,
+    "require_versioned_artifact": true,
+    "require_post_deploy_probe": true,
+    "auto_promote_on_green": true,
+    "auto_rollback_on_regression": true
+  },
+  "review": {
+    "independent_reviewer_required": false,
+    "target_independent_reviewer_required": true,
+    "builder_may_clear_own_findings": false,
+    "security_review_patterns": [
+      "agents/core/security/**",
+      "agents/core/kernel/**",
+      ".github/workflows/**"
+    ]
+  },
+  "budgets": {
+    "max_repair_attempts_per_change": 3,
+    "max_wall_minutes_per_change": 180,
+    "max_parallel_selfdev_changes": 4
+  },
+  "provenance": {
+    "required": true,
+    "required_fields": [
+      "trigger",
+      "proposal",
+      "builder_model",
+      "builder_session",
+      "reviewer_model",
+      "tests",
+      "head_sha",
+      "merge_sha",
+      "deployment_artifact",
+      "post_deploy_verdict"
+    ]
+  }
+}

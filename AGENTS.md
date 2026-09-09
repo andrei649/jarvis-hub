@@ -1,12 +1,13 @@
 # AGENTS.md — Nerva contributor instructions
 
-> **Development posture (owner decision, 2026-08-29): no blocking gates.** The machine-readable
-> AI-development policy, risk tiers (R0–R3), evidence receipts, review-round ceremony, and the
-> PR-blocking CI gates (security scans, AI review, boundary/tier classification, Nerva movement
-> and roadmap-ledger checks, CODEOWNERS) were removed to keep development fast. PRs run one fast
-> advisory lint+test lane; the heavier suites run post-merge on `main` and on schedules. Merge on
-> green tests is a **convention agents follow**, not a GitHub-enforced gate. This file is the
-> concise operating guide.
+> **Development posture.** Owner decision 2026-08-29 removed heavyweight blocking ceremony to keep
+> development fast. **Updated 2026-09-09:** routine Nerva engineering is now explicitly
+> **owner-out-of-loop**. `selfdev-policy.json` is the machine-readable autonomy contract and
+> `scripts/selfdev_policy.py` is its stdlib-only validator/classifier. The hourly auto-merge workflow
+> evaluates candidate PRs with the trusted policy/script already on `main`; normal product/code/test
+> changes may merge unattended only after their reported automated checks have finished green, while
+> the small root-of-trust control plane may not self-authorize changes to itself. This does not
+> restore the old R0–R3 ceremony, review bureaucracy, or a blanket manual gate for Nerva work.
 
 ## Safe task start
 
@@ -18,7 +19,8 @@
    feature branch is yours, the worktree is clean, no user changes are present, and the base is
    known. Read-only tasks and dirty worktrees must not trigger an automatic rebase.
 5. Confirm authorization before remote mutations. A request to inspect or plan does not authorize
-   a commit, push, PR edit, merge, or external write.
+   a commit, push, PR edit, merge, or external write. An owner directive for unattended development
+   authorizes routine actions only inside the machine-readable self-development policy.
 
 ## ⚡ Max mode — protocolul de finisare
 
@@ -50,6 +52,8 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 - Start with this file and the relevant section of
   `docs/ARCHITECTURE.md`; do not load the repository indiscriminately.
+- For autonomous development/merge/deploy decisions, load `selfdev-policy.json` and use
+  `scripts/selfdev_policy.py`; do not infer the root-of-trust boundary from prose or branch names.
 - `BACKLOG.md` is the priority truth when prioritizing, changing delivery scope, or updating
   roadmap status. **Query it, do not load it** — it is ~957 KB (~176K tokens), and a whole read to
   answer "what is open" costs more than every other document here combined:
@@ -67,19 +71,43 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 ## Delivery workflow
 
-- Work on a feature branch and use a PR into `main` (keeps history reviewable and lets the
-  hourly auto-merge sweep pick it up); nothing GitHub-side blocks a merge anymore — the sweep
-  merges any non-draft PR GitHub reports CLEAN with **no review**, and the PR checks re-gated on
-  2026-09-02 (`test` incl. the test-count drift step, `hud-v2-build`, security-scans,
-  lockfile-drift) block only once the owner marks them required (owner item A4). Independent
-  review is *recommended* for R2/R3; R3 runtime/security changes get a recorded post-merge
-  attestation in `BACKLOG.md` (the SEC-B4 / SEC-B6 / #911 model from #1009).
+- Work on a feature branch and use a PR into `main`. The hourly auto-merge sweep may merge any
+  **non-draft** PR only when the same head satisfies all three conditions: GitHub reports `CLEAN`,
+  the changed-file set is classified `autonomous_merge=true` by the trusted `main` copy of
+  `scripts/selfdev_policy.py`, and **at least one automated check is reported with every reported
+  check completed as success/neutral/skipped**. Pending, failed, cancelled, empty or unreadable
+  check state does not merge. Branch names — including `nerva2/*` — are not manual gates anymore.
+- A candidate touching a protected root-of-trust path is classified `control_plane` and skipped by
+  unattended merge. That includes the self-development policy/classifier, **all GitHub workflows
+  and actions**, Action Kernel/security roots, and the other paths named in `selfdev-policy.json`.
+  Routine feature, refactor, test and documentation work outside that boundary does **not** wait for
+  owner approval.
+- The automated-check rule is enforced by the auto-merge workflow itself and does not depend on
+  whether branch-protection settings happen to mark a check "required". The existing PR checks
+  (`test` incl. test-count drift, `hud-v2-build`, security scans, `lockfile-drift`, and any future
+  check that reports on the candidate SHA) therefore become real inputs to autonomous merge rather
+  than advisory decoration. Do not claim a check is GitHub branch-protection-required unless the
+  repository settings actually make it required.
 - Before non-trivial implementation, record goal, non-goals, likely paths, tests, rollback,
   and dependencies. Prefer one coherent rollback unit over arbitrary micro-commits or push-per-step
   churn.
 - Use TDD for bug fixes and behavior changes where a failing regression can be demonstrated.
-- Run the tests that cover what you changed before pushing; merge on green is a convention, not
-  an enforced gate — honest reporting of what was actually run is the control that remains.
+- Run the tests that cover what you changed before pushing. Honest reporting of what was actually
+  run remains mandatory even when merge/deploy is autonomous.
+
+## Autonomous self-development boundary
+
+- `selfdev-policy.json` expresses the owner's standing authorization for routine AI-operated
+  engineering. Do not add an owner click merely because a change was AI-generated.
+- The autonomous lane may create branches/PRs, implement code, update tests and merge eligible work
+  once machine gates pass. Enforced independent AI review and autonomous release/canary/promote/
+  rollback are recorded as **targets**, not claimed live until their #1054 enforcement slices land.
+- The lane may **not** use the same change it is evaluating to weaken the classifier, root-of-trust
+  path set, deployment credential isolation, rollback authority, any GitHub workflow/action,
+  security boundary, Action Kernel, or emergency-stop/control-plane mechanisms. Those paths are
+  evaluated using the trusted base.
+- Builder/reviewer separation and provenance remain product requirements of #1054 even though the
+  first policy/auto-merge slice does not yet implement the whole self-development loop.
 
 ## Coordination and leases
 
@@ -93,7 +121,7 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 - On collision, do not silently take over. Narrow the scope, obtain an explicit handoff, or stop
   the overlapping mutation and escalate.
 - For 3+ independent waves, a conductor may coordinate dependencies and status. A conductor does
-  not implement code, approve its own high-risk work, or merge without the required authority.
+  not implement code, approve its own high-risk work, or bypass the self-development policy.
 
 See `PARALLEL_WORKFLOW.md` for the derived multi-agent playbook.
 
