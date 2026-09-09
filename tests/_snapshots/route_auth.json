@@ -159,6 +159,7 @@
   "GET /api/payments": "admin",
   "GET /api/payments/mandates": "admin",
   "GET /api/permissions": "user",
+  "GET /api/plugins/extensions": "user",
   "GET /api/presence/owner": "user",
   "GET /api/quality": "open",
   "GET /api/quality/scores": "user",

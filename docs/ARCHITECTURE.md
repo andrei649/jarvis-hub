@@ -209,6 +209,14 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 
 ### Plugins
 
+Declarative extension inspection is separate from executable built-in plugins.
+`agents/core/extensions/manifest.py` validates versioned JSON declarations, reserved
+commands, qualified tool names, dependencies and exact registration sets.
+`doctor.py` checks distribution metadata and projects already-composed acquired
+packages without imports, installation, promotion or SDK dispatch. User-guarded
+`GET /api/plugins/extensions` and `nerva extensions {doctor,list}` expose that
+inspection; all extension callables remain empty. See [`EXTENSIONS.md`](EXTENSIONS.md).
+
 | Path | Purpose | Notes |
 |------|---------|-------|
 | `agents/core/plugins/weather.py` | wttr.in weather | `WeatherPlugin.get_weather` |

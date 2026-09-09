@@ -84,8 +84,9 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
+        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
     }
+    assert tree["extensions"] == ["doctor", "list"]
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]

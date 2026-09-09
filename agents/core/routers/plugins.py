@@ -18,7 +18,8 @@ from agents.core.plugins.honesty import degradation_info as _plugin_degradation
 from agents.core.plugins.honesty import honesty_for
 from agents.core.plugins.honesty import live_plugin_for as _live_plugin_for
 from agents.core.plugins.honesty import runtime_configuration as _plugin_runtime_configuration
-from agents.core.routers._deps import admin_guard
+from agents.core.routers._component import require_component
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["plugins"])
@@ -98,3 +99,14 @@ async def toggle_plugin(plugin_id: str):
         action = "enabled"
     logger.info("Plugin %s %s", log_safe(plugin_id), action)
     return nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
+
+
+@router.get("/api/plugins/extensions", dependencies=[Depends(user_guard)])
+async def inspect_extensions():
+    """Read extension metadata without loading, installing or promoting packages."""
+    from agents.core.extensions.doctor import inspect_acquisition
+
+    _, runtime, error = require_component("acquisition", "extension acquisition not available")
+    if error is not None:
+        return error
+    return nocache_json(inspect_acquisition(runtime))

@@ -248,6 +248,15 @@ host filesystem path, infer completion from a queued task, or retry an ambiguous
 The existing Media Director controls presentation devices, not image generation; its
 shipped status does not close this gap. Native presentation is tracked as H18.27.
 
+**HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
+`GET /api/plugins/extensions` projects already-composed acquired package declarations
+without activation; `nerva extensions doctor` validates local JSON offline. A dedicated
+HUD view remains pending: show unavailable/disabled/uncomposed states, declaration and
+integrity results, and the explicit absence of SDK dispatch. Signature verification
+must not become an approval/ready badge. The existing acquisition panel does not close
+this extension-specific UI gap. Native mobile inspection also remains pending in
+`mobile/PARITY.md`; no third-party UI injection is added. See `docs/EXTENSIONS.md`.
+
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
 coverage.*

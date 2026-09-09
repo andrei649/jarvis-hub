@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
 
+    extensions = verbs.add_parser("extensions", help="inspect declarative extensions without executing them")
+    extension_verbs = extensions.add_subparsers(dest="action", required=True, metavar="action")
+    extension_doctor = extension_verbs.add_parser("doctor", help="validate named JSON descriptors and dependency metadata (offline)")
+    extension_doctor.add_argument("paths", nargs="+", metavar="MANIFEST")
+    extension_doctor.add_argument("--json", action="store_true")
+    extension_list = extension_verbs.add_parser("list", help="inspect already-composed acquired packages (user)")
+    extension_list.add_argument("--json", action="store_true")
+
     status = verbs.add_parser("status", help="what the hub is doing right now")
     status.add_argument("--json", action="store_true")
 
@@ -202,6 +210,41 @@ def cmd_doctor(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.smoke:
         argv.append("--smoke")
     return int(doctor.main(argv))
+
+
+def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
+    if ns.action == "doctor":
+        from agents.core.extensions.doctor import doctor_paths
+
+        report = doctor_paths(ns.paths)
+        success = report["ok"]
+    else:
+        report = ctx.client().get("/api/plugins/extensions")
+        if (not isinstance(report, dict) or report.get("mode") != "inspection_only"
+                or not isinstance(report.get("extensions"), list)
+                or not isinstance(report.get("reason"), str)
+                or any(not isinstance(row, dict)
+                       or any(not isinstance(row.get(key), str) for key in ("id", "version", "reason"))
+                       or row.get("execution_available") is not False
+                       or row.get("callable_tools") != [] or row.get("callable_commands") != []
+                       for row in report["extensions"])):
+            ctx.err.write("extension inspection returned a malformed response\n")
+            return EXIT_FAILED
+        success = (report["reason"] in {"sdk_dispatch_unavailable", "acquisition_disabled", "acquisition_not_composed"}
+                   and all(row["reason"] in {"sdk_dispatch_unavailable", "acquired_inactive"}
+                           for row in report["extensions"]))
+    if ns.json:
+        ctx.dump(report)
+    else:
+        ctx.say("Extension inspection only; SDK dispatch is unavailable.")
+        for error in report.get("errors", []):
+            ctx.say(f"  {error['reason']}")
+        for row in report.get("extensions", []):
+            issues = ", ".join(row.get("issues", [])) or row["reason"]
+            ctx.say(f"  {row['id']} {row['version']}: {issues}; callable tools: 0")
+        if not report.get("extensions") and report.get("reason"):
+            ctx.say(f"  {report['reason']}")
+    return EXIT_OK if success else EXIT_FAILED
 
 
 def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
@@ -788,6 +831,7 @@ def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:
 
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "doctor": cmd_doctor,
+    "extensions": cmd_extensions,
     "status": cmd_status,
     "config": cmd_config,
     "approvals": cmd_approvals,

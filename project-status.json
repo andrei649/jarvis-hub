@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "a5b8b496f319447f0233b1baf4a0f54cb8551c06",
+  "latest_ci_commit": "8db71a9dbc257b0997c9b2d46d29ce2dc8f7593c",
   "open_release_gates": [
     {
       "id": "A1",
@@ -222,9 +222,9 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 477,
+  "routes": 478,
   "tests": {
-    "backend": 9541,
+    "backend": 9589,
     "frontend": 1041,
     "mobile": 137
   },

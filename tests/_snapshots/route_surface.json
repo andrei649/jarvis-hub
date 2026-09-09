@@ -159,6 +159,7 @@
   "GET /api/payments",
   "GET /api/payments/mandates",
   "GET /api/permissions",
+  "GET /api/plugins/extensions",
   "GET /api/presence/owner",
   "GET /api/quality",
   "GET /api/quality/scores",
