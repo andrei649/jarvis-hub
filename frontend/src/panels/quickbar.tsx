@@ -26,11 +26,12 @@
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
-import { apiGet, apiPost } from '../api/client';
+import { apiPost } from '../api/client';
 import { useApi, arr, mono, Card, State, Row, Tag, inpS } from '../panel-kit';
 
 const HELP_PATH = '/api/quickbar/help';
 const RESOLVE_PATH = '/api/quickbar/resolve';
+const COMMANDS_PATH = '/api/commands';
 const HISTORY_KEY = 'nerva.quickbar.history';
 const MAX_HISTORY = 20;
 
@@ -93,6 +94,8 @@ export const describePlan = (plan: any): string => {
 
 export function QuickbarPanel() {
   const help = useApi(HELP_PATH);
+  // Include an existing owner credential; visibility is decided by chat's principal.
+  const catalog = useApi(COMMANDS_PATH, true, true);
   const [line, setLine] = useState('');
   const [plan, setPlan] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -115,13 +118,14 @@ export function QuickbarPanel() {
   };
 
   const commands = arr(help.d, 'commands');
+  const chatCommands = catalog.e || catalog.loading ? [] : arr(catalog.d, 'commands');
 
   return (
     <Card
       title="QUICKBAR"
       live={help.d ? 'live' : undefined}
       sub={commands.length ? `${commands.length} command(s)` : null}
-      onReload={help.reload}
+      onReload={() => { help.reload(); catalog.reload(); }}
     >
       <State e={help.e} loading={help.loading} n={help.d ? 1 : 0} />
 
@@ -181,7 +185,7 @@ export function QuickbarPanel() {
       {commands.length > 0 && (
         <>
           <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10 }}>
-            COMMANDS
+            SHORTCUTS
           </div>
           {commands.slice(0, 8).map((c: any) => (
             <Row key={c.command}>
@@ -192,11 +196,29 @@ export function QuickbarPanel() {
         </>
       )}
 
+      <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10 }}>
+        CHAT COMMANDS
+      </div>
+      {catalog.loading && <Note>Loading chat commands…</Note>}
+      {catalog.e && <Note c="var(--amber)">Chat commands unavailable.</Note>}
+      {!catalog.loading && !catalog.e && catalog.d?.ok && chatCommands.length === 0 && (
+        <Note>No chat commands available for this session.</Note>
+      )}
+      {chatCommands.map((command: any) => (
+        <div key={command.name} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <span style={{ ...mono, fontSize: 11, overflowWrap: 'anywhere' }}>
+              {command.command}{command.usage ? ` ${command.usage}` : ''}
+            </span>
+            {command.tier === 'admin' && <Tag c="var(--amber)">owner</Tag>}
+          </div>
+          <Note>{command.description}</Note>
+        </div>
+      ))}
+      {chatCommands.length > 0 && <Note>Send a command in chat to run it.</Note>}
+
       <Note>
-        This panel <b>resolves</b> a line and does nothing with the result. A command bar is
-        the most tempting place to put a shortcut past the rules, so acting on a plan takes
-        the ordinary path — with the affordances that make it reviewable. Recall lives in
-        this browser and is never sent anywhere.
+        Preview a line here; use chat to send it. Recent lines stay in this browser.
       </Note>
     </Card>
   );

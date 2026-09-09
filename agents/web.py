@@ -1306,6 +1306,7 @@ from agents.core.routers.support import router as _support_router  # noqa: E402
 from agents.core.routers.codeintel import router as _codeintel_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
 from agents.core.routers.quickbar import router as _quickbar_router  # noqa: E402
+from agents.core.routers.commands import router as _commands_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
 from agents.core.routers.agents_api import router as _agents_api_router  # noqa: E402
 from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
@@ -1338,6 +1339,7 @@ app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
 app.include_router(_quickbar_router)
+app.include_router(_commands_router)
 app.include_router(_canvas_router)
 app.include_router(_browser_router)
 app.include_router(_capture_router)

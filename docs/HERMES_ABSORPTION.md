@@ -171,7 +171,8 @@ comenzi slash: `agents/core/commands.py` — `/help`, `/status`, `/sessions` (us
 `/stop`, `/resume` (owner), dispecerizate de orchestrator înaintea skill-urilor și a modelului pe
 orice suprafață; tura poartă un principal (allowlist-ul/chat-ul owner-ului pe Telegram, token admin
 pe web). **Rămâne:** `nerva send <canal>` (nu există rută de trimitere; una nouă trece prin patru
-porți de snapshot + poarta de caller HUD) și `GET /api/commands` + listarea în quickbar. Teste:
+porți de snapshot + poarta de caller HUD). Catalogul `GET /api/commands` și listarea în quickbar
+sunt livrate în 4i-catalog (mai jos). Teste:
 `tests/test_nerva_cli.py` (27), `tests/test_slash_commands.py` (12). *Nedovedit pe un hub viu* →
 `docs/OWNER_TASKS.md` **P17**.
 
@@ -363,7 +364,16 @@ fără parser refuzul îl numește (`parser_missing`, ce pachet), un fișier pe 
 poate citi e `extraction_failed`, iar `raw: true` returnează în continuare bytes. Niciun parser
 nu e dependență declarată — rămâne decizia owner-ului. Teste: `tests/test_file_read_documents.py`
 (5). Rămân în 4i: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de plugin-uri,
-`nerva send` + `GET /api/commands`, kernelele de cod persistente și `image_generate`.
+`nerva send`, kernelele de cod persistente și `image_generate`.
+
+**Livrat 2026-09-08 (4i-catalog — comenzile disponibile devin vizibile în HUD).**
+`GET /api/commands` citește registrul viu al orchestratorului și folosește același principal
+ca chat-ul: un utilizator vede comenzile user, owner-ul le vede și pe cele admin. Guard-ul user
+rulează înainte de citire; catalogul nu execută handler-e. Un registru care nu este disponibil
+întoarce `commands_unavailable` (503), nu o listă implicită inventată. Quickbar afișează comanda,
+sintaxa și marcajul owner; încărcarea, lipsa comenzilor și indisponibilitatea au stări separate.
+Execuția rămâne prin chat. Teste: `tests/test_commands_catalog.py` și
+`frontend/src/panels/quickbar.test.tsx`. Meniul nativ mobil rămâne **H18.26**.
 
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea

@@ -50,9 +50,9 @@ describe('QuickbarPanel — a preview, never an execution', () => {
     fireEvent.change(screen.getByLabelText('quickbar line'), { target: { value: '/memory' } });
     fireEvent.click(screen.getByTitle('resolve this line'));
     await waitFor(() => expect(screen.getByText('would go to memory')).toBeTruthy());
-    // the ONLY calls are the help load and the resolve — nothing was executed
+    // Only read-only catalogs and the existing preview resolver — nothing executed.
     const called = fetchMock.mock.calls.map((c) => String(c[0]));
-    expect(called.every((u) => u.includes('/api/quickbar/'))).toBe(true);
+    expect(called.every((u) => u.includes('/api/quickbar/') || u.endsWith('/api/commands'))).toBe(true);
   });
 
   it('says a summon WOULD ask, rather than asking', async () => {
@@ -141,6 +141,55 @@ describe('QuickbarPanel — a preview, never an execution', () => {
     render(<QuickbarPanel />);
     await waitFor(() => expect(screen.getByText('/memory')).toBeTruthy());
     expect(screen.getByText('go to memory')).toBeTruthy();
+  });
+
+  it('lists the live chat commands with usage and owner tier without invoking one', async () => {
+    localStorage.setItem('hud.admin_token', 'existing-owner-token');
+    const fetchMock = mockFetch({
+      '/api/quickbar/help': ok(HELP),
+      '/api/commands': ok({ ok: true, commands: [
+        { name: 'status', command: '/status', description: 'Hub status', tier: 'user', usage: '' },
+        { name: 'stop', command: '/stop', description: 'Emergency stop', tier: 'admin', usage: '[reason]' },
+      ] }),
+    });
+    render(<QuickbarPanel />);
+    await waitFor(() => expect(screen.getByText('/status')).toBeTruthy());
+    expect(screen.getByText('/stop [reason]')).toBeTruthy();
+    expect(screen.getByText('owner')).toBeTruthy();
+    expect(screen.getByText('Emergency stop')).toBeTruthy();
+    expect(screen.getByText(/Send a command in chat/)).toBeTruthy();
+    expect(fetchMock.mock.calls.every(([, opts]) => !opts?.method || opts.method === 'GET')).toBe(true);
+    const catalogCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/commands'));
+    expect(catalogCall[1].headers['X-Admin-Token']).toBe('existing-owner-token');
+    expect(screen.queryByRole('button', { name: /stop/ })).toBeNull();
+    expect(readHistory()).toEqual([]);
+  });
+
+  it('does not invent owner commands absent from the returned catalog', async () => {
+    mockFetch({ '/api/quickbar/help': ok(HELP), '/api/commands': ok({ ok: true, commands: [
+      { name: 'status', command: '/status', description: 'Hub status', tier: 'user', usage: '' },
+    ] }) });
+    render(<QuickbarPanel />);
+    await waitFor(() => expect(screen.getByText('/status')).toBeTruthy());
+    expect(screen.queryByText('/stop')).toBeNull();
+    expect(screen.queryByText('owner')).toBeNull();
+  });
+
+  it('shows catalog unavailability while keeping the existing quickbar menu usable', async () => {
+    mockFetch({ '/api/quickbar/help': ok(HELP),
+      '/api/commands': refuse(503, { reason: 'commands_unavailable' }) });
+    render(<QuickbarPanel />);
+    await waitFor(() => expect(screen.getByText('Chat commands unavailable.')).toBeTruthy());
+    expect(screen.getByText('/memory')).toBeTruthy();
+    expect(screen.queryByText('/status')).toBeNull();
+    expect(screen.getByTitle('resolve this line')).toBeTruthy();
+  });
+
+  it('distinguishes a live empty command registry from an unavailable one', async () => {
+    mockFetch({ '/api/quickbar/help': ok(HELP), '/api/commands': ok({ ok: true, commands: [] }) });
+    render(<QuickbarPanel />);
+    await waitFor(() => expect(screen.getByText('No chat commands available for this session.')).toBeTruthy());
+    expect(screen.queryByText('Chat commands unavailable.')).toBeNull();
   });
 
   /* ── the pure helpers ─────────────────────────────────────────────── */

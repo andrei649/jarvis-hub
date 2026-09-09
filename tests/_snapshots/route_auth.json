@@ -87,6 +87,7 @@
   "GET /api/cognition/personality": "user",
   "GET /api/cognition/status": "user",
   "GET /api/cognition/stream": "user",
+  "GET /api/commands": "user",
   "GET /api/company/runs": "user",
   "GET /api/company/runs/{run_id}": "user",
   "GET /api/company/waiting": "user",
