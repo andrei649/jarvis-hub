@@ -34,13 +34,19 @@ permit heavy features. Nerva does not unload the LLM or otherwise coordinate GPU
 memory in this slice. A missing/incompatible model or insufficient GPU memory is
 a generation failure, never a success placeholder.
 
-**Mediation limitation:** the current protected canonical registry does not map
-`toolrpc.image_generate` (nor the other existing `toolrpc.*` queued kinds) to the
-`tool.rpc` action kind. A queue configured with mediation `enforce` or `hold`
-therefore refuses/holds this feature. This delivery does not change that
-registry, issue its own mediation receipt or reduce the mediation mode. A
-separate governed registry integration is needed for those deployments. The
-hermetic approved-worker proof uses the existing default queue mediation mode.
+**Queue mediation:** image proposals authorize and enqueue the identical
+canonical `tool.rpc` tuple: title `Tool 'image_generate' via RPC`, payload
+`tool=target=image_generate`, full normalized arguments and server binding,
+with the active origin and any taint retained. Only the image executor accepts
+that tuple; ordinary `toolrpc.*` tools retain their existing contract. No
+registry aliases or protected kernel changes are required.
+
+Both `off` and `enforce` use the production kernel bridge and require durable
+human approval. Under `enforce`, the existing queue issues its signed receipt
+and private dispatch permit, and the image guard revalidates the current
+receipt, exact task fingerprint, policy and expiry before submission. Missing,
+revoked or changed evidence refuses execution. `hold` continues to refuse
+image intake and execution. Mediation modes are never reduced to make a task run.
 
 ## Propose, approve, retrieve
 
@@ -79,15 +85,19 @@ configuration only; it does not probe ComfyUI or claim model/GPU readiness.
 
 ## Approval and failure behavior
 
-The server records the proposal's task ID, complete payload, origin, risk tier,
+The server records the proposal's task ID, title, complete payload, origin, risk tier,
 agent and backend/runtime fingerprint before returning the task ID. Execution
 requires the exact human-approved running row and a second Action Kernel check.
 DENY, an absent/invalid verdict, missing proof or an exception refuses execution.
 As with FileTools, QUEUE can proceed only because that exact durable human
 approval already exists; the verdict is not rewritten and risk, taint and
 inbound origin are retained. Editing request bytes or changing backend settings
-requires a new proposal and approval. Source changes require a restart, and old
-backend bindings no longer authorize the new code.
+requires a new proposal and approval. Changes to the image runtime or ComfyUI
+adapter source require a restart and invalidate old image bindings. This
+fingerprint covers those two modules and backend configuration, not the whole
+Git revision or every coordinator helper.
+Previously queued `toolrpc.image_generate` proposals require a new request and
+approval; their kind, receipt or binding is never relabeled or migrated.
 
 Before the single POST, an exclusively created, flushed attempt record in
 `media/image_approvals` consumes the approval. It doubles as durable pre-effect
@@ -114,9 +124,11 @@ overwritten on an ID collision.
 ## Verification and rollback
 
 Focused tests use a mocked HTTP transport with the real ComfyUI protocol, queue,
-worker, Action Kernel, approval and user-guard routes. They exercise negative
+worker, bound Action Kernel bridge, authenticated approval and artifact routes
+in both `off` and `enforce`; `hold` is explicitly refused. They exercise negative
 authority changes, concurrent/restarted execution, timeout/cancellation, hostile
-response paths, redirects, compression, invalid/oversized PNG and write errors.
+response paths, current receipt/policy/expiry changes after worker dispatch,
+final-guard revocation, redirects, compression, invalid/oversized PNG and write errors.
 No real image was generated in this delivery: the owner's default loopback
 ComfyUI endpoint was unavailable during the earlier read-only readiness probe.
 

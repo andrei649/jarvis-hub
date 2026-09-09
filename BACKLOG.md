@@ -1701,10 +1701,14 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   after concurrency, ambiguous failure or restart. No cloud provider, arbitrary workflow,
   model installation or default activation. Generated PNGs are available only through an
   authenticated artifact-id lookup. Configured status does not claim host reachability.
-  Queue mediation `hold`/`enforce` still refuses the unregistered `toolrpc.image_generate`
-  canonical kind; this slice neither edits the protected registry nor disables mediation.
-  Verification covers protocol fixtures and the real queue/coordinator path with an HTTP
-  test transport; no real ComfyUI generation has been proven. HA-4i stays open: the dedicated
+  **Composition repair:** image-only intake now binds the identical full `tool.rpc`
+  action/task tuple through the production mediation bridge. `off` and `enforce` require
+  exact human approval; enforce revalidates the existing signed receipt and current task
+  at the effect boundary, while `hold` continues refusing. Other ToolRPC kinds and the
+  protected registry remain unchanged. Verification covers authenticated HTTP proposal,
+  admin decision, guarded worker and artifact retrieval in both modes, current-receipt
+  tampering, final-guard revocation and ambiguous-post restart with only ComfyUI transport
+  simulated; no real ComfyUI generation has been proven. HA-4i stays open: the dedicated
   browser image composer/gallery is tracked in `docs/design/HUD_V2_REMAINING.md`; native
   image presentation is H18.27. Existing chat and approvals remain the proposal surface.
   Setup and explicit execution limits: [`docs/LOCAL_IMAGE_SETUP.md`](docs/LOCAL_IMAGE_SETUP.md).

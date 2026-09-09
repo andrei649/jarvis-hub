@@ -57,7 +57,7 @@ def rig(tmp_path, monkeypatch):
 
     coordinator = AutonomyCoordinator(orch)
     coordinator._wire_agent_tool_runtime(action_kernel=observed)
-    executor = TaskExecutor().register("toolrpc.image_generate", coordinator._approved_desktop_tool_rpc_execute)
+    executor = TaskExecutor().register("tool.rpc", coordinator._approved_image_tool_rpc_execute)
     worker.executor = executor.execute
     value = SimpleNamespace(module=module, queue=queue, worker=worker, orch=orch, coordinator=coordinator,
                             requests=requests, actions=actions, root=tmp_path)
@@ -75,7 +75,7 @@ async def test_real_worker_requires_exact_human_approval_and_rechecks_kernel(rig
     task_id = proposal["task_id"]
     assert rig.requests == []
     assert rig.queue.get(task_id).status == "blocked"
-    early = await rig.coordinator._approved_desktop_tool_rpc_execute(rig.queue.get(task_id))
+    early = await rig.coordinator._approved_image_tool_rpc_execute(rig.queue.get(task_id))
     assert early["status"] == "failed"
     await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
     assert rig.requests == []
@@ -153,10 +153,10 @@ async def test_one_approval_is_consumed_concurrently_and_across_runtime_restart(
     await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
     rig.queue.transition(task_id, "running")
     task = rig.queue.get(task_id)
-    results = await asyncio.gather(*(rig.coordinator._approved_desktop_tool_rpc_execute(task) for _ in range(2)))
+    results = await asyncio.gather(*(rig.coordinator._approved_image_tool_rpc_execute(task) for _ in range(2)))
     assert sum(r["status"] == "ok" for r in results) == 1, results
     rig.coordinator._wire_agent_tool_runtime(action_kernel=make_action_kernel(rig.orch))
-    replay = await rig.coordinator._approved_desktop_tool_rpc_execute(task)
+    replay = await rig.coordinator._approved_image_tool_rpc_execute(task)
     assert replay["status"] == "failed"
     assert sum(r.method == "POST" for r in rig.requests) == 1
 
@@ -202,7 +202,7 @@ async def test_execution_kernel_failures_refuse_before_any_post(rig, verdict):
             raise RuntimeError("kernel unavailable")
         return Decision(Verdict.DENY, reason="halted", tier=3) if verdict == "deny" else None
     rig.coordinator._wire_agent_tool_runtime(action_kernel=broken)
-    rig.worker.executor = TaskExecutor().register("toolrpc.image_generate", rig.coordinator._approved_desktop_tool_rpc_execute).execute
+    rig.worker.executor = TaskExecutor().register("tool.rpc", rig.coordinator._approved_image_tool_rpc_execute).execute
     await rig.worker.tick()
     assert rig.requests == []
     assert rig.queue.get(task_id).result["status"] == "failed"
@@ -242,7 +242,7 @@ async def test_direct_runtime_does_not_infer_approval_from_args(rig):
 
 @pytest.mark.parametrize("mode", ["hold", "enforce"])
 @pytest.mark.asyncio
-async def test_unknown_toolrpc_mediation_contract_stays_fail_closed(rig, mode):
+async def test_strict_mediation_without_bound_signer_stays_fail_closed(rig, mode):
     queue = TaskQueue(db_path=str(rig.root / (mode + ".db")), mediation_mode=mode).initialize()
     try:
         worker = AutonomyWorker(queue, policy=AutonomyPolicy())
@@ -275,7 +275,7 @@ async def test_ambiguous_submission_cannot_replay_after_rebuilding_runtime(rig, 
     await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
     rig.queue.transition(task_id, "running")
     task = rig.queue.get(task_id)
-    running = asyncio.create_task(rig.coordinator._approved_desktop_tool_rpc_execute(task))
+    running = asyncio.create_task(rig.coordinator._approved_image_tool_rpc_execute(task))
     await asyncio.wait_for(submitted.wait(), timeout=2)
     if failure == "cancel":
         running.cancel()
@@ -285,7 +285,7 @@ async def test_ambiguous_submission_cannot_replay_after_rebuilding_runtime(rig, 
         result = await running
         assert result["reason"] == "submission_unknown"
     rig.coordinator._wire_agent_tool_runtime(action_kernel=make_action_kernel(rig.orch))
-    replay = await rig.coordinator._approved_desktop_tool_rpc_execute(task)
+    replay = await rig.coordinator._approved_image_tool_rpc_execute(task)
     assert replay["reason"] == "approval_consumed_result_may_be_unknown"
     assert len(calls) == 1 and calls[0].method == "POST"
 
