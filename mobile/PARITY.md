@@ -60,6 +60,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
+| Declarative extension inspection (S1; execution unavailable) | user `GET /api/plugins/extensions`; offline host `nerva extensions doctor`, online `extensions list` | ⬜ dedicated extension view pending; existing acquisition panel unchanged | ⬜ extension view pending; doctor CLI is host-only | HA-4i-S1 |
 | Permission ledger (consent grants + revoke) | `GET /api/permissions`, `POST /api/permissions/{grant_id}/revoke` | ✅ | ⬜ | |
 | Ambient Watch (H33.6, default-off, redacted) | user `GET /api/ambient/monitors`; admin-only monitor create/update/delete | ✅ | ✅ | H33.6 |
 | Self-Improvement dashboard (admin-only diagnostic aggregation) | admin-only `GET /api/self-improvement/status`, `POST /api/self-improvement/enable` | ✅ | ➖ | — |

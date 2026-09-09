@@ -200,6 +200,7 @@ RULES = [
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"),
     ("/plugins", "admin"),
+    ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
     ("/api/models", "admin"),
     ("/api/llm/", "admin"),
     ("/api/oauth", "admin"),
@@ -509,6 +510,9 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # HA-4i-S1: host CLI inspection exists; dedicated HUD/mobile views are pending.
+    # The existing acquisition panel does not show this extension projection.
+    "/api/plugins/extensions",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an

@@ -434,6 +434,21 @@ Chat-ul și coada existentă primesc propunerea; composerul/galeria dedicate în
 afișarea nativă pe mobil rămân declarate în ledger-ele de paritate (H18.27).
 Configurare: [`LOCAL_IMAGE_SETUP.md`](LOCAL_IMAGE_SETUP.md).
 
+**2026-09-09 (4i-S1 — manifest și inspecție declarativă pentru extensii).** Un JSON
+versionat declară unelte cu namespace, comenzi fără coliziuni cu registrul de bază și
+evenimente de observare dintr-o listă închisă. Doctorul validează dependențe exacte,
+cicluri și egalitatea declarațiilor cu un viitor răspuns de înregistrare; nu execută
+cod și nu instalează pachete. `nerva extensions doctor` este offline;
+`nerva extensions list` folosește `GET /api/plugins/extensions`, protejat cu user guard.
+Ruta inspectează doar store-ul de achiziție deja compus, fără inițializare sau promovare.
+Semnătura/integritatea unui pachet activ se verifică prin mecanismul existent, dar asta
+nu dovedește aprobarea sau disponibilitatea sandbox-ului. Carantina și aprobările nu
+se modifică; listele de unelte și comenzi executabile sunt goale. CLI raportează eșecul
+inspecției/integrității prin exit 1. Interfața dedicată în HUD și mobil rămâne declarată
+ca lipsă. Contract și exemple: [`EXTENSIONS.md`](EXTENSIONS.md). **SDK-ul nu este încă
+închis:** S2 execuție izolată mediată și S3 livrare de evenimente sunt pași separați;
+injecția UI și hook-urile shell rămân excluse.
+
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
 pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca

@@ -1710,6 +1710,22 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   Setup and explicit execution limits: [`docs/LOCAL_IMAGE_SETUP.md`](docs/LOCAL_IMAGE_SETUP.md).
 
 
+  **2026-09-09 — Declarative extension inspection (HA-4i-S1).** Strict manifest/API v1
+  JSON declares namespaced tools, noncolliding commands and allowlisted observation
+  events, with bounded exact dependencies and cycle checks. `nerva extensions doctor`
+  reads named descriptors and Python distribution metadata without importing candidate
+  modules, installing packages or granting trust. `extensions list` uses user-guarded
+  `GET /api/plugins/extensions`; it only projects an already-composed acquisition store,
+  checks existing active signature/integrity state and never initializes or promotes it.
+  Failed inspection/integrity cannot yield a successful CLI exit. Quarantine and approval
+  remain unproven by this projection, and **all SDK callable sets remain empty**.
+  Tests cover malformed/colliding/cyclic descriptors, exact registration sets, metadata
+  reads, signed/tampered/revoked records, CLI failures and actual remote-client auth guards;
+  route/OpenAPI/auth snapshots and API sweep are synchronized. Dedicated HUD/mobile
+  extension views remain explicit parity gaps. Setup: [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md).
+  **Not SDK completion:** S2 mediated isolated dispatch and S3 event delivery remain open;
+  native UI injection, Git installation and raw-shell hooks remain excluded.
+
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
 verified/partial/aspirational split in `NERVA_VISION.md` now matches what actually ships, so the
 vision doc stops reading as a status report for capabilities that are still seeds.
