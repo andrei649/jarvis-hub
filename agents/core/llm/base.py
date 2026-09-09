@@ -723,6 +723,11 @@ class OllamaBackend(LLMBackend):
                 "model in LM Studio (or, if llm.max_tokens is set to a manual cap, raise it)",
                     model,
                 )
+                # Match the stream's native/proxy fields without exposing reasoning
+                # on a clean stop: Ollama's non-stream path never returned it.
+                reasoning = data.get("thinking") or data.get("reasoning_content") or ""
+                if strip_thinking(reasoning).strip():
+                    return THINKING_EXHAUSTED_REPLY
             return answer
         except Exception as e:
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
@@ -762,6 +767,9 @@ class OllamaBackend(LLMBackend):
                 logger.warning(
                     "Ollama truncated at num_predict before an answer (model=%s)", model
                 )
+                reasoning = message.get("thinking") or message.get("reasoning_content") or ""
+                if strip_thinking(reasoning).strip():
+                    content = THINKING_EXHAUSTED_REPLY
             return ToolTurn(content=content, tool_calls=tool_calls, finish_reason=finish)
         except Exception as e:
             return ToolTurn(
