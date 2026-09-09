@@ -1557,8 +1557,14 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   degraded by the H23.12 contract (no learning review, zero memory reward, a failed
   interaction, never mistaken for an answer) and never leaking the reasoning; warm-up treats it
   as a loaded model; the Ollama stream now reads its native `thinking` key. Covers LM Studio
-  (generate, stream, tool turn) and the Ollama stream; the two non-streaming Ollama paths still
-  answer blank on the same condition — named. Stated cost of the floor: a deep turn longer than
+  (generate, stream, tool turn) and Ollama (generate, stream, tool turn). **2026-09-09:** the two
+  non-streaming Ollama paths now return the same named degraded reply for native `thinking`
+  or the streaming proxy alias, preserving visible answers and tool calls. Eighteen new
+  regression cases; 228 related tests passed. A real local `qwen3.5:0.8b` probe exercised both
+  `/api/generate` and `/api/chat`: eight generated tokens, 25 thinking characters, no visible
+  answer, `done_reason=length`; both patched methods returned the named degraded reply.
+  Raw streaming evidence in P26 remains open; see the dated implementation plan for this
+  bounded non-stream proof. Stated cost of the floor: a deep turn longer than
   the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
   included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
   done: the continuation chain and the one empty retry (they change the tool-loop message

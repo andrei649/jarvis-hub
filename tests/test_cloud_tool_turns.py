@@ -23,7 +23,7 @@ import pytest
 from agents.core.agent_runtime import AgentToolRuntime
 from agents.core.llm.anthropic import ANTHROPIC_API_BASE, ClaudeBackend
 from agents.core.llm.auth_rotation import AuthProfilePool
-from agents.core.llm.base import OllamaBackend, is_degraded_reply
+from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, OllamaBackend, is_degraded_reply
 from agents.core.llm.gemini import GeminiBackend
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.provider_errors import GEMINI_DEGRADED_REPLY
@@ -313,6 +313,91 @@ async def test_openrouter_failure_is_a_degraded_turn_not_an_exception():
 
 
 # ── Ollama: /api/chat, object arguments, no ids ──────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_turn", [False, True], ids=["generate", "chat"])
+@pytest.mark.parametrize("reasoning_fields", [
+    {"thinking": "PRIVATE-REASONING"},
+    {"reasoning_content": "PRIVATE-REASONING"},
+    {"thinking": "", "reasoning_content": "PRIVATE-REASONING"},
+], ids=["native", "proxy", "proxy-with-empty-native"])
+async def test_ollama_exhausted_thinking_is_a_degraded_reply(
+    tool_turn, reasoning_fields, caplog,
+):
+    """A length stop with only reasoning must not become a successful blank reply."""
+    if tool_turn:
+        payload = _ollama_reply(done_reason="length")
+        payload["message"].update(reasoning_fields)
+    else:
+        payload = {"response": "", "done": True, "done_reason": "length", **reasoning_fields}
+    backend, _requests = _ollama(payload)
+    try:
+        if tool_turn:
+            turn = await _turn(backend)
+            answer = turn.content
+            assert turn.tool_calls == ()
+            assert turn.finish_reason == "length"
+        else:
+            answer = await backend.generate("model-x", "A hard question")
+    finally:
+        await backend.client.aclose()
+
+    assert answer == THINKING_EXHAUSTED_REPLY
+    assert is_degraded_reply(answer)
+    assert "PRIVATE-REASONING" not in answer
+    assert "PRIVATE-REASONING" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_turn", [False, True], ids=["generate", "chat"])
+@pytest.mark.parametrize("content,reasoning,finish,expected", [
+    ("", None, "length", ""),
+    ("", " \n\t", "length", ""),
+    ("<think>PRIVATE-REASONING</think>Visible answer.", "PRIVATE-REASONING", "length", "Visible answer."),
+    ("", "PRIVATE-REASONING", "stop", ""),
+    ("", "PRIVATE-REASONING", None, ""),
+], ids=["no-reasoning", "blank-reasoning", "visible-answer", "clean-stop", "missing-stop"])
+async def test_ollama_nonexhausted_reply_behavior_is_preserved(
+    tool_turn, content, reasoning, finish, expected,
+):
+    """The exhaustion guard must not expose reasoning or relabel another outcome."""
+    if tool_turn:
+        payload = _ollama_reply(content, done_reason=finish)
+        payload["message"]["thinking"] = reasoning
+    else:
+        payload = {"response": content, "thinking": reasoning, "done": True, "done_reason": finish}
+    backend, _requests = _ollama(payload)
+    try:
+        answer = (await _turn(backend)).content if tool_turn else await backend.generate("model-x", "Question")
+    finally:
+        await backend.client.aclose()
+
+    assert answer == expected
+    assert not is_degraded_reply(answer)
+    assert "PRIVATE-REASONING" not in answer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("arguments,parse_error", [
+    ({"value": "hi"}, None),
+    (["malformed"], "arguments_not_object"),
+], ids=["valid-call", "malformed-call"])
+async def test_ollama_tool_calls_are_not_replaced_by_exhausted_thinking(arguments, parse_error):
+    payload = _ollama_reply("", [{"function": {"name": "echo", "arguments": arguments}}], "length")
+    payload["message"]["thinking"] = "PRIVATE-REASONING"
+    backend, _requests = _ollama(payload)
+    try:
+        turn = await _turn(backend)
+    finally:
+        await backend.client.aclose()
+
+    assert turn.content == ""
+    assert turn.finish_reason == "length"
+    (call,) = turn.tool_calls
+    assert call.name == "echo"
+    assert call.parse_error == parse_error
+    assert call.arguments == (arguments if parse_error is None else None)
 
 
 @pytest.mark.asyncio
