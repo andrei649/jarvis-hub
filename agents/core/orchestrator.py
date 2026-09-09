@@ -1198,20 +1198,18 @@ class Orchestrator:
         # chat_id/sender, email sender, slack_channel, matrix room_id, teams
         # conversation, google-chat space). Drives both halves below: the
         # session key and the delivery decision.
+        thread_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
+                     or kwargs.get("room_id") or kwargs.get("conversation") or kwargs.get("space"))
+        if channel == "slack":
+            thread_id = kwargs.get("slack_channel")
+            if thread_id and kwargs.get("thread_ts"):
+                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
+        elif channel == "discord":
+            thread_id = kwargs.get("channel_id")
         source = SessionSource(
             channel=channel,
             sender=kwargs.get("sender"),
-            thread_id=(
-                (f"{kwargs['slack_channel']}:{kwargs['thread_ts']}"
-                 if channel == "slack" and kwargs.get("slack_channel") and kwargs.get("thread_ts")
-                 else None)
-                or kwargs.get("chat_id")
-                or kwargs.get("slack_channel")
-                or kwargs.get("channel_id")
-                or kwargs.get("room_id")
-                or kwargs.get("conversation")
-                or kwargs.get("space")
-            ),
+            thread_id=thread_id,
             client_id=kwargs.get("client_id"),
         )
         try:

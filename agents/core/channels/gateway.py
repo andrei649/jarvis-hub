@@ -113,7 +113,10 @@ class Gateway:
 
         try:
             origin = origin_for_channel(channel)
-            kwargs.setdefault("origin", origin)
+            if channel in {"slack", "discord"}:
+                kwargs["origin"] = origin
+            else:
+                kwargs.setdefault("origin", origin)
             inbound_meta = self._inbound_meta(channel, text, origin=origin)
             if inbound_meta:
                 kwargs.setdefault("_inbound_meta", dict(inbound_meta))

@@ -1657,7 +1657,8 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
 - [x] **HA-4i-comms** — Slack/Discord governed reply foundation (2026-09-09). Paired inbound
   messages persist in the same inbox as other channels; rooms and Slack subthreads have
   separate identities, and the exact persisted inbound id binds automatic replies even if
-  another message arrives first. Both channels use `channel.reply` through the Action Kernel
+  another message arrives first. The gateway fixes their origin to inbound; unrelated channel
+  identity fields cannot select their memory session. Both use `channel.reply` through the Action Kernel
   and existing approval queue. Discord's direct echo is removed; generic sends and unapproved
   draft streaming remain closed. Approved Slack replies preserve `slack_channel`/`thread_ts`;
   transport failures do not create delivery records. HUD, mobile and `nerva send` use the same

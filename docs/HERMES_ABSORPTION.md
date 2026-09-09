@@ -390,6 +390,7 @@ apelează adaptoarele direct. Teste: `tests/test_nerva_send.py` (25), CLI + Safe
 Mesajele admise de pairing intră în inbox-ul persistent. Identitatea conversației include
 camera și, pe Slack, subfirul; același membru în două camere nu mai amestecă memoria ori ținta.
 Gateway-ul leagă răspunsul de mesajul exact salvat și înlocuiește orice id pretins de eveniment.
+Originea rămâne `inbound`, iar câmpuri de identitate ale altui canal nu pot selecta memoria turei.
 Orchestratorul propune răspunsul complet prin brokerul `channel.reply`, cu Action Kernel și
 coada existentă. Discord nu mai publică direct valoarea returnată de handler. Un refuz,
 indisponibilitatea inbox-ului sau lipsa brokerului nu pot porni un send alternativ. Executarea

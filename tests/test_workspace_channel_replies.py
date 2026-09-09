@@ -168,11 +168,13 @@ async def test_gateway_store_failure_cannot_reuse_an_injected_message_id(tmp_pat
 @pytest.mark.asyncio
 async def test_workspace_sessions_separate_rooms_and_slack_threads():
     orch, cap = _bare_orchestrator()
-    for room, ts in (("C1", "100.001"), ("C1", "100.002"), ("C2", "100.001")):
-        await orch.channel_handler("hi", channel="slack", sender="7", slack_channel=room, thread_ts=ts)
+    for room, ts in (("C1", "100.001"), ("C1", "100.002"), ("C2", "100.001"), ("C1", ""), ("C2", "")):
+        await orch.channel_handler("hi", channel="slack", sender="7", slack_channel=room,
+                                   thread_ts=ts, chat_id="foreign")
     for room in ("123", "456"):
-        await orch.channel_handler("hi", channel="discord", sender="7", channel_id=room)
-    assert len(set(cap["sessions"])) == 5
+        await orch.channel_handler("hi", channel="discord", sender="7", channel_id=room,
+                                   chat_id="foreign")
+    assert len(set(cap["sessions"])) == 7
 
 
 @pytest.mark.parametrize("channel,reply", CASES)
@@ -199,3 +201,12 @@ def test_edit_support_alone_cannot_publish_unapproved_tokens(channel, reply):
     orch.channel_manager.channels = {channel: adapter}
     assert orch._begin_channel_draft(channel, SessionSource(channel=channel), reply) is None
     adapter.begin_stream.assert_not_called()
+
+
+@pytest.mark.parametrize("channel,reply", CASES)
+@pytest.mark.asyncio
+async def test_workspace_gateway_cannot_be_given_a_trusted_origin(channel, reply):
+    handler = AsyncMock(return_value=None)
+    gateway = Gateway(handler=handler, inbox_store=ChannelInboxStore(None))
+    await gateway.route("ping", channel=channel, sender="7", origin="generated", **reply)
+    assert handler.call_args.kwargs["origin"] == "inbound"
