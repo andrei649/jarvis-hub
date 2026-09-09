@@ -382,9 +382,25 @@ destinatarul din conversația exactă și apelează aceeași rută de reply ca H
 mobilă. `--json` păstrează rezultatul serverului; exit 0 înseamnă un task durabil pus în coadă,
 nu livrare, iar un preview fără task, un refuz sau un răspuns malformat este exit 1. Mesajele
 goale sau peste plafonul de 4.000 de caractere sunt refuzate înainte de apel, fără trunchiere
-tăcută. Lista curentă de canale rămâne Telegram/web/email; nu se ghicesc adrese și nu se
+tăcută. Lista inițială de canale era Telegram/web/email; nu se ghicesc adrese și nu se
 apelează adaptoarele direct. Teste: `tests/test_nerva_send.py` (25), CLI + Safe Comms (64
 împreună). Nicio trimitere către un serviciu extern nu a fost făcută în verificare.
+
+**Livrat 2026-09-09 (4i-comms — răspunsuri Slack/Discord prin aprobările existente).**
+Mesajele admise de pairing intră în inbox-ul persistent. Identitatea conversației include
+camera și, pe Slack, subfirul; același membru în două camere nu mai amestecă memoria ori ținta.
+Gateway-ul leagă răspunsul de mesajul exact salvat și înlocuiește orice id pretins de eveniment.
+Originea rămâne `inbound`, iar câmpuri de identitate ale altui canal nu pot selecta memoria turei.
+Orchestratorul propune răspunsul complet prin brokerul `channel.reply`, cu Action Kernel și
+coada existentă. Discord nu mai publică direct valoarea returnată de handler. Un refuz,
+indisponibilitatea inbox-ului sau lipsa brokerului nu pot porni un send alternativ. Executarea
+aprobată păstrează camera/subfirul Slack și înregistrează livrarea doar dacă transportul confirmă.
+Conversațiile sunt accesibile prin HUD, mobil și `nerva send`; nu există endpoint nou.
+Teste: `test_workspace_channel_replies.py`, suitele channel/session/render/API, composerul HUD
+și clientul mobil. **Streamingul live rămâne separat:** capabilitatea `supports_edit` nu este
+permisiune de a publica tokeni înainte ca mesajul complet să fie aprobat. Slack păstrează
+punctul de intrare host `receive_event`; configurarea evenimentelor și livrarea pe conturi
+reale nu au fost probate aici.
 
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea

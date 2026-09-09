@@ -57,19 +57,24 @@ class SlackChannel(ChannelAdapter):
     async def send(self, message: str, **kwargs) -> bool:
         if not self._client:
             return False
-        channel = kwargs.get("channel")
+        channel = kwargs.get("slack_channel") or kwargs.get("channel")
         if not channel:
             logger.warning("No Slack channel specified")
             return False
         try:
+            target = {"channel": channel}
+            if kwargs.get("thread_ts"):
+                target["thread_ts"] = kwargs["thread_ts"]
             # Rendered to mrkdwn and chunked on the source (Hermes absorption 4d).
             # slack_sdk.WebClient is the blocking (urllib) client; run it in an
             # executor so a slow/unreachable Slack API can't freeze the event loop.
             loop = asyncio.get_running_loop()
             for piece in render_outbound(str(message or ""), self.descriptor):
-                await loop.run_in_executor(
-                    None, lambda text=piece: self._client.chat_postMessage(channel=channel, text=text)
+                result = await loop.run_in_executor(
+                    None, lambda text=piece: self._client.chat_postMessage(**target, text=text)
                 )
+                if result.get("ok") is not True:
+                    return False
             return True
         except Exception as e:
             logger.error(f"Slack send error: {e}")

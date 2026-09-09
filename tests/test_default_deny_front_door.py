@@ -471,6 +471,7 @@ async def test_a_fresh_channel_starts_with_no_held_senders():
 
 class _Sink:
     def __init__(self):
+        self.id = 123
         self.sent: list[str] = []
 
     async def send(self, text):
@@ -538,14 +539,14 @@ async def test_discord_threads_its_sender_so_pairing_holds_a_stranger(tmp_path):
 
     await ch._handle_message(msg)
     assert reached == []                                  # held at the gate
-    assert msg.channel.sent and "approval" in msg.channel.sent[0].lower()
+    assert msg.channel.sent == []  # the adapter cannot publish the gateway's return value
     assert store.status("discord", "424242") == pairing_mod.PENDING
 
     store.approve("discord", "424242")
     msg2 = _discord_message(424242, "again")
     await ch._handle_message(msg2)
     assert reached == [("again", "424242")]              # sender is str(author.id)
-    assert msg2.channel.sent == ["routed"]
+    assert msg2.channel.sent == []  # only the governed reply executor may deliver
 
 
 @pytest.mark.asyncio
@@ -558,7 +559,7 @@ async def test_discord_handler_receives_sender_as_the_author_id_string():
 
     ch = DiscordChannel(token="tok", handler=handler)
     await ch._handle_message(_discord_message(99, "hi"))
-    assert seen == {"text": "hi", "channel": "discord", "sender": "99"}
+    assert seen == {"text": "hi", "channel": "discord", "sender": "99", "channel_id": "123"}
 
 
 @pytest.mark.asyncio
@@ -583,12 +584,12 @@ async def test_discord_on_message_delegates_to_the_method(fake_discord):
 
         stranger = _discord_message(7, "yo")
         await on_message(stranger)
-        assert seen == [("yo", "discord", {"sender": "7"})]
-        assert stranger.channel.sent == ["pong"]
+        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123"})]
+        assert stranger.channel.sent == []
 
         own = _discord_message(1, "echo?", author=client.user)
         await on_message(own)
-        assert seen == [("yo", "discord", {"sender": "7"})] and own.channel.sent == []
+        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123"})] and own.channel.sent == []
     finally:
         await ch.stop()
 
