@@ -14,6 +14,14 @@
 
 ## Windows portability — 2026-09-08 (run `copper-ember`)
 
+- [x] **WIN-2 — UTF-8 context queries on Windows.** Post-merge Windows run `34286680195`
+  verified the four WIN-1 fixes and exposed four different failures in the context query tools:
+  redirected Python output used cp1252, which cannot represent the Romanian text, arrows and
+  emoji already in BACKLOG and the Hermes ledger. Both CLI entry points now emit UTF-8 on stdout
+  and stderr; imports leave the caller's streams alone. Subprocess readers decode that contract
+  explicitly. Four regressions force the legacy encoding and verify lossless normal/error output;
+  all 24 context-query tests pass, including closed-pipe handling. Runtime policy is unchanged.
+
 - [x] **WIN-1 — preserve dependency hashes and portable host/path fixtures.** The latest
   push-to-main CI run (`34225122597`, Windows job `102057245227`) had four failures.
   Git's `core.autocrlf=true` changed the requirement-source bytes and made `doctor` report
