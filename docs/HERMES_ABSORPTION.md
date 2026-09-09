@@ -375,6 +375,17 @@ sintaxa și marcajul owner; încărcarea, lipsa comenzilor și indisponibilitate
 Execuția rămâne prin chat. Teste: `tests/test_commands_catalog.py` și
 `frontend/src/panels/quickbar.test.tsx`. Meniul nativ mobil rămâne **H18.26**.
 
+**Livrat 2026-09-09 (4i-send — un script poate propune o livrare pe canal).**
+`nerva send --list` arată până la 200 de conversații recente din inbox-ul real și distinge
+un inbox indisponibil de unul gol. `nerva send --to <thread_id> "Backup terminat"` verifică
+destinatarul din conversația exactă și apelează aceeași rută de reply ca HUD-ul și aplicația
+mobilă. `--json` păstrează rezultatul serverului; exit 0 înseamnă un task durabil pus în coadă,
+nu livrare, iar un preview fără task, un refuz sau un răspuns malformat este exit 1. Mesajele
+goale sau peste plafonul de 4.000 de caractere sunt refuzate înainte de apel, fără trunchiere
+tăcută. Lista curentă de canale rămâne Telegram/web/email; nu se ghicesc adrese și nu se
+apelează adaptoarele direct. Teste: `tests/test_nerva_send.py` (25), CLI + Safe Comms (64
+împreună). Nicio trimitere către un serviciu extern nu a fost făcută în verificare.
+
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
 pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca
