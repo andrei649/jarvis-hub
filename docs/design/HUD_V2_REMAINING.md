@@ -240,13 +240,16 @@ route; the cockpit is now one keystroke from chat, and the standalone page stays
 
 ---
 **HA-4i local images (2026-09-09):** the optional ComfyUI backend is reachable through
-the governed `image_generate` proposal and existing approval queue. A dedicated media
-composer/gallery is still missing. It must show configured versus measured availability,
-preview the exact prompt before approval, distinguish queued/failed/completed states,
-and fetch generated PNGs through the authenticated artifact-id API. It must not embed a
-host filesystem path, infer completion from a queued task, or retry an ambiguous submission.
-The existing Media Director controls presentation devices, not image generation; its
-shipped status does not close this gap. Native presentation is tracked as H18.27.
+the governed `image_generate` proposal and existing approval queue. **Composer and selected
+result view delivered:** Console → Build → Images shows configuration as untested, proposes
+the exact prompt, hands approval to the existing Inbox and observes one exact task through
+an admin-only state projection. Only a validated successful artifact is fetched as bounded,
+authenticated PNG bytes for a revocable browser preview/download. Lost POST responses remain
+uncertain with no automatic retry. Reopening/hard refresh clears panel state; entering the
+known task ID resumes observation without resubmission. A persistent gallery, owner-host
+ComfyUI proof and native presentation (H18.27) remain open. The production approval
+bridge supports `off` and `enforce`; `hold` intentionally refuses execution.
+Per-conversation access isolation is not added by this surface.
 
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations

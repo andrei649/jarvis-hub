@@ -17,13 +17,15 @@ edge back into `agents.web`.
 
 
 from fastapi import APIRouter, Depends
+from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, SkipValidation
 
 from agents.core.app_state import get_orch
 from agents.core.desktop_drivers import driver_for_host
 from agents.core.env_config import env_flag
-from agents.core.routers._deps import user_guard
+from agents.core.image_generation_view import ImageTaskView, project_image_task
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import error_json, nocache_json
 
 router = APIRouter(tags=["multimodal"])
@@ -442,3 +444,20 @@ async def media_catalog(q: str | None = None, kind: str | None = None):
                              "stats": {"total": 0, "cloud": 0, "by_kind": {}}})
     items = cat.search(q, kind=kind) if (q or kind) else cat.all()
     return nocache_json({"enabled": True, "items": items[:200], "stats": cat.stats()})
+
+
+@router.get("/api/media/generation-tasks/{task_id}", dependencies=[Depends(admin_guard)],
+            response_model=ImageTaskView)
+async def media_generation_task(task_id: int = PathParam(..., ge=1, le=2**63 - 1)):
+    """Owner-only image state/artifact metadata; excludes raw payload, results and paths."""
+    from agents.core.routers._component import require_component
+    _, queue, error = require_component("autonomy_queue", "image task state not available")
+    if error is not None:
+        return error
+    task = queue.get(task_id)
+    if (task is None or task.id != task_id
+            or task.kind not in {"toolrpc.image_generate", "tool.rpc"}
+            or not isinstance(task.payload, dict) or task.payload.get("tool") != "image_generate"
+            or (task.kind == "tool.rpc" and task.payload.get("target") != "image_generate")):
+        return nocache_json({"error": "image task not found"}, status_code=404)
+    return nocache_json(project_image_task(task).model_dump())

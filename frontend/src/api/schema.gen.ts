@@ -7205,6 +7205,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/media/generation-tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Media Generation Task
+         * @description Owner-only image state/artifact metadata; excludes raw payload, results and paths.
+         */
+        get: operations["media_generation_task_api_media_generation_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ingestion/provenance": {
         parameters: {
             query?: never;
@@ -9442,6 +9462,28 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImageArtifactView */
+        ImageArtifactView: {
+            /** Id */
+            id: string;
+            /** Bytes */
+            bytes: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /** ImageTaskView */
+        ImageTaskView: {
+            /** Task Id */
+            task_id: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "awaiting_approval" | "queued" | "generating" | "ready" | "rejected" | "deferred" | "refused" | "uncertain";
+            artifact?: components["schemas"]["ImageArtifactView"] | null;
         };
         /** InstallSkillBody */
         InstallSkillBody: {
@@ -20681,6 +20723,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    media_generation_task_api_media_generation_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageTaskView"];
                 };
             };
             /** @description Validation Error */

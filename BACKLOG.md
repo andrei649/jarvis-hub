@@ -1708,9 +1708,13 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   protected registry remain unchanged. Verification covers authenticated HTTP proposal,
   admin decision, guarded worker and artifact retrieval in both modes, current-receipt
   tampering, final-guard revocation and ambiguous-post restart with only ComfyUI transport
-  simulated; no real ComfyUI generation has been proven. HA-4i stays open: the dedicated
-  browser image composer/gallery is tracked in `docs/design/HUD_V2_REMAINING.md`; native
-  image presentation is H18.27. Existing chat and approvals remain the proposal surface.
+  simulated; no real ComfyUI generation has been proven. The owner Images panel in
+  Console → Build now proposes the exact prompt, hands approval to the existing Inbox,
+  observes a selected task through an admin-only projection and fetches authenticated PNG
+  bytes for preview/download. A missing POST response is uncertain and never retried;
+  interrupted observation can resume by task ID without making another proposal.
+  HA-4i stays open: persistent image history, native presentation (H18.27), host proof and
+  the intentionally held mode remain separate limitations. No activation is implied by this UI.
   Setup and explicit execution limits: [`docs/LOCAL_IMAGE_SETUP.md`](docs/LOCAL_IMAGE_SETUP.md).
 
 
@@ -2592,9 +2596,9 @@ absorbed them, not as independently shipped work.
   Auto column to `✅ frontend/src/test/workflow-builder-panel.test.tsx`, but none of that file's six tests
   exercises the empty-description guard the case describes — a green coverage marker for coverage that
   does not exist, added by an honesty pass, and it should be reverted to ❌ or the test written.
-- [ ] 🟡 **DRA-29 — Multimodal is output-only in the HUD: /api/vlm/describe and /api/media/generate have zero
-  frontend callers.** SINGLE_PAGE_HUD_BRIEF. *(evidence: `agents/core/routers/multimodal.py:70,
-  schema.gen.ts, frontend/src/cockpit.tsx`)*
+- [ ] 🟡 **DRA-29 — Multimodal HUD callers delivered; owner-host proof remains open.**
+  SINGLE_PAGE_HUD_BRIEF. VLM input and governed local image output now have actual client
+  callers. The following VLM delivery and 2026-09-09 image update describe their limits.
   **Partially shipped 02970c4 — the row stays OPEN.** The `/api/vlm/describe` half is wired: a new
   `VlmDescribePanel` in the Admin cluster reads `/api/vlm/status` for config truth, takes `image/*` files
   through `FileReader` into `data:` URIs (never paths — `encode_image_block` rejects those by design),
@@ -2607,10 +2611,14 @@ absorbed them, not as independently shipped work.
   route-level `is_local` guard: `_is_loopback_base` counts a LAN address as non-local, so a hard guard
   would refuse the owner's own second box, and silently narrowing a snapshot-frozen user-guarded contract
   is a behaviour change a HUD finding cannot justify. The code comment says so in those terms.
-  **The `/api/media/generate` half is deliberately NOT wired, and that is why this row is not ticked.**
-  `MediaGenManager` is constructed with no backends, so a button there would be dead by construction; the
-  owner must pick and deploy a media backend first. That route keeps its `UNCALLED_BACKLOG` entry, and
-  the row should be re-scoped rather than ticked.
+  **2026-09-09: local image caller delivered.** Console → Build → Images proposes through
+  `/api/media/generate`, uses the existing Decision Inbox and reads one exact image task's
+  redacted state. Only a validated nested success/artifact ID permits an authenticated PNG
+  preview/download. The prompt is readable before approval; changing it needs a fresh proposal.
+  No automatic POST retry, raw task JSON, host paths or backend URLs are rendered. Reopening
+  can resume by task ID; this owner-instance surface adds no browser prompt/task persistence.
+  The actual call removes this route from `UNCALLED_BACKLOG`. The row stays open for real
+  owner-host image/VLM proof; ComfyUI was unavailable and no live image generation is claimed.
 - [x] ✅ **DRA-30 — Issue #242 (CI/F-10): the SEC-4 required-checks posture contradicts itself across four
   in-repo files after the owner applied the settings on 2026-08-28.** Issue #242's second half asks to
   "Update OWNER_TASKS.md, BACKLOG.md, and workflow comments so they agree", to document required-check names

@@ -24,6 +24,23 @@ function buildHeaders(admin?: boolean): Record<string, string> {
   return h;
 }
 
+/** Explicit one-attempt transport for proposals whose response can be lost.
+ * It shares the HUD's header credentials, but never prompts, follows redirects,
+ * or retries a mutation. Callers bound and validate the response body. */
+export function apiFetchOnce(path: string, opts: {
+  method?: 'GET' | 'POST'; body?: unknown; admin?: boolean; signal?: AbortSignal; accept?: string;
+} = {}): Promise<Response> {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u0020\u007f]/.test(path)) {
+    return Promise.reject(new Error('same-origin path required'));
+  }
+  const headers = buildHeaders(opts.admin);
+  headers.Accept = opts.accept || 'application/json';
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  return fetch(path, { method: opts.method || 'GET', headers, signal: opts.signal,
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    redirect: 'error', credentials: 'same-origin', cache: 'no-store' });
+}
+
 let _prompted = false;
 
 async function request(
