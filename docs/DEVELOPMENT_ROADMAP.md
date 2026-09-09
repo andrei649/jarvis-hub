@@ -177,7 +177,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-10 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+11 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -206,8 +206,10 @@ deleting entries from the punch list; prioritize by user value:
    instead of silently returning the previous ctx value at run time.
 4. DRA-29 — multimodal *input*, **half done**: ~~the VLM describe caller~~ **done**
    (`VlmDescribePanel` posts to `/api/vlm/describe`), but `POST /api/media/generate` **still has
-   no caller** — nothing under `frontend/src` (outside the generated schema) references it, so
-   this row stays open; ~~DRA-37 — marketplace rollback control~~ **done** (the ⟲ control on the
+   no caller** — nothing under `frontend/src` (outside the generated schema) references it.
+   HA-4i-image adds the governed local backend and authenticated
+   `GET /api/media/generated/{artifact_id}`; its dedicated composer/preview is also pending,
+   so this row stays open; ~~DRA-37 — marketplace rollback control~~ **done** (the ⟲ control on the
    SKILLS MARKETPLACE list, which is where the rollback data actually lives);
    ~~DRA-38 — acquisition drive trigger beyond curl~~ **done** —
    `POST /api/acquisition/{request}/drive` is driven from the AcquisitionPanel.
