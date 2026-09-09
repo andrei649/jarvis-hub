@@ -375,17 +375,18 @@ async def media_generate(body: MediaGenBody):
                       "(heavy_features off — set JARVIS_SYSTEM_PROFILE=balanced to re-enable)"},
             status_code=200,
         )
-    orch = get_orch()
     if not body.cloud and body.kind == "image":
-        server = getattr(orch, "tool_rpc", None) if orch else None
-        if server is None:
-            return nocache_json({"ok": False, "reason": "tool_runtime_unavailable"}, status_code=503)
+        from agents.core.routers._component import require_component
+        _, server, error = require_component("tool_rpc", "tool runtime unavailable")
+        if error is not None:
+            return error
         args = {"prompt": body.prompt}
         args.update({key: value for key in ("seed", "width", "height", "steps")
                      if (value := getattr(body, key)) is not None})
         result = await server.handle({"tool": "image_generate", "args": args}, actor="pepper")
         queued = result.get("reason") == "approval_required" and "task_id" in result
         return nocache_json(result, status_code=202 if queued else 422)
+    orch = get_orch()
     from agents.core.media_catalog import default_catalog_if_enabled
     from agents.core.media_gen import MediaGenManager
     q = getattr(orch, "autonomy_queue", None) if orch else None

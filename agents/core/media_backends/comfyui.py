@@ -21,6 +21,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..env_config import truthy
+
 _IMPORTED_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 _READ_CHUNK_BYTES = 64 * 1024
 
@@ -44,7 +46,7 @@ class ComfyUIConfig:
     @classmethod
     def from_env(cls, env=None, *, output_root=None):
         env = os.environ if env is None else env
-        if str(env.get("JARVIS_LOCAL_IMAGE_GENERATION", "")).lower() not in {"1", "true", "yes", "on"}:
+        if not truthy(env.get("JARVIS_LOCAL_IMAGE_GENERATION")):
             return None
         checkpoint = env.get("JARVIS_COMFYUI_CHECKPOINT", "")
         if not checkpoint:

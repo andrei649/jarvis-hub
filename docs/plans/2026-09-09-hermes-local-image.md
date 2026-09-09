@@ -58,3 +58,13 @@ cached 7.13.0 CLI without starting a server or installing dependencies.
 Next action: root integration, clean-branch rebase if needed, then PR validation.
 No push from the implementation agent. Real ComfyUI/model proof and canonical
 mapping for strict mediated queue deployments remain separate requirements.
+
+Integration follow-up: the first full hosted run found six failures in shared
+environment/component conventions and route-auth/API-manual inventories. The
+backend now uses `env_config.truthy`, the router uses `require_component`, and
+the authenticated route is recorded in the auth snapshot and generated API
+sweep. The explicit HUD caller gap is also recorded in its parity ratchet.
+After the fixes, 165 image, environment, component, API sweep, route-auth,
+system-profile, route-parity and HUD-parity tests passed locally; Ruff and diff
+checks passed. No test was removed or skipped. Backend test collection remains
+9,541. The hosted full suite must pass on the new commit before merge.

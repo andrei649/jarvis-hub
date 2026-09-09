@@ -545,6 +545,9 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/desktop/plan",
     "/api/llm/openrouter",
     "/api/media/generate",
+    # HA-4i-image: opaque authenticated artifacts exist; the dedicated image
+    # panel/preview is an explicit follow-up in docs/design/HUD_V2_REMAINING.md.
+    "/api/media/generated/{artifact_id}",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). It is a legacy ALIAS, not a gap:
     # analytics.py:208-221 and analytics.py:224-235 return the identical `snapshot(orch)`,
     # and /api/capabilities' own docstring says it "extends the legacy metrics surface

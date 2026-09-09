@@ -121,6 +121,7 @@
   "GET /api/media": "user",
   "GET /api/media/catalog": "user",
   "GET /api/media/devices": "user",
+  "GET /api/media/generated/{artifact_id}": "user",
   "GET /api/media/session": "user",
   "GET /api/memory/consolidate/preview": "user",
   "GET /api/memory/decay/candidates": "user",

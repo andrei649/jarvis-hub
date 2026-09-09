@@ -46,6 +46,8 @@ def rig(tmp_path, monkeypatch):
     worker = AutonomyWorker(queue, policy=AutonomyPolicy())
     orch = SimpleNamespace(agents={}, autonomy=worker, autonomy_queue=queue, intent_log=None,
                            kill_switch=None, budget_ledger=None, loop_detector=None, permission_gate=None)
+    from agents.core.routers import _component
+    monkeypatch.setattr(_component, "get_orch", lambda: orch)
     kernel = make_action_kernel(orch)
     actions = []
 
