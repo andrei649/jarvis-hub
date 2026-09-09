@@ -1654,7 +1654,7 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   plus the existing CLI and Safe Comms suites (64 passed combined). Native UI plugin injection
   remains an explicit **skip** in the inventory; it is not included in the SDK work above.
 
-- [x] **HA-4i-comms** — Slack/Discord governed reply foundation (2026-09-09). Paired inbound
+  **2026-09-09 — Slack/Discord governed reply foundation shipped (HA-4i-comms).** Paired inbound
   messages persist in the same inbox as other channels; rooms and Slack subthreads have
   separate identities, and the exact persisted inbound id binds automatic replies even if
   another message arrives first. The gateway fixes their origin to inbound; unrelated channel
