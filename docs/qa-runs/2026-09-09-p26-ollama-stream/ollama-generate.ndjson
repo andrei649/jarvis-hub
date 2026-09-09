@@ -1,0 +1,7 @@
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8500891Z","response":"","thinking":"Thinking","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8750985Z","response":"","thinking":" Process","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8816697Z","response":"","thinking":":","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8883967Z","response":"","thinking":"\n\n1","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8920281Z","response":"","thinking":".","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8997721Z","response":"","thinking":"  **","done":false}
+{"model":"qwen3.5:0.8b","created_at":"2026-09-09T12:02:37.8997721Z","response":"","done":true,"done_reason":"length","context":[248045,846,198,46270,220,16,22,53070,539,220,17,18,13,248046,198,248045,74455,198,248068,198,90700,8340,25,271,16,13,220,2972],"total_duration":7016626300,"load_duration":6855172500,"prompt_eval_count":20,"prompt_eval_cached_count":0,"prompt_eval_duration":107497000,"eval_count":8,"eval_duration":49436000}
