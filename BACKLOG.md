@@ -1557,8 +1557,19 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   degraded by the H23.12 contract (no learning review, zero memory reward, a failed
   interaction, never mistaken for an answer) and never leaking the reasoning; warm-up treats it
   as a loaded model; the Ollama stream now reads its native `thinking` key. Covers LM Studio
-  (generate, stream, tool turn) and the Ollama stream; the two non-streaming Ollama paths still
-  answer blank on the same condition — named. Stated cost of the floor: a deep turn longer than
+  (generate, stream, tool turn) and Ollama (generate, stream, tool turn). **2026-09-09:** the two
+  non-streaming Ollama paths now return the same named degraded reply for native `thinking`
+  or the streaming proxy alias, preserving visible answers and tool calls. Eighteen new
+  regression cases; 228 related tests passed. A real local `qwen3.5:0.8b` probe exercised both
+  `/api/generate` and `/api/chat`: eight generated tokens, 25 thinking characters, no visible
+  answer, `done_reason=length`; both patched methods returned the named degraded reply.
+  **Raw Ollama streaming proven 2026-09-09:** Ollama 0.33.3 / the same installed small model
+  returned seven raw NDJSON records (1,123 bytes), eight generated tokens, 25 native thinking
+  characters, zero visible response, and `done_reason=length`. Unmodified `generate_stream`
+  returned the named degraded reply and emitted zero user-token callbacks; `keep_alive=0`
+  plus explicit cleanup left no model resident. The [capture and offline replay](docs/qa-runs/2026-09-09-p26-ollama-stream/README.md)
+  preserve the real response bytes without a serving-layer shim. P26 stays open for LM Studio,
+  long real reasoning latency, later memory recall, and the cloud window proof. Stated cost of the floor: a deep turn longer than
   the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
   included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
   done: the continuation chain and the one empty retry (they change the tool-loop message
@@ -1566,9 +1577,9 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   floor and the window table were exercised against a real reasoning model. The
   thinking-exhausted guard was **not** — llama.cpp's OpenAI server returns a thinking model's
   output inline as `<think>` inside `content`, never as `reasoning_content`, and on that shape
-  the guard does not fire; the only probe that made it fire manufactured the field the guard
-  reads, which is circular. P26 now asks for the one artefact that closes it: a raw captured
-  stream from real LM Studio and real Ollama.
+  the guard does not fire; the only probe in that off-box run that made it fire manufactured
+  the field the guard reads, which is circular. The real Ollama stream is now captured above;
+  P26 still needs the raw LM Studio stream, and the inline-thinking gap remains named.
 - [x] ✅ **HA-5d — five fixes the off-box proof run found** (PR #1044). A GPU-less container ran
   the P24/P25/P26 packets end to end — a real Qwen3-0.6B on CPU (llama.cpp, ~30 tok/s,
   `is_reasoning_model` true) driving the real `AgentToolRuntime` over the coordinator's real
@@ -1665,7 +1676,23 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   inbox target. Tests: `test_workspace_channel_replies.py`, existing channel/session/render/API
   suites, HUD inbox and mobile client regressions. **Live token streaming remains HA-4i:**
   the current approval covers a complete message, not unknown future output. Real Slack
-  event ingress is still the host `receive_event` seam; platform account delivery is unproven.
+  event ingress was still the host `receive_event` seam at that slice; platform account delivery is unproven.
+
+  **2026-09-09 — Slack Socket Mode ingress (HA-4i-socket).** Optional `SLACK_APP_TOKEN`
+  connects the official SDK to `receive_event` and the existing paired inbox. Human DMs
+  and explicit mentions only; authenticated workspace binding and `TEAM_ID:USER_ID`
+  pairing prevent reuse across workspaces (prior bare pairings need fresh approval).
+  Bot/subtype/malformed events are ignored, exact room/thread
+  identity is retained, event replay memory and SDK-to-async queue are bounded. Envelope
+  acknowledgment never implies processing or delivery. Stop closes the socket and cancels
+  pending dispatch. Bot-token-only hosts keep manual ingress; no new route or send bypass.
+  HUD and mobile consume the existing inbox. Setup and explicit live-test limits:
+  [`docs/SLACK_SETUP.md`](docs/SLACK_SETUP.md). Regressions use fake SDK lifecycle/events
+  and the real gateway/pairing/inbox. Fifty-one new cases include a native SDK 3.44.1
+  offline parser/callback/cleanup smoke; Slack/front-door checks passed with that SDK,
+  along with inbox/session/render, route/OpenAPI and app lifecycle checks. The real
+  SDK smoke skips when the optional package is absent. Live workspace
+  connectivity/delivery remains unproven.
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the

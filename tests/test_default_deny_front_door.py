@@ -51,7 +51,7 @@ PAIRING_OFF = {"JARVIS_CHANNEL_PAIRING": "0"}
 
 _FRONT_DOOR_VARS = (
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "DISCORD_BOT_TOKEN",
-    "SLACK_BOT_TOKEN", "JARVIS_WEBHOOK_CHANNELS", "IMAP_HOST", "SMTP_HOST",
+    "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "JARVIS_WEBHOOK_CHANNELS", "IMAP_HOST", "SMTP_HOST",
     "JARVIS_CHANNEL_PAIRING", "JARVIS_CHANNEL_OPEN",
     "JARVIS_HOST", "JARVIS_HARDENED", "NERVA_PUBLIC_PROFILE", "JARVIS_TASK_MEDIATION",
 )
@@ -112,6 +112,28 @@ def test_parse_check_reads_the_mapping_it_is_given(flag):
 def test_no_token_no_guard(capsys):
     boot_guards.assert_guarded_channels({})  # nothing configured → nothing to guard
     boot_guards.assert_guarded_channels({**PAIRING_OFF})
+    assert "[SECURITY]" not in capsys.readouterr().out
+
+
+def test_slack_socket_ingress_requires_pairing_or_explicit_open_ack(capsys):
+    env = {"SLACK_BOT_TOKEN": TOKEN, "SLACK_APP_TOKEN": "app-secret"}
+    boot_guards.assert_front_door(env)
+    assert "[SECURITY]" not in capsys.readouterr().out
+    with pytest.raises(SystemExit) as refused:
+        boot_guards.assert_front_door({**env, **PAIRING_OFF})
+    assert "slack bot would answer any sender" in str(refused.value)
+    assert TOKEN not in str(refused.value) and "app-secret" not in str(refused.value)
+    boot_guards.assert_front_door({**env, **PAIRING_OFF, "JARVIS_CHANNEL_OPEN": "1"})
+    assert "[SECURITY] slack bot answers any sender" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("tokens", [
+    {"SLACK_BOT_TOKEN": TOKEN},
+    {"SLACK_APP_TOKEN": "app-secret"},
+    {"SLACK_BOT_TOKEN": TOKEN, "SLACK_APP_TOKEN": "   "},
+])
+def test_slack_without_both_tokens_does_not_add_a_live_front_door(tokens, capsys):
+    boot_guards.assert_front_door({**tokens, **PAIRING_OFF})
     assert "[SECURITY]" not in capsys.readouterr().out
 
 
@@ -189,20 +211,9 @@ def test_a_webhook_map_that_wires_nothing_is_not_a_front_door():
 
 
 def test_a_slack_token_alone_is_not_a_front_door(capsys):
-    """The app builds the Slack adapter for outbound ``send()`` only and nothing calls
-    ``receive_event`` — so an outbound-only Slack config must boot, and must not be
-    told it answers strangers. The tripwire below fires the day an inbound Slack
-    route appears: then Slack belongs back in the guard's table."""
+    """Automatic Slack ingress requires the additional app-level Socket Mode token."""
     boot_guards.assert_guarded_channels({"SLACK_BOT_TOKEN": "xoxb-outbound-only", **PAIRING_OFF})
     assert "[SECURITY]" not in capsys.readouterr().out
-    callers = [
-        path for path in (repo_root / "agents").rglob("*.py")
-        if path.name != "slack.py" and ".receive_event(" in path.read_text(encoding="utf-8")
-    ]
-    assert callers == [], (
-        "an inbound Slack path now exists — add slack to boot_guards._INBOUND_CHANNELS"
-    )
-    assert all(ch.name != "slack" for ch in boot_guards._INBOUND_CHANNELS)
 
 
 def test_channel_open_ack_prints_the_security_line_and_boots(capsys):

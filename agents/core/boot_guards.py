@@ -90,9 +90,8 @@ class _InboundChannel(NamedTuple):
 # Every inbound path the app wires that threads a ``sender`` into the gateway — that
 # is, every door a stranger can knock on. Each entry mirrors the wiring condition in
 # the app lifespan so the guard neither misses a wired door nor refuses one that is
-# never wired: Slack is deliberately absent because the app constructs its adapter
-# for outbound ``send()`` only and nothing calls ``SlackChannel.receive_event`` yet
-# (it re-enters this table the moment an inbound Slack events route exists). Only
+# never wired: Slack receives events automatically only when both its bot token
+# and Socket Mode app token are set; bot-token-only hosts retain manual ingress. Only
 # Telegram has an allowlist knob; the others rely on pairing. Two doors are outside
 # this table on purpose: the admin-minted public widget (``routers/secrets.py``) is an
 # intentionally anonymous door governed by its own token and the gateway rate limit,
@@ -104,6 +103,7 @@ _INBOUND_CHANNELS: tuple[_InboundChannel, ...] = (
     _InboundChannel("telegram", "telegram bot", _env_set("TELEGRAM_BOT_TOKEN"),
                     "TELEGRAM_ALLOWED_USER_IDS"),
     _InboundChannel("discord", "discord bot", _env_set("DISCORD_BOT_TOKEN"), None),
+    _InboundChannel("slack", "slack bot", _env_set("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"), None),
     _InboundChannel("webhook", "webhook channel", _json_object_set("JARVIS_WEBHOOK_CHANNELS"),
                     None),
     _InboundChannel("email", "email channel", _env_set("IMAP_HOST", "SMTP_HOST"), None),

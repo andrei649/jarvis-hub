@@ -402,6 +402,22 @@ permisiune de a publica tokeni înainte ca mesajul complet să fie aprobat. Slac
 punctul de intrare host `receive_event`; configurarea evenimentelor și livrarea pe conturi
 reale nu au fost probate aici.
 
+**2026-09-09 (4i-socket — recepție Slack prin Socket Mode).** Cu `SLACK_APP_TOKEN`
+configurat, adaptorul conectează clientul oficial opțional și trece mesajele directe și
+mențiunile explicite prin `receive_event`, pairing și inbox-ul existent. Nu mai este
+necesar ca un host extern să cheme manual acea metodă. Confirmarea plicului precedează
+procesarea; o coadă mărginită separă callback-urile SDK de bucla hub-ului, iar un cache
+mărginit elimină evenimentele repetate în aceeași pornire. Editările, mesajele de bot,
+conversația neadresată și identitățile malformate nu pornesc ture. O mențiune la nivelul
+camerei primește propriul thread; un subfir existent își păstrează ținta. Nicio cale nouă
+de send și nicio schimbare la aprobări. Fără app token, punctul manual existent rămâne.
+Identitatea verificată a botului fixează workspace-ul acceptat; pairing-ul folosește
+`TEAM_ID:USER_ID`, deci aprobările vechi pe user simplu nu se transferă implicit.
+Configurare și limite: [`SLACK_SETUP.md`](SLACK_SETUP.md). Aceleași API-uri de inbox
+servesc HUD și mobil. Testele folosesc SDK fals și componentele reale de pairing/inbox;
+un test suplimentar verifică parserul, callback-ul și închiderea SDK-ului real 3.44.1
+cu rețeaua simulată. Conectarea la un workspace și livrarea pe conturi reale rămân neprobate.
+
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
 pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca
@@ -502,8 +518,13 @@ răspuns vizibil întoarce acum un răspuns `⚠️` numit în loc de un șir go
 contractul H23.12 (fără review de învățare, recompensă zero în memorie, interacțiune eșuată,
 niciodată luat drept răspuns) și fără să scurgă raționamentul; warm-up-ul îl tratează ca model
 încărcat, iar fluxul Ollama citește acum cheia lui nativă `thinking`. Acoperă LM Studio (generate,
-flux, tură cu unelte) și fluxul Ollama; cele două căi Ollama fără flux răspund încă gol pe
-aceeași condiție — numit. Costul declarat al pragului: o tură profundă mai lungă decât
+flux, tură cu unelte) și Ollama (generate, flux, tură cu unelte). **2026-09-09:** cele două
+căi Ollama fără flux întorc același răspuns numit pentru `thinking` nativ sau aliasul folosit
+de flux, fără să schimbe răspunsurile vizibile și apelurile de unelte. 18 regresii noi,
+228 de teste conexe trecute; probă locală reală cu `qwen3.5:0.8b` pe ambele endpoint-uri:
+8 tokeni, 25 de caractere de raționament, răspuns gol, `done_reason=length` → răspuns
+degradat numit în ambele metode. Proba de flux brut cerută de P26 rămâne deschisă.
+Costul declarat al pragului: o tură profundă mai lungă decât
 așteptarea de 180 s a lease-ului de tură face ca un al doilea mesaj pe aceeași sesiune de canal,
 `/stop` inclus, să primească „ocupat" până se termină; `nerva estop` și API-ul rămân la îndemână.
 Numite și nefăcute: lanțul de continuare și reîncercarea pe răspuns gol (schimbă forma mesajelor
