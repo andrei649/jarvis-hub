@@ -35,7 +35,7 @@ describe('mode surfaces keep their accessibility contract', () => {
 
   it('names the MEMORY time-travel slider in the active locale', () => {
     for (const loc of ['en', 'ro']) {
-      const { container } = render(<MemoryMode t={V2.I18N[loc]} />);
+      const { container } = render(<MemoryMode t={V2.I18N[loc]} demo />);
       const slider = container.querySelector('input[type="range"]');
       expect(slider, `MemoryMode should render the time-travel slider (${loc})`).toBeTruthy();
       // An unlabelled range input is axe `critical · label`: it announced as a bare "slider".

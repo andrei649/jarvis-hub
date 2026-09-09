@@ -41,7 +41,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
 | Memory / notes | read legs only: `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
-| Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ | H18.17 |
+| Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
+| Memory neighborhood navigation | user `GET /api/kg/entities`, `GET /api/kg/entities/{name}` | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 entity list/detail exists; connected-neighbor navigation and request-bound parity remain | DW-1 / H18.28 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |

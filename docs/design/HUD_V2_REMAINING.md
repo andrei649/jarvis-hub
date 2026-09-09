@@ -54,7 +54,15 @@ with plugin-configured checks instead of seeded success. Still open:
   the JSON-paste `WORKFLOW BUILDER` panel is the v2 editing surface of record; the legacy v1 HUD's
   `WorkflowCanvas` (`agents/web/static/workflows.js`) does exist and retires together with the v1
   HUD (§8 / AUD-15) — ported only on demonstrated demand, as a fresh spec with its own id.
-- **Memory**: `RECALLS` / `TOPICS` / `KG` live (recall search, decay ranking, bitemporal KG as‑of).
+- **Memory**: DW-1 replaces the live mode's sample graph with read-only entity search,
+  selection and connected-entity navigation over `GET /api/kg/entities` and
+  `GET /api/kg/entities/{name}`. Reads use current user credentials, a ten-second deadline,
+  a one-MiB response bound and 100 displayed entities/relationships; cancelled or superseded
+  reads cannot replace the current selection. Empty/unavailable data stays explicit. Recalls
+  use real search results with no sample fallback, and headline statistics remain unchanged.
+  The sample graph, recalls, topic freshness bars and historical slider appear only in explicit
+  Demo. Live decay ranking and bitemporal as-of navigation remain open. Relationships are
+  presented without directional or semantic-distance claims; this is no 3D embedding map.
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
 - **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now

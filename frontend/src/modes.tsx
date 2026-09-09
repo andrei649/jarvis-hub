@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
 import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
+import { MemoryNeighborhood } from './panels/memory-neighborhood';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 /* ============ AGENTS ============ */
@@ -264,21 +265,27 @@ function TrustMode({ t, localPct = null }) {
 }
 
 /* ============ MEMORY + KG ============ */
-function MemoryMode({ t }) {
+function MemoryMode({ t, demo = false }) {
   const D = V2;
   const M = D.MEMORY_STATS;
   const marks = D.KG.marks;
   const [ti,setTi]=useState(marks.length-1);
   // LIVE recalls: GET /api/memory/search returns the user's actual top hits. We map
   // the backend {score,payload,sources} → the seed's {rx,rsrc,score} row shape and
-  // replace the mock list when real results arrive (empty/offline → keep seed corpus).
+  // use real results in live mode; samples belong only to explicit Demo mode.
   const [recalls,setRecalls]=useState(null);
+  const [recallState,setRecallState]=useState('Loading recalls…');
   useEffect(() => {
     let alive = true;
+    setRecalls(null);
+    if (demo) return () => { alive = false; };
+    setRecallState('Loading recalls…');
     // A neutral query surfaces the most salient memories for the "recent recalls" panel.
     memorySearch('recent').then((r) => {
-      const res = r && Array.isArray(r.results) ? r.results : [];
-      if (!alive || !res.length) return;
+      if (!alive) return;
+      if (!r || ('error' in r && r.error) || !Array.isArray(r.results)) throw new Error('Memory recall unavailable');
+      const res = r.results;
+      setRecallState(res.length ? '' : 'No matching memories.');
       setRecalls(res.slice(0,6).map((h: any) => {
         const p = h.payload || {};
         const text = p.text || p.content || p.summary || (typeof h.payload === 'string' ? h.payload : '') || h.id || '';
@@ -286,17 +293,17 @@ function MemoryMode({ t }) {
         const sc = h.score != null ? Number(h.score).toFixed(2) : '';
         return { rx: String(text).slice(0,90), rsrc: src + (sc?' · '+sc:''), score: sc };
       }));
-    }).catch(() => {});
+    }).catch(() => { if (alive) { setRecalls([]); setRecallState('Memory recall unavailable.'); } });
     return () => { alive = false; };
-  }, []);
-  const RECALLS = recalls || D.RECALLS;
+  }, [demo]);
+  const RECALLS = demo ? D.RECALLS : (recalls || []);
   const born = ti; // 0..3
   const visNodes = D.KG.nodes.filter(n=>n.born<=born);
   const visIds = new Set(visNodes.map(n=>n.id));
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.memory} size={14}/><span className="ttl">{t.memTitle}</span><span className="st">qdrant · 768d</span></div>
+      <div className="panel-head"><Icon d={ICONS.memory} size={14}/><span className="ttl">{t.memTitle}</span><span className="st">{demo ? 'DEMO · sample memory' : 'stored memory'}</span></div>
       <div className="panel-body">
         <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
           {[[M.sessions,'sessions'],[M.vectors,'vectors'],[M.entities,'entities'],[M.relations,'relations']].map(([v,l],i)=>(
@@ -306,19 +313,20 @@ function MemoryMode({ t }) {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'var(--gap)',alignItems:'start'}}>
           <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
             <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:8}}>{t.recall}</div>
+            {!demo && <div role="status" style={{fontSize:12,color:'var(--ink-2)'}}>{recallState}</div>}
             {RECALLS.map((r,i)=>(
               <div className="recall-row" key={i}><div><div className="rx">{r.rx}</div><div className="rsrc">{r.rsrc}</div></div><span className="recall-score">{r.score}</span></div>
             ))}
-            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',margin:'16px 0 8px'}}>{t.spaces}</div>
+            {demo && <><div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',margin:'16px 0 8px'}}>{t.spaces}</div>
             {D.TOPICS.map((tp,i)=>(
               <div key={i} style={{marginBottom:8}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-2)'}}><span>{tp.t}</span><span style={{fontFamily:'var(--font-mono)',color:'var(--ink-3)'}}>{100-tp.d}% fresh</span></div>
                 <div className="decay-bar"><i style={{width:(100-tp.d)+'%'}}></i></div>
               </div>
-            ))}
+            ))}</>}
           </div>
           {/* KG */}
-          <div>
+          {demo ? <div>
             <div className="kg-wrap">
               <svg className="kg-svg" viewBox="0 0 640 380" preserveAspectRatio="xMidYMid meet">
                 {D.KG.edges.map((e,i)=>{
@@ -348,7 +356,7 @@ function MemoryMode({ t }) {
               <span className="asof">{marks[ti]}</span>
             </div>
             <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
-          </div>
+          </div> : <MemoryNeighborhood />}
         </div>
       </div>
     </div>
