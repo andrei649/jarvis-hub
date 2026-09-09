@@ -999,6 +999,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Command Catalog
+         * @description List the live registry using the same owner identity as the chat endpoint.
+         *
+         *     No handler is invoked. A hub that has not started its registry reports that
+         *     absence, rather than advertising commands it cannot currently dispatch.
+         */
+        get: operations["command_catalog_api_commands_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -9148,6 +9171,29 @@ export interface components {
             /** Value */
             value: number | string;
         };
+        /** CommandCatalog */
+        CommandCatalog: {
+            /** Ok */
+            ok: boolean;
+            /** Commands */
+            commands: components["schemas"]["CommandSummary"][];
+        };
+        /** CommandSummary */
+        CommandSummary: {
+            /** Name */
+            name: string;
+            /** Command */
+            command: string;
+            /** Description */
+            description: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "user" | "admin";
+            /** Usage */
+            usage: string;
+        };
         /** ConfirmationBody */
         ConfirmationBody: {
             /** Challenge Token */
@@ -11710,6 +11756,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    command_catalog_api_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandCatalog"];
                 };
             };
         };

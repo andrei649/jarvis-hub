@@ -1627,8 +1627,15 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   field, so neither tool can answer "how many of the 476 are already delivered" — that is the
   separate status pass.
 
+- [x] **HA-4i-catalog** — `GET /api/commands` lists the live slash-command registry using the
+  same principal as chat. The user guard runs first; owner entries require the existing owner
+  identity. Reading never dispatches a handler, and an unavailable registry returns a named 503
+  instead of a synthetic default. The HUD quickbar renders command, usage and owner tier, with
+  separate loading/empty/unavailable states; it sends no command. Final API/auth/parity/lifespan
+  checks: 68 passed; full frontend: 1,039 passed; typecheck and build pass. Native discovery is H18.26.
+
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
-  now say they can), HUD mode on desktop, the plugin SDK, `nerva send` + `GET /api/commands`,
+  now say they can), HUD mode on desktop, the plugin SDK, `nerva send`,
   session-persistent code kernels and `image_generate` (both need backends that do not exist
   yet) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
 
@@ -6340,6 +6347,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.23 ✅ | **Mobile spoken morning brief** — the native Status tab gains a "Morning brief" card over the admin-guarded `GET /autonomy/brief`, with a 🔊 Speak/Stop control through the existing hub-TTS + expo-audio path. Honest empty/no-admin-token/TTS-unavailable states; `fetchAutonomyBrief` normalizes kind/text with a bound. Red/green: `autonomyBrief.test.ts` (+3) first failed on the missing client function, then full mobile Jest passed (96) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.5, H18.14 | PARITY.md |
 | H18.24 | **Native voice orb** — bring the browser voice orb (`frontend/src/orb.tsx`) to the native mic surface: the same state→visual contract (listening = measured mic level, every other state a labelled animation, no numeric level), rendered with the platform's canvas/Skia equivalent. No API change — it reads the existing STT/TTS loop. | 3 | P3 | H18.5 | PARITY.md |
 | H18.25 | **Native briefing wall** — the browser wall (`frontend/src/wall.tsx` + `burst.tsx`) is responsive down to phone widths, so a phone browser already gets the portrait layout and hold-to-talk; the **native** apps have neither. Port the field, the chip/edge-tab chrome and the push-to-talk control, carrying the same fail-closed mic rule (current trust evidence + exact `mic === 'on'`, stop on permission loss/unmount) and the default-hidden spoken line. | 5 | P3 | H18.5, H18.24 | PARITY.md |
+| H18.26 | **Native chat-command discovery** — list the live `GET /api/commands` catalog with usage, owner tier and unavailable state in the native chat UI. Keep execution on the existing guarded chat path. Browser quickbar discovery ships in HA-4i-catalog. | 2 | P3 | H18.1 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

@@ -19,6 +19,9 @@
   make LIVE/SEED visible, and `panel-chip-coverage.test.ts` pins every Console card.
 
 ## 2. Deepen the P4c Console panels (read/basic → full)
+- ✅ **Chat-command discovery (HA-4i-catalog):** the Quickbar panel reads `GET /api/commands`
+  from the live registry, with usage and owner markers filtered by chat's principal. Loading,
+  empty and unavailable states are distinct. This is a catalog; commands execute through chat.
 - ✅ **Ambient Watch (H33.6):** the Home cluster now reads the redacted live ambient runtime,
   showing monitor/source health, last policy decision, rung counts, and the single global
   attention budget. Monitor administration remains in the separately authenticated admin API;
