@@ -247,8 +247,9 @@ an admin-only state projection. Only a validated successful artifact is fetched 
 authenticated PNG bytes for a revocable browser preview/download. Lost POST responses remain
 uncertain with no automatic retry. Reopening/hard refresh clears panel state; entering the
 known task ID resumes observation without resubmission. A persistent gallery, owner-host
-ComfyUI proof and native presentation (H18.27) remain open. This surface does not bypass
-the existing strict queue-mediation limitation or add per-conversation access isolation.
+ComfyUI proof and native presentation (H18.27) remain open. The production approval
+bridge supports `off` and `enforce`; `hold` intentionally refuses execution.
+Per-conversation access isolation is not added by this surface.
 
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations
