@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -154,6 +155,13 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("message")
     chat.add_argument("--agent", help="address one agent instead of the router")
     chat.add_argument("--json", action="store_true")
+
+    send = verbs.add_parser("send", help="queue a governed reply to a known inbox target")
+    target = send.add_mutually_exclusive_group(required=True)
+    target.add_argument("--list", action="store_true", help="list recent inbox targets")
+    target.add_argument("--to", metavar="THREAD_ID", help="exact target id from --list")
+    send.add_argument("message", nargs="?", help="reply text (up to 4,000 characters)")
+    send.add_argument("--json", action="store_true")
 
     completion = verbs.add_parser("completion", help="print a shell completion script")
     completion.add_argument("shell", choices=("bash", "zsh"))
@@ -676,6 +684,60 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
+    """Use the HUD's reply broker; queue acceptance is never delivery confirmation."""
+    if ns.list:
+        if ns.message is not None:
+            ctx.err.write("--list does not take a message\n")
+            return EXIT_USAGE
+        client = ctx.client()
+        status = client.get("/api/channels/inbox/status")
+        if not isinstance(status, dict) or status.get("enabled") is not True:
+            ctx.err.write("channel inbox unavailable\n")
+            return EXIT_FAILED
+        reply = client.get("/api/channels/inbox?limit=200")
+        rows = reply.get("threads") if isinstance(reply, dict) else None
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise HubError(0, "malformed inbox target list")
+        if ns.json:
+            ctx.dump(rows)
+        elif not rows:
+            ctx.say("no inbox targets — receive a message in a configured channel first")
+        else:
+            ctx.say("recent inbox targets (up to 200):")
+            for row in rows:
+                ctx.say(f"{row.get('thread_id', '?')}  {row.get('channel', '?')}  {row.get('from', '')}")
+        return EXIT_OK
+
+    # An id is a single path segment, never a URL, a display name or a guessed recipient.
+    if not re.fullmatch(r"[A-Za-z0-9_:-]{1,200}", ns.to or ""):
+        ctx.err.write("--to requires an exact thread id from `nerva send --list`\n")
+        return EXIT_USAGE
+    if not ns.message or not ns.message.strip() or len(ns.message) > 4_000:
+        ctx.err.write("message must contain 1–4,000 characters; nothing was queued\n")
+        return EXIT_USAGE
+    client = ctx.client()
+    path = f"/api/channels/inbox/{ns.to}"
+    found = client.get(path)
+    thread = found.get("thread") if isinstance(found, dict) else None
+    if (not isinstance(thread, dict) or thread.get("thread_id") != ns.to
+            or not isinstance(thread.get("reply"), dict) or not thread["reply"]):
+        ctx.err.write("target has no resolved inbox recipient; nothing was queued\n")
+        return EXIT_FAILED
+    reply = client.post(f"{path}/reply", {"text": ns.message, "source": "nerva.cli.send"})
+    task_id = reply.get("task_id") if isinstance(reply, dict) else None
+    queued = (isinstance(reply, dict) and reply.get("ok") is True
+              and reply.get("queued") is True and type(task_id) is int and task_id > 0)
+    if ns.json:
+        ctx.dump(reply)
+    elif queued:
+        ctx.say(f"queued task {task_id} for {ns.to} — delivery follows the hub's approval policy")
+    else:
+        reason = reply.get("reason") if isinstance(reply, dict) else None
+        ctx.err.write(f"reply was not queued: {reason or 'no durable task returned'}\n")
+    return EXIT_OK if queued else EXIT_FAILED
+
+
 def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
     tree = command_tree(parser)
     verbs = " ".join(sorted(tree))
@@ -736,6 +798,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "chat": cmd_chat,
+    "send": cmd_send,
     "completion": cmd_completion,
 }
 

@@ -12,8 +12,8 @@ driver do something the owner did not agree to:
     return a black frame rather than an error, and a black screenshot that looks
     like a screenshot is worse than no screenshot at all.
 
-Hermetic on a headless runner: every platform library is injected, and the real
-probe is used only to prove the honest refusal on this very box.
+Hermetic on every runner: platform libraries and host inputs are injected, while
+the real probe and factory still decide the refusal for a headless host.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from agents.core.desktop_drivers import (
     normalize_element,
 )
 from agents.core.desktop_drivers.capture import backend_for
-from agents.core.host_probe import REFUSAL_REASONS, HostProbe
+from agents.core.host_probe import REFUSAL_REASONS, HostProbe, probe_host
 
 pytestmark = pytest.mark.asyncio
 
@@ -82,10 +82,10 @@ def _rows(*names):
 
 # ── the factory never downgrades silently ────────────────────────────────────
 
-def test_this_headless_runner_is_refused_by_name_not_given_a_pretend_driver():
-    """The real probe on this box. A driver here would be a lie about a machine
-    with no display."""
-    choice = driver_for_host()
+def test_a_headless_host_is_refused_by_name_not_given_a_pretend_driver():
+    """A runner may have a desktop; the host under test explicitly has none."""
+    host = probe_host(env={}, sys_platform="linux", importer=lambda _name: None, calls={})
+    choice = driver_for_host(host)
     assert choice.ok is False
     assert choice.driver is None
     assert choice.reason == "desktop_platform_unsupported"

@@ -231,7 +231,7 @@ export function CommsScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
       {!loadingInbox && threads.length === 0 && !error && (
         <View style={styles.clearBox}>
           <Text style={styles.clearTitle}>No live inbox yet</Text>
-          <Text style={styles.clearText}>Telegram and web messages appear here after sender pairing allows them.</Text>
+          <Text style={styles.clearText}>Messages from connected channels appear here after sender pairing allows them.</Text>
         </View>
       )}
 

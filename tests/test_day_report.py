@@ -236,14 +236,17 @@ def test_export_refuses_bad_format_tampered_report_and_oversize(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_export_contract_names_each_violation():
-    good = {"kind": dr.KIND, "format": "json", "date": "2026-09-06", "path": "/r/x.json",
-            "root": "/r", "bytes": 10, "max_bytes": 100, "fingerprint": "a" * 64}
+def test_export_contract_names_each_violation(tmp_path):
+    root = tmp_path / "reports"
+    good = {"kind": dr.KIND, "format": "json", "date": "2026-09-06",
+            "path": str(root / "x.json"), "root": str(root),
+            "bytes": 10, "max_bytes": 100, "fingerprint": "a" * 64}
     assert dr.EXPORT_CONTRACT.evaluate(good).admissible
     assert dr.EXPORT_CONTRACT.requires_approval is False
     for field, value, reason in [
         ("kind", "file.write", "invalid_kind"), ("format", "pdf", "invalid_format"),
-        ("date", "today", "bad_date"), ("path", "/elsewhere/x.json", "outside_scope"),
+        ("date", "today", "bad_date"),
+        ("path", str(tmp_path / "elsewhere" / "x.json"), "outside_scope"),
         ("path", "r/x.json", "outside_scope"), ("bytes", 0, "too_large"),
         ("bytes", True, "too_large"), ("fingerprint", "zz", "missing_fingerprint"),
     ]:

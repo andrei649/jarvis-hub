@@ -80,12 +80,12 @@ class DiscordChannel(ChannelAdapter):
             return
         if not self.handler:
             return
-        response = await self.handler(
-            message.content, channel="discord", sender=str(message.author.id)
+        # The orchestrator queues a governed channel.reply. Echoing its return
+        # value here would bypass approval (and duplicate an approved delivery).
+        await self.handler(
+            message.content, channel="discord", sender=str(message.author.id),
+            channel_id=str(message.channel.id),
         )
-        if response:
-            for piece in render_outbound(str(response), self.descriptor):
-                await message.channel.send(piece)
 
     async def stop(self):
         self._running = False
@@ -99,10 +99,13 @@ class DiscordChannel(ChannelAdapter):
         if not self._client or not self._client.is_ready():
             return False
         channel_id = kwargs.get("channel_id")
-        if channel_id:
-            channel = self._client.get_channel(int(channel_id))
-            if channel:
-                for piece in render_outbound(str(message or ""), self.descriptor):
-                    await channel.send(piece)
-                return True
+        try:
+            if channel_id:
+                channel = self._client.get_channel(int(channel_id))
+                if channel:
+                    for piece in render_outbound(str(message or ""), self.descriptor):
+                        await channel.send(piece)
+                    return True
+        except Exception:
+            logger.warning("Discord reply transport failed", exc_info=True)
         return False

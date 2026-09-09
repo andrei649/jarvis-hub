@@ -203,11 +203,12 @@ def test_detect_gpu_is_report_only():
 # ── smoke wiring ───────────────────────────────────────────────────
 def test_run_install_smoke_wires_the_venv_and_parses_json(root):
     runner = FakeRunner(smoke_stdout="noise line\n" + json.dumps({"ok": True, "agents": 3}))
-    payload = bootstrap.run_install_smoke(Path("/v/bin/python"), root, run=runner,
+    venv_py = bootstrap.venv_python(root)
+    payload = bootstrap.run_install_smoke(venv_py, root, run=runner,
                                           env={"ANTHROPIC_API_KEY": "sk-secret", "PATH": "/bin"})
     assert payload == {"ok": True, "agents": 3}
     call = runner.calls[0]
-    assert call["argv"] == ["/v/bin/python", str(root / "scripts" / "install_smoke.py"), "--json"]
+    assert call["argv"] == [str(venv_py), str(root / "scripts" / "install_smoke.py"), "--json"]
     assert call["cwd"] == str(root)
     # The child environment pins loopback and carries no cloud key.
     assert call["env"]["JARVIS_HOST"] == "127.0.0.1"

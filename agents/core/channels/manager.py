@@ -27,7 +27,7 @@ _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 # untrusted input and may only reach SMTP through the governed channel-reply
 # executor below.
 _SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
-_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email"})
+_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord"})
 
 
 def _safe_contract_token(value: Any) -> bool:
@@ -157,7 +157,7 @@ class ChannelManager:
             return False
         if self._reply_contract_denial(channel, response, kwargs) is not None:
             return False
-        if channel in {"telegram", "web", "email"}:
+        if channel in _SUPPORTED_REPLY_CHANNELS:
             return bool(await ch.send(response, **kwargs))
         return False
 

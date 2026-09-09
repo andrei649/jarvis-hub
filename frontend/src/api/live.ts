@@ -251,7 +251,7 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
       unread: thread.unread !== false,
       dir: 'in',
       local: true,
-      replyable: ['telegram', 'web'].includes(channel),
+      replyable: ['telegram', 'web', 'slack', 'discord'].includes(channel),
     };
   });
   const roomThreads = rooms.slice(0, 12).map((room: any, i: number) => ({
