@@ -130,7 +130,8 @@ def inspect_acquisition(runtime) -> dict:
                         row["signature_verified"] = True
                         row["reason"] = "sdk_dispatch_unavailable"
                 except Exception:
-                    pass
+                    row.update({"signature_verified": False,
+                                "reason": "acquired_integrity_unverified"})
             rows.append(row)
         result.update({"extensions": rows, "reason": "sdk_dispatch_unavailable"})
     except Exception:
