@@ -1,0 +1,2248 @@
+{
+  "schema_version": 1,
+  "inventory_count": 697,
+  "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
+  "base_sha": "efc87a20634d33f2d7950b762d90854812c0a841",
+  "assessed_at": "2026-09-09T17:39:21Z",
+  "reviews": [
+    {
+      "id": "H001",
+      "row_sha256": "00baa8874be9c34c175d4b7b6b8ddcba51e81e60c8c9f12582dcd1b98d4665dc",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H004",
+      "row_sha256": "81b6bfbfc65b2f2f591c6d659d1189946a76f76c5d1a47ff6aa88bbb8887cf8a",
+      "status": "partial",
+      "summary": "Completarea este generată din parser pentru bash și zsh.",
+      "remaining": "Lipsește fish, cerut explicit de rândul din inventar.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H005",
+      "row_sha256": "9bd64bcfb03a726b04333fb4a387e76eed2d5d70ed9ad283424ea5c0febe2fa6",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H006",
+      "row_sha256": "e822c5a62d5b659859a73d34d804d3de1a628d703b183c0836d6cba191290b94",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H008",
+      "row_sha256": "011e8530ffc64c3171e1c80c6f368e53a40013ce4bd0063940b21481438ec290",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H015",
+      "row_sha256": "f281d5ccd01b82e368b24955b03dbeede8d409f543ad5b0d09e0d6d8564f0502",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H018",
+      "row_sha256": "19f831ae4d1a512e44f9f594b12cfb23bb9d76a3c9b131b6f8f99060d6a6b6c2",
+      "status": "partial",
+      "summary": "nerva send enumeră threaduri persistate și propune un răspuns prin aprobările existente.",
+      "remaining": "Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "tests/test_nerva_send.py",
+          "sha256": "3261d6e85be72d1cf656846b123a407728948df5f89bc798097d0fe190a5e0b8"
+        }
+      ]
+    },
+    {
+      "id": "H020",
+      "row_sha256": "d2dcf59c423ed683c1e3add6712617f9db8a9948e43c370e57a517528708d601",
+      "status": "partial",
+      "summary": "kernel explain evaluează offline porțile reale pentru un action kind.",
+      "remaining": "Nu implementează întreaga analiză shell a comenzii și a variantelor normalizate / propunerea regulilor din istoric.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H028",
+      "row_sha256": "9686fb22f9f038b22281eaf0ccb561ef3266011c1a7ed01ffebc28b021d3a138",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H030",
+      "row_sha256": "60fd73e87a1bda032a102d04ee6f280b2ee37da52488138ad70642c23d6fdced",
+      "status": "partial",
+      "summary": "Profilurile restrâng oferta pe agent, principal și tip de suprafață.",
+      "remaining": "Disponibilitatea fiecărui backend și configurația completă pe toate suprafețele trebuie reconciliate; un profil nu probează backendul.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "20f3b853ef36e667fe8c5a16384b6c984f02a10d60deaa4c5fcc2332587b0757"
+        },
+        {
+          "path": "tests/test_tool_profiles.py",
+          "sha256": "e7ecd8fc538b1695c6e30fd02264b1577849efeb5b651a408c858d7ab7182b96"
+        }
+      ]
+    },
+    {
+      "id": "H043",
+      "row_sha256": "a5957c1abc0d8ebfc746bc8d1028ac6e9b2de971ef22488fdc9cfb491ce6d375",
+      "status": "partial",
+      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
+      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+        },
+        {
+          "path": "desktop/src-tauri/tauri.conf.json",
+          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+        }
+      ]
+    },
+    {
+      "id": "H049",
+      "row_sha256": "f92a66dad35cc38e44b1f406882002d6b6dbbdb886451690d3038337ecd4bdc8",
+      "status": "partial",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
+      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H057",
+      "row_sha256": "35c61a60fc7bb4785d937973dee7cae3b12f987d0592601f0d7de36dce232348",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H058",
+      "row_sha256": "8a8feea422a0eddbff6a89f29b02b5a872458707a7375f54ea340477cbb47813",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H059",
+      "row_sha256": "85994f45c84dc8fafbde223bd45487ad4b0880b5fc9a1d3b717ca37c7b487a2d",
+      "status": "partial",
+      "summary": "Politica de grup și autorizarea implicit restrictivă există.",
+      "remaining": "Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/group_policy.py",
+          "sha256": "14dce92914f0665ca138384460e835fcb521ac5d8d73169d60cf426bba4ca817"
+        },
+        {
+          "path": "tests/test_telegram_group_gate.py",
+          "sha256": "624726054fab62e30dabbb1078b390d2c69117f911c8477b0f4538048ff6b440"
+        }
+      ]
+    },
+    {
+      "id": "H060",
+      "row_sha256": "8a5b5673d2277756f7f2b075ce42c12806c7ea99151a0450f910a8f522a79758",
+      "status": "partial",
+      "summary": "Există lease per sesiune și stop/pause.",
+      "remaining": "Queue/steer/interrupt, generațiile, evacuarea stării și confirmările complete din inventar nu sunt toate implementate.",
+      "evidence": [
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H061",
+      "row_sha256": "ec64075ea64d379a130a6d03fe73c4865c2b7f3886d90e3284377c0e55c88718",
+      "status": "partial",
+      "summary": "Există lease per sesiune și stop/pause.",
+      "remaining": "Queue/steer/interrupt, generațiile, evacuarea stării și confirmările complete din inventar nu sunt toate implementate.",
+      "evidence": [
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H064",
+      "row_sha256": "18857a34a2fd01cc45ddd57f5e82b9959bf91bb15e4dd4e76c57785f7d8c506d",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H068",
+      "row_sha256": "9b28eb3e26eacf7385b194f03329e1ffaddf72adb4f51ee81537e97e8b2267e0",
+      "status": "partial",
+      "summary": "Telegram are răspunsuri editate incremental; Slack/Discord au răspunsuri complete aprobate.",
+      "remaining": "Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "1b8136f6dc1650c0756e345bb07bd3f3a42bcef2befd26c1d021493a135f8b6c"
+        },
+        {
+          "path": "tests/test_telegram_streaming.py",
+          "sha256": "6a5d795dae44884d089b3632f248a422a3b452a8561637d3153aa6cf1484d585"
+        }
+      ]
+    },
+    {
+      "id": "H079",
+      "row_sha256": "049302393b6d9a4baaa1bcf70c75993d703b2219179f2139df4081fad14bbee9",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H090",
+      "row_sha256": "beea832c45d0384c2abcf292badd42fe7d174731d9e912d9461f6825ec3596fc",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H092",
+      "row_sha256": "9bf81d81471c300dd371e48576eff9b0a8fcd51b9b9880db5d17aa170a1019f4",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H093",
+      "row_sha256": "cdd0e2430e508e2d6e6182a69002f11b2b058694ec51f14848c9037cbef90079",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H094",
+      "row_sha256": "33b70ebf4939e1c5b4bd783ebc4526d1a45fe0062cdd1ef98645b3d811198565",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H099",
+      "row_sha256": "00de40ec393428ca550f8abcbebc5e6d94d56ca25d95ffa5a62bd84ebe53ae57",
+      "status": "partial",
+      "summary": "ntfy poate trimite notificări simple către un server configurat explicit.",
+      "remaining": "Rândul original include și abonare inbound, deduplicare și reconectare; adaptorul Nerva este numai outbound.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/ntfy.py",
+          "sha256": "c89e10396236cddbc1e0e83ec2f9ce2791eee24c27e082797cf1a35f6c8976b7"
+        },
+        {
+          "path": "tests/test_ntfy_channel.py",
+          "sha256": "cd51682e53634c27ceb9b63e397c7379f2438c2876fa123406c601adaaf6ec26"
+        }
+      ]
+    },
+    {
+      "id": "H103",
+      "row_sha256": "24fa9cbf2518b786bc6518e0b42478034475b51719f4c420f6a9ec061cdd1a56",
+      "status": "equivalent",
+      "summary": "Randarea și împărțirea mesajelor folosesc descriptorul și registrul comun pentru dialectele canalelor Nerva; platformele excluse nu sunt reintroduse.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/channels/render.py",
+          "sha256": "805ad974e3d3cd30662cacb7cbbd124510d357aba85ff98f1e988af8d60abb8f"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        },
+        {
+          "path": "tests/test_channel_render.py",
+          "sha256": "e1f44a536158d9848cf7d53661285ebce685be5954de2f8a5ac050e30896aa16"
+        },
+        {
+          "path": "tests/test_channel_render_slack_discord.py",
+          "sha256": "7fb827ef09db7f743ecb65b739596cbae3eeee94f087bc0571e464d4d18b4bc9"
+        }
+      ]
+    },
+    {
+      "id": "H104",
+      "row_sha256": "ede4bd2cc8a43a958ecddfd3cc7d46797aae89bba53c7ac4691382c860fbe50a",
+      "status": "partial",
+      "summary": "Telegram are răspunsuri editate incremental; Slack/Discord au răspunsuri complete aprobate.",
+      "remaining": "Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "1b8136f6dc1650c0756e345bb07bd3f3a42bcef2befd26c1d021493a135f8b6c"
+        },
+        {
+          "path": "tests/test_telegram_streaming.py",
+          "sha256": "6a5d795dae44884d089b3632f248a422a3b452a8561637d3153aa6cf1484d585"
+        }
+      ]
+    },
+    {
+      "id": "H111",
+      "row_sha256": "59716f77fea9fe64293233d2799ea49a38ff5b93f2ed6ad14a9160ea0c9f7ff3",
+      "status": "partial",
+      "summary": "Politica de grup și autorizarea implicit restrictivă există.",
+      "remaining": "Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/group_policy.py",
+          "sha256": "14dce92914f0665ca138384460e835fcb521ac5d8d73169d60cf426bba4ca817"
+        },
+        {
+          "path": "tests/test_telegram_group_gate.py",
+          "sha256": "624726054fab62e30dabbb1078b390d2c69117f911c8477b0f4538048ff6b440"
+        }
+      ]
+    },
+    {
+      "id": "H113",
+      "row_sha256": "2c14fabc74e9b4fdc2016df1f59db0dfb79a598033fbedc2d95bd851a2e6502a",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H115",
+      "row_sha256": "9212bd614144634469bb7f417ac427e63a5d4df65183c7a3983bbcb098fa147a",
+      "status": "partial",
+      "summary": "Joburile pot selecta un canal și păstrează regulile de prezență și liniște.",
+      "remaining": "Rămân routingul origin/thread/all, predarea către alt agent și fallbackurile complete cerute de inventar.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        }
+      ]
+    },
+    {
+      "id": "H120",
+      "row_sha256": "fdde32c58130d4ce571e0fe37baec0a20e542da28d77d06ca0daf366f0e97ce0",
+      "status": "partial",
+      "summary": "Descriptorii, randarea și identitatea inboxului sunt integrate; Slack are Socket Mode autentic.",
+      "remaining": "Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/descriptor.py",
+          "sha256": "ac9cf4d06d5022c7d4def45a2354f961027cae5a1bea6da13a3275694409f97e"
+        }
+      ]
+    },
+    {
+      "id": "H146",
+      "row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
+      "status": "partial",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
+      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        },
+        {
+          "path": "frontend/src/panels/jobs.tsx",
+          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        }
+      ]
+    },
+    {
+      "id": "H169",
+      "row_sha256": "930463ce25ae60529373504e614ea254c7d5e10f78c65cc6bdc9db10e1a6a487",
+      "status": "partial",
+      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
+      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+        },
+        {
+          "path": "desktop/src-tauri/tauri.conf.json",
+          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+        }
+      ]
+    },
+    {
+      "id": "H170",
+      "row_sha256": "88eb06b9159c13209294d88c1d2647dde275b70a5d32d0063878458c3e765b74",
+      "status": "partial",
+      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
+      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+        },
+        {
+          "path": "desktop/src-tauri/tauri.conf.json",
+          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+        }
+      ]
+    },
+    {
+      "id": "H178",
+      "row_sha256": "06a781401ea40ab7592728fd485af700bb9b9375a89d874aab91f459871f49fd",
+      "status": "missing",
+      "summary": "Hostul Tauri are doar fereastra principală.",
+      "remaining": "Lipsește fereastra flotantă always-on-top, cu conversație și recuperare de geometrie.",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+        },
+        {
+          "path": "desktop/src-tauri/tauri.conf.json",
+          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+        }
+      ]
+    },
+    {
+      "id": "H199",
+      "row_sha256": "1cd105df91f9f4d98563965ec01e5c43dd76b860d72a706db0a7327e9720576a",
+      "status": "partial",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
+      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        },
+        {
+          "path": "frontend/src/panels/jobs.tsx",
+          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        }
+      ]
+    },
+    {
+      "id": "H206",
+      "row_sha256": "f4c58b45cbbe6bd79243ee31a44e69437317d50661a17936d69c91755a63bc86",
+      "status": "partial",
+      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo.",
+      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "evidence": [
+        {
+          "path": "frontend/src/modes.tsx",
+          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+        },
+        {
+          "path": "frontend/src/panels/memory-neighborhood.tsx",
+          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+        },
+        {
+          "path": "tests/test_session_search.py",
+          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+        }
+      ]
+    },
+    {
+      "id": "H257",
+      "row_sha256": "2cc5378053ec3c6937d21e92e9f9c9e87896a4fbafb5c15d24dad4467981b8a3",
+      "status": "partial",
+      "summary": "Configurația, registrul și comenzile de inspecție au primit corecții.",
+      "remaining": "Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+        }
+      ]
+    },
+    {
+      "id": "H269",
+      "row_sha256": "fa679cb603a9356b0d1fa5ab3f8072211addbacaf27b6f22002210adb1576a55",
+      "status": "partial",
+      "summary": "Configurația, registrul și comenzile de inspecție au primit corecții.",
+      "remaining": "Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+        }
+      ]
+    },
+    {
+      "id": "H284",
+      "row_sha256": "dce00abe746b0aea3412ce4a1d9286856ba4c4aa6330ffe5672c5e2710ea80aa",
+      "status": "partial",
+      "summary": "Configurația, registrul și comenzile de inspecție au primit corecții.",
+      "remaining": "Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+        }
+      ]
+    },
+    {
+      "id": "H287",
+      "row_sha256": "46e5a8383b36d68402b047fc573f46f40ef9851b87f952db804c5530973dfe43",
+      "status": "partial",
+      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
+      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H295",
+      "row_sha256": "8d4119c93a7013c107aa2988168aa7e7722f68f6d99ae1f213b739cb0fda5965",
+      "status": "partial",
+      "summary": "Profilurile restrâng oferta pe agent, principal și tip de suprafață.",
+      "remaining": "Disponibilitatea fiecărui backend și configurația completă pe toate suprafețele trebuie reconciliate; un profil nu probează backendul.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "20f3b853ef36e667fe8c5a16384b6c984f02a10d60deaa4c5fcc2332587b0757"
+        },
+        {
+          "path": "tests/test_tool_profiles.py",
+          "sha256": "e7ecd8fc538b1695c6e30fd02264b1577849efeb5b651a408c858d7ab7182b96"
+        }
+      ]
+    },
+    {
+      "id": "H299",
+      "row_sha256": "fc44c9a79c8339d4489b4f1e35417e22f4279111c4ca8229e74bb6a9fed6f5fb",
+      "status": "equivalent",
+      "summary": "Runtime-ul oprește apelurile identice și seriile de eșecuri, aplică limite per unealtă și înlocuiește rezultatele identice reușite cu referințe.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_tool_loop_guardrails.py",
+          "sha256": "3dfaa1890f16bc7198c637c3ee275e8ec17273b0de405dcaff5a801960dceb3a"
+        },
+        {
+          "path": "tests/test_tool_loop_repeats.py",
+          "sha256": "b3305f7d642435d1c1a23b30f41384918cd7b866bcba43d27bbcb99db3fef8cc"
+        }
+      ]
+    },
+    {
+      "id": "H301",
+      "row_sha256": "61e8cc59670a245e60696007796088a2e6cc4d8b3ab3f219b8d531d3c4e5d670",
+      "status": "equivalent",
+      "summary": "Oferta este calculată din principal, origine/suprafață și restricțiile agentului; seturile sunt verificate prin snapshot. Catalogul Hermes de platforme excluse nu este copiat.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "20f3b853ef36e667fe8c5a16384b6c984f02a10d60deaa4c5fcc2332587b0757"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_tool_profiles.py",
+          "sha256": "e7ecd8fc538b1695c6e30fd02264b1577849efeb5b651a408c858d7ab7182b96"
+        }
+      ]
+    },
+    {
+      "id": "H303",
+      "row_sha256": "e1dd3cc3893c1f0cdac5848d9f07f0ef94563ff523af5da0c89ced56b4577232",
+      "status": "partial",
+      "summary": "file_search și extracția documentelor sunt implementate în uneltele modelului.",
+      "remaining": "Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search.",
+      "evidence": [
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+        },
+        {
+          "path": "tests/test_file_search.py",
+          "sha256": "5b99048a1660e764a8fe614b26c8a536f6221e32747ddc6a9ddccf1e3590e973"
+        },
+        {
+          "path": "tests/test_file_read_documents.py",
+          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+        }
+      ]
+    },
+    {
+      "id": "H305",
+      "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
+      "status": "partial",
+      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
+      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H310",
+      "row_sha256": "442c28f4453442aadd61d72923dfbbace2f7ecf95552332b2eb4894e25bb8492",
+      "status": "partial",
+      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
+      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "evidence": [
+        {
+          "path": "agents/core/web_tools.py",
+          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+        },
+        {
+          "path": "agents/core/plugins/websearch.py",
+          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+        },
+        {
+          "path": "tests/test_web_tools.py",
+          "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
+        },
+        {
+          "path": "tests/test_web_tools_wiring.py",
+          "sha256": "10e2391e27f5cf5daff1e1946821155bc48dcf80c1d6734219b5d7e0e42feddc"
+        }
+      ]
+    },
+    {
+      "id": "H312",
+      "row_sha256": "84f70dcd63be6cb22a5a7a54cbc0947ff6714b0090ce4e5eb28d27fcf512c097",
+      "status": "partial",
+      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
+      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "evidence": [
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+        },
+        {
+          "path": "agents/core/image_generation_view.py",
+          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+        },
+        {
+          "path": "tests/test_image_mediation_composition.py",
+          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+        },
+        {
+          "path": "tests/test_image_generation_api_flow.py",
+          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+        }
+      ]
+    },
+    {
+      "id": "H317",
+      "row_sha256": "08e27fb0ec2999846abcd8ac2c348b23c64d8776cb30669b37aa675e573dd7cb",
+      "status": "partial",
+      "summary": "session_search este oferit modelului și poate citi conversații salvate.",
+      "remaining": "Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H326",
+      "row_sha256": "6b508c1f7164950a244e5aaf925b08ea8c644a6923d27ad38ffba9e6aafcb4fa",
+      "status": "partial",
+      "summary": "Catalogul mărginit de skilluri este injectat în prompt.",
+      "remaining": "Lipsesc părți ale scării L0/L1/L2, cacheului și deduplicării încărcărilor cerute de inventar.",
+      "evidence": [
+        {
+          "path": "agents/core/skills/loader.py",
+          "sha256": "172e5352a2720961b0135dafb090c96518c7236bc9753cd3cae9eb6aa41e0d34"
+        },
+        {
+          "path": "tests/test_skills_in_prompt.py",
+          "sha256": "1042e3a3c9e306915309eb2ff0428b766534d3d8423867d1ab3b2288d1cb11c2"
+        }
+      ]
+    },
+    {
+      "id": "H362",
+      "row_sha256": "ff5c8494a612fa422b26f9bc489ff87d0da768813f27fa2b29420e2255ccdd27",
+      "status": "partial",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H386",
+      "row_sha256": "126f0a252da57ce288cd87765b35847500d3d34977dde00b03ac4a958da04e6b",
+      "status": "partial",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H389",
+      "row_sha256": "145a016b9504864e503cf414733c89030ad4b68c8138a3088e0fe065550e6d51",
+      "status": "partial",
+      "summary": "Catalogul mărginit de skilluri este injectat în prompt.",
+      "remaining": "Lipsesc părți ale scării L0/L1/L2, cacheului și deduplicării încărcărilor cerute de inventar.",
+      "evidence": [
+        {
+          "path": "agents/core/skills/loader.py",
+          "sha256": "172e5352a2720961b0135dafb090c96518c7236bc9753cd3cae9eb6aa41e0d34"
+        },
+        {
+          "path": "tests/test_skills_in_prompt.py",
+          "sha256": "1042e3a3c9e306915309eb2ff0428b766534d3d8423867d1ab3b2288d1cb11c2"
+        }
+      ]
+    },
+    {
+      "id": "H391",
+      "row_sha256": "6efeb3348c1b1080d980201e737e6003572488fc5040a3c1ba9ebea2fe21f5ec",
+      "status": "partial",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H392",
+      "row_sha256": "a68cdb645ce370db7489e93f201884d12faa74ddc5b193040983299688314795",
+      "status": "partial",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H397",
+      "row_sha256": "24d36efbac2668592b276df708d9644784af8fb0afb1bdc0b957dd43276476ab",
+      "status": "equivalent",
+      "summary": "Runtime-ul oprește apelurile identice și seriile de eșecuri, aplică limite per unealtă și înlocuiește rezultatele identice reușite cu referințe.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_tool_loop_guardrails.py",
+          "sha256": "3dfaa1890f16bc7198c637c3ee275e8ec17273b0de405dcaff5a801960dceb3a"
+        },
+        {
+          "path": "tests/test_tool_loop_repeats.py",
+          "sha256": "b3305f7d642435d1c1a23b30f41384918cd7b866bcba43d27bbcb99db3fef8cc"
+        }
+      ]
+    },
+    {
+      "id": "H398",
+      "row_sha256": "2daf0454a3ec222962737d811f25ec1cea95ddd91a6f48eb0a0ac201e6d52f0d",
+      "status": "equivalent",
+      "summary": "Pe Python 3.12, rezultatele externe sunt delimitate ca date; taintul și semnalele de injecție sunt propagate inclusiv prin orchestrator și păstrate la compactare.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_tool_result_taint.py",
+          "sha256": "a95868e866aae109f2c6332ea425706def375bdf63020c86ba45f3ae44ea5008"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+        },
+        {
+          "path": "agents/core/security/recall_taint.py",
+          "sha256": "5d0b093704d404b9e3231862099625da34bd075b16327706e47ac9280d353679"
+        }
+      ]
+    },
+    {
+      "id": "H417",
+      "row_sha256": "3490429467dd6ce4fc73cb014d7748c21b2026a21d6eae60ee4e3992e6eefd2a",
+      "status": "partial",
+      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo.",
+      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "evidence": [
+        {
+          "path": "frontend/src/modes.tsx",
+          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+        },
+        {
+          "path": "frontend/src/panels/memory-neighborhood.tsx",
+          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+        },
+        {
+          "path": "tests/test_session_search.py",
+          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+        }
+      ]
+    },
+    {
+      "id": "H435",
+      "row_sha256": "b5e626f7333f7051fae67222e24bc7d0a197e985fddfa3f341f56fded7afb50c",
+      "status": "partial",
+      "summary": "session_search este oferit modelului și poate citi conversații salvate.",
+      "remaining": "Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H436",
+      "row_sha256": "5e583d810aefaa57a7c84b5636f2d1c83f8e45548e0d729e13449b309422f318",
+      "status": "partial",
+      "summary": "session_search este oferit modelului și poate citi conversații salvate.",
+      "remaining": "Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H437",
+      "row_sha256": "c5641179b6c7a781b599e26bce81f791a24d6cfc367e8e5739b6ba85c5f51acf",
+      "status": "partial",
+      "summary": "session_search este oferit modelului și poate citi conversații salvate.",
+      "remaining": "Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H444",
+      "row_sha256": "6535326d3f790273e023d6fe88e89ca91138c8af7ea0ea28b7b56680e192649f",
+      "status": "partial",
+      "summary": "file_search și extracția documentelor sunt implementate în uneltele modelului.",
+      "remaining": "Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search.",
+      "evidence": [
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+        },
+        {
+          "path": "tests/test_file_search.py",
+          "sha256": "5b99048a1660e764a8fe614b26c8a536f6221e32747ddc6a9ddccf1e3590e973"
+        },
+        {
+          "path": "tests/test_file_read_documents.py",
+          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+        }
+      ]
+    },
+    {
+      "id": "H445",
+      "row_sha256": "66d03aa679ff461c50f897156b25190e40ababae706d5dfe86e925c58c952b2a",
+      "status": "partial",
+      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo.",
+      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "evidence": [
+        {
+          "path": "frontend/src/modes.tsx",
+          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+        },
+        {
+          "path": "frontend/src/panels/memory-neighborhood.tsx",
+          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+        },
+        {
+          "path": "tests/test_session_search.py",
+          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+        }
+      ]
+    },
+    {
+      "id": "H449",
+      "row_sha256": "5fd839c96d6e105a4c8ebea64d497efd9a5086a6a3086923e007e385db609d43",
+      "status": "partial",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
+      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        },
+        {
+          "path": "frontend/src/panels/jobs.tsx",
+          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        }
+      ]
+    },
+    {
+      "id": "H451",
+      "row_sha256": "733ec73833fc07058c4850652f667d08c4d80edabc4f5ec93d10e07a13646b1f",
+      "status": "partial",
+      "summary": "Joburile păstrează istoric și notepad; eșecurile repetate opresc jobul și creează o problemă persistentă.",
+      "remaining": "Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        }
+      ]
+    },
+    {
+      "id": "H452",
+      "row_sha256": "409e5e426c6fb0367564ed896d5d8e9fe40cc627897fa26c2493e37809e0afc5",
+      "status": "partial",
+      "summary": "Joburile păstrează istoric și notepad; eșecurile repetate opresc jobul și creează o problemă persistentă.",
+      "remaining": "Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        }
+      ]
+    },
+    {
+      "id": "H454",
+      "row_sha256": "82eabad3070a60eaa9e2becdefae10d569d90418b693c703c5eb6d2fb2d3b31c",
+      "status": "partial",
+      "summary": "Joburile păstrează istoric și notepad; eșecurile repetate opresc jobul și creează o problemă persistentă.",
+      "remaining": "Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        }
+      ]
+    },
+    {
+      "id": "H455",
+      "row_sha256": "14d1855c3ffbf16d03b43a8b8e97b6f666ec920a6693a8009529898b62695b0d",
+      "status": "partial",
+      "summary": "Joburile pot selecta un canal și păstrează regulile de prezență și liniște.",
+      "remaining": "Rămân routingul origin/thread/all, predarea către alt agent și fallbackurile complete cerute de inventar.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        }
+      ]
+    },
+    {
+      "id": "H480",
+      "row_sha256": "0def80cdcc721c3c0d8900dd3a9b0aaba8f7f35c37fe38a7a00fb02656c295a7",
+      "status": "partial",
+      "summary": "nerva send enumeră threaduri persistate și propune un răspuns prin aprobările existente.",
+      "remaining": "Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "tests/test_nerva_send.py",
+          "sha256": "3261d6e85be72d1cf656846b123a407728948df5f89bc798097d0fe190a5e0b8"
+        }
+      ]
+    },
+    {
+      "id": "H483",
+      "row_sha256": "02f369360fbe1a23dd3f8af33c8becc33c2c0a8a34aa57c5c5a12733028a1e95",
+      "status": "partial",
+      "summary": "kernel explain evaluează offline porțile reale pentru un action kind.",
+      "remaining": "Nu implementează întreaga analiză shell a comenzii și a variantelor normalizate / propunerea regulilor din istoric.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        }
+      ]
+    },
+    {
+      "id": "H515",
+      "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
+      "status": "partial",
+      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
+      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "evidence": [
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+        },
+        {
+          "path": "agents/core/image_generation_view.py",
+          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+        },
+        {
+          "path": "tests/test_image_mediation_composition.py",
+          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+        },
+        {
+          "path": "tests/test_image_generation_api_flow.py",
+          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+        }
+      ]
+    },
+    {
+      "id": "H518",
+      "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
+      "status": "partial",
+      "summary": "Catalogul și exportul există; imaginile noi pot fi citite autentificat prin ID.",
+      "remaining": "Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață.",
+      "evidence": [
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+        },
+        {
+          "path": "agents/core/image_generation_view.py",
+          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+        },
+        {
+          "path": "tests/test_image_mediation_composition.py",
+          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+        },
+        {
+          "path": "tests/test_image_generation_api_flow.py",
+          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+        },
+        {
+          "path": "agents/core/media_catalog.py",
+          "sha256": "fee42dd45f00540fe5c77ff413222ea1e5d85d63016f5914b920f5af6f72c7ce"
+        },
+        {
+          "path": "agents/core/media_export.py",
+          "sha256": "a03b08ae99be921571e6c2121986e3cf72ebbc88893c838912c015bdc6e9d669"
+        }
+      ]
+    },
+    {
+      "id": "H523",
+      "row_sha256": "a0fab30d78e84c7347418373ea736c26ee895f31fe9a9fbec2e274fab2b3dd62",
+      "status": "partial",
+      "summary": "Catalogul și exportul există; imaginile noi pot fi citite autentificat prin ID.",
+      "remaining": "Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață.",
+      "evidence": [
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+        },
+        {
+          "path": "agents/core/image_generation_view.py",
+          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+        },
+        {
+          "path": "tests/test_image_mediation_composition.py",
+          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+        },
+        {
+          "path": "tests/test_image_generation_api_flow.py",
+          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+        },
+        {
+          "path": "agents/core/media_catalog.py",
+          "sha256": "fee42dd45f00540fe5c77ff413222ea1e5d85d63016f5914b920f5af6f72c7ce"
+        },
+        {
+          "path": "agents/core/media_export.py",
+          "sha256": "a03b08ae99be921571e6c2121986e3cf72ebbc88893c838912c015bdc6e9d669"
+        }
+      ]
+    },
+    {
+      "id": "H536",
+      "row_sha256": "2ea7bd5bc4a3aa92cca40731407ea21863470fcb31a07f6ac9a0573b499cbe59",
+      "status": "partial",
+      "summary": "file_search și extracția documentelor sunt implementate în uneltele modelului.",
+      "remaining": "Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search.",
+      "evidence": [
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+        },
+        {
+          "path": "tests/test_file_search.py",
+          "sha256": "5b99048a1660e764a8fe614b26c8a536f6221e32747ddc6a9ddccf1e3590e973"
+        },
+        {
+          "path": "tests/test_file_read_documents.py",
+          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+        }
+      ]
+    },
+    {
+      "id": "H537",
+      "row_sha256": "9976e87725933ba1b38df57b2bce946bfb5f3f5226321a384b6f179e62157234",
+      "status": "partial",
+      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
+      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "evidence": [
+        {
+          "path": "agents/core/web_tools.py",
+          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+        },
+        {
+          "path": "agents/core/plugins/websearch.py",
+          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+        },
+        {
+          "path": "tests/test_web_tools.py",
+          "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
+        },
+        {
+          "path": "tests/test_web_tools_wiring.py",
+          "sha256": "10e2391e27f5cf5daff1e1946821155bc48dcf80c1d6734219b5d7e0e42feddc"
+        }
+      ]
+    },
+    {
+      "id": "H551",
+      "row_sha256": "d36709263aea47ed23673e62454f692bab83bae2f78f0c05f08fa7a8a14872e9",
+      "status": "equivalent",
+      "summary": "Filtrele allow/deny pe nume și glob restrâng atât listarea, cât și apelarea uneltelor MCP; deny prevalează. Resursele/prompts sunt urmărite separat în H552.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "tests/test_mcp_tool_filters.py",
+          "sha256": "26f3a2f2617b6866791c6b34c4e0ca5b4a0c9cc9dfa69bf52bf48f0c9b6a4657"
+        }
+      ]
+    },
+    {
+      "id": "H554",
+      "row_sha256": "b75e7096da0fcb345bb23c46ca94b629ea8d752fad711c5bfc817bb168eae582",
+      "status": "partial",
+      "summary": "Trust tiers și readOnlyHint limitează oferta/apelurile MCP.",
+      "remaining": "Rămâne reconcilierea fiecărei căi de autorizare outbound față de contractul complet.",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "tests/test_mcp_tool_filters.py",
+          "sha256": "26f3a2f2617b6866791c6b34c4e0ca5b4a0c9cc9dfa69bf52bf48f0c9b6a4657"
+        }
+      ]
+    },
+    {
+      "id": "H566",
+      "row_sha256": "b6972f5f0508020fafb457913bab19e4ddb3d4af0f65c5ae7c3f4a35e1c14309",
+      "status": "partial",
+      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
+      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H567",
+      "row_sha256": "17015511b5fa0147b4caac8b8a0a6b3ede2ffc635963b8f9bb64192ee1bb2de4",
+      "status": "missing",
+      "summary": "Manifestul poate declara evenimente, dar nu există livrare SDK a evenimentelor.",
+      "remaining": "Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H570",
+      "row_sha256": "0925a7a683605d100096d89823e8d52fa47f1555b18755a8d65314ac86414322",
+      "status": "partial",
+      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
+      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H571",
+      "row_sha256": "85e2999cdcf26dc4403d102039935a8428e8a102565ffa0a608db36e1c3708b6",
+      "status": "partial",
+      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
+      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H576",
+      "row_sha256": "f0fa068039695312b24854188bf8874941cf55c602969d29a9117b403d1d97a0",
+      "status": "partial",
+      "summary": "file_search și extracția documentelor sunt implementate în uneltele modelului.",
+      "remaining": "Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search.",
+      "evidence": [
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+        },
+        {
+          "path": "tests/test_file_search.py",
+          "sha256": "5b99048a1660e764a8fe614b26c8a536f6221e32747ddc6a9ddccf1e3590e973"
+        },
+        {
+          "path": "tests/test_file_read_documents.py",
+          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+        }
+      ]
+    },
+    {
+      "id": "H595",
+      "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
+      "status": "partial",
+      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
+      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H598",
+      "row_sha256": "0011c0e1c0c25d51aa1a5e78fa488aaf33410af4bd2964a4f43955ff621fb66c",
+      "status": "partial",
+      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
+      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "evidence": [
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+        },
+        {
+          "path": "agents/core/image_generation_view.py",
+          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+        },
+        {
+          "path": "tests/test_image_mediation_composition.py",
+          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+        },
+        {
+          "path": "tests/test_image_generation_api_flow.py",
+          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+        }
+      ]
+    },
+    {
+      "id": "H605",
+      "row_sha256": "08c90e0758c8d20221718ebd657a0e0a3e72492a204b341468eeef74942a35f5",
+      "status": "partial",
+      "summary": "Memoria și graful au backend; DW-1 afișează entități și legături reale, cu mostre doar în Demo.",
+      "remaining": "Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică.",
+      "evidence": [
+        {
+          "path": "frontend/src/modes.tsx",
+          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+        },
+        {
+          "path": "frontend/src/panels/memory-neighborhood.tsx",
+          "sha256": "1851b806d08e4db4decf43f4dd0188660199cda97f9d4ca681d87287fe44676c"
+        },
+        {
+          "path": "tests/test_session_search.py",
+          "sha256": "96e69cb501c0ded7fed3c1c6c2079cbcc2ae2cbee8510800ea326c195a4194fc"
+        }
+      ]
+    },
+    {
+      "id": "H607",
+      "row_sha256": "d07b2ddc1df210d7b3a9ecdca6e043462e115d06ed8fc19962ab9e4f44575d71",
+      "status": "partial",
+      "summary": "Modelul poate căuta și extrage pagini prin egressul existent, cu rezultate limitate și marcate ca date.",
+      "remaining": "Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus.",
+      "evidence": [
+        {
+          "path": "agents/core/web_tools.py",
+          "sha256": "304ace67aa59ea9c55578db72e33f2df075a2b6b23335dd774bd24580567dfbd"
+        },
+        {
+          "path": "agents/core/plugins/websearch.py",
+          "sha256": "d7df9ce137089da629e1356dc5666d689ea8b4b8036fa6ac5afda02077e45828"
+        },
+        {
+          "path": "tests/test_web_tools.py",
+          "sha256": "f5ede64b2ad26a16c6a4ce561d15937601ce9f4bbd1c61782327f8bd4532090f"
+        },
+        {
+          "path": "tests/test_web_tools_wiring.py",
+          "sha256": "10e2391e27f5cf5daff1e1946821155bc48dcf80c1d6734219b5d7e0e42feddc"
+        }
+      ]
+    },
+    {
+      "id": "H615",
+      "row_sha256": "92628630fd7071778aa25bec97e020e51e30dd3eb698b694a49ebf8626565c1a",
+      "status": "partial",
+      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
+      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H620",
+      "row_sha256": "47f438aab4a3e246d57bb290768c34eddf706864e1c9b00d2efba558e1f03292",
+      "status": "partial",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
+      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        },
+        {
+          "path": "frontend/src/panels/jobs.tsx",
+          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        }
+      ]
+    },
+    {
+      "id": "H622",
+      "row_sha256": "4fa3da69b81711aa0dbb733374021baf2a332f2faaef2a45622eac05181df371",
+      "status": "missing",
+      "summary": "Manifestul poate declara evenimente, dar nu există livrare SDK a evenimentelor.",
+      "remaining": "Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H637",
+      "row_sha256": "2e138fd2fd024e831f216be7a75bf256796be771c63e8ec5afb144dbe0acc8ed",
+      "status": "partial",
+      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
+      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "ee31aec32a1ead936b4c6cb364e852dc5580f6b66e6c3e7742f34baeb6b822a8"
+        },
+        {
+          "path": "agents/core/extensions/doctor.py",
+          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+        },
+        {
+          "path": "docs/EXTENSIONS.md",
+          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+        }
+      ]
+    },
+    {
+      "id": "H660",
+      "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
+      "status": "missing",
+      "summary": "Pipeline-ul existent este pe invocare, nu un interpreter rezident.",
+      "remaining": "Lipsesc kernelurile persistente pe sesiune, resetarea/expirarea și izolarea/revocarea între celule; depinde de K0–K3.",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+        },
+        {
+          "path": "agents/core/memory/session_search.py",
+          "sha256": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "c941299d5aa7d9e1e009cba16c64c819a37d73cc359c218d0488b293e8d646c8"
+        },
+        {
+          "path": "tests/test_tool_rpc_h20_1.py",
+          "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        }
+      ]
+    },
+    {
+      "id": "H676",
+      "row_sha256": "0efe319add5e63508f1d17b9b99684b195facf2014696430e9a7b705beb3aff4",
+      "status": "partial",
+      "summary": "Joburile au refuz/raportare explicită și livrare prin aprobări existente.",
+      "remaining": "Politica configurabilă queue/deny pentru toate originile fără operator nu este echivalată prin simpla livrare a joburilor.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+        },
+        {
+          "path": "agents/core/routers/jobs.py",
+          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+        },
+        {
+          "path": "tests/test_owner_jobs.py",
+          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+        },
+        {
+          "path": "tests/test_jobs_routes.py",
+          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+        },
+        {
+          "path": "agents/core/action_origin.py",
+          "sha256": "9fa26194ed41eb10ad759ff6091e7adcb9eed322634cabaaf91c4f5ba7726ea1"
+        }
+      ]
+    },
+    {
+      "id": "H678",
+      "row_sha256": "ffca1cd8ac5c329ebbf4bfe523fcdbd0aa0375c7814f4b071287569384b9a734",
+      "status": "partial",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H682",
+      "row_sha256": "b9be4db66d9f59f670b5a9a94b56283cacbd1d922a9263d4b9fa92c1a2587a10",
+      "status": "partial",
+      "summary": "Registrul de comenzi, tierele și catalogul HUD există.",
+      "remaining": "Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+        }
+      ]
+    },
+    {
+      "id": "H683",
+      "row_sha256": "5f437791c8a597a2037685ac8ce18b77c91cac834c8be7d6d9b30b607a0e17cf",
+      "status": "partial",
+      "summary": "Telegram are răspunsuri editate incremental; Slack/Discord au răspunsuri complete aprobate.",
+      "remaining": "Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte.",
+      "evidence": [
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+        },
+        {
+          "path": "agents/core/channels/discord.py",
+          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+        },
+        {
+          "path": "tests/test_workspace_channel_replies.py",
+          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+        },
+        {
+          "path": "tests/test_slack_socket_mode.py",
+          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+        },
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "1b8136f6dc1650c0756e345bb07bd3f3a42bcef2befd26c1d021493a135f8b6c"
+        },
+        {
+          "path": "tests/test_telegram_streaming.py",
+          "sha256": "6a5d795dae44884d089b3632f248a422a3b452a8561637d3153aa6cf1484d585"
+        }
+      ]
+    }
+  ]
+}

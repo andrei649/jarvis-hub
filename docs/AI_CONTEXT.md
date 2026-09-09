@@ -17,6 +17,12 @@
 
 ## Query before you load — the two files that dominate everything else
 
+**Current Hermes sprint:** [all-697 code-equivalence status](../HERMES_STATUS.md),
+[scope/deliveries](HERMES_SPRINT.md); query `scripts/hermes_status.py summary | list | show H515`.
+This assessment distinguishes the dated inventory from reviewed implementation; never
+derive its progress from PR counts or the shorter HA checklist. Regenerate it with
+`scripts/hermes_status.py write` after a reviewed capability/evidence change.
+
 Two documents are larger than the rest of the repo's prose put together, and neither is ever needed
 whole. Reading them to answer a question is the single most expensive habit available here, so both
 have a query tool. Use it; open the file only when you are *writing* to it.
