@@ -44,6 +44,7 @@ _TRUSTED_TOOL_RPC_KINDS = frozenset({
     "toolrpc.terminal_run",
     "toolrpc.file_write",
     "toolrpc.file_delete",
+    "toolrpc.image_generate",
 })
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -383,12 +384,26 @@ class AutonomyCoordinator:
                 logger.warning("agent tool runtime setting read failed closed")
                 return default
 
+        from .image_generation_runtime import INPUT_SCHEMA, LocalImageRuntime
+
+        image_runtime = LocalImageRuntime(
+            queue=getattr(self._orch, "autonomy_queue", None),
+            approved_task=_APPROVED_TASK.get,
+            authorizer=action_kernel,
+            enqueue=self._governed_enqueue,
+        )
         server = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
-            enqueue=self._governed_enqueue,
+            enqueue=image_runtime.enqueue,
             audit=getattr(self._orch, "intent_log", None),
             kernel=action_kernel,
             execution_context_check=_approved_execution_context,
+        )
+        server.register_tool(
+            "image_generate", image_runtime.execute, gated=True,
+            description="Propose one local image using the owner's configured ComfyUI checkpoint; approval required.",
+            input_schema=INPUT_SCHEMA, capability_id="tool:image_generate",
+            preflight=image_runtime.preflight, trusted_execution=True,
         )
 
         async def _rpc_echo(args):
@@ -1040,6 +1055,10 @@ class AutonomyCoordinator:
         )
         executor.register(
             "toolrpc.file_delete",
+            self._approved_desktop_tool_rpc_execute,
+        )
+        executor.register(
+            "toolrpc.image_generate",
             self._approved_desktop_tool_rpc_execute,
         )
         # 1.1.0 operator wave — the durable consent ledger. The request half runs at

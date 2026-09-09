@@ -418,6 +418,22 @@ servesc HUD și mobil. Testele folosesc SDK fals și componentele reale de pairi
 un test suplimentar verifică parserul, callback-ul și închiderea SDK-ului real 3.44.1
 cu rețeaua simulată. Conectarea la un workspace și livrarea pe conturi reale rămân neprobate.
 
+**2026-09-09 (4i-image — motor local de imagini).** `image_generate` propune o cerere
+prin ToolRPC; un task aprobat poate folosi un ComfyUI configurat explicit pe loopback.
+Workflow-ul este fix, cu checkpoint ales în configurația hostului. Modelul nu poate
+furniza noduri executabile, endpoint-uri sau căi de fișier. La execuție se verifică din nou
+cererea aprobată, configurația, proveniența și Action Kernel-ul; aprobarea nu poate fi
+refolosită pentru o altă cerere sau pentru o a doua trimitere după o întrerupere.
+Un rezultat PNG validat este salvat în data root și citit printr-un identificator de
+artefact autentificat. Nu există activare implicită, instalare de modele sau fallback cloud.
+Starea configurată rămâne separată de disponibilitatea probată. Testele folosesc protocolul
+ComfyUI simulat și coada reală de aprobare; generarea pe un motor/model real rămâne neprobată.
+Medierea cozii în modurile `hold`/`enforce` refuză încă noul kind canonic; registrul protejat
+nu este modificat și medierea nu este dezactivată pentru a face funcția să ruleze.
+Chat-ul și coada existentă primesc propunerea; composerul/galeria dedicate în HUD și
+afișarea nativă pe mobil rămân declarate în ledger-ele de paritate (H18.27).
+Configurare: [`LOCAL_IMAGE_SETUP.md`](LOCAL_IMAGE_SETUP.md).
+
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
 pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca

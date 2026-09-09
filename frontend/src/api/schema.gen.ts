@@ -7129,7 +7129,7 @@ export interface paths {
         };
         /**
          * Media Status
-         * @description H12.24 — supported media kinds + which backends are wired.
+         * @description Configured kinds, with explicit unprobed reachability for the local backend.
          */
         get: operations["media_status_api_media_get"];
         put?: never;
@@ -7151,12 +7151,32 @@ export interface paths {
         put?: never;
         /**
          * Media Generate
-         * @description H12.24 — governed media generation (cloud generation is approval-gated).
+         * @description Propose a local image through ToolRPC or use the existing cloud approval queue.
          *
          *     0.62: paused when the active system profile turns heavy features off (e.g. the
          *     *gaming* profile frees the GPU). Default ``balanced`` leaves them on → unchanged.
          */
         post: operations["media_generate_api_media_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/generated/{artifact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Media Generated Artifact
+         * @description Read a generated PNG by opaque id; never accept a host path or backend URL.
+         */
+        get: operations["media_generated_artifact_api_media_generated__artifact_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9516,6 +9536,14 @@ export interface components {
              * @default false
              */
             cloud: boolean;
+            /** Seed */
+            seed?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Steps */
+            steps?: number | null;
         };
         /** MoERouteBody */
         MoERouteBody: {
@@ -20557,6 +20585,51 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Local image proposal queued for human approval */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    media_generated_artifact_api_media_generated__artifact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+            /** @description Artifact not found or invalid */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
