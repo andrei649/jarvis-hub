@@ -10,7 +10,7 @@ from agents.core.routers import multimodal
 
 
 def image_task(*, status="done", result=None, kind="toolrpc.image_generate"):
-    return SimpleNamespace(id=17, kind=kind, status=status, payload={"tool": "image_generate", "args": {"prompt": "PRIVATE", "_binding": "PRIVATE"}}, result=result)
+    return SimpleNamespace(id=17, kind=kind, status=status, payload={"tool": "image_generate", "target": "image_generate", "args": {"prompt": "PRIVATE", "_binding": "PRIVATE"}}, result=result)
 
 
 def success(**overrides):
@@ -30,15 +30,28 @@ def app(monkeypatch):
     return app
 
 
+@pytest.mark.parametrize("kind", ["toolrpc.image_generate", "tool.rpc"])
 @pytest.mark.asyncio
-async def test_owner_projection_redacts_payload_paths_urls_and_unrelated_results(app, monkeypatch):
-    monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(autonomy_queue=SimpleNamespace(get=lambda task_id: image_task(result=success()))))
+async def test_owner_projection_redacts_payload_paths_urls_and_unrelated_results(app, monkeypatch, kind):
+    monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(autonomy_queue=SimpleNamespace(get=lambda task_id: image_task(kind=kind, result=success()))))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         response = await client.get("/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"})
     assert response.status_code == 200
     assert response.json() == {"task_id": 17, "state": "ready", "artifact": {"id": "a" * 32, "bytes": 80, "width": 512, "height": 512}}
     assert "PRIVATE" not in response.text
     assert "url" not in response.json()["artifact"]
+
+
+@pytest.mark.parametrize("overrides", [{"tool": "other"}, {"target": "other"}, {"target": None}, {"tool": None}])
+@pytest.mark.asyncio
+async def test_canonical_tool_task_requires_exact_image_identity(app, monkeypatch, overrides):
+    task = image_task(kind="tool.rpc", result=success())
+    task.payload.update(overrides)
+    monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(autonomy_queue=SimpleNamespace(get=lambda task_id: task)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        response = await client.get("/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"})
+    assert response.status_code == 404
+    assert "PRIVATE" not in response.text
 
 
 @pytest.mark.parametrize("result", [None, [], 12, {"status": "failed", "reason": "submission_unknown", "secret": "PRIVATE"}, success(artifact_id="../secret"), success(bytes=0), success(bytes=True), success(width=999999), success(height=False), {**success(), "status": "failed"}, {**success(), "tool": "different"}, {**success(), "result": {"ok": "true"}}])

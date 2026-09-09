@@ -455,7 +455,9 @@ async def media_generation_task(task_id: int = PathParam(..., ge=1, le=2**63 - 1
     if error is not None:
         return error
     task = queue.get(task_id)
-    if (task is None or task.id != task_id or task.kind != "toolrpc.image_generate"
-            or not isinstance(task.payload, dict) or task.payload.get("tool") != "image_generate"):
+    if (task is None or task.id != task_id
+            or task.kind not in {"toolrpc.image_generate", "tool.rpc"}
+            or not isinstance(task.payload, dict) or task.payload.get("tool") != "image_generate"
+            or (task.kind == "tool.rpc" and task.payload.get("target") != "image_generate")):
         return nocache_json({"error": "image task not found"}, status_code=404)
     return nocache_json(project_image_task(task).model_dump())

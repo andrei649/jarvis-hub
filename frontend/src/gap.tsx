@@ -2928,6 +2928,9 @@ export function DecisionInboxPanel() {
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
+  const isImageProposal = (task) => task.payload?.tool === 'image_generate'
+    && (task.kind === 'toolrpc.image_generate'
+      || (task.kind === 'tool.rpc' && task.payload?.target === 'image_generate'));
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
@@ -2939,14 +2942,14 @@ export function DecisionInboxPanel() {
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
-              {t.kind !== 'toolrpc.image_generate' && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
+              {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
-              {t.kind !== 'toolrpc.image_generate' && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
+              {!isImageProposal(t) && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
             </span>
           </Row>
-          {t.kind === 'toolrpc.image_generate' && <div style={{ fontSize: 12, margin: '6px 0' }}>
+          {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof t.payload?.args?.prompt === 'string' ? t.payload.args.prompt.slice(0, 4000) : 'Image prompt unavailable.'}</p>
             <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
               {' · '}{Number.isInteger(t.payload?.args?.steps) ? t.payload.args.steps : 20} steps</p>

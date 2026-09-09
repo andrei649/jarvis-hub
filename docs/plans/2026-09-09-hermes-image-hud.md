@@ -112,3 +112,30 @@ proof. The final color-only build was separately inspected at 12.86:1 contrast.
 Temporary previews were stopped. Next action: PR checks on the final head, trusted
 policy classification, then squash merge only when every required/reporting gate
 passes. Generation remains default-off pending an actual configured local service.
+
+## Production composition follow-up — 2026-09-09T13:35:00Z
+
+The first hosted run passed all 1,084 frontend tests, Python tests and security
+scans, but rejected the committed bundle: the shared local dependency cache used
+Vite 8.2.1 instead of the lockfile's 8.2.2. An isolated temporary runtime was
+installed from the unchanged lockfile (Vite 8.2.2, Vitest 5.0.0); the shared
+checkout's dependencies were preserved. Its rebuild matched the hosted asset.
+
+A separate production-composition probe then found an image intake mismatch at
+the real MediationKernelBridge: logical tool kind/title/args-key authorization
+did not match the complete queued image proposal. Image backend integration is
+being corrected independently on `codex/hermes-image-composition`; this HUD PR
+must wait for that repair and its real bridge/worker regression packet.
+
+The stable corrected durable contract is kind `tool.rpc`, with payload `tool`
+and `target` both `image_generate`. This HUD accepts that exact identity and keeps
+legacy image task reads. Ordinary canonical tools retain their existing Inbox
+controls. The new canonical projection and Inbox regressions failed before the
+fix; 33 projection tests, 54 focused frontend tests, and the complete 1,086-test
+frontend suite then passed. TypeScript and E2E TypeScript passed. Final rebuilt
+asset: `index-BmNGjE-_.js`, SHA256
+`5dbe8fe82ce7276cc23953988bfa48be0c7e86c16368f5f5cc08ed204b03aace`.
+The independent Chromium synthetic flow was repeated on that exact bundle and
+canonical task shape: one proposal/approval, authenticated PNG, clean hard reload,
+read-only resume, 12.86:1 links and no page errors. Previews were stopped.
+This still does not establish real backend composition or live ComfyUI proof.
