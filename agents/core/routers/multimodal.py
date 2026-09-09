@@ -17,7 +17,7 @@ edge back into `agents.web`.
 
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, SkipValidation
 
 from agents.core.app_state import get_orch
@@ -338,21 +338,32 @@ async def desktop_run(body: DesktopStepsBody):
 
 
 class MediaGenBody(BaseModel):
+    model_config = {"extra": "forbid"}
     kind: str = Field(..., max_length=20)
     prompt: str = Field(..., max_length=4000)
     cloud: bool = False
+    seed: int | None = Field(None, strict=True, ge=0, le=2**63 - 1)
+    width: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
+    height: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
+    steps: int | None = Field(None, strict=True, ge=1, le=40)
 
 
 @router.get("/api/media", dependencies=[Depends(user_guard)])
 async def media_status():
-    """H12.24 — supported media kinds + which backends are wired."""
-    from agents.core.media_gen import MediaGenManager
-    return nocache_json({"kinds": MediaGenManager().kinds()})
+    """Configured kinds, with explicit unprobed reachability for the local backend."""
+    from agents.core.image_generation_runtime import configuration_status
+    status = configuration_status()
+    return nocache_json({
+        "kinds": {"image": status["configured"], "thumbnail": False, "video": False},
+        "local_image": status,
+    })
 
 
-@router.post("/api/media/generate", dependencies=[Depends(user_guard)])
+@router.post("/api/media/generate", dependencies=[Depends(user_guard)], responses={
+    202: {"description": "Local image proposal queued for human approval"},
+})
 async def media_generate(body: MediaGenBody):
-    """H12.24 — governed media generation (cloud generation is approval-gated).
+    """Propose a local image through ToolRPC or use the existing cloud approval queue.
 
     0.62: paused when the active system profile turns heavy features off (e.g. the
     *gaming* profile frees the GPU). Default ``balanced`` leaves them on → unchanged."""
@@ -365,6 +376,16 @@ async def media_generate(body: MediaGenBody):
             status_code=200,
         )
     orch = get_orch()
+    if not body.cloud and body.kind == "image":
+        server = getattr(orch, "tool_rpc", None) if orch else None
+        if server is None:
+            return nocache_json({"ok": False, "reason": "tool_runtime_unavailable"}, status_code=503)
+        args = {"prompt": body.prompt}
+        args.update({key: value for key in ("seed", "width", "height", "steps")
+                     if (value := getattr(body, key)) is not None})
+        result = await server.handle({"tool": "image_generate", "args": args}, actor="pepper")
+        queued = result.get("reason") == "approval_required" and "task_id" in result
+        return nocache_json(result, status_code=202 if queued else 422)
     from agents.core.media_catalog import default_catalog_if_enabled
     from agents.core.media_gen import MediaGenManager
     q = getattr(orch, "autonomy_queue", None) if orch else None
@@ -374,6 +395,38 @@ async def media_generate(body: MediaGenBody):
                         catalog=default_catalog_if_enabled())
     result = await m.generate(body.kind, body.prompt, cloud=body.cloud)
     return nocache_json(result, status_code=200 if result.get("ok") else 422)
+
+
+@router.get("/api/media/generated/{artifact_id}", dependencies=[Depends(user_guard)],
+            response_class=Response, responses={
+                200: {"content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}},
+                404: {"description": "Artifact not found or invalid"},
+            })
+async def media_generated_artifact(artifact_id: str):
+    """Read a generated PNG by opaque id; never accept a host path or backend URL."""
+    import re
+
+    from agents.core.media_backends.comfyui import ImageGenerationError, validate_png
+    from agents.core.paths import data_path
+
+    if not re.fullmatch(r"[a-f0-9]{32}", artifact_id):
+        return nocache_json({"ok": False, "reason": "artifact_not_found"}, status_code=404)
+    root = data_path("media", "generated").resolve()
+    candidate = root / (artifact_id + ".png")
+    try:
+        if candidate.is_symlink() or candidate.resolve() != candidate:
+            raise OSError
+        with candidate.open("rb") as handle:
+            data = handle.read(16 * 1024 * 1024 + 1)
+        if len(data) > 16 * 1024 * 1024:
+            raise OSError
+        validate_png(data)
+    except (OSError, ImageGenerationError):
+        return nocache_json({"ok": False, "reason": "artifact_not_found"}, status_code=404)
+    return Response(data, media_type="image/png", headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": f'inline; filename="{artifact_id}.png"',
+    })
 
 
 @router.get("/api/media/catalog", dependencies=[Depends(user_guard)])

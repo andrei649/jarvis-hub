@@ -121,6 +121,7 @@
   "GET /api/media": "media_status_api_media_get",
   "GET /api/media/catalog": "media_catalog_api_media_catalog_get",
   "GET /api/media/devices": "media_devices_api_media_devices_get",
+  "GET /api/media/generated/{artifact_id}": "media_generated_artifact_api_media_generated__artifact_id__get",
   "GET /api/media/session": "media_sessions_api_media_session_get",
   "GET /api/memory/consolidate/preview": "memory_consolidate_preview_api_memory_consolidate_preview_get",
   "GET /api/memory/decay/candidates": "memory_decay_candidates_api_memory_decay_candidates_get",

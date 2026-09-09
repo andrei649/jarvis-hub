@@ -121,6 +121,7 @@
   "GET /api/media",
   "GET /api/media/catalog",
   "GET /api/media/devices",
+  "GET /api/media/generated/{artifact_id}",
   "GET /api/media/session",
   "GET /api/memory/consolidate/preview",
   "GET /api/memory/decay/candidates",

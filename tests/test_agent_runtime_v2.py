@@ -1808,6 +1808,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._secrets is secret_broker
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
+    from agents.core.image_generation_runtime import INPUT_SCHEMA
     assert orch.tool_rpc.tools() == [
         {
             "name": "desktop_plan",
@@ -1870,6 +1871,13 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                  "additionalProperties": False,
              },
             "capability_id": "tool:echo",
+        },
+        {
+            "name": "image_generate",
+            "gated": True,
+            "description": "Propose one local image using the owner's configured ComfyUI checkpoint; approval required.",
+            "input_schema": INPUT_SCHEMA,
+            "capability_id": "tool:image_generate",
         },
         {
             "name": "operator_plan",
