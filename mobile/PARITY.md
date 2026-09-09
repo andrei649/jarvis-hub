@@ -46,7 +46,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
-| Slack/Discord inbox replies | Same inbox/reply API; exact room/thread target, existing approval queue | ✅ live inbox composer | ✅ existing Comms screen and client; requires host adapters | HA-4i-comms |
+| Slack/Discord inbox replies | Same inbox/reply API; exact room/thread target, existing approval queue | ✅ live inbox composer | ✅ existing Comms screen and client; requires host adapters; Slack automatic ingress uses optional Socket Mode ([setup](../docs/SLACK_SETUP.md)) | HA-4i-comms / 4i-socket |
 | Shell reply command (`nerva send --list/--to`) | Same inbox/reply API above; queued task is not a delivery receipt | ✅ existing inbox | ✅ existing inbox; CLI itself is host-only | HA-4i |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native: hub TTS via expo-audio) | ✅ | ✅ | H18.23 |
 | Chat rooms (multi-agent) | `GET/POST /api/rooms*` | ✅ | ⬜ | — |

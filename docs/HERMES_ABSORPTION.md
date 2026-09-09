@@ -402,6 +402,22 @@ permisiune de a publica tokeni înainte ca mesajul complet să fie aprobat. Slac
 punctul de intrare host `receive_event`; configurarea evenimentelor și livrarea pe conturi
 reale nu au fost probate aici.
 
+**2026-09-09 (4i-socket — recepție Slack prin Socket Mode).** Cu `SLACK_APP_TOKEN`
+configurat, adaptorul conectează clientul oficial opțional și trece mesajele directe și
+mențiunile explicite prin `receive_event`, pairing și inbox-ul existent. Nu mai este
+necesar ca un host extern să cheme manual acea metodă. Confirmarea plicului precedează
+procesarea; o coadă mărginită separă callback-urile SDK de bucla hub-ului, iar un cache
+mărginit elimină evenimentele repetate în aceeași pornire. Editările, mesajele de bot,
+conversația neadresată și identitățile malformate nu pornesc ture. O mențiune la nivelul
+camerei primește propriul thread; un subfir existent își păstrează ținta. Nicio cale nouă
+de send și nicio schimbare la aprobări. Fără app token, punctul manual existent rămâne.
+Identitatea verificată a botului fixează workspace-ul acceptat; pairing-ul folosește
+`TEAM_ID:USER_ID`, deci aprobările vechi pe user simplu nu se transferă implicit.
+Configurare și limite: [`SLACK_SETUP.md`](SLACK_SETUP.md). Aceleași API-uri de inbox
+servesc HUD și mobil. Testele folosesc SDK fals și componentele reale de pairing/inbox;
+un test suplimentar verifică parserul, callback-ul și închiderea SDK-ului real 3.44.1
+cu rețeaua simulată. Conectarea la un workspace și livrarea pe conturi reale rămân neprobate.
+
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea
 pe amândouă. Acum bucla de unelte (`agent_runtime.py`) îngrădește rezultatul ca

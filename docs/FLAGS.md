@@ -353,7 +353,8 @@ boot guard `assert_guarded_channels` then refuses to start a channel whose token
 an allowlist names at least one id or `JARVIS_CHANNEL_OPEN=1` acknowledges an open bot. A typo
 refuses boot like the other posture flags. The guard runs twice: early, and again from the
 lifespan once `.env` is loaded (`assert_front_door`), so a token that lives only in `.env` is
-seen. The doors it counts: the Telegram and Discord bots, the webhook map, the IMAP inbox
+seen. The doors it counts: the Telegram and Discord bots, Slack Socket Mode when both
+`SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are set, the webhook map, the IMAP inbox
 (whose sender is the `From` address — forgeable without DMARC, so a paired address is a held
 stranger let in, not an authenticated owner). **Cost of ON:** on upgrade the owner must pair
 themselves once — or set `TELEGRAM_ALLOWED_USER_IDS`, which now passes the gate on its own.

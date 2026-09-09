@@ -201,7 +201,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/channels/group_policy.py` | Group-chat gate applied by the Telegram poll loop after the user allowlist: DMs pass; in a room only an `@mention`, `/cmd@bot`, reply-to-bot or `text_mention` is answered (mention stripped), `TELEGRAM_ALLOWED_CHAT_IDS` / `chat:thread` restricts rooms, `TELEGRAM_GROUP_REQUIRE_MENTION` relaxes, `TELEGRAM_GROUP_OBSERVE` records unaddressed messages as context without answering; fails closed on unknown chat types and an unknown bot identity | `GroupPolicy.from_env`, `gate_message`, `GateDecision` |
 | `agents/core/channels/discord.py` | Discord bot | `DiscordChannel` |
 | `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
-| `agents/core/channels/slack.py` | Slack bot | `SlackChannel` |
+| `agents/core/channels/slack.py` | Slack bot; optional `SLACK_APP_TOKEN` Socket Mode ingress admits human DMs/mentions through the existing paired inbox, with bounded queue/replay cache and no direct replies. Bot-token-only hosts retain manual event ingress. [Setup](SLACK_SETUP.md) | `SlackChannel`, `receive_event` |
 | `agents/core/channels/gateway.py` | Message routing gateway (incl. inbound rate limit, the pairing hold, and a per-channel `held_senders` count that stores nothing of the sender) | `Gateway.route` |
 | `agents/core/channels/webhook_channels.py` | HTTP webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) | `WebhookChannel`, `build_send`, `parse_inbound` |
 | `agents/core/channels/send_rate_limit.py` | 0.44 opt-in per-channel **outbound** send rate limit (`JARVIS_CHANNEL_SEND_RATE[S]`) | `allow_send`, `SendRateLimiter`, `limit_for` |
