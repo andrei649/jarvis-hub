@@ -38,6 +38,7 @@ logger = logging.getLogger("jarvis.tool_rpc")
 
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
+GatedIntake = Callable[[str, dict], int]
 
 _KIND_PREFIX = "toolrpc."
 _RISK_TIER = 2
@@ -118,6 +119,7 @@ class ToolRPCServer:
         preflight: Preflight | None = None,
         trusted_execution: bool = False,
         untrusted_output: bool = False,
+        gated_intake: GatedIntake | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -129,6 +131,10 @@ class ToolRPCServer:
         """
         if trusted_execution and not gated:
             raise ValueError("trusted execution is only valid for gated tools")
+        if gated_intake is not None and (
+            not callable(gated_intake) or not gated or not trusted_execution
+        ):
+            raise ValueError("custom intake requires a trusted gated tool")
         if capability_id is not None:
             if (
                 not isinstance(capability_id, str)
@@ -158,6 +164,7 @@ class ToolRPCServer:
             "preflight": preflight,
             "trusted_execution": bool(trusted_execution),
             "untrusted_output": bool(untrusted_output),
+            "gated_intake": gated_intake,
             "active_tasks": set(),
         }
         return self
@@ -255,6 +262,21 @@ class ToolRPCServer:
                     agent=effective_actor,
                 )
                 return {"ok": False, "reason": reason, "tool": name}
+
+            # A server-owned intake can bind one finalized action/task tuple
+            # through the production mediation bridge. It owns BOTH the kernel
+            # gate and governed enqueue; call data cannot select this callback.
+            intake = spec.get("gated_intake")
+            if intake is not None:
+                try:
+                    task_id = intake(effective_actor, args)
+                except ToolRPCValidationError as exc:
+                    return {"ok": False, "reason": exc.reason, "tool": name}
+                except Exception:
+                    logger.warning("tool-rpc bound intake failed", exc_info=True)
+                    return {"ok": False, "reason": "enqueue_failed", "tool": name}
+                self._record("toolrpc.gated", name, agent=effective_actor)
+                return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
             # first (default-off). A DENY (halted kill-switch / over-budget / runaway

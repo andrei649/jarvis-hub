@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+from collections.abc import Mapping
 from pathlib import Path
 
 from .media_backends.comfyui import (
@@ -23,7 +24,8 @@ from .tool_rpc import ToolRPCValidationError
 
 _SOURCE_SHA = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 TOOL = "image_generate"
-KIND = "toolrpc.image_generate"
+KIND = "tool.rpc"
+TITLE = "Tool 'image_generate' via RPC"
 INPUT_SCHEMA = {
     "type": "object", "required": ["prompt"], "additionalProperties": False,
     "properties": {
@@ -53,8 +55,18 @@ def _digest(value):
 def _task_binding(task):
     """Immutable proposal tuple, independent of subsequent worker status changes."""
     return _digest({key: getattr(task, key) for key in (
-        "id", "agent", "kind", "payload", "origin", "risk_tier", "autonomy_level",
+        "id", "agent", "kind", "title", "payload", "origin", "risk_tier", "autonomy_level",
     )})
+
+
+def is_image_task(task):
+    """Only this image tuple may use the canonical ToolRPC executor."""
+    payload = getattr(task, "payload", None)
+    return (
+        getattr(task, "kind", None) == KIND
+        and isinstance(payload, Mapping)
+        and payload.get("tool") == TOOL and payload.get("target") == TOOL
+    )
 
 
 def _write_exclusive(path, value):
@@ -125,24 +137,28 @@ class LocalImageRuntime:
         except ImageGenerationError as exc:
             raise ToolRPCValidationError(exc.reason) from None
 
-    def enqueue(self, agent, kind, title, **kwargs):
-        if kind != KIND:
-            return self._enqueue(agent, kind, title, **kwargs)
+    def intake(self, agent, args):
+        """Authorize and enqueue the identical full image tuple exactly once."""
+        from .action_origin import current_action_origin
+        from .kernel import Action, Decision, Verdict
+        from .security.taint import mark_if_untrusted
+
         self._config()
         if self._queue is None:
             raise ImageGenerationError("queue_required")
-        # ToolRPC's legacy enqueue sets origin="generated". Preserve inbound
-        # provenance here as well as in the worker, including during partial
-        # startup when the coordinator has only its raw-queue fallback.
-        from .action_origin import current_action_origin
-        from .security.taint import is_untrusted_source, mark_if_untrusted
-        active = current_action_origin()
-        if is_untrusted_source(active):
-            kwargs["origin"] = active
-            kwargs["payload"] = mark_if_untrusted(kwargs["payload"], active)
-        task_id = self._enqueue(agent, kind, title, **kwargs)
+        origin = current_action_origin()
+        payload = mark_if_untrusted({"tool": TOOL, "args": args, "target": TOOL}, origin)
+        decision = self._authorizer(Action(
+            kind=KIND, agent=agent, title=TITLE, payload=payload, origin=origin,
+        ))
+        if not isinstance(decision, Decision) or decision.verdict not in {Verdict.GRANT, Verdict.QUEUE}:
+            raise ToolRPCValidationError("kernel_denied")
+        task_id = self._enqueue(
+            agent, KIND, TITLE, payload=payload, risk_tier=2,
+            autonomy_level="ask", origin=origin,
+        )
         task = self._queue.get(task_id)
-        if task is None or task.kind != KIND or task.payload.get("args") != kwargs["payload"]["args"]:
+        if not is_image_task(task) or task.payload.get("args") != args:
             raise ImageGenerationError("proposal_binding_failed")
         # Bind AFTER governed intake has raised risk/provenance/taint, before the
         # caller receives a task id. A failed write leaves a non-executable row.
@@ -155,7 +171,7 @@ class LocalImageRuntime:
             raise ImageGenerationError("trusted_execution_required")
         persisted = self._queue.get(getattr(task, "id", None))
         if persisted is None or not (
-            persisted.kind == KIND and persisted.status == "running"
+            is_image_task(persisted) and persisted.status == "running"
             and persisted.autonomy_level == "ask"
             and persisted.decision in {"accept", "edit"}
             and persisted.decided_by and str(persisted.decided_by).strip().lower() != "policy"
@@ -170,9 +186,16 @@ class LocalImageRuntime:
                 raise ImageGenerationError("approved_payload_changed")
         except (OSError, ValueError):
             raise ImageGenerationError("approval_binding_invalid") from None
-        # Enforce/hold stay governed by the existing mediated queue. Unknown
-        # toolrpc.* kinds currently cannot obtain a B7 execution receipt.
-        if getattr(self._queue, "mediation_mode", None) != "off":
+        mode = getattr(self._queue, "mediation_mode", None)
+        if mode == "enforce":
+            # The worker has already consumed its private dispatch permit.
+            # Recheck the presented snapshot against current authenticated
+            # storage at each guard, including immediately before the attempt.
+            if not self._queue.validate_mediated_execution(
+                task, self._queue.execution_fingerprint(task),
+            ):
+                raise ImageGenerationError("mediation_execution_required")
+        elif mode != "off":
             raise ImageGenerationError("mediation_execution_required")
         return persisted
 

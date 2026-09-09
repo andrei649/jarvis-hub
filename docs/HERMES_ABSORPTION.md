@@ -428,8 +428,12 @@ Un rezultat PNG validat este salvat în data root și citit printr-un identifica
 artefact autentificat. Nu există activare implicită, instalare de modele sau fallback cloud.
 Starea configurată rămâne separată de disponibilitatea probată. Testele folosesc protocolul
 ComfyUI simulat și coada reală de aprobare; generarea pe un motor/model real rămâne neprobată.
-Medierea cozii în modurile `hold`/`enforce` refuză încă noul kind canonic; registrul protejat
-nu este modificat și medierea nu este dezactivată pentru a face funcția să ruleze.
+Remedierea compoziției transmite aceeași acțiune `tool.rpc` cu titlu, payload complet și
+origine prin bridge-ul real și coada guvernată. Executorul canonic acceptă numai
+`tool=target=image_generate`. Modurile `off` și `enforce` păstrează aprobarea umană exactă;
+`enforce` reverifică receipt-ul semnat actual inclusiv înainte de trimitere, iar `hold`
+continuă să refuze. Testele HTTP autentificate parcurg propunerea, decizia, workerul și
+citirea PNG-ului în ambele moduri. Registrul protejat și celelalte unelte nu sunt modificate.
 Chat-ul și coada existentă primesc propunerea; composerul/galeria dedicate în HUD și
 afișarea nativă pe mobil rămân declarate în ledger-ele de paritate (H18.27).
 Configurare: [`LOCAL_IMAGE_SETUP.md`](LOCAL_IMAGE_SETUP.md).

@@ -44,7 +44,6 @@ _TRUSTED_TOOL_RPC_KINDS = frozenset({
     "toolrpc.terminal_run",
     "toolrpc.file_write",
     "toolrpc.file_delete",
-    "toolrpc.image_generate",
 })
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -365,7 +364,7 @@ class AutonomyCoordinator:
                 return False
             return (
                 persisted.status == "running"
-                and persisted.kind in _TRUSTED_TOOL_RPC_KINDS
+                and (persisted.kind in _TRUSTED_TOOL_RPC_KINDS or is_image_task(persisted))
                 and persisted.autonomy_level == "ask"
                 and persisted.decision in {"accept", "edit"}
                 and bool(persisted.decided_by)
@@ -384,7 +383,7 @@ class AutonomyCoordinator:
                 logger.warning("agent tool runtime setting read failed closed")
                 return default
 
-        from .image_generation_runtime import INPUT_SCHEMA, LocalImageRuntime
+        from .image_generation_runtime import INPUT_SCHEMA, LocalImageRuntime, is_image_task
 
         image_runtime = LocalImageRuntime(
             queue=getattr(self._orch, "autonomy_queue", None),
@@ -394,7 +393,7 @@ class AutonomyCoordinator:
         )
         server = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
-            enqueue=image_runtime.enqueue,
+            enqueue=self._governed_enqueue,
             audit=getattr(self._orch, "intent_log", None),
             kernel=action_kernel,
             execution_context_check=_approved_execution_context,
@@ -404,6 +403,7 @@ class AutonomyCoordinator:
             description="Propose one local image using the owner's configured ComfyUI checkpoint; approval required.",
             input_schema=INPUT_SCHEMA, capability_id="tool:image_generate",
             preflight=image_runtime.preflight, trusted_execution=True,
+            gated_intake=image_runtime.intake,
         )
 
         async def _rpc_echo(args):
@@ -795,6 +795,15 @@ class AutonomyCoordinator:
                 _APPROVED_TASK.reset(token)
 
         self._approved_desktop_tool_rpc_execute = _approved_desktop_tool_rpc_execute
+
+        async def _approved_image_tool_rpc_execute(task):
+            # Canonical tool.rpc is NOT a generic alias for toolrpc.*. Admit
+            # only this server-owned image payload; other names remain closed.
+            if not is_image_task(task):
+                return {"status": "failed", "reason": "image_task_required"}
+            return await _approved_desktop_tool_rpc_execute(task)
+
+        self._approved_image_tool_rpc_execute = _approved_image_tool_rpc_execute
         self._targets = None
         for agent in getattr(self._orch, "agents", {}).values():
             agent.tool_runtime = runtime
@@ -1058,8 +1067,8 @@ class AutonomyCoordinator:
             self._approved_desktop_tool_rpc_execute,
         )
         executor.register(
-            "toolrpc.image_generate",
-            self._approved_desktop_tool_rpc_execute,
+            "tool.rpc",
+            self._approved_image_tool_rpc_execute,
         )
         # 1.1.0 operator wave — the durable consent ledger. The request half runs at
         # the routers/brokers (crossing the kernel first); the grant row itself is
