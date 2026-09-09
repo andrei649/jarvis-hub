@@ -89,3 +89,30 @@ async def test_discord_chunks_at_two_thousand():
     assert stub.sent[0].startswith("para")
     channel._client = SimpleNamespace(is_ready=lambda: False, get_channel=lambda cid: stub)
     assert await channel.send("x", channel_id="99") is False
+
+
+@pytest.mark.asyncio
+async def test_slack_governed_target_keeps_its_thread_and_reports_api_refusal():
+    posts = []
+
+    def post(**kwargs):
+        posts.append(kwargs)
+        return {"ok": len(posts) == 1}
+
+    channel = SlackChannel("tok")
+    channel._client = SimpleNamespace(chat_postMessage=post)
+    assert await channel.send("**reply**", slack_channel="C1", thread_ts="100.001") is True
+    assert posts == [{"channel": "C1", "thread_ts": "100.001", "text": "*reply*"}]
+    assert await channel.send("refused", slack_channel="C1") is False
+
+
+@pytest.mark.asyncio
+async def test_discord_transport_failure_is_not_delivery():
+    async def fail(text):
+        raise RuntimeError("platform unavailable")
+
+    channel = DiscordChannel("tok")
+    channel._client = SimpleNamespace(
+        is_ready=lambda: True, get_channel=lambda cid: SimpleNamespace(send=fail),
+    )
+    assert await channel.send("pong", channel_id="123") is False

@@ -1186,6 +1186,7 @@ class Orchestrator:
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
+        inbox_message_id = kwargs.pop("_inbox_message_id", "")
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
         origin_token = bind_action_origin(action_origin)
@@ -1201,8 +1202,12 @@ class Orchestrator:
             channel=channel,
             sender=kwargs.get("sender"),
             thread_id=(
-                kwargs.get("chat_id")
+                (f"{kwargs['slack_channel']}:{kwargs['thread_ts']}"
+                 if channel == "slack" and kwargs.get("slack_channel") and kwargs.get("thread_ts")
+                 else None)
+                or kwargs.get("chat_id")
                 or kwargs.get("slack_channel")
+                or kwargs.get("channel_id")
                 or kwargs.get("room_id")
                 or kwargs.get("conversation")
                 or kwargs.get("space")
@@ -1272,11 +1277,29 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                await self.channel_manager.send(decision.target.channel, response, **kwargs)
+                if channel in {"slack", "discord"}:
+                    self._queue_workspace_reply(channel, inbox_message_id, response)
+                else:
+                    await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
             reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def _queue_workspace_reply(self, channel: str, message_id: str, response: str) -> None:
+        """Workspace replies share the inbox's Action Kernel/approval boundary."""
+        broker = getattr(self, "channel_replies", None)
+        if not broker or not message_id:
+            logger.debug("Workspace reply unavailable: no broker or persisted inbound turn")
+            return
+        try:
+            result = broker.request_for_message(
+                message_id, response, channel=channel, source="channel.auto_reply",
+            )
+            if not result.get("ok") or not result.get("queued"):
+                logger.info("Workspace reply not queued: %s", result.get("reason", "queue_unavailable"))
+        except Exception:
+            logger.warning("Workspace reply request failed closed", exc_info=True)
 
     def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
         """The owner test for a channel turn: Telegram's owner allowlist or owner chat; else nobody."""
@@ -1320,6 +1343,10 @@ class Orchestrator:
     def _begin_channel_draft(self, channel: str, source, kwargs: dict):
         """A streaming draft for this turn, or None when the channel cannot edit, the
         owner turned streaming off, or the router would not deliver to this source."""
+        # Full workspace replies are approved through channel.reply. An editable
+        # transport alone is not authority to publish tokens before that decision.
+        if channel in {"slack", "discord"}:
+            return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:
                 return None

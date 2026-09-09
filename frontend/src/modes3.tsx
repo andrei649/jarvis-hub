@@ -46,7 +46,7 @@ function CommsMode({ t }){
   const [replyState,setReplyState]=uS3('');
   const activeAny = active as any;
   const activeThread = activeAny?.thread_id || activeAny?.id || '';
-  const canReply = !!activeAny?.replyable && !!activeThread && ['telegram','web'].includes(activeAny.channel);
+  const canReply = !!activeAny?.replyable && !!activeThread && ['telegram','web','slack','discord'].includes(activeAny.channel);
   uE3(()=>{ setReply(''); setReplyState(''); }, [activeThread]);
   const queueReply = () => {
     const text = reply.trim();

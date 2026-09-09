@@ -81,18 +81,18 @@ describe('mobile channel inbox API', () => {
     expect(out.messages[0].text).toBe('ping');
   });
 
-  it('queues a governed reply from mobile without admin auth', async () => {
+  it.each(['telegram', 'slack', 'discord'])('queues a governed %s reply from mobile without admin auth', async (channel) => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true, queued: true, task_id: 99 }));
 
     const out = await sendChannelReply(
       { baseUrl: 'http://jarvis.lan', token: 'tok', adminToken: 'adm' },
-      'telegram:abc123',
+      `${channel}:abc123`,
       'pong',
       'veronica',
     );
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://jarvis.lan/api/channels/inbox/telegram%3Aabc123/reply',
+      `http://jarvis.lan/api/channels/inbox/${channel}%3Aabc123/reply`,
       expect.objectContaining({
         method: 'POST',
         headers: expect.not.objectContaining({ 'X-Admin-Token': 'adm' }),

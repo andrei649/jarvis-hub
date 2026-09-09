@@ -192,11 +192,16 @@ async def test_approved_channel_reply_sends_and_records_outbound(tmp_path):
     assert smtp[0][0]["Subject"] == "Ping"
 
 
-def test_channel_inbox_api_lists_threads_messages_and_status(monkeypatch, tmp_path):
+@pytest.mark.parametrize("channel,reply", [
+    ("telegram", {"chat_id": 99}),
+    ("slack", {"slack_channel": "C1", "thread_ts": "100.001"}),
+    ("discord", {"channel_id": "123"}),
+])
+def test_channel_inbox_api_lists_threads_messages_and_status(monkeypatch, tmp_path, channel, reply):
     from agents import web
 
     inbox = ChannelInboxStore(tmp_path / "inbox.json")
-    inbound = inbox.record_inbound("telegram", "ping", sender="42", metadata={"chat_id": 99})
+    inbound = inbox.record_inbound(channel, "ping", sender="42", metadata=reply)
     monkeypatch.setattr(web, "orch", SimpleNamespace(channel_inbox=inbox))
     client = TestClient(web.app)
 
@@ -208,17 +213,23 @@ def test_channel_inbox_api_lists_threads_messages_and_status(monkeypatch, tmp_pa
     assert status.json()["stats"]["threads"] == 1
     assert threads.status_code == 200
     assert threads.json()["threads"][0]["thread_id"] == inbound["thread_id"]
+    assert threads.json()["threads"][0]["reply"] == reply
     assert messages.status_code == 200
     assert messages.json()["messages"][0]["text"] == "ping"
 
 
-def test_channel_inbox_reply_api_enqueues_governed_reply(monkeypatch, tmp_path):
+@pytest.mark.parametrize("channel,reply", [
+    ("telegram", {"chat_id": 99}),
+    ("slack", {"slack_channel": "C1", "thread_ts": "100.001"}),
+    ("discord", {"channel_id": "123"}),
+])
+def test_channel_inbox_reply_api_enqueues_governed_reply(monkeypatch, tmp_path, channel, reply):
     from agents import web
 
     queue = TaskQueue(db_path=str(tmp_path / "autonomy.db")).initialize()
     worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=None)
     inbox = ChannelInboxStore(tmp_path / "inbox.json")
-    inbound = inbox.record_inbound("telegram", "ping", sender="42", metadata={"chat_id": 99})
+    inbound = inbox.record_inbound(channel, "ping", sender="42", metadata=reply)
     broker = ChannelReplyBroker(inbox=inbox, enqueue=worker.govern_enqueue)
     monkeypatch.setattr(web, "orch", SimpleNamespace(channel_inbox=inbox, channel_replies=broker))
     client = TestClient(web.app)

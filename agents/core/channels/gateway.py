@@ -117,8 +117,13 @@ class Gateway:
             inbound_meta = self._inbound_meta(channel, text, origin=origin)
             if inbound_meta:
                 kwargs.setdefault("_inbound_meta", dict(inbound_meta))
+            # Never accept an event-supplied claim about which stored message is
+            # being answered. Only the successful inbox write may bind this turn.
+            kwargs.pop("_inbox_message_id", None)
             metadata = {**kwargs, **inbound_meta}
-            self._record_inbox(channel, text, sender=sender, metadata=metadata)
+            recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
+            if channel in {"slack", "discord"}:
+                kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
             result = await self.handler(text, channel=channel, **kwargs)
             self._channels[channel]["last_activity"] = time.time()
             return result
@@ -166,11 +171,11 @@ class Gateway:
         return meta
 
     def _record_inbox(self, channel: str, text: str, *, sender: Any = None,
-                      metadata: dict | None = None) -> None:
+                      metadata: dict | None = None) -> dict | None:
         if self.inbox_store is None or not hasattr(self.inbox_store, "record_inbound"):
             return
         try:
-            self.inbox_store.record_inbound(
+            return self.inbox_store.record_inbound(
                 channel,
                 text,
                 sender="" if sender is None else str(sender),
