@@ -12,6 +12,26 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Current sprint: Hermes capability equivalence — 2026-09-09
+
+- [x] **HEQ-0 — one status over the complete 697-row Hermes inventory.** Owner-requested
+  consolidation: [HERMES_STATUS.md](HERMES_STATUS.md), linked from README and STATUS,
+  with a complete generated row index and additive, source-bound assessments.
+  Partial work and the 107 explicit exclusions never count as completion; inherited
+  7 September judgments and fresh code reviews remain distinguishable. All prior
+  merged delivery PRs and the remaining K0/S2/desktop investigation are collected in
+  [the sprint record](docs/HERMES_SPRINT.md). This is tracking delivery, not full parity.
+
+- [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
+  owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
+  intentionally excluded. Reassess inherited judgments, finish the full accepted
+  contract of each row, preserve authority boundaries, and update code evidence and
+  the status in the implementation PR. First slices: job editing, configured-target
+  messaging, image controls/gallery, SDK S2/S3, K0 before persistent code sessions,
+  then native overlay and channel streaming. The full inventory remains the scope;
+  these first slices are not a replacement denominator. Live-service proof is tracked
+  separately. Query `scripts/hermes_status.py summary | list | show H515`.
+
 ## Darwin feature absorption — 2026-09-09
 
 - [x] **DW-1 — truthful read-only memory neighborhood.** Live Memory mode uses the

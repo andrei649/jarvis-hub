@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-09-09T12:38:11.405931+00:00",
+  "head_sha": "a5b8b496f319447f0233b1baf4a0f54cb8551c06",
+  "source_sha256": {
+    "agents/core/agent_runtime.py": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4",
+    "agents/core/autonomy_coordinator.py": "1c92d8b9145a7bb383c54bcc809f6d1d68b444a0af8db94bf2d638004d0a934d",
+    "agents/core/data_spaces.py": "db71d03b1402d47c8c6c039cbd21038177b73e48ab63f331161c6d667986aff8",
+    "agents/core/memory/session_search.py": "b872fa4537e11351c4fc4c0dbabb2c5b91bb4f068de48a510c7fec541bfb6809",
+    "agents/core/orchestrator.py": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791",
+    "agents/core/routers/data_spaces.py": "8d7b1129951614c6b62f942c103e6801d93de798331b0bb25442c4fb162579f0",
+    "agents/core/sandbox.py": "b0f832a0900670f2dd407134eb144cdfe349e7f789a0f819cd544888a8156682",
+    "agents/core/tool_profiles.py": "20f3b853ef36e667fe8c5a16384b6c984f02a10d60deaa4c5fcc2332587b0757",
+    "agents/core/tool_rpc.py": "f7023d9908f812cb2a61a23c82d20fc1f39d1ce2762398de7d092a0a0e04463a",
+    "agents/core/tool_rpc_runtime.py": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+  },
+  "source_worktree_status": "",
+  "probe_sha256": "ad3edc66416b585fc96e01c392d94622d068ea13e2c66384d1b80d0e8b1d07a3",
+  "observation": {
+    "outer_actor_intended": "frigga",
+    "outer_offered": [
+      "echo"
+    ],
+    "inner_request_result": {
+      "ok": false,
+      "reason": "approval_required",
+      "tool": "synthetic_mutation",
+      "task_id": "synthetic-task"
+    },
+    "queue_records": [
+      {
+        "actor": "jarvis",
+        "kind": "toolrpc.synthetic_mutation"
+      }
+    ],
+    "gated_handler_calls": 0,
+    "configured_sources": [
+      "session_allowed"
+    ],
+    "session_search_hit_ids": [
+      "session_allowed",
+      "session_other"
+    ]
+  },
+  "limitations": [
+    "Only temporary synthetic files and an in-memory queue were used.",
+    "No generated code, sandbox backend, external action or live isolation proof.",
+    "The outer actor/profile is the intended invocation contract, not bound by this bridge API.",
+    "No runtime contract maps or enforces DataSpaces sources for session_search.",
+    "This is a missing authority binding, not evidence of an implemented session ACL bypass.",
+    "HEAD identifies the checkout; exact source hashes describe the files inspected.",
+    "A nonempty source_worktree_status means HEAD alone does not identify that source."
+  ]
+}

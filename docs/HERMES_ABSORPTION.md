@@ -1,5 +1,9 @@
 # Hermes → Nerva — planul de absorbție
 
+**Sprint curent, directivă 2026-09-09 → [Statusul tuturor celor 697 de capabilități](../HERMES_STATUS.md).**
+[Reguli, livrări reunite și următorii pași](HERMES_SPRINT.md). Cifrele de inventar
+de mai jos sunt auditul din 7 septembrie; progresul curent se citește în pagina de status.
+
 > **Directiva owner-ului, 2026-09-07:** *„vreau ca tot să fie în nerva — ce avem superior, păstrăm;
 > ce nu avem, copiem; ce e sub hermes, facem update."*
 >

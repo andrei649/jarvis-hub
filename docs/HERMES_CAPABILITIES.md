@@ -1,0 +1,802 @@
+# Cele 697 de capabilități Hermes — status cod
+
+[Statusul sprintului](../HERMES_STATUS.md) · [Reguli și livrări](HERMES_SPRINT.md)
+
+ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash. Folosește căutarea paginii pentru nume/ID sau comanda `show` pentru cerința originală completă. «Audit 07.09» înseamnă moștenit, nu verificat din nou. Dovezile legate sunt fișiere inspectate; simpla lor existență nu dovedește întregul flux și nu afirmă că testele au fost rulate în această livrare.
+
+## cli
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h001"></a>H001 | Drive the whole product from one command (\`nerva ...\`) with a discoverable command tree | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h002"></a>H002 | Run one scripted agent turn from a pipe and get a machine-readable cost report | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h003"></a>H003 | Talk to the agent in a terminal with editing, history, cancel, and a live tool feed | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h004"></a>H004 | Get shell tab-completion for the command tree | copy | Parțial | Reevaluat | Lipsește fish, cerut explicit de rândul din inventar. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h005"></a>H005 | Inspect, export, prune and repair the conversation/session store | update | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h006"></a>H006 | Read and change configuration without an editor, and validate/migrate it | update | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h007"></a>H007 | First-run setup: pick a model, a runtime, channels and tools without a browser | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h008"></a>H008 | Diagnose a broken install and repair the fixable parts | update | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h009"></a>H009 | Produce a pasteable, non-sensitive diagnostic report for a support thread | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h010"></a>H010 | Back up and restore the whole install | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h011"></a>H011 | Roll back file edits an agent made, from a shadow checkpoint store | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h012"></a>H012 | Migrate in from another agent (Claude Code, Codex, OpenClaw, Hermes) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h013"></a>H013 | Update the install itself, safely, with a plan and a rollback | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h014"></a>H014 | Uninstall cleanly, with a dry run | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h015"></a>H015 | Create and manage scheduled jobs, and see why past runs failed | update | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h016"></a>H016 | Install the hub as an OS background service (systemd / launchd / Windows Task) and start/stop/restart/status it | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h017"></a>H017 | Connect a messaging platform through a guided wizard | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h018"></a>H018 | Send a message to a configured channel from the shell | copy | Parțial | Reevaluat | Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../tests/test_nerva_send.py) |
+| <a id="h019"></a>H019 | Emergency-stop everything, and see component status at a glance | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h020"></a>H020 | Ask the system what it would do with a given command, and mine past approvals into rules | copy | Parțial | Reevaluat | Nu implementează întreaga analiză shell a comenzii și a variantelor normalizate / propunerea regulilor din istoric. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h021"></a>H021 | Run user-authored shell scripts on agent lifecycle events, with a consent record | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h022"></a>H022 | Audit installed dependencies for known vulnerabilities | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h023"></a>H023 | Detect how an arbitrary project builds/tests/starts and prove it still runs | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h024"></a>H024 | Find, install, review and remove skills | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h025"></a>H025 | Add extra skill sources and move a skill setup between machines | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h026"></a>H026 | Group skills into named bundles / packs | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h027"></a>H027 | Age out, pin, archive and roll back agent-authored skills automatically | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h028"></a>H028 | Install, enable, disable and inspect plugins, including their granted capabilities | update | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h029"></a>H029 | Add, test, authenticate and configure MCP servers, and browse a vetted catalog | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h030"></a>H030 | Choose which tools each surface may use | update | Parțial | Reevaluat | Disponibilitatea fiecărui backend și configurația completă pe toate suprafețele trebuie reconciliate; un profil nu probează backendul. [d1](../agents/core/tool_profiles.py) [d2](../tests/test_tool_profiles.py) |
+| <a id="h031"></a>H031 | Pick a provider and model interactively, with a declared fallback chain | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h032"></a>H032 | Run several models as one committee (Mixture of Agents presets) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h033"></a>H033 | Manage pooled provider credentials and see which are exhausted | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h034"></a>H034 | Source secrets from an external password manager instead of a .env file | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h035"></a>H035 | Keep real credentials outside the sandbox: swap opaque tokens for real keys at the network boundary | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h036"></a>H036 | Run several isolated instances of the product on one machine | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h037"></a>H037 | Run a durable multi-worker task board: create work, claim it, track dependencies, review and complete it | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h038"></a>H038 | Message another instance of the agent on a different machine | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h039"></a>H039 | Subscribe an external system's events to the agent via a webhook | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h040"></a>H040 | Sync the owner's own configuration and skills between their devices | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h041"></a>H041 | Onboard through a vendor portal and route tools through a hosted gateway | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h042"></a>H042 | Start, check and stop the web UI / headless backend | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h043"></a>H043 | Launch the desktop application | keep | Parțial | Reevaluat | Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate. [d1](../desktop/src-tauri/src/main.rs) [d2](../desktop/src-tauri/tauri.conf.json) |
+| <a id="h044"></a>H044 | Install the desktop-control driver and grant it the OS permissions it needs | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h045"></a>H045 | See and reset what the assistant remembers | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h046"></a>H046 | Look back at what the assistant has learned over time | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h047"></a>H047 | See usage, cost and activity analytics for this install | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h048"></a>H048 | See where the prompt budget actually goes | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h049"></a>H049 | Read recent logs without knowing where they live | copy | Parțial | Reevaluat | Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h050"></a>H050 | Hand a semi-trusted operator a restricted command shell | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h051"></a>H051 | Approve or revoke who may talk to the agent over DM | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h052"></a>H052 | Theme the terminal and keep an animated mascot | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h053"></a>H053 | Audit and reclaim disposable git worktrees the agent created | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h054"></a>H054 | Drive the owner's real, logged-in browser profile | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h055"></a>H055 | Install and manage language servers for code intelligence | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h056"></a>H056 | Serve the agent to an editor over the Agent Client Protocol | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## gateway
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h057"></a>H057 | Chat slash-command plane (grammar, aliases, dispatch precedence, unknown-command notice, per-platform command menus) | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h058"></a>H058 | Per-command access tiers (admin vs user, DM vs group scope) and \`/whoami\` | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h059"></a>H059 | Default-deny inbound authorization and DM pairing | update | Parțial | Reevaluat | Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal. [d1](../agents/core/channels/group_policy.py) [d2](../tests/test_telegram_group_gate.py) |
+| <a id="h060"></a>H060 | Talking to a busy agent: queue / steer / interrupt, \`/stop\`, and the ack that says what happened | copy | Parțial | Reevaluat | Queue/steer/interrupt, generațiile, evacuarea stării și confirmările complete din inventar nu sunt toate implementate. [d1](../agents/core/orchestrator.py) [d2](../agents/core/commands.py) [d3](../tests/test_slash_commands.py) |
+| <a id="h061"></a>H061 | Turn serialization and per-session runtime state (lease, run generations, slot claim, concurrency cap, stale/reaped eviction, warm agent cache) | copy | Parțial | Reevaluat | Queue/steer/interrupt, generațiile, evacuarea stării și confirmările complete din inventar nu sunt toate implementate. [d1](../agents/core/orchestrator.py) [d2](../agents/core/commands.py) [d3](../tests/test_slash_commands.py) |
+| <a id="h062"></a>H062 | Session identity, delivery routing, home channel and channel directory | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h063"></a>H063 | Session reset policy and expiry/stall watchers | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h064"></a>H064 | Session lifecycle commands from chat (\`/new\` \`/topic\` \`/save\` \`/retry\` \`/undo\` \`/title\` \`/branch\` \`/compress\` \`/rollback\` \`/resume\` \`/sessions\` \`/status\` \`/context\` \`/usage\` \`/insights\`) | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h065"></a>H065 | Approving a risky action from chat | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h066"></a>H066 | Session-wide approval bypass (\`/yolo\`, \`/approvals off\`) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h067"></a>H067 | Pending-input interception (clarify answers, three-way confirm, destructive-command confirm, ephemeral notices) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h068"></a>H068 | Outbound rendering: streaming edits, tool-progress bubbles, typing/status lines, verbosity tiers | copy | Parțial | Reevaluat | Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h069"></a>H069 | Outbound safety at the transport boundary (final sanitizer, secret redaction, provider-error mapping, silence tokens) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h070"></a>H070 | Media in and out: inbound attachments, image mode, MEDIA: delivery and the delivery-path allowlist | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h071"></a>H071 | Voice on chat channels (inbound voice notes, spoken replies, per-chat voice mode) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h072"></a>H072 | Background work and its notifications back into the chat (\`/bg\`, \`/btw\`, \`/agents\`, completion coalescing, session wake) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h073"></a>H073 | Standing goals and recurring loops driven from chat (\`/goal\`, \`/subgoal\`, \`/loop\`, \`/heartbeat\`, \`/refine\`, \`/review\`, \`/plan\`, \`/init\`, \`/learn\`) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h074"></a>H074 | Automation blueprints and proposed-automation review (\`/blueprint\`, \`/suggestions\`, \`/curator\`) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h075"></a>H075 | Kanban board and multi-agent board dispatcher (\`/kanban\`, kanban watchers) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h076"></a>H076 | Model, persona and per-channel runtime control (\`/model\` incl. \`--once\` and persistence, \`/personality\`, \`/reasoning\`, per-channel overrides, turn runtime resolution, fallback chain, prefill and ephemeral system prompt, message timestamps in context) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h077"></a>H077 | Paid-tier and vendor-commerce knobs (\`/fast\` service_tier, \`/codex-runtime\`, \`/topup\`) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h078"></a>H078 | User-defined quick commands (\`/x\` → shell exec or alias) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h079"></a>H079 | Plugin- and skill-registered commands, bundles, stacked skills, and command discovery (\`/help\`, \`/commands\`, \`/bundles\`) | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h080"></a>H080 | Lifecycle hooks (\`pre_command\`, \`command:\<name\>\`, \`pre_gateway_dispatch\`, reaction events, the event hook system) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h081"></a>H081 | Durable delivery ledger and dead-target registry (at-least-once replies) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h082"></a>H082 | Restart, drain, crash forensics and process supervision | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h083"></a>H083 | Platform adapter resilience (circuit breaker, pause/resume, reconnect backoff, connect timeout, credential/listener claims, token and connectivity guards) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h084"></a>H084 | Operator maintenance from chat (\`/pause\` e-stop, \`/platform\`, \`/restart\`, \`/update\`, \`/reload-mcp\`, \`/reload-skills\`, \`/debug\`, \`/diff\`, \`/egress\`, \`/version\`, \`/profile\`, plain-text restart coercion) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h085"></a>H085 | Multi-profile gateways, multiplexing, profile routes, relay, peer messaging, hosted rooms and cross-instance handoff | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h086"></a>H086 | Browser-control broker and artifact store | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h087"></a>H087 | Scale-to-zero (idle self-suspend of the host) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h088"></a>H088 | Gateway configuration surface (layered load order, per-platform shared keys, env overrides, platform enum, port-binding conflicts, cwd/SSL/venv bootstraps) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h089"></a>H089 | The gateway process model itself (one always-on process owning adapters, sessions and the cron tick; the ordered inbound pipeline) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## platforms
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h090"></a>H090 | Pluggable platform adapter contract (one descriptor per channel, one base class that owns the conversation runtime) | update | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h091"></a>H091 | Add a new messenger without touching core code (platform plugin packages) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h092"></a>H092 | Telegram as a full-fidelity surface (rich text, media, threads, buttons, resilience) | update | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h093"></a>H093 | Discord as a governed channel (server chat, threads, slash commands, roles) | update | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h094"></a>H094 | Slack as a two-way channel (Socket Mode inbound, threads, workspace install) | update | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h095"></a>H095 | WhatsApp reach without account-ban risk | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h096"></a>H096 | Email as a conversational channel (authenticated senders, threading, attachments) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h097"></a>H097 | Governed webhook-class channels (Signal, Matrix, Teams, Google Chat) as real adapters | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h098"></a>H098 | SMS as a channel (Twilio REST out, signed webhook in) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h099"></a>H099 | Push notification to a phone without a bot or an account (ntfy) | copy | Parțial | Reevaluat | Rândul original include și abonare inbound, deduplicare și reconectare; adaptorul Nerva este numai outbound. [d1](../agents/core/channels/ntfy.py) [d2](../tests/test_ntfy_channel.py) |
+| <a id="h100"></a>H100 | Connection self-healing (stay connected without an operator watching) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h101"></a>H101 | Alternative inbound transports and network placement (webhook mode, proxy, custom API host) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h102"></a>H102 | DNS-over-HTTPS fallback-IP transport (reach the platform through a hostile network) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h103"></a>H103 | Per-platform outbound rendering (each channel gets text it can actually display) | copy | Echivalent | Reevaluat | Randarea și împărțirea mesajelor folosesc descriptorul și registrul comun pentru dialectele canalelor Nerva; platformele excluse nu sunt reintroduse. [d1](../agents/core/channels/render.py) [d2](../agents/core/channels/descriptor.py) [d3](../tests/test_channel_render.py) |
+| <a id="h104"></a>H104 | Live/streaming replies in chat | copy | Parțial | Reevaluat | Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h105"></a>H105 | Working-state feedback (typing, status lines, lifecycle reactions, read receipts) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h106"></a>H106 | In-chat approvals and interactive controls (approve, clarify, pick — from the phone) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h107"></a>H107 | Sending media out (photos, albums, documents, video, voice notes, GIFs) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h108"></a>H108 | Receiving media in (photos, voice notes, documents, stickers, locations) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h109"></a>H109 | Voice notes both ways on chat channels (speak to it, hear it back) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h110"></a>H110 | Discord voice-channel presence (join a VC, listen, speak, ambient audio bed) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h111"></a>H111 | Inbound gating: who may talk to the agent, and when it should answer | copy | Parțial | Reevaluat | Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal. [d1](../agents/core/channels/group_policy.py) [d2](../tests/test_telegram_group_gate.py) |
+| <a id="h112"></a>H112 | Pairing an unknown sender (first contact without editing a config file) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h113"></a>H113 | Threads, topics and per-conversation sessions | update | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h114"></a>H114 | Per-channel personality, skills and verbosity | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h115"></a>H115 | Proactive delivery: home channel, scheduled output, and sending when no adapter is running | update | Parțial | Reevaluat | Rămân routingul origin/thread/all, predarea către alt agent și fallbackurile complete cerute de inventar. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h116"></a>H116 | Catching up on what was missed while offline | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h117"></a>H117 | Message batching and debounce (treat a burst as one turn) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h118"></a>H118 | Guided setup for a channel (from 'I have nothing' to 'it replies') | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h119"></a>H119 | Authenticating inbound webhooks (proving the message came from the platform) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h120"></a>H120 | Not answering itself: echo, duplicate and loop guards | copy | Parțial | Reevaluat | Rămân cerințe ale rândului complet: administrare/instalare workspace, media, opțiuni de thread și/sau reziliență; probele live sunt separate. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h121"></a>H121 | Agent-to-agent as a channel (be callable by another agent; call peers) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h122"></a>H122 | Home Assistant as a channel (the house talks to the agent) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h123"></a>H123 | Regional and enterprise-chat breadth (DingTalk, Feishu/Lark, WeCom, WeCom Callback, Yuanbao) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h124"></a>H124 | Long-tail protocol adapters (IRC, LINE, SimpleX, Mattermost, Raft, Buzz) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h125"></a>H125 | iMessage reach (Photon/BlueBubbles sidecar) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h126"></a>H126 | Slack-native AI-app surfaces (Agent view, task cards, suggested prompts, thread titles, Block Kit) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h127"></a>H127 | Transport-level end-to-end encryption (Matrix E2EE, cross-signing) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h128"></a>H128 | Agent-facing platform administration tools (act on the platform, not just chat in it) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## web
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h129"></a>H129 | Deep-link / bookmark a UI surface (URL routing) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h130"></a>H130 | Serve the UI under a reverse-proxy sub-path | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h131"></a>H131 | Keyboard-first navigation and a command palette | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h132"></a>H132 | Persistent navigation chrome (rail, mobile drawer, page-header slots) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h133"></a>H133 | Live status chrome (gateway state, sessions, model, data provenance) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h134"></a>H134 | Operator-authored reskin (themes, fonts, custom CSS, layout variants) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h135"></a>H135 | Appearance preference follows the owner across devices | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h136"></a>H136 | Localized UI | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h137"></a>H137 | Talk to the agent in the browser | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h138"></a>H138 | A real shell in the browser | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h139"></a>H139 | Attach an image or paste a screenshot into the conversation | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h140"></a>H140 | Survive a dropped connection mid-run | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h141"></a>H141 | Browse, search, rename, export and prune conversation history | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h142"></a>H142 | Browse, upload and download files on the host | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h143"></a>H143 | Token, cost and usage analytics | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h144"></a>H144 | Model control panel (main model, per-task models, ensembles, per-model usage) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h145"></a>H145 | Read the system logs from the UI | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h146"></a>H146 | Create and manage your own scheduled jobs | copy | Parțial | Reevaluat | Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h147"></a>H147 | Enable/disable skills, author them, configure tool backends, browse a hub | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h148"></a>H148 | Install a plugin from an arbitrary Git URL | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h149"></a>H149 | Swap the memory provider / context engine from the UI | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h150"></a>H150 | Manage MCP servers from the UI (add, test, connect, OAuth, catalog install) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h151"></a>H151 | Configure a messaging channel from the UI (credentials, enable, test, QR onboarding) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h152"></a>H152 | Breadth of supported messaging platforms | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h153"></a>H153 | Webhook subscriptions (create, enable, HMAC secret, delete) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h154"></a>H154 | Approve or revoke who may talk to the agent (pairing) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h155"></a>H155 | Isolated workspaces (profiles): separate config, keys, memory, sessions, skills and cron per persona | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h156"></a>H156 | Edit an agent's persona and description from the UI | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h157"></a>H157 | Edit every configuration key from the UI | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h158"></a>H158 | Set provider API keys and connect OAuth providers from the UI | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h159"></a>H159 | Sign in to the web UI from another device | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h160"></a>H160 | Restart or update the running system from the UI, with a streaming action log | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h161"></a>H161 | Warn when the box is running out of memory or disk | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h162"></a>H162 | Full backup: create, download, restore, and checkpoints | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h163"></a>H163 | Event-triggered shell hooks | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h164"></a>H164 | Share a diagnostic report for support | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h165"></a>H165 | In-app documentation | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h166"></a>H166 | Third-party dashboard extensions (plugin manifests, slots, SDK, route override) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h167"></a>H167 | Task board for planned work | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h168"></a>H168 | Shared UI primitives the pages lean on (markdown, destructive-action confirmation, schema-driven fields) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+
+## desktop
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h169"></a>H169 | Ship a signed, double-clickable desktop app per OS | update | Parțial | Reevaluat | Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate. [d1](../desktop/src-tauri/src/main.rs) [d2](../desktop/src-tauri/tauri.conf.json) |
+| <a id="h170"></a>H170 | Native app chrome that owns the window (menu bar, geometry persistence, zoom, translucency, tray/dock, find in page) | update | Parțial | Reevaluat | Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate. [d1](../desktop/src-tauri/src/main.rs) [d2](../desktop/src-tauri/tauri.conf.json) |
+| <a id="h171"></a>H171 | The shell owns the backend process (resolve, spawn, ownership record, orphan reap, readiness probe, per-profile pool) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h172"></a>H172 | Install the agent runtime from inside the app (staged first-run bootstrap with progress, log, repair, reset, cancel) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h173"></a>H173 | In-app self-update with a tracked branch, honest behind-count and a safe hand-off | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h174"></a>H174 | Uninstall from inside the app, with a pre-flight summary of exactly what goes | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h175"></a>H175 | Register and switch between multiple gateways (local / remote / SSH / cloud) with Test, Make primary and launch mode | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h176"></a>H176 | Drive an agent on another machine over SSH, and update that fleet | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h177"></a>H177 | Real-time bidirectional wire with heartbeat and lossless reconnect replay | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h178"></a>H178 | HUD mode — a chrome-free, always-on-top chat floating over whatever you are doing | copy | Lipsă | Reevaluat | Lipsește fereastra flotantă always-on-top, cu conversație și recuperare de geometrie. [d1](../desktop/src-tauri/src/main.rs) [d2](../desktop/src-tauri/tauri.conf.json) |
+| <a id="h179"></a>H179 | Quick Entry — a global hotkey that captures a prompt from anywhere on the system | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h180"></a>H180 | Multi-window: peer app instances and per-session pop-outs | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h181"></a>H181 | Native OS notifications with action buttons that route back into the app | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h182"></a>H182 | Keep the machine awake through a turn, and be aware of power/battery state | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h183"></a>H183 | \`nerva://\` deep links, including one-click MCP-server install | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h184"></a>H184 | Local file access from the shell (native pickers, clipboard, save-as, trash, rename, reveal, data-URL read cap) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h185"></a>H185 | An interactive terminal inside the app | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h186"></a>H186 | Git worktrees plus a full review and ship pane (stage, unstage, revert, commit, push, create PR) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h187"></a>H187 | Encrypt stored credentials with the OS keychain | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h188"></a>H188 | Native OAuth (system browser + loopback + PKCE) and per-connection cookie partitions | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h189"></a>H189 | A command palette that searches everything — sessions, settings, projects, skills, pasted ids and paths | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h190"></a>H190 | Command Center — one operator console (Sessions / System / Usage / Maintenance) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h191"></a>H191 | A status bar of live operational readouts that the owner can configure | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h192"></a>H192 | Approval-mode control in the chrome, and a per-chat auto-approve escape | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h193"></a>H193 | A composer that can do more than send text | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h194"></a>H194 | A transcript that renders tool calls, thinking and approval decisions inline | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h195"></a>H195 | Session lifecycle: search, pin, unread watermark, rename, delete, filter, date dividers, export, branch/fork, move to project | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h196"></a>H196 | Projects and repo lanes in the sidebar | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h197"></a>H197 | Subagent spawn tree with live streams and per-child file lists | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h198"></a>H198 | Artifacts workspace (saved outputs: images, links, files) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h199"></a>H199 | User-defined scheduled jobs (cron editor, run history, delivery targets, ready-made blueprints) | copy | Parțial | Reevaluat | Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h200"></a>H200 | Webhook subscription management surface | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h201"></a>H201 | Messaging platform cards with credential setup and pairing approval | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h202"></a>H202 | Per-agent persona (SOUL) editing | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h203"></a>H203 | Profile export/import bundles and per-profile config scope | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h204"></a>H204 | Capabilities hub — skills and toolsets management | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h205"></a>H205 | MCP server management surface (catalog, paste-anything import, config, OAuth, logs, reload) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h206"></a>H206 | Memory graph explorer (canvas, legend, timeline scrubber, node edit/delete, share) | keep | Parțial | Reevaluat | Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică. [d1](../frontend/src/modes.tsx) [d2](../frontend/src/panels/memory-neighborhood.tsx) [d3](../tests/test_session_search.py) |
+| <a id="h207"></a>H207 | Schema-driven settings with typed controls, search, deep-link-to-field and diff-only autosave | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h208"></a>H208 | Provider and API-key management UI (OAuth account picker, keys tab, custom/local endpoint) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h209"></a>H209 | Keyboard shortcut customisation with a recorder and conflict detection | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h210"></a>H210 | Failure recovery UX: boot-failure overlay, toast stack, error summarizer, disk-full detection, crash screen | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h211"></a>H211 | Third-party UI plugin SDK and install-a-plugin-from-Git | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h212"></a>H212 | User-installable themes (VS Code Marketplace import) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h213"></a>H213 | Pane/zone tiling with layout presets and an agent-callable apply_layout tool | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h214"></a>H214 | Desktop pet — generation, adoption and a floating overlay window | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h215"></a>H215 | Native app context menu and spellchecker | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h216"></a>H216 | In-app browser / preview pane showing what the agent is looking at | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h217"></a>H217 | Windows and WSL host-integration quirks | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h218"></a>H218 | Archived chats, auto-archive of stale chats, and a default project directory | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h219"></a>H219 | Execution-backend and toolset configuration panel | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h220"></a>H220 | Usage and cost accounting surface | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h221"></a>H221 | Language switcher | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h222"></a>H222 | Always-visible microphone / wake-word state indicator | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+
+## tui
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h223"></a>H223 | Run and drive the agent from a terminal (interactive client: launch, resume, clean exit, crash/OOM safety, shipped bundle) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h224"></a>H224 | Terminal keyboard and mouse interaction model | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h225"></a>H225 | Composer: type-ahead queueing while the agent is busy, editable queue, $EDITOR handoff | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h226"></a>H226 | Answer the governance queue from the terminal (approval, clarify, confirm, sudo, secret prompts) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h227"></a>H227 | "What can it do right now" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h228"></a>H228 | Personality and ambient chrome (busy indicators, kaomoji faces, verb tickers, long-run charms, fortunes, ASCII hero art, pet mascot pane, ambient docks and floats) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h229"></a>H229 | Rich turn rendering: markdown/syntax/math, incremental streaming, virtualised history, and the agent's working area (thinking panel, tool trail, todo panel, subagent tree) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h230"></a>H230 | Theme/skin engine and terminal color adaptation | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h231"></a>H231 | Slash-command system: a catalog of commands with fuzzy, description-aware resolution and a dispatch fallback chain | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h232"></a>H232 | Modal overlay surfaces (pager, live session switcher, model picker, skills hub, plugins hub, pet picker, billing/subscription overlays, agents overlay, journey overlay) and their stage machinery | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h233"></a>H233 | Terminal widget SDK: user-authored, hot-loaded widget apps with a grid layout engine and ambient zones | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h234"></a>H234 | Client↔agent transport: streaming, reconnect, and lossless resume by event sequence | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h235"></a>H235 | TUI client internal architecture (UI/overlay/turn stores, event handler, session lifecycle hook, submission pipeline, config sync, small stores, cwd/branch label, battery polling, clipboard/OSC-52, text utils) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h236"></a>H236 | Session control plane: create, list, resume, activate, retitle, hide, delete, undo, retry, compress, save/export, branch/fork, close, interrupt, steer, redirect, plus per-session usage and context breakdown | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h237"></a>H237 | Delegation control: subagent status, pause, interrupt, steer, and spawn-tree archive/replay | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h238"></a>H238 | Pet system (adopt, generate, hatch, rename, export, scale, disable a mascot) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h239"></a>H239 | Hosted wallet: balance, top-up, auto-reload, spending limits, subscription plan change/upgrade/resume, charge settlement polling | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h240"></a>H240 | Prompt submission and attachments: image, PDF (page-rendered), arbitrary file staging, drag-drop detection, background prompts, side questions, and image generation | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h241"></a>H241 | Tools, MCP servers, plugins, skills, cron jobs, checkpoint rollback and background processes — the operator control plane | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h242"></a>H242 | Workspace/project model, repo discovery, strict setup verification and diagnostics bundle | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h243"></a>H243 | Completions (filesystem paths, slash commands) and provider/model options (list, save key, disconnect) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h244"></a>H244 | Agent profiles: list, create, describe, configure and attach assets to named agent configurations | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h245"></a>H245 | Hosted multi-gateway rooms: create, send, approve, replicate, promote/demote authority with epoch fencing | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h246"></a>H246 | Cross-process brokers: relaying agent DMs between gateways, and brokering an externally-registered browser controller | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h247"></a>H247 | Wake word arming per surface, push-to-talk capture, TTS, and liveness/config primitives | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+
+## config
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h248"></a>H248 | Layered config resolution with one effective-value view (defaults ⊕ user ⊕ operator overlay) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h249"></a>H249 | Operator-pinned settings a user cannot change (managed scope) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h250"></a>H250 | Named profiles — several isolated configurations on one machine | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h251"></a>H251 | Schema-driven settings form rendered from typed field metadata | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h252"></a>H252 | Server-side validation of a settings write | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h253"></a>H253 | Credential-bearing settings encrypted at rest and never echoed back | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h254"></a>H254 | External secret sources — resolve credentials from a vault instead of storing them | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h255"></a>H255 | \`${env:VAR}\` interpolation inside config values | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h256"></a>H256 | Surviving a corrupt or unreadable config store without silently losing policy | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h257"></a>H257 | Command-line access to configuration on a box with no working server | copy | Parțial | Reevaluat | Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/settings_db.py) |
+| <a id="h258"></a>H258 | Config schema versioning and a migration ladder | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h259"></a>H259 | Reset to defaults, scoped and previewed, plus export/import of the whole configuration | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h260"></a>H260 | Per-agent / per-surface configuration overrides that persist | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h261"></a>H261 | Per-internal-task model and provider assignment (auxiliary models) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h262"></a>H262 | Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h263"></a>H263 | Fail-closed boot on malformed security-critical configuration | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h264"></a>H264 | An enumerated, inspectable environment-variable surface | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h265"></a>H265 | Settings changes as governed, mediated actions | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+
+## env
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h266"></a>H266 | Layered configuration load with a defined precedence order | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h267"></a>H267 | Admin-pinned managed scope an owner-level edit cannot override | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h268"></a>H268 | Configure Nerva from the product — write a key or setting and have it take effect | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h269"></a>H269 | Registry of which keys exist, what each unlocks, and whether it is set | update | Parțial | Reevaluat | Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/settings_db.py) |
+| <a id="h270"></a>H270 | Writer allowlist for names that hijack execution or soften posture | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h271"></a>H271 | Secrets resolved from an external vault instead of a plaintext file | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h272"></a>H272 | Secret references inside config instead of secret values | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h273"></a>H273 | Tell the owner where an effective value actually came from | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h274"></a>H274 | Safety-posture flags: one parser, declared defaults, refusal on garbage | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h275"></a>H275 | Boot into a known-good state when customizations break the install | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h276"></a>H276 | Point the assistant at any model endpoint without a code change | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h277"></a>H277 | Separate models for separate jobs (vision, video, approval judging) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h278"></a>H278 | One consistent access-control grammar across every channel | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h279"></a>H279 | Breadth of chat platforms an owner can reach the assistant on | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h280"></a>H280 | Choose where a command actually runs (sandbox backends and their limits) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h281"></a>H281 | Operator control of egress: proxy, CA trust, and what may leave the box | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h282"></a>H282 | Exportable traces of what the assistant did and what it cost | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h283"></a>H283 | Know what kind of machine this is, and tell the model | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h284"></a>H284 | Speak the owner's language and keep the owner's clock | copy | Parțial | Reevaluat | Trebuie închise cerințele complete de acces offline, proveniență, limbă și ceas, nu doar reparate cheile moarte. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/settings_db.py) |
+| <a id="h285"></a>H285 | Choose which skills, plugins and MCP servers load at startup | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h286"></a>H286 | Bound what one turn may spend (iterations, tokens, time, children) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h287"></a>H287 | Carry who asked, through every tool and subprocess | keep | Parțial | Reevaluat | K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h288"></a>H288 | Scheduled and queued work, and its delivery destination | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h289"></a>H289 | Pluggable long-term memory backends | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h290"></a>H290 | Credentials for optional tools: search, media generation, voice, browser farms, SaaS | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h291"></a>H291 | Terminal-UI and Electron desktop shell configuration | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h292"></a>H292 | Response pacing that imitates a human typing | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h293"></a>H293 | Test, benchmark and CI harness environment | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## tools — the agent-callable surface
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h294"></a>H294 | Declare a tool and authorize who may declare/replace it | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h295"></a>H295 | Hide a tool for the turns where its backend is not usable | copy | Parțial | Reevaluat | Disponibilitatea fiecărui backend și configurația completă pe toate suprafețele trebuie reconciliate; un profil nu probează backendul. [d1](../agents/core/tool_profiles.py) [d2](../tests/test_tool_profiles.py) |
+| <a id="h296"></a>H296 | Adapt a tool's advertised schema to the live configuration | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h297"></a>H297 | Execute a named tool call and return a bounded, well-formed result | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h298"></a>H298 | Keep a huge tool result out of context without losing it | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h299"></a>H299 | Stop a model that is looping on the same tool call | copy | Echivalent | Reevaluat | Runtime-ul oprește apelurile identice și seriile de eșecuri, aplică limite per unealtă și înlocuiește rezultatele identice reușite cu referințe. [d1](../agents/core/agent_runtime.py) [d2](../tests/test_tool_loop_guardrails.py) [d3](../tests/test_tool_loop_repeats.py) |
+| <a id="h300"></a>H300 | Know whether an interrupted tool call left anything behind | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h301"></a>H301 | Give each surface, channel and agent its own tool profile | copy | Echivalent | Reevaluat | Oferta este calculată din principal, origine/suprafață și restricțiile agentului; seturile sunt verificate prin snapshot. Catalogul Hermes de platforme excluse nu este copiat. [d1](../agents/core/tool_profiles.py) [d2](../agents/core/agent_runtime.py) [d3](../tests/test_tool_profiles.py) |
+| <a id="h302"></a>H302 | Run shell commands and manage long-running processes | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h303"></a>H303 | Read files and search a codebase | update | Parțial | Reevaluat | Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search. [d1](../agents/core/file_tools.py) [d2](../tests/test_file_search.py) [d3](../tests/test_file_read_documents.py) |
+| <a id="h304"></a>H304 | Write and precisely edit files | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h305"></a>H305 | Let the model write a script that orchestrates many tool calls | update | Parțial | Reevaluat | K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h306"></a>H306 | Drive a web browser | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h307"></a>H307 | Control the desktop the user is actually sitting at | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h308"></a>H308 | Drive the app's own window: preview pane, panes, layouts, projects | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h309"></a>H309 | Show the user where something is, in their UI | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h310"></a>H310 | Search the web and read pages | update | Parțial | Reevaluat | Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus. [d1](../agents/core/web_tools.py) [d2](../agents/core/plugins/websearch.py) [d3](../tests/test_web_tools.py) |
+| <a id="h311"></a>H311 | Look at an image or a video and answer a question about it | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h312"></a>H312 | Generate images and video | update | Parțial | Reevaluat | Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video. [d1](../agents/core/image_generation_runtime.py) [d2](../agents/core/image_generation_view.py) [d3](../agents/core/routers/multimodal.py) |
+| <a id="h313"></a>H313 | Speak | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h314"></a>H314 | Let the model decide what to remember | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h315"></a>H315 | Keep a visible checklist of what the agent is doing | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h316"></a>H316 | Ask the user a question and wait for the answer | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h317"></a>H317 | Search what was said in past sessions | copy | Parțial | Reevaluat | Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h318"></a>H318 | List, read and author the agent's own skills | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h319"></a>H319 | Let the agent schedule its own future work | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h320"></a>H320 | Spawn subagents and steer or stop them mid-run | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h321"></a>H321 | Discover, consent to, and call external MCP servers' tools | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h322"></a>H322 | Read and control the house | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h323"></a>H323 | Run a durable multi-agent work board with review handoffs | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h324"></a>H324 | Participate natively in third-party chat platforms | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h325"></a>H325 | Prove the documented tool surface matches the live one | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## skills
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h326"></a>H326 | Model-facing skill discovery (prompt index + progressive disclosure) | copy | Parțial | Reevaluat | Lipsesc părți ale scării L0/L1/L2, cacheului și deduplicării încărcărilor cerute de inventar. [d1](../agents/core/skills/loader.py) [d2](../tests/test_skills_in_prompt.py) |
+| <a id="h327"></a>H327 | SKILL.md frontmatter contract (agentskills.io-compatible) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h328"></a>H328 | Conditional skill visibility (OS platform, runtime environment, channel, tool availability) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h329"></a>H329 | Turning individual skills off without uninstalling them | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h330"></a>H330 | Agent-authored skills: create, patch, edit, delete, add/remove supporting files | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h331"></a>H331 | Human review gate before an agent-written skill takes effect | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h332"></a>H332 | Static security scanning of skill packages before install | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h333"></a>H333 | Cryptographic signing and load-time integrity verification of skills | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h334"></a>H334 | Importing skills from an upstream project at a verified pin | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h335"></a>H335 | Multi-source skills hub: search, browse, install, update, uninstall across registries | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h336"></a>H336 | An on-disk catalog of inert optional skills installable on demand | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h337"></a>H337 | The bundled skill library itself (58 core + 137 optional procedure documents) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h338"></a>H338 | Invoking a skill explicitly: slash commands, stacked invocations, session preload | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h339"></a>H339 | Skill bundles (one command loads a fixed set of skills) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h340"></a>H340 | Skill body preprocessing: template variables | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h341"></a>H341 | Inline shell execution inside skill bodies | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h342"></a>H342 | Skill-declared setup: required env vars, credential files, and non-secret config | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h343"></a>H343 | Repo-local skills with a per-repo trust decision and re-scan on change | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h344"></a>H344 | Reading skills from directories shared with other AI tools | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h345"></a>H345 | Org-shared skill mirror and cross-device skill synchronisation | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h346"></a>H346 | Per-mutation skill audit trail with rollback | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h347"></a>H347 | Background curator: skill lifecycle, archiving and operator control | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h348"></a>H348 | LLM consolidation of overlapping skills into umbrella skills | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h349"></a>H349 | Per-skill usage telemetry driving lifecycle and provenance | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h350"></a>H350 | Skill authoring linter and validator | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h351"></a>H351 | Prompt-injection warnings when a skill is loaded | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h352"></a>H352 | Local skill marketplace: publish, moderate, install, rollback, uninstall | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h353"></a>H353 | Governed capability acquisition: gap → research → synthesise → quarantine → sign → promote → sandbox-only run | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h354"></a>H354 | Skills as first-class entries in a capability registry with rollback contracts and reality evidence | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h355"></a>H355 | Curated MCP server catalog with guided install and tool selection | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h356"></a>H356 | Third-party plugin ecosystem: community index, pinned installs, packs, capability consent | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h357"></a>H357 | Pluggable provider backends shipped as optional plugins (memory, web, image/video generation, browser, dashboard auth, cron) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h358"></a>H358 | First-party optional feature plugins (kanban dispatcher, achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## providers
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h359"></a>H359 | Choose an inference provider from a broad catalog | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h360"></a>H360 | Provider profiles that actually drive routing | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h361"></a>H361 | Install a third-party provider as a plugin (drop-in directory or pip entry point) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h362"></a>H362 | Use tools and stream on a cloud model, not just a local one | update | Parțial | Reevaluat | Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. [d1](../agents/core/llm/tool_dialects.py) [d2](../agents/core/llm/base.py) [d3](../agents/core/agent_runtime.py) |
+| <a id="h363"></a>H363 | Pay the cached-input rate on repeated Claude context | update | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h364"></a>H364 | Ask for more or less thinking, and never 400 on a wire that rejects the level | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h365"></a>H365 | Authenticate with Bedrock / Vertex / Azure Foundry enterprise credentials | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h366"></a>H366 | Sign in with a Claude Pro/Max or ChatGPT subscription instead of buying API credits | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h367"></a>H367 | Add and manage named custom OpenAI-compatible endpoints at runtime | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h368"></a>H368 | Refuse to speak the wrong protocol to a lookalike host | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h369"></a>H369 | Know a model's context window and price without a human editing a table | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h370"></a>H370 | Cap and account for cloud spend | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h371"></a>H371 | Buy credits, manage a subscription and see a balance from inside the product | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h372"></a>H372 | Multi-credential pool: rotation, persistence and a management surface | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h373"></a>H373 | See how much provider quota is left before hitting the wall | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h374"></a>H374 | Define the order of backup providers and switch mid-turn when the primary fails | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h375"></a>H375 | Answer one turn with several models advising an aggregator (Mixture of Agents) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h376"></a>H376 | Let other local apps use the house's provider credentials | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h377"></a>H377 | Pick a provider and model from the UI, with prices and capabilities visible | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h378"></a>H378 | Be warned before choosing a model that is very expensive or trains on your data | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h379"></a>H379 | Run background work on a cheap model instead of the main one | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h380"></a>H380 | Prove a configured cloud provider actually works | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h381"></a>H381 | Prove where every prompt actually went | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h382"></a>H382 | Install, load, evict and size local models on the owner's box | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h383"></a>H383 | Force valid tool arguments and clean output out of a weak model | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h384"></a>H384 | Use another agent CLI as the inference backend | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h385"></a>H385 | First-party portal: onboarding, tool gateway, request attribution, keepalive | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## agent-core
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h386"></a>H386 | Session-stable, tiered system prompt with a provider cache boundary | update | Parțial | Reevaluat | Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. [d1](../agents/core/llm/tool_dialects.py) [d2](../agents/core/llm/base.py) [d3](../agents/core/agent_runtime.py) |
+| <a id="h387"></a>H387 | Identity and project instruction files with a size cap and an injection scan | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h388"></a>H388 | Model-family and surface operating guidance blocks | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h389"></a>H389 | Skills index in the prompt, cached and prunable under compaction | update | Parțial | Reevaluat | Lipsesc părți ale scării L0/L1/L2, cacheului și deduplicării încărcărilor cerute de inventar. [d1](../agents/core/skills/loader.py) [d2](../tests/test_skills_in_prompt.py) |
+| <a id="h390"></a>H390 | Two-tier context compaction with lineage and image-first eviction | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h391"></a>H391 | Compaction inside the running turn (preflight, pre-API, idle, micro, fail-closed) | update | Parțial | Reevaluat | Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. [d1](../agents/core/llm/tool_dialects.py) [d2](../agents/core/llm/base.py) [d3](../agents/core/agent_runtime.py) |
+| <a id="h392"></a>H392 | Recovery from an empty or truncated model response | update | Parțial | Reevaluat | Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. [d1](../agents/core/llm/tool_dialects.py) [d2](../agents/core/llm/base.py) [d3](../agents/core/agent_runtime.py) |
+| <a id="h393"></a>H393 | Repetition-loop guard on truncated output | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h394"></a>H394 | Failure taxonomy with per-class recovery and a stable error surface | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h395"></a>H395 | Steering, redirecting and interrupting the live turn | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h396"></a>H396 | Turn exit reasons, a completion explainer and per-turn accounting | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h397"></a>H397 | Tool-loop guardrails: repeated-failure detection, per-tool loop caps, identical-call stall breaker | copy | Echivalent | Reevaluat | Runtime-ul oprește apelurile identice și seriile de eșecuri, aplică limite per unealtă și înlocuiește rezultatele identice reușite cu referințe. [d1](../agents/core/agent_runtime.py) [d2](../tests/test_tool_loop_guardrails.py) [d3](../tests/test_tool_loop_repeats.py) |
+| <a id="h398"></a>H398 | Untrusted tool results wrapped as data, not instructions | update | Echivalent | Reevaluat | Pe Python 3.12, rezultatele externe sunt delimitate ca date; taintul și semnalele de injecție sunt propagate inclusiv prin orchestrator și păstrate la compactare. [d1](../agents/core/agent_runtime.py) [d2](../tests/test_tool_result_taint.py) [d3](../agents/core/orchestrator.py) |
+| <a id="h399"></a>H399 | Concurrent tool dispatch with a serialized approval gate and bounded results | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h400"></a>H400 | Subagent delegation: isolation, capability blocklist, depth and concurrency caps, typed outputs, steer/stop | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h401"></a>H401 | Delegation durability and observability: background fan-out, crash recovery, exactly-once delivery, live transcripts | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h402"></a>H402 | Git-worktree isolation for delegated children | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h403"></a>H403 | Background self-improvement review after a turn | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h404"></a>H404 | On-demand independent reviewer of the current work | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h405"></a>H405 | Project verification: recipe detection, manifest, evidence ledger, verify-on-stop | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h406"></a>H406 | Coding posture: workspace snapshot, project facts, edit-format steering | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h407"></a>H407 | Global emergency stop | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h408"></a>H408 | User lifecycle hooks running the owner's own scripts | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h409"></a>H409 | Outbound signed lifecycle webhooks | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h410"></a>H410 | Universal secret redaction on every log record | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h411"></a>H411 | Message hygiene and wire-level recovery | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h412"></a>H412 | Context meter and @-references for the owner | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h413"></a>H413 | Session auto-titling | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h414"></a>H414 | One auxiliary-model rail for every side task | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h415"></a>H415 | Reasoning-effort control and reasoning-aware timeouts | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h416"></a>H416 | Unified deadline and budget layer | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h417"></a>H417 | Learning made visible: journey graph and usage insights | update | Parțial | Reevaluat | Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică. [d1](../frontend/src/modes.tsx) [d2](../frontend/src/panels/memory-neighborhood.tsx) [d3](../tests/test_session_search.py) |
+| <a id="h418"></a>H418 | Telemetry export: monitoring emitter, gateway health, OTLP traces, install id | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h419"></a>H419 | Mixture-of-Agents aggregation runtime | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h420"></a>H420 | Terminal display surface: pet, spinner, tool labels, inline diffs, i18n | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h421"></a>H421 | Vendor-owned agent runtimes: Codex app-server, NeMo Relay, tools-as-MCP-server, transport registry | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## memory
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h422"></a>H422 | Agent-curated core memory injected into the prompt as a frozen, threat-scanned snapshot | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h423"></a>H423 | Model-callable memory write tool with add / replace / remove, an atomic batch, a hard budget, and a lost-update guard | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h424"></a>H424 | Approval gate on memory writes — staged, reviewable, rejectable before they land | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h425"></a>H425 | Destructive forget: retract a fact and everything derived from it | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h426"></a>H426 | Memory-write orchestration: off-turn persistence, ordered lifecycle hooks, bounded shutdown drain | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h427"></a>H427 | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h428"></a>H428 | Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h429"></a>H429 | Fencing recalled memory as untrusted data at the prompt boundary, including the streaming egress | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h430"></a>H430 | Telling the user what memory was used this turn — and why something was not | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h431"></a>H431 | Third-party memory-provider plugin ecosystem (nine SaaS/local backends, setup wizard, OAuth, declarative config, provider tools) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h432"></a>H432 | Swappable vector and graph backends behind stable interfaces | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h433"></a>H433 | Retrieval query rewriting by a cheap auxiliary model | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h434"></a>H434 | Pluggable context engine and the compaction policy around it | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h435"></a>H435 | A durable, queryable transcript store covering every surface | update | Parțial | Reevaluat | Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h436"></a>H436 | Full-text search over past conversations | copy | Parțial | Reevaluat | Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h437"></a>H437 | \`session_search\` — the model searching and scrolling its own past conversations | copy | Parțial | Reevaluat | Acoperirea tuturor suprafețelor, căutarea completă și contractul canonic sesiune/date trebuie închise; probele sintetice nu definesc un ACL. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h438"></a>H438 | Session management: list, rename, pin, archive, delete, prune, stats — with safe auto-sweeps | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h439"></a>H439 | Transcript export and import from other agents | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h440"></a>H440 | Automatic session titles and continuation lineage | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h441"></a>H441 | Getting back into a conversation: continue, resume, and a free recap | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h442"></a>H442 | Undoing what the agent did to the filesystem | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h443"></a>H443 | The post-turn learning loop that decides what is worth remembering | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h444"></a>H444 | Reading documents into the conversation | update | Parțial | Reevaluat | Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search. [d1](../agents/core/file_tools.py) [d2](../tests/test_file_search.py) [d3](../tests/test_file_read_documents.py) |
+| <a id="h445"></a>H445 | Learning timeline — a browsable, prunable view of everything the assistant has learned | update | Parțial | Reevaluat | Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică. [d1](../frontend/src/modes.tsx) [d2](../frontend/src/panels/memory-neighborhood.tsx) [d3](../tests/test_session_search.py) |
+| <a id="h446"></a>H446 | Measuring whether memory actually works | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h447"></a>H447 | The memory brain: bi-temporal facts, fusion, decay, consolidation, episodes | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h448"></a>H448 | Process heap trimming for long-lived agent processes | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## automation
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h449"></a>H449 | Create, edit, pause, resume, trigger and delete a recurring scheduled job | copy | Parțial | Reevaluat | Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h450"></a>H450 | Say when in plain words (schedule syntax) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h451"></a>H451 | See every attempt an autonomous run made, and whether the scheduler itself is alive | update | Parțial | Reevaluat | Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h452"></a>H452 | Repeated failures collapse into one acknowledgeable incident, and an unrunnable job pauses itself | copy | Parțial | Reevaluat | Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h453"></a>H453 | Let a cheap check decide whether the expensive model runs at all | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h454"></a>H454 | A run remembers what the last one said (continuity, chaining, per-job notepad) | copy | Parțial | Reevaluat | Rămân unele cerințe de sănătate/incident/continuitate din inventar, inclusiv context_from între joburi; verificarea trebuie făcută pe întregul rând. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h455"></a>H455 | Choose where an autonomous result lands | update | Parțial | Reevaluat | Rămân routingul origin/thread/all, predarea către alt agent și fallbackurile complete cerute de inventar. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h456"></a>H456 | Bound what an unattended agent may do | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h457"></a>H457 | Guards specific to the unattended lane (injection, credential exfiltration, self-restart) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h458"></a>H458 | One-tap automations the owner accepts instead of composing | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h459"></a>H459 | Fire schedules without a live local process (pluggable scheduler provider / hosted cron) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h460"></a>H460 | A recurring wakeup inside the conversation you are already having | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h461"></a>H461 | A standing instruction that re-enters this session on a cadence | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h462"></a>H462 | A goal that keeps being worked until something independent says it is done | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h463"></a>H463 | Deterministic gates that must pass before anything may be called done | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h464"></a>H464 | Park a run on real async work instead of poking it | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h465"></a>H465 | Run the self-improvement review on demand | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h466"></a>H466 | A durable board where multi-agent work lives: dependencies, atomic claims, run history, event log | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h467"></a>H467 | Cards get dispatched to workers in isolated workspaces, with a circuit breaker | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h468"></a>H468 | Review as a state, not a block (request-review / request-changes / reopen) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h469"></a>H469 | Turn a one-line ask into a spec, or into a graph of routed children | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h470"></a>H470 | A fan-out/fan-in swarm written as a graph over the existing board | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h471"></a>H471 | The system tells the operator what is wrong and what to press | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h472"></a>H472 | Subscribe a chat to a work item's terminal events — including waking the agent | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h473"></a>H473 | Named multi-folder projects that give work a stable repo and branch convention | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h474"></a>H474 | An isolated git worktree per parallel agent, and an attended reclaim of the leftovers | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h475"></a>H475 | Federated rooms across machines: replicas, authority takeover, peer grants, target-side execution policy | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h476"></a>H476 | Drive a long agent run over HTTP: start, poll, stream, steer, stop, resolve its approval | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h477"></a>H477 | Point an external client at Nerva (OpenAI-compatible chat, and capability discovery) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h478"></a>H478 | Bot-to-bot messaging between machines | keep | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h479"></a>H479 | Named inbound webhook routes that wake the agent — or deliver without one | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h480"></a>H480 | Send a message to any configured channel from a script, with no model call | copy | Parțial | Reevaluat | Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../tests/test_nerva_send.py) |
+
+## security
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h481"></a>H481 | Refuse a catastrophic shell command no matter who approved it (hardline floor + risky-pattern tier + de-obfuscation) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h482"></a>H482 | Remember an approval so the same class stops asking, and propose safe candidates from history | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h483"></a>H483 | Ask what the policy WOULD do to a command, without running it | copy | Parțial | Reevaluat | Nu implementează întreaga analiză shell a comenzii și a variantelor normalizate / propunerea regulilor din istoric. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) |
+| <a id="h484"></a>H484 | One dial that sets how much Nerva may do without asking | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h485"></a>H485 | A second, cheap model opinion on a flagged action before bothering the human | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h486"></a>H486 | Stop a model that is grinding on a blocked or looping action | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h487"></a>H487 | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h488"></a>H488 | Hold a memory or skill write for review instead of committing it | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h489"></a>H489 | Turn every approval prompt off for a session or a process | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h490"></a>H490 | Start with zero customization to prove a bug is not your own setup | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h491"></a>H491 | Decide what a worker that cannot prompt does when it hits an approval | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h492"></a>H492 | Default-deny where the agent may connect, including internal address space | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h493"></a>H493 | Make sure a sandboxed or compromised process never holds a usable API key | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h494"></a>H494 | Pull credentials from the owner's existing password manager instead of a second copy on disk | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h495"></a>H495 | Never let a credential reach a log, a transcript, an approval card or an export | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h496"></a>H496 | Keep one identity's credentials out of another identity's turn | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h497"></a>H497 | Let a stranger reach the assistant only after the owner says so | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h498"></a>H498 | Let an administrator pin policy a normal user cannot override | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h499"></a>H499 | Stop a writable settings surface from being used to escalate | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h500"></a>H500 | Tell the owner when the software actually installed on their box is known-vulnerable | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h501"></a>H501 | Warn about a dangerous deployment posture before it becomes an incident | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h502"></a>H502 | Refuse an MCP server entry that is a backdoor wearing an MCP costume, and never hand one the owner's keys | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h503"></a>H503 | Unpack an archive from another machine without letting it write outside the destination | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h504"></a>H504 | Fail loudly when TLS trust is misconfigured instead of silently not verifying | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h505"></a>H505 | Keep the agent's file tools out of credential stores and system files | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h506"></a>H506 | Treat files that steer future runs as a distinct always-ask class, on the way in and on the way out | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h507"></a>H507 | Warn the model when the code it just wrote contains a known-dangerous pattern | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h508"></a>H508 | Catch content-level attacks in a command that pattern matching cannot see | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h509"></a>H509 | Sign in to a networked Nerva from a browser | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h510"></a>H510 | Stop a web page or a rebound DNS name from driving the local API | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h511"></a>H511 | Prove every route's required credential rather than maintaining a list by hand | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h512"></a>H512 | See who authenticated, who failed, and when | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h513"></a>H513 | Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h514"></a>H514 | Consent once, in writing, before a user-supplied command becomes a lifecycle hook | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## media
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h515"></a>H515 | Generate an image from a prompt (and edit an existing image) | copy | Parțial | Reevaluat | Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video. [d1](../agents/core/image_generation_runtime.py) [d2](../agents/core/image_generation_view.py) [d3](../agents/core/routers/multimodal.py) |
+| <a id="h516"></a>H516 | Generate or animate a video from a prompt or a still image | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h517"></a>H517 | Register a third-party media backend without touching core | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h518"></a>H518 | Browse, search and export everything the assistant has generated | keep | Parțial | Reevaluat | Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață. [d1](../agents/core/image_generation_runtime.py) [d2](../agents/core/image_generation_view.py) [d3](../agents/core/routers/multimodal.py) |
+| <a id="h519"></a>H519 | Look at an image and answer questions about it, mid-conversation | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h520"></a>H520 | Accept an image safely before it enters conversation history | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h521"></a>H521 | Understand a video (not just its audio) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h522"></a>H522 | Attach an image or file to a chat turn | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h523"></a>H523 | Serve a generated or cached media file back to a client | copy | Parțial | Reevaluat | Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață. [d1](../agents/core/image_generation_runtime.py) [d2](../agents/core/image_generation_view.py) [d3](../agents/core/routers/multimodal.py) |
+| <a id="h524"></a>H524 | Speak a reply out loud with a chosen voice and backend | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h525"></a>H525 | Refuse to speak in a cloned or persona voice without recorded owner consent | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h526"></a>H526 | Make a spoken reply sound like speech rather than read-out markdown | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h527"></a>H527 | Start hearing the answer before it is finished, and interrupt by talking | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h528"></a>H528 | Deliver audio as a native voice message on a chat platform | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h529"></a>H529 | Transcribe a voice message or dictated speech | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h530"></a>H530 | Not turn a silent recording into a message | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h531"></a>H531 | Clean up dictated text into written prose | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h532"></a>H532 | Hold a hands-free voice conversation | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h533"></a>H533 | Wake the assistant hands-free with a spoken phrase | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h534"></a>H534 | Have the room you spoke in become the output device | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h535"></a>H535 | Play or show something on a real device with etiquette, verification and undo | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h536"></a>H536 | Read a document (PDF, DOCX, slides) into the conversation | copy | Parțial | Reevaluat | Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search. [d1](../agents/core/file_tools.py) [d2](../tests/test_file_search.py) [d3](../tests/test_file_read_documents.py) |
+| <a id="h537"></a>H537 | Search the web and pull clean page content | update | Parțial | Reevaluat | Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus. [d1](../agents/core/web_tools.py) [d2](../agents/core/plugins/websearch.py) [d3](../tests/test_web_tools.py) |
+| <a id="h538"></a>H538 | Drive a web page (browser automation) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h539"></a>H539 | Control the computer (desktop control) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h540"></a>H540 | Run code or commands somewhere other than this host | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h541"></a>H541 | Drive the app's own preview pane, tours, tips and layouts | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## acp-mcp-dev
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h542"></a>H542 | Run Nerva as a coding agent inside an editor (ACP) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h543"></a>H543 | Approve a dangerous command or a file edit from inside the editor, with the real diff shown first | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h544"></a>H544 | Steer, inspect and control a running editor thread (in-thread commands + live rendering) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h545"></a>H545 | Let the editor hand the agent MCP servers that exist only for that session | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h546"></a>H546 | Use a third-party agent CLI (GitHub Copilot) as a model backend over ACP | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h547"></a>H547 | Connect to external MCP servers and call their tools | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h548"></a>H548 | Add, test, configure and remove MCP servers as an operator | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h549"></a>H549 | Install a vetted MCP server in one step from a catalogue | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h550"></a>H550 | Sign in to a remote MCP server that requires OAuth | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h551"></a>H551 | Choose which of a server's tools the model may see | copy | Echivalent | Reevaluat | Filtrele allow/deny pe nume și glob restrâng atât listarea, cât și apelarea uneltelor MCP; deny prevalează. Resursele/prompts sunt urmărite separat în H552. [d1](../agents/core/mcp/client.py) [d2](../tests/test_mcp_tool_filters.py) |
+| <a id="h552"></a>H552 | Read an MCP server's resources and prompts, not just call its tools | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h553"></a>H553 | Let an MCP server ask the agent for an LLM completion or for user input mid-call | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h554"></a>H554 | Authorize an outbound MCP tool call before it runs | update | Parțial | Reevaluat | Rămâne reconcilierea fiecărei căi de autorizare outbound față de contractul complet. [d1](../agents/core/mcp/client.py) [d2](../tests/test_mcp_tool_filters.py) |
+| <a id="h555"></a>H555 | Refuse a malicious MCP server config or a poisoned tool description | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h556"></a>H556 | Keep a flaky or slow MCP server from wedging or slowing the whole product | update | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h557"></a>H557 | Make a third-party tool schema safe and unambiguous for every model provider | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h558"></a>H558 | Let another MCP client (Claude Desktop, Cursor, another agent) call Nerva | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h559"></a>H559 | Read conversations and answer pending approvals from an MCP client | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h560"></a>H560 | Point any OpenAI-compatible app at Nerva as its backend | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h561"></a>H561 | Accept work from another agent over the open A2A protocol | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h562"></a>H562 | Call other agents as tools and fan work out to peers | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h563"></a>H563 | Harden the A2A channel against a hostile or runaway peer | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h564"></a>H564 | Show the agent the semantic errors its own edit just introduced | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h565"></a>H565 | Let third-party apps ride the owner's authenticated model subscription | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h566"></a>H566 | Write, install and validate a third-party extension | copy | Parțial | Reevaluat | S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h567"></a>H567 | Run custom logic at a lifecycle event, in Python or in any language | copy | Lipsă | Reevaluat | Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h568"></a>H568 | Rewrite a tool call or a model request before it happens | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h569"></a>H569 | Swap in a different backend for memory, models, search, browser, speech or secrets | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h570"></a>H570 | Declare what an extension is allowed to do, and consent to it once | update | Parțial | Reevaluat | S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h571"></a>H571 | Distribute and reproduce a set of extensions | update | Parțial | Reevaluat | S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h572"></a>H572 | Extend the desktop app and the web dashboard with custom UI | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h573"></a>H573 | Deploy Nerva as a container or a declarative system service | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h574"></a>H574 | Shell completion and native search-index extensions | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## docs-features
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h575"></a>H575 | Read the product's own per-feature manual (published docs site) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h576"></a>H576 | Read a PDF / Office document / notebook as text from inside a tool call | update | Parțial | Reevaluat | Inventarul mai cere formate, paginare și moduri de căutare suplimentare; nu echivalăm automat toate cerințele unui rând cu read/search. [d1](../agents/core/file_tools.py) [d2](../tests/test_file_search.py) [d3](../tests/test_file_read_documents.py) |
+| <a id="h577"></a>H577 | Give the current conversation one recurring instruction (session heartbeat) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h578"></a>H578 | Re-run a prompt on a cadence inside the session, self-paced, with stop conditions (/loop) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h579"></a>H579 | Pull a file or slice of a file into a message inline (@ context references) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h580"></a>H580 | Receive generated files as native chat attachments (deliverable mode) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h581"></a>H581 | Run a durable multi-agent task board with worker lanes (kanban) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h582"></a>H582 | Search X / Twitter from the agent (x_search) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h583"></a>H583 | Steer which upstream provider serves an OpenRouter request (provider routing) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h584"></a>H584 | Let other apps use your subscription as an OpenAI endpoint (subscription proxy) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h585"></a>H585 | Keep hundreds of tools reachable without paying their schema cost every turn (Tool Search) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h586"></a>H586 | Paste or attach a screenshot into the conversation (vision & image paste) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h587"></a>H587 | Get working search / images / TTS / browser without signing up for five vendors (Nous Tool Gateway) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h588"></a>H588 | Run commands somewhere other than this machine (toolsets + terminal backends) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h589"></a>H589 | Run the agent over thousands of prompts to produce training / eval data (batch processing) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h590"></a>H590 | Have an animated mascot react to what the agent is doing (pets) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h591"></a>H591 | Restyle the CLI chrome (skins & themes) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h592"></a>H592 | Change who the assistant is, per session and globally (personality & SOUL.md) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h593"></a>H593 | Give the agent a standing objective it keeps working toward (/goal) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h594"></a>H594 | Have the agent pick up a project's conventions automatically (context files) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h595"></a>H595 | Let the model write a script that calls tools without a round trip per call (execute_code) | keep | Parțial | Reevaluat | K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h596"></a>H596 | Keep working when one API key is rate-limited (credential pools) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h597"></a>H597 | See the type errors an edit just introduced (LSP semantic diagnostics) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h598"></a>H598 | Generate an image from a prompt (image generation) | update | Parțial | Reevaluat | Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video. [d1](../agents/core/image_generation_runtime.py) [d2](../agents/core/image_generation_view.py) [d3](../agents/core/routers/multimodal.py) |
+| <a id="h599"></a>H599 | Answer a hard question with several models at once (Mixture of Agents) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h600"></a>H600 | Plug in an external memory backend (Honcho and 8 memory providers) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h601"></a>H601 | Control music playback by voice or chat (Spotify) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h602"></a>H602 | Start the assistant hands-free by speaking to it (wake word) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h603"></a>H603 | Use the agent from inside an IDE (ACP host integration) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h604"></a>H604 | Keep the skill library from rotting (curator) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h605"></a>H605 | Have the assistant remember you across sessions (persistent memory) | update | Parțial | Reevaluat | Rămân timeline/as-of, paritatea exploratorului și controalele de memorie cerute de rând; o listă de vecini nu închide harta semantică. [d1](../frontend/src/modes.tsx) [d2](../frontend/src/panels/memory-neighborhood.tsx) [d3](../tests/test_session_search.py) |
+| <a id="h606"></a>H606 | Keep answering when a provider or model goes down (fallback providers + auxiliary routing) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h607"></a>H607 | Search and read the web (web_search / web_extract) | update | Parțial | Reevaluat | Rămân cerințe de extracție/paginare/cache/configurare din rândurile complete; x_search exclus nu este reinclus. [d1](../agents/core/web_tools.py) [d2](../agents/core/plugins/websearch.py) [d3](../tests/test_web_tools.py) |
+| <a id="h608"></a>H608 | Hand a piece of work to an isolated child agent (subagent delegation) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h609"></a>H609 | Hand turns to an external coding-agent runtime (Codex app-server) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h610"></a>H610 | Get useful integrations without writing code (bundled plugins) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h611"></a>H611 | Talk to the assistant and hear it answer (voice mode) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h612"></a>H612 | Have the agent drive the desktop it shares with you (computer use) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h613"></a>H613 | Choose how it sounds and how it hears (TTS / STT provider matrix) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h614"></a>H614 | Point any OpenAI-compatible frontend at the agent (API server) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h615"></a>H615 | Extend the agent with third-party code at lifecycle points (plugin system) | update | Parțial | Reevaluat | S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h616"></a>H616 | Drive a real browser to do something on the web (browser automation) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h617"></a>H617 | Reskin and extend the dashboard without forking it | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h618"></a>H618 | Connect the agent to external MCP tool servers, and expose it as one | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h619"></a>H619 | Teach the agent a new procedure and share it (skills system) | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h620"></a>H620 | Schedule work to run without you (cron / scheduled tasks) | update | Parțial | Reevaluat | Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h621"></a>H621 | Operate and inspect the whole system from a web UI (dashboard) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h622"></a>H622 | Run your own code at the agent's lifecycle points (four hook systems) | update | Lipsă | Reevaluat | Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+
+## rest-api
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h623"></a>H623 | Install Nerva in one command on any supported OS, and prove the install is healthy | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h624"></a>H624 | Update a running install safely, and undo it when the update goes wrong | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h625"></a>H625 | Run the product as a container | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h626"></a>H626 | Run on Windows as a first-class OS, natively or under WSL2 | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h627"></a>H627 | Run the agent host on an Android phone | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h628"></a>H628 | Deploy declaratively and reproducibly to a fleet (Nix / NixOS / Home Manager) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h629"></a>H629 | Pin configuration an operator can set and a user cannot override | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h630"></a>H630 | Go from install to a working agent through a guided first run, choosing how much capability to turn on | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h631"></a>H631 | Diagnose a broken install from a symptom, without a screen-share | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h632"></a>H632 | Know where every setting and secret lives, and which file the agent reads when | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h633"></a>H633 | Point the agent at whatever model provider the user already pays for | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h634"></a>H634 | Run a real local model well: pick one that fits the box, serve it, and get the context window right | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h635"></a>H635 | Keep working when the chosen model fails, and use a cheaper model for side tasks | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h636"></a>H636 | Swap the backend behind a capability without touching the core (search, browser, image, video, memory, context, secrets, sandbox, voice) | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h637"></a>H637 | Extend the agent with third-party code without forking it | copy | Parțial | Reevaluat | S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale. [d1](../agents/core/extensions/manifest.py) [d2](../agents/core/extensions/doctor.py) [d3](../docs/EXTENSIONS.md) |
+| <a id="h638"></a>H638 | Extend the desktop shell itself (panes, pages, commands, themes) and point it at several backends | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h639"></a>H639 | Drive the agent from another program or an editor | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h640"></a>H640 | Keep, resume, name and search conversations across surfaces | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h641"></a>H641 | Run several independent agents on one machine, and share one as a package | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h642"></a>H642 | Move in from another agent you already use | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h643"></a>H643 | Undo what the agent did to your files | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h644"></a>H644 | Stop a destructive shell command before it runs | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h645"></a>H645 | Stop the agent from exfiltrating data or leaking a credential | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h646"></a>H646 | Fit a long conversation into the context window without the agent getting dumber | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h647"></a>H647 | Teach the agent a repeatable procedure, share it, and trust one you install | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h648"></a>H648 | Have the agent act on a schedule or when something external happens | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h649"></a>H649 | Reach the agent from the messaging apps and mailboxes people already use | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h650"></a>H650 | Split work across child agents and supervise them | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h651"></a>H651 | Connect the agent to MCP servers, and let other tools drive it over MCP | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h652"></a>H652 | Add a tool to the agent, understand how a turn executes, and export turns as training data | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h653"></a>H653 | Read the product's documentation as a site, and let an LLM ingest it | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h654"></a>H654 | Talk to the agent in a terminal | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h655"></a>H655 | Contribute to the codebase without breaking its invariants | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+
+## delta
+
+| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
+|---|---|---|---|---|---|
+| <a id="h656"></a>H656 | A group chat between several agents that keeps running when the client that opened it is closed | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h657"></a>H657 | A surviving host continues a room whose owner-host died, and fences the old host if it comes back | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h658"></a>H658 | A member of a shared session that lives on a different machine, running under a capability the target machine issued and can revoke | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h659"></a>H659 | A retried external request returns the original run instead of starting a second one | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h660"></a>H660 | Code the agent runs keeps its variables, imports and loaded data between calls | copy | Lipsă | Reevaluat | Lipsesc kernelurile persistente pe sesiune, resetarea/expirarea și izolarea/revocarea între celule; depinde de K0–K3. [d1](../agents/core/tool_rpc_runtime.py) [d2](../agents/core/memory/session_search.py) [d3](../agents/core/autonomy_coordinator.py) |
+| <a id="h661"></a>H661 | Oversized tool output is paged from a file instead of being thrown away | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h662"></a>H662 | A second local browser engine, and browsing with a snapshot of the owner's real signed-in profile | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h663"></a>H663 | The product points at its own features — an anchored bubble while idle, and the agent raising the same bubble mid-conversation | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h664"></a>H664 | The advertised tool surface is a token budget, and verb-per-tool families collapse behind one action enum | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h665"></a>H665 | Editing several skills in one atomic, rollback-on-failure batch | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h666"></a>H666 | The agent's own task list nests subtasks under a parent | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h667"></a>H667 | Never assume /tmp is real storage; prune only the cache you own | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h668"></a>H668 | /plan — turn the current request into a saved implementation plan without implementing anything | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h669"></a>H669 | /btw — answer a side question about the running conversation without disturbing it | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h670"></a>H670 | The default identity prompt is a behavior contract, and it lives in one file | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h671"></a>H671 | A long-lived conversation knows what day it is now | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h672"></a>H672 | A never-ending session picks up config, skill and tool changes at the compaction boundary | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h673"></a>H673 | Context pressure is measured from the provider's own number, not re-estimated | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h674"></a>H674 | Compression cannot stall the user: bounded holds, inactivity deadlines and derived thresholds | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h675"></a>H675 | A restricted background runtime whose whitelist can admit but never advertise | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h676"></a>H676 | A surface with nobody to answer resolves approvals by policy instead of queueing a prompt into the void | update | Parțial | Reevaluat | Politica configurabilă queue/deny pentru toate originile fără operator nu este echivalată prin simpla livrare a joburilor. [d1](../agents/core/autonomy/jobs.py) [d2](../agents/core/routers/jobs.py) [d3](../tests/test_owner_jobs.py) |
+| <a id="h677"></a>H677 | Boot warm-up before accepting work, and every shutdown wait has a short explicit budget | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h678"></a>H678 | A transcript never ends with a blank or clobbered assistant turn | copy | Parțial | Reevaluat | Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. [d1](../agents/core/llm/tool_dialects.py) [d2](../agents/core/llm/base.py) [d3](../agents/core/agent_runtime.py) |
+| <a id="h679"></a>H679 | Per-model reasoning-effort vocabularies, clamped by one canonical helper | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h680"></a>H680 | Hosted-provider breadth: Ramp Router, Nebius Token Factory, region-split Alibaba, Tencent TokenPlan, refreshed model pickers | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h681"></a>H681 | Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h682"></a>H682 | Every command and skill is discoverable on a chat platform whose menu is capped | copy | Parțial | Reevaluat | Rândul include mai multe comenzi, meniuri și extensii de comenzi decât registrul livrat; echivalarea completă rămâne deschisă. [d1](../agents/cli/nerva.py) [d2](../tests/test_nerva_cli.py) [d3](../agents/core/commands.py) |
+| <a id="h683"></a>H683 | Chat replies stream, can be edited or deleted, and acknowledge receipt at ingest | update | Parțial | Reevaluat | Streamingul Slack/Discord are nevoie de un contract de aprobare pentru ieșirea viitoare; restul interacțiunilor rămân distincte. [d1](../agents/core/channels/slack.py) [d2](../agents/core/channels/discord.py) [d3](../tests/test_workspace_channel_replies.py) |
+| <a id="h684"></a>H684 | A read-only scheduler health check that exits non-zero when jobs are silently not firing | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h685"></a>H685 | Move a whole work container to another machine, through one hardened archive primitive | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h686"></a>H686 | The operator can see how the model is actually performing right now, and choose which fields to see | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h687"></a>H687 | A recurring instruction runs once immediately, then on its cadence | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h688"></a>H688 | Config keys whose NAME contains a dot can be addressed | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h689"></a>H689 | One stable identity for this install, and per-profile isolation of its runtime artifacts | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h690"></a>H690 | OS permission grants survive an interpreter upgrade (macOS TCC anchoring) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h691"></a>H691 | Reverse-proxy trust is a validated, bounded allowlist rather than an on/off switch | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h692"></a>H692 | OAuth completes when the browser and the backend are on different machines | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h693"></a>H693 | Canonical data survives a corrupt derived index, and there is a documented offline repair | copy | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h694"></a>H694 | One canonical kill switch that every scope honors | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
+| <a id="h695"></a>H695 | An updater that repairs the tools it depends on, and names a half-applied install | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h696"></a>H696 | A small default skill bundle with a large on-demand catalog, re-pinned to the current release | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h697"></a>H697 | A client whose backend session died recovers instead of staying bound to a phantom | update | Parțial | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
