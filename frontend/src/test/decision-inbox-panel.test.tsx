@@ -131,4 +131,21 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     render(<DecisionInboxPanel />);
     await waitFor(() => expect(screen.getByText(/1\/4 interrupts today/)).toBeTruthy());
   });
+
+  it('shows an image prompt without exposing approval internals or editing its bound JSON', async () => {
+    const fn = mockFetch({ tasks: [{ id: 17, kind: 'toolrpc.image_generate', title: 'Local image',
+      risk_tier: 2, status: 'blocked', payload: { tool: 'image_generate', args: {
+        prompt: 'A rain-soaked tree', width: 512, height: 512, steps: 20,
+        _binding: { nonce: 'PRIVATE', head: 'PRIVATE' }, url: 'https://evil.invalid/PRIVATE',
+      } } }] });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('A rain-soaked tree');
+    expect(screen.getByText(/Changes require a fresh proposal/)).toBeTruthy();
+    expect(screen.queryByTitle('edit')).toBeNull();
+    expect(screen.queryByTitle('dry-run preview')).toBeNull();
+    expect(document.body.textContent).not.toContain('PRIVATE');
+    fireEvent.click(screen.getByTitle('accept'));
+    await waitFor(() => expect(fn.mock.calls.some(c => c[0] === '/autonomy/tasks/17/decision'
+      && c[1].body === '{"action":"accept"}')).toBe(true));
+  });
 });

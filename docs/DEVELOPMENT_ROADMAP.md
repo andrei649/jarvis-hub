@@ -177,7 +177,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-12 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
+10 shipped, user-facing routes have **no client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -185,9 +185,9 @@ engine, the `nerva jobs` verbs and the chat commands shipped first — and left 
 panel under Autonomy & Agents wired all of them. Of the 61 at the start of the
 reachability sprint, 49 left because a panel now genuinely calls them and 1 was never uncalled at
 all (`agents/web/*.html` was missing from the gate's client globs, so `brain.html` fetching
-`/api/brain/summary` did not count). The 12 that remain are each annotated on their entry with why:
+`/api/brain/summary` did not count). The 10 that remain are each annotated on their entry with why:
 six are deliberate refusals (an agent-produced input, a route that swaps nothing, two dead by
-construction, two duplicates of already-wired surfaces) and six are deliberately-open UI work.
+construction, two duplicates of already-wired surfaces) and four are deliberately-open UI work.
 HA-4i-S1 adds CLI extension inspection; its `/api/plugins/extensions` view still needs a
 dedicated HUD/mobile caller, separate from the existing acquisition panel.
 A shrinking number is only good news when it shrinks for the right reason — an earlier pass of this
@@ -206,12 +206,11 @@ deleting entries from the punch list; prioritize by user value:
    ~~DRA-39 — `flow_api.build_flow` silently dropping `subflow`~~ **done** — the compiler passes
    `subflow` through and now raises at compile time when a `kind="subflow"` step has no config,
    instead of silently returning the previous ctx value at run time.
-4. DRA-29 — multimodal *input*, **half done**: ~~the VLM describe caller~~ **done**
-   (`VlmDescribePanel` posts to `/api/vlm/describe`), but `POST /api/media/generate` **still has
-   no caller** — nothing under `frontend/src` (outside the generated schema) references it.
-   HA-4i-image adds the governed local backend and authenticated
-   `GET /api/media/generated/{artifact_id}`; its dedicated composer/preview is also pending,
-   so this row stays open; ~~DRA-37 — marketplace rollback control~~ **done** (the ⟲ control on the
+4. DRA-29 — multimodal callers **delivered; owner-host proof pending**: the VLM describe caller
+   and Console → Build → Images now propose local images through `POST /api/media/generate`,
+   hand approval to the existing Inbox and retrieve authenticated PNG bytes for one selected
+   task. Configuration alone does not prove a working model/service; live proof remains open.
+   ~~DRA-37 — marketplace rollback control~~ **done** (the ⟲ control on the
    SKILLS MARKETPLACE list, which is where the rollback data actually lives);
    ~~DRA-38 — acquisition drive trigger beyond curl~~ **done** —
    `POST /api/acquisition/{request}/drive` is driven from the AcquisitionPanel.

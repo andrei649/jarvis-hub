@@ -53,7 +53,24 @@ image intake and execution. Mediation modes are never reduced to make a task run
 The existing generic model tool loop offers `image_generate` to the operator
 owner under its normal profile. The loop itself remains subject to its existing
 enable setting. Inbound and unattended tool profiles do not gain actuation by
-default. There is no new standalone image composer in HUD V2 or mobile.
+default. HUD V2 also offers **Console → Build → Images** for the instance owner:
+write the exact prompt, choose **Propose image**, then approve that task in the existing
+Decision Inbox. Images uses 512 × 512, 20 steps and a seed chosen at proposal time.
+The Inbox displays the prompt and settings; changing a bound image proposal requires
+rejecting it and making a fresh proposal. Other task editing is unchanged.
+
+The panel distinguishes configured/unprobed, waiting for approval, queued, generating,
+refused and uncertain states. Its admin-only `GET /api/media/generation-tasks/{task_id}`
+returns only validated state and artifact metadata. A successful task is fetched through
+header-authenticated PNG transport, then previewed/downloaded from a revocable browser
+blob URL; credentials, host paths and backend URLs are not put into links. Reads are
+bounded and abortable. **Stop watching** stops observation; the server job may continue.
+A lost proposal response is uncertain and is never automatically resubmitted.
+
+Closing the Console or refreshing clears its prompt/task state and preview. Use
+**Existing image task ID** to resume a known task without creating another. This is an
+instance-owner view, with no new conversation isolation or persistent image gallery.
+Native image presentation remains open as H18.27.
 
 An authenticated API client can also propose the same task:
 

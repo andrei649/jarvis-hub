@@ -9,6 +9,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
+import { ImagesPanel } from './panels/images';
 import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
 import { SecuritySkillsMapPanel } from './panels/security-skills-map';
@@ -2904,6 +2905,10 @@ export function OnboardingPanel() {
    accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
+  useEffect(() => {
+    window.addEventListener('nerva:image-proposed', reload);
+    return () => window.removeEventListener('nerva:image-proposed', reload);
+  }, [reload]);
   const pending = arr(d, 'tasks');
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
@@ -2924,7 +2929,7 @@ export function DecisionInboxPanel() {
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
   return (
-    <Card title="DECISION INBOX" live={asLive(d)}
+    <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
       onReload={() => { reload(); interrupts.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
@@ -2934,13 +2939,19 @@ export function DecisionInboxPanel() {
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
-              <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>
+              {t.kind !== 'toolrpc.image_generate' && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
-              <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>
+              {t.kind !== 'toolrpc.image_generate' && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
             </span>
           </Row>
+          {t.kind === 'toolrpc.image_generate' && <div style={{ fontSize: 12, margin: '6px 0' }}>
+            <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof t.payload?.args?.prompt === 'string' ? t.payload.args.prompt.slice(0, 4000) : 'Image prompt unavailable.'}</p>
+            <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
+              {' · '}{Number.isInteger(t.payload?.args?.steps) ? t.payload.args.steps : 20} steps</p>
+            <p>Changes require a fresh proposal in Images. Reject this proposal before replacing it.</p>
+          </div>}
           {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
             <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
             {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}
@@ -2975,7 +2986,7 @@ export function DecisionInboxPanel() {
         </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
-    </Card>
+    </Card></div>
   );
 }
 
@@ -4652,7 +4663,7 @@ const SECTIONS: Array<[string, Array<() => any>]> = [
   ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel, PermissionsPanel]],
   ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
   ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
-  ['Build', [HostReadinessPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
+  ['Build', [HostReadinessPanel, ImagesPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
   ['Autonomy & Agents', [CompanyRoomPanel, QuickbarPanel, AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, JobsPanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
   ['Admin', [LlmRoutingPanel, SupportVoicePanel, BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
 ];

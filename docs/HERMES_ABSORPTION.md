@@ -434,8 +434,11 @@ origine prin bridge-ul real și coada guvernată. Executorul canonic acceptă nu
 `enforce` reverifică receipt-ul semnat actual inclusiv înainte de trimitere, iar `hold`
 continuă să refuze. Testele HTTP autentificate parcurg propunerea, decizia, workerul și
 citirea PNG-ului în ambele moduri. Registrul protejat și celelalte unelte nu sunt modificate.
-Chat-ul și coada existentă primesc propunerea; composerul/galeria dedicate în HUD și
-afișarea nativă pe mobil rămân declarate în ledger-ele de paritate (H18.27).
+Console → Build → Images oferă acum propunerea promptului exact, aprobarea în Inbox-ul
+existent și previzualizarea/descărcarea PNG-ului prin fetch autentificat. Starea unui singur
+task se citește printr-o proiecție admin, fără payload/rezultat brut sau căi de host.
+După redeschidere, observarea se poate relua prin ID fără o nouă trimitere. Galeria cu
+istoric persistent și afișarea nativă pe mobil rămân în ledger-ele de paritate (H18.27).
 Configurare: [`LOCAL_IMAGE_SETUP.md`](LOCAL_IMAGE_SETUP.md).
 
 **2026-09-09 (4i-S1 — manifest și inspecție declarativă pentru extensii).** Un JSON
@@ -558,7 +561,11 @@ căi Ollama fără flux întorc același răspuns numit pentru `thinking` nativ 
 de flux, fără să schimbe răspunsurile vizibile și apelurile de unelte. 18 regresii noi,
 228 de teste conexe trecute; probă locală reală cu `qwen3.5:0.8b` pe ambele endpoint-uri:
 8 tokeni, 25 de caractere de raționament, răspuns gol, `done_reason=length` → răspuns
-degradat numit în ambele metode. Proba de flux brut cerută de P26 rămâne deschisă.
+degradat numit în ambele metode. **Fluxul Ollama brut a fost probat pe 2026-09-09:**
+Ollama 0.33.3 cu același model a emis șapte înregistrări NDJSON (1.123 octeți), opt tokeni,
+25 de caractere de raționament și zero răspuns vizibil; cititorul nemodificat a întors
+răspunsul degradat și zero callback-uri de tokeni. [Captura și replay-ul offline](qa-runs/2026-09-09-p26-ollama-stream/README.md)
+păstrează răspunsul real fără shim; curățarea a lăsat zero modele rezidente.
 Costul declarat al pragului: o tură profundă mai lungă decât
 așteptarea de 180 s a lease-ului de tură face ca un al doilea mesaj pe aceeași sesiune de canal,
 `/stop` inclus, să primească „ocupat" până se termină; `nerva estop` și API-ul rămân la îndemână.
@@ -568,8 +575,10 @@ fost exercitate cu un model de raționament real. Guard-ul de gândire epuizată
 serverul OpenAI al llama.cpp întoarce ieșirea unui model care gândește inline, ca `<think>` în
 `content`, niciodată ca `reasoning_content`, iar pe forma asta guard-ul nu se declanșează;
 singura probă care l-a făcut să se declanșeze fabrica exact câmpul pe care guard-ul îl citește,
-ceea ce e circular. **P26** cere acum artefactul care închide asta definitiv: un flux brut
-capturat din LM Studio real și din Ollama real.
+ceea ce e circular. **P26 rămâne deschis** pentru fluxul SSE brut din LM Studio, latența
+reală a unui raționament lung, excluderea avertismentului din memoria recuperată ulterior
+și proba ferestrelor cloud. Proba Ollama de mai sus verifică răspunsul pe fir și cititorul,
+nu o tură completă a hub-ului; limita formei inline `<think>` rămâne neschimbată.
 
 **Livrat 2026-09-08 (5d — cele cinci corecții pe care le-a găsit rularea de probă off-box).** Un
 container fără GPU a rulat pachetele P24/P25/P26 cap la cap: un Qwen3-0.6B real pe CPU (llama.cpp,
