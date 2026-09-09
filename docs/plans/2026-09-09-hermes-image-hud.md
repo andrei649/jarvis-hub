@@ -139,3 +139,28 @@ The independent Chromium synthetic flow was repeated on that exact bundle and
 canonical task shape: one proposal/approval, authenticated PNG, clean hard reload,
 read-only resume, 12.86:1 links and no page errors. Previews were stopped.
 This still does not establish real backend composition or live ComfyUI proof.
+
+## Final composition integration — 2026-09-09T13:59:49Z
+
+Base: `c1a4ef9f5b7f5d3d3fd83ca6332e00c72b43ac7a`, the independently merged
+production approval-bridge repair #1067. Only this HUD unit was replayed onto
+that base. Goal, changed surfaces and rollback remain as recorded above; the
+final commit is identified in PR #1066. Generated count conflicts were resolved
+from the current base and regenerated from the actual combined tree.
+
+The permanent authenticated HTTP regression now uses the real mediated queue,
+bound kernel bridge, admin decision and worker in both `off` and `enforce`.
+It proves approval before the one submission, the redacted task projection,
+authenticated PNG retrieval and repeat reads without another effect. Only
+ComfyUI transport is simulated. The two new composed flow cases and 33 view
+cases passed independently. All 213 tests in the image and route/auth/OpenAPI/
+HUD/documentation/manual/typegen packet passed after the rebase.
+
+The complete saved locked-toolchain frontend result remains 1,086 passes; no
+frontend source changed during this rebase and the reviewed production bundle
+hash above is unchanged. Backend collection is now 9,695, mobile inventory 137
+and routes 479. These are inventory counts, not full local Python/mobile runs.
+Ruff, generated status and measured frontend-count checks passed before
+the final push. Next action: all reported and policy-required checks on the
+final PR head, followed by an eligible squash merge. No live ComfyUI generation
+or deployment is claimed; `hold` intentionally refuses image execution.
