@@ -16,6 +16,7 @@ dumping bodies would quietly restore the original problem.
 from __future__ import annotations
 
 import json
+import os
 import subprocess  # nosec B404 — fixed argv, no shell
 import sys
 from pathlib import Path
@@ -36,7 +37,7 @@ def run(script: str, *args: str) -> str:
     """Invoke a tool the way a caller actually does: as a subprocess."""
     proc = subprocess.run(  # nosec B603 — fixed interpreter and script path
         [sys.executable, str(REPO / "scripts" / script), *args],
-        capture_output=True, text=True, check=False, cwd=REPO,
+        capture_output=True, text=True, encoding="utf-8", check=False, cwd=REPO,
     )
     assert proc.returncode == 0, proc.stderr
     return proc.stdout
@@ -187,7 +188,7 @@ def test_a_closed_pipe_is_a_normal_end_not_a_crash(script: str, args: list[str])
     """
     tool = subprocess.Popen(  # nosec B603 — fixed interpreter and script path
         [sys.executable, str(REPO / "scripts" / script), *args],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=REPO,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", cwd=REPO,
     )
     head = subprocess.Popen(  # nosec B603 B607 — fixed argv
         ["head", "-3"], stdin=tool.stdout, stdout=subprocess.DEVNULL, text=True,
@@ -198,3 +199,24 @@ def test_a_closed_pipe_is_a_normal_end_not_a_crash(script: str, args: list[str])
     assert tool.returncode == 0, stderr
     assert "BrokenPipeError" not in stderr
     assert "Exception ignored" not in stderr
+
+
+@pytest.mark.parametrize("script,command", [("backlog.py", "sections"), ("ledger.py", "list")])
+@pytest.mark.parametrize("missing", [False, True])
+def test_redirected_queries_preserve_unicode_with_a_windows_legacy_encoding(tmp_path, script, command, missing):
+    """A cp1252 pipe must not crash or replace Romanian text, arrows and emoji."""
+    label = "Română → 🟡"
+    sample = tmp_path / f"{label}.data"
+    if not missing:
+        body = (f"## {label}\n- [ ] **A-1** — {label}\n" if script == "backlog.py" else
+                json.dumps({"capabilities": [{"name": label, "decision": "copy", "effort": "S"}]}))
+        sample.write_text(body, encoding="utf-8")
+    result = subprocess.run(  # nosec B603 — fixed interpreter and script path
+        [sys.executable, str(REPO / "scripts" / script), "--file", str(sample), command],
+        capture_output=True, check=False, cwd=REPO,
+        env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+    )
+    assert result.returncode == (2 if missing else 0), result.stderr.decode("utf-8", errors="replace")
+    output = result.stderr if missing else result.stdout
+    assert label in output.decode("utf-8")
+    assert b"UnicodeEncodeError" not in result.stderr

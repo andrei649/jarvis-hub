@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable
 
@@ -39,6 +40,23 @@ def _contract_template() -> ContractTemplate:
             return "client_id" in reply
         if channel == "email":
             return "to" in reply
+        if channel == "slack":
+            target = reply.get("slack_channel")
+            thread = reply.get("thread_ts")
+            return (
+                isinstance(target, str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", target) is not None
+                and (thread is None or (
+                    isinstance(thread, str)
+                    and re.fullmatch(r"[0-9]{1,20}\.[0-9]{1,10}", thread) is not None
+                ))
+            )
+        if channel == "discord":
+            target = reply.get("channel_id")
+            return (
+                isinstance(target, (str, int)) and not isinstance(target, bool)
+                and re.fullmatch(r"[1-9][0-9]{0,19}", str(target)) is not None
+            )
         return False
 
     return ContractTemplate(kind=CHANNEL_REPLY_CONTRACT_KIND, constraints=(
@@ -70,6 +88,29 @@ class ChannelReplyBroker:
         thread = self._inbox.thread(thread_id)
         if thread is None:
             return {"ok": False, "reason": "unknown_thread"}
+        return self._request(thread, text, agent=agent, source=source)
+
+    def request_for_message(self, message_id: str, text: str, *, channel: str,
+                            agent: str | None = None, source: str = "") -> dict:
+        """Queue an automatic reply to the exact persisted inbound turn.
+
+        A concurrent arrival must not move the reply to the thread's latest
+        message. The gateway supplies this id after pairing and persistence.
+        """
+        message = self._inbox.get_message(message_id)
+        if (message is None or message.get("direction") != "in"
+                or message.get("channel") != channel):
+            return {"ok": False, "reason": "unknown_inbound_message"}
+        return self._request({
+            "thread_id": message["thread_id"],
+            "last_message_id": message["id"],
+            "channel": channel,
+            "reply": dict(message.get("reply") or {}),
+            "from": message.get("sender", ""),
+        }, text, agent=agent, source=source)
+
+    def _request(self, thread: dict, text: str, *, agent: str | None, source: str) -> dict:
+        thread_id = thread["thread_id"]
         clean_text = str(text or "").strip()[:_TEXT_CAP]
         if not clean_text:
             return {"ok": False, "reason": "missing_text"}

@@ -127,6 +127,7 @@ RULES = [
     # 0.64 quickbar: a resolve-only preview, rendered in the same cluster as the
     # company room. It never executes a plan — see agents/core/routers/quickbar.py.
     ("/api/quickbar/", "autonomy"),
+    ("/api/commands", "autonomy"),  # HA-4i: live chat-command catalog in QuickbarPanel
     ("/api/reflection", "autonomy"),
     ("/api/schedule/parse", "autonomy"),
     ("/api/transcripts", "autonomy"),

@@ -9,6 +9,11 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 
+# Lock headers hash the exact requirements source bytes. Keep them identical on
+# Windows (core.autocrlf=true) so doctor and lock_deps.sh agree after checkout.
+/requirements*.txt text eol=lf
+/requirements*.lock text eol=lf
+
 # Keep Vite's HTML source and generated shell byte-reproducible on Windows.
 frontend/index.html text eol=lf
 agents/web/v2/index.html text eol=lf

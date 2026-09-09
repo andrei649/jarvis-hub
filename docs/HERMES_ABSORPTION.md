@@ -171,7 +171,8 @@ comenzi slash: `agents/core/commands.py` — `/help`, `/status`, `/sessions` (us
 `/stop`, `/resume` (owner), dispecerizate de orchestrator înaintea skill-urilor și a modelului pe
 orice suprafață; tura poartă un principal (allowlist-ul/chat-ul owner-ului pe Telegram, token admin
 pe web). **Rămâne:** `nerva send <canal>` (nu există rută de trimitere; una nouă trece prin patru
-porți de snapshot + poarta de caller HUD) și `GET /api/commands` + listarea în quickbar. Teste:
+porți de snapshot + poarta de caller HUD). Catalogul `GET /api/commands` și listarea în quickbar
+sunt livrate în 4i-catalog (mai jos). Teste:
 `tests/test_nerva_cli.py` (27), `tests/test_slash_commands.py` (12). *Nedovedit pe un hub viu* →
 `docs/OWNER_TASKS.md` **P17**.
 
@@ -363,7 +364,43 @@ fără parser refuzul îl numește (`parser_missing`, ce pachet), un fișier pe 
 poate citi e `extraction_failed`, iar `raw: true` returnează în continuare bytes. Niciun parser
 nu e dependență declarată — rămâne decizia owner-ului. Teste: `tests/test_file_read_documents.py`
 (5). Rămân în 4i: streaming prin editări pe Slack/Discord, HUD mode, SDK-ul de plugin-uri,
-`nerva send` + `GET /api/commands`, kernelele de cod persistente și `image_generate`.
+`nerva send`, kernelele de cod persistente și `image_generate`.
+
+**Livrat 2026-09-08 (4i-catalog — comenzile disponibile devin vizibile în HUD).**
+`GET /api/commands` citește registrul viu al orchestratorului și folosește același principal
+ca chat-ul: un utilizator vede comenzile user, owner-ul le vede și pe cele admin. Guard-ul user
+rulează înainte de citire; catalogul nu execută handler-e. Un registru care nu este disponibil
+întoarce `commands_unavailable` (503), nu o listă implicită inventată. Quickbar afișează comanda,
+sintaxa și marcajul owner; încărcarea, lipsa comenzilor și indisponibilitatea au stări separate.
+Execuția rămâne prin chat. Teste: `tests/test_commands_catalog.py` și
+`frontend/src/panels/quickbar.test.tsx`. Meniul nativ mobil rămâne **H18.26**.
+
+**Livrat 2026-09-09 (4i-send — un script poate propune o livrare pe canal).**
+`nerva send --list` arată până la 200 de conversații recente din inbox-ul real și distinge
+un inbox indisponibil de unul gol. `nerva send --to <thread_id> "Backup terminat"` verifică
+destinatarul din conversația exactă și apelează aceeași rută de reply ca HUD-ul și aplicația
+mobilă. `--json` păstrează rezultatul serverului; exit 0 înseamnă un task durabil pus în coadă,
+nu livrare, iar un preview fără task, un refuz sau un răspuns malformat este exit 1. Mesajele
+goale sau peste plafonul de 4.000 de caractere sunt refuzate înainte de apel, fără trunchiere
+tăcută. Lista inițială de canale era Telegram/web/email; nu se ghicesc adrese și nu se
+apelează adaptoarele direct. Teste: `tests/test_nerva_send.py` (25), CLI + Safe Comms (64
+împreună). Nicio trimitere către un serviciu extern nu a fost făcută în verificare.
+
+**Livrat 2026-09-09 (4i-comms — răspunsuri Slack/Discord prin aprobările existente).**
+Mesajele admise de pairing intră în inbox-ul persistent. Identitatea conversației include
+camera și, pe Slack, subfirul; același membru în două camere nu mai amestecă memoria ori ținta.
+Gateway-ul leagă răspunsul de mesajul exact salvat și înlocuiește orice id pretins de eveniment.
+Originea rămâne `inbound`, iar câmpuri de identitate ale altui canal nu pot selecta memoria turei.
+Orchestratorul propune răspunsul complet prin brokerul `channel.reply`, cu Action Kernel și
+coada existentă. Discord nu mai publică direct valoarea returnată de handler. Un refuz,
+indisponibilitatea inbox-ului sau lipsa brokerului nu pot porni un send alternativ. Executarea
+aprobată păstrează camera/subfirul Slack și înregistrează livrarea doar dacă transportul confirmă.
+Conversațiile sunt accesibile prin HUD, mobil și `nerva send`; nu există endpoint nou.
+Teste: `test_workspace_channel_replies.py`, suitele channel/session/render/API, composerul HUD
+și clientul mobil. **Streamingul live rămâne separat:** capabilitatea `supports_edit` nu este
+permisiune de a publica tokeni înainte ca mesajul complet să fie aprobat. Slack păstrează
+punctul de intrare host `receive_event`; configurarea evenimentelor și livrarea pe conturi
+reale nu au fost probate aici.
 
 **Livrat 2026-09-07 (5a — ce citește modelul e date, nu instrucțiuni).** Rezultatul unei unelte
 intra în transcript așa cum venea, fără gard și fără taint, în timp ce memoria recuperată le avea

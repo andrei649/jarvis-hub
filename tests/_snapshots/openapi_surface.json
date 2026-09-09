@@ -87,6 +87,7 @@
   "GET /api/cognition/personality": "cognition_personality_api_cognition_personality_get",
   "GET /api/cognition/status": "cognition_status_api_cognition_status_get",
   "GET /api/cognition/stream": "cognition_stream_api_cognition_stream_get",
+  "GET /api/commands": "command_catalog_api_commands_get",
   "GET /api/company/runs": "company_runs_api_company_runs_get",
   "GET /api/company/runs/{run_id}": "company_run_api_company_runs__run_id__get",
   "GET /api/company/waiting": "company_waiting_api_company_waiting_get",

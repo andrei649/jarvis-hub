@@ -1,8 +1,6 @@
 """Bounded inbox store for live channel messages.
 
-Safe Comms v0 deliberately scopes persistence to interactive channels whose
-reply path is already real (web + telegram). Other channels can be added once
-their send path is proven.
+Only channels with a governed reply transport are admitted to the inbox.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from agents.core.paths import data_path
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
-SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email"})
+SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord"})
 _MAX_TEXT = 4_000
 _PREVIEW = 240
 _REPLY_KEYS = {
@@ -26,6 +24,8 @@ _REPLY_KEYS = {
     # EmailChannel.send() kwargs; `to` is aliased from the inbound `from_addr`
     # in _reply_metadata (the reply target IS the inbound sender).
     "email": ("to", "subject"),
+    "slack": ("slack_channel", "thread_ts"),
+    "discord": ("channel_id",),
 }
 
 
@@ -245,6 +245,12 @@ def _injection_flags(value: Any) -> list[str]:
 
 def _thread_id(channel: str, sender: str, reply: dict) -> str:
     stable = sender or reply.get("chat_id") or reply.get("client_id") or "unknown"
+    # Workspace conversations belong to a room/thread, not to a member who may
+    # speak in several rooms. Preserve all existing Telegram/web/email ids.
+    if channel == "slack" and reply.get("slack_channel"):
+        stable = f"{reply['slack_channel']}:{reply.get('thread_ts', '')}"
+    elif channel == "discord" and reply.get("channel_id"):
+        stable = str(reply["channel_id"])
     digest = hashlib.sha256(f"{channel}:{stable}".encode()).hexdigest()[:12]
     return f"{channel}:{digest}"
 
