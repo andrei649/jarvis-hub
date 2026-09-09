@@ -1643,9 +1643,16 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   checks: 68 passed; full frontend: 1,039 passed; typecheck and build pass. Native discovery is H18.26.
 
 - [ ] **HA-4i** — the rest of the depth wave: streaming edits on Slack / Discord (the descriptors
-  now say they can), HUD mode on desktop, the plugin SDK, `nerva send`,
+  now say they can), HUD mode on desktop, the agent-side plugin SDK,
   session-persistent code kernels and `image_generate` (both need backends that do not exist
   yet) — sequenced in [`docs/HERMES_ABSORPTION.md`](docs/HERMES_ABSORPTION.md).
+  **2026-09-09 — `nerva send` shipped.** `--list` reads recent persisted inbox targets;
+  `--to <thread_id> <message>` resolves that exact thread and queues through the existing
+  user-guarded reply API. No direct transport, guessed recipient, automatic approval or false
+  delivery claim; a preview without a durable task is a failure. The current reply vocabulary
+  remains Telegram/web/email. Regression coverage: `tests/test_nerva_send.py` (25 cases),
+  plus the existing CLI and Safe Comms suites (64 passed combined). Native UI plugin injection
+  remains an explicit **skip** in the inventory; it is not included in the SDK work above.
 
 
 Fixed since: ✅ **NERVA_VISION capability claims reconciled with the code** (#952) — the
