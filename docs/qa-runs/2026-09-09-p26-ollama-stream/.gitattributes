@@ -1,0 +1,2 @@
+# Preserve the captured response body byte-for-byte on every checkout.
+ollama-generate.ndjson -text

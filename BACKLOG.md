@@ -1563,8 +1563,13 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   regression cases; 228 related tests passed. A real local `qwen3.5:0.8b` probe exercised both
   `/api/generate` and `/api/chat`: eight generated tokens, 25 thinking characters, no visible
   answer, `done_reason=length`; both patched methods returned the named degraded reply.
-  Raw streaming evidence in P26 remains open; see the dated implementation plan for this
-  bounded non-stream proof. Stated cost of the floor: a deep turn longer than
+  **Raw Ollama streaming proven 2026-09-09:** Ollama 0.33.3 / the same installed small model
+  returned seven raw NDJSON records (1,123 bytes), eight generated tokens, 25 native thinking
+  characters, zero visible response, and `done_reason=length`. Unmodified `generate_stream`
+  returned the named degraded reply and emitted zero user-token callbacks; `keep_alive=0`
+  plus explicit cleanup left no model resident. The [capture and offline replay](docs/qa-runs/2026-09-09-p26-ollama-stream/README.md)
+  preserve the real response bytes without a serving-layer shim. P26 stays open for LM Studio,
+  long real reasoning latency, later memory recall, and the cloud window proof. Stated cost of the floor: a deep turn longer than
   the 180 s turn-lease wait makes a second message on the same channel session, `/stop`
   included, answer busy until it ends; `nerva estop` and the API stay reachable. Named and not
   done: the continuation chain and the one empty retry (they change the tool-loop message
@@ -1572,9 +1577,9 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   floor and the window table were exercised against a real reasoning model. The
   thinking-exhausted guard was **not** — llama.cpp's OpenAI server returns a thinking model's
   output inline as `<think>` inside `content`, never as `reasoning_content`, and on that shape
-  the guard does not fire; the only probe that made it fire manufactured the field the guard
-  reads, which is circular. P26 now asks for the one artefact that closes it: a raw captured
-  stream from real LM Studio and real Ollama.
+  the guard does not fire; the only probe in that off-box run that made it fire manufactured
+  the field the guard reads, which is circular. The real Ollama stream is now captured above;
+  P26 still needs the raw LM Studio stream, and the inline-thinking gap remains named.
 - [x] ✅ **HA-5d — five fixes the off-box proof run found** (PR #1044). A GPU-less container ran
   the P24/P25/P26 packets end to end — a real Qwen3-0.6B on CPU (llama.cpp, ~30 tok/s,
   `is_reasoning_model` true) driving the real `AgentToolRuntime` over the coordinator's real

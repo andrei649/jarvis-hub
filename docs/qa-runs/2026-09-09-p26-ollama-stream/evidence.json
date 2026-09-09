@@ -1,0 +1,46 @@
+{
+  "raw_sha256": "c5a3026db1b528df81e57a016f53143d643bbcbd727d24e8f1df251fa90b869e",
+  "raw_bytes": 1123,
+  "records": 7,
+  "thinking_chars": 25,
+  "response_chars": 0,
+  "done": true,
+  "done_reason": "length",
+  "eval_count": 8,
+  "user_token_callbacks": 0,
+  "returned_named_degraded_reply": true,
+  "reasoning_in_returned_reply": false,
+  "returned_reply": "⚠️ The model spent its whole answer budget thinking and produced no visible answer. Ask again more narrowly, or raise llm.max_tokens (or load a larger-context model).",
+  "captured_at_utc": "2026-09-09T12:02:37.997383+00:00",
+  "base_sha": "d0a729f846e08c7fb3d35180a31050316c8439c1",
+  "endpoint": "http://127.0.0.1:11434/api/generate",
+  "ollama_version": "0.33.3",
+  "model": "qwen3.5:0.8b",
+  "model_digest": "f3817196d142eaf72ce79dfebe53dcb20bd21da87ce13e138a8f8e10a866b3a4",
+  "model_size_bytes": 1036046583,
+  "wire_request": {
+    "model": "qwen3.5:0.8b",
+    "prompt": "Calculate 17 multiplied by 23.",
+    "system": "",
+    "stream": true,
+    "options": {
+      "num_predict": 8,
+      "temperature": 0,
+      "num_ctx": 2048
+    },
+    "keep_alive": 0,
+    "think": true
+  },
+  "wall_seconds": 7.031,
+  "resident_models_before": [],
+  "resident_models_after": [],
+  "unload_response": {
+    "model": "qwen3.5:0.8b",
+    "created_at": "2026-09-09T12:02:37.9816991Z",
+    "response": "",
+    "done": true,
+    "done_reason": "unload"
+  },
+  "scope": "Ollama raw stream and backend reader; not full hub/memory or LM Studio",
+  "reader_source_sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+}

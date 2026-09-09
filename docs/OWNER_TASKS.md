@@ -883,16 +883,20 @@ built on your Windows box:
       thinking model actually spends that long on your hardware. While it thinks, a second
       message on the same Telegram session (`/stop` included) gets the busy reply until the turn
       ends; `nerva estop` and the HUD stay live.
-      *(b) The real serving layer.* **This is the one thing that could not be proven anywhere
-      here, and it is a gap in the guard, not in the proof.** llama.cpp's OpenAI server hands
-      Qwen3's thinking back inline as `<think>` in `content`, never as `reasoning_content` — and
-      on that shape the guard does not fire and the user gets the blank bubble it was written to
-      prevent. Every off-box proof of the guard went through a shim that manufactures the field
-      the guard reads, which makes it circular. **One artefact from you closes this for good:**
-      run a thinking model in LM Studio and in Ollama, capture the raw SSE / NDJSON stream to a
-      file (`curl -N` against their `/v1/chat/completions` and `/api/generate` with
-      `"stream": true`), and send me the two files. Replaying them here turns this into a
-      permanent test instead of an assumption.
+      *(b) The real serving layer.* **Ollama proven on the owner's box, 2026-09-09.**
+      The existing `qwen3.5:0.8b` on Ollama 0.33.3 answered a synthetic arithmetic prompt with
+      eight generated tokens: 25 native `thinking` characters, zero `response` characters,
+      `done_reason=length`. The unmodified `OllamaBackend.generate_stream` consumed the real
+      stream, returned the named degraded reply, and emitted zero user-token callbacks.
+      The [raw capture, evidence and offline replay](qa-runs/2026-09-09-p26-ollama-stream/README.md)
+      retain seven NDJSON records without a response shim. Request-only controls set
+      `think=true`, `num_ctx=2048`, and `keep_alive=0`; cleanup confirmed no resident models.
+      **LM Studio remains unproven.** The earlier off-box llama.cpp server put Qwen3's thinking
+      inline as `<think>` in `content`, never as `reasoning_content`; that shape still does not
+      trigger the guard. Its manufactured-field shim proved only the reader. The remaining
+      serving-layer artefact is a raw SSE capture from a thinking model in real LM Studio
+      (`/v1/chat/completions`, `"stream": true`), followed by replay through the reader.
+      This Ollama proof does not close the real-latency, memory-recall, or cloud limbs below.
       *(c) The `⚠️` reply must not come back through memory recall.* Set `llm.max_tokens` to 64,
       ask again, then look for it in a later recall — unproven anywhere, by anyone.
       *(d) The cloud half.* With a Claude or Gemini route and the tool loop on, a question that
