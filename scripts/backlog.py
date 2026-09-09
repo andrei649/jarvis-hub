@@ -239,4 +239,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # The documents are Unicode; redirected Windows streams otherwise use a
+    # legacy code page and can crash on a normal row. The CLI emits UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
     raise SystemExit(main())

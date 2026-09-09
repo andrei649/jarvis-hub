@@ -162,4 +162,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Match the UTF-8 ledger even when Windows redirects output through a
+    # legacy code page. Imported query helpers leave their caller's I/O alone.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
     raise SystemExit(main())
