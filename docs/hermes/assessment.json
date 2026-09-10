@@ -305,7 +305,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
+          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
         },
         {
           "path": "agents/core/commands.py",
@@ -326,7 +326,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
+          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
         },
         {
           "path": "agents/core/commands.py",
@@ -1366,7 +1366,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
+          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1557,7 +1557,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
+          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -2656,6 +2656,27 @@
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
           "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+        }
+      ]
+    },
+    {
+      "id": "H673",
+      "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
+      "status": "partial",
+      "summary": "Presiunea de context nu mai e reestimată din zero la fiecare tură. `UsageAnchor` (în `agents/core/context_compressor.py`) poartă numărul **raportat de provider** pentru ultima cerere din bucla principală — prompt de sistem, scheme de unelte și istoric la un loc, măsurate, nu ghicite — plus câte ture de la începutul transcriptului acoperă acel număr. `compact()` îl primește opțional și calculează `used` prin `_used()`: prefixul ancorat contribuie cifra providerului, iar **doar** ce s-a adăugat de atunci se estimează. Fereastra de eroare scade de la toată conversația la o singură tură și se recalibrează la fiecare răspuns. Ancora acoperă și ce transcriptul nu conține deloc — promptul de sistem și schemele de unelte — de aceea e normal mai mare decât estimarea acelorași ture, și de aceea estimarea singură subevaluează o cerere cu tot ce nu e conversație. Un test arată exact eșecul din rând: zece ture scurte estimează ~1k pe o fereastră de 32k și dau tier `none`, în timp ce cererea reală de 28k trece de pragul dur. Fără ancoră (fiecare backend local, prima tură a oricărei sesiuni) rezultatul e identic cu cel de dinainte, deci estimatorul rămâne alternativa, nu o cale abandonată. Direcția erorii e fixată explicit: rezultatul are podea la estimarea simplă, deci o ancoră poate face compactarea să se întâmple mai devreme sau la fel, niciodată mai târziu — aceeași direcție în care merge deja limita de fereastră. Imaginile scoase din prefixul ancorat se scad din ancoră la costul fix, pentru că providerul n-a spus niciodată cât a costat imaginea în realitate, iar ancora descria prefixul **așa cum a fost trimis**. Pe partea de orchestrator, `_record_context_anchor` reține dimensiunea ultimei cereri prin **înlocuire, nu acumulare** — capcana reală a acestui rând: `_last_reported_usage` însumează pe bună dreptate (aia e nota de plată, un răspuns costă mai multe cereri), dar o buclă de unelte retrimite tot prefixul la fiecare iterație, așa că suma ar raporta de câteva ori contextul care există și ar compacta la nimic o sesiune sănătoasă. `_usage_anchor` alege cea mai mare cerere măsurată când au răspuns mai mulți agenți (sub-ancorarea riscă trunchierea pe care rândul o previne; supra-ancorarea doar compactează puțin mai devreme) și **aruncă** o ancoră devenită stală în loc s-o scaleze, dacă istoricul a fost între timp compactat sub ce acoperea. O sesiune nouă își pierde ancora.",
+      "remaining": "Clampul pe `num_ctx`-ul Ollama — companionul pe care chiar raționamentul rândului îl numește cel mai necesar, fiindcă LM Studio/Ollama e calea fierbinte — NU e livrat: `num_ctx` nu apare nicăieri în cod, Nerva nici nu-l trimite, nici nu-l citește, deci ar cere o sondă nouă (`/api/show`) plus un setting. A-l ghici ar însemna exact greșeala evitată la H364 pe wire-urile neverificate. Fereastra rămâne cea din tabelul `MODEL_WINDOWS` plus `CompactionPolicy.per_model`, deci un server pornit cu un `num_ctx` mai mic decât presupune tabelul rămâne supraestimat. Nelivrate și celelalte două companion-uri din același interval: podeaua pragului de compactare plafonată la 85% din fereastră și rezervarea `maxOutputTokens` implicit la Gemini când `max_tokens` nu e setat. Costul fix pe imagine (`IMAGE_TOKEN_COST`) rămâne euristic peste tot în afara prefixului ancorat — ancora îl înlocuiește doar acolo unde providerul a numărat efectiv. Ancora se aplică pe calea de streaming, singura care raportează usage; celelalte canale nu au ce ancora și păstrează estimarea. Neverificat pe serviciu real: niciun apel către un provider nu a fost făcut — testele fixează aritmetica ancorei și pragul, nu că un provider raportează cifra așteptată.",
+      "evidence": [
+        {
+          "path": "agents/core/context_compressor.py",
+          "sha256": "8d8af031713bef8efb1e4df096c35bd22f80d6946701a7cccde4727a857796c4"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+        },
+        {
+          "path": "tests/test_context_usage_anchor.py",
+          "sha256": "2b9e76d58b6db174b438d4c70fa0b3ff0fcc30ea0c36b442de6d73a6041803aa"
         }
       ]
     },

@@ -1802,6 +1802,14 @@ class Orchestrator:
         # real Gemini context cache. Per turn, like the route/latency maps above.
         self._last_cached_tokens = {}
         self._last_prompt_tokens = {}
+        # H673 — same reason: a turn that reported nothing must not be measured
+        # against the previous turn's request size.
+        self._context_anchor = {}
+        # H673 — {agent_id: (provider-reported input tokens, turns that covered)}.
+        self._context_anchor: dict = {}
+        # How many history turns the last prompt was built from, so the anchor
+        # knows where measurement stops and estimation resumes.
+        self._ctx_turns_at_build = 0
         # H363: what the PROVIDER said each agent's turn cost, summed over the tool
         # loop's several requests. Per turn like the maps above, and cleared for the
         # same reason: an empty map means nobody reported anything and the estimate
@@ -1961,6 +1969,7 @@ class Orchestrator:
                     self._last_reported_usage[_agent_id] = _sum_usage(
                         self._last_reported_usage.get(_agent_id), usage,
                     )
+                    self._record_context_anchor(_agent_id, usage)
 
                 with request_scope:
                     guarded_backend = bind_guardrails(self.security, backend)
@@ -2739,6 +2748,56 @@ class Orchestrator:
             logger.warning("compaction thresholds are unusable; falling back to defaults")
             return CompactionPolicy()
 
+    def _record_context_anchor(self, agent_id: str, usage) -> None:
+        """Remember how big the request that just went out was (H673).
+
+        Deliberately a REPLACEMENT and not an accumulation, which is the one way
+        this is easy to get wrong. `_last_reported_usage` sums, and should: that
+        is the bill, and one answer takes several requests which all cost. This
+        is the opposite question — the size of a single request — and a tool loop
+        resends the whole prefix on every iteration, so a sum would report
+        several times the context that actually exists and compact a healthy
+        session down to nothing.
+
+        A turn that reported no input leaves the previous anchor alone rather
+        than clearing it: the transcript did not shrink because one backend
+        stayed quiet.
+        """
+        if not getattr(usage, "input_tokens", 0):
+            return
+        self._context_anchor[agent_id] = (
+            int(usage.input_tokens), int(self._ctx_turns_at_build),
+        )
+
+    def _usage_anchor(self, turn_count: int):
+        """The provider's own size for the last request, if one reported (H673).
+
+        Returns ``None`` when nothing measured this session's traffic — every
+        local backend, and the first turn of any session — so the estimator stays
+        the fallback rather than becoming a deprecated path.
+
+        The strongest anchor wins when several agents answered: they were each
+        sent their own prompt, and the transcript being measured is shared, so
+        the largest measured request is the one closest to what the next request
+        will carry. Under-anchoring risks the truncation this row exists to
+        prevent; over-anchoring only compacts a little early.
+
+        A stale anchor is dropped rather than scaled: if history has since been
+        compacted or trimmed below what the anchor covered, the count no longer
+        describes any prefix of these turns.
+        """
+        from .context_compressor import UsageAnchor
+
+        best = None
+        for tokens, covers in (getattr(self, "_context_anchor", {}) or {}).values():
+            if int(tokens) <= 0 or int(covers) > int(turn_count):
+                continue
+            if best is None or int(tokens) > best[0]:
+                best = (int(tokens), int(covers))
+        if best is None:
+            return None
+        return UsageAnchor(prompt_tokens=best[0], covers=best[1])
+
     async def _history_for_prompt(self, last_n: int) -> str:
         """Conversation history for a prompt, optionally token-budget compressed.
 
@@ -2760,6 +2819,8 @@ class Orchestrator:
         if not self.get_setting("memory.context_compression", False):
             return await self.memory.get_context(self.session_id, last_n=last_n)
         turns = await self.memory.get_history(self.session_id, last_n)
+        # H673 — where measurement stops and estimation resumes on the next turn.
+        self._ctx_turns_at_build = len(turns)
         if not turns:
             return ""
         from .context_compressor import ContextCompressor
@@ -2787,6 +2848,7 @@ class Orchestrator:
             policy=self._compaction_policy(),
             session_id=str(self.session_id or ""),
             prior=prior,
+            anchor=self._usage_anchor(len(turns)),
         )
         if summarizer is not None and result["compressed"]:
             # Iterative merge state (bounded: one entry per live session key).

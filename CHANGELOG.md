@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Hermes sprint — context pressure measured, not re-estimated (H673)
+
+The compressor decided *when* to compact carefully — soft/hard tiers, images first,
+head and tail protected — and then fed that policy a `chars/4` guess. The guess errs
+across the whole conversation and the error compounds. On a 32k local window a 10%
+error is the difference between compacting a turn too early, losing detail nobody
+needed to lose, and being truncated by the provider — which cuts the **tail**, i.e.
+the turn that is happening right now.
+
+**Added**
+
+- `UsageAnchor` in `agents/core/context_compressor.py` — the provider's own count for
+  the last main-loop request (system prompt, tool schemas and history together) plus
+  how many leading turns it covers. `compact()` takes one and estimates only what has
+  been appended since, so the error window is a single turn and re-anchors on every
+  response.
+- The anchor also covers what the transcript does not contain at all — the system
+  prompt and the tool schemas — which is why it is normally *larger* than an estimate
+  of the same turns, and why the estimate alone under-counts a request by everything
+  that is not conversation.
+- `Orchestrator._record_context_anchor` / `_usage_anchor`. The strongest measured
+  request wins when several agents answered; a stale anchor (covering more turns than
+  remain, after a compaction or trim) is dropped rather than scaled; a new session
+  drops the anchor.
+
+**Unchanged**
+
+- With no anchor — every local backend, and the first turn of any session — the result
+  is what it always was. The estimator stays the fallback, not a deprecated path.
+- The anchored total is floored at the plain estimate, so an anchor can only make
+  compaction happen sooner or at the same point, never later — the same direction the
+  window bound already runs in.
+
+**Note**
+
+- `_last_reported_usage` still sums, and should: that is the bill, and one answer takes
+  several requests which all cost. The anchor is the opposite question — the size of a
+  *single* request — so it is recorded by replacement. A tool loop resends the whole
+  prefix each iteration, and billing that sum as context would report several times the
+  context that exists and compact a healthy session down to nothing.
+
 ### Hermes sprint — a per-model reasoning vocabulary, and one canonical clamp (H679)
 
 Two answers that look alike produce opposite request bodies: "nobody has declared what
