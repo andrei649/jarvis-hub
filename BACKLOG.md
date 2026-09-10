@@ -33,7 +33,8 @@
   owner's status/reset controls over it), then H298 (an oversized tool result spilled to
   disk instead of dropped, with the caps scaled to the model's real context window)
   and the `execute_code` stdout spill it left open (H305/H595, on the K1 path),
-  then native overlay and channel streaming.
+  then H363 (Anthropic prompt caching, and a cost meter that hears the provider
+  instead of guessing), then native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.

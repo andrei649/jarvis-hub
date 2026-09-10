@@ -360,6 +360,19 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   bug:** with `llm.execute_code_sessions` **on**, a cell's stdout is capped inside the
   container, so there is no `stdout_file` on that path — only an honest head+tail with
   a counted notice. The complete spill there needs a chunked worker protocol.
+- [ ] **Anthropic prompt caching and a measured bill (H363)** ❌🔑🤖 — **The only
+  place this is provable.** With a real `ANTHROPIC_API_KEY` and the tool loop on,
+  send two turns in one session with the same agent. Turn 1's response `usage` should
+  show `cache_creation_input_tokens` > 0; turn 2's should show
+  `cache_read_input_tokens` roughly equal to the system prompt plus tool schemas, and
+  a much smaller `input_tokens`. Then check the run ledger's cost rows: `usage_source`
+  must read `provider`, not `estimate`, and `cached_tokens` must be non-zero on turn
+  2. On a local route the same rows must read `usage_source: estimate` — the local
+  backends report nothing, and silence must not be recorded as a measurement. Entries
+  expire in about five minutes, so leave a gap between turns to see the miss too.
+  **Nothing in the repository's tests can show this:** they drive a fake HTTP client
+  and pin the request body and the response parsing, never that the vendor honours
+  the mark.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

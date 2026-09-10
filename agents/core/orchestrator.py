@@ -266,6 +266,47 @@ _active_session: contextvars.ContextVar = contextvars.ContextVar(
 )
 
 
+def _sum_usage(running, incoming):
+    """Add one model turn's reported counts to an agent's running total.
+
+    A tool loop makes several requests for one answer, so what the turn cost is the
+    sum, not the last request. Returns a new value rather than mutating: the caller
+    stores it back into a per-turn map, and a mutable accumulator shared across
+    agents is how one agent ends up billed for another's tokens.
+    """
+    from .llm.tool_protocol import TokenUsage
+
+    if running is None:
+        return incoming
+    return TokenUsage(
+        input_tokens=running.input_tokens + incoming.input_tokens,
+        output_tokens=running.output_tokens + incoming.output_tokens,
+        cache_read=running.cache_read + incoming.cache_read,
+        cache_write=running.cache_write + incoming.cache_write,
+    )
+
+
+def _billable_from_usage(usage) -> tuple[int, int, int] | None:
+    """Turn a provider's counts into the three numbers the cost meter records.
+
+    Anthropic reports `input_tokens` as the portion that was NOT served from cache,
+    with reads and writes counted separately, so the billable input is all three
+    added together. Only the reads are a discount; a cache *write* costs a premium
+    over the plain input rate, so it is counted as input and never as `cached`.
+
+    That premium is currently under-reported, because the price table carries one
+    `cached` rate and no write rate, and inventing a figure the vendor page has not
+    been checked against would be worse than a known, stated under-report. It errs
+    the safe way: the bill reads slightly low, never the saving high.
+
+    ``None`` means nothing was reported and the caller keeps its estimate.
+    """
+    if usage is None or not getattr(usage, "reported", False):
+        return None
+    billable_input = usage.input_tokens + usage.cache_read + usage.cache_write
+    return billable_input, usage.output_tokens, usage.cache_read
+
+
 class Orchestrator:
     # DRA-08: the reply-target resolver is pure and stateless (no per-instance
     # config), so it lives on the class. That also keeps `channel_handler`
@@ -1761,6 +1802,11 @@ class Orchestrator:
         # real Gemini context cache. Per turn, like the route/latency maps above.
         self._last_cached_tokens = {}
         self._last_prompt_tokens = {}
+        # H363: what the PROVIDER said each agent's turn cost, summed over the tool
+        # loop's several requests. Per turn like the maps above, and cleared for the
+        # same reason: an empty map means nobody reported anything and the estimate
+        # stands — never that the turn was free, and never last turn's numbers.
+        self._last_reported_usage = {}
         t_s0 = time.perf_counter()
         for agent_id in target:
             if agent_id in self.agents:
@@ -1904,6 +1950,18 @@ class Orchestrator:
                     return msg
 
                 t_s0 = time.perf_counter()
+
+                def _meter(usage, _agent_id: str = agent_id) -> None:
+                    """Accumulate one model turn's reported counts for this agent.
+
+                    `_agent_id` is bound at definition on purpose: the enclosing loop
+                    rebinds `agent_id` on every iteration, and a callback that read the
+                    loop variable would bill a later agent for this one's tokens.
+                    """
+                    self._last_reported_usage[_agent_id] = _sum_usage(
+                        self._last_reported_usage.get(_agent_id), usage,
+                    )
+
                 with request_scope:
                     guarded_backend = bind_guardrails(self.security, backend)
                     response = await agent.generate_response(
@@ -1915,6 +1973,7 @@ class Orchestrator:
                         temperature=temperature,
                         on_token=on_token,
                         wall_seconds=wall_seconds,
+                        usage_sink=_meter,
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -2873,6 +2932,11 @@ class Orchestrator:
         # turn's cached-token counts and claims reuse that never happened.
         self._last_cached_tokens = {}
         self._last_prompt_tokens = {}
+        # H363: what the PROVIDER said each agent's turn cost, summed over the tool
+        # loop's several requests. Per turn like the maps above, and cleared for the
+        # same reason: an empty map means nobody reported anything and the estimate
+        # stands — never that the turn was free, and never last turn's numbers.
+        self._last_reported_usage = {}
         # Per-agent routes, alongside the per-agent latencies that already live here.
         # Before this, ONE route_name was computed from target_agents[0] and recorded for
         # every agent that answered — so a turn where stark answered locally and athena
@@ -3023,6 +3087,12 @@ class Orchestrator:
                 # from target_agents[0] and is only right for the primary responder.
                 agent_route = getattr(self, "_last_routes", {}).get(agent_id) or route_name
                 cached_prefix = getattr(self, "_last_cached_tokens", {}).get(agent_id, 0)
+                # H363: a provider that told us what the turn cost outranks every
+                # estimate below. Before this the meter had no way to hear it — the
+                # Anthropic client never read `usage` and Gemini's is dropped in
+                # `_extract_text` — so `cached` was a rate no cloud route could earn.
+                reported = _billable_from_usage(
+                    getattr(self, "_last_reported_usage", {}).get(agent_id))
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
@@ -3036,12 +3106,16 @@ class Orchestrator:
                     # construction, which is what stops the estimator inventing a
                     # saving on tokens that were never sent.
                     "input_tokens": (
-                        getattr(self, "_last_prompt_tokens", {}).get(agent_id)
-                        or estimate_tokens(text)
+                        reported[0] if reported else (
+                            getattr(self, "_last_prompt_tokens", {}).get(agent_id)
+                            or estimate_tokens(text)
+                        )
                     ),
-                    "output_tokens": estimate_tokens(resp),
-                    "cached_tokens": cached_prefix,
-                    "cache_hit": cached_prefix > 0,
+                    "output_tokens": reported[1] if reported else estimate_tokens(resp),
+                    "cached_tokens": reported[2] if reported else cached_prefix,
+                    "cache_hit": (reported[2] if reported else cached_prefix) > 0,
+                    # So a reader of the ledger can tell a measurement from a guess.
+                    "usage_source": "provider" if reported else "estimate",
                 }
                 self.learning.record(
                     agent_id=agent_id,

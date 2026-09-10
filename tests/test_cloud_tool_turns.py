@@ -180,8 +180,11 @@ def _openai_choice(content: str = "", tool_calls: Any = None, finish: str = "sto
     return {"choices": [{"message": message, "finish_reason": finish}]}
 
 
-def _claude_reply(*blocks: dict, stop_reason: str = "end_turn") -> dict:
-    return {"content": list(blocks), "stop_reason": stop_reason}
+def _claude_reply(*blocks: dict, stop_reason: str = "end_turn", usage: dict | None = None) -> dict:
+    reply = {"content": list(blocks), "stop_reason": stop_reason}
+    if usage is not None:
+        reply["usage"] = usage
+    return reply
 
 
 def _gemini_reply(*parts: dict, finish: str = "STOP") -> dict:
@@ -540,9 +543,17 @@ async def test_claude_translates_the_loop_into_messages_api_blocks():
     assert request["headers"]["x-api-key"] == "sk-ant-test"
     body = request["json"]
     assert body["model"] == "model-x"
-    assert body["system"] == "You are Nerva."
+    # H363: the two things that do not change between the turns of one session go
+    # out as a marked cacheable prefix. The system prompt has to become a block to
+    # carry the mark at all; the tool array takes one mark on its last entry,
+    # because `cache_control` covers everything before it.
+    assert body["system"] == [
+        {"type": "text", "text": "You are Nerva.",
+         "cache_control": {"type": "ephemeral"}},
+    ]
     assert body["tools"] == [
-        {"name": "echo", "description": "Echo one value.", "input_schema": ECHO.input_schema}
+        {"name": "echo", "description": "Echo one value.", "input_schema": ECHO.input_schema,
+         "cache_control": {"type": "ephemeral"}}
     ]
     assert body["tool_choice"] == {"type": "auto"}
     assert body["messages"] == [
@@ -916,3 +927,154 @@ def test_synthetic_ids_are_recognizable_and_unique():
     assert first.startswith(SYNTHETIC_ID_PREFIX) and is_synthetic_id(first)
     assert not is_synthetic_id("toolu_01")
     assert not is_synthetic_id(SimpleNamespace())
+
+
+# ── what the turn actually cost, from the provider (H363) ────────────────────
+
+@pytest.mark.asyncio
+async def test_the_providers_own_token_counts_come_back_on_the_turn():
+    """The meter estimated because nothing carried the real numbers out.
+
+    An estimate is fine for a budget check and wrong for a bill — and the cost
+    table has always priced a `cached` rate that no Claude route could earn,
+    because no request ever asked for caching and no response was ever read for it.
+    """
+    backend, _client = _claude(_claude_reply(
+        {"type": "text", "text": "done"},
+        usage={"input_tokens": 120, "output_tokens": 40,
+               "cache_read_input_tokens": 9_000, "cache_creation_input_tokens": 300},
+    ))
+
+    turn = await _turn(backend)
+
+    assert turn.usage.reported is True
+    assert turn.usage.as_dict() == {
+        "input_tokens": 120, "output_tokens": 40,
+        "cache_read": 9_000, "cache_write": 300,
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_reply_with_no_usage_reads_as_unreported_not_as_free():
+    """Zero has to mean "the provider said nothing", so a caller can fall back."""
+    backend, _client = _claude(_claude_reply({"type": "text", "text": "done"}))
+
+    turn = await _turn(backend)
+
+    assert turn.usage.reported is False
+    assert turn.usage.as_dict() == {
+        "input_tokens": 0, "output_tokens": 0, "cache_read": 0, "cache_write": 0,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hostile", [
+    {"input_tokens": -5},
+    {"input_tokens": "lots"},
+    {"input_tokens": None},
+    {"cache_read_input_tokens": 1e400},
+    {"input_tokens": {"nested": 1}},
+])
+async def test_a_nonsense_usage_block_cannot_report_a_negative_bill(hostile):
+    """A parsed response body is outside the box; the meter is downstream of it."""
+    backend, _client = _claude(_claude_reply(
+        {"type": "text", "text": "done"}, usage=hostile))
+
+    turn = await _turn(backend)
+
+    assert all(value >= 0 for value in turn.usage.as_dict().values())
+
+
+@pytest.mark.asyncio
+async def test_usage_that_is_not_a_mapping_is_ignored_rather_than_raising():
+    backend, _client = _claude({"content": [{"type": "text", "text": "d"}],
+                                "stop_reason": "end_turn", "usage": "nope"})
+
+    turn = await _turn(backend)
+
+    assert turn.usage.reported is False
+
+
+@pytest.mark.asyncio
+async def test_a_turn_with_no_tools_still_marks_the_system_prompt():
+    """The system prompt is the big stable thing even when nothing is offered."""
+    backend, client = _claude(_claude_reply({"type": "text", "text": "done"}))
+
+    await backend.generate_tool_turn(
+        model="model-x", messages=list(LOOP_MESSAGES), tools=[],
+        max_tokens=64, temperature=0.0,
+    )
+
+    body = client.calls[0]["json"]
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert "tools" not in body
+
+
+# ── the meter finally hears the provider (H363) ──────────────────────────────
+
+def test_a_cache_write_is_billed_as_input_and_never_reported_as_a_saving():
+    """A write costs a premium over plain input. It is not a discount.
+
+    Counting it as `cached` would report a saving on the one thing that costs
+    MORE. The known cost of this choice is stated where it is made: the price
+    table has no write rate, so the write is billed at the plain input rate and
+    the bill reads slightly low — the safe direction.
+    """
+    from agents.core.llm.tool_protocol import TokenUsage
+    from agents.core.orchestrator import _billable_from_usage
+
+    billable, output, cached = _billable_from_usage(
+        TokenUsage(input_tokens=100, output_tokens=20, cache_read=800, cache_write=400))
+
+    assert billable == 1_300, "uncached + read + write is what the request sent"
+    assert output == 20
+    assert cached == 800, "only the read is discounted"
+
+
+def test_nothing_reported_falls_back_rather_than_billing_zero():
+    from agents.core.llm.tool_protocol import TokenUsage
+    from agents.core.orchestrator import _billable_from_usage
+
+    assert _billable_from_usage(None) is None
+    assert _billable_from_usage(TokenUsage()) is None
+
+
+def test_usage_sums_across_the_several_requests_one_answer_takes():
+    """A tool loop is many requests. The turn cost the sum, not the last one."""
+    from agents.core.llm.tool_protocol import TokenUsage
+    from agents.core.orchestrator import _sum_usage
+
+    running = None
+    for _ in range(3):
+        running = _sum_usage(running, TokenUsage(
+            input_tokens=10, output_tokens=4, cache_read=90, cache_write=1))
+
+    assert running.as_dict() == {
+        "input_tokens": 30, "output_tokens": 12, "cache_read": 270, "cache_write": 3,
+    }
+
+
+@pytest.mark.asyncio
+async def test_the_guardrail_wrapper_does_not_drop_the_usage_it_did_not_scan():
+    """`dataclasses.replace` keeps it — but nothing said so until this test.
+
+    The scan rewrites content and tool calls. If it ever rebuilt the turn instead,
+    the meter would silently go back to estimating on every guarded route, which is
+    every cloud route.
+    """
+    from agents.core.security.guardrails import GuardrailsEngine, bind_guardrails
+
+    backend, _client = _claude(_claude_reply(
+        {"type": "text", "text": "done"},
+        usage={"input_tokens": 7, "output_tokens": 2, "cache_read_input_tokens": 70},
+    ))
+    guarded = bind_guardrails(GuardrailsEngine(backend=None), backend)
+
+    turn = await guarded.generate_tool_turn(
+        model="model-x", messages=list(LOOP_MESSAGES), tools=[ECHO],
+        max_tokens=64, temperature=0.0,
+    )
+
+    assert turn.usage.as_dict() == {
+        "input_tokens": 7, "output_tokens": 2, "cache_read": 70, "cache_write": 0,
+    }

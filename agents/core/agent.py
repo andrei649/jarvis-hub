@@ -184,8 +184,15 @@ class Agent:
         temperature,
         on_token=None,
         wall_seconds: float | None = None,
+        usage_sink=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
+
+        ``usage_sink`` reaches only the tool loop, for the same reason ``wall_seconds``
+        does: it is the path that makes several provider requests for one answer, and
+        the only one that can report what each of them cost. The legacy path returns a
+        string from a backend that reports nothing, so the caller keeps its estimate
+        there — silence, not a claim that the turn was free.
 
         ``wall_seconds`` is the turn's per-agent ceiling as the orchestrator chose it
         (the reasoning floor on a thinking route, the flat value otherwise). It reaches
@@ -199,6 +206,8 @@ class Agent:
             # Forwarded only when a ceiling was given, so a caller without one keeps
             # the loop's constructor default and the pre-5c call shape byte-identical.
             budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
+            if usage_sink is not None:
+                budget["usage_sink"] = usage_sink
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,
