@@ -13,7 +13,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ..model_config import DEFAULT_CLAUDE_MODEL
-from ..reasoning_effort import vendor_efforts
+from ..reasoning_effort import (
+    clamp_reasoning_effort,
+    supported_reasoning_efforts,
+    vendor_efforts,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,31 @@ class ProviderProfile:
             raise ValueError("provider profile display_name is required")
         if not self.backend_kind:
             raise ValueError("provider profile backend_kind is required")
+
+    def supported_reasoning_efforts(self, model: str) -> tuple[str, ...] | None:
+        """What *model* accepts under this provider — tri-state (H679).
+
+        ``None`` means undeclared: nobody has told this build what the model
+        takes, so a transport must keep the defaults it already had. ``()`` means
+        declared empty — the model accepts no effort level and the field has to be
+        omitted. A non-empty tuple is a vocabulary to clamp into, weakest first.
+
+        The two ``None``-ish answers are not interchangeable, which is why this
+        cannot be an attribute: ``reasoning_efforts`` below is the vendor-level
+        union for display, and an empty one there says nothing about any model.
+        Answered from cache; a cold catalog reads as undeclared rather than
+        blocking a request to find out.
+        """
+        return supported_reasoning_efforts(self.id, model)
+
+    def clamp_reasoning_effort(self, model: str, level: object) -> tuple[str | None, str]:
+        """``(effort_to_send, reason)`` for *model* — the one canonical clamp.
+
+        Nearest **weaker** supported rung, never an escalation. Providers do not
+        get to hand-roll this: an inverted ladder is silent, and it is wrong in
+        the expensive direction exactly when the owner asked for the cheap one.
+        """
+        return clamp_reasoning_effort(self.id, model, level)
 
     def status(self, environ: Mapping[str, str] | None = None) -> dict:
         """Return public configuration status without exposing secret values."""

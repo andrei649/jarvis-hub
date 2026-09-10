@@ -36,7 +36,10 @@
   then H363 (Anthropic prompt caching, and a cost meter that hears the provider
   instead of guessing), then H364 (one reasoning-effort ladder, clamped to the nearest
   weaker level each wire accepts — and the sampling parameter the current Anthropic
-  models reject taken back off), then native overlay and channel streaming.
+  models reject taken back off), then H679 (that ladder given a per-model tri-state
+  vocabulary — undeclared, declared-empty and a vocabulary to clamp into are three
+  different request bodies, and collapsing the first two is the 400), then native
+  overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.

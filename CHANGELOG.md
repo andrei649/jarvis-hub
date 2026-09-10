@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Hermes sprint — a per-model reasoning vocabulary, and one canonical clamp (H679)
+
+Two answers that look alike produce opposite request bodies: "nobody has declared what
+this model takes" (leave the transport's defaults alone) and "this model rejects every
+effort level" (omit the field). Nerva shipped the collapse — every non-Anthropic
+profile carried an empty tuple, which read as *rejects* when the truth was *undeclared*.
+
+**Added**
+
+- `ProviderProfile.supported_reasoning_efforts(model)` — a **tri-state** hook. `None`
+  is undeclared, `()` is declared-empty (omit the effort field), and a non-empty tuple
+  is a vocabulary to clamp into, weakest first. It cannot be an attribute, because the
+  vendor-level `reasoning_efforts` union says nothing about any individual model.
+- A declaration registry in `agents/core/llm/reasoning_effort.py` —
+  `declare_reasoning_efforts` / `forget_reasoning_efforts` are the write half, meant to
+  be called off the request path by a catalog probe or an operator correction. The read
+  half answers from cache and never blocks: a model nobody has declared answers `None`
+  immediately rather than waiting for a catalog to warm.
+- `ProviderProfile.clamp_reasoning_effort(model, level)` and the module-level
+  `clamp_reasoning_effort` — the single canonical clamp. Nearest **weaker** rung, never
+  an escalation, monotonic across the whole ladder, with a test that walks every rung.
+  A hand-rolled map is what inverts (`ultra` falling through to `medium` while `xhigh`
+  maps to `high`), and an inverted ladder is silent and wrong in the expensive
+  direction exactly when the cheap one was asked for.
+
+**Changed**
+
+- `apply_anthropic` now asks the registry for the vocabulary instead of reading the
+  family table directly, so the hook is load-bearing rather than an unconnected
+  interface: a declaration recorded off the hot path changes the request that goes out,
+  with no release. With nothing declared the answer is identical to before.
+- An `EffortPlan` that carries a thinking block but no effort field reported
+  `reason="budget"` even on the adaptive families, which never build a token budget.
+  It now reads `thinking-only`. Diagnostic only; no request body changed.
+
+**Unchanged**
+
+- The registry governs the effort vocabulary only. Whether a model takes a thinking
+  block, and in which shape, stays with `WireCapability`: `claude-sonnet-4-5` rejects
+  every effort level and still accepts a manual budget, and treating those as one
+  "accepts reasoning" flag is the error this row exists to prevent.
+
 ### Hermes sprint — ask for more or less thinking, and never 400 on the wire (H364)
 
 Nerva's only "think harder" lever was swapping to a different *local* model. Nothing
