@@ -125,21 +125,39 @@ class CommandRegistry:
         name, args = parsed
         command = self.get(name)
         if command is None:
+            # Deliberately NOT observed. `name` here is whatever the sender typed, so
+            # emitting it would push arbitrary message text through a field that
+            # promises to carry command names — a body leak wearing a safe label.
             return CommandOutcome(name, "unknown", f"Unknown command /{name}. Try /help.")
         if command.tier == ADMIN and not principal.admin:
-            return CommandOutcome(
+            # Observed: this name came from the registry, not from the sender.
+            return self._observed(CommandOutcome(
                 name,
                 "refused",
                 f"/{name} is an owner command — send it from the owner's channel or with an admin token.",
-            )
+            ))
         try:
             result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
             if inspect.isawaitable(result):
                 result = await result
-            return CommandOutcome(name, "answered", str(result))
+            return self._observed(CommandOutcome(name, "answered", str(result)))
         except Exception:
             logger.warning("slash command /%s failed", name, exc_info=True)
-            return CommandOutcome(name, "failed", f"/{name} failed — check the hub log.")
+            return self._observed(CommandOutcome(name, "failed", f"/{name} failed — check the hub log."))
+
+    @staticmethod
+    def _observed(outcome: CommandOutcome) -> CommandOutcome:
+        """Tell watching extensions a command finished, and hand back the same outcome.
+
+        The name and the status go out; the command's *reply* never does. An
+        extension learns that `/status` ran, not what the hub said back — the reply
+        can contain anything the handler chose to say, and this surface promises it
+        carries no message bodies.
+        """
+        from .extensions.events import EXTENSION_EVENTS
+
+        EXTENSION_EVENTS.emit("command.completed", command=outcome.name, status=outcome.status)
+        return outcome
 
 
 # ── the built-in commands ────────────────────────────────────────────────────

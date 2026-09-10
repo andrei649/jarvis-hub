@@ -477,3 +477,113 @@ def test_capacity_is_bounded(rig):
     rig.runtime._active = {f"ext{index}": object() for index in range(MAX_EXTENSIONS)}
     with pytest.raises(ExtensionRuntimeError, match="extension_capacity"):
         asyncio.run(rig.runtime.activate(descriptor()))
+
+
+# ── S3: observation, and the gates it does not get to skip ───────────────────
+
+OBSERVING = '''
+def register():
+    return {"tools": ["boats.summarize"], "commands": [], "events": ["tool.completed"]}
+
+
+def call(tool, payload):
+    return {"tool": tool, "seen": payload}
+
+
+def on_event(event, payload):
+    open(MARKER, "a", encoding="utf-8").write(event + "\\n")
+'''
+
+
+def observing(rig, marker):
+    return rig.packages.write(OBSERVING.replace("MARKER", repr(str(marker))))
+
+
+def watching_descriptor():
+    return descriptor(events=["tool.completed"])
+
+
+@pytest.mark.asyncio
+async def test_an_activated_extension_observes_the_events_it_declared(consented, tmp_path):
+    marker = tmp_path / "seen.txt"
+    observing(consented, marker)
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+    assert consented.runtime.observers("tool.completed") == ("boats",)
+    assert consented.runtime.observers("session.started") == ()
+
+    assert await consented.runtime.observe("boats", "tool.completed", {"tool": "file_read"}) is None
+    assert marker.read_text(encoding="utf-8").split() == ["tool.completed"]
+
+
+@pytest.mark.asyncio
+async def test_an_undeclared_event_is_never_delivered(consented, tmp_path):
+    observing(consented, tmp_path / "seen.txt")
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+    with pytest.raises(ExtensionRuntimeError, match="event_not_observed"):
+        await consented.runtime.observe("boats", "session.started", {})
+    with pytest.raises(ExtensionRuntimeError, match="event_not_observed"):
+        await consented.runtime.observe("ships", "tool.completed", {})
+
+
+@pytest.mark.asyncio
+async def test_observation_crosses_the_same_gates_as_dispatch(consented, tmp_path):
+    """An observer is third-party code on the owner's box for the same reasons a
+    tool is, so consent, the signature and the pinned package hash all apply."""
+    observing(consented, tmp_path / "seen.txt")
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+
+    consented.consent.revoke("boats")
+    with pytest.raises(ExtensionRuntimeError, match="consent_required"):
+        await consented.runtime.observe("boats", "tool.completed", {})
+    consented.consent.grant(watching_descriptor())
+
+    consented.packages.record.package_hash = "f" * 64
+    with pytest.raises(ExtensionRuntimeError, match="package_changed"):
+        await consented.runtime.observe("boats", "tool.completed", {})
+    consented.packages.record.package_hash = "c" * 64
+
+    consented.runtime.enabled = lambda: False
+    with pytest.raises(ExtensionRuntimeError, match="extensions_disabled"):
+        await consented.runtime.observe("boats", "tool.completed", {})
+
+
+@pytest.mark.asyncio
+async def test_an_extension_declaring_an_event_it_cannot_observe_says_so(consented, tmp_path):
+    consented.packages.write(
+        'def register():\n'
+        '    return {"tools": ["boats.summarize"], "commands": [], "events": ["tool.completed"]}\n'
+        'def call(tool, payload):\n    return {}\n'
+    )
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+    with pytest.raises(ExtensionRuntimeError, match="observer_missing"):
+        await consented.runtime.observe("boats", "tool.completed", {})
+
+
+@pytest.mark.asyncio
+async def test_an_oversized_or_unserializable_event_never_reaches_the_sandbox(consented, tmp_path):
+    observing(consented, tmp_path / "seen.txt")
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+    before = len(consented.runner.calls)
+    with pytest.raises(ExtensionRuntimeError, match="input_too_large"):
+        await consented.runtime.observe("boats", "tool.completed", {"blob": "x" * 200_000})
+    with pytest.raises(ExtensionRuntimeError, match="invalid_event"):
+        await consented.runtime.observe("boats", "tool.completed", {"when": object()})
+    with pytest.raises(ExtensionRuntimeError, match="invalid_event"):
+        await consented.runtime.observe("boats", "tool.completed", ["not", "an", "object"])
+    assert len(consented.runner.calls) == before
+
+
+@pytest.mark.asyncio
+async def test_deactivation_stops_observation_too(consented, tmp_path):
+    observing(consented, tmp_path / "seen.txt")
+    consented.consent.grant(watching_descriptor())
+    await consented.runtime.activate(watching_descriptor())
+    await consented.runtime.deactivate("boats")
+    assert consented.runtime.observers("tool.completed") == ()
+    with pytest.raises(ExtensionRuntimeError, match="event_not_observed"):
+        await consented.runtime.observe("boats", "tool.completed", {})

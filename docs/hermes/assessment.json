@@ -22,7 +22,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -246,7 +246,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -271,7 +271,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -305,11 +305,11 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -326,11 +326,11 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -355,7 +355,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -413,7 +413,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -1322,7 +1322,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a300271e0d70ff49a2bac3fa187b9a20bb732ef59d898ea163522bce5e9d791"
+          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -1859,7 +1859,7 @@
       "row_sha256": "b6972f5f0508020fafb457913bab19e4ddb3d4af0f65c5ae7c3f4a35e1c14309",
       "status": "partial",
       "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
-      "remaining": "Lipseste calea de distributie/instalare pentru un autor tert (extensia trebuie sa soseasca prin pipeline-ul de achizitie semnat), nu exista ctx, comenzile declarate nu sunt legate de registrul de chat si evenimentele S3 lipsesc. Nedovedit pe un Docker real.",
+      "remaining": "Lipseste calea de distributie/instalare pentru un autor tert (extensia trebuie sa soseasca prin pipeline-ul de achizitie semnat), nu exista ctx, iar comenzile declarate nu sunt legate de registrul de chat. Evenimentele S3 exista, dar numai ca observare. Nedovedit pe un Docker real.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -1871,7 +1871,7 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
         },
         {
           "path": "agents/core/extensions/consent.py",
@@ -1879,7 +1879,7 @@
         },
         {
           "path": "agents/core/extensions/runtime.py",
-          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+          "sha256": "e86bd18f63b68f665452b1e7ce79848a08cde4d66ec5e35ecf2aa70704ad7020"
         },
         {
           "path": "tests/test_extension_consent.py",
@@ -1887,16 +1887,28 @@
         },
         {
           "path": "tests/test_extension_runtime.py",
-          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
+          "sha256": "62320e454182ef95e171479dd6f203b3690b26951f00c2d4668f9393fb03be8b"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
     {
       "id": "H567",
       "row_sha256": "17015511b5fa0147b4caac8b8a0a6b3ede2ffc635963b8f9bb64192ee1bb2de4",
-      "status": "missing",
-      "summary": "Manifestul poate declara evenimente, dar nu există livrare SDK a evenimentelor.",
-      "remaining": "Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă.",
+      "status": "partial",
+      "summary": "O extensie activata poate OBSERVA patru evenimente de ciclu de viata in sandbox; nimic nu se intoarce de la observator.",
+      "remaining": "Lipsesc celelalte 33 de puncte de hook, orice hook care poate bloca sau injecta, si rularea in alt limbaj decat pachetul semnat. Jumatatea blocanta ramane inchisa prin decizie: H021, H163 si H514 exclud explicit hook-urile shell scrise de owner, iar calea lor de redeschidere cere un kernel kind `hook.exec` cu token de capabilitate si script fixat prin hash - adica agents/core/kernel/**, cale protejata. Este o decizie a owner-ului, nu una de luat scriind cod.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -1908,7 +1920,19 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
@@ -1917,7 +1941,7 @@
       "row_sha256": "0925a7a683605d100096d89823e8d52fa47f1555b18755a8d65314ac86414322",
       "status": "partial",
       "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
-      "remaining": "Consimtamantul pe hash exista si re-intreaba cu diff la o suprafata schimbata; lipsesc registrul canonic de capabilitati cu fraze de risc, ecranul de consimtamant si declararea prin entry-point-uri pip.",
+      "remaining": "Consimtamantul pe hash acopera si evenimentele declarate; lipsesc registrul canonic de capabilitati cu fraze de risc, ecranul de consimtamant si declararea prin entry-point-uri pip.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -1929,7 +1953,7 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
         },
         {
           "path": "agents/core/extensions/consent.py",
@@ -1937,7 +1961,7 @@
         },
         {
           "path": "agents/core/extensions/runtime.py",
-          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+          "sha256": "e86bd18f63b68f665452b1e7ce79848a08cde4d66ec5e35ecf2aa70704ad7020"
         },
         {
           "path": "tests/test_extension_consent.py",
@@ -1945,7 +1969,19 @@
         },
         {
           "path": "tests/test_extension_runtime.py",
-          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
+          "sha256": "62320e454182ef95e171479dd6f203b3690b26951f00c2d4668f9393fb03be8b"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
@@ -1966,7 +2002,7 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
         }
       ]
     },
@@ -2108,7 +2144,7 @@
       "row_sha256": "92628630fd7071778aa25bec97e020e51e30dd3eb698b694a49ebf8626565c1a",
       "status": "partial",
       "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
-      "remaining": "Jumatatea de hook-uri ramane deschisa: evenimentele pot fi declarate, dar nu sunt livrate (S3). Lipsesc si legarea comenzilor declarate si middleware-ul.",
+      "remaining": "Jumatatea de hook-uri este acum livrata doar ca observare: patru evenimente ajung la o extensie izolata, dar niciun hook nu poate bloca sau transforma. Jumatatea blocanta ramane inchisa prin decizie: H021, H163 si H514 exclud explicit hook-urile shell scrise de owner, iar calea lor de redeschidere cere un kernel kind `hook.exec` cu token de capabilitate si script fixat prin hash - adica agents/core/kernel/**, cale protejata. Este o decizie a owner-ului, nu una de luat scriind cod.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -2120,7 +2156,7 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
         },
         {
           "path": "agents/core/extensions/consent.py",
@@ -2128,7 +2164,7 @@
         },
         {
           "path": "agents/core/extensions/runtime.py",
-          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+          "sha256": "e86bd18f63b68f665452b1e7ce79848a08cde4d66ec5e35ecf2aa70704ad7020"
         },
         {
           "path": "tests/test_extension_consent.py",
@@ -2136,7 +2172,19 @@
         },
         {
           "path": "tests/test_extension_runtime.py",
-          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
+          "sha256": "62320e454182ef95e171479dd6f203b3690b26951f00c2d4668f9393fb03be8b"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
@@ -2176,9 +2224,9 @@
     {
       "id": "H622",
       "row_sha256": "4fa3da69b81711aa0dbb733374021baf2a332f2faaef2a45622eac05181df371",
-      "status": "missing",
-      "summary": "Manifestul poate declara evenimente, dar nu există livrare SDK a evenimentelor.",
-      "remaining": "Implementare S3 după S2; contradicția din inventar despre raw-shell hooks trebuie rezolvată explicit, păstrând excluderea existentă.",
+      "status": "partial",
+      "summary": "Din cele patru sisteme de hook-uri exista doar observarea: patru evenimente livrate unei extensii semnate, consimtite si izolate.",
+      "remaining": "Lipsesc gateway event hooks, ctx.register_hook cu catalogul de 37 de evenimente, hook-urile shell si webhook-urile semnate pe evenimente de ciclu de viata. Jumatatea blocanta ramane inchisa prin decizie: H021, H163 si H514 exclud explicit hook-urile shell scrise de owner, iar calea lor de redeschidere cere un kernel kind `hook.exec` cu token de capabilitate si script fixat prin hash - adica agents/core/kernel/**, cale protejata. Este o decizie a owner-ului, nu una de luat scriind cod.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -2190,7 +2238,19 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
@@ -2199,7 +2259,7 @@
       "row_sha256": "2e138fd2fd024e831f216be7a75bf256796be771c63e8ec5afb144dbe0acc8ed",
       "status": "partial",
       "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
-      "remaining": "Din triada manifest+lifecycle+doctor, dispatch-ul exista acum; lipsesc cele 16 hook-uri, middleware-ul, suprafetele de storage, ctx.llm, comenzile CLI/slash aduse de extensie, distributia prin pip si link-urile de instalare. Nedovedit pe un Docker real.",
+      "remaining": "Din triada manifest+lifecycle+doctor exista dispatch-ul si observarea a patru evenimente; lipsesc restul hook-urilor, middleware-ul, suprafetele de storage, ctx.llm, comenzile CLI/slash aduse de extensie, distributia prin pip si link-urile de instalare. Nedovedit pe un Docker real.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -2211,7 +2271,7 @@
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+          "sha256": "2b6e0ae7ccfccdd2357dcb3e93f97db088505a7a101ef28185ee9b8ce2a29769"
         },
         {
           "path": "agents/core/extensions/consent.py",
@@ -2219,7 +2279,7 @@
         },
         {
           "path": "agents/core/extensions/runtime.py",
-          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+          "sha256": "e86bd18f63b68f665452b1e7ce79848a08cde4d66ec5e35ecf2aa70704ad7020"
         },
         {
           "path": "tests/test_extension_consent.py",
@@ -2227,7 +2287,19 @@
         },
         {
           "path": "tests/test_extension_runtime.py",
-          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
+          "sha256": "62320e454182ef95e171479dd6f203b3690b26951f00c2d4668f9393fb03be8b"
+        },
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "12d2860e26d36caba4574d451047f070e19c6091badc79211f5172d99a446940"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "tests/test_extension_event_emission.py",
+          "sha256": "226e51b30f550d1dd61ba98b3c4789f9dab029dce8cb4c3fbb47d98faee9553a"
         }
       ]
     },
@@ -2331,7 +2403,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
+          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
         },
         {
           "path": "tests/test_slash_commands.py",
