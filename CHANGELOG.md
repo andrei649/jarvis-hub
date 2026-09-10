@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### Hermes sprint — an `execute_code` run's stdout is kept, not cut (H305/H595)
+
+H298 spilled oversized tool *results*. It did not close the clause these two rows
+carry, and the PR said so: a run's stdout was capped in `code_tools._cap` before the
+result was built, so a spilled copy of an `execute_code` result already had the
+truncated text in it. That is the same loss with a file path attached.
+
+The fix had to go where the bytes still exist. `Sandbox._read_output_capped` drops
+the middle of a long stream *as it drains it* — deliberately, because agent-written
+code decides how much it prints and buffering it is the hazard the reader exists to
+avoid. So the stream is now spooled on the way past instead of copied afterwards.
+
+**Added**
+
+- `ToolResultStore.open_stream()` → a `StreamSpill`: writes and hashes as the chunks
+  arrive, lands content-addressed like any other spill, and `discard()`s cleanly for
+  a run whose output fitted. Nothing ever holds the whole stream — including at
+  naming time, which is why the digest is accumulated rather than read back.
+- `read_capped_stream(sink=…)` and `output_limits.StreamSinks`, threaded through
+  `Sandbox.execute_python` and `ToolRPCSandboxRuntime.run_python` as one optional
+  value. What the reader *retains* is unchanged; the sink is the separate, complete
+  copy. Every sandbox fallback re-routes at spawn time, before a byte is read, so a
+  sink can never receive two runs' output.
+- `execute_code` results gained `stdout_file` / `stdout_reference` / `stdout_bytes` /
+  `stdout_sha256` / `stdout_notice`, and the same for stderr, when the child produced
+  more than the model is being shown.
+- `tests/test_code_tools.py`, `tests/test_tool_result_store.py`,
+  `tests/test_environment_output_limits.py` and `tests/test_session_kernels.py` gained
+  the cases; four deliberate breakages each fail a named test.
+
+**Kept by bytes, not by a flag**
+
+The spill is kept when the child produced more than the model gets — compared in
+bytes, not against `truncated`. A hundred and fifty lines of fifteen hundred
+characters is over the sandbox's byte cap but under both line limits, so this layer
+cuts nothing and reports `truncated: false` while the bytes are already gone.
+Gating on the flag would drop the stream in exactly the case the row is about.
+
+**Fixed**
+
+- A session kernel's cell output was truncated to `text[-CAP:]` — the tail alone,
+  with no marker. A cell that printed a lot came back looking like a cell that
+  printed a little, its head gone and nothing saying so. It is now head+tail with a
+  counted notice, worded like the host's so the host's line cap recognises it as an
+  earlier layer's record and never elides it in turn.
+- `StreamSpill` catches `ValueError` alongside `OSError`: a file object closed under
+  it raises the former, and "the handle went away" is the same situation as "the
+  write failed" from a reader draining a live child.
+
+**Still open on the session path**
+
+With `llm.execute_code_sessions` on, the worker truncates *inside* the container, so
+the host never sees the whole stream and there is nothing to spool. A complete spill
+there needs a chunked worker protocol. H305, H595 and H660 stay `partial` and say
+exactly this; the remote kernel and the proof on a real Docker daemon are unchanged.
+
+
 ### Hermes sprint — an oversized tool result is spilled, not thrown away (H298)
 
 The loop already refused to let a giant result flood the turn: it truncated to a

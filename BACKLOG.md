@@ -31,7 +31,8 @@
   and K1 (`execute_code` on the tool surface, default off), then K2 (a resident
   interpreter per authorized session, state persisting and permission not) and K3 (the
   owner's status/reset controls over it), then H298 (an oversized tool result spilled to
-  disk instead of dropped, with the caps scaled to the model's real context window),
+  disk instead of dropped, with the caps scaled to the model's real context window)
+  and the `execute_code` stdout spill it left open (H305/H595, on the K1 path),
   then native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked

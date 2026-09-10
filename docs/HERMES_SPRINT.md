@@ -62,9 +62,10 @@ Punctul de plecare este `efc87a20634d33f2d7950b762d90854812c0a841`.
 | K2 — interpreter rezident pe sesiune (H660/H305/H595/H287) | [#1077](https://github.com/andrei649/jarvis-hub/pull/1077) | Starea persistă între celule, permisiunea nu: fiecare celulă releagă autoritatea K0, trece prin Action Kernel, primește propria cutie poștală și recitește ESTOP. Kernelul remote și K3 rămân; containerul nu e probat aici. |
 | K3 — fereastra owner-ului peste propriul kernel (H660) | [#1078](https://github.com/andrei649/jarvis-hub/pull/1078) | Niciuna dintre cele două rute nu acceptă id de sesiune, principal sau token: cheia vine din autoritatea K0 a cererii, deci „altă sesiune nu poate inspecta sau reseta pe asta” e o proprietate a formei, nu o verificare care se poate uita. H660 rămâne parțial — varianta remote și proba pe un daemon Docker real. |
 | H298 — un rezultat prea mare e scris pe disc, nu aruncat | [#1079](https://github.com/andrei649/jarvis-hub/pull/1079) | Cele cinci trepte ale pragului, preview mărginit cu calea fișierului în subsol, bugete scalate la fereastra reală a modelului (15 % / 30 %, praguri 8 KB / 16 KB) și retenție la fiecare scriere. Cele trei limite de output stau acum într-un singur modul și cele două limite de formă chiar se aplică. **H298 devine `equivalent`.** Spill-ul stdout-ului din `execute_code` (clauza H305/H595) NU e închis: stdout-ul e tăiat înainte de construirea rezultatului. |
+| H305/H595 — stdout-ul unei rulări `execute_code` e păstrat, nu tăiat | [#1080](https://github.com/andrei649/jarvis-hub/pull/1080) | Fluxul e scurs pe disc pe drum (`ToolResultStore.open_stream` + `read_capped_stream(sink=…)`), nu copiat după ce cititorul mărginit i-a aruncat mijlocul; memoria gazdei rămâne mărginită. Închis pe calea K1 (implicită); pe calea K2 worker-ul taie în container, deci rămâne deschis și cere un protocol pe cadre. Tăierea celulei K2 nu mai e tăcută: cap+coadă cu notiță numărată în loc de doar coadă. **H305/H595/H660 rămân `partial`.** |
 
 Cele opt PR-uri #1061–#1068 raportate la încheierea lucrului sunt toate integrate, la
-fel și livrările #1070–#1078 din sprintul curent; #1079 este în lucru.
+fel și livrările #1070–#1079 din sprintul curent; #1080 este în lucru.
 Intrările anterioare arată dependențele și livrările conexe deja existente; numărul
 lor nu este folosit în calculul progresului. SHA-urile, rezultatele verificărilor
 și detaliile de implementare se găsesc în fiecare PR.
@@ -93,11 +94,9 @@ contractul K0 sunt implementate și nu autorizează modificări printr-un snapsh
 4. **Execuție de cod:** K0–K3 sunt livrate — autoritatea rulării, `execute_code` pe
    suprafața de unelte, interpretorul rezident pe sesiune și controalele de operator
    peste el (toate implicit oprite). Rămân kernelul remote și proba pe un daemon Docker
-   real. Scurgerea stdout-ului într-un fișier rămâne deschisă și acum e descrisă exact:
-   H298 a livrat mecanismul de spill la nivel de rezultat de unealtă, dar stdout-ul unei
-   rulări `execute_code` e tăiat în `code_tools._cap` înainte ca rezultatul să fie
-   construit, deci copia de pe disc conține deja textul trunchiat. H305/H595/H660 rămân
-   parțiale.
+   real. Scurgerea stdout-ului într-un fișier e livrată pe calea implicită (K1) și
+   rămâne deschisă pe calea cu kernel de sesiune (K2), unde worker-ul taie în container
+   și gazda nu vede niciodată fluxul întreg. H305/H595/H660 rămân parțiale.
 5. **Desktop și canale:** overlay nativ H178 și streaming Slack/Discord H104/H683,
    cu autoritate și cicluri de viață explicite.
 

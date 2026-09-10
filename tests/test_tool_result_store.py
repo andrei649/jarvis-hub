@@ -19,8 +19,10 @@ directory growing on a box nobody is watching.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -140,7 +142,7 @@ def test_the_same_bytes_reuse_one_file_rather_than_multiplying(tmp_path):
 # ── reading one back, and refusing anything that is not one ──────────────────
 
 @pytest.mark.parametrize("reference", [
-    "../../etc/passwd", "/etc/passwd", "..%2Fx.json", "", "x.txt",
+    "../../etc/passwd", "/etc/passwd", "..%2Fx.json", "", "x.md", "x",
     "a" * 200 + ".json", "sub/dir.json",
 ])
 def test_read_refuses_anything_that_is_not_a_reference_in_the_spill_directory(
@@ -174,7 +176,10 @@ def test_only_the_name_pattern_stands_between_a_normalising_path_and_a_read(tmp_
     # Contained because it genuinely lives there — and still not a reference: the
     # spill root sits under the workspace the file tools write to, so "a file in
     # this directory" is not the same claim as "a result this store wrote".
-    for name in ("notes.txt", "UPPER.JSON", "has space.json", "x" * 130 + ".json"):
+    # `.json` and `.txt` are both real spill shapes (a result and a stream), so the
+    # names that prove the pattern are the ones outside that vocabulary.
+    for name in ("notes.md", "UPPER.JSON", "has space.json", "readme",
+                 "x" * 130 + ".txt"):
         (root / name).write_text("not a spill", encoding="utf-8")
         assert store.read(name) is None, name
 
@@ -261,3 +266,103 @@ def test_the_default_spill_root_is_inside_the_file_tools_default_scope(monkeypat
     root = ToolResultStore().root.resolve()
 
     assert scope.root_for(root) is not None, f"{root} is outside {scope.roots}"
+
+
+# ── a stream nobody may hold whole (H305/H595) ───────────────────────────────
+
+def test_a_streamed_spill_lands_content_addressed_and_complete(tmp_path):
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="execute-code-stdout")
+    body = b"".join(b"line-%d\n" % i for i in range(50_000))
+    for start in range(0, len(body), 4_096):
+        spill.write(body[start:start + 4_096])
+
+    assert spill.written_bytes == len(body)
+    landed = spill.close()
+
+    assert landed.original_bytes == len(body)
+    assert landed.sha256 == hashlib.sha256(body).hexdigest()
+    assert landed.reference.startswith("execute-code-stdout-")
+    assert landed.reference.endswith(".txt")
+    assert Path(landed.path).read_bytes() == body
+
+
+def test_the_digest_is_computed_as_the_bytes_go_past(tmp_path):
+    """Not by re-reading the finished file — the whole point is never holding it.
+
+    Re-reading would work and would be simpler, which is exactly why this is
+    pinned: it would also reintroduce, at naming time, the memory cost the
+    streaming write exists to avoid.
+    """
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="echo")
+    spill.write(b"abc")
+    spill.write(b"def")
+    landed = spill.close()
+
+    assert landed.sha256 == hashlib.sha256(b"abcdef").hexdigest()
+    assert landed.reference == f"echo-{landed.sha256[:16]}.txt"
+
+
+def test_a_streamed_spill_is_readable_through_the_same_door(tmp_path):
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="echo")
+    spill.write(b"hello stream")
+    landed = spill.close()
+
+    assert store.read(landed.reference) == "hello stream"
+
+
+def test_discard_leaves_nothing_behind(tmp_path):
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="echo")
+    spill.write(b"output the model already has in full")
+    spill.discard()
+
+    assert list((tmp_path / "spills").iterdir()) == []
+    assert spill.close() is None, "a discarded spill cannot then be landed"
+
+
+def test_an_empty_stream_lands_nothing(tmp_path):
+    """A run that printed nothing must not leave a file to age out of the budget."""
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="echo")
+
+    assert spill.close() is None
+    assert list((tmp_path / "spills").iterdir()) == []
+
+
+def test_a_write_that_fails_is_reported_rather_than_half_landed(tmp_path):
+    store = _store(tmp_path)
+    spill = store.open_stream(tool="echo")
+    spill.write(b"the first half")
+    spill._handle.close()          # the disk goes away mid-run
+    spill.write(b"the second half")
+
+    assert spill.close() is None, "half a stream must never be offered as the whole"
+    assert not list((tmp_path / "spills").glob("*.txt"))
+
+
+def test_an_unopenable_store_returns_no_writer_rather_than_raising(tmp_path):
+    blocker = tmp_path / "spills"
+    blocker.write_text("not a directory", encoding="utf-8")
+
+    assert ToolResultStore(blocker).open_stream(tool="echo") is None
+
+
+def test_retention_sweeps_streamed_spills_too(tmp_path):
+    """Both shapes share one directory, so they have to share one budget."""
+    now = {"t": 10_000.0}
+    store = _store(tmp_path, retention_seconds=100, clock=lambda: now["t"])
+    old = store.open_stream(tool="echo")
+    old.write(b"x" * 1_000)
+    stale = old.close()
+
+    now["t"] += 1_000
+    fresh = store.open_stream(tool="echo")
+    fresh.write(b"y" * 1_000)
+    kept = fresh.close()
+
+    assert store.read(kept.reference) is not None
+    assert store.read(stale.reference) is None
+    assert not (tmp_path / "spills" / stale.reference).exists()

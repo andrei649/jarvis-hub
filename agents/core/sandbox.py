@@ -136,7 +136,7 @@ class Sandbox:
         """True only if the active backend isolates code from the host."""
         return self.active_backend() in ("docker", "wasm")
 
-    async def _read_output_capped(self, proc) -> tuple[str, str]:
+    async def _read_output_capped(self, proc, sinks=None) -> tuple[str, str]:
         """Drain a child's stdout/stderr with bounded peak host memory.
 
         Replaces ``proc.communicate()``, which reads the child to EOF into host
@@ -152,6 +152,12 @@ class Sandbox:
             truncate_text,
         )
 
+        # H305/H595: when the caller wants the complete stream kept, every chunk goes
+        # to its sink on the way past. What this function *returns* is capped exactly
+        # as before; the sink is the separate, lossless copy.
+        out_sink = getattr(sinks, "stdout", None)
+        err_sink = getattr(sinks, "stderr", None)
+
         out_stream = getattr(proc, "stdout", None)
         err_stream = getattr(proc, "stderr", None)
         if out_stream is None and err_stream is None:
@@ -160,6 +166,12 @@ class Sandbox:
             # sandbox always spawns with stdout/stderr=PIPE, so real children
             # take the memory-bounded streaming path below.
             stdout_b, stderr_b = await proc.communicate()
+            # This branch buffers, so spooling saves nothing on memory here — but the
+            # caller asked for the complete stream and this is where it exists.
+            if out_sink is not None and stdout_b:
+                out_sink(stdout_b)
+            if err_sink is not None and stderr_b:
+                err_sink(stderr_b)
             return (
                 truncate_text(stdout_b.decode("utf-8", errors="replace"),
                               max_content_bytes=self.max_output_bytes, label="OUTPUT").text,
@@ -167,15 +179,15 @@ class Sandbox:
                               max_content_bytes=self.max_output_bytes, label="ERROR").text,
             )
 
-        async def _drain(stream) -> tuple[bytes, bytes, int]:
+        async def _drain(stream, sink) -> tuple[bytes, bytes, int]:
             if stream is None:
                 return b"", b"", 0
             return await read_capped_stream(
-                stream, max_content_bytes=self.max_output_bytes
+                stream, max_content_bytes=self.max_output_bytes, sink=sink,
             )
 
         (h_out, t_out, tot_out), (h_err, t_err, tot_err) = await asyncio.gather(
-            _drain(out_stream), _drain(err_stream)
+            _drain(out_stream, out_sink), _drain(err_stream, err_sink)
         )
         await proc.wait()
         return (
@@ -216,24 +228,34 @@ class Sandbox:
         code: str,
         filename: str = "script.py",
         writable_paths: list[str | Path] | None = None,
+        sinks=None,
     ) -> SandboxResult:
+        """``sinks`` (an ``output_limits.StreamSinks``) spools the child's streams.
+
+        What comes back in the ``SandboxResult`` is capped exactly as before; the
+        sinks are the separate, complete copy, written as the streams arrive so
+        nothing is ever held whole. Every fallback below re-routes at spawn time,
+        before a byte has been read, so a sink can never receive two runs' output.
+        """
         if self._has_docker:
             return await self._execute_docker_python(
                 code,
                 filename,
                 writable_paths=writable_paths,
+                sinks=sinks,
             )
         if self.wasm_available():
-            return await self._execute_wasm_python(code, filename)
+            return await self._execute_wasm_python(code, filename, sinks=sinks)
         if not self.allow_subprocess:
             return SandboxResult(
                 stderr="Code execution disabled: no Docker/WASM isolation and the host "
                        "fallback is off (allow_subprocess=False).",
                 exit_code=-1,
             )
-        return await self._execute_subprocess_python(code, filename)
+        return await self._execute_subprocess_python(code, filename, sinks=sinks)
 
-    async def _execute_wasm_python(self, code: str, filename: str) -> SandboxResult:
+    async def _execute_wasm_python(self, code: str, filename: str,
+                                   sinks=None) -> SandboxResult:
         start = time.monotonic()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +268,7 @@ class Sandbox:
             )
             try:
                 out_text, err_text = await asyncio.wait_for(
-                    self._read_output_capped(proc), timeout=self.timeout)
+                    self._read_output_capped(proc, sinks), timeout=self.timeout)
                 return SandboxResult(
                     stdout=out_text,
                     stderr=err_text,
@@ -264,7 +286,7 @@ class Sandbox:
             logger.warning("wasmtime not found at execution — falling back")
             self._has_wasmtime = False
             if self.allow_subprocess:
-                return await self._execute_subprocess_python(code, filename)
+                return await self._execute_subprocess_python(code, filename, sinks=sinks)
             return SandboxResult(
                 stderr="WASM runtime unavailable and subprocess execution disabled",
                 exit_code=-1, duration=time.monotonic() - start,
@@ -288,10 +310,11 @@ class Sandbox:
         code: str,
         filename: str,
         writable_paths: list[str | Path] | None = None,
+        sinks=None,
     ) -> SandboxResult:
         return await self._run_docker([
             "python", f"/workspace/{filename}",
-        ], {filename: code}, writable_paths=writable_paths)
+        ], {filename: code}, writable_paths=writable_paths, sinks=sinks)
 
     async def _execute_docker_shell(self, command: str) -> SandboxResult:
         return await self._run_docker([
@@ -303,6 +326,7 @@ class Sandbox:
         cmd: list[str],
         files: dict[str, str] = None,
         writable_paths: list[str | Path] | None = None,
+        sinks=None,
     ) -> SandboxResult:
         start = time.monotonic()
 
@@ -340,7 +364,7 @@ class Sandbox:
             )
             try:
                 out_text, err_text = await asyncio.wait_for(
-                    self._read_output_capped(proc), timeout=self.timeout
+                    self._read_output_capped(proc, sinks), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
@@ -400,10 +424,10 @@ class Sandbox:
             # script.py: a shell run has files=None (would AttributeError) and a
             # python run may use any filename (script.py → empty-script false success).
             if cmd[:2] == ["sh", "-c"] and len(cmd) >= 3:
-                return await self._execute_subprocess_shell(cmd[2])
+                return await self._execute_subprocess_shell(cmd[2], sinks=sinks)
             if files:
                 fname, code = next(iter(files.items()))
-                return await self._execute_subprocess_python(code, fname)
+                return await self._execute_subprocess_python(code, fname, sinks=sinks)
             return SandboxResult(
                 stderr="Code execution disabled: Docker not available and no runnable "
                        "input to fall back to.",
@@ -434,7 +458,8 @@ class Sandbox:
 
         return args
 
-    async def _execute_subprocess_python(self, code: str, filename: str) -> SandboxResult:
+    async def _execute_subprocess_python(self, code: str, filename: str,
+                                         sinks=None) -> SandboxResult:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
                        "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
@@ -454,7 +479,7 @@ class Sandbox:
             )
             try:
                 out_text, err_text = await asyncio.wait_for(
-                    self._read_output_capped(proc), timeout=self.timeout
+                    self._read_output_capped(proc, sinks), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
@@ -476,7 +501,7 @@ class Sandbox:
             duration = time.monotonic() - start
             return SandboxResult(stderr=str(e), exit_code=-1, duration=duration)
 
-    async def _execute_subprocess_shell(self, command: str) -> SandboxResult:
+    async def _execute_subprocess_shell(self, command: str, sinks=None) -> SandboxResult:
         logger.warning("Sandbox: running a shell command on the HOST with no Docker isolation "
                        "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
@@ -493,7 +518,7 @@ class Sandbox:
             )
             try:
                 out_text, err_text = await asyncio.wait_for(
-                    self._read_output_capped(proc), timeout=self.timeout
+                    self._read_output_capped(proc, sinks), timeout=self.timeout
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(

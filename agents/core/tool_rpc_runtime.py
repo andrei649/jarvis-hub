@@ -194,7 +194,13 @@ class ToolRPCSandboxRuntime:
         self,
         code: str,
         filename: str = "script.py",
+        sinks=None,
     ) -> ToolRPCSandboxRun:
+        """``sinks`` is handed straight to the sandbox; see ``Sandbox.execute_python``.
+
+        Passed through rather than interpreted here: this runtime services tool calls
+        while the child runs and has no business deciding what happens to its output.
+        """
         run_id = uuid.uuid4().hex
         rpc_dir = self.sandbox.work_dir / ".jarvis_file_rpc" / run_id
         store = FileRPCStore(rpc_dir, max_tool_calls=self.max_tool_calls)
@@ -211,6 +217,7 @@ class ToolRPCSandboxRuntime:
                 script,
                 filename,
                 writable_paths=[rpc_dir],
+                sinks=sinks,
             )
         )
 

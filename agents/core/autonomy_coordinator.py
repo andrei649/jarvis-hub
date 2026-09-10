@@ -795,6 +795,14 @@ class AutonomyCoordinator:
             # moving tag is a different program tomorrow.
             kernels=kernels,
             authorizer=action_kernel,
+            # H305/H595 — a run's stdout over the ceiling is spooled to disk as it
+            # arrives and the result names the file, instead of the bytes being
+            # dropped. Same store and same retention as a spilled tool result.
+            result_store=ToolResultStore(
+                retention_seconds=float(
+                    _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
+                max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
+            ),
         )
         # K3 — the operator surface reads and resets what K2 owns, so the manager has
         # to be reachable from a route. Bound even when it is None: "sessions are off"
