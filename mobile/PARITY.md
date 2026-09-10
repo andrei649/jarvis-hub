@@ -101,7 +101,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Reasoning traces list | `GET /api/traces` | ✅ | ⬜ | |
 | Cognition read + live scoring stream | `GET /api/cognition`, `GET /api/cognition/stream` (SSE) | ✅ | ⬜ | |
 | Workflows (list / run / step-generate) | `GET /api/workflows`, `POST /api/workflows/run`, `POST /api/workflows/step/generate`; admin `DELETE /api/workflows/{pipeline_id}` | ✅ | ⬜ | |
-| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute` | ✅ | ➖ hub-host capability (runs on the hub box, not a phone surface; triage 2026-09-01) | — |
+| Sandboxed code execution | `GET /sandbox/status` (open), `POST /sandbox/execute`, `GET /sandbox/kernels`, `POST /sandbox/kernels/reset` | ✅ | ➖ hub-host capability (runs on the hub box, not a phone surface; triage 2026-09-01, unchanged by the K3 session-kernel controls — a resident interpreter is a property of the hub, and the reset button belongs where the code is written) | — |
 | Agent templates (instantiate a config) | `GET /api/agent-templates` (open), `POST /api/agent-templates/instantiate` | ✅ | ⬜ | |
 | Publish readiness (creative checklist + package) | `POST /api/creative/publish/checklist`, `POST /api/creative/publish/package` | ✅ | ⬜ | |
 | Missions board (long-horizon governed workspaces) | `GET /api/missions`, `POST /api/missions/{mission_id}/{start,pause,resume,complete,cancel}` | ✅ | ⬜ | |

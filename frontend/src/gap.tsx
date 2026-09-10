@@ -2092,12 +2092,34 @@ export function WorkflowBuilderPanel() {
    that is guaranteed to 503. */
 export function SandboxPanel() {
   const { d: st, reload } = useApi('/sandbox/status');
+  /* K3 — the owner's window onto their OWN session kernel. The route takes no id:
+     it derives the key from this request's authority, so there is nothing here that
+     could address someone else's interpreter. `kernel: null` therefore means "you
+     have none", never "none exist". */
+  const { d: ks, reload: reloadKernels } = useApi('/sandbox/kernels');
   const [code, setCode] = useState('');
   const [lang, setLang] = useState('python');
   const [tools, setTools] = useState(false);
   const [out, setOut] = useState(null);
+  const [resetNote, setResetNote] = useState('');
   const rpc = (st && st.tool_rpc) || null;
   const rpcAvailable = !!(rpc && rpc.available);
+  const sessionMode = ks?.mode === 'session';
+  const kernel = (ks && ks.kernel) || null;
+  const resetKernel = () => {
+    setResetNote('resetting…');
+    apiPost<{ reset?: boolean; reason?: string }>('/sandbox/kernels/reset', {})
+      .then((res) => {
+        /* A successful call over an empty seat is NOT a failure, and a failed call
+           is NOT an empty seat. Saying "reset" for both would teach an owner to
+           distrust the button on the one day it mattered. */
+        setResetNote(res?.reset ? 'kernel destroyed — the next cell starts over'
+          : 'nothing to reset · ' + (res?.reason || 'no kernel was running'));
+        reloadKernels();
+      })
+      .catch((err) => setResetNote('reset UNCONFIRMED · ' + refusalReason(err, err?.message || '')
+        + ' — the kernel may still be running; check status'));
+  };
   const run = () => {
     if (!code.trim()) return;
     setOut('running…');
@@ -2140,6 +2162,26 @@ export function SandboxPanel() {
           </Row>
         )}
       </>)}
+    {ks && <div style={{ marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+      <Row><span style={mono}>session kernel</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+          <Tag c={sessionMode ? 'var(--green)' : 'var(--ink-3)'}>{ks.mode || 'unknown'}</Tag>
+          {!sessionMode && ks.reason && <Tag>{ks.reason}</Tag>}
+        </span>
+      </Row>
+      {kernel ? <Row><span style={mono}>yours</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+          <Tag>{kernel.cells_run} cells</Tag>
+          <Tag>idle {Math.round(kernel.idle_seconds)}s</Tag>
+          <Tag c={kernel.alive ? 'var(--green)' : 'var(--red)'}>{kernel.alive ? 'alive' : 'gone'}</Tag>
+        </span>
+      </Row>
+        : <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+          {sessionMode ? 'no kernel yet — the first cell starts one' : 'each call runs in its own container'}
+        </div>}
+      {sessionMode && <button className="tool-btn" style={{ marginTop: 6 }} onClick={resetKernel}>reset kernel</button>}
+      {resetNote && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{resetNote}</div>}
+    </div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
       Docker-isolated execution, audited (DEV_MODE gate){rpc && !rpcAvailable ? ' · governed tools unavailable on this server' : ''}
     </div>

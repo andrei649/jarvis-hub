@@ -305,7 +305,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
+          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
         },
         {
           "path": "agents/core/commands.py",
@@ -326,7 +326,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
+          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
         },
         {
           "path": "agents/core/commands.py",
@@ -934,7 +934,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1054,8 +1054,8 @@
       "id": "H305",
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
-      "summary": "K1 si K2 sunt livrate: execute_code este inregistrat pentru model (implicit oprit) si, cu al doilea comutator, ruleaza celule intr-un interpreter rezident pe sesiune. Lipsesc scurgerea stdout intr-un fisier si controalele de operator.",
-      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si K3 — status/reset pe suprafata de operator plus dovada pe gazda. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real.",
+      "summary": "K1, K2 si K3 sunt livrate: execute_code inregistrat pentru model, celule intr-un interpreter rezident pe sesiune si controale de operator peste el. Lipseste scurgerea stdout intr-un fisier.",
+      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si kernelul remote. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -1067,7 +1067,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1079,7 +1079,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "f7c89005779024f8ee91e2740dbc3ba8fc00121aae8fc7db4dfb77d7682df869"
+          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -1108,6 +1108,18 @@
         {
           "path": "tests/test_session_kernels.py",
           "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+        },
+        {
+          "path": "tests/test_session_kernel_routes.py",
+          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+        },
+        {
+          "path": "frontend/src/test/sandbox-kernels.test.tsx",
+          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
         }
       ]
     },
@@ -1190,7 +1202,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1386,7 +1398,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a2c4a018d20f5cd6e14b4f61cd7269e77630c1612c9670aa40bf46d2bc43f0fa"
+          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -1432,7 +1444,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1457,7 +1469,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1482,7 +1494,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2095,8 +2107,8 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1 si K2 sunt livrate: execute_code este inregistrat pentru model si poate rula celule intr-un interpreter rezident pe sesiune, cu autoritate relegata la fiecare celula.",
-      "remaining": "Ramane spill-ul stdout intr-un fisier si K3 (controale de operator). Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real.",
+      "summary": "K1, K2 si K3 sunt livrate: execute_code pentru model, celule rezidente pe sesiune cu autoritate relegata la fiecare celula, si o suprafata de operator care spune modul, motivul si ce s-a pierdut la reset.",
+      "remaining": "Ramane spill-ul stdout intr-un fisier si kernelul remote. Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -2108,7 +2120,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2120,7 +2132,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "f7c89005779024f8ee91e2740dbc3ba8fc00121aae8fc7db4dfb77d7682df869"
+          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -2149,6 +2161,18 @@
         {
           "path": "tests/test_session_kernels.py",
           "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+        },
+        {
+          "path": "tests/test_session_kernel_routes.py",
+          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+        },
+        {
+          "path": "frontend/src/test/sandbox-kernels.test.tsx",
+          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
         }
       ]
     },
@@ -2407,8 +2431,8 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2 este livrat: un interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista intre apeluri si permisiune care NU persista — fiecare celula releaga autoritatea K0, trece prin Action Kernel, isi primeste propria cutie postala de tool-calls si recitește ESTOP. Lipseste kernelul remote si dovada pe container real.",
-      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si K3 (controale de operator + dovada pe gazda). Dependinta scrisa in rand — un hook de re-autorizare per-celula in environments/execution.py — a fost adaptata: o celula nu este o comanda de shell pe o tinta numita, deci re-autorizarea trece prin Action Kernel ca actiune tool.rpc, fara kind nou. Kernelurile sunt opt-in (llm.execute_code_sessions), nu mereu pornite ca la Hermes. Nedovedit pe un daemon Docker real: testele conduc interpretoare reale peste acelasi protocol, dar containerul ramane de probat de owner.",
+      "summary": "K2 si K3 sunt livrate: interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista si permisiune care nu, plus suprafata de operator (mod, motiv, varsta starii, reset) si inchiderea kernelurilor la sfarsitul sesiunii. Lipseste varianta remote si proba pe container real.",
+      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si proba efectiva pe gazda izolata — doua celule, restart si cancel pe un daemon Docker adevarat. Kernelurile raman opt-in (llm.execute_code_sessions + imagine fixata prin digest), nu mereu pornite ca la Hermes.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -2420,7 +2444,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
+          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2441,6 +2465,22 @@
         {
           "path": "tests/test_session_kernels.py",
           "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
+        },
+        {
+          "path": "tests/test_session_kernel_routes.py",
+          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+        },
+        {
+          "path": "frontend/src/test/sandbox-kernels.test.tsx",
+          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
         }
       ]
     },

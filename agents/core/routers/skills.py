@@ -65,6 +65,119 @@ async def sandbox_status():
     }
 
 
+# ── K3: the owner's window onto their own session kernels ────────────────────
+#
+# Two additive routes over what K2 already owns. Both derive the kernel key from the
+# *request's* own authority — the same K0 binding `execute_code` uses — so neither
+# takes a session id, a principal or a kernel token as input. That is the whole
+# access-control story: there is no argument with which to name someone else's
+# interpreter, so "another session cannot inspect or reset this one" is a property of
+# the shape rather than a check that could be forgotten.
+#
+# What they publish is deliberately thin: the mode and why, and for the caller's own
+# kernel its age, its cell count and whether it is alive. Never a cell's source, never
+# a variable, never the reply token that frames a kernel's replies.
+
+SESSIONS_OFF = "sessions_disabled"
+CODE_OFF = "code_execution_disabled"
+NOT_COMPOSED = "kernels_not_composed"
+NOT_ISOLATED = "sandbox_not_isolated"
+SESSION_MODE = "session"
+ONE_SHOT_MODE = "one_shot"
+
+
+def _kernel_mode(orch, get_setting) -> tuple[object, str, str]:
+    """The manager, the mode a cell would run in, and the reason it is not `session`.
+
+    Read in the order an owner would ask: is code execution on at all, are sessions
+    on, is a manager composed, and is the backend really isolated. The first honest
+    "no" wins, so the reason names the switch to change rather than the symptom.
+    """
+    from agents.core.code_tools import SESSION_SETTING, SETTING
+
+    if get_setting is None:
+        return None, ONE_SHOT_MODE, CODE_OFF
+    if get_setting(SETTING, False) is not True:
+        return None, ONE_SHOT_MODE, CODE_OFF
+    if get_setting(SESSION_SETTING, False) is not True:
+        return None, ONE_SHOT_MODE, SESSIONS_OFF
+    kernels = getattr(orch, "session_kernels", None)
+    if kernels is None:
+        # Composed to None: the image is missing or unpinned. The coordinator logged
+        # which; the route says the honest short version.
+        return None, ONE_SHOT_MODE, NOT_COMPOSED
+    sandbox = getattr(orch, "sandbox", None)
+    try:
+        isolated = bool(sandbox.is_isolated())
+    except Exception:
+        isolated = False
+    if not isolated:
+        return kernels, ONE_SHOT_MODE, NOT_ISOLATED
+    return kernels, SESSION_MODE, ""
+
+
+def _caller_key(orch, request):
+    """This request's kernel key, or None when no authority can be bound.
+
+    Built from the same invocation `execute_code` binds, so the key a route resolves
+    and the key a cell runs under cannot drift apart.
+    """
+    from agents.core.session_kernels import KernelKey
+
+    server = getattr(orch, "tool_rpc", None)
+    if server is None:
+        return None
+    invocation = _sandbox_invocation(orch, server, getattr(orch, "get_setting", None), request)
+    if invocation is None:
+        return None
+    return KernelKey.from_invocation(invocation)
+
+
+@router.get("/sandbox/kernels", dependencies=[Depends(user_guard)])
+async def sandbox_kernels(request: Request):
+    """Report the mode, and the caller's own kernel if they have one."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    get_setting = getattr(orch, "get_setting", None)
+    kernels, mode, reason = _kernel_mode(orch, get_setting)
+    body = {"mode": mode, "reason": reason, "kernel": None}
+    if kernels is None:
+        return body
+    key = _caller_key(orch, request)
+    if key is None:
+        # No authority resolved: report the mode, claim no kernel. Returning someone
+        # else's row here would be the exact leak these routes exist to avoid.
+        return body
+    body["kernel"] = next(
+        (row for row in kernels.status() if row.get("token") == key.token), None)
+    return body
+
+
+@router.post("/sandbox/kernels/reset", dependencies=[Depends(user_guard)])
+async def sandbox_kernel_reset(request: Request):
+    """Destroy the caller's own kernel. Says whether there was one to destroy."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    kernels, mode, reason = _kernel_mode(orch, getattr(orch, "get_setting", None))
+    if kernels is None:
+        return {"reset": False, "mode": mode, "reason": reason}
+    server = getattr(orch, "tool_rpc", None)
+    invocation = _sandbox_invocation(
+        orch, server, getattr(orch, "get_setting", None), request) if server else None
+    if invocation is None:
+        return {"reset": False, "mode": mode, "reason": "authority_unavailable"}
+    # `reset` answers "was there state to lose", not "did the call succeed". False
+    # here is a successful call over an empty seat, and the panel says so — a reset
+    # that reads as success when nothing existed teaches an owner to distrust it.
+    from agents.core.session_kernels import KernelKey
+
+    destroyed = await kernels.reset(invocation)
+    return {"reset": bool(destroyed), "mode": mode, "reason": reason,
+            "kernel_token": KernelKey.from_invocation(invocation).token}
+
+
 def _sandbox_invocation(orch, server, get_setting, request):
     """Resolve one sandbox run's authority. Never raises: a failure binds nothing,
     and a runtime without an invocation refuses every tool call it is asked for.

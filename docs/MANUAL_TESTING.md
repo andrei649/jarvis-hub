@@ -322,6 +322,17 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   restart: sessions must stay off with a warning, and the tool's schema must lose
   `reset`. **This is the only place the container claims are tested** — the repository's
   tests drive bare interpreters over the same protocol.
+- [ ] **Session-kernel controls (K3)** ❌🔑 — With sessions live, run a cell, then open
+  the SANDBOX card: the kernel row must show your cell count and a rising idle time.
+  Press **reset kernel** → "kernel destroyed"; press it again with no kernel →
+  "nothing to reset" (a different message, on purpose). Stop the hub mid-request or
+  block the route so the call fails → **"reset UNCONFIRMED"**, never "destroyed". From a
+  second browser profile signed in as a non-owner, the card must show no kernel of yours
+  and its reset must not remove yours. Start a new session (`/sessions`) and confirm the
+  old session's container is gone from `docker ps`. Switch `llm.execute_code_sessions`
+  off and restart: the card reads `one_shot · sessions_disabled` and offers no reset.
+  **The plan's remaining K3 clause is here** — two-cell, restart and cancel proof on a
+  real isolated host.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**
