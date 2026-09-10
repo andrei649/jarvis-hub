@@ -766,6 +766,23 @@ class AutonomyCoordinator:
             agents = getattr(config, "agents", None) or {}
             return getattr(agents.get(agent_id), "tools", None)
 
+        # K1 — the model may write one script that orchestrates many tool calls. Off
+        # unless `llm.execute_code` is on, and registered last on purpose: the tool
+        # offers a script exactly the tools registered above, minus itself, narrowed by
+        # this same profile. It is composed with the two resolvers rather than reading
+        # them itself so the authority it binds (K0) comes from the host, never from an
+        # argument.
+        from .code_tools import register_code_tools
+
+        register_code_tools(
+            server,
+            sandbox=lambda: getattr(self._orch, "sandbox", None),
+            settings=_get_setting,
+            agent_patterns=_agent_tool_patterns,
+            principal=_turn_principal,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+        )
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,

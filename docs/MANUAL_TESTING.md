@@ -299,6 +299,18 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   owner's inbox from the dev sandbox. A tool that is not registered at all also reads
   `tool_not_offered`, so probing cannot map the registry. Every refusal happens before
   the tool runs, so a refused read has no side effect to observe.
+- [ ] **`execute_code` on the tool surface (K1)** ❌🔑 — Set `llm.execute_code` to
+  `true` and restart. On a host **without** Docker/WASM the tool must answer
+  `sandbox_not_isolated`, and nothing must run on the host interpreter — check by
+  asking a script to write a file and confirming it does not appear. On a host
+  **with** an isolated backend: a script that loops `jarvis_tool_call("echo", ...)`
+  returns one answer for many calls; a script that calls `execute_code` gets
+  `tool_not_offered`; a gated tool from inside answers `approval_required` and leaves
+  exactly one card. From an inbound channel as a guest, the same script must see only
+  the guest's tools in `offered_tools`. Set the setting back to `false`, restart, and
+  confirm the tool is gone from the model's list entirely — not present-and-refusing.
+  **This is the only place the isolation claim is actually tested**; the repository's
+  tests fake `is_isolated()` and prove the protocol, not the container.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

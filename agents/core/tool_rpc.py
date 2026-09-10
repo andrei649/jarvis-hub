@@ -28,6 +28,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Mapping
+from contextvars import ContextVar
 from copy import deepcopy
 from typing import Awaitable, Callable, Optional
 
@@ -35,6 +36,19 @@ from .automation_contracts import ContractTemplate, predicate
 from .security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.tool_rpc")
+
+#: Who the call in flight is being made *as*. ``handle`` resolves the actor once and
+#: publishes it here for the length of the handler, so a handler that has to make an
+#: authority decision of its own (``execute_code`` binds a sandbox invocation) reads the
+#: identity the server settled on instead of guessing the server's default agent. It is
+#: written by ``handle`` only, and reset in a ``finally``: nothing leaks to the next call.
+_tool_actor: ContextVar[str] = ContextVar("jarvis_tool_actor", default="")
+
+
+def current_tool_actor() -> str:
+    """The actor of the ToolRPC call in flight, or ``""`` outside one."""
+    return _tool_actor.get()
+
 
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
@@ -303,7 +317,7 @@ class ToolRPCServer:
             return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
         try:
-            result = await self._invoke_handler(spec, args)
+            result = await self._invoke_handler(spec, args, effective_actor)
         except Exception:
             logger.warning("tool-rpc handler failed: %s", name, exc_info=True)
             return {"ok": False, "reason": "tool_error", "tool": name}
@@ -371,7 +385,7 @@ class ToolRPCServer:
                     "detail": denied,
                 }
         try:
-            result = await self._invoke_handler(spec, args)
+            result = await self._invoke_handler(spec, args, effective_actor)
         except Exception:
             logger.warning("tool-rpc approved execute failed: %s", name, exc_info=True)
             return {"status": "failed", "reason": "tool_error", "tool": name}
@@ -397,14 +411,16 @@ class ToolRPCServer:
     # ── internals ────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def _invoke_handler(spec: dict, args: dict):
+    async def _invoke_handler(spec: dict, args: dict, actor: str = ""):
         task = asyncio.current_task()
         active = spec["active_tasks"]
         if task is not None:
             active.add(task)
+        token = _tool_actor.set(str(actor or ""))
         try:
             return await spec["handler"](args)
         finally:
+            _tool_actor.reset(token)
             if task is not None:
                 active.discard(task)
 

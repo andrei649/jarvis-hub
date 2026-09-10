@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### Hermes sprint — the model may write one script that calls many tools (K1, H305 / H595)
+
+K0 answered *on whose authority* a call from inside the sandbox is made. K1 is the door
+that authority was built in front of: `execute_code` is now a registered tool, so a turn
+can filter, branch and loop over tool results **inside** the container instead of paying
+context for every intermediate byte. The transport is unchanged — the file-RPC bridge,
+the allowlist and the secret scrubbing are the ones that were already there.
+
+**Added**
+
+- `agents/core/code_tools.py` — `register_code_tools` / `CodeExecutionTool`. It calls
+  `sandbox_invocation.bind()` rather than re-deriving anything: the offered set, the
+  identity and the lifetime all come from K0, over the live registry **minus
+  `execute_code` itself**, so a script cannot start another script.
+- `llm.execute_code` (default **off**). Off means the tool is not registered at all, not
+  registered-and-refusing: a tool the model can see but never use costs context every turn.
+- `current_tool_actor()` in `tool_rpc.py` — `handle` publishes the actor it resolved for
+  the length of the handler, so the binding uses the turn's own agent instead of the
+  server's default. A `friday` turn no longer binds as `jarvis`.
+- `tests/test_execute_code_tool.py` (28), and `execute_code` in the tool-profile snapshot
+  for every posture (`inbound/guest` still gets only `llm.guest_tools`).
+
+**What it does not widen**
+
+- The script's reach is exactly the set that turn was offered — a guest's script gets a
+  guest's tools, and a per-agent `tools:` list narrows it further.
+- A **gated** tool called from inside still only enqueues and answers `approval_required`.
+  That invariant is the whole reason `execute_code` itself is ungated.
+- Without a Docker/WASM backend the call answers `sandbox_not_isolated`. Model-written
+  code never falls back to the host interpreter, even where `allow_subprocess` would let a
+  developer's own script run. **Deviation from the delivery plan**, stated rather than
+  glossed: the plan asked for the tool to be *offered* only when a backend is usable, and
+  it is offered on the owner's switch and refuses at call time. A per-turn availability
+  probe is exactly H295's open gap, and a boot-time probe would make the offered set
+  depend on whether a daemon happened to be up when the hub started.
+- Output is capped per stream at the smaller of 50 KB and the sandbox's own
+  `max_output_bytes`, and only the binding layer truncates — one notice, never two nested.
+
+**Assessment**
+
+- H305 and H595 stay **partial**. K1 is delivered; K2/K3 are not — there is still no
+  resident interpreter keeping variables between calls (H660), and stdout over the budget
+  is dropped with an honest notice rather than spilled to a file.
+- H287 stays partial and gains the actor hand-off; H295 now says precisely why a profile
+  is not a backend probe — `execute_code` refuses at call time instead of disappearing
+  from the turn's offer, which is the row's own gap.
+- 11 rows went to `needs_review` because this change touched files they cite. All 11 were
+  re-read and re-stamped; **none was promoted**. Equivalence is unchanged at 114/697
+  (16.4%), 19.3% of the 590 accepted.
+
+**Not verified here:** that any of this holds against a real container. The tests run real
+scripts through the real shim and the real interpreter on a sandbox whose `is_isolated()`
+is faked to True — the protocol is exercised, the isolation is the backend's own contract
+and the owner's to prove (`docs/MANUAL_TESTING.md`).
+
 ### Hermes sprint — editing a job the owner already armed (H146 / H449)
 
 Both rows recorded the same gap: create, pause, resume, run and delete existed; changing
