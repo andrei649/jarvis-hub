@@ -575,7 +575,15 @@ export interface paths {
         delete: operations["jobs_delete_api_jobs__job_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Jobs Edit
+         * @description Change a job's name, schedule or action. Omitted fields keep their value.
+         *
+         *     PATCH rather than PUT: a job carries run history and failure counters the owner never
+         *     authored, so a whole-record replace would either drop them or invite a caller to send
+         *     them back stale.
+         */
+        patch: operations["jobs_edit_api_jobs__job_id__patch"];
         trace?: never;
     };
     "/api/jobs/{job_id}/runs": {
@@ -9574,6 +9582,20 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * JobEditBody
+         * @description The three fields an owner authored. Everything else about a job is an outcome.
+         */
+        JobEditBody: {
+            /** Name */
+            name?: string | null;
+            /** Schedule Text */
+            schedule_text?: string | null;
+            /** Action */
+            action?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** JobPauseBody */
         JobPauseBody: {
             /** Reason */
@@ -11187,6 +11209,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_edit_api_jobs__job_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobEditBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

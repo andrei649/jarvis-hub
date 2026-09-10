@@ -268,6 +268,7 @@
   "GET /v2/manifest.webmanifest": "open",
   "GET /v2/sw-v2.js": "open",
   "GET /v2/{path:path}": "open",
+  "PATCH /api/jobs/{job_id}": "admin",
   "PATCH /api/notes/blocks/{block_id}": "user",
   "POST /api/a2a/card": "admin",
   "POST /api/a2a/inbox/{task_id}/decide": "admin",

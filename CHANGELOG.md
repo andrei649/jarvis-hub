@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Hermes sprint — editing a job the owner already armed (H146 / H449)
+
+Both rows recorded the same gap: create, pause, resume, run and delete existed; changing
+what an existing job *is* did not. The owner's only route to a new schedule was delete and
+retype, which loses the run history.
+
+**Added**
+
+- `JobStore.edit()` — name, schedule and action, under the rules that created them. It is
+  deliberately not `update()`: that one is the runner's internal field setter, and it writes
+  `schedule_text` without touching `cron`. An edit routed through it would show the new
+  schedule in the HUD, the CLI and the API while the job kept firing on the old one.
+- `JobRunner.edit()` — re-registers the trigger from the new cron, and unregisters instead
+  when the job is not runnable, so editing a paused job cannot resume it by accident.
+- `PATCH /api/jobs/{job_id}` (admin), `nerva jobs edit`, and an inline editor in the HUD
+  jobs panel.
+- `tests/test_jobs_edit.py` (12) plus route and CLI regressions.
+
+**Assessment**
+
+- H146 and H449 stay **partial**, with the edit clause removed from what they still owe.
+  H146 still needs the schedule builder, per-job delivery targets and the 16-blueprint
+  gallery; H449's record has 14 fields against Hermes' ~40, and lacks `incidents`,
+  `notepad`, `doctor` and `tick`.
+- 28 rows went to `needs_review` because this change touched files they cite as evidence.
+  All 28 were re-read and re-stamped; **none was promoted** — the change is additive.
 ### Hermes sprint — send to a configured destination (H018 / H480)
 
 `nerva send` could only propose a reply into a thread Nerva had already received, so a
