@@ -32,6 +32,12 @@ from .workflows.pending_queue import WorkflowPendingQueue
 # by the TaskExecutor handler below and read by the gated tools that need to prove a
 # human accepted THIS row; deliberately not a model-facing tool argument, so a model
 # can never forge an approval id through the input schema.
+#: K2 switches, read at composition. Kept next to the coordinator's other wiring
+#: constants so the two settings that arm a resident interpreter are visible in one
+#: place rather than spelled out at the call site.
+CODE_SESSIONS_SETTING = "llm.execute_code_sessions"
+CHILD_RPC_ROOT = "/nerva-rpc"
+
 _APPROVED_TASK: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_approved_task", default=None
 )
@@ -781,6 +787,12 @@ class AutonomyCoordinator:
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            # K2 — a resident interpreter per authorized session, behind its own
+            # switch. Docker only and pinned by digest: a kernel that survives an
+            # hour deserves the pin the acquisition profile already demands, and a
+            # moving tag is a different program tomorrow.
+            kernels=self._session_kernels(_get_setting),
+            authorizer=action_kernel,
         )
 
         runtime = AgentToolRuntime(
@@ -825,6 +837,45 @@ class AutonomyCoordinator:
         for agent in getattr(self._orch, "agents", {}).values():
             agent.tool_runtime = runtime
         return runtime
+
+    def _session_kernels(self, get_setting):
+        """Compose the K2 kernel manager, or None when it cannot be real.
+
+        None is the honest answer whenever the pinned image is missing or the switch
+        is off: `code_tools` then stays on the K1 one-shot path and says so, rather
+        than advertising persistence it cannot keep.
+        """
+        if get_setting(CODE_SESSIONS_SETTING, False) is not True:
+            return None
+        image = str(get_setting("llm.execute_code_image", "") or "").strip()
+        if "@sha256:" not in image:
+            logger.warning(
+                "session kernels need llm.execute_code_image pinned by digest; staying off")
+            return None
+        from .estop import is_engaged
+        from .paths import data_path
+        from .session_kernels import (
+            PipeKernelBackend,
+            SessionKernelManager,
+            docker_kernel_argv,
+        )
+
+        sandbox = getattr(self._orch, "sandbox", None)
+        backend = PipeKernelBackend(
+            docker_kernel_argv(image),
+            name="docker",
+            child_root=CHILD_RPC_ROOT,
+            available=lambda: getattr(sandbox, "active_backend", lambda: "")() == "docker",
+        )
+        return SessionKernelManager(
+            backend,
+            max_kernels=int(get_setting("llm.execute_code_max_kernels", 4) or 4),
+            idle_ttl_seconds=float(get_setting("llm.execute_code_idle_ttl", 900) or 900),
+            cell_timeout_seconds=float(getattr(sandbox, "timeout", 30) or 30),
+            estop=is_engaged,
+            rpc_root=str(data_path("code_sessions")),
+            max_tool_calls=int(get_setting("security.sandbox_max_tool_calls", 50) or 50),
+        )
 
     def _target_registry(self):
         """Build the named-target registry once, with a durable audit chain.

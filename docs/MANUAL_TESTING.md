@@ -311,6 +311,17 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   confirm the tool is gone from the model's list entirely — not present-and-refusing.
   **This is the only place the isolation claim is actually tested**; the repository's
   tests fake `is_isolated()` and prove the protocol, not the container.
+- [ ] **Session kernels (K2)** ❌🔑 — Set `llm.execute_code_sessions` and
+  `llm.execute_code_image` (pinned `repo@sha256:…`) and restart. Cell 1: `import pandas`
+  / load something; cell 2 must see it. From a second session, the same name must be
+  undefined. `reset=true` must come back `continuity: "reset"`, `state_lost: true`.
+  Kill the container by hand (`docker kill nerva-kernel-*`) — the next cell must read
+  `crashed`, never a silent fresh start. `sleep` past the cell timeout: `docker ps` must
+  show the container **gone**, not orphaned. Engage ESTOP mid-session: the cell refuses
+  `estop_engaged` and `docker ps` shows no kernel left alive. Unset the image digest and
+  restart: sessions must stay off with a warning, and the tool's schema must lose
+  `reset`. **This is the only place the container claims are tested** — the repository's
+  tests drive bare interpreters over the same protocol.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

@@ -22,6 +22,7 @@ contract, exercised by the sandbox suite and provable only on a host that has on
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -452,3 +453,125 @@ async def test_a_real_tool_loop_selects_the_tool_and_gets_bounded_filtered_stdou
     assert "LONGEST 3" in observation
     # ...and not the three intermediate results it was computed from.
     assert "bb" not in observation
+
+
+# ── K2: the session path, from the tool's side ───────────────────────────────
+
+def _kernels(tmp_path, **kwargs):
+    from agents.core.session_kernels import (
+        WORKER_SOURCE,
+        PipeKernelBackend,
+        SessionKernelManager,
+    )
+
+    kwargs.setdefault("cell_timeout_seconds", 20)
+    kwargs.setdefault("rpc_root", str(tmp_path / "kernel-rpc"))
+    return SessionKernelManager(
+        PipeKernelBackend(lambda key, token, rpc_dir="": [sys.executable, "-c", WORKER_SOURCE],
+                          name="local"),
+        **kwargs)
+
+
+def _session_tool(tmp_path, *, on=True, authorizer=None, **kwargs):
+    settings = _settings(**{code_tools.SESSION_SETTING: on})
+    server, tool = _tool(tmp_path, settings=settings, **kwargs)
+    tool._kernels = _kernels(tmp_path)
+    tool._authorizer = authorizer
+    return server, tool
+
+
+def test_the_reset_argument_exists_only_where_a_kernel_is_behind_the_tool(tmp_path):
+    _server_, off = _tool(tmp_path)
+    with pytest.raises(ToolRPCValidationError):
+        off.preflight({"code": "print(1)", "reset": True})
+    _server2, on = _session_tool(tmp_path)
+    assert on.preflight({"code": "print(1)", "reset": True}) == {"code": "print(1)", "reset": True}
+    assert on.preflight({"code": "print(1)"}) == {"code": "print(1)"}
+
+
+def test_a_registration_advertises_persistence_only_when_it_can_keep_it(tmp_path):
+    plain = _server()
+    register_code_tools(plain, sandbox=lambda: _sandbox(tmp_path), settings=_settings())
+    row = next(r for r in plain.tools() if r["name"] == TOOL)
+    assert sorted(row["input_schema"]["properties"]) == ["code"]
+    assert "persist" not in row["description"]
+
+    sessions = _server()
+    register_code_tools(
+        sessions, sandbox=lambda: _sandbox(tmp_path),
+        settings=_settings(**{code_tools.SESSION_SETTING: True}),
+        kernels=_kernels(tmp_path))
+    row = next(r for r in sessions.tools() if r["name"] == TOOL)
+    assert sorted(row["input_schema"]["properties"]) == ["code", "reset"]
+    assert "persist" in row["description"]
+
+
+@pytest.mark.asyncio
+async def test_the_session_path_keeps_state_between_two_tool_calls(tmp_path):
+    _server_, tool = _session_tool(tmp_path)
+    first = await _run(tool, "import math\nvalue = math.tau\nprint('set')")
+    second = await _run(tool, "print('tau', round(value, 3))")
+    assert first["session"] is True and first["continuity"] == "new"
+    assert second["continuity"] == "continued" and "tau 6.283" in second["stdout"]
+    assert second["state_lost"] is False
+    await tool._kernels.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_reset_starts_over_and_says_so(tmp_path):
+    _server_, tool = _session_tool(tmp_path)
+    await _run(tool, "kept = 'yes'")
+    after = await tool.execute({"code": "print('kept' in dir())", "reset": True})
+    assert after["continuity"] == "reset" and after["state_lost"] is True
+    assert "False" in after["stdout"]
+    await tool._kernels.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_cell_the_kernel_denies_never_runs(tmp_path):
+    from agents.core.kernel import Decision, Verdict
+
+    denials = {"on": False}
+
+    def authorizer(action, capability=None):
+        return Decision(Verdict.DENY if denials["on"] else Verdict.GRANT, reason="test")
+
+    _server_, tool = _session_tool(tmp_path, authorizer=authorizer)
+    await _run(tool, "touched = False")
+    denials["on"] = True
+    denied = await _run(tool, "touched = True")
+    assert denied["ok"] is False and denied["reason"] == code_tools.SESSION_DENIED
+    denials["on"] = False
+    after = await _run(tool, "print('touched', touched)")
+    assert "touched False" in after["stdout"]
+    await tool._kernels.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_cell_reaches_the_same_tools_the_one_shot_script_would(tmp_path):
+    _server_, tool = _session_tool(tmp_path)
+    outcome = await _run(tool, CALL.format(tool="echo", args={"value": "hi"}))
+    assert "'echo': 'hi'" in outcome["stdout"]
+    gated = await _run(tool, CALL.format(tool="send_email", args={}))
+    assert "'approval_required'" in gated["stdout"]
+    recursive = await _run(tool, CALL.format(tool=TOOL, args={"code": "print('inner')"}))
+    assert "'tool_not_offered'" in recursive["stdout"]
+    await tool._kernels.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_sessions_switched_off_mid_flight_fall_back_to_one_shot(tmp_path):
+    live = {"sessions": True}
+    settings = lambda key, default: (  # noqa: E731
+        True if key == code_tools.SETTING else
+        live["sessions"] if key == code_tools.SESSION_SETTING else default)
+    server, tool = _tool(tmp_path, settings=settings)
+    tool._kernels = _kernels(tmp_path)
+    kept = await _run(tool, "kept = 1\nprint('session')")
+    assert kept["session"] is True
+    live["sessions"] = False
+    plain = await _run(tool, "print('kept' in dir())")
+    # Named, not silent: the one-shot result has no continuity to report at all.
+    assert "session" not in plain and "continuity" not in plain
+    assert "False" in plain["stdout"]
+    await tool._kernels.shutdown()

@@ -31,6 +31,54 @@ from agents.core.tool_rpc import ToolRPCServer
 logger = logging.getLogger("jarvis.tool_rpc_runtime")
 
 
+class ToolCallBroker:
+    """One tool call, authorized then handled. The only copy of that sequence.
+
+    A sandboxed script and a session kernel (K2) both need exactly this: refuse
+    against the run's authority *before* the server sees the call, then reach the
+    server as the invocation's agent. Writing it twice is how the two copies drift,
+    and the one that drifts is a second, weaker authorization system — so both
+    callers hold a broker instead.
+
+    A broker is per *authority*, not per process: a session kernel builds a fresh one
+    for every cell, which is what stops a variable created in cell 1 from carrying
+    cell 1's permissions into cell 400.
+    """
+
+    __slots__ = ("server", "invocation", "revoked")
+
+    def __init__(self, server: ToolRPCServer, invocation: SandboxInvocation | None,
+                 *, revoked: Callable[[], bool] | None = None) -> None:
+        self.server = server
+        self.invocation = invocation
+        self.revoked = revoked
+
+    async def call(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        # Authority first, and entirely before `handle`: a refusal after the call has
+        # run is not a refusal, and a gated tool that reaches the server has already
+        # put a card in the owner's inbox even though it never executes.
+        if self.invocation is None:
+            return {"ok": False, "reason": AUTHORITY_MISSING, "tool": tool}
+        try:
+            self.invocation.authorize(
+                tool, registered=self.server.allows, revoked=self.revoked,
+            )
+        except InvocationRefused as refusal:
+            return refusal.as_response()
+        try:
+            response = await self.server.handle(
+                {"tool": tool, "args": args}, actor=self.invocation.agent,
+            )
+        except Exception:
+            logger.warning("file-rpc tool request failed: %s", tool, exc_info=True)
+            return {"ok": False, "reason": "tool_error", "tool": tool}
+        return response if isinstance(response, dict) else {
+            "ok": False,
+            "reason": "bad_response",
+            "tool": tool,
+        }
+
+
 @dataclass(frozen=True)
 class ToolRPCSandboxRun:
     """Result of a sandboxed script plus the host-serviced Tool-RPC count."""
@@ -247,29 +295,9 @@ class ToolRPCSandboxRuntime:
             store.request_path(seq).unlink(missing_ok=True)
 
     async def _handle_request(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        # Authority first, and entirely before `handle`: a refusal after the call has
-        # run is not a refusal, and a gated tool that reaches the server has already
-        # put a card in the owner's inbox even though it never executes.
-        if self.invocation is None:
-            return {"ok": False, "reason": AUTHORITY_MISSING, "tool": tool}
-        try:
-            self.invocation.authorize(
-                tool, registered=self.server.allows, revoked=self.revoked,
-            )
-        except InvocationRefused as refusal:
-            return refusal.as_response()
-        try:
-            response = await self.server.handle(
-                {"tool": tool, "args": args}, actor=self.invocation.agent,
-            )
-        except Exception:
-            logger.warning("file-rpc tool request failed: %s", tool, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": tool}
-        return response if isinstance(response, dict) else {
-            "ok": False,
-            "reason": "bad_response",
-            "tool": tool,
-        }
+        return await ToolCallBroker(
+            self.server, self.invocation, revoked=self.revoked,
+        ).call(tool, args)
 
     def _child_rpc_dir(self, run_id: str) -> str:
         if self.sandbox.active_backend() in {"docker", "wasm"}:
