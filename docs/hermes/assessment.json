@@ -934,7 +934,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -996,7 +996,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1021,7 +1021,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -1067,7 +1067,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1202,7 +1202,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1244,7 +1244,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1273,7 +1273,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1319,7 +1319,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1348,7 +1348,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1369,7 +1369,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1390,7 +1390,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -1444,7 +1444,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1469,7 +1469,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1494,7 +1494,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2120,7 +2120,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2444,7 +2444,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "9bb98d6a0451d64f54600d2d1df1870a603a86b55e6a8615820bfa4832500ea6"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2530,7 +2530,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "dafbcd601dd336a5f900746fe3be7c3f5cc0f2e2847c1bbda4473b0808d979ab"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",

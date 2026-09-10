@@ -350,6 +350,7 @@ class AutonomyCoordinator:
 
         from .agent_runtime import AgentToolRuntime
         from .tool_profiles import ToolProfileResolver
+        from .tool_result_store import ToolResultStore
         from .acquisition.runtime import AcquisitionRuntime
         from .desktop_operator import DesktopProposalError, validate_desktop_run_args
         from .observability import capability_registry
@@ -809,6 +810,18 @@ class AutonomyCoordinator:
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            # H298 — an oversized tool result is spilled to disk instead of being
+            # thrown away, and the caps scale to the model's real context window.
+            # The store writes under the file tools' default root, so the path in a
+            # preview footer is one `file_read` can actually open.
+            result_store=ToolResultStore(
+                retention_seconds=float(
+                    _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
+                max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
+            ),
+            result_thresholds=lambda: _get_setting("llm.tool_result_thresholds", {}) or {},
+            context_window_tokens=lambda: int(
+                _get_setting("llm.tool_loop_context_tokens", 0) or 0),
             tool_profile=ToolProfileResolver(
                 settings=_get_setting,
                 agent_patterns=_agent_tool_patterns,
