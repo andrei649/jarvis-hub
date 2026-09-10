@@ -263,6 +263,7 @@
   "GET /v2/manifest.webmanifest",
   "GET /v2/sw-v2.js",
   "GET /v2/{path:path}",
+  "PATCH /api/jobs/{job_id}",
   "PATCH /api/notes/blocks/{block_id}",
   "POST /api/a2a/card",
   "POST /api/a2a/inbox/{task_id}/decide",

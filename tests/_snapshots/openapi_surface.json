@@ -263,6 +263,7 @@
   "GET /v2/manifest.webmanifest": "v2_manifest_v2_manifest_webmanifest_get",
   "GET /v2/sw-v2.js": "v2_service_worker_v2_sw_v2_js_get",
   "GET /v2/{path}": "hud_v2_v2__path__get",
+  "PATCH /api/jobs/{job_id}": "jobs_edit_api_jobs__job_id__patch",
   "PATCH /api/notes/blocks/{block_id}": "note_docs_update_block_api_notes_blocks__block_id__patch",
   "POST /api/a2a/card": "a2a_set_card_api_a2a_card_post",
   "POST /api/a2a/inbox/{task_id}/decide": "a2a_decide_api_a2a_inbox__task_id__decide_post",
