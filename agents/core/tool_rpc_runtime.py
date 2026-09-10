@@ -1,4 +1,11 @@
-"""Runtime bridge between sandboxed Python code and governed Tool-RPC."""
+"""Runtime bridge between sandboxed Python code and governed Tool-RPC.
+
+Every inner call carries the run's authority (K0, `sandbox_invocation.py`): the
+invoking agent reaches `ToolRPCServer.handle` as the actor, and a tool outside the
+outer turn's offered set is refused here, before the server sees it. A runtime built
+without an invocation refuses every call rather than falling back to the server's
+default identity — that fallback is exactly what K0 exists to remove.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +14,18 @@ import json
 import logging
 import shutil
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
 from agents.core.environments.file_rpc import FileRPCStore
 from agents.core.sandbox import Sandbox, SandboxResult
+from agents.core.sandbox_invocation import (
+    AUTHORITY_MISSING,
+    InvocationRefused,
+    SandboxInvocation,
+)
 from agents.core.tool_rpc import ToolRPCServer
 
 logger = logging.getLogger("jarvis.tool_rpc_runtime")
@@ -109,12 +122,19 @@ class ToolRPCSandboxRuntime:
         server: ToolRPCServer,
         sandbox: Sandbox,
         *,
+        invocation: SandboxInvocation | None = None,
+        revoked: Callable[[], bool] | None = None,
         max_tool_calls: int = 50,
         poll_interval: float = 0.01,
         service_timeout: float | None = None,
     ) -> None:
         self.server = server
         self.sandbox = sandbox
+        # No invocation means no authority. The run still executes — plain Python in
+        # the sandbox is the caller's own business — but every tool call it attempts
+        # is refused, because the alternative is acting as the server's default agent.
+        self.invocation = invocation
+        self.revoked = revoked
         self.max_tool_calls = max(0, int(max_tool_calls))
         self.poll_interval = max(0.001, float(poll_interval))
         self.service_timeout = service_timeout
@@ -227,8 +247,21 @@ class ToolRPCSandboxRuntime:
             store.request_path(seq).unlink(missing_ok=True)
 
     async def _handle_request(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        # Authority first, and entirely before `handle`: a refusal after the call has
+        # run is not a refusal, and a gated tool that reaches the server has already
+        # put a card in the owner's inbox even though it never executes.
+        if self.invocation is None:
+            return {"ok": False, "reason": AUTHORITY_MISSING, "tool": tool}
         try:
-            response = await self.server.handle({"tool": tool, "args": args})
+            self.invocation.authorize(
+                tool, registered=self.server.allows, revoked=self.revoked,
+            )
+        except InvocationRefused as refusal:
+            return refusal.as_response()
+        try:
+            response = await self.server.handle(
+                {"tool": tool, "args": args}, actor=self.invocation.agent,
+            )
         except Exception:
             logger.warning("file-rpc tool request failed: %s", tool, exc_info=True)
             return {"ok": False, "reason": "tool_error", "tool": tool}

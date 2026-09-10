@@ -22,6 +22,25 @@ def _host_sandbox(tmp_path, *, max_output_bytes=50_000):
     return sandbox
 
 
+def _owner_invocation(server, *, agent="jarvis", **overrides):
+    """Bind the run's authority the way the route does, as the owner at the console.
+
+    K0 made an unbound runtime refuse every tool call, so a test that means to
+    exercise the pipeline has to say who is running it — which is the point: there
+    is no longer a default identity to fall back on.
+    """
+    from types import SimpleNamespace
+
+    from agents.core import sandbox_invocation
+
+    invocation, _decision = sandbox_invocation.bind(
+        tools=server.tools(), agent=agent,
+        principal=SimpleNamespace(admin=True, channel="web"),
+        origin="operator", session_id="session_test", **overrides,
+    )
+    return invocation
+
+
 @pytest.mark.asyncio
 async def test_sandbox_script_calls_readonly_tool_through_file_rpc(tmp_path):
     server = ToolRPCServer()
@@ -30,7 +49,7 @@ async def test_sandbox_script_calls_readonly_tool_through_file_rpc(tmp_path):
         return {"echo": args}
 
     server.register_tool("echo", echo)
-    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), invocation=_owner_invocation(server))
 
     run = await runtime.run_python(
         "import json\n"
@@ -64,7 +83,7 @@ async def test_gated_tool_returns_approval_required_without_inline_execution(tmp
         return {"sent": True}
 
     server.register_tool("send_email", send_email, gated=True)
-    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), invocation=_owner_invocation(server))
 
     run = await runtime.run_python(
         "import json\n"
@@ -83,8 +102,18 @@ async def test_gated_tool_returns_approval_required_without_inline_execution(tmp
 
 
 @pytest.mark.asyncio
-async def test_unknown_tool_is_refused_by_existing_allowlist(tmp_path):
-    runtime = ToolRPCSandboxRuntime(ToolRPCServer(), _host_sandbox(tmp_path))
+async def test_unknown_tool_is_refused_before_the_server_sees_it(tmp_path):
+    """The reason moved from `tool_not_allowed` to `tool_not_offered` in K0, on purpose.
+
+    The invocation gate now runs *first*, so a tool that does not exist is refused by
+    the offer check before the server's allowlist is ever consulted. Both refusals
+    are correct; collapsing them into one is the better answer, because "exists but
+    is not offered to you" and "does not exist" now look identical from inside the
+    sandbox — a guest cannot map the tool registry by probing it.
+    """
+    empty = ToolRPCServer()
+    runtime = ToolRPCSandboxRuntime(
+        empty, _host_sandbox(tmp_path), invocation=_owner_invocation(empty))
 
     run = await runtime.run_python(
         "import json\n"
@@ -94,7 +123,7 @@ async def test_unknown_tool_is_refused_by_existing_allowlist(tmp_path):
     assert run.result.success
     assert run.tool_calls == 1
     payload = json.loads(run.result.stdout.strip())
-    assert payload == {"ok": False, "reason": "tool_not_allowed", "tool": "missing"}
+    assert payload == {"ok": False, "reason": "tool_not_offered", "tool": "missing"}
 
 
 @pytest.mark.asyncio
@@ -107,7 +136,7 @@ async def test_runtime_caps_tool_calls_before_host_execution(tmp_path):
         return {"echo": args}
 
     server.register_tool("echo", echo)
-    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), max_tool_calls=2)
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), invocation=_owner_invocation(server), max_tool_calls=2)
 
     run = await runtime.run_python(
         "import json\n"
@@ -189,7 +218,7 @@ async def test_service_pending_deletes_request_files_after_servicing(tmp_path):
         return {"echo": args}
 
     server.register_tool("echo", echo)
-    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), invocation=_owner_invocation(server))
 
     store = FileRPCStore(tmp_path / "rpc")
     store.write_request(FileRPCRequest(seq=1, tool="echo", args={"a": 1}))
@@ -217,7 +246,7 @@ async def test_service_pending_drops_duplicate_already_processed_requests(tmp_pa
         return {"echo": args}
 
     server.register_tool("echo", echo)
-    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path))
+    runtime = ToolRPCSandboxRuntime(server, _host_sandbox(tmp_path), invocation=_owner_invocation(server))
     store = FileRPCStore(tmp_path / "rpc")
 
     store.write_request(FileRPCRequest(seq=1, tool="echo", args={}))

@@ -65,6 +65,58 @@ async def sandbox_status():
     }
 
 
+def _sandbox_invocation(orch, server, get_setting, request):
+    """Resolve one sandbox run's authority. Never raises: a failure binds nothing,
+    and a runtime without an invocation refuses every tool call it is asked for.
+
+    The principal comes from *this request*, resolved the same way `/chat` resolves
+    it. That matters more than it looks: nothing binds a turn principal on this
+    route, so reading the ambient one would make every sandbox run resolve as the
+    `internal`/`system` posture — and the profile would then withhold every gated
+    tool, quietly withdrawing the documented "a gated call enqueues an approval"
+    behaviour from the owner as well as from a guest. Binding what the door already
+    authenticated keeps the owner's reach and narrows a guest's, which is the point.
+    """
+    from agents.core import sandbox_invocation
+    from agents.core.action_origin import current_action_origin
+
+    try:
+        config = getattr(orch, "config", None)
+        agents = getattr(config, "agents", None) or {}
+        agent = getattr(server, "agent", "jarvis")
+        invocation, _decision = sandbox_invocation.bind(
+            tools=server.tools(),
+            agent=agent,
+            principal=_request_principal(request),
+            origin=current_action_origin(),
+            session_id=str(getattr(orch, "session_id", "") or ""),
+            settings=(get_setting or (lambda key, default: default)),
+            agent_patterns=getattr(agents.get(agent), "tools", None),
+        )
+        return invocation
+    except Exception:
+        logger.warning("sandbox invocation binding failed; tool calls will be refused",
+                       exc_info=True)
+        return None
+
+
+def _request_principal(request):
+    """Who is at this door, by the same rule the chat route uses."""
+    from agents import web
+
+    resolver = getattr(web, "_web_principal", None)
+    if resolver is None or request is None:
+        return None
+    try:
+        return resolver(request)
+    except Exception:
+        # An unreadable request is nobody in particular: the guest posture, never
+        # the owner's.
+        from agents.core.commands import Principal
+
+        return Principal(channel="web", sender=None, admin=False)
+
+
 class SandboxExecuteBody(BaseModel):
     code: str = Field("", max_length=32768)
     language: str = "python"
@@ -74,7 +126,7 @@ class SandboxExecuteBody(BaseModel):
 
 
 @router.post("/sandbox/execute", dependencies=[Depends(user_guard)])
-async def sandbox_execute(body: SandboxExecuteBody):
+async def sandbox_execute(body: SandboxExecuteBody, request: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
@@ -106,8 +158,13 @@ async def sandbox_execute(body: SandboxExecuteBody):
                 get_setting("security.sandbox_max_tool_calls", 50) if get_setting else 50)
         except (TypeError, ValueError):
             max_tool_calls = 50
+        # K0 — bind this run's authority from what the host already knows about the
+        # caller, before a line of the script runs. The body cannot name an identity
+        # or a tool set: both are resolved here, and the same profile that narrows a
+        # model turn narrows the script's reach.
+        invocation = _sandbox_invocation(orch, server, get_setting, request)
         run = await ToolRPCSandboxRuntime(
-            server, orch.sandbox, max_tool_calls=max_tool_calls,
+            server, orch.sandbox, invocation=invocation, max_tool_calls=max_tool_calls,
         ).run_python(code)
         return {
             "stdout": run.result.stdout,
