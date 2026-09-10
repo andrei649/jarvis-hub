@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # The ladder is deliberately wider than any single vendor's vocabulary: it is the
 # language the *caller* speaks, and each wire's table narrows it. Ordered weakest
@@ -247,6 +247,12 @@ _BUDGETS: dict[str, int] = {
 }
 
 
+def _split_levels(raw: str) -> list[object]:
+    """Split a human-written level list: commas and/or whitespace, either way."""
+
+    return list(raw.replace(",", " ").split())
+
+
 def _model_key(model: str) -> str:
     """Normalize a model id enough to match a family pattern against it."""
     return str(model or "").strip().lower().replace(".", "-").replace("_", "-")
@@ -276,7 +282,7 @@ def parse_overrides(raw: object) -> dict[str, tuple[str, ...]]:
         if not pattern:
             continue
         if isinstance(value, str):
-            candidates: list[object] = list(value.replace(",", " ").split())
+            candidates: list[object] = _split_levels(value)
         elif isinstance(value, (list, tuple)):
             candidates = list(value)
         else:
@@ -308,8 +314,6 @@ def anthropic_capability(
         return base
     for pattern in sorted(overrides, key=len, reverse=True):
         if pattern and (key.startswith(pattern) or pattern in key):
-            from dataclasses import replace
-
             return replace(base, efforts=tuple(overrides[pattern]))
     return base
 
@@ -394,7 +398,9 @@ def plan(
         thinking=thinking,
         drop_sampling=drop,
         requested=requested,
-        reason=why if effort is not None else "budget",
+        # No effort field went out, but a thinking block did. Naming this
+        # "budget" was wrong on the adaptive families, which never build one.
+        reason=why if effort is not None else "thinking-only",
         notes=(why,),
     )
 
@@ -432,6 +438,13 @@ def apply_anthropic(
     knob.
     """
     capability = anthropic_capability(model, overrides)
+    # H679 — the registry is the front door, the family table only the source
+    # behind it. A declaration recorded off the hot path (a catalog probe, an
+    # operator correction) therefore reaches the wire without a release, and a
+    # model nobody has declared stays exactly as silent as it was.
+    vocabulary = supported_reasoning_efforts("anthropic", model, overrides=overrides)
+    if vocabulary is not None and vocabulary != capability.efforts:
+        capability = replace(capability, efforts=vocabulary)
     decided = plan(
         capability,
         normalize(requested),
@@ -450,6 +463,147 @@ def apply_anthropic(
             payload["output_config"] = {"effort": decided.effort}
     return decided
 
+
+
+# ── H679 — the tri-state reasoning-effort registry ───────────────────────────
+#
+# One question, asked per request, with three genuinely different answers:
+#
+#   None          undeclared. Nobody has told this build what the model takes,
+#                 so the transport keeps whatever defaults it already had. This
+#                 is also the answer while a live catalog is still cold — the
+#                 hot path never blocks on I/O to find out.
+#   ()            declared empty. This model accepts no effort level at all, so
+#                 the effort field is omitted (and stripped if a caller set it).
+#   ("low", ...)  declared vocabulary, weakest first. Clamp into it.
+#
+# Collapsing the first two is the bug this row exists to prevent: "we do not
+# know" and "it rejects the parameter" produce opposite request bodies, and only
+# one of them is safe to guess. Nerva shipped exactly that collapse — every
+# non-Anthropic profile carried an empty tuple meaning "undeclared".
+#
+# The registry governs the *effort vocabulary* only. Whether a model takes a
+# thinking block, and in which shape, stays with ``WireCapability``: a family can
+# reject every effort level and still accept a manual thinking budget.
+
+_VOCAB_CACHE: dict[tuple[str, str], tuple[str, ...]] = {}
+
+
+def _vocab_key(provider_id: object, model: object) -> tuple[str, str]:
+    return (
+        str(provider_id or "").strip().lower(),
+        _model_key(model),
+    )
+
+
+def declare_reasoning_efforts(
+    provider_id: str, model: str, efforts: object
+) -> tuple[str, ...]:
+    """Record what one model accepts, so the hot path can answer from cache.
+
+    This is the write half of the contract: a catalog probe, an admin setting or
+    a provider's own ``/models`` response calls it once, off the request path,
+    and every later request reads the answer without waiting. Passing an empty
+    iterable declares "no effort level at all", which is a real answer and not
+    the same as never having called this.
+
+    Levels that are not on the ladder are dropped rather than trusted — a
+    vocabulary is only useful if ``clamp`` can rank every rung in it.
+    """
+    if isinstance(efforts, str):
+        candidates: list[object] = _split_levels(efforts)
+    elif isinstance(efforts, (list, tuple, set, frozenset)):
+        candidates = list(efforts)
+    else:
+        candidates = []
+    levels = tuple(
+        level for level in (normalize(item) for item in candidates)
+        if level is not None and level != "none"
+    )
+    ordered = tuple(rung for rung in LADDER if rung in levels)
+    _VOCAB_CACHE[_vocab_key(provider_id, model)] = ordered
+    return ordered
+
+
+def forget_reasoning_efforts(provider_id: str = "", model: str = "") -> None:
+    """Drop declarations, so a refresh cannot be shadowed by a stale answer."""
+
+    if not provider_id:
+        _VOCAB_CACHE.clear()
+        return
+    wanted = str(provider_id).strip().lower()
+    if model:
+        _VOCAB_CACHE.pop(_vocab_key(provider_id, model), None)
+        return
+    for key in [key for key in _VOCAB_CACHE if key[0] == wanted]:
+        del _VOCAB_CACHE[key]
+
+
+def _builtin_vocab(
+    provider_id: str,
+    model: str,
+    overrides: Mapping[str, tuple[str, ...]] | None = None,
+) -> tuple[str, ...] | None:
+    """The vocabulary this build knows synchronously, or None if it knows none.
+
+    Anthropic is the one vendor whose families are pinned in-tree, so it answers
+    without a catalog and is always warm. Everything else stays undeclared until
+    something declares it — which is the honest answer, not a guess.
+    """
+    if provider_id != "anthropic":
+        return None
+    capability = anthropic_capability(model, overrides)
+    if capability is UNSUPPORTED:
+        # A model id this build has never seen. Undeclared, not "rejects".
+        return None
+    return capability.efforts
+
+
+def supported_reasoning_efforts(
+    provider_id: str,
+    model: str,
+    *,
+    overrides: Mapping[str, tuple[str, ...]] | None = None,
+) -> tuple[str, ...] | None:
+    """The tri-state answer for one model. Never blocks; never guesses.
+
+    A declaration always wins over the built-in table: that is how a family whose
+    contract moves under us gets corrected without a release.
+    """
+    declared = _VOCAB_CACHE.get(_vocab_key(provider_id, model))
+    if declared is not None:
+        return declared
+    return _builtin_vocab(str(provider_id or "").strip().lower(), model, overrides)
+
+
+def clamp_reasoning_effort(
+    provider_id: str,
+    model: str,
+    level: object,
+    *,
+    overrides: Mapping[str, tuple[str, ...]] | None = None,
+) -> tuple[str | None, str]:
+    """``(effort_to_send, reason)`` for one model — the canonical clamp, once.
+
+    ``reason`` is one of ``undeclared``, ``unsupported``, ``unreadable``,
+    ``exact``, ``clamped`` or ``floored``. The two None-effort reasons are kept
+    apart on purpose: ``undeclared`` means the transport should leave its own
+    defaults alone, ``unsupported`` means the field must be omitted.
+
+    Every caller goes through here rather than writing its own map. A hand-rolled
+    ladder is what inverts — ``ultra`` quietly falling through to ``medium`` while
+    ``xhigh`` maps to ``high`` — and an inverted ladder spends more on the cheap
+    request and less on the expensive one, silently.
+    """
+    vocabulary = supported_reasoning_efforts(provider_id, model, overrides=overrides)
+    if vocabulary is None:
+        return None, "undeclared"
+    if not vocabulary:
+        return None, "unsupported"
+    wanted = normalize(level)
+    if wanted is None or wanted == "none":
+        return None, "unreadable" if wanted is None else "unsupported"
+    return resolve(wanted, vocabulary)
 
 def vendor_efforts(vendor: str) -> tuple[str, ...]:
     """The union of levels one vendor can express, weakest first.
@@ -474,10 +628,14 @@ __all__ = [
     "anthropic_capability",
     "apply_anthropic",
     "clamp",
+    "clamp_reasoning_effort",
+    "declare_reasoning_efforts",
+    "forget_reasoning_efforts",
     "normalize",
     "parse_overrides",
     "plan",
     "rank",
     "resolve",
+    "supported_reasoning_efforts",
     "vendor_efforts",
 ]

@@ -1387,7 +1387,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/reasoning_effort.py",
-          "sha256": "c18e6e67a443a2fed44e4bd2db03e70dcd220414be4aee8ab959dcac43e8ace3"
+          "sha256": "93b0d0fc02635d8da5ab532a7545a96da46a22a20be05c7fcfe31c02fb451c12"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -1399,7 +1399,7 @@
         },
         {
           "path": "agents/core/llm/providers/__init__.py",
-          "sha256": "cbba6ab8a97505bb2080e543aee63b4d77926619ca424e9f7adbcfcf260b67e1"
+          "sha256": "71cb8ccae8f7bee58cea40df6af67072484af367f02acdbc9e4a81811788ebfb"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2714,6 +2714,31 @@
         {
           "path": "tests/test_tool_loop_compaction.py",
           "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        }
+      ]
+    },
+    {
+      "id": "H679",
+      "row_sha256": "0cf627d19b3738a25a359ba7761a0a2ae5cce2b328a640d82ba84ea29b502237",
+      "status": "partial",
+      "summary": "`ProviderProfile.supported_reasoning_efforts(model)` există și răspunde **tri-state**, exact distincția pe care o cere rândul: `None` = nedeclarat, transportul își păstrează default-urile; `()` = modelul nu acceptă nicio treaptă de efort, câmpul se omite; un tuplu nevid = vocabular în care se face clamp. Cele două răspunsuri „fără efort\" nu sunt interschimbabile și de aceea hook-ul nu putea fi un atribut: `reasoning_efforts` rămâne uniunea de vânzător pentru afișare, iar o uniune goală acolo nu spune nimic despre un model anume. Înainte de această livrare Nerva avea exact colapsul pe care rândul îl numește: toate profilele non-Anthropic purtau `()`, adică „respinge\", când adevărul era „nedeclarat\". Registrul trăiește în `agents/core/llm/reasoning_effort.py`, lângă scară și clamp, deci nu introduce ciclu de import cu pachetul `providers`. Cache-ul e citit pe calea fierbinte și nu blochează niciodată: un model pe care nimeni nu l-a declarat răspunde `None` imediat, nu așteaptă un catalog. `declare_reasoning_efforts` e jumătatea de scriere (o sondă de catalog, o corecție de operator), acceptă listă scrisă de om („low, high\"), aruncă treptele care nu-s pe scară și reordonează de la cea mai slabă; `()` declarat explicit e un răspuns real, nu o resetare; `forget_reasoning_efforts` lasă celelalte provider-e neatinse. Clamp-ul e cel canonic, unul singur: cea mai apropiată treaptă **mai slabă**, niciodată escaladare, monoton pe toată scara — un test parcurge toate treptele și verifică monotonia, pentru că bug-ul Nebius (`ultra` căzând la `medium` în timp ce `xhigh` mergea la `high`) e tăcut și greșit tocmai în direcția scumpă. Hook-ul e purtător de sarcină, nu interfață: `apply_anthropic` cere vocabularul registrului, deci o declarație înregistrată în afara căii fierbinți schimbă corpul cererii care pleacă pe sârmă, fără release. Corectat în trecere: un `EffortPlan` fără efort dar cu bloc de gândire raporta `reason=\"budget\"` și pe familiile adaptive, care nu construiesc niciun buget — acum `thinking-only`.",
+      "remaining": "Jumătatea de scriere n-are încă producător viu: nimic din produs nu apelează `declare_reasoning_efforts`, deci în practică singurul vocabular care răspunde sincron e Anthropic (din tabelul de familii, mereu cald). Sondele de catalog care ar putea alimenta registrul există deja (`local_model_inventory.py`, `lmstudio_control.py`, `ollama_control.py` citesc `/v1/models`), dar niciuna nu declară vocabulare — conectarea lor e lucrare separată. Hermes cere „implementări\" la plural, câte una per provider; Nerva are una reală plus mecanismul de declarare pentru restul, deci rândul rămâne `partial`. Nu există în Nerva un echivalent de `provider-nebius-token-factory`: jumătatea portabilă a acelei intrări e clamp-ul, și el e livrat. Registrul guvernează **doar** vocabularul de efort; forma blocului de gândire rămâne la `WireCapability` — o familie poate respinge orice treaptă de efort și totuși să accepte un buget manual (`claude-sonnet-4-5`), iar tratarea celor două ca un singur „acceptă reasoning\" ar fi chiar eroarea pe care rândul o previne. Neverificat pe serviciu real: niciun apel către un gateway de provider nu a fost făcut — testele fixează răspunsul registrului și corpul cererii, nu acceptarea lui de către un serviciu.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "93b0d0fc02635d8da5ab532a7545a96da46a22a20be05c7fcfe31c02fb451c12"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "71cb8ccae8f7bee58cea40df6af67072484af367f02acdbc9e4a81811788ebfb"
+        },
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+        },
+        {
+          "path": "tests/test_reasoning_vocabulary_registry.py",
+          "sha256": "ccf7c8cf73dfed83d9ac63da35788b13f1823a277413e68583ac98c4c814ae66"
         }
       ]
     },
