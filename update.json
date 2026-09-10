@@ -1,7 +1,7 @@
 {
   "name": "superpowers",
-  "old_version": "6.1.1",
-  "new_version": "6.2.0",
+  "old_version": "6.2.0",
+  "new_version": "6.3.0",
   "vendored": true,
   "license_refreshed": true,
   "version_source_updated": false,
