@@ -2,6 +2,69 @@
 
 ## [Unreleased]
 
+### Hermes sprint — an oversized tool result is spilled, not thrown away (H298)
+
+The loop already refused to let a giant result flood the turn: it truncated to a
+head+tail preview and moved on. That protects the context and loses the rest, which
+is the wrong trade twice — a truncated `file_read` or a truncated governed
+`terminal_run` transcript means the owner reviewing an approval sees less than the
+tool actually produced, and the model's only way back to the dropped bytes is to run
+the tool again, the expensive thing the cap existed to avoid.
+
+**Added**
+
+- `agents/core/tool_result_store.py` — `threshold_for` resolves a result's ceiling
+  most-specific-first: pinned → the owner's `llm.tool_result_thresholds` → the `mcp_`
+  family → the tool's own `register_tool(max_result_bytes=…)` → the global default.
+  `file_read` is pinned to *no limit* on purpose: it is how a spilled result is read
+  back, and spilling the read of a spill is an infinite regress with disk writes.
+- `ToolResultStore.spill/read/sweep` — the full bytes land under
+  `data/workspace/tool_results/`, which is the file tools' default root, so the path
+  in the preview footer is one `file_read` can actually open. The read path refuses
+  anything that is not one of the store's own references and anything that resolves
+  outside the directory. Retention (age, file count, total bytes) runs on every write,
+  so the directory cannot grow without bound on a box nobody is watching.
+- `budget_for_context_window` — 15 % of the window for one result, 30 % for a whole
+  turn, floors at 8 KB / 16 KB. A constant 50 KB is generous on a 200k-token cloud
+  model and ruinous on the 8k local one this product is built around.
+- `register_tool(..., max_result_bytes=N)` and `ToolRPCServer.declared_result_bytes` —
+  the rung of that ladder only the registrar can fill. Deliberately absent from
+  `tools()`: it is a budgeting detail, not the model's business, and putting it there
+  would move a pinned snapshot.
+- Settings `llm.tool_result_thresholds`, `llm.tool_result_context_window`,
+  `llm.tool_result_retention_seconds`, `llm.tool_result_max_files` (`docs/FLAGS.md`).
+- `tests/test_tool_result_store.py` (32) and `tests/test_tool_loop_result_spill.py` (19).
+
+**Three holes the loop-level tests found**
+
+- The turn's running total was never threaded through the *ordinary* tool call path —
+  only through gated calls and refusals — so the per-turn budget, the part a per-result
+  cap cannot express, was silently inert for every normal result.
+- The budget scaled only to an owner-configured window, which nobody sets on a fresh
+  install. It now comes from the model the turn is running on. The override moved to a
+  setting of its own: `llm.tool_loop_context_tokens` is the *transcript* budget
+  compaction folds against, not a window, and borrowing it made the scaling read a
+  number that means something else.
+- The threshold ladder's fourth rung had nowhere to come from at all.
+
+**One place for the output limits**
+
+`agents/core/environments/output_limits.py` now owns `MAX_OUTPUT_BYTES` (50 KB),
+`MAX_OUTPUT_LINES` (2 000) and `MAX_LINE_LENGTH` (2 000); `code_tools` and
+`session_kernels` import them instead of each declaring their own 50 000. The two line
+limits did not previously exist, so one 5 MB line and fifty thousand short ones both
+passed every check while burying the window and the terminal. `cap_lines` bounds shape
+and **never drops a line carrying an earlier layer's truncation notice** — byte
+truncation leaves that notice in the middle, exactly where a line cap cuts, and
+composing the two naively erased the only record that bytes went missing.
+
+**Not closed by this**
+
+H305 / H595 state that `execute_code`'s stdout over 50 KB spills to a file whose path
+rides in the result. It still does not: stdout is capped in `code_tools._cap` before
+the result is built, so the copy written to disk already carries the truncated text.
+Both rows say so.
+
 ### Hermes sprint — the owner's window onto their own session kernel (K3, H660)
 
 K2 built the resident interpreter. This is the surface over it, and the interesting

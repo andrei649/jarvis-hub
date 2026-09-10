@@ -242,3 +242,22 @@ def test_the_total_size_is_bounded_too(tmp_path):
 
 def test_a_sweep_over_a_directory_that_does_not_exist_is_not_an_error(tmp_path):
     assert _store(tmp_path).sweep() == 0
+
+
+# ── the claim the preview footer makes ───────────────────────────────────────
+
+def test_the_default_spill_root_is_inside_the_file_tools_default_scope(monkeypatch):
+    """The footer tells the model to read the file with `file_read`. It must be able to.
+
+    This is the whole bargain of a spill: bounded in context, complete on disk,
+    and reachable without a second mechanism. If either side's default root moves,
+    the preview starts naming a path the model is refused, and the row quietly
+    goes back to being a truncation with extra steps.
+    """
+    from agents.core.file_tools import ROOTS_ENV, FileScope
+
+    monkeypatch.delenv(ROOTS_ENV, raising=False)
+    scope = FileScope.from_env()
+    root = ToolResultStore().root.resolve()
+
+    assert scope.root_for(root) is not None, f"{root} is outside {scope.roots}"
