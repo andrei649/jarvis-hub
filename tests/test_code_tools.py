@@ -21,8 +21,10 @@ contract, exercised by the sandbox suite and provable only on a host that has on
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -86,7 +88,7 @@ def _settings(**overrides):
 
 
 def _tool(tmp_path, *, principal=OWNER, settings=None, sandbox=None, patterns=None,
-          isolated=True, server=None):
+          isolated=True, server=None, result_store=None):
     server = server if server is not None else _server()
     box = sandbox if sandbox is not None else _sandbox(tmp_path, isolated=isolated)
     return server, CodeExecutionTool(
@@ -96,6 +98,7 @@ def _tool(tmp_path, *, principal=OWNER, settings=None, sandbox=None, patterns=No
         agent_patterns=(lambda agent: patterns),
         principal=lambda: principal,
         session_id=lambda: "session_k1",
+        result_store=result_store,
     )
 
 
@@ -617,3 +620,108 @@ async def test_sessions_switched_off_mid_flight_fall_back_to_one_shot(tmp_path):
     assert "session" not in plain and "continuity" not in plain
     assert "False" in plain["stdout"]
     await tool._kernels.shutdown()
+
+
+# ── the stream a byte cap used to throw away (H305/H595) ─────────────────────
+
+def _store(tmp_path):
+    from agents.core.tool_result_store import ToolResultStore
+
+    return ToolResultStore(tmp_path / "spills")
+
+
+@pytest.mark.asyncio
+async def test_an_oversized_stdout_lands_on_disk_whole_and_the_result_names_it(tmp_path):
+    """The clause H298 did not close: not a copy of the truncation, the real thing.
+
+    The sandbox's reader discards the middle of a long stream as it drains it, so a
+    spill taken from what came back would carry the same loss with a file path
+    attached. The bytes are spooled on the way past instead, which is why this can
+    assert the file matches what the script actually printed.
+    """
+    store = _store(tmp_path)
+    _server_, tool = _tool(tmp_path, result_store=store)
+
+    result = await _run(tool, "print('z' * 200000)")
+
+    assert result["stdout_bytes"] >= 200_000
+    assert "file_read" in result["stdout_notice"]
+    spilled = Path(result["stdout_file"])
+    assert spilled.is_file()
+    raw = spilled.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == result["stdout_sha256"]
+    assert raw.decode().strip() == "z" * 200_000, "the whole stream, not the ends"
+    # And the model's copy is still small.
+    assert len(result["stdout"].encode()) <= code_tools.MAX_OUTPUT_BYTES + 512
+    assert store.read(result["stdout_reference"], max_bytes=10 ** 7).strip() == "z" * 200_000
+
+
+@pytest.mark.asyncio
+async def test_a_run_whose_output_fits_leaves_no_file_behind(tmp_path):
+    """A spill per run would fill the retention budget with files nobody opens."""
+    store = _store(tmp_path)
+    _server_, tool = _tool(tmp_path, result_store=store)
+
+    result = await _run(tool, "print('small')")
+
+    assert result["stdout"].strip() == "small"
+    assert "stdout_file" not in result and "stderr_file" not in result
+    assert list((tmp_path / "spills").iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_stderr_spills_on_its_own_terms(tmp_path):
+    store = _store(tmp_path)
+    _server_, tool = _tool(tmp_path, result_store=store)
+
+    result = await _run(
+        tool, "import sys; sys.stderr.write('e' * 200000); print('ok')")
+
+    assert result["stdout"].strip() == "ok"
+    assert "stdout_file" not in result, "a stream that fitted gets no file"
+    assert Path(result["stderr_file"]).read_bytes().decode() == "e" * 200_000
+
+
+@pytest.mark.asyncio
+async def test_without_a_store_the_old_truncation_is_exactly_what_happens(tmp_path):
+    _server_, tool = _tool(tmp_path)
+
+    result = await _run(tool, "print('z' * 200000)")
+
+    assert result["truncated"] is False or result["truncated"] is True
+    assert not any(key.endswith("_file") for key in result)
+    assert not any(key.endswith("_reference") for key in result)
+
+
+@pytest.mark.asyncio
+async def test_a_store_that_cannot_open_falls_back_rather_than_failing_the_run(tmp_path):
+    from agents.core.tool_result_store import ToolResultStore
+
+    blocker = tmp_path / "spills"
+    blocker.write_text("not a directory", encoding="utf-8")
+    _server_, tool = _tool(tmp_path, result_store=ToolResultStore(blocker))
+
+    result = await _run(tool, "print('z' * 200000)")
+
+    assert result["ok"] is True
+    assert "stdout_file" not in result
+
+
+@pytest.mark.asyncio
+async def test_the_spill_is_kept_by_byte_count_not_by_this_layers_truncated_flag(tmp_path):
+    """The case that separates the two rules, and the reason it is not `truncated`.
+
+    A hundred and fifty lines of fifteen hundred characters is over the sandbox's
+    byte cap but under both line limits, so the sandbox drops the middle while
+    `_cap` cuts nothing and reports `truncated: False`. Gating the spill on that
+    flag would throw away the bytes in exactly the case the row is about.
+    """
+    store = _store(tmp_path)
+    _server_, tool = _tool(tmp_path, result_store=store)
+
+    result = await _run(tool, "for _ in range(150): print('q' * 1500)")
+
+    assert result["truncated"] is False, "this layer cut nothing — the sandbox did"
+    assert result["stdout_bytes"] == 150 * 1501
+    assert Path(result["stdout_file"]).read_bytes() == b"q" * 1500 + b"\n" + \
+        (b"q" * 1500 + b"\n") * 149

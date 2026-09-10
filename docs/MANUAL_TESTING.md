@@ -346,9 +346,20 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   the old file is gone but the new one is not. Then run something that prints tens of
   thousands of short lines through `execute_code`: the output must come back with BOTH
   a byte notice and a line notice — a single notice means one layer erased the other's
-  record. **Known gap, do not report as a bug:** `execute_code`'s own stdout is capped
-  before the result is built, so the spilled copy of an `execute_code` result carries
-  the already-truncated stdout (H305/H595).
+  record.
+- [ ] **`execute_code` stdout spilled whole (H305/H595)** ❌🔑 — With `llm.execute_code`
+  on and sessions **off**, run `print('z' * 200000)`. The result must carry
+  `stdout_file`, `stdout_bytes` ≥ 200,000 and `stdout_sha256`; open the file and
+  confirm it is the *whole* 200,000 characters, not a head-and-tail with a notice —
+  the point of this row is that the sandbox's own reader drops the middle and the
+  spool keeps it. Check `sha256sum` against the field. Then run `print('small')`: no
+  `stdout_file` key and **no new file** in `data/workspace/tool_results/` — a spill
+  per run would fill the retention budget with files nobody opens. Watch host RSS
+  (`ps -o rss= -p $(pgrep -f 'agents.web')`) while a script prints ~500 MB: it must
+  stay flat, because nothing buffers the stream. **Known gap, do not report as a
+  bug:** with `llm.execute_code_sessions` **on**, a cell's stdout is capped inside the
+  container, so there is no `stdout_file` on that path — only an honest head+tail with
+  a counted notice. The complete spill there needs a chunked worker protocol.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

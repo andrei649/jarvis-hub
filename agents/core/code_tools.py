@@ -47,6 +47,7 @@ from .environments.output_limits import (
     MAX_LINE_LENGTH,
     MAX_OUTPUT_BYTES,
     MAX_OUTPUT_LINES,
+    StreamSinks,
     TruncatedText,
     cap_lines,
     truncate_text,
@@ -175,6 +176,45 @@ def _int_setting(settings: Callable[[str, object], object], key: str, default: i
         return default
 
 
+#: What a spilled stream is called in the store, and therefore in the result. Two
+#: names rather than one so an owner reading the directory can tell them apart
+#: without opening the files.
+_STREAM_TOOLS = {"STDOUT": "execute-code-stdout", "STDERR": "execute-code-stderr"}
+
+_SPILL_NOTICE = (
+    "The complete {label} is on disk at the path below — read it with file_read "
+    "(whole or in parts) instead of running this again."
+)
+
+
+def _stream_fields(label: str, capped: TruncatedText, spill) -> dict:
+    """The keys that tell the model where the rest of a stream went, or nothing.
+
+    A spill is kept only when the child actually produced more than the model is
+    being shown. That comparison is made against the *bytes*, not against
+    ``capped.truncated``: the sandbox's own reader may have dropped the middle
+    before this layer ever saw the stream, in which case this layer cut nothing and
+    would report ``truncated=False`` while bytes were missing all the same.
+    """
+    if spill is None:
+        return {}
+    shown = len(capped.text.encode("utf-8"))
+    if spill.written_bytes <= shown:
+        spill.discard()
+        return {}
+    landed = spill.close()
+    if landed is None:
+        return {}
+    key = label.lower()
+    return {
+        f"{key}_file": landed.path,
+        f"{key}_reference": landed.reference,
+        f"{key}_bytes": landed.original_bytes,
+        f"{key}_sha256": landed.sha256,
+        f"{key}_notice": _SPILL_NOTICE.format(label=key),
+    }
+
+
 class CodeExecutionTool:
     """The handler, as an object so the wiring stays readable and testable."""
 
@@ -189,6 +229,7 @@ class CodeExecutionTool:
         session_id: Callable[[], str] | None = None,
         kernels=None,
         authorizer: Callable[..., object] | None = None,
+        result_store=None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -199,6 +240,9 @@ class CodeExecutionTool:
         # K2. Absent, or switched off, and every call is the K1 one-shot path.
         self._kernels = kernels
         self._authorizer = authorizer
+        # H305/H595. Absent, and an over-long stream is truncated as before; the
+        # feature adds a complete copy, it never becomes a dependency.
+        self._result_store = result_store
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -320,9 +364,18 @@ class CodeExecutionTool:
         if self.sessions_on():
             return await self._session_cell(
                 invocation, code, reset=bool(args.get("reset")), sandbox=sandbox)
-        run = await ToolRPCSandboxRuntime(
-            self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
-        ).run_python(code)
+        # Opened before the run because that is the only moment it can be: the
+        # sandbox's reader discards the middle of a long stream as it goes, so a
+        # spill taken afterwards would be a copy of the truncation. Whether either
+        # is worth keeping is decided after, by `_stream_fields`.
+        out_spill, err_spill, sinks = self._open_stream_spills()
+        try:
+            run = await ToolRPCSandboxRuntime(
+                self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
+            ).run_python(code, sinks=sinks)
+        except BaseException:
+            self._abandon_stream_spills(out_spill, err_spill)
+            raise
         limit, binding = _output_ceiling(sandbox)
         stdout = _cap(run.result.stdout, limit, "STDOUT", binding)
         stderr = _cap(run.result.stderr, limit, "STDERR", binding)
@@ -330,6 +383,8 @@ class CodeExecutionTool:
             "ok": bool(run.result.success) and not run.timed_out,
             "stdout": stdout.text,
             "stderr": stderr.text,
+            **_stream_fields("STDOUT", stdout, out_spill),
+            **_stream_fields("STDERR", stderr, err_spill),
             # True only when *this* pass cut something. When the sandbox's own cap was
             # the tighter one it truncated first, and says so inline in the stream.
             "truncated": stdout.truncated or stderr.truncated,
@@ -342,6 +397,36 @@ class CodeExecutionTool:
             "offered_tools": sorted(invocation.offered),
         }
 
+
+    def _open_stream_spills(self):
+        """A writer per stream, or three ``None``s when there is no store.
+
+        Returns the two writers and the ``StreamSinks`` the sandbox takes, so the
+        call site reads as one step rather than three.
+        """
+        store = self._result_store
+        if store is None:
+            return None, None, None
+        out = store.open_stream(tool=_STREAM_TOOLS["STDOUT"])
+        err = store.open_stream(tool=_STREAM_TOOLS["STDERR"])
+        if out is None and err is None:
+            return None, None, None
+        return out, err, StreamSinks(
+            stdout=out.write if out is not None else None,
+            stderr=err.write if err is not None else None,
+        )
+
+    @staticmethod
+    def _abandon_stream_spills(*spills) -> None:
+        """Leave nothing behind when the run did not finish.
+
+        A cancelled or crashed run has a part-file open and a partial stream in it.
+        Landing that would put a path in no result at all and leave a fragment to
+        age out of the retention budget; the honest move is to drop it.
+        """
+        for spill in spills:
+            if spill is not None:
+                spill.discard()
 
     # ── K2: the session path ─────────────────────────────────────────────────
 
@@ -411,6 +496,7 @@ def register_code_tools(
     session_id: Callable[[], str] | None = None,
     kernels=None,
     authorizer: Callable[..., object] | None = None,
+    result_store=None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -428,7 +514,7 @@ def register_code_tools(
     tool = CodeExecutionTool(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
         principal=principal, session_id=session_id, kernels=kernels,
-        authorizer=authorizer,
+        authorizer=authorizer, result_store=result_store,
     )
     sessions = tool.sessions_on()
     server.register_tool(

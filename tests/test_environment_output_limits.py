@@ -6,6 +6,7 @@ from agents.core.environments.output_limits import (
     MAX_LINE_LENGTH,
     MAX_OUTPUT_BYTES,
     MAX_OUTPUT_LINES,
+    StreamSinks,
     cap_lines,
     read_capped_stream,
     render_capped,
@@ -213,3 +214,41 @@ def test_an_absurd_limit_is_floored_rather_than_crashing(absurd):
     capped = cap_lines("a\nb\nc\nd", max_lines=absurd, max_line_length=absurd)
 
     assert capped.text  # a floor, not a ZeroDivisionError or an empty result
+
+
+# ── spooling the middle instead of dropping it (H305/H595) ───────────────────
+
+@pytest.mark.asyncio
+async def test_the_sink_sees_every_byte_while_the_reader_still_keeps_only_the_ends():
+    """The two halves of the bargain, in one assertion each.
+
+    The reader's whole reason to exist is that agent-written code decides how much
+    it prints, so the host must not hold it. The sink does not weaken that: it is
+    handed each chunk on the way past, and what this function *retains* is
+    unchanged. Break either half and the feature is pointless — buffering to spill
+    reintroduces the hazard, spooling the truncation keeps the loss.
+    """
+    chunks = [b"A" * 1_000 for _ in range(40)]
+    spooled = bytearray()
+    stream = _FakeStream(list(chunks))
+
+    head, tail, total = await read_capped_stream(
+        stream, max_content_bytes=100, chunk_size=1_000, sink=spooled.extend,
+    )
+
+    assert total == 40_000
+    assert bytes(spooled) == b"".join(chunks), "the sink got the middle the reader dropped"
+    assert len(head) + len(tail) == 100, "the reader still retains only the budget"
+
+
+@pytest.mark.asyncio
+async def test_no_sink_leaves_the_reader_exactly_as_it_was():
+    stream = _FakeStream([b"one", b"two"])
+
+    assert await read_capped_stream(stream, max_content_bytes=64) == (b"onetwo", b"", 6)
+
+
+def test_stream_sinks_default_to_spooling_nothing():
+    sinks = StreamSinks()
+
+    assert (sinks.stdout, sinks.stderr) == (None, None)

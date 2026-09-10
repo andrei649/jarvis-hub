@@ -11,6 +11,7 @@ terminal, and neither shape is what a byte cap is measuring.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 #: The byte ceiling on a single tool's output. Import it; do not re-declare it.
@@ -81,6 +82,19 @@ def truncate_text(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class StreamSinks:
+    """Where a child's two streams are spooled, when anyone wants them kept.
+
+    Threaded through the sandbox as one value rather than two parameters, and
+    optional at every level: a run nobody asked to spool passes ``None`` and the
+    reader behaves exactly as it did before.
+    """
+
+    stdout: Callable[[bytes], None] | None = None
+    stderr: Callable[[bytes], None] | None = None
+
+
 _STREAM_CHUNK = 65_536
 
 
@@ -89,6 +103,7 @@ async def read_capped_stream(
     *,
     max_content_bytes: int,
     chunk_size: int = _STREAM_CHUNK,
+    sink: Callable[[bytes], None] | None = None,
 ) -> tuple[bytes, bytes, int]:
     """Drain an asyncio stream while bounding peak host memory to ~budget.
 
@@ -104,6 +119,13 @@ async def read_capped_stream(
     Returns ``(head, tail, total_bytes)``; when ``total_bytes <=
     max_content_bytes`` the head and tail concatenate to the full output with no
     overlap.
+
+    ``sink``, when given, is called with every chunk as it arrives — before any of
+    it is discarded. That is how the middle of a long stream survives without ever
+    being held: the caller can spool it to disk while this reader keeps retaining
+    only the ends. The sink must not raise; a sink that cannot write is expected to
+    remember its own failure and stay quiet, because this function is draining a
+    live child process and an exception here loses the run.
     """
     if max_content_bytes < 8:
         raise ValueError("max_content_bytes must be at least 8")
@@ -119,6 +141,8 @@ async def read_capped_stream(
         if not chunk:
             break
         total += len(chunk)
+        if sink is not None:
+            sink(chunk)
         take = head_budget - len(head)
         if take > 0:
             head += chunk[:take]
@@ -241,7 +265,7 @@ def cap_lines(
 
 __all__ = [
     "MAX_LINE_LENGTH", "MAX_OUTPUT_BYTES", "MAX_OUTPUT_LINES", "NOTICE_MARK",
-    "CappedLines",
+    "CappedLines", "StreamSinks",
     "TruncatedText", "cap_lines", "read_capped_stream", "render_capped",
     "truncate_text",
 ]

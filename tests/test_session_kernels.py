@@ -534,3 +534,40 @@ async def test_a_cell_cannot_read_the_reply_token_from_anywhere_it_can_reach(tmp
     assert "env []" in outcome.stdout
     assert "argv False" in outcome.stdout
     await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_cell_that_prints_too_much_keeps_its_head_and_says_what_went(tmp_path):
+    """The worker used to send `text[-CAP:]` — the tail alone, with no marker.
+
+    A cell that printed a lot came back looking like a cell that printed a little:
+    the head, where a script says what it is doing, was gone and nothing said so.
+    The notice is worded like the host's so the host's line cap recognises it as an
+    earlier layer's record and never elides it in turn.
+    """
+    from agents.core.environments.output_limits import NOTICE_MARK
+
+    manager = _manager(tmp_path)
+    invocation = _bind(_server())
+
+    outcome = await _run(manager, invocation,
+                         "print('HEAD'); print('m' * 200000); print('TAIL')")
+
+    assert outcome.ok
+    assert outcome.stdout.startswith("HEAD"), "the head is the half that says what ran"
+    assert outcome.stdout.rstrip().endswith("TAIL")
+    assert NOTICE_MARK in outcome.stdout
+    assert "chars omitted out of" in outcome.stdout
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_cell_whose_output_fits_is_returned_untouched(tmp_path):
+    manager = _manager(tmp_path)
+    invocation = _bind(_server())
+
+    outcome = await _run(manager, invocation, "print('exactly what I printed')")
+
+    assert outcome.stdout.strip() == "exactly what I printed"
+    assert "TRUNCATED" not in outcome.stdout
+    await manager.shutdown()

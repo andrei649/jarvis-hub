@@ -181,6 +181,22 @@ def jarvis_tool_call(tool, args=None):
 NS["jarvis_tool_call"] = jarvis_tool_call
 
 
+def _bounded(text, label):
+    # Keep both ends and say what went. The old `text[-CAP:]` kept only the tail and
+    # said nothing, so a cell that printed a lot came back looking like a cell that
+    # printed a little — the head, where a script says what it is doing, gone with no
+    # marker at all. The notice wording matches the host's, so the host's line cap
+    # recognises it as an earlier layer's record and never elides it.
+    if len(text) <= CAP:
+        return text
+    head = CAP // 2
+    omitted = len(text) - CAP
+    return (text[:head]
+            + "\n\n... [%s TRUNCATED - %d chars omitted out of %d total] ...\n\n" % (
+                label, omitted, len(text))
+            + text[len(text) - (CAP - head):])
+
+
 def run(source):
     out, err = io.StringIO(), io.StringIO()
     failed = ""
@@ -193,8 +209,8 @@ def run(source):
         # SystemExit included — `sys.exit()` in a cell ends the cell, not the kernel.
         failed = traceback.format_exc()
     return {
-        "stdout": out.getvalue()[-CAP:],
-        "stderr": (err.getvalue() + failed)[-CAP:],
+        "stdout": _bounded(out.getvalue(), "STDOUT"),
+        "stderr": _bounded(err.getvalue() + failed, "STDERR"),
         "failed": bool(failed),
     }
 

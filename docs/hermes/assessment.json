@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "3eac55b6475e265b9c1c29303bce4074458cf9d3",
-  "assessed_at": "2026-09-10T14:00:00Z",
+  "base_sha": "5bdea1c30686efa2ee49cbb160665c752a5b2209",
+  "assessed_at": "2026-09-10T15:00:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -926,7 +926,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -934,7 +934,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -950,7 +950,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -958,15 +958,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
         }
       ]
     },
@@ -991,16 +991,16 @@
       "id": "H298",
       "row_sha256": "d516cf7e38eda13e728191a930ad08eecc1fdf248dd718e220a19b1713ded66f",
       "status": "equivalent",
-      "summary": "Toate cele cinci trepte ale pragului există și sunt cablate în bucla reală: pinned (`file_read` = fără limită, ca să nu se spill-eze citirea unui spill) → override-ul owner-ului (`llm.tool_result_thresholds`) → familia `mcp_` → declarația uneltei (`register_tool(max_result_bytes=…)`) → implicitul global. Un rezultat peste prag e scris integral sub `data/workspace/tool_results/` — în rădăcina implicită a uneltelor de fișiere, deci calea din subsolul preview-ului e una pe care `file_read` chiar o poate deschide — iar modelul primește un preview mărginit cu cap+coadă, dimensiunea originală și sha256. `budget_for_context_window` scalează 15 % pe rezultat și 30 % pe tură, cu praguri minime de 8 KB / 16 KB, pornind de la fereastra modelului pe care rulează tura (nu de la o constantă și nu doar când o configurează cineva). Retenția — vârstă, număr de fișiere, total octeți — rulează la fiecare scriere, deci dependența pe care o numea rândul e livrată, nu amânată. Cele trei limite de output (50 KB / 2 000 linii / 2 000 caractere pe linie) stau acum într-un singur modul, iar cele două limite de formă chiar se aplică: o linie de 5 MB și cincizeci de mii de linii scurte treceau amândouă de un plafon pe octeți. Neverificat pe servicii reale: bucla e probată cu un backend de model simulat (runtime-ul este cel real), iar store-ul pe un sistem de fișiere real în teste — nicio cerință acceptată a rândului nu depinde de hardware sau de un serviciu extern. Nicio unealtă din producție nu declară încă `max_result_bytes`; treapta există, e testată și e opțională prin construcție.",
+      "summary": "Toate cele cinci trepte ale pragului există și sunt cablate în bucla reală: pinned (`file_read` = fără limită, ca să nu se spill-eze citirea unui spill) → override-ul owner-ului (`llm.tool_result_thresholds`) → familia `mcp_` → declarația uneltei (`register_tool(max_result_bytes=…)`) → implicitul global. Un rezultat peste prag e scris integral sub `data/workspace/tool_results/` — în rădăcina implicită a uneltelor de fișiere, deci calea din subsolul preview-ului e una pe care `file_read` chiar o poate deschide — iar modelul primește un preview mărginit cu cap+coadă, dimensiunea originală și sha256. `budget_for_context_window` scalează 15 % pe rezultat și 30 % pe tură, cu praguri minime de 8 KB / 16 KB, pornind de la fereastra modelului pe care rulează tura (nu de la o constantă și nu doar când o configurează cineva). Retenția — vârstă, număr de fișiere, total octeți — rulează la fiecare scriere, deci dependența pe care o numea rândul e livrată, nu amânată. Store-ul are acum și un scriitor în flux (`open_stream`), folosit de H305/H595 pentru stdout-ul unei rulări; retenția și poarta de citire acoperă ambele forme. Cele trei limite de output (50 KB / 2 000 linii / 2 000 caractere pe linie) stau acum într-un singur modul, iar cele două limite de formă chiar se aplică: o linie de 5 MB și cincizeci de mii de linii scurte treceau amândouă de un plafon pe octeți. Neverificat pe servicii reale: bucla e probată cu un backend de model simulat (runtime-ul este cel real), iar store-ul pe un sistem de fișiere real în teste — nicio cerință acceptată a rândului nu depinde de hardware sau de un serviciu extern. Nicio unealtă din producție nu declară încă `max_result_bytes`; treapta există, e testată și e opțională prin construcție.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/tool_result_store.py",
-          "sha256": "07915d3b5632cc75c88b416266acc4ff2f43803ac6d7a4f53cdad936f54a6032"
+          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
         },
         {
           "path": "tests/test_tool_result_store.py",
-          "sha256": "6078c34ca83acb3b1f03bda8baea65976f9fdf0c5a062d9fd5c4459bc546cb2a"
+          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1012,23 +1012,23 @@
         },
         {
           "path": "agents/core/environments/output_limits.py",
-          "sha256": "7c2413ca9e8ac334f2ec73d96753af36b7802d547cab3a28d04d9469b5925b89"
+          "sha256": "28665037575d856d714dde91f51662fe54aad0f18bf4b9de9fd2d004e8709022"
         },
         {
           "path": "tests/test_environment_output_limits.py",
-          "sha256": "9d91f2204468308d4b9020e30af6a00bf83e2a41a5d58204fb2406a751df09d0"
+          "sha256": "d4b6d7fafd858786e03aa4458efd21aa1ecdc93f7a930a9ff85fb4b53b9ef00e"
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -1036,7 +1036,15 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+        },
+        {
+          "path": "agents/core/sandbox.py",
+          "sha256": "b466e7f195e05cb4bd51f2f27a7b6529420f414124fe8d3a9a4fef7ab8b9bcaf"
+        },
+        {
+          "path": "agents/core/tool_rpc_runtime.py",
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         }
       ]
     },
@@ -1107,12 +1115,12 @@
       "id": "H305",
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
-      "summary": "K1, K2 si K3 sunt livrate: execute_code inregistrat pentru model, celule intr-un interpreter rezident pe sesiune si controale de operator peste el. Lipseste scurgerea stdout intr-un fisier.",
-      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si kernelul remote. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real. H298 a livrat spill-ul la nivel de rezultat de unealtă (store, praguri, buget pe fereastră, retenție), dar NU închide clauza de aici: stdout-ul unei rulări `execute_code` este tăiat în `code_tools._cap` înainte ca rezultatul să fie construit, deci copia scrisă pe disc conține deja textul trunchiat — octeții peste plafon rămân pierduți, iar calea din rezultat nu e a stdout-ului integral. Rămâne de făcut: `code_tools` să scrie stdout/stderr complet în `ToolResultStore` și să pună referința în rezultat, în locul tăierii.",
+      "summary": "K1, K2 si K3 sunt livrate: execute_code inregistrat pentru model, celule intr-un interpreter rezident pe sesiune si controale de operator peste el. Lipseste scurgerea stdout intr-un fisier. Clauza de spill al stdout-ului este închisă pe calea implicită (K1, o rulare per apel): `code_tools` deschide un scriitor în flux înainte de rulare, `Sandbox.execute_python` primește sinks și cititorul mărginit dă fiecare chunk mai departe pe drum, deci fișierul de pe disc conține tot ce a scris procesul copil, nu ce a supraviețuit plafonului — iar rezultatul poartă calea, referința, dimensiunea și sha256. Memoria gazdei rămâne mărginită: cititorul păstrează în continuare doar capetele. Un flux care a încăput nu lasă fișier.",
+      "remaining": "Spill-ul stdout: livrat pe K1, deschis pe K2. Rămâne deschisă pe calea cu kernel de sesiune (K2, `llm.execute_code_sessions`, implicit oprită): worker-ul taie în container, în `run()`, deci gazda nu vede niciodată fluxul întreg — spill-ul complet de acolo cere un protocol pe cadre între worker și gazdă. Ce s-a livrat acum pentru acea cale este onestitatea tăierii: `text[-CAP:]` păstra doar coada, fără niciun marcaj; acum e cap+coadă cu o notiță formulată ca a gazdei, pe care plafonul de linii al gazdei o recunoaște și nu o mai elidează. Rămân de asemenea kernelul remote și proba pe un daemon Docker real. Modul `project|strict` al lui Hermes rămâne necopiat deliberat: postura o decide profilul de unelte (agent × suprafață × principal).",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1120,7 +1128,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1144,7 +1152,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -1152,15 +1160,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
@@ -1173,6 +1181,22 @@
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
           "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+        },
+        {
+          "path": "agents/core/sandbox.py",
+          "sha256": "b466e7f195e05cb4bd51f2f27a7b6529420f414124fe8d3a9a4fef7ab8b9bcaf"
+        },
+        {
+          "path": "agents/core/tool_result_store.py",
+          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
+        },
+        {
+          "path": "agents/core/environments/output_limits.py",
+          "sha256": "28665037575d856d714dde91f51662fe54aad0f18bf4b9de9fd2d004e8709022"
+        },
+        {
+          "path": "tests/test_tool_result_store.py",
+          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
         }
       ]
     },
@@ -1247,7 +1271,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1255,7 +1279,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1489,7 +1513,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1497,7 +1521,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1514,7 +1538,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1522,7 +1546,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1539,7 +1563,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1547,7 +1571,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2160,12 +2184,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1, K2 si K3 sunt livrate: execute_code pentru model, celule rezidente pe sesiune cu autoritate relegata la fiecare celula, si o suprafata de operator care spune modul, motivul si ce s-a pierdut la reset.",
-      "remaining": "Ramane spill-ul stdout intr-un fisier si kernelul remote. Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real. H298 a livrat spill-ul la nivel de rezultat de unealtă (store, praguri, buget pe fereastră, retenție), dar NU închide clauza de aici: stdout-ul unei rulări `execute_code` este tăiat în `code_tools._cap` înainte ca rezultatul să fie construit, deci copia scrisă pe disc conține deja textul trunchiat — octeții peste plafon rămân pierduți, iar calea din rezultat nu e a stdout-ului integral. Rămâne de făcut: `code_tools` să scrie stdout/stderr complet în `ToolResultStore` și să pună referința în rezultat, în locul tăierii.",
+      "summary": "K1, K2 si K3 sunt livrate: execute_code pentru model, celule rezidente pe sesiune cu autoritate relegata la fiecare celula, si o suprafata de operator care spune modul, motivul si ce s-a pierdut la reset. Clauza de spill al stdout-ului este închisă pe calea implicită (K1, o rulare per apel): `code_tools` deschide un scriitor în flux înainte de rulare, `Sandbox.execute_python` primește sinks și cititorul mărginit dă fiecare chunk mai departe pe drum, deci fișierul de pe disc conține tot ce a scris procesul copil, nu ce a supraviețuit plafonului — iar rezultatul poartă calea, referința, dimensiunea și sha256. Memoria gazdei rămâne mărginită: cititorul păstrează în continuare doar capetele. Un flux care a încăput nu lasă fișier.",
+      "remaining": "Spill-ul stdout: livrat pe K1, deschis pe K2. Rămâne deschisă pe calea cu kernel de sesiune (K2, `llm.execute_code_sessions`, implicit oprită): worker-ul taie în container, în `run()`, deci gazda nu vede niciodată fluxul întreg — spill-ul complet de acolo cere un protocol pe cadre între worker și gazdă. Ce s-a livrat acum pentru acea cale este onestitatea tăierii: `text[-CAP:]` păstra doar coada, fără niciun marcaj; acum e cap+coadă cu o notiță formulată ca a gazdei, pe care plafonul de linii al gazdei o recunoaște și nu o mai elidează. Rămân de asemenea kernelul remote și proba pe un daemon Docker real. Modul `project|strict` al lui Hermes rămâne necopiat deliberat: postura o decide profilul de unelte (agent × suprafață × principal).",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2173,7 +2197,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2197,7 +2221,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -2205,15 +2229,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
@@ -2226,6 +2250,22 @@
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
           "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+        },
+        {
+          "path": "agents/core/sandbox.py",
+          "sha256": "b466e7f195e05cb4bd51f2f27a7b6529420f414124fe8d3a9a4fef7ab8b9bcaf"
+        },
+        {
+          "path": "agents/core/tool_result_store.py",
+          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
+        },
+        {
+          "path": "agents/core/environments/output_limits.py",
+          "sha256": "28665037575d856d714dde91f51662fe54aad0f18bf4b9de9fd2d004e8709022"
+        },
+        {
+          "path": "tests/test_tool_result_store.py",
+          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
         }
       ]
     },
@@ -2484,12 +2524,12 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2 si K3 sunt livrate: interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista si permisiune care nu, plus suprafata de operator (mod, motiv, varsta starii, reset) si inchiderea kernelurilor la sfarsitul sesiunii. Lipseste varianta remote si proba pe container real.",
-      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si proba efectiva pe gazda izolata — doua celule, restart si cancel pe un daemon Docker adevarat. Kernelurile raman opt-in (llm.execute_code_sessions + imagine fixata prin digest), nu mereu pornite ca la Hermes.",
+      "summary": "K2 si K3 sunt livrate: interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista si permisiune care nu, plus suprafata de operator (mod, motiv, varsta starii, reset) si inchiderea kernelurilor la sfarsitul sesiunii. Lipseste varianta remote si proba pe container real. Tăierea output-ului unei celule nu mai este tăcută: worker-ul trimitea `text[-CAP:]`, adică doar coada, fără marcaj, așa că o celulă care scria mult arăta ca una care scria puțin; acum e cap+coadă cu o notiță numărată.",
+      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si proba efectiva pe gazda izolata — doua celule, restart si cancel pe un daemon Docker adevarat. Kernelurile raman opt-in (llm.execute_code_sessions + imagine fixata prin digest), nu mereu pornite ca la Hermes. Spill-ul complet al stdout-ului unei celule rămâne deschis din același motiv ca varianta remote: worker-ul taie în container, iar gazda nu vede fluxul întreg.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
+          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2497,7 +2537,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2505,19 +2545,19 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
+          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
         },
         {
           "path": "agents/core/routers/skills.py",

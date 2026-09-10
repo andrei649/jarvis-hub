@@ -97,7 +97,12 @@ DEFAULT_MAX_FILES = 512
 DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024
 
 _SAFE_NAME = re.compile(r"[^a-z0-9_.-]+")
-_REFERENCE = re.compile(r"^[a-z0-9_.-]{1,120}\.json$")
+#: Two shapes live here. A spilled tool *result* is JSON, because that is what the
+#: loop encoded. A spilled *stream* — an `execute_code` run's stdout — is text,
+#: because that is what it was; wrapping it in JSON would make the model unwrap an
+#: envelope to read a log. Nothing else is a reference.
+_REFERENCE = re.compile(r"^[a-z0-9_.-]{1,120}\.(?:json|txt)$")
+_SPILL_GLOB = ("*.json", "*.txt")
 
 
 def _safe_tool_name(tool: str) -> str:
@@ -257,6 +262,31 @@ class ToolResultStore:
         return SpilledResult(reference=reference, path=str(target),
                              original_bytes=len(raw), sha256=digest)
 
+    def open_stream(self, *, tool: str, suffix: str = "txt") -> StreamSpill | None:
+        """A spill written as it arrives, for bytes that must never be buffered whole.
+
+        :meth:`spill` takes a string the caller already holds. A sandboxed child's
+        stdout is the opposite case: the reason it is capped at all is that holding
+        it in host memory is the hazard (agent-written code decides how much it
+        prints). So this hands back a writer the *reader* feeds chunk by chunk —
+        peak host memory stays whatever the reader retains, and the file gets
+        everything, which is the only version of this feature worth having. A
+        truncated copy on disk would be the same loss with an extra step.
+
+        ``None`` means the directory could not be opened; the caller truncates as
+        before rather than losing the turn.
+        """
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            temporary = self.root / f".{_safe_tool_name(tool)}-{os.getpid()}-{id(self):x}.part"
+            handle = temporary.open("wb")
+        except OSError:
+            logger.warning("tool result stream spill could not be opened; "
+                           "falling back to truncation", exc_info=True)
+            return None
+        return StreamSpill(store=self, handle=handle, temporary=temporary,
+                           tool=tool, suffix=suffix)
+
     # ── reading back ─────────────────────────────────────────────────────────
 
     def read(self, reference: str, *, max_bytes: int = MAX_OUTPUT_BYTES) -> str | None:
@@ -291,7 +321,8 @@ class ToolResultStore:
         try:
             entries = [
                 (path.stat().st_mtime, path.stat().st_size, path)
-                for path in self.root.glob("*.json")
+                for pattern in _SPILL_GLOB
+                for path in self.root.glob(pattern)
             ]
         except OSError:
             return 0
@@ -324,6 +355,110 @@ class ToolResultStore:
             return 1
         except OSError:
             return 0
+
+
+class StreamSpill:
+    """The open half of a streaming spill. Feed it chunks; :meth:`close` names the file.
+
+    The name is content-addressed like a whole-result spill, so the digest is computed
+    as the bytes go past rather than by re-reading the finished file — the point of
+    this class is that nothing ever holds the whole stream, and that has to include
+    the naming.
+    """
+
+    __slots__ = ("_store", "_handle", "_temporary", "_tool", "_suffix",
+                 "_digest", "_written", "_failed", "_closed")
+
+    def __init__(self, *, store: ToolResultStore, handle, temporary: Path,
+                 tool: str, suffix: str) -> None:
+        self._store = store
+        self._handle = handle
+        self._temporary = temporary
+        self._tool = tool
+        self._suffix = "txt" if str(suffix or "").lower() not in {"json", "txt"} else str(suffix).lower()
+        self._digest = hashlib.sha256()
+        self._written = 0
+        self._failed = False
+        self._closed = False
+
+    @property
+    def written_bytes(self) -> int:
+        return self._written
+
+    def write(self, chunk: bytes) -> None:
+        """Take one chunk. A write that fails disables the spill without raising.
+
+        The caller is a stream reader in the middle of draining a child process; an
+        exception here would turn a disk problem into a lost run. The failure is
+        remembered so :meth:`close` reports it honestly instead of naming a file
+        that holds part of the output.
+
+        ``ValueError`` is caught alongside ``OSError`` because a file object that has
+        been closed under us raises it, and "the handle went away" is the same
+        situation as "the write failed" from here.
+        """
+        if self._failed or self._closed or not chunk:
+            return
+        try:
+            self._handle.write(chunk)
+        except (OSError, ValueError):
+            logger.warning("tool result stream spill failed mid-write", exc_info=True)
+            self._failed = True
+            return
+        self._digest.update(chunk)
+        self._written += len(chunk)
+
+    def discard(self) -> None:
+        """Close and remove, for a stream the model already has in full.
+
+        The spill is opened before the run, because that is the only moment it can
+        be; whether it is *worth keeping* is knowable only afterwards. A run whose
+        output fitted needs no second copy, and writing one anyway would fill the
+        retention budget with files nobody will ever open.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._handle.close()
+        except (OSError, ValueError):
+            logger.warning("tool result stream spill failed to close", exc_info=True)
+        self._store._unlink(self._temporary)
+
+    def close(self) -> SpilledResult | None:
+        """Finalise and name the file, or clean up and return ``None``.
+
+        ``None`` covers three cases the caller treats alike — a failed write, an
+        empty stream, and a failed rename — because in all three there is no complete
+        copy on disk to point the model at.
+        """
+        if self._closed:
+            return None
+        self._closed = True
+        try:
+            self._handle.flush()
+            os.fsync(self._handle.fileno())
+            self._handle.close()
+        except (OSError, ValueError):
+            logger.warning("tool result stream spill failed to close", exc_info=True)
+            self._failed = True
+        if self._failed or self._written <= 0:
+            self._store._unlink(self._temporary)
+            return None
+        digest = self._digest.hexdigest()
+        reference = f"{_safe_tool_name(self._tool)}-{digest[:16]}.{self._suffix}"
+        target = self._store.root / reference
+        try:
+            self._temporary.replace(target)
+            written = self._store._clock()
+            os.utime(target, (written, written))
+        except OSError:
+            logger.warning("tool result stream spill failed to land", exc_info=True)
+            self._store._unlink(self._temporary)
+            return None
+        self._store.sweep(keep=reference)
+        return SpilledResult(reference=reference, path=str(target),
+                             original_bytes=self._written, sha256=digest)
 
 
 def preview_envelope(
@@ -366,6 +501,7 @@ __all__ = [
     "DEFAULT_MAX_TOTAL_BYTES", "DEFAULT_RETENTION_SECONDS", "MAX_LINE_LENGTH",
     "MAX_OUTPUT_BYTES", "MAX_OUTPUT_LINES", "MCP_DEFAULT_BYTES", "MCP_PREFIX",
     "PER_RESULT_FLOOR_BYTES", "PER_TURN_FLOOR_BYTES", "PINNED_THRESHOLDS",
-    "PREVIEW_CHARS", "SPILL_DIRNAME", "SpilledResult", "ToolResultStore",
+    "PREVIEW_CHARS", "SPILL_DIRNAME", "SpilledResult", "StreamSpill",
+    "ToolResultStore",
     "budget_for_context_window", "cap_lines", "preview_envelope", "threshold_for",
 ]
