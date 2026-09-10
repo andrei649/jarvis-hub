@@ -1076,12 +1076,12 @@
       "id": "H312",
       "row_sha256": "84f70dcd63be6cb22a5a7a54cbc0947ff6714b0090ce4e5eb28d27fcf512c097",
       "status": "partial",
-      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
-      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
+      "remaining": "Lipsesc upscalingul, alegerea modelului/backend-ului si mai multe imagini de referinta; editarea nu este probata pe un ComfyUI real. Video lipseste in intregime.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
         },
         {
           "path": "agents/core/image_generation_view.py",
@@ -1089,15 +1089,23 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
+        },
+        {
+          "path": "agents/core/media_backends/comfyui.py",
+          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+        },
+        {
+          "path": "tests/test_image_edit.py",
+          "sha256": "53e12057285f6fa58db63016212ed85d090b843a17089f9a8bcb88bc54edc142"
         }
       ]
     },
@@ -1647,12 +1655,12 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
-      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
+      "remaining": "Lipsesc upscalingul, alegerea modelului/backend-ului si mai multe imagini de referinta; editarea nu este probata pe un ComfyUI real.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
         },
         {
           "path": "agents/core/image_generation_view.py",
@@ -1660,15 +1668,27 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
+        },
+        {
+          "path": "agents/core/media_backends/comfyui.py",
+          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+        },
+        {
+          "path": "tests/test_image_edit.py",
+          "sha256": "53e12057285f6fa58db63016212ed85d090b843a17089f9a8bcb88bc54edc142"
+        },
+        {
+          "path": "frontend/src/panels/images.tsx",
+          "sha256": "7dbf2b41de7fda0b8a0729feaf03a9675f6f291bc6148bf05db7c905a8ded296"
         }
       ]
     },
@@ -1676,12 +1696,12 @@
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
       "status": "partial",
-      "summary": "Catalogul și exportul există; imaginile noi pot fi citite autentificat prin ID.",
-      "remaining": "Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață.",
+      "summary": "Catalogul si exportul exista; imaginile noi pot fi citite autentificat prin ID, printr-un singur cititor de artefacte partajat cu calea de editare.",
+      "remaining": "Ramane experienta unificata de galerie si servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este intreaga suprafata.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
         },
         {
           "path": "agents/core/image_generation_view.py",
@@ -1689,15 +1709,15 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
         },
         {
           "path": "agents/core/media_catalog.py",
@@ -1706,6 +1726,10 @@
         {
           "path": "agents/core/media_export.py",
           "sha256": "a03b08ae99be921571e6c2121986e3cf72ebbc88893c838912c015bdc6e9d669"
+        },
+        {
+          "path": "agents/core/media_backends/comfyui.py",
+          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
         }
       ]
     },
@@ -1713,12 +1737,12 @@
       "id": "H523",
       "row_sha256": "a0fab30d78e84c7347418373ea736c26ee895f31fe9a9fbec2e274fab2b3dd62",
       "status": "partial",
-      "summary": "Catalogul și exportul există; imaginile noi pot fi citite autentificat prin ID.",
-      "remaining": "Rămâne experiența unificată de galerie și servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este întreaga suprafață.",
+      "summary": "Catalogul si exportul exista; imaginile noi pot fi citite autentificat prin ID, printr-un singur cititor de artefacte partajat cu calea de editare.",
+      "remaining": "Ramane experienta unificata de galerie si servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este intreaga suprafata.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
         },
         {
           "path": "agents/core/image_generation_view.py",
@@ -1726,15 +1750,15 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
         },
         {
           "path": "agents/core/media_catalog.py",
@@ -1743,6 +1767,10 @@
         {
           "path": "agents/core/media_export.py",
           "sha256": "a03b08ae99be921571e6c2121986e3cf72ebbc88893c838912c015bdc6e9d669"
+        },
+        {
+          "path": "agents/core/media_backends/comfyui.py",
+          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
         }
       ]
     },
@@ -1960,12 +1988,12 @@
       "id": "H598",
       "row_sha256": "0011c0e1c0c25d51aa1a5e78fa488aaf33410af4bd2964a4f43955ff621fb66c",
       "status": "partial",
-      "summary": "Există generare locală din prompt prin ComfyUI, aprobare exactă și interfață de rezultat.",
-      "remaining": "Lipsesc editarea imaginii, upscalingul și controalele/breadth acceptate; H312 include și video.",
+      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
+      "remaining": "Lipsesc upscalingul, alegerea modelului si controlul de aspect ratio la editare (dimensiunea vine din referinta); editarea nu este probata pe un ComfyUI real.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "f8c71ba15628a9da3b6574786e71d1876badbc50eb25babc486b320d238f64ab"
+          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
         },
         {
           "path": "agents/core/image_generation_view.py",
@@ -1973,15 +2001,27 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "37a28865153cfe31065ef5b7d41551a837013023e66fe5d26eef7436c245b37e"
+          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "be279eeaa8c3e1872b5cfef24f53b50987e2ec205cb427c613b4fb2011d12fc1"
+          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "d161f9db9d075286d39f90bd5bc0ac40257d160e2656cbd67564a5d7681aa4d4"
+          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
+        },
+        {
+          "path": "agents/core/media_backends/comfyui.py",
+          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+        },
+        {
+          "path": "tests/test_image_edit.py",
+          "sha256": "53e12057285f6fa58db63016212ed85d090b843a17089f9a8bcb88bc54edc142"
+        },
+        {
+          "path": "frontend/src/panels/images.tsx",
+          "sha256": "7dbf2b41de7fda0b8a0729feaf03a9675f6f291bc6148bf05db7c905a8ded296"
         }
       ]
     },

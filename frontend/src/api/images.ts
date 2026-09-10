@@ -3,6 +3,10 @@ import { apiFetchOnce } from './client';
 export type ImageArtifact = { id: string; bytes: number; width: number; height: number };
 export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'rejected' | 'deferred' | 'refused' | 'uncertain';
 export type ImageTask = { task_id: number; state: ImageState; artifact: ImageArtifact | null };
+export type ImageCapability = { configured: boolean; edit: boolean };
+/** An edit of an artifact this hub already produced: its opaque id, plus how much of
+ *  it to keep. There is deliberately no field here for a path, a URL or a filename. */
+export type ImageEdit = { reference: string; strength: number };
 export class ImageRequestError extends Error {
   constructor(public code: 'auth' | 'refused' | 'uncertain' | 'unavailable') { super(code); }
 }
@@ -12,6 +16,8 @@ const positiveInt = (value: unknown, limit = Number.MAX_SAFE_INTEGER): value is 
 const artifactValid = (value: any): value is ImageArtifact => value && typeof value.id === 'string'
   && /^[a-f0-9]{32}$/.test(value.id) && positiveInt(value.bytes, 16 * 1024 * 1024)
   && positiveInt(value.width, 1024) && positiveInt(value.height, 1024);
+export const editValid = (value: any): value is ImageEdit => !!value && typeof value.reference === 'string'
+  && /^[a-f0-9]{32}$/.test(value.reference) && positiveInt(value.strength, 100);
 const states: ImageState[] = ['awaiting_approval', 'queued', 'generating', 'ready', 'rejected', 'deferred', 'refused', 'uncertain'];
 
 async function boundedBody(response: Response, limit: number, signal: AbortSignal): Promise<Uint8Array> {
@@ -62,20 +68,24 @@ function readStatus(response: Response) {
   if (response.status === 401 || response.status === 403) fail('auth');
   if (!response.ok) fail();
 }
-export async function imageStatus(signal?: AbortSignal): Promise<{ configured: boolean }> {
+export async function imageStatus(signal?: AbortSignal): Promise<ImageCapability> {
   return timed(signal, async signal => {
     const response = await apiFetchOnce('/api/media', { admin: true, signal }); readStatus(response);
     const status = (await json(response, signal))?.local_image;
     if (!status || typeof status.configured !== 'boolean' || status.local !== true || status.approval_required !== true) fail();
-    return { configured: status.configured };
+    // `edit` is read, never required: a hub that predates image editing still reports
+    // a usable generator, and refusing the whole status over a missing capability flag
+    // would break generation to advertise editing.
+    return { configured: status.configured, edit: status.edit === true };
   });
 }
-export async function proposeImage(prompt: string, signal?: AbortSignal): Promise<number> {
+export async function proposeImage(prompt: string, edit?: ImageEdit | null, signal?: AbortSignal): Promise<number> {
   if (!prompt.trim() || prompt.length > 4000) fail('refused');
+  if (edit && !editValid(edit)) fail('refused');
   try {
     return await timed(signal, async signal => {
       const response = await apiFetchOnce('/api/media/generate', { method: 'POST', admin: true, signal,
-        body: { kind: 'image', prompt, cloud: false } });
+        body: { kind: 'image', prompt, cloud: false, ...(edit ? { reference: edit.reference, strength: edit.strength } : {}) } });
       if (response.status === 401 || response.status === 403) fail('auth');
       if ([400, 422].includes(response.status)) fail('refused');
       const value = await json(response, signal);
