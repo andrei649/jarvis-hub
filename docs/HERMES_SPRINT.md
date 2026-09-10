@@ -58,9 +58,10 @@ Punctul de plecare este `efc87a20634d33f2d7950b762d90854812c0a841`.
 | Extensii S2 — suprafața declarată devine apelabilă (H566/H570/H615/H637) | [#1073](https://github.com/andrei649/jarvis-hub/pull/1073) | Consimțământ pe amprenta suprafeței, înregistrare dovedită în sandbox; izolarea rămâne a profilului de achiziție, nedovedită aici. |
 | Extensii S3 — patru evenimente de ciclu de viață, doar observate (H567/H622) | [#1074](https://github.com/andrei649/jarvis-hub/pull/1074) | Nimic nu se întoarce dintr-un observator; hook-urile care blochează cer o decizie de kernel a owner-ului (`hook.exec`). |
 | K0 — o rulare de sandbox își poartă autoritatea (H305/H595/H287) | [#1075](https://github.com/andrei649/jarvis-hub/pull/1075) | Identitate, ofertă și durată rezolvate de gazdă înainte de orice apel; K1–K3 rămân. |
+| K1 — `execute_code` pe suprafața de unelte (H305/H595) | [#1076](https://github.com/andrei649/jarvis-hub/pull/1076) | Implicit oprit; reach-ul scriptului este exact oferta turei, iar fără backend izolat refuză. K2/K3 și spill-ul stdout rămân. |
 
 Cele opt PR-uri #1061–#1068 raportate la încheierea lucrului sunt toate integrate, la
-fel și livrările #1070–#1075 din sprintul curent.
+fel și livrările #1070–#1075 din sprintul curent; #1076 este în curs.
 Intrările anterioare arată dependențele și livrările conexe deja existente; numărul
 lor nu este folosit în calculul progresului. SHA-urile, rezultatele verificărilor
 și detaliile de implementare se găsesc în fiecare PR.
