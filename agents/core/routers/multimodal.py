@@ -348,6 +348,11 @@ class MediaGenBody(BaseModel):
     width: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
     height: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
     steps: int | None = Field(None, strict=True, ge=1, le=40)
+    # An edit of an artifact this hub already generated, addressed by its opaque id.
+    # No path and no URL is accepted here, so nothing a model writes can point the
+    # generator at a file the owner did not produce through this same route.
+    reference: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
+    strength: int | None = Field(None, strict=True, ge=1, le=100)
 
 
 @router.get("/api/media", dependencies=[Depends(user_guard)])
@@ -383,7 +388,7 @@ async def media_generate(body: MediaGenBody):
         if error is not None:
             return error
         args = {"prompt": body.prompt}
-        args.update({key: value for key in ("seed", "width", "height", "steps")
+        args.update({key: value for key in ("seed", "width", "height", "steps", "reference", "strength")
                      if (value := getattr(body, key)) is not None})
         result = await server.handle({"tool": "image_generate", "args": args}, actor="pepper")
         queued = result.get("reason") == "approval_required" and "task_id" in result
@@ -406,25 +411,18 @@ async def media_generate(body: MediaGenBody):
                 404: {"description": "Artifact not found or invalid"},
             })
 async def media_generated_artifact(artifact_id: str):
-    """Read a generated PNG by opaque id; never accept a host path or backend URL."""
-    import re
+    """Read a generated PNG by opaque id; never accept a host path or backend URL.
 
-    from agents.core.media_backends.comfyui import ImageGenerationError, validate_png
+    Shares one reader with the edit path (`comfyui.artifact_bytes`), so an artifact
+    is reachable as an edit's reference on exactly the terms it is downloadable —
+    there is no second, laxer resolution of an id anywhere in the hub.
+    """
+    from agents.core.media_backends.comfyui import ImageGenerationError, artifact_bytes
     from agents.core.paths import data_path
 
-    if not re.fullmatch(r"[a-f0-9]{32}", artifact_id):
-        return nocache_json({"ok": False, "reason": "artifact_not_found"}, status_code=404)
-    root = data_path("media", "generated").resolve()
-    candidate = root / (artifact_id + ".png")
     try:
-        if candidate.is_symlink() or candidate.resolve() != candidate:
-            raise OSError
-        with candidate.open("rb") as handle:
-            data = handle.read(16 * 1024 * 1024 + 1)
-        if len(data) > 16 * 1024 * 1024:
-            raise OSError
-        validate_png(data)
-    except (OSError, ImageGenerationError):
+        data = artifact_bytes(artifact_id, data_path("media", "generated"))
+    except ImageGenerationError:
         return nocache_json({"ok": False, "reason": "artifact_not_found"}, status_code=404)
     return Response(data, media_type="image/png", headers={
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",

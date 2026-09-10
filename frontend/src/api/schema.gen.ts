@@ -7231,6 +7231,10 @@ export interface paths {
         /**
          * Media Generated Artifact
          * @description Read a generated PNG by opaque id; never accept a host path or backend URL.
+         *
+         *     Shares one reader with the edit path (`comfyui.artifact_bytes`), so an artifact
+         *     is reachable as an edit's reference on exactly the terms it is downloadable —
+         *     there is no second, laxer resolution of an id anywhere in the hub.
          */
         get: operations["media_generated_artifact_api_media_generated__artifact_id__get"];
         put?: never;
@@ -9756,6 +9760,10 @@ export interface components {
             height?: number | null;
             /** Steps */
             steps?: number | null;
+            /** Reference */
+            reference?: string | null;
+            /** Strength */
+            strength?: number | null;
         };
         /** MoERouteBody */
         MoERouteBody: {

@@ -43,8 +43,36 @@ describe('owner image transport', () => {
     await expect(proposeImage('tree')).rejects.toMatchObject({ code: 'refused' });
   });
   it('reads configured status without inventing reachability', async () => {
-    vi.mocked(fetch).mockResolvedValue(reply({ local_image: { configured: true, local: true, approval_required: true, reachable: null, reason: 'PRIVATE' } }));
-    expect(await imageStatus()).toEqual({ configured: true });
+    vi.mocked(fetch).mockResolvedValue(reply({ local_image: { configured: true, local: true, approval_required: true, edit: true, reachable: null, reason: 'PRIVATE' } }));
+    expect(await imageStatus()).toEqual({ configured: true, edit: true });
+  });
+  it('still reports a usable generator on a hub that predates image editing', async () => {
+    // The defect this pins is the one worth avoiding: requiring a new capability flag
+    // would take generation down on an older hub in order to advertise editing.
+    vi.mocked(fetch).mockResolvedValue(reply({ local_image: { configured: true, local: true, approval_required: true } }));
+    expect(await imageStatus()).toEqual({ configured: true, edit: false });
+  });
+  it.each([{ edit: 'yes' }, { edit: 1 }, { edit: null }])('treats a non-boolean edit flag as no edit support', async extra => {
+    vi.mocked(fetch).mockResolvedValue(reply({ local_image: { configured: true, local: true, approval_required: true, ...extra } }));
+    expect((await imageStatus()).edit).toBe(false);
+  });
+  it('sends an edit as a reference id and a strength alongside the prompt', async () => {
+    vi.mocked(fetch).mockResolvedValue(reply({ reason: 'approval_required', task_id: 21 }, 202));
+    expect(await proposeImage('make it snow', { reference: id, strength: 35 })).toBe(21);
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body as string))
+      .toEqual({ kind: 'image', prompt: 'make it snow', cloud: false, reference: id, strength: 35 });
+  });
+  it.each([
+    { reference: '../../etc/passwd', strength: 50 },
+    { reference: '/var/lib/nerva/media/generated/' + id + '.png', strength: 50 },
+    { reference: id.toUpperCase(), strength: 50 },
+    { reference: 'a'.repeat(31), strength: 50 },
+    { reference: id, strength: 0 },
+    { reference: id, strength: 101 },
+    { reference: id, strength: 35.5 },
+  ])('refuses an invalid edit tuple without reaching the network', async edit => {
+    await expect(proposeImage('make it snow', edit as any)).rejects.toMatchObject({ code: 'refused' });
+    expect(fetch).not.toHaveBeenCalled();
   });
   it('rejects malformed configuration instead of treating strings as booleans', async () => {
     vi.mocked(fetch).mockResolvedValue(reply({ local_image: { configured: 'yes' } }));

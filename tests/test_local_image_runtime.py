@@ -31,6 +31,8 @@ def rig(tmp_path, monkeypatch):
 
     def service(request):
         requests.append(request)
+        if request.url.path == "/upload/image":
+            return httpx.Response(200, json={"name": "nerva-reference.png", "subfolder": "", "type": "input"})
         if request.method == "POST":
             return httpx.Response(200, json={"prompt_id": "p-1"})
         if request.url.path.startswith("/history/"):
@@ -333,3 +335,71 @@ async def test_proposal_preserves_inbound_origin_even_before_worker_is_bound(rig
     assert task.origin == "inbound"
     assert task.payload["tainted"] is True
     assert rig.requests == []
+
+
+# ── editing an artifact the hub already generated (H515 / H598) ──────────────
+
+def seed_reference(rig, artifact_id="c" * 32):
+    """Put a real artifact where a real generation would have left one."""
+    root = rig.root / "media" / "generated"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / (artifact_id + ".png")).write_bytes(PNG)
+    return artifact_id
+
+
+@pytest.mark.asyncio
+async def test_an_edit_crosses_the_same_approval_gate_as_a_generation(rig):
+    """The reference buys no shortcut: an edit is the identical propose/approve/execute
+    tuple, and the transport is untouched until a human has accepted it by name."""
+    reference = seed_reference(rig)
+    task_id = (await propose(rig, reference=reference, strength=35))["task_id"]
+    assert rig.requests == []
+    assert rig.queue.get(task_id).status == "blocked"
+    await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
+    assert rig.requests == []
+    await rig.worker.tick()
+
+    result = rig.queue.get(task_id).result
+    assert result["status"] == "ok", result
+    assert [r.url.path for r in rig.requests if r.method == "POST"] == ["/upload/image", "/prompt"]
+    workflow = json.loads(next(r for r in rig.requests if r.url.path == "/prompt").content)["prompt"]
+    assert workflow["11"]["class_type"] == "LoadImage"
+    assert workflow["3"]["inputs"]["denoise"] == 0.35
+    assert "EmptyLatentImage" not in {node["class_type"] for node in workflow.values()}
+    artifact = result["result"]["result"]
+    assert artifact["artifact_id"] != reference and "path" not in artifact
+
+
+@pytest.mark.asyncio
+async def test_the_approved_reference_is_the_one_that_is_edited(rig):
+    """Swapping the reference after approval is the same class of forgery as swapping
+    the prompt: the owner accepted an edit *of a particular image*."""
+    approved = seed_reference(rig)
+    other = seed_reference(rig, "d" * 32)
+    task_id = (await propose(rig, reference=approved))["task_id"]
+    await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
+    payload = copy.deepcopy(rig.queue.get(task_id).payload)
+    payload["args"]["reference"] = other
+    rig.queue._conn.execute("UPDATE tasks SET payload=? WHERE id=?", (json.dumps(payload), task_id))
+    rig.queue._conn.commit()
+    await rig.worker.tick()
+    assert rig.requests == []
+    assert rig.queue.get(task_id).result["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_a_reference_that_names_nothing_is_refused_before_any_transport(rig):
+    task_id = (await propose(rig, reference="e" * 32))["task_id"]
+    await rig.worker.apply_decision(task_id, "accept", decided_by="andrei")
+    await rig.worker.tick()
+    result = rig.queue.get(task_id).result
+    assert result["status"] == "failed" and result["reason"] == "reference_not_found"
+    assert rig.requests == [], "the approval is not spent on a reference we could reject first"
+
+
+@pytest.mark.asyncio
+async def test_an_edit_proposal_refuses_a_canvas_size_at_the_tool_boundary(rig):
+    reference = seed_reference(rig)
+    refused = await propose(rig, reference=reference, width=768)
+    assert refused["ok"] is False
+    assert rig.queue.list() == [] and rig.requests == []
