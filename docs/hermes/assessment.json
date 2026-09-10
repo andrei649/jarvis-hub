@@ -921,12 +921,12 @@
       "id": "H287",
       "row_sha256": "46e5a8383b36d68402b047fc573f46f40ef9851b87f952db804c5530973dfe43",
       "status": "partial",
-      "summary": "Provenienta pe tura exista in ContextVar si nu intra niciodata in mediul procesului; K0 a inchis calea sandbox, iar K1 duce actorul efectiv pana in handler (current_tool_actor), deci execute_code se leaga pe identitatea turei, nu pe agentul implicit al serverului.",
+      "summary": "Provenienta pe tura exista in ContextVar si nu intra niciodata in mediul procesului; K0 a inchis calea sandbox, K1 duce actorul efectiv pana in handler, iar K2 releaga identitatea la fiecare celula — un apelabil capturat intr-o celula anterioara nu poarta mai departe permisiunea ei.",
       "remaining": "Ramane identitatea dusa prin celelalte subprocese (terminal.exec, desktop) si contractul canonic sesiune/sursa din DataSpaces. Nedovedit pe servicii reale.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -934,7 +934,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -950,7 +950,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
+          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -958,7 +958,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
+          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+        },
+        {
+          "path": "agents/core/session_kernels.py",
+          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+        },
+        {
+          "path": "tests/test_session_kernels.py",
+          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
         }
       ]
     },
@@ -1046,12 +1054,12 @@
       "id": "H305",
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
-      "summary": "K1 este livrat: execute_code este inregistrat pentru model (implicit oprit, llm.execute_code), ruleaza doar pe backend izolat si isi ia autoritatea din K0. Lipseste kernelul rezident si scurgerea stdout intr-un fisier.",
-      "remaining": "Ramane K2/K3: interpreter rezident pe sesiune (variabile/importuri/date incarcate intre apeluri, H660) si spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat; azi surplusul este taiat cu o nota cinstita, nu salvat. Apelurile din script nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls (50) si ceasul sandboxului. Nedovedit pe un backend izolat real.",
+      "summary": "K1 si K2 sunt livrate: execute_code este inregistrat pentru model (implicit oprit) si, cu al doilea comutator, ruleaza celule intr-un interpreter rezident pe sesiune. Lipsesc scurgerea stdout intr-un fisier si controalele de operator.",
+      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si K3 — status/reset pe suprafata de operator plus dovada pe gazda. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1059,7 +1067,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1083,7 +1091,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
+          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -1091,7 +1099,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
+          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+        },
+        {
+          "path": "agents/core/session_kernels.py",
+          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+        },
+        {
+          "path": "tests/test_session_kernels.py",
+          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
         }
       ]
     },
@@ -1166,7 +1182,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1174,7 +1190,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1408,7 +1424,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1416,7 +1432,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1433,7 +1449,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1441,7 +1457,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1458,7 +1474,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1466,7 +1482,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2079,12 +2095,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1 este livrat: execute_code este inregistrat pentru model (implicit oprit, llm.execute_code), ruleaza doar pe backend izolat si isi ia autoritatea din K0. Lipseste kernelul rezident si scurgerea stdout intr-un fisier.",
-      "remaining": "Ramane K2/K3: interpreter rezident pe sesiune (H660) si spill-ul stdout intr-un fisier. Modul project|strict al Hermes nu este copiat: aici postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real.",
+      "summary": "K1 si K2 sunt livrate: execute_code este inregistrat pentru model si poate rula celule intr-un interpreter rezident pe sesiune, cu autoritate relegata la fiecare celula.",
+      "remaining": "Ramane spill-ul stdout intr-un fisier si K3 (controale de operator). Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2092,7 +2108,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2116,7 +2132,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
+          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -2124,7 +2140,15 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
+          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+        },
+        {
+          "path": "agents/core/session_kernels.py",
+          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+        },
+        {
+          "path": "tests/test_session_kernels.py",
+          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
         }
       ]
     },
@@ -2382,13 +2406,13 @@
     {
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
-      "status": "missing",
-      "summary": "Pipeline-ul existent este pe invocare, nu un interpreter rezident: K1 deschide usa (execute_code), dar fiecare apel porneste un container nou si nu pastreaza nimic intre apeluri.",
-      "remaining": "K0 si K1 sunt livrate; lipsesc kernelurile persistente pe sesiune, resetarea/expirarea si izolarea/revocarea intre celule (K2/K3).",
+      "status": "partial",
+      "summary": "K2 este livrat: un interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista intre apeluri si permisiune care NU persista — fiecare celula releaga autoritatea K0, trece prin Action Kernel, isi primeste propria cutie postala de tool-calls si recitește ESTOP. Lipseste kernelul remote si dovada pe container real.",
+      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si K3 (controale de operator + dovada pe gazda). Dependinta scrisa in rand — un hook de re-autorizare per-celula in environments/execution.py — a fost adaptata: o celula nu este o comanda de shell pe o tinta numita, deci re-autorizarea trece prin Action Kernel ca actiune tool.rpc, fara kind nou. Kernelurile sunt opt-in (llm.execute_code_sessions), nu mereu pornite ca la Hermes. Nedovedit pe un daemon Docker real: testele conduc interpretoare reale peste acelasi protocol, dar containerul ramane de probat de owner.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
+          "sha256": "2ebfe2595cd48c61147802085342fcfb34911a03dbc997f247e92debe2dcb3f9"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2396,7 +2420,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "483f1b741c637ba7f9eece949674d9a7458c883618e498ee79c210a82eaaa798"
+          "sha256": "21dab274b68368d064fa6154eaaadab8bc114b387d721ad7fa61cbcdbd207114"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2404,11 +2428,19 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
+          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
+          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+        },
+        {
+          "path": "agents/core/session_kernels.py",
+          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+        },
+        {
+          "path": "tests/test_session_kernels.py",
+          "sha256": "0fa1b0e49136df21bde4dffdd388a38de5f5bccbde966e761ed3ff682c63f627"
         }
       ]
     },

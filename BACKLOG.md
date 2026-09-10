@@ -28,8 +28,9 @@
   contract of each row, preserve authority boundaries, and update code evidence and
   the status in the implementation PR. First slices: job editing, configured-target
   messaging, image controls/gallery, SDK S2/S3, then K0 (a sandbox run's authority)
-  and K1 (`execute_code` on the tool surface, default off) before persistent code
-  sessions, then native overlay and channel streaming. The full inventory remains the scope;
+  and K1 (`execute_code` on the tool surface, default off), then K2 (a resident
+  interpreter per authorized session, state persisting and permission not), then native
+  overlay and channel streaming. The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
 

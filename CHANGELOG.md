@@ -2,6 +2,75 @@
 
 ## [Unreleased]
 
+### Hermes sprint — a resident interpreter per session, and why each cell re-earns it (K2, H660)
+
+K1 gave the model one container per call. That is correct and it is expensive: an
+analysis that needs a loaded dataframe re-loads it every single call, and on a local
+model that is the difference between a task that finishes and one that spends its
+context re-printing setup code. A session kernel keeps the variables, the imports and
+the loaded data alive between calls.
+
+**The danger is exactly the thing that makes it useful.** An interpreter authorized once
+and then fed arbitrary later code is a kernel bypass with extra steps: cell 1 is
+reviewed, cell 400 is not. So the rule the whole design hangs on is that **state
+persists and permission does not**.
+
+**Added**
+
+- `agents/core/session_kernels.py` — `SessionKernelManager`, `KernelKey`,
+  `PipeKernelBackend` and `docker_kernel_argv`. One resident process per key, its stdin
+  and stdout held open for its life; requests are line-delimited JSON and replies are
+  length-framed behind a per-kernel random token, so a cell cannot forge a result by
+  writing to `sys.__stdout__`.
+- `llm.execute_code_sessions` (default **off**), plus `llm.execute_code_image` which
+  must be **pinned by digest** — an unpinned image leaves sessions off with a warning.
+  Off means the tool's schema has no `reset` and its description promises no
+  persistence: the model is never told about a kernel that is not there.
+- `ToolCallBroker` in `tool_rpc_runtime.py` — the authorize-then-handle sequence, now
+  in one place. The one-shot sandbox and a session cell both hold one, so there is no
+  second, weaker copy of the authority check to drift.
+- `tests/test_session_kernels.py` (34) and seven session tests in `test_code_tools.py`.
+
+**What re-earns the right, every cell**
+
+- A **fresh K0 `SandboxInvocation`**, bound from the live principal. A variable created
+  while a tool was offered is still just a variable once it is not — a
+  `jarvis_tool_call` captured in cell 1 gets `authority_revoked` or `tool_not_offered`
+  in cell 2 if that is what the new binding says.
+- A **crossing of the Action Kernel** as a `tool.rpc` action, before a byte reaches the
+  interpreter. No new action kind.
+- Its **own tool-call mailbox**, created for that cell and removed after, serviced under
+  that cell's authority. Between cells there is no directory to write to, so a thread a
+  cell left running cannot keep calling.
+- A **re-read of ESTOP**, and an engaged stop tears every kernel down rather than
+  leaving processes alive to resume into.
+
+**Losing state is always named.** `reset`, idle expiry, eviction past
+`llm.execute_code_max_kernels`, a crash, a cell timeout and ESTOP each produce a
+`continuity` reason with `state_lost: true` on the next cell. A cell that raises costs
+the cell and not the namespace — ten cells of work outweigh the eleventh cell's
+traceback — and `sys.exit()` ends the cell, not the kernel. Cells in one session
+serialize; a full pool whose kernels are all mid-cell refuses the newcomer rather than
+killing a running cell.
+
+**Assessment**
+
+- **H660 moves `missing` → `partial`.** The remote kernel (`code_kernel_remote`:
+  run-to-completion transports, a detached runner, `kill -0` liveness, an open fallback)
+  is not built, and K3's operator controls are not either. Its written dependency — a
+  per-cell re-authorization hook in `environments/execution.py` — was **adapted, not
+  met as written**: a cell is not a shell command on a named target, so re-authorization
+  goes through the Action Kernel as a `tool.rpc` action.
+- H305 and H595 stay **partial** (stdout spill to a file, and K3). H287 stays partial
+  and gains per-cell identity rebinding.
+- 8 rows went to `needs_review`; all 8 were re-read. Equivalence is unchanged at
+  **114/697 (16.4%)**, 19.3% of the 590 accepted, `needs_review: 0`.
+
+**Not verified here:** that any of this holds against a real Docker daemon. The tests
+drive real resident interpreters over the real framing with the real worker source, so
+the protocol, the lifecycle and every refusal are exercised — the container is the
+owner's to prove (`docs/MANUAL_TESTING.md`).
+
 ### Hermes sprint — the model may write one script that calls many tools (K1, H305 / H595)
 
 K0 answered *on whose authority* a call from inside the sandbox is made. K1 is the door

@@ -452,6 +452,51 @@ not spilled to a file.
 **Revert:** set it back to `false` and restart; the tool disappears from the allowlist.
 A call already in flight is refused on its next tool call.
 
+### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
+
+**Defaults: OFF · unset · `4` · `900`s.** Runtime settings, read at composition.
+
+**OFF:** every `execute_code` call is the K1 one-shot — a container per call, nothing
+kept. The tool's schema has no `reset` and its description promises no persistence, so
+the model is never told about a kernel that is not there.
+
+**ON:** the model gets a **resident interpreter per authorized session**. Variables,
+imports and loaded data survive between calls, which is the difference between an
+analysis that finishes and one that spends its context re-loading the same dataframe.
+It needs `llm.execute_code_image` **pinned by digest** (`repo@sha256:…`); an unpinned
+or missing image leaves sessions off with a warning, because a kernel that lives for an
+hour deserves the pin the acquisition profile already demands.
+
+**What keeps a long-lived interpreter from being a bypass.** An interpreter authorized
+once and then fed arbitrary later code is a kernel bypass with extra steps: cell 1 is
+reviewed, cell 400 is not. So *state* persists and *permission* does not.
+
+| every cell | what happens |
+|---|---|
+| binds fresh | a new K0 `SandboxInvocation` from the live principal — a variable created while a tool was offered is still just a variable once it is not |
+| crosses the kernel | the cell is a `tool.rpc` action; a DENY (halted kill-switch, over budget, runaway loop) refuses it **before** a byte reaches the interpreter. No new action kind |
+| gets its own mailbox | tool calls go to a directory created for that cell and removed after, serviced under that cell's authority; a `jarvis_tool_call` captured ten cells ago writes where nobody is reading |
+| checks the stop | ESTOP is read before every cell, and an engaged stop **tears every kernel down** rather than leaving processes alive to resume |
+
+**Which kernel you get** is keyed to agent × principal × session × data scope, all read
+off the invocation the host resolved. There is no model-supplied kernel id, so two
+sessions cannot share one even by asking for the same name.
+
+**Losing state is always named.** `reset`, idle expiry, eviction (past
+`llm.execute_code_max_kernels`), a crash, a cell timeout and ESTOP each produce a
+`continuity` reason on the next cell with `state_lost: true`. A fresh kernel reads
+`new`; a continuing one reads `continued`. Nothing silently hands a caller a new
+interpreter while they think they still hold their data.
+
+**Cost:** a long-lived process per active session (memory, pids and wall bounded by the
+container), and a cell can leave a thread running between cells — it keeps the CPU it
+was given and gets `tool_calls_unavailable` if it tries to call a tool with no cell in
+flight. Cells in one session serialize; a full pool with every kernel busy refuses the
+newcomer rather than killing a running cell.
+
+**Revert:** set it back to `false` and restart. The next call is a one-shot again, and
+says nothing about continuity — the fallback is named in the result shape, not silent.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -482,6 +527,7 @@ A call already in flight is refused on its next tool call.
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers believed only from these networks; XFF walked right-to-left | A listed peer can name any client address — list only proxies you run; a malformed list refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
+| `llm.execute_code_sessions` *(runtime setting)* | off · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, crosses the Action Kernel, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Set `false` + restart: back to the K1 one-shot, kernels destroyed |
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
 Webhook channels cost no dependency, only configuration discipline.

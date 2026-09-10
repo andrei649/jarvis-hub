@@ -51,6 +51,7 @@ logger = logging.getLogger("jarvis.code_tools")
 
 TOOL = "execute_code"
 SETTING = "llm.execute_code"
+SESSION_SETTING = "llm.execute_code_sessions"
 MAX_TOOL_CALLS_SETTING = "security.sandbox_max_tool_calls"
 
 MAX_CODE_CHARS = 32_768
@@ -66,6 +67,7 @@ DEFAULT_MAX_TOOL_CALLS = 50
 CODE_REQUIRED = "code_required"
 CODE_TOO_LONG = "code_too_long"
 INVALID_ARGS = "invalid_args"
+SESSION_DENIED = "cell_denied"
 DISABLED = "code_execution_disabled"
 SANDBOX_UNAVAILABLE = "sandbox_unavailable"
 NOT_ISOLATED = "sandbox_not_isolated"
@@ -77,13 +79,28 @@ INPUT_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "code": {"type": "string", "minLength": 1, "maxLength": MAX_CODE_CHARS},
+        # K2 only, and advertised only when session kernels are on: start this cell
+        # in a fresh interpreter. Losing state has to be something a caller can ask
+        # for on purpose, or the only way out of a wedged namespace is a new session.
+        "reset": {"type": "boolean"},
     },
+}
+
+SESSION_SCHEMA = INPUT_SCHEMA
+ONESHOT_SCHEMA = {
+    "type": "object", "required": ["code"], "additionalProperties": False,
+    "properties": {"code": INPUT_SCHEMA["properties"]["code"]},
 }
 
 DESCRIPTION = (
     "Run one Python script in the isolated sandbox. Inside it, "
     "jarvis_tool_call(name, args) reaches the same tools this turn was offered, so "
     "many calls can be filtered and combined without returning here between them."
+)
+SESSION_DESCRIPTION = DESCRIPTION + (
+    " Variables, imports and loaded data persist between calls in this session; the "
+    "result says whether it continued or started over. Pass reset=true for a fresh "
+    "interpreter."
 )
 
 
@@ -131,6 +148,8 @@ class CodeExecutionTool:
         agent_patterns: Callable[[str], Sequence[str] | None] | None = None,
         principal: Callable[[], object] | None = None,
         session_id: Callable[[], str] | None = None,
+        kernels=None,
+        authorizer: Callable[..., object] | None = None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -138,6 +157,9 @@ class CodeExecutionTool:
         self._agent_patterns = agent_patterns
         self._principal = principal
         self._session_id = session_id
+        # K2. Absent, or switched off, and every call is the K1 one-shot path.
+        self._kernels = kernels
+        self._authorizer = authorizer
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -189,6 +211,17 @@ class CodeExecutionTool:
 
     # ── the arguments ────────────────────────────────────────────────────────
 
+    def sessions_on(self) -> bool:
+        """K2 is a second switch, not a consequence of the first."""
+        if self._kernels is None:
+            return False
+        try:
+            return self._settings(SESSION_SETTING, False) is True
+        except Exception:
+            logger.warning("session-kernel setting unreadable; leaving it off",
+                           exc_info=True)
+            return False
+
     def preflight(self, args: Mapping[str, object]) -> dict:
         """Enforce the advertised schema; the server only advertises it.
 
@@ -197,14 +230,18 @@ class CodeExecutionTool:
         not enforce is decoration. Refusing an unknown key matters more than the cap:
         this tool's whole contract is that the only thing a caller supplies is code.
         """
-        if set(args) - {"code"}:
+        allowed = {"code", "reset"} if self.sessions_on() else {"code"}
+        if set(args) - allowed:
             raise ToolRPCValidationError(INVALID_ARGS)
         code = args.get("code")
         if not isinstance(code, str) or not code.strip():
             raise ToolRPCValidationError(CODE_REQUIRED)
         if len(code) > MAX_CODE_CHARS:
             raise ToolRPCValidationError(CODE_TOO_LONG)
-        return {"code": code}
+        reset = args.get("reset", False)
+        if not isinstance(reset, bool):
+            raise ToolRPCValidationError(INVALID_ARGS)
+        return {"code": code, **({"reset": True} if reset else {})}
 
     # ── the call ─────────────────────────────────────────────────────────────
 
@@ -241,6 +278,9 @@ class CodeExecutionTool:
         code = str(args.get("code") or "")
         max_calls = max(0, _int_setting(
             self._settings, MAX_TOOL_CALLS_SETTING, DEFAULT_MAX_TOOL_CALLS))
+        if self.sessions_on():
+            return await self._session_cell(
+                invocation, code, reset=bool(args.get("reset")), sandbox=sandbox)
         run = await ToolRPCSandboxRuntime(
             self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
         ).run_python(code)
@@ -264,6 +304,64 @@ class CodeExecutionTool:
         }
 
 
+    # ── K2: the session path ─────────────────────────────────────────────────
+
+    async def _session_cell(self, invocation, code: str, *, reset: bool, sandbox) -> dict:
+        """Run one cell in this session's kernel, re-earning the right to first.
+
+        The invocation is this cell's own — bound moments ago from the live principal
+        — and the broker is built from it, so the interpreter's age buys the cell
+        nothing. ``authorize`` crosses the Action Kernel before a byte is written; a
+        DENY (a halted kill-switch, an over-budget agent, a runaway loop) stops the
+        cell here rather than at whatever it would have done next.
+        """
+        from .tool_rpc_runtime import ToolCallBroker
+
+        if reset:
+            await self._kernels.reset(invocation)
+        outcome = await self._kernels.run(
+            invocation, code,
+            authorize=lambda cell: self._authorize_cell(invocation),
+            broker=ToolCallBroker(self._server, invocation),
+        )
+        limit, binding = _output_ceiling(sandbox)
+        stdout = _cap(outcome.stdout, limit, "STDOUT", binding)
+        stderr = _cap(outcome.stderr, limit, "STDERR", binding)
+        return {
+            **outcome.as_dict(),
+            "stdout": stdout.text,
+            "stderr": stderr.text,
+            "truncated": stdout.truncated or stderr.truncated,
+            "output_limit": limit,
+            "session": True,
+            "offered_tools": sorted(invocation.offered),
+        }
+
+    def _authorize_cell(self, invocation) -> None:
+        """Cross the Action Kernel for this cell, or refuse it.
+
+        A resident interpreter authorized once and then fed arbitrary later code is a
+        kernel bypass with extra steps. No new action kind: a cell is a ``tool.rpc``
+        effect, the same boundary the one-shot path already sits behind.
+        """
+        if self._authorizer is None:
+            return
+        from .kernel import Action, Verdict
+
+        try:
+            decision = self._authorizer(Action(
+                kind="tool.rpc", agent=invocation.agent,
+                title="Run one code cell in the session kernel",
+                payload={"tool": TOOL, "target": TOOL, "session": invocation.session_id},
+                origin=invocation.origin,
+            ))
+        except Exception:
+            logger.warning("session cell authorization failed", exc_info=True)
+            raise ToolRPCValidationError(SESSION_DENIED) from None
+        if getattr(decision, "verdict", None) is Verdict.DENY:
+            raise ToolRPCValidationError(SESSION_DENIED)
+
+
 def register_code_tools(
     server,
     *,
@@ -272,6 +370,8 @@ def register_code_tools(
     agent_patterns: Callable[[str], Sequence[str] | None] | None = None,
     principal: Callable[[], object] | None = None,
     session_id: Callable[[], str] | None = None,
+    kernels=None,
+    authorizer: Callable[..., object] | None = None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -288,13 +388,17 @@ def register_code_tools(
         return []
     tool = CodeExecutionTool(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
-        principal=principal, session_id=session_id,
+        principal=principal, session_id=session_id, kernels=kernels,
+        authorizer=authorizer,
     )
+    sessions = tool.sessions_on()
     server.register_tool(
         TOOL,
         tool.execute,
-        description=DESCRIPTION,
-        input_schema=INPUT_SCHEMA,
+        # The model is shown what it can actually do: `reset` and the persistence
+        # promise appear only where a kernel is really behind the tool.
+        description=SESSION_DESCRIPTION if sessions else DESCRIPTION,
+        input_schema=SESSION_SCHEMA if sessions else ONESHOT_SCHEMA,
         capability_id="tool:execute_code",
         preflight=tool.preflight,
         # Stdout is whatever the script printed, which is where a fetched page or a

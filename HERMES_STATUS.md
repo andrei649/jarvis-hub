@@ -11,8 +11,8 @@ Din acestea, **6** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 114 | 16.4% |
-| Parțial | 367 | 52.7% |
-| Lipsă | 109 | 15.6% |
+| Parțial | 368 | 52.8% |
+| Lipsă | 108 | 15.5% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 0 | 0.0% |
 
@@ -45,7 +45,7 @@ Din acestea, **6** au fost reevaluate pe cod în această livrare; **108** păst
 | acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
 | docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
-| delta | 42 | 1 | 26 | 10 | 5 | 0 |
+| delta | 42 | 1 | 27 | 9 | 5 | 0 |
 
 ## Actualizare
 
