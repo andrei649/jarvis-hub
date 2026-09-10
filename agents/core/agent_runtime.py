@@ -40,7 +40,13 @@ from .action_origin import current_action_origin
 from .context_compressor import window_for
 from .iteration_budget import IterationBudget
 from .llm.tokenizer import estimate_messages
-from .llm.tool_protocol import MAX_PARSED_TOOL_CALLS, ToolCall, ToolSpec
+from .llm.tool_protocol import (
+    MAX_PARSED_TOOL_CALLS,
+    TokenUsage,
+    ToolCall,
+    ToolSpec,
+    ToolTurn,
+)
 from .security.quarantine import (
     fence_tool_result,
     injection_flag_names,
@@ -257,8 +263,14 @@ class AgentToolRuntime:
         temperature: float = 0.7,
         event_sink: ToolEventSink | None = None,
         wall_seconds: float | None = None,
+        usage_sink: Callable[[TokenUsage], None] | None = None,
     ) -> str:
         """Run one bounded tool-enabled model turn to a final answer.
+
+        ``usage_sink`` receives each model turn's provider-reported token counts as
+        they arrive. A tool loop makes several requests for one answer, so the caller
+        that meters cost has to see every one of them, not just the last — and it has
+        to be told during the loop, because ``run`` returns only the text.
 
         Deadlines bound response latency, not in-process coroutine lifetime. A coroutine
         that suppresses cancellation is detached and blocks ``can_run`` until it exits,
@@ -286,6 +298,7 @@ class AgentToolRuntime:
             max_tokens=max_tokens,
             temperature=temperature,
             event_sink=event_sink,
+            usage_sink=usage_sink,
         )
         # The loop runs in a child task under the deadline, in this explicit copy of the
         # turn's context; whatever recall taint the loop raised there is carried back into
@@ -300,6 +313,24 @@ class AgentToolRuntime:
             return _DEADLINE_REPLY
         finally:
             self._carry_turn_taint(turn_context)
+
+    @staticmethod
+    def _report_usage(
+        usage_sink: Callable[[TokenUsage], None] | None, turn: ToolTurn,
+    ) -> None:
+        """Hand one turn's provider counts to the meter, and never fail the turn for it.
+
+        Reported only when the provider actually said something: an empty usage means
+        "no numbers", and passing it on would let a caller mistake silence for a turn
+        that cost nothing. A sink that raises is the meter's problem, not the answer's.
+        """
+        usage = getattr(turn, "usage", None)
+        if usage_sink is None or usage is None or not getattr(usage, "reported", False):
+            return
+        try:
+            usage_sink(usage)
+        except Exception:
+            logger.warning("tool loop usage sink failed", exc_info=True)
 
     @staticmethod
     def _carry_turn_taint(turn_context: contextvars.Context) -> None:
@@ -331,6 +362,7 @@ class AgentToolRuntime:
         max_tokens: int,
         temperature: float,
         event_sink: ToolEventSink | None,
+        usage_sink: Callable[[TokenUsage], None] | None = None,
     ) -> str:
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
@@ -410,6 +442,7 @@ class AgentToolRuntime:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
+            self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
                 return turn.content
 

@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Hermes sprint — ask Anthropic to cache the stable prefix, and read the bill back (H363)
+
+`cost_estimator.py` prices a `cached` rate for every Claude row — opus-5 at 0.50
+against 5.00 input. That rate was unearnable: `cache_control`, `cache_creation` and
+`cache_read` appeared nowhere under `agents/`, so no request ever asked for caching
+and no response was ever read for it. A documented 10x discount was priced and never
+collected, and the meter reported a saving that could not exist.
+
+**Added**
+
+- `cache_marked_system()` makes the system prompt a text block carrying an ephemeral
+  breakpoint — a bare string cannot carry one — and `cache_marked_tools()` puts a
+  single breakpoint on the **last** tool. A `cache_control` mark covers everything
+  before it, so one mark caches the whole array; marking each tool would spend the
+  four-breakpoint budget on a prefix already covered. System prompt and tool array
+  are exactly the two things that do not change between the turns of a session.
+- `TokenUsage` on `ToolTurn`, filled by `anthropic_usage()` from the provider's own
+  counts. Every field is coerced and floored at zero: this is a parsed body from
+  outside the box and the cost meter is downstream of it. `reported` is False when
+  the provider said nothing, which a caller must be able to tell from a free turn.
+- `usage_sink`, threaded `Orchestrator` → `Agent.generate_response` → the tool loop.
+  A loop makes several requests for one answer, so the meter has to see every one of
+  them and be told during the loop — `run()` returns only text.
+- `_record_interactions` now prefers the reported numbers over the heuristic estimate
+  and stamps `usage_source: provider | estimate`, so a reader of the ledger can tell
+  a measurement from a guess.
+
+**Two things deliberately not claimed**
+
+A cache *write* costs a premium over plain input, so it is billed as input and never
+reported as `cached`. The price table has one `cached` rate and no write rate, and
+inventing a figure the vendor page has not been checked against would be worse than a
+stated under-report — this errs the safe way: the bill reads slightly low, never the
+saving high.
+
+**H363 moves `missing` → `partial`, not to `equivalent`.** The row also asks for
+`ProviderProfile.supports_prompt_cache_key` carrying a session-stable
+`prompt_cache_key` on OpenAI-compatible wires. `ProviderProfile` exists and its
+`capabilities` set is the right home for the declaration, but the OpenAI-compatible
+backend does not know which profile it belongs to — that plumbing is the real work,
+and it must default OFF: an unknown parameter on a wire that rejects it is a 400. The
+Codex `prompt_cache_retention` clause has no counterpart because Nerva has no Codex
+adapter; that is an unbuilt adapter, not a gap in this mechanism.
+
+
 ### Hermes sprint — an `execute_code` run's stdout is kept, not cut (H305/H595)
 
 H298 spilled oversized tool *results*. It did not close the clause these two rows

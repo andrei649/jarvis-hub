@@ -1684,7 +1684,13 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     assert answer == "seam answer"
     assert emitted == ["seam answer"]
     assert len(seam_calls) == 1
-    assert seam_calls[0] == {
+    # H363 added `usage_sink`, the channel the cost meter hears each model turn on.
+    # Pinned by behaviour rather than identity — it is a closure, so the only
+    # meaningful assertions are that it is passed and that it bills THIS agent.
+    call = dict(seam_calls[0])
+    meter = call.pop("usage_sink")
+    assert callable(meter)
+    assert call == {
         "backend": backend,
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",
@@ -1694,9 +1700,55 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
         "temperature": 0.15,
         "on_token": on_token,
     }
+    from agents.core.llm.tool_protocol import TokenUsage
+
+    meter(TokenUsage(input_tokens=10, output_tokens=3, cache_read=900))
+    meter(TokenUsage(input_tokens=5, output_tokens=2, cache_read=100))
+    billed = orchestrator._last_reported_usage
+    # Summed over the loop's requests, and filed under the agent that made them.
+    assert list(billed) == ["jarvis"]
+    assert billed["jarvis"].as_dict() == {
+        "input_tokens": 15, "output_tokens": 5, "cache_read": 1_000, "cache_write": 0,
+    }
+
     assert len(completion_calls) == 1
     assert [turn["role"] for turn in turns] == ["user", "assistant"]
     assert turns[-1]["content"] == "seam answer"
+
+@pytest.mark.asyncio
+async def test_a_backend_that_reports_nothing_leaves_the_meter_map_empty():
+    """Silence has to stay silence all the way down, not become a zero entry.
+
+    Every local backend reports nothing, and most of the cloud ones did until
+    H363. An entry of zeros in this map is not the same state as no entry: the
+    ledger stamps `usage_source`, and a reader that finds a key would call a
+    guess a measurement.
+    """
+    seam_calls = []
+
+    class _SeamAgent:
+        name = "Jarvis"
+        soul = {"content": "agent system"}
+        config = {"model": "configured-model"}
+
+        async def generate_response(self, **kwargs):
+            seam_calls.append(kwargs)
+            kwargs["on_token"]("seam answer")
+            return "seam answer"
+
+    orchestrator, _backend, _completions, _turns = _streamed_orchestrator_for(_SeamAgent())
+    await orchestrator.handle_input_stream(
+        "question", channel="web", on_token=lambda _t: None, session_id="quiet-session",
+    )
+
+    from agents.core.agent_runtime import AgentToolRuntime
+    from agents.core.llm.tool_protocol import ToolTurn
+
+    meter = seam_calls[0]["usage_sink"]
+    # What the loop does with a turn no provider annotated.
+    AgentToolRuntime._report_usage(meter, ToolTurn(content="hi"))
+
+    assert orchestrator._last_reported_usage == {}
 
 
 @pytest.mark.parametrize("runtime_response", ["", " \t "])

@@ -3,7 +3,7 @@
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
   "base_sha": "5bdea1c30686efa2ee49cbb160665c752a5b2209",
-  "assessed_at": "2026-09-10T15:00:00Z",
+  "assessed_at": "2026-09-10T16:00:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -305,7 +305,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
+          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
         },
         {
           "path": "agents/core/commands.py",
@@ -326,7 +326,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
+          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
         },
         {
           "path": "agents/core/commands.py",
@@ -1004,7 +1004,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_tool_loop_result_spill.py",
@@ -1057,7 +1057,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1082,7 +1082,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -1309,11 +1309,11 @@
       "row_sha256": "ff5c8494a612fa422b26f9bc489ff87d0da768813f27fa2b29420e2255ccdd27",
       "status": "partial",
       "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
-      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. H363 a adăugat o marcă `cache_control` pe blocul de sistem al wire-ului Anthropic, dar asta NU e layout-ul cerut aici: rândul cere trei tiere ordonate (stable/context/volatile) asamblate și memoizate o dată pe sesiune, un layout `[static, volatile]` reconstruibil, invalidare explicită și restaurare byte-cu-byte din DB-ul de sesiune cu verificare de identitate runtime. Din toate astea există acum doar granița de cache, pe un singur bloc.",
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1321,15 +1321,60 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
           "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        },
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
+        }
+      ]
+    },
+    {
+      "id": "H363",
+      "row_sha256": "cd0c402c53fbf7ad02280d90cab250311c91a6767de28d8def4b2e2e7ddd0786",
+      "status": "partial",
+      "summary": "Wire-ul Anthropic cere acum caching-ul și citește factura înapoi. Promptul de sistem pleacă drept bloc de text cu un breakpoint efemer (un string simplu nu poate purta unul), iar array-ul de unelte primește un singur breakpoint pe ULTIMA unealtă: o marcă `cache_control` acoperă tot ce e înaintea ei, deci una singură prinde tot array-ul, iar marcarea fiecărei unelte ar cheltui bugetul de patru breakpoint-uri pe un prefix deja acoperit. Promptul de sistem și array-ul de unelte sunt exact cele două lucruri care nu se schimbă între turele unei sesiuni. `anthropic_usage` aduce contoarele providerului pe `ToolTurn.usage`, iar `usage_sink` le duce prin bucla de unelte (mai multe cereri pentru un singur răspuns, deci se însumează) până în contorul de cost, care preferă cifra raportată în locul estimării euristice și marchează `usage_source`. Înainte, `cost_estimator` prețuia un tarif `cached` pe care nicio rută Claude nu-l putea câștiga: nicio cerere nu cerea caching și niciun răspuns nu era citit pentru el. O scriere de cache e facturată ca input, niciodată raportată drept economie.",
+      "remaining": "Rămâne clauza pentru wire-urile compatibile OpenAI: `ProviderProfile.supports_prompt_cache_key` care să poarte un `prompt_cache_key` stabil pe sesiune. `ProviderProfile` există și are deja un set `capabilities` care e locul potrivit pentru declarație, dar backend-ul compatibil OpenAI nu știe azi cărui profil îi aparține — plumbing-ul profil → constructor de cerere e partea reală de făcut, iar implicit trebuie să fie OPRIT: un parametru necunoscut trimis pe un wire care nu-l acceptă întoarce 400. Clauza `prompt_cache_retention` a adaptorului Codex nu are corespondent: Nerva nu are un adaptor Codex, deci nu e o lipsă în acest mecanism, ci un adaptor neconstruit. Neverificat pe serviciu real: niciun apel către api.anthropic.com nu a fost făcut aici — testele conduc un client HTTP fals și fixează corpul cererii și parsarea răspunsului. Că vânzătorul chiar servește prefixul din cache și facturează `cache_read_input_tokens` se vede doar pe o cheie reală.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
+        },
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
+        },
+        {
+          "path": "agents/core/llm/tool_protocol.py",
+          "sha256": "5841d5359786b58987159046456a9508b5855c1a94db55969699e72baee5bc31"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+        },
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "7a6c8417adf87bb8bff502fb76687fb06844b26c92f543ad1b4298a13400480b"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+        },
+        {
+          "path": "tests/test_agent_runtime_v2.py",
+          "sha256": "14769a140cb90f2fbfce29eb9dd484804e9d2ec20e1e1d3416d1c42cb7e10ace"
         }
       ]
     },
@@ -1338,11 +1383,11 @@
       "row_sha256": "126f0a252da57ce288cd87765b35847500d3d34977dde00b03ac4a958da04e6b",
       "status": "partial",
       "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
-      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
+      "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite. H363 a adăugat o marcă `cache_control` pe blocul de sistem al wire-ului Anthropic, dar asta NU e layout-ul cerut aici: rândul cere trei tiere ordonate (stable/context/volatile) asamblate și memoizate o dată pe sesiune, un layout `[static, volatile]` reconstruibil, invalidare explicită și restaurare byte-cu-byte din DB-ul de sesiune cu verificare de identitate runtime. Din toate astea există acum doar granița de cache, pe un singur bloc.",
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1350,15 +1395,19 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
           "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+        },
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
         }
       ]
     },
@@ -1388,7 +1437,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1396,11 +1445,11 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -1417,7 +1466,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1425,11 +1474,11 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -1446,7 +1495,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1467,7 +1516,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -1475,7 +1524,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "f58a1dd98ef5a44e5dd1e6f7e78a661478ed84708a23fc0e827fc166386e5ccb"
+          "sha256": "1cffb47bbffa46c0781b87af929cdd73cd0efe48016ec45c678d44f13195f25b"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -2615,7 +2664,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "c2e2046d3a41229c81e789c9ba0e586530080bd527e76bce775a437cde61e45a"
+          "sha256": "66e4ce8e1a10d5212cdb8f3228b3052a8d44eae472dfbc7ec2e33f4f045b2a9d"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -2623,11 +2672,11 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "2f72941037df0e046f5e42b0b6195f99183bee10156edf057d331dba075ae8b8"
+          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
