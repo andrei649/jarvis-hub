@@ -52,8 +52,15 @@ Punctul de plecare este `efc87a20634d33f2d7950b762d90854812c0a841`.
 | Interfață pentru propunerea și citirea imaginilor | [#1066](https://github.com/andrei649/jarvis-hub/pull/1066) | Preview/download autentificat, reluare prin citire; nu galerie completă/native parity. |
 | Legarea imaginilor la bridge-ul real de aprobare | [#1067](https://github.com/andrei649/jarvis-hub/pull/1067) | Compoziție în `off` și `enforce`; `hold` refuză intenționat. |
 | Memorie navigabilă, inspirată de Darwin | [#1068](https://github.com/andrei649/jarvis-hub/pull/1068) | Entități și vecini reali, mostre doar în Demo. Nu adaugă un rând nou la numitorul Hermes și nu închide timeline/edit/share. |
+| Editarea unui job deja armat (H146/H449) | [#1070](https://github.com/andrei649/jarvis-hub/pull/1070) | Nume, program și acțiune se schimbă fără a pierde istoricul; rândurile rămân parțiale (builder de program, ținte per job, galeria de blueprinturi). |
+| Trimitere către o destinație configurată (H018/H480) | [#1071](https://github.com/andrei649/jarvis-hub/pull/1071) | Destinații numite, fără thread inbound; nu send arbitrar. |
+| Editarea unei imagini generate de hub (H515/H598) | [#1072](https://github.com/andrei649/jarvis-hub/pull/1072) | Referință opacă + `strength`, niciodată o cale; fără upscaling și fără probă pe GPU. |
+| Extensii S2 — suprafața declarată devine apelabilă (H566/H570/H615/H637) | [#1073](https://github.com/andrei649/jarvis-hub/pull/1073) | Consimțământ pe amprenta suprafeței, înregistrare dovedită în sandbox; izolarea rămâne a profilului de achiziție, nedovedită aici. |
+| Extensii S3 — patru evenimente de ciclu de viață, doar observate (H567/H622) | [#1074](https://github.com/andrei649/jarvis-hub/pull/1074) | Nimic nu se întoarce dintr-un observator; hook-urile care blochează cer o decizie de kernel a owner-ului (`hook.exec`). |
+| K0 — o rulare de sandbox își poartă autoritatea (H305/H595/H287) | [#1075](https://github.com/andrei649/jarvis-hub/pull/1075) | Identitate, ofertă și durată rezolvate de gazdă înainte de orice apel; K1–K3 rămân. |
 
-Cele opt PR-uri #1061–#1068 raportate la încheierea lucrului sunt toate integrate.
+Cele opt PR-uri #1061–#1068 raportate la încheierea lucrului sunt toate integrate, la
+fel și livrările #1070–#1075 din sprintul curent.
 Intrările anterioare arată dependențele și livrările conexe deja existente; numărul
 lor nu este folosit în calculul progresului. SHA-urile, rezultatele verificărilor
 și detaliile de implementare se găsesc în fiecare PR.
@@ -79,7 +86,9 @@ contractul K0 sunt implementate și nu autorizează modificări printr-un snapsh
    cerințele acceptate; o subfuncție livrată nu închide întregul pachet.
 3. **Extensii S2/S3:** dispatch izolat și evenimente, peste S1; H566/H570/H615/H637.
    Fără imports cu încredere totală, extensii UI sau raw-shell hooks introduse tacit.
-4. **Execuție de cod:** K0 înainte de K1, apoi sesiuni persistente K2/K3; H305/H595/H660.
+4. **Execuție de cod:** K0 și K1 sunt livrate — autoritatea rulării, apoi `execute_code`
+   pe suprafața de unelte (implicit oprit). Rămân sesiunile persistente K2/K3 și
+   scurgerea stdout într-un fișier; H305/H595/H660 rămân parțiale.
 5. **Desktop și canale:** overlay nativ H178 și streaming Slack/Discord H104/H683,
    cu autoritate și cicluri de viață explicite.
 

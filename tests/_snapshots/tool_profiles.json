@@ -3,6 +3,7 @@
     "desktop_plan",
     "desktop_run",
     "echo",
+    "execute_code",
     "file_delete",
     "file_list",
     "file_read",
@@ -23,6 +24,7 @@
       "desktop_plan",
       "desktop_run",
       "echo",
+      "execute_code",
       "file_delete",
       "file_list",
       "file_read",
@@ -41,6 +43,7 @@
     "operator/guest": [
       "desktop_plan",
       "echo",
+      "execute_code",
       "file_list",
       "file_read",
       "file_search",
@@ -54,6 +57,7 @@
     "inbound/owner": [
       "desktop_plan",
       "echo",
+      "execute_code",
       "file_list",
       "file_read",
       "file_search",
@@ -71,6 +75,7 @@
     "internal/system": [
       "desktop_plan",
       "echo",
+      "execute_code",
       "file_list",
       "file_read",
       "file_search",

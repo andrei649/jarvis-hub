@@ -28,13 +28,22 @@ SNAPSHOT = Path(__file__).parent / "_snapshots" / "tool_profiles.json"
 DEFAULTS = lambda key, default: default  # noqa: E731 — the settings a fresh install has
 
 
+#: Settings the snapshot resolves under: every default-off tool switched ON, so the
+#: snapshot pins the widest registry a host can present. A tool that is off on a fresh
+#: install is not a tool whose postures may go unreviewed.
+SNAPSHOT_SETTINGS = {"llm.execute_code": True}
+
+
 def _live_registry(root: str) -> list[dict]:
-    """The coordinator's real ToolRPC allowlist, file tools switched on."""
+    """The coordinator's real ToolRPC allowlist, every optional tool switched on."""
     from agents.core.autonomy_coordinator import AutonomyCoordinator
 
     os.environ["JARVIS_FILE_TOOLS"] = "1"
     os.environ["JARVIS_FILE_ROOTS"] = root
-    orch = SimpleNamespace(agents={})
+    orch = SimpleNamespace(
+        agents={},
+        get_setting=lambda key, default=None: SNAPSHOT_SETTINGS.get(key, default),
+    )
     AutonomyCoordinator(orch)._wire_agent_tool_runtime()
     return orch.tool_rpc.tools()
 

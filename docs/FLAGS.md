@@ -405,6 +405,53 @@ allowed` — that is the DNS-rebinding defence. `*` and leading-dot wildcards re
 `/healthz`, `/readyz`, `/metrics` are exempt. No WebSocket route exists today; a future one
 must call `host_accepted` itself, since the HTTP middleware would not cover it.
 
+## Wave 2026-09-10 — the model may write a script (K1)
+
+One switch, and the only one on this page that is a **runtime setting** rather than an
+environment variable: it lives in the settings store next to the rest of the `llm.*`
+family, and it is read at composition time, so switching it on needs a restart the way
+`JARVIS_FILE_TOOLS` does.
+
+### `llm.execute_code`
+
+**Default: OFF** (`agents/core/code_tools.py`).
+
+**OFF:** `register_code_tools` is a no-op — **`execute_code` does not exist on the
+ToolRPC allowlist at all**, so no profile can offer it and no turn can name it. Off has
+to mean absent rather than present-and-refusing: a tool the model can see but never use
+costs context on every turn and teaches it to keep trying.
+
+**ON:** the model may submit one Python script that runs in the sandbox, where
+`jarvis_tool_call(name, args)` reaches tools over the existing file-RPC bridge. The
+point is arithmetic, not authority: a script can make many calls and return one answer,
+so a large intermediate result is filtered inside the container instead of being paid
+for in context.
+
+**What it does not widen.** The script's reach is bound by K0
+(`agents/core/sandbox_invocation.py`) from the turn's own principal and origin, so it is
+exactly the set that turn was offered — a guest's script gets a guest's tools. It cannot
+call `execute_code` (one turn, one container). A **gated** tool called from inside still
+only enqueues an ask-tier task and returns `approval_required`; that invariant is the
+reason `execute_code` itself is ungated. The container is the sandbox's own:
+`--network none`, read-only, memory/pids/wall bounded, and every response is
+secret-scrubbed on the way back.
+
+**When it refuses:** `sandbox_not_isolated` when the host has no Docker/WASM backend —
+model-written code never falls back to the host interpreter, even where
+`allow_subprocess` would let a developer's own script run; `sandbox_unavailable` with no
+sandbox composed; `authority_unavailable` if the binding fails; `code_execution_disabled`
+if the setting is switched off after boot (it is re-read on every call).
+
+**Cost:** the model can run arbitrary code inside the container, and a script's inner
+calls are not visible to the tool loop's per-tool caps or its repeated-call detector —
+they are bounded instead by `security.sandbox_max_tool_calls` (default 50) and the
+sandbox's wall clock. Output is capped per stream at the smaller of 50 KB and the
+sandbox's own `max_output_bytes`; the overflow is dropped with a notice saying how much,
+not spilled to a file.
+
+**Revert:** set it back to `false` and restart; the tool disappears from the allowlist.
+A call already in flight is refused on its next tool call.
+
 ## Decision table
 
 | Flag | Default | Effect ON | Cost / risk | Revert story |
@@ -434,6 +481,7 @@ must call `host_accepted` itself, since the HTTP middleware would not cover it.
 | `JARVIS_CA_BUNDLE` | unset (`http_client.py`) | Extra CA roots for plugin egress (adds only; verification always on) | A root you add is trusted for every plugin fetch — point it at your own proxy's CA, nothing else | Unset + restart: back to certifi alone |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers believed only from these networks; XFF walked right-to-left | A listed peer can name any client address — list only proxies you run; a malformed list refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
+| `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
 Webhook channels cost no dependency, only configuration discipline.
