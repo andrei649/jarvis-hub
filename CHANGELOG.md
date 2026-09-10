@@ -44,6 +44,16 @@ missing or not pinned by digest), `sandbox_not_isolated`.
 - 11 rows went to `needs_review` because this touched files they cite; all 11 were
   re-read. Equivalence unchanged at **114/697 (16.4%)**, 19.3% of 590, `needs_review: 0`.
 
+**Fixed on the way through** — CI's `hud-v2-build` failed on this branch with
+`ReferenceError: window is not defined` from `Timeout._onTimeout` at `voice.ts`, after
+all 1152 tests had passed. Not a flake and not this branch's code: cleanup of the VAD
+level meter's 60 ms interval hung off `rec.onstop`, so a recorder that errors, is torn
+down mid-event, or is a test double that never fires it left the interval calling
+`setLevel()` on an unmounted component forever. `releaseStream()` now clears the meter
+unconditionally — teardown never waits for a browser event — and
+`frontend/src/test/voice-timer-leak.test.tsx` pins it with a recorder that swallows
+`onstop` (it fails without the fix).
+
 **Not verified here:** the plan's own K3 acceptance ends with *"actual two-cell/restart/
 cancel proof on the isolated host"*. That needs a real Docker daemon and remains the
 owner's, in `docs/MANUAL_TESTING.md`. The route guards are pinned by
