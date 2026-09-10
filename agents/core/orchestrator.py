@@ -309,6 +309,9 @@ class Orchestrator:
         self.permission_ledger = None
         self.work_runs = None
         self.company_runtime = None
+        # K3 — the session-kernel manager the coordinator composes. Declared here
+        # like the rest of the external slots so the protocol holds before wiring.
+        self.session_kernels = None
 
         # ── optional components via the registry (A2: tames the god-object) ──
         from .component_registry import ComponentRegistry
@@ -3178,6 +3181,18 @@ class Orchestrator:
         sid = await self.memory.new_session()
         self.session_id = sid
         if previous:
+            # K3 — a session's resident interpreters die with the session. Leaving
+            # them alive would mean the next session inherits nothing (the kernel key
+            # includes the session id) while the processes keep their memory and their
+            # idle TTL. Read through `getattr` and wrapped: this method is borrowed by
+            # stubs that carry no binding, and a kernel that will not close must not
+            # stop the session from rolling over.
+            kernels = getattr(self, "session_kernels", None)
+            if kernels is not None:
+                try:
+                    await kernels.close_session(str(previous))
+                except Exception:
+                    logger.warning("session kernel cleanup failed", exc_info=True)
             EXTENSION_EVENTS.emit("session.ended", session_id=str(previous))
         EXTENSION_EVENTS.emit("session.started", session_id=str(sid))
         return sid

@@ -780,6 +780,7 @@ class AutonomyCoordinator:
         # argument.
         from .code_tools import register_code_tools
 
+        kernels = self._session_kernels(_get_setting)
         register_code_tools(
             server,
             sandbox=lambda: getattr(self._orch, "sandbox", None),
@@ -791,9 +792,13 @@ class AutonomyCoordinator:
             # switch. Docker only and pinned by digest: a kernel that survives an
             # hour deserves the pin the acquisition profile already demands, and a
             # moving tag is a different program tomorrow.
-            kernels=self._session_kernels(_get_setting),
+            kernels=kernels,
             authorizer=action_kernel,
         )
+        # K3 — the operator surface reads and resets what K2 owns, so the manager has
+        # to be reachable from a route. Bound even when it is None: "sessions are off"
+        # is a state the status route has to be able to report honestly.
+        bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
         runtime = AgentToolRuntime(
             server,

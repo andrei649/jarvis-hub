@@ -59,6 +59,11 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const recRef = useRef(null);
   const audioRef = useRef(null);
   const activeRef = useRef(false);
+  // The VAD level meter's interval. Held in a ref because clearing it used to depend
+  // on the recorder firing `onstop` — so a recorder that errors, or one that never
+  // fires the event, left a 60 ms timer calling setLevel() on an unmounted component
+  // forever. Cleanup must not need a browser event to arrive.
+  const levelIvRef = useRef(null);
   const cancelSpeakRef = useRef(null);
   const onTurnRef = useRef(onTurn);
   onTurnRef.current = onTurn;
@@ -108,6 +113,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   }
 
   function releaseStream() {
+    // First, and unconditionally: the meter stops here, not on an event we hope for.
+    if (levelIvRef.current) { clearInterval(levelIvRef.current); levelIvRef.current = null; }
     try { if (recRef.current && recRef.current.state !== 'inactive') recRef.current.stop(); } catch { /* */ }
     try { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); } catch { /* */ }
     try { if (acRef.current) acRef.current.close(); } catch { /* */ }
@@ -152,7 +159,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       catch { return resolve(null); }
       recRef.current = rec;
       rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.onstop = () => { clearInterval(iv); resolve(chunks.length ? new Blob(chunks, { type: chunks[0].type || 'audio/webm' }) : null); };
+      rec.onstop = () => { clearInterval(iv); levelIvRef.current = null; resolve(chunks.length ? new Blob(chunks, { type: chunks[0].type || 'audio/webm' }) : null); };
       const t0 = Date.now(); let speechAt = 0; let lastVoice = 0;
       const iv = setInterval(() => {
         const lv = rms(); setLevel(lv);
@@ -162,7 +169,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         const ended = (speechAt && now - lastVoice > SILENCE_MS) || dur > MAX_UTTER_MS || (!speechAt && dur > WAIT_SPEECH_MS);
         if (ended || !activeRef.current) { try { if (rec.state !== 'inactive') rec.stop(); } catch { /* */ } }
       }, 60);
-      try { rec.start(); } catch { clearInterval(iv); resolve(null); }
+      levelIvRef.current = iv;
+      try { rec.start(); } catch { clearInterval(iv); levelIvRef.current = null; resolve(null); }
     });
   }
 

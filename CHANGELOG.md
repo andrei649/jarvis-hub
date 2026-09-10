@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Hermes sprint — the owner's window onto their own session kernel (K3, H660)
+
+K2 built the resident interpreter. This is the surface over it, and the interesting
+part is what the two routes do **not** accept: neither takes a session id, a principal
+or a kernel token, because both derive the key from the request's own K0 authority.
+"Another session cannot inspect or reset this one" is therefore a property of the shape
+rather than a check somebody could forget to write.
+
+**Added**
+
+- `GET /sandbox/kernels` — the mode (`session` / `one_shot`), the reason it is not
+  `session`, and the caller's own kernel: cells run, idle seconds, alive, backend.
+  Never a cell's source, never a variable, never the token that frames a kernel's
+  replies.
+- `POST /sandbox/kernels/reset` — destroys the caller's own kernel and reports whether
+  there was one to destroy.
+- The SandboxPanel shows all of it and offers reset when sessions are live.
+- Session end now closes that session's kernels (`Orchestrator.new_session`), read
+  through `getattr` and wrapped: a kernel that will not close must not stop the session
+  from rolling over.
+- `tests/test_session_kernel_routes.py` (11) and
+  `frontend/src/test/sandbox-kernels.test.tsx` (6).
+
+**Three states that must never read the same**
+
+`reset: true` (a kernel was destroyed), `reset: false` (a successful call over an empty
+seat) and a failed call (**reset UNCONFIRMED — the kernel may still be running**). A
+button that says "reset" for all three stops meaning anything on the day it matters, so
+the panel spells each one out and a test holds them apart.
+
+The mode names the *switch to change* rather than the symptom:
+`code_execution_disabled`, `sessions_disabled`, `kernels_not_composed` (the image is
+missing or not pinned by digest), `sandbox_not_isolated`.
+
+**Assessment**
+
+- **H660 stays `partial`.** K3 closes the operator-controls clause; the remote kernel
+  (`code_kernel_remote`) is still unwritten and no container has been proven. H305 and
+  H595 stay partial (stdout spill to a file, and the remote kernel).
+- 11 rows went to `needs_review` because this touched files they cite; all 11 were
+  re-read. Equivalence unchanged at **114/697 (16.4%)**, 19.3% of 590, `needs_review: 0`.
+
+**Fixed on the way through** — CI's `hud-v2-build` failed on this branch with
+`ReferenceError: window is not defined` from `Timeout._onTimeout` at `voice.ts`, after
+all 1152 tests had passed. Not a flake and not this branch's code: cleanup of the VAD
+level meter's 60 ms interval hung off `rec.onstop`, so a recorder that errors, is torn
+down mid-event, or is a test double that never fires it left the interval calling
+`setLevel()` on an unmounted component forever. `releaseStream()` now clears the meter
+unconditionally — teardown never waits for a browser event — and
+`frontend/src/test/voice-timer-leak.test.tsx` pins it with a recorder that swallows
+`onstop` (it fails without the fix).
+
+**Not verified here:** the plan's own K3 acceptance ends with *"actual two-cell/restart/
+cancel proof on the isolated host"*. That needs a real Docker daemon and remains the
+owner's, in `docs/MANUAL_TESTING.md`. The route guards are pinned by
+`test_route_auth_matrix.py` from the live dependency graph rather than asserted over
+HTTP here, because conftest overrides the user guard suite-wide — an HTTP assertion
+would have passed for the wrong reason.
+
 ### Hermes sprint — a resident interpreter per session, and why each cell re-earns it (K2, H660)
 
 K1 gave the model one container per call. That is correct and it is expensive: an
