@@ -114,8 +114,60 @@ def test_gated_tool_still_requires_approval_from_the_pipeline(client, dev_mode, 
     assert resp.status_code == 200, resp.text
     payload = json.loads(resp.json()["stdout"].strip())
     assert payload["ok"] is False
-    assert payload["reason"] == "approval_required"
+    # K0 narrowed this, deliberately. The caller here presents no admin credential,
+    # so the run binds as `operator/guest`, and that posture is offered no gated
+    # tool at all — the script cannot even *propose* the send. The original
+    # guarantee still holds and is the stronger half of the assertion: it did not
+    # execute. What is gone is the approval card a non-owner could previously put in
+    # the owner's inbox from a dev sandbox, which is what least privilege is for.
+    assert payload["reason"] == "tool_not_offered"
     assert ran["value"] is False
+    assert enqueued == [], "a guest's script cannot queue an approval either"
+
+
+def test_the_owner_can_still_propose_a_gated_tool_and_it_still_only_enqueues(
+    client, dev_mode, monkeypatch, tmp_path,
+):
+    """The documented pipeline behaviour, preserved for the principal it was for.
+
+    K0 binds the principal this route already authenticated, so an owner keeps every
+    registered tool and a gated one still enqueues instead of running. Without that
+    binding the route would read the ambient turn principal — which nothing sets here —
+    resolve as `internal`/`system`, and silently withdraw this from the owner too.
+    """
+    from agents import web
+
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "sandbox-owner", raising=False)
+    enqueued = []
+    ran = {"value": False}
+
+    def enqueue(*args, **kwargs):
+        enqueued.append((args, kwargs))
+        return 11
+
+    server = ToolRPCServer(enqueue=enqueue)
+
+    async def send_email(args):
+        ran["value"] = True
+        return {"sent": True}
+
+    server.register_tool("send_email", send_email, gated=True)
+    _bind(monkeypatch, _stub_orch(tmp_path, server))
+
+    resp = client.post("/sandbox/execute", headers={"X-Admin-Token": "sandbox-owner"}, json={
+        "code": (
+            "import json\n"
+            "print(json.dumps(jarvis_tool_call('send_email', {'to': 'a@b.test'}),"
+            " sort_keys=True))\n"
+        ),
+        "language": "python",
+        "tools": True,
+    })
+    assert resp.status_code == 200, resp.text
+    payload = json.loads(resp.json()["stdout"].strip())
+    assert payload["ok"] is False
+    assert payload["reason"] == "approval_required"
+    assert ran["value"] is False, "a gated tool never executes from inside the sandbox"
     assert len(enqueued) == 1
 
 
