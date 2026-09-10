@@ -1,9 +1,17 @@
-"""Read-only extension diagnostics, without candidate imports or runtime startup."""
+"""Read-only extension diagnostics, without candidate imports or runtime startup.
+
+S2 gave extensions a way to become callable, so these reports now have to answer a
+second question honestly: not just "is this descriptor well formed" but "has the
+owner agreed to it, and is it live". Both answers are read, never established —
+inspecting an extension still activates nothing, composes nothing and imports no
+candidate code.
+"""
 
 from __future__ import annotations
 
 from importlib import metadata
 
+from .consent import ExtensionConsentStore
 from .manifest import (
     API_VERSION,
     MANIFEST_VERSION,
@@ -25,6 +33,20 @@ def _declarations(manifest):
         "execution_available": False, "callable_tools": [], "callable_commands": [],
         "reason": "sdk_dispatch_unavailable",
     }
+
+
+def _consent(manifest, store=None):
+    """What the owner agreed to for this exact declared surface.
+
+    An unreadable consent store reports ``not_granted``, never "unknown": the
+    runtime treats it as not granted, and a report that said otherwise would be
+    describing a permission that does not exist.
+    """
+    try:
+        return (store or ExtensionConsentStore()).check(manifest).as_dict()
+    except Exception:
+        return {"consent": "not_granted", "declared_digest": "", "granted_digest": None,
+                "added_declarations": [], "removed_declarations": []}
 
 
 def doctor_paths(paths) -> dict:
@@ -56,11 +78,12 @@ def doctor_paths(paths) -> dict:
     result["order"] = catalog["order"]
     result["dependency_issues"] = catalog["issues"]
     by_id = {manifest.id: manifest for manifest in manifests}
-    rows, installed = {}, {}
+    rows, installed, consent = {}, {}, ExtensionConsentStore()
     for name in catalog["order"]:
         manifest = by_id[name]
         row = _declarations(manifest)
         row.update({"source": "unsigned_descriptor", "trust": "unverified", "python_dependencies": [], "issues": []})
+        row.update(_consent(manifest, consent))
         row["issues"].extend(issue["reason"] for issue in catalog["issues"] if issue["extension"] == name)
         for distribution, required in manifest.python_requires:
             if distribution not in installed:
@@ -104,6 +127,8 @@ def inspect_acquisition(runtime) -> dict:
         if packages is None:
             result["reason"] = "acquisition_not_composed"
             return result
+        extensions = getattr(runtime, "extension_runtime", None)
+        active = {row.manifest.id: row for row in extensions.active()} if extensions is not None else {}
         records = packages.list_records(include_retained=True)
         if len(records) > MAX_EXTENSIONS:
             result["reason"] = "extension_capacity"
@@ -132,8 +157,17 @@ def inspect_acquisition(runtime) -> dict:
                 except Exception:
                     row.update({"signature_verified": False,
                                 "reason": "acquired_integrity_unverified"})
+            # Read an already-composed runtime; never compose one from a read. This
+            # goes last on purpose: the integrity block above also writes `reason`,
+            # and a live activation is the more specific truth about this row.
+            live = active.get(record.name)
+            if live is not None and row["signature_verified"]:
+                row.update({"execution_available": True,
+                            "callable_tools": list(live.manifest.qualified_tools),
+                            "callable_commands": [], "reason": "activated"})
             rows.append(row)
-        result.update({"extensions": rows, "reason": "sdk_dispatch_unavailable"})
+        result.update({"extensions": rows,
+                       "reason": "activated" if active else "sdk_dispatch_unavailable"})
     except Exception:
         result.update({"extensions": [], "reason": "acquisition_inspection_unavailable"})
     return result

@@ -30,6 +30,8 @@ class AcquisitionRuntime:
         self._promotion_config: dict | None = None
         self._reconciled = False
         self.ledger = None
+        self.sandbox_profile = None
+        self.extension_runtime = None
 
     def is_enabled(self) -> bool:
         try:
@@ -163,7 +165,35 @@ class AcquisitionRuntime:
         broker.restore_registrations()
         self.package_store = packages
         self.promotion_broker = broker
+        self.sandbox_profile = profile
         return broker
+
+    def extensions(self):
+        """The S2 extension runtime, over the same signed store and sandbox profile.
+
+        Composed lazily and only from an already-composed promotion path: an
+        extension is an acquired package, so there is deliberately no second store,
+        no second signing key and no second sandbox profile it could be admitted
+        through. Nothing is activated here — activation is the owner's explicit act.
+        """
+        if self.extension_runtime is not None:
+            return self.extension_runtime
+        if not self.is_enabled() or self.package_store is None or self.sandbox_profile is None:
+            return None
+        from pathlib import Path as _Path
+
+        from agents.core.extensions.runtime import ExtensionRuntime
+        from agents.core.paths import data_path
+
+        base = _Path(self._root) if self._root is not None else data_path("acquisition")
+        self.extension_runtime = ExtensionRuntime(
+            packages=self.package_store,
+            profile=self.sandbox_profile,
+            runtime_root=base / "extension-runs",
+            enabled=self.is_enabled,
+            rpc=(self._promotion_config or {}).get("tool_rpc"),
+        )
+        return self.extension_runtime
 
     async def synthesize_and_propose(
         self,

@@ -406,6 +406,8 @@
   "POST /api/payments/{payment_id}/reject": "reject_payment_api_payments__payment_id__reject_post",
   "POST /api/payments/{payment_id}/settle": "settle_payment_api_payments__payment_id__settle_post",
   "POST /api/permissions/{grant_id}/revoke": "permissions_revoke_api_permissions__grant_id__revoke_post",
+  "POST /api/plugins/extensions/activate": "extension_activate_api_plugins_extensions_activate_post",
+  "POST /api/plugins/extensions/consent": "extension_consent_api_plugins_extensions_consent_post",
   "POST /api/presence/owner": "set_owner_presence_api_presence_owner_post",
   "POST /api/quality/threshold": "quality_set_threshold_api_quality_threshold_post",
   "POST /api/quickbar/resolve": "quickbar_resolve_api_quickbar_resolve_post",

@@ -7821,6 +7821,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins/extensions/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extension Consent
+         * @description Record or withdraw the owner's consent to exactly these declarations.
+         */
+        post: operations["extension_consent_api_plugins_extensions_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/extensions/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extension Activate
+         * @description Prove the declared surface inside the sandbox, then make its tools callable.
+         */
+        post: operations["extension_activate_api_plugins_extensions_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -9502,6 +9542,32 @@ export interface components {
             title: string;
             /** Targets */
             targets?: string[];
+        };
+        /** ExtensionActivateBody */
+        ExtensionActivateBody: {
+            /** Manifest */
+            manifest: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ExtensionConsentBody
+         * @description The owner grants against a manifest they submitted, not against an id.
+         *
+         *     That is the whole point of the consent hash: consenting to *an extension* would
+         *     be consenting to whatever it declares next. Consenting to this exact document
+         *     is a decision that can be checked later.
+         */
+        ExtensionConsentBody: {
+            /** Manifest */
+            manifest: {
+                [key: string]: unknown;
+            };
+            /**
+             * Revoke
+             * @default false
+             */
+            revoke: boolean;
         };
         /** FeedbackBody */
         FeedbackBody: {
@@ -21714,6 +21780,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    extension_consent_api_plugins_extensions_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionConsentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extension_activate_api_plugins_extensions_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionActivateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

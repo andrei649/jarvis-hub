@@ -471,6 +471,11 @@ MACHINE_FACING: dict[str, str] = {
     "/v2/manifest.webmanifest": "PWA install prompt, fetched by the browser",
     "/sw-v2.js": "service-worker registration, fetched by the browser",
     "/v2/sw-v2.js": "service-worker registration, fetched by the browser",
+    # HA-4i-S2: authoring an extension is a terminal act — you have a descriptor file
+    # in front of you. `nerva extensions consent|activate` reads it, validates it and
+    # posts the validated document. A HUD form would be typing JSON into a textarea.
+    "/api/plugins/extensions/consent": "owner consent to a local descriptor, via `nerva extensions consent`",
+    "/api/plugins/extensions/activate": "owner activation of a local descriptor, via `nerva extensions activate`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
     "/api/admin/tool-events":

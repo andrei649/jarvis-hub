@@ -86,7 +86,9 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
     }
-    assert tree["extensions"] == ["doctor", "list"]
+    # S2 added the two owner acts an extension needs: agree to what a descriptor
+    # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
+    assert tree["extensions"] == ["activate", "consent", "doctor", "list"]
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]

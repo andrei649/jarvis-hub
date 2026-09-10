@@ -73,6 +73,13 @@ def build_parser() -> argparse.ArgumentParser:
     extension_doctor.add_argument("--json", action="store_true")
     extension_list = extension_verbs.add_parser("list", help="inspect already-composed acquired packages (user)")
     extension_list.add_argument("--json", action="store_true")
+    extension_consent = extension_verbs.add_parser("consent", help="agree to exactly what a descriptor declares, or withdraw it (owner)")
+    extension_consent.add_argument("path", metavar="MANIFEST")
+    extension_consent.add_argument("--revoke", action="store_true", help="withdraw consent and take its tools off the surface")
+    extension_consent.add_argument("--json", action="store_true")
+    extension_activate = extension_verbs.add_parser("activate", help="prove a consented descriptor in the sandbox and make its tools callable (owner)")
+    extension_activate.add_argument("path", metavar="MANIFEST")
+    extension_activate.add_argument("--json", action="store_true")
 
     status = verbs.add_parser("status", help="what the hub is doing right now")
     status.add_argument("--json", action="store_true")
@@ -220,12 +227,60 @@ def cmd_doctor(ns: argparse.Namespace, ctx: Context) -> int:
     return int(doctor.main(argv))
 
 
+def _extension_descriptor(path, ctx):
+    """Read the descriptor here, so the owner consents to the bytes they can see."""
+    from agents.core.extensions.manifest import ManifestError, load_manifest
+
+    try:
+        manifest = load_manifest(path)
+    except ManifestError as exc:
+        ctx.err.write(f"{exc}\n")
+        return None
+    # Re-serialize from the parsed manifest rather than forwarding raw file bytes:
+    # what the hub records consent for is exactly what was validated locally, and
+    # an unknown field in the file can never ride along to the route.
+    return {
+        "manifest_version": 1, "api_version": 1, "id": manifest.id, "version": manifest.version,
+        "capabilities": list(manifest.capabilities), "tools": list(manifest.tools),
+        "commands": list(manifest.commands), "events": list(manifest.events),
+        "requires": {"extensions": dict(manifest.extension_requires),
+                     "python": dict(manifest.python_requires)},
+    }
+
+
 def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "doctor":
         from agents.core.extensions.doctor import doctor_paths
 
         report = doctor_paths(ns.paths)
         success = report["ok"]
+    elif ns.action in {"consent", "activate"}:
+        body = _extension_descriptor(ns.path, ctx)
+        if body is None:
+            return EXIT_FAILED
+        if ns.action == "consent":
+            report = ctx.client().post("/api/plugins/extensions/consent",
+                                       {"manifest": body, "revoke": bool(ns.revoke)})
+        else:
+            report = ctx.client().post("/api/plugins/extensions/activate", {"manifest": body})
+        if not isinstance(report, dict):
+            ctx.err.write("extension request returned a malformed response\n")
+            return EXIT_FAILED
+        success = report.get("ok") is True
+        if ns.json:
+            ctx.dump(report)
+        elif not success:
+            ctx.say(f"Refused: {report.get('reason', 'unknown')}")
+        elif ns.action == "consent":
+            ctx.say("Consent withdrawn." if report.get("revoked") else
+                    f"Consent recorded for {body['id']} ({report.get('declared_digest', '')[:12]}).")
+        else:
+            activation = report.get("activation") or {}
+            tools = activation.get("callable_tools") or []
+            ctx.say(f"Activated {activation.get('id')} {activation.get('version')}; callable tools: {len(tools)}")
+            for tool in tools:
+                ctx.say(f"  {tool}")
+        return EXIT_OK if success else EXIT_FAILED
     else:
         report = ctx.client().get("/api/plugins/extensions")
         if (not isinstance(report, dict) or report.get("mode") != "inspection_only"
@@ -233,23 +288,30 @@ def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
                 or not isinstance(report.get("reason"), str)
                 or any(not isinstance(row, dict)
                        or any(not isinstance(row.get(key), str) for key in ("id", "version", "reason"))
-                       or row.get("execution_available") is not False
-                       or row.get("callable_tools") != [] or row.get("callable_commands") != []
+                       or not isinstance(row.get("callable_tools"), list)
+                       or row.get("callable_commands") != []
+                       # An inactive row still advertises nothing; only an activated
+                       # one may, and only tools. This pin moved deliberately in S2 —
+                       # before it, "callable" was unreachable by construction.
+                       or (row.get("execution_available") is not True
+                           and (row.get("execution_available") is not False or row.get("callable_tools") != []))
                        for row in report["extensions"])):
             ctx.err.write("extension inspection returned a malformed response\n")
             return EXIT_FAILED
-        success = (report["reason"] in {"sdk_dispatch_unavailable", "acquisition_disabled", "acquisition_not_composed"}
-                   and all(row["reason"] in {"sdk_dispatch_unavailable", "acquired_inactive"}
+        success = (report["reason"] in {"sdk_dispatch_unavailable", "activated",
+                                        "acquisition_disabled", "acquisition_not_composed"}
+                   and all(row["reason"] in {"sdk_dispatch_unavailable", "acquired_inactive", "activated"}
                            for row in report["extensions"]))
     if ns.json:
         ctx.dump(report)
     else:
-        ctx.say("Extension inspection only; SDK dispatch is unavailable.")
+        ctx.say("Extension inspection only; SDK dispatch is unavailable."
+                if report.get("reason") != "activated" else "Extension inspection; some tools are activated.")
         for error in report.get("errors", []):
             ctx.say(f"  {error['reason']}")
         for row in report.get("extensions", []):
             issues = ", ".join(row.get("issues", [])) or row["reason"]
-            ctx.say(f"  {row['id']} {row['version']}: {issues}; callable tools: 0")
+            ctx.say(f"  {row['id']} {row['version']}: {issues}; callable tools: {len(row.get('callable_tools') or [])}")
         if not report.get("extensions") and report.get("reason"):
             ctx.say(f"  {report['reason']}")
     return EXIT_OK if success else EXIT_FAILED

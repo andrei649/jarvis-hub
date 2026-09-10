@@ -82,9 +82,22 @@ class CommandRegistry:
         self._commands: dict[str, SlashCommand] = {}
 
     def register(self, command: SlashCommand) -> SlashCommand:
+        """Add a command. A name already taken is refused, never overwritten.
+
+        This used to be a plain dict assignment, which made the registry
+        last-writer-wins. That was harmless while every caller was in-tree and
+        registered once. It stops being harmless the moment an extension can
+        declare a command: silently replacing ``/pause`` with third-party code is
+        exactly the override Nerva does not offer, and no opt-in flag makes it
+        safe. Refusing here is what lets the extension runtime hand a declared
+        command straight to this registry without a second, weaker check.
+        """
         if command.tier not in (USER, ADMIN):
             raise ValueError(f"unknown command tier {command.tier!r}")
-        self._commands[command.name.lower()] = command
+        name = command.name.lower()
+        if name in self._commands:
+            raise ValueError(f"command already registered: {name}")
+        self._commands[name] = command
         return command
 
     def get(self, name: str) -> SlashCommand | None:

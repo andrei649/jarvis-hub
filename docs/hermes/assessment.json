@@ -14,19 +14,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -56,11 +56,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -73,11 +73,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -90,11 +90,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -107,11 +107,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -132,7 +132,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -140,7 +140,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -153,11 +153,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -165,16 +165,16 @@
       "id": "H028",
       "row_sha256": "9686fb22f9f038b22281eaf0ccb561ef3266011c1a7ed01ffebc28b021d3a138",
       "status": "partial",
-      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii și loguri.",
-      "remaining": "Nu toate operațiile și căile de reparare/migrare/administrare din rândul original sunt expuse; trebuie închise individual.",
+      "summary": "CLI are comenzi pentru configurare, diagnostic, sesiuni, joburi, extensii (inclusiv consimtamant declarat-vs-acordat si activare) si loguri.",
+      "remaining": "Lipsesc install/search/update/remove pentru pluginuri si pachetele de pluginuri; restul operatiilor de reparare/migrare/administrare raman de inchis individual.",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -221,11 +221,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -238,19 +238,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -263,19 +263,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -309,11 +309,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -330,11 +330,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -347,19 +347,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -405,19 +405,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
@@ -745,7 +745,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         }
       ]
     },
@@ -829,7 +829,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         }
       ]
     },
@@ -863,11 +863,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -884,11 +884,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -905,11 +905,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1501,7 +1501,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         }
       ]
     },
@@ -1622,7 +1622,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -1630,7 +1630,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -1643,11 +1643,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         }
       ]
     },
@@ -1858,8 +1858,8 @@
       "id": "H566",
       "row_sha256": "b6972f5f0508020fafb457913bab19e4ddb3d4af0f65c5ae7c3f4a35e1c14309",
       "status": "partial",
-      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
-      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
+      "remaining": "Lipseste calea de distributie/instalare pentru un autor tert (extensia trebuie sa soseasca prin pipeline-ul de achizitie semnat), nu exista ctx, comenzile declarate nu sunt legate de registrul de chat si evenimentele S3 lipsesc. Nedovedit pe un Docker real.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -1867,11 +1867,27 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+        },
+        {
+          "path": "agents/core/extensions/consent.py",
+          "sha256": "f8f3d3a13c85a77d91d7abcdadaf6839247ff1b9fa90b2b917f0f4faf8bbcba8"
+        },
+        {
+          "path": "agents/core/extensions/runtime.py",
+          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+        },
+        {
+          "path": "tests/test_extension_consent.py",
+          "sha256": "1937827db9f2fa8199cfbd0cd4088c9b8ece3150e93dd85706d6fe02abf48e18"
+        },
+        {
+          "path": "tests/test_extension_runtime.py",
+          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
         }
       ]
     },
@@ -1888,11 +1904,11 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
         }
       ]
     },
@@ -1900,8 +1916,8 @@
       "id": "H570",
       "row_sha256": "0925a7a683605d100096d89823e8d52fa47f1555b18755a8d65314ac86414322",
       "status": "partial",
-      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
-      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
+      "remaining": "Consimtamantul pe hash exista si re-intreaba cu diff la o suprafata schimbata; lipsesc registrul canonic de capabilitati cu fraze de risc, ecranul de consimtamant si declararea prin entry-point-uri pip.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -1909,11 +1925,27 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+        },
+        {
+          "path": "agents/core/extensions/consent.py",
+          "sha256": "f8f3d3a13c85a77d91d7abcdadaf6839247ff1b9fa90b2b917f0f4faf8bbcba8"
+        },
+        {
+          "path": "agents/core/extensions/runtime.py",
+          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+        },
+        {
+          "path": "tests/test_extension_consent.py",
+          "sha256": "1937827db9f2fa8199cfbd0cd4088c9b8ece3150e93dd85706d6fe02abf48e18"
+        },
+        {
+          "path": "tests/test_extension_runtime.py",
+          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
         }
       ]
     },
@@ -1930,11 +1962,11 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
         }
       ]
     },
@@ -2075,8 +2107,8 @@
       "id": "H615",
       "row_sha256": "92628630fd7071778aa25bec97e020e51e30dd3eb698b694a49ebf8626565c1a",
       "status": "partial",
-      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
-      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
+      "remaining": "Jumatatea de hook-uri ramane deschisa: evenimentele pot fi declarate, dar nu sunt livrate (S3). Lipsesc si legarea comenzilor declarate si middleware-ul.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -2084,11 +2116,27 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+        },
+        {
+          "path": "agents/core/extensions/consent.py",
+          "sha256": "f8f3d3a13c85a77d91d7abcdadaf6839247ff1b9fa90b2b917f0f4faf8bbcba8"
+        },
+        {
+          "path": "agents/core/extensions/runtime.py",
+          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+        },
+        {
+          "path": "tests/test_extension_consent.py",
+          "sha256": "1937827db9f2fa8199cfbd0cd4088c9b8ece3150e93dd85706d6fe02abf48e18"
+        },
+        {
+          "path": "tests/test_extension_runtime.py",
+          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
         }
       ]
     },
@@ -2121,7 +2169,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         }
       ]
     },
@@ -2138,11 +2186,11 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
         }
       ]
     },
@@ -2150,8 +2198,8 @@
       "id": "H637",
       "row_sha256": "2e138fd2fd024e831f216be7a75bf256796be771c63e8ec5afb144dbe0acc8ed",
       "status": "partial",
-      "summary": "S1 validează manifestul, dependențele și integritatea; doctor/list nu importă și nu activează pachete.",
-      "remaining": "S2 dispatch izolat cu autoritate și S3 evenimente lipsesc; seturile callable SDK sunt încă goale.",
+      "summary": "S2: consimtamant pe hash-ul suprafetei declarate, inregistrare dovedita in sandbox-ul semnat si dispatch al uneltelor declarate; gazda nu importa niciodata cod tert.",
+      "remaining": "Din triada manifest+lifecycle+doctor, dispatch-ul exista acum; lipsesc cele 16 hook-uri, middleware-ul, suprafetele de storage, ctx.llm, comenzile CLI/slash aduse de extensie, distributia prin pip si link-urile de instalare. Nedovedit pe un Docker real.",
       "evidence": [
         {
           "path": "agents/core/extensions/manifest.py",
@@ -2159,11 +2207,27 @@
         },
         {
           "path": "agents/core/extensions/doctor.py",
-          "sha256": "e3a80b21576f5840c4f4a37e52e2b2a0a375168a4f633c56d8dfa9af0145ef3f"
+          "sha256": "e339855bb126c0fc04c8564a65194199ba4364f7b9aaae148cef70bcc21a98eb"
         },
         {
           "path": "docs/EXTENSIONS.md",
-          "sha256": "1cd32f60312b83f2fb2026826eabab0359344251b6cae036b98d34efdda67660"
+          "sha256": "673e48e44d57b21676e00a06f7b60322281911d089de2f33829f9b777bb6f3ff"
+        },
+        {
+          "path": "agents/core/extensions/consent.py",
+          "sha256": "f8f3d3a13c85a77d91d7abcdadaf6839247ff1b9fa90b2b917f0f4faf8bbcba8"
+        },
+        {
+          "path": "agents/core/extensions/runtime.py",
+          "sha256": "c1ffcd978b35545500f92b0ec0a2d837fc720f106afea66eb99277699b4babe5"
+        },
+        {
+          "path": "tests/test_extension_consent.py",
+          "sha256": "1937827db9f2fa8199cfbd0cd4088c9b8ece3150e93dd85706d6fe02abf48e18"
+        },
+        {
+          "path": "tests/test_extension_runtime.py",
+          "sha256": "cba2743560af8592af508337844db7875b2252d5d90404a89e05dc3862673633"
         }
       ]
     },
@@ -2259,19 +2323,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
+          "sha256": "c94daa635e62adbcd7cfee0089731bc6a466158037f5c22cf15e3a180afe4898"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "1bb3f101a0b378ffdbc4fd74b4435978dda65183ed44d256d404513ff3c82dd1"
+          "sha256": "f1fe51b8076abc80f751dc898a1a24d4493551039b0ef9669b1eee79a96532aa"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "81df55add137e9c27e52a51b838fd98ae51e1e90d40bfadfe9f172164778dbed"
+          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
         }
       ]
     },
