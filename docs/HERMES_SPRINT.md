@@ -66,7 +66,7 @@ Punctul de plecare este `efc87a20634d33f2d7950b762d90854812c0a841`.
 | H363 — caching de prompt pe Anthropic, și un contor care aude providerul | [#1081](https://github.com/andrei649/jarvis-hub/pull/1081) | Un breakpoint efemer pe blocul de sistem și unul pe ultima unealtă (marca acoperă tot ce e înaintea ei); `ToolTurn.usage` aduce contoarele providerului, `usage_sink` le însumează prin buclă până în contorul de cost, care preferă cifra raportată și marchează `usage_source`. Tariful `cached` din tabelul de prețuri era până acum necâștigabil. **H363: `missing` → `partial`** — rămâne `supports_prompt_cache_key` pe wire-urile compatibile OpenAI. |
 
 Cele opt PR-uri #1061–#1068 raportate la încheierea lucrului sunt toate integrate, la
-fel și livrările #1070–#1080 din sprintul curent; #1081 este în lucru.
+fel și livrările #1070–#1081 din sprintul curent.
 Intrările anterioare arată dependențele și livrările conexe deja existente; numărul
 lor nu este folosit în calculul progresului. SHA-urile, rezultatele verificărilor
 și detaliile de implementare se găsesc în fiecare PR.
