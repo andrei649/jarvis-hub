@@ -14,7 +14,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -39,7 +39,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -56,7 +56,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -73,7 +73,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -90,7 +90,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -107,7 +107,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -132,7 +132,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -153,7 +153,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -170,7 +170,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -213,6 +213,27 @@
       ]
     },
     {
+      "id": "H048",
+      "row_sha256": "94d4a69bdba768d528bd919f78c964eabc17bca751c2567a456d24b19ab65648",
+      "status": "partial",
+      "summary": "`nerva prompt-size` există și raportează costul fix per apel, pe componente, cel mai mare primul — offline, fără hub, fără backend, fără nicio cerere: citește personele de pe disc și cere registrului specurile pe care oricum le declară. Exact asta îl face utilizabil pentru întrebarea la care răspunde („cât plătesc înainte să înceapă conversația\") pe o cutie unde hub-ul nici măcar nu rulează. `agents/core/prompt_size.py` sparge costul în: câte o linie per persoană de agent găsită pe disc, câte una per unealtă — costată ca **JSON-ul care chiar traversează sârma**, nu ca numele ei, fiindcă un `input_schema` stufos poate cântări cât o persoană întreagă — indexul de skill-uri randat exact cum îl randează `build_prompt`, și schela de tură pe care fiecare cerere o plătește. Numărul pe care raportul îl scoate în față e **podeaua per apel**, nu suma: cele 18 persoane sunt listate separat fiindcă o cerere reală trimite una singură, a agentului rutat. Prima versiune a raportului aduna toate cele 18 și anunța 71,8 % dintr-o fereastră de 32k, când o cerere reală plătește ~6,5 % — un număr greșit e mai rău decât niciun număr, așa că podeaua per apel e ce se citește primul și un test o fixează. Fără agent numit se folosește persoana cea mai grea, deci cifra e cazul realist cel mai prost, nu unul măgulitor; un agent inexistent nu e taxat tăcut pe seama altcuiva. Raportul spune despre el însuși că cifrele sunt estimări din aceeași funcție pe care o folosește bugetul la runtime, și trimite la H673 pentru singura măsurătoare exactă — cea raportată de provider. Ieșire text tabelară sau `--json`.",
+      "remaining": "Rândul Hermes cere și componente pe care Nerva nu le are separate azi: „cele trei tiere de prompt\" și „user profile\" nu există ca blocuri distincte în asamblarea promptului (`Agent.build_prompt` are soul + skills + agent memory + schelă), iar `<available_skills>` e un index Hermes; echivalentul livrat e blocul `Available skills:`. Memoria nu e costată: e per sesiune și variabilă, nu cost fix, iar a o raporta ca „fix\" ar fi exact tipul de cifră greșită pe care livrarea asta o evită. Schemele de unelte sunt raportate doar când i se dau: verbul nu bootează un registru, iar pe o cutie fără hub secțiunea lipsește și raportul **spune** că lipsește, în loc s-o raporteze ca zero. Cost per toolset (grupat) nu e implementat, doar per unealtă. Neverificat pe serviciu real: nicio cerere nu a fost trimisă — cifrele sunt estimări comparabile cu bugetul intern, nu contorul unui provider.",
+      "evidence": [
+        {
+          "path": "agents/core/prompt_size.py",
+          "sha256": "5f34b083c035cfc69a376a67f32fb2a718adbc35d8200c9d6647d73756f17ee9"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
+        },
+        {
+          "path": "tests/test_prompt_size.py",
+          "sha256": "d0ba48aa3cca44aaeb534e26ace9eb4c1ac8269112d77cd62a7e9a5d1c03c56f"
+        }
+      ]
+    },
+    {
       "id": "H049",
       "row_sha256": "f92a66dad35cc38e44b1f406882002d6b6dbbdb886451690d3038337ecd4bdc8",
       "status": "partial",
@@ -221,7 +242,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -238,7 +259,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -263,7 +284,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -347,7 +368,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -405,7 +426,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -745,7 +766,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         }
       ]
     },
@@ -829,7 +850,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         }
       ]
     },
@@ -863,7 +884,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -884,7 +905,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -905,7 +926,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -1736,7 +1757,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         }
       ]
     },
@@ -1857,7 +1878,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -1878,7 +1899,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -2516,7 +2537,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         }
       ]
     },
@@ -2772,7 +2793,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "01c6f5d5d4012592f559f5bab47ef07a26dddfd3fc98491c3d81e068222710b2"
+          "sha256": "c446e20ab81c680e8b4f78d1316267cf1d5808f1e1cdf4fe24ed1d1d0a2a95d0"
         },
         {
           "path": "tests/test_nerva_cli.py",

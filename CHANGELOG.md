@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Hermes sprint — see where the prompt budget goes (H048)
+
+Nerva's stated advantage is running well on a local model with a small context
+window. Everything competing for that window before the first user word — each
+agent's soul, the skills index, the tool schemas, the turn scaffolding — was
+invisible, so "why does the local model degrade after four turns" had no number
+attached to it.
+
+**Added**
+
+- `nerva prompt-size` — the fixed per-call cost, by component, largest first.
+  Offline by design: it reads the personas off disk and asks the registry for specs
+  it already declares. No hub, no backend, no request — which is what makes it
+  usable for the question it answers on a box where the hub is not even running.
+  Text table or `--json`; `--agent` costs a named persona, `--window` compares the
+  floor against a context window.
+- `agents/core/prompt_size.py` — the component model behind it. Tools are costed as
+  the **JSON that actually crosses the wire**, not by name: one verbose
+  `input_schema` can outweigh a whole persona, which is exactly what this exists to
+  expose.
+
+**The number it leads with**
+
+The report leads with the **per-call floor**, not the sum. The first draft summed
+all eighteen personas and announced 71.8% of a 32k window; a real request sends one
+soul and pays about 6.5%. A wrong number is worse than no number, so the per-call
+figure is what a reader sees first and a test pins it. With no agent named the
+heaviest persona is used — the worst realistic case, not a flattering one — and an
+agent that does not exist is never silently billed against somebody else's soul.
+
+**What it says about itself**
+
+The figures are estimates from the same function the runtime budget uses, so they
+are directly comparable with it; the exact size of a real request is the one the
+provider reports back (H673). Where the tool registry is not populated the section
+is absent and the report **says** so rather than reporting zero.
+
 ### Hermes sprint — context pressure measured, not re-estimated (H673)
 
 The compressor decided *when* to compact carefully — soft/hard tiers, images first,

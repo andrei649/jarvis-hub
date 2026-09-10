@@ -41,6 +41,8 @@
   different request bodies, and collapsing the first two is the 400), then H673
   (context pressure anchored on the provider's own prompt-token count, so the
   estimate's error window is one turn instead of the whole conversation), then
+  H048 (`nerva prompt-size` — the fixed per-call floor by component, offline, with
+  the per-call figure led rather than the sum of all eighteen personas), then
   native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked

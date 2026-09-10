@@ -11,14 +11,14 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 115 | 16.5% |
-| Parțial | 371 | 53.2% |
-| Lipsă | 104 | 14.9% |
+| Parțial | 372 | 53.4% |
+| Lipsă | 103 | 14.8% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 0 | 0.0% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 115/590 = **19.5%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 100/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 101/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -26,7 +26,7 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 15 | 27 | 4 | 10 | 0 |
+| cli | 56 | 15 | 28 | 3 | 10 | 0 |
 | gateway | 33 | 5 | 17 | 6 | 5 | 0 |
 | platforms | 39 | 5 | 20 | 6 | 8 | 0 |
 | web | 40 | 7 | 17 | 9 | 7 | 0 |
