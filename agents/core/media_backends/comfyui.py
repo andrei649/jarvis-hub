@@ -1,4 +1,5 @@
-"""Bounded, loopback-only ComfyUI transport for one fixed text-to-image workflow.
+"""Bounded, loopback-only ComfyUI transport for two fixed workflows: text-to-image
+and an edit of an artifact this hub already generated.
 
 This module does not grant permission to generate. The governed runtime owns
 approval and the durable single-use attempt before calling this transport.
@@ -92,35 +93,104 @@ class ComfyUIConfig:
         return hashlib.sha256(encoded).hexdigest()
 
 
+ARTIFACT_ID = re.compile(r"[a-f0-9]{32}")
+OPTION_KEYS = ("seed", "width", "height", "steps", "reference", "strength")
+
+
 def validate_options(prompt, options):
+    """Normalize one generation's options into the exact dict the approval will bind.
+
+    Two shapes, never mixed. Without ``reference`` this is text-to-image and the
+    caller chooses the canvas. With one it is an *edit*: the size comes from the
+    reference's own pixels, so ``width``/``height`` are refused rather than accepted
+    and silently ignored — an ignored option is a lie told to whoever approves it.
+    """
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
         raise ImageGenerationError("invalid_prompt")
-    if not isinstance(options, dict) or set(options) - {"seed", "width", "height", "steps"}:
+    if not isinstance(options, dict) or set(options) - set(OPTION_KEYS):
         raise ImageGenerationError("invalid_options")
-    result = {"seed": 0, "width": 512, "height": 512, "steps": 20, **options}
-    for key, low, high in (("seed", 0, 2**63 - 1), ("width", 64, 1024), ("height", 64, 1024), ("steps", 1, 40)):
+    reference = options.get("reference")
+    if reference is None:
+        if "reference" in options or "strength" in options:
+            raise ImageGenerationError("invalid_options")
+        result = {"seed": 0, "width": 512, "height": 512, "steps": 20, **options}
+        bounds = (("seed", 0, 2**63 - 1), ("width", 64, 1024), ("height", 64, 1024), ("steps", 1, 40))
+    else:
+        if "width" in options or "height" in options:
+            raise ImageGenerationError("invalid_options")
+        # The id is the whole handle. Nothing here accepts a host path, a URL or a
+        # filename, so no argument can point the edit at a file outside the artifact
+        # root — see ``artifact_bytes``.
+        if not isinstance(reference, str) or not ARTIFACT_ID.fullmatch(reference):
+            raise ImageGenerationError("invalid_options")
+        result = {"seed": 0, "steps": 20, "strength": 60, **options}
+        bounds = (("seed", 0, 2**63 - 1), ("steps", 1, 40), ("strength", 1, 100))
+    for key, low, high in bounds:
         value = result[key]
         if type(value) is not int or not low <= value <= high:
             raise ImageGenerationError("invalid_options")
-    if result["width"] % 64 or result["height"] % 64:
+    if reference is None and (result["width"] % 64 or result["height"] % 64):
         raise ImageGenerationError("invalid_options")
     return result
 
 
-def _workflow(config, prompt, opts):
-    return {
+def artifact_bytes(artifact_id, root):
+    """Read one already-generated PNG out of the artifact root, by opaque id only.
+
+    This is the single reader for both the HTTP artifact route and the edit path, so
+    a reference image is reachable on exactly the terms a download is: a 32-hex id
+    this hub minted, resolving to a real file directly inside the root. A symlink, a
+    path that resolves elsewhere, an oversized file or bytes that are not the PNG
+    subset ``validate_png`` accepts are all one refusal — the caller learns that the
+    reference is unusable, not which of those it was.
+    """
+    if not isinstance(artifact_id, str) or not ARTIFACT_ID.fullmatch(artifact_id):
+        raise ImageGenerationError("reference_not_found")
+    root = Path(root).resolve()
+    candidate = root / (artifact_id + ".png")
+    try:
+        if candidate.is_symlink() or candidate.resolve() != candidate or candidate.parent != root:
+            raise OSError
+        with candidate.open("rb") as handle:
+            data = handle.read(16 * 1024 * 1024 + 1)
+        if len(data) > 16 * 1024 * 1024:
+            raise OSError
+        validate_png(data)
+    except (OSError, ImageGenerationError):
+        raise ImageGenerationError("reference_not_found") from None
+    return data
+
+
+def _workflow(config, prompt, opts, reference_name=None):
+    """One graph in two fixed shapes. Node "9" is the only output in both, so the
+    result extraction never has to ask which shape ran.
+
+    Text-to-image samples an empty latent at full denoise. An edit encodes the
+    owner's own uploaded artifact into the latent instead and samples it at
+    ``strength`` — denoise below 1 is precisely what makes the result an edit of
+    that image rather than a fresh one that merely shares the prompt.
+    """
+    graph = {
         "3": {"class_type": "KSampler", "inputs": {
             "seed": opts["seed"], "steps": opts["steps"], "cfg": 7,
             "sampler_name": "euler", "scheduler": "normal", "denoise": 1,
             "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0],
         }},
         "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": config.checkpoint}},
-        "5": {"class_type": "EmptyLatentImage", "inputs": {"width": opts["width"], "height": opts["height"], "batch_size": 1}},
         "6": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["4", 1]}},
         "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["4", 1]}},
         "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
         "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "nerva", "images": ["8", 0]}},
     }
+    if reference_name is None:
+        graph["5"] = {"class_type": "EmptyLatentImage", "inputs": {
+            "width": opts["width"], "height": opts["height"], "batch_size": 1}}
+        return graph
+    graph["3"]["inputs"]["latent_image"] = ["10", 0]
+    graph["3"]["inputs"]["denoise"] = opts["strength"] / 100
+    graph["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["11", 0], "vae": ["4", 2]}}
+    graph["11"] = {"class_type": "LoadImage", "inputs": {"image": reference_name, "upload": "image"}}
+    return graph
 
 
 def validate_png(data: bytes):
@@ -225,9 +295,38 @@ class ComfyUIBackend:
             raise ImageGenerationError("invalid_response")
         return value
 
+    async def _upload(self, client, data):
+        """Put the reference into ComfyUI's own input directory; LoadImage reads
+        nothing else.
+
+        The name we send is fixed. The name we *use* is the one the service returns,
+        because it renames on collision — and that returned name is re-validated
+        before it may reach a workflow node, so the transport still chooses no
+        filename on the strength of a response body.
+        """
+        try:
+            body = await self._request(
+                client, "POST", "/upload/image",
+                files={"image": ("nerva-reference.png", data, "image/png")},
+                data={"type": "input", "subfolder": "", "overwrite": "false"},
+            )
+        except httpx.HTTPError:
+            # The /prompt rule applies here too: a POST whose outcome we cannot
+            # observe is never retried, not even after a restart.
+            raise ImageGenerationError("reference_upload_unknown") from None
+        name = body.get("name")
+        if (not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_. ()-]{0,180}\.png", name)
+                or body.get("subfolder") not in {"", None} or body.get("type") != "input"):
+            raise ImageGenerationError("invalid_response")
+        return name
+
     async def generate(self, prompt, options):
         self.config.fingerprint()
         opts = validate_options(prompt, options)
+        # Resolved before a socket is opened. An unusable reference must not cost a
+        # submission whose outcome we would then be unable to observe.
+        reference = artifact_bytes(opts["reference"], self.config.output_root) if "reference" in opts else None
         try:
             async with asyncio.timeout(self.config.timeout):
                 async with httpx.AsyncClient(
@@ -235,8 +334,9 @@ class ComfyUIBackend:
                     headers={"Accept-Encoding": "identity"},
                     timeout=httpx.Timeout(10.0, connect=3.0),
                 ) as client:
+                    reference_name = None if reference is None else await self._upload(client, reference)
                     try:
-                        submitted = await self._request(client, "POST", "/prompt", json={"prompt": _workflow(self.config, prompt, opts)})
+                        submitted = await self._request(client, "POST", "/prompt", json={"prompt": _workflow(self.config, prompt, opts, reference_name)})
                     except httpx.HTTPError:
                         # A response timeout cannot tell us whether ComfyUI queued
                         # the job. Never retry POST, including after restart.

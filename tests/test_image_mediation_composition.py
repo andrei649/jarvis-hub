@@ -31,6 +31,8 @@ def composed(tmp_path, monkeypatch, request):
 
     def service(req):
         requests.append(req)
+        if req.url.path == "/upload/image":
+            return httpx.Response(200, json={"name": "nerva-reference.png", "subfolder": "", "type": "input"})
         if req.method == "POST":
             return httpx.Response(200, json={"prompt_id": "p-1"})
         if req.url.path.startswith("/history/"):

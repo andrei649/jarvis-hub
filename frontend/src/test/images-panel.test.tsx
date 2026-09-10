@@ -3,11 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ImagesPanel } from '../panels/images';
 import * as api from '../api/images';
-vi.mock('../api/images', () => ({ imageStatus: vi.fn(), proposeImage: vi.fn(), imageTask: vi.fn(), imageBlob: vi.fn() }));
+// `editValid` is the real predicate, not a stub: the panel's submit gate is the thing
+// under test, and a stubbed validator would let an invalid reference through it.
+vi.mock('../api/images', () => ({
+  imageStatus: vi.fn(), proposeImage: vi.fn(), imageTask: vi.fn(), imageBlob: vi.fn(),
+  editValid: (value: any) => !!value && typeof value.reference === 'string'
+    && /^[a-f0-9]{32}$/.test(value.reference) && Number.isSafeInteger(value.strength)
+    && value.strength > 0 && value.strength <= 100,
+}));
 const artifact = { id: 'a'.repeat(32), bytes: 8, width: 512, height: 512 };
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(api.imageStatus).mockResolvedValue({ configured: true });
+  vi.mocked(api.imageStatus).mockResolvedValue({ configured: true, edit: true });
   vi.mocked(api.proposeImage).mockResolvedValue(17);
   vi.mocked(api.imageTask).mockResolvedValue({ task_id: 17, state: 'awaiting_approval', artifact: null });
   vi.mocked(api.imageBlob).mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
@@ -23,14 +30,15 @@ describe('Images panel', () => {
   it('separates exact prompt proposal from existing inbox approval', async () => {
     render(<ImagesPanel />); await propose();
     await screen.findByText(/Awaiting approval/);
-    expect(api.proposeImage).toHaveBeenCalledWith('A rain-soaked tree', expect.any(AbortSignal));
+    // Third argument, and a null second one: a plain proposal carries no edit tuple.
+    expect(api.proposeImage).toHaveBeenCalledWith('A rain-soaked tree', null, expect.any(AbortSignal));
     expect(screen.getByRole('link', { name: 'Open Decision Inbox' }).getAttribute('href')).toBe('#decision-inbox');
     expect(screen.queryByRole('button', { name: /approve/i })).toBeNull();
     expect(screen.getByText('A rain-soaked tree')).toBeTruthy();
     expect(api.imageBlob).not.toHaveBeenCalled();
   });
   it('does not offer generation when configuration is disabled', async () => {
-    vi.mocked(api.imageStatus).mockResolvedValue({ configured: false });
+    vi.mocked(api.imageStatus).mockResolvedValue({ configured: false, edit: true });
     render(<ImagesPanel />);
     await screen.findByText(/Local image generation is disabled/);
     expect((screen.getByRole('button', { name: 'Propose image' }) as HTMLButtonElement).disabled).toBe(true);
@@ -96,6 +104,44 @@ describe('Images panel', () => {
     await screen.findByText(/Awaiting approval/);
     expect(api.imageTask).toHaveBeenCalledWith(17, expect.any(AbortSignal));
     expect(api.proposeImage).not.toHaveBeenCalled();
+  });
+  it('sends an edit as a reference id and a strength, never a path', async () => {
+    render(<ImagesPanel />);
+    await waitFor(() => expect(screen.getByText(/configured · connection untested/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('radio', { name: /edit an image/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Image prompt' }), { target: { value: 'make it snow' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reference artifact ID' }), { target: { value: artifact.id } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Change strength' }), { target: { value: '35' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Propose edit' })); });
+    expect(api.proposeImage).toHaveBeenCalledWith(
+      'make it snow', { reference: artifact.id, strength: 35 }, expect.any(AbortSignal));
+  });
+  it.each(['', 'not-a-reference', 'A'.repeat(32), 'a'.repeat(31)])(
+    'refuses to propose an edit whose reference is %s', async value => {
+      render(<ImagesPanel />);
+      await waitFor(() => expect(screen.getByText(/configured · connection untested/i)).toBeTruthy());
+      fireEvent.click(screen.getByRole('radio', { name: /edit an image/i }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Image prompt' }), { target: { value: 'make it snow' } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Reference artifact ID' }), { target: { value } });
+      expect((screen.getByRole('button', { name: 'Propose edit' }) as HTMLButtonElement).disabled).toBe(true);
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Propose edit' })); });
+      expect(api.proposeImage).not.toHaveBeenCalled();
+    });
+  it('offers no edit controls when the hub does not report the capability', async () => {
+    vi.mocked(api.imageStatus).mockResolvedValue({ configured: true, edit: false });
+    render(<ImagesPanel />);
+    await waitFor(() => expect(screen.getByText(/configured · connection untested/i)).toBeTruthy());
+    expect(screen.queryByRole('radio', { name: /edit an image/i })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Reference artifact ID' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Propose image' })).toBeTruthy();
+  });
+  it('carries a finished image straight into an edit of itself', async () => {
+    vi.mocked(api.imageTask).mockResolvedValue({ task_id: 17, state: 'ready', artifact });
+    render(<ImagesPanel />); await propose();
+    await screen.findByRole('img', { name: 'Generated image' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit this image' }));
+    expect((screen.getByRole('textbox', { name: 'Reference artifact ID' }) as HTMLInputElement).value).toBe(artifact.id);
+    expect(api.proposeImage).toHaveBeenCalledTimes(1);
   });
   it.each(['0', '9007199254740992'])('does not read invalid existing task ID %s', async value => {
     render(<ImagesPanel />);

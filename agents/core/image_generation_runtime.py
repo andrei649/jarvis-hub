@@ -34,6 +34,12 @@ INPUT_SCHEMA = {
         "width": {"type": "integer", "minimum": 64, "maximum": 1024, "multipleOf": 64},
         "height": {"type": "integer", "minimum": 64, "maximum": 1024, "multipleOf": 64},
         "steps": {"type": "integer", "minimum": 1, "maximum": 40},
+        # An edit of an artifact this hub already generated. The reference is an
+        # opaque id, never a path or a URL, and `strength` is how much of the
+        # original survives (percent of denoise). Both are refused together with
+        # width/height, which an edit takes from the reference itself.
+        "reference": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+        "strength": {"type": "integer", "minimum": 1, "maximum": 100},
     },
 }
 
@@ -45,7 +51,7 @@ def configuration_status():
         return {"configured": False, "backend": "comfyui", "reason": exc.reason, "reachable": None}
     return {"configured": config is not None, "backend": "comfyui" if config else "off",
             "reason": "not_probed" if config else "disabled", "reachable": None,
-            "local": True, "approval_required": True}
+            "local": True, "approval_required": True, "edit": True}
 
 
 def _digest(value):
@@ -212,7 +218,9 @@ class LocalImageRuntime:
             task = self._approval(args, config)
         except (ImageGenerationError, OSError, KeyError, TypeError, ValueError) as exc:
             return {"ok": False, "reason": getattr(exc, "reason", "approval_binding_invalid")}
-        options = {key: args[key] for key in ("seed", "width", "height", "steps")}
+        # Whatever `validate_options` normalized, minus the two keys that are not
+        # options: a text-to-image tuple and an edit tuple both round-trip exactly.
+        options = {key: value for key, value in args.items() if key not in {"prompt", "_binding"}}
 
         def guard(kind, prompt, opts):
             nonlocal reason
