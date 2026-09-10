@@ -1,8 +1,8 @@
 /* SCHEDULED JOBS — the owner's own recurring jobs (Hermes absorption, wave 2b).
 
-   Reads GET /api/jobs and GET /api/jobs/blueprints; arms with POST /api/jobs; drives one
-   job with POST /api/jobs/{id}/run, /pause, /resume and DELETE /api/jobs/{id}; and lists a
-   job's attempts from GET /api/jobs/{id}/runs. Every route is admin-guarded on the backend
+   Reads GET /api/jobs and GET /api/jobs/blueprints; arms with POST /api/jobs; edits an
+   existing one with PATCH /api/jobs/{id}; drives one with POST /api/jobs/{id}/run, /pause, /resume;
+   removes one with DELETE /api/jobs/{id}; and lists a job's attempts from GET /api/jobs/{id}/runs. Every route is admin-guarded on the backend
    — arming autonomous work is the owner's decision — so every call here carries the admin
    token, and a refusal is printed in the backend's own words (refusalReason), never
    swallowed.
@@ -20,7 +20,7 @@
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
-import { apiDelete, apiGet } from '../api/client';
+import { apiDelete, apiGet, apiPatch } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 
 const JOBS_PATH = '/api/jobs';
@@ -59,6 +59,7 @@ export function JobsPanel() {
   const [note, setNote] = useState<string | null>(null);
   const [runNote, setRunNote] = useState<Record<string, string>>({});
   const [runs, setRuns] = useState<Record<string, any[] | null>>({});
+  const [editing, setEditing] = useState<Record<string, { name: string; when: string } | null>>({});
 
   const chosen = blueprints.find((b) => b.id === blueprint) || null;
   const params: string[] = (chosen && chosen.params) || [];
@@ -94,6 +95,30 @@ export function JobsPanel() {
       .then(() => reload())
       .catch((err: any) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err)}` })));
 
+  // An edit is only real once the scheduler re-arms, which the backend does; the panel
+  // re-reads afterwards so the row shows the cron the job will actually fire on, never the
+  // text the owner just typed.
+  const openEdit = (job: any) => {
+    const id = String(job.id);
+    setEditing((m) => ({ ...m, [id]: m[id] ? null : { name: job.name || '', when: job.schedule_text || '' } }));
+  };
+
+  const saveEdit = (id: string) => {
+    const draft = editing[id];
+    if (!draft) return;
+    const body: Record<string, string> = {};
+    if (draft.name.trim()) body.name = draft.name.trim();
+    if (draft.when.trim()) body.schedule_text = draft.when.trim();
+    if (!Object.keys(body).length) { setRunNote((m) => ({ ...m, [id]: 'nothing to change' })); return; }
+    apiPatch(`${JOBS_PATH}/${encodeURIComponent(id)}`, body, { admin: true })
+      .then((r: any) => {
+        setEditing((m) => ({ ...m, [id]: null }));
+        setRunNote((m) => ({ ...m, [id]: `edited · ${r?.job?.schedule_text || ''} (${r?.job?.cron || ''})` }));
+        reload();
+      })
+      .catch((err: any) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err, 'could not edit the job')}` })));
+  };
+
   const showRuns = (id: string) => {
     if (runs[id]) { setRuns((m) => ({ ...m, [id]: null })); return; }
     apiGet(`${JOBS_PATH}/${encodeURIComponent(id)}/runs?limit=5`, { admin: true })
@@ -126,10 +151,28 @@ export function JobsPanel() {
                 {job.paused_reason
                   ? <button className="tool-btn" title="resume" onClick={() => drive(id, 'resume')}>⏵</button>
                   : <button className="tool-btn" title="pause" onClick={() => drive(id, 'pause')}>⏸</button>}
+                <button className="tool-btn" title="edit name or schedule" onClick={() => openEdit(job)}>edit</button>
                 <button className="tool-btn" title="attempts" onClick={() => showRuns(id)}>runs</button>
                 <button className="tool-btn" title="delete" onClick={() => remove(id)}>✕</button>
               </span>
             </Row>
+            {editing[id] && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '4px 0 6px' }}>
+                <input aria-label={`name for ${id}`} value={editing[id]!.name}
+                  onChange={(ev) => setEditing((m) => ({ ...m, [id]: { ...m[id]!, name: ev.target.value } }))}
+                  placeholder="name" style={{ ...inpS, width: '100%' }} />
+                <input aria-label={`when for ${id}`} value={editing[id]!.when}
+                  onChange={(ev) => setEditing((m) => ({ ...m, [id]: { ...m[id]!, when: ev.target.value } }))}
+                  placeholder="when — plain words or a five-field cron" style={{ ...inpS, width: '100%' }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>
+                  <button className="tool-btn" onClick={() => setEditing((m) => ({ ...m, [id]: null }))}>cancel</button>
+                  <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>
+                    editing a paused job leaves it paused
+                  </span>
+                </div>
+              </div>
+            )}
             {job.paused_reason && <Note c="var(--amber)">paused · {String(job.paused_reason)}</Note>}
             {job.last_status && (
               <Note>

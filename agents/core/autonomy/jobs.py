@@ -563,6 +563,55 @@ class JobStore:
             self._conn.commit()
         return merged
 
+    def edit(
+        self,
+        job_id: str,
+        *,
+        name: str | None = None,
+        schedule_text: str | None = None,
+        action: Mapping[str, Any] | None = None,
+    ) -> Job:
+        """Change what an existing job *is*, under the same rules that created it.
+
+        Deliberately not ``update``. ``update`` is the internal field setter the runner
+        uses to record outcomes, and it trusts its caller: it does not trim a name, does
+        not run :func:`validate_action`, and — the trap — writes ``schedule_text`` without
+        touching ``cron``. An owner-facing edit that went through it would show the new
+        schedule everywhere while the job kept firing on the old one. So the cron is always
+        re-derived from the text here, exactly as ``create`` derives it.
+
+        Only the three fields an owner authored are editable. Run history, failure counts
+        and ``paused_reason`` are outcomes, not settings: an edit must not silently resume a
+        paused job or forgive its failures — ``resume`` is the verb for that.
+        """
+        current = self.get(job_id)
+        if current is None:
+            raise KeyError(job_id)
+        if name is None and schedule_text is None and action is None:
+            raise ValueError("an edit needs a name, a schedule or an action")
+
+        fields: dict[str, Any] = {}
+        if name is not None:
+            cleaned = " ".join(str(name).split())
+            if not cleaned:
+                raise ValueError("a job needs a name")
+            if len(cleaned) > MAX_NAME:
+                raise ValueError(f"the name is longer than {MAX_NAME} characters")
+            fields["name"] = cleaned
+        if action is not None:
+            errors = validate_action(action)
+            if errors:
+                raise ValueError("; ".join(errors))
+            fields["action"] = dict(action)
+        if schedule_text is not None:
+            text = str(schedule_text).strip()
+            if not text:
+                raise ValueError("a job needs a schedule")
+            cron, _description = resolve_schedule(text)
+            fields["schedule_text"] = text
+            fields["cron"] = cron
+        return self.update(job_id, **fields)
+
     def delete(self, job_id: str) -> bool:
         with self._lock:
             cursor = self._conn.execute("DELETE FROM jobs WHERE id = ?", (str(job_id),))
@@ -753,6 +802,22 @@ class JobRunner:
     def create(self, **kwargs: Any) -> Job:
         job = self.store.create(**kwargs)
         self.register(job)
+        return job
+
+    def edit(self, job_id: str, **fields: Any) -> Job:
+        """Apply an owner's edit and make the scheduler agree with it.
+
+        Re-registering is the half that makes an edit real: ``add_job`` with
+        ``replace_existing`` rebuilds the trigger from the new cron, so a rescheduled job
+        stops firing on its old times. A job that is not runnable (paused, or disabled) is
+        unregistered instead — editing a paused job must leave it paused, and leaving a
+        stale trigger armed for it would resume it by accident.
+        """
+        job = self.store.edit(job_id, **fields)
+        if job.runnable:
+            self.register(job)
+        else:
+            self.unregister(job_id)
         return job
 
     def pause(self, job_id: str, reason: str) -> Job:

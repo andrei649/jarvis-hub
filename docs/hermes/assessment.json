@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "efc87a20634d33f2d7950b762d90854812c0a841",
-  "assessed_at": "2026-09-09T17:39:21Z",
+  "base_sha": "bbfe1eec4b17f3aefa7ee30978e4f3b98489e064",
+  "assessed_at": "2026-09-10T03:05:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -14,11 +14,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -56,11 +56,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -73,11 +73,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -90,11 +90,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -107,11 +107,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -124,11 +124,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -145,11 +145,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -162,11 +162,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -213,11 +213,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -230,11 +230,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",
@@ -255,11 +255,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",
@@ -339,11 +339,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",
@@ -397,11 +397,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",
@@ -659,11 +659,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -671,7 +671,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         }
       ]
     },
@@ -708,16 +708,16 @@
       "id": "H146",
       "row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
       "status": "partial",
-      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, edita, porni, pune pe pauză, relua și șterge joburi; editarea trece prin PATCH /api/jobs/{id}, `nerva jobs edit` și un formular în panoul HUD, re-derivă cron-ul din textul programului și re-armează scheduler-ul. Există istoric de rulări și catalogul de blueprint-uri.",
+      "remaining": "Rândul cere pagina Cron completă: câmpuri avansate în modalul de creare, un constructor vizual de program, ținte de livrare per job și galeria celor 16 Automation Blueprints tipizate. Nerva are 3 blueprint-uri, fără ținte per job și fără constructor vizual.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -725,15 +725,19 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+        },
+        {
+          "path": "tests/test_jobs_edit.py",
+          "sha256": "6f83d731ae93bd754732d7f5b7e1b1958f1742c8264e9204c95323dc3aca8798"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         }
       ]
     },
@@ -793,15 +797,15 @@
       "row_sha256": "1cd105df91f9f4d98563965ec01e5c43dd76b860d72a706db0a7327e9720576a",
       "status": "partial",
       "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "remaining": "Editarea există acum (PATCH /api/jobs/{id}, `nerva jobs edit`, formular în panou), dar rândul cere în plus un constructor vizual de program, ținte de livrare per job și galeria de 16 blueprint-uri tipizate; Nerva are 3 blueprint-uri și nicio țintă per job.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -809,15 +813,15 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         }
       ]
     },
@@ -851,11 +855,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -872,11 +876,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -893,11 +897,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1452,16 +1456,16 @@
       "id": "H449",
       "row_sha256": "5fd839c96d6e105a4c8ebea64d497efd9a5086a6a3086923e007e385db609d43",
       "status": "partial",
-      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "summary": "Cele șase verbe pe care le numește rândul există acum end-to-end: list, create, edit, pause, resume, run și remove, peste un store SQLite (jobs + runs + held) cu lock, istoric și pauză ca dată, nu ca ștergere. `run` înregistrează o rulare pe aceeași cale de execuție ca o declanșare programată.",
+      "remaining": "Înregistrarea Hermes are ~40 de câmpuri; a noastră are 14. Lipsesc repeat, deliver (ținte per job), workdir, pin-uri de model/provider, enabled_toolsets și skills. Lipsesc și verbele `incidents`, `notepad`, `doctor` și `tick` (câmpul notepad există în store, fără comandă care să-l scrie).",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1469,15 +1473,19 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+        },
+        {
+          "path": "tests/test_jobs_edit.py",
+          "sha256": "6f83d731ae93bd754732d7f5b7e1b1958f1742c8264e9204c95323dc3aca8798"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         }
       ]
     },
@@ -1490,11 +1498,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1502,7 +1510,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         }
       ]
     },
@@ -1515,11 +1523,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1527,7 +1535,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         }
       ]
     },
@@ -1540,11 +1548,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1552,7 +1560,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         }
       ]
     },
@@ -1565,11 +1573,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1577,7 +1585,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         }
       ]
     },
@@ -1590,11 +1598,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -1611,11 +1619,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         }
       ]
     },
@@ -2033,15 +2041,15 @@
       "row_sha256": "47f438aab4a3e246d57bb290768c34eddf706864e1c9b00d2efba558e1f03292",
       "status": "partial",
       "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea unui job existent nu are rută sau control CLI/HUD; rândurile mai largi cer și opțiuni avansate suplimentare.",
+      "remaining": "Editarea există acum end-to-end; rămân opțiunile avansate ale rândului — repeat, ținte de livrare per job, workdir și pin-uri de model/provider.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -2049,15 +2057,15 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "6890ff95ad2cc6fe843912898eb32087d544a63e9250cb03e4bb7da0d6f90c48"
+          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         }
       ]
     },
@@ -2137,11 +2145,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "13305f00cae7b3da45932d9d70cd49ffb56f9e23754ebf1cbf73f7a32804a397"
+          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "5af246958b8eebe54fc98dc4aa0673e9797fd8698dafed40a0058fbbdab995ee"
+          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -2149,7 +2157,7 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "6d95582beda21bd94a581d8659c5f9374531a802ce015033740263ee0922ff2f"
+          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
         },
         {
           "path": "agents/core/action_origin.py",
@@ -2195,11 +2203,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43894d2720eb086e1218e74928e9f0062452da5be6543c98ee7c8b1e99d8e5b6"
+          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "6d577d1f07b80fec47d7f3ca04667f2d4ed95b741c57636ccb363bdf148d9922"
+          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
         },
         {
           "path": "agents/core/commands.py",

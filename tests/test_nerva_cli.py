@@ -477,7 +477,7 @@ def test_jobs_verbs_ride_the_admin_routes():
 
 
 def test_jobs_is_in_the_tree_and_the_completion():
-    assert command_tree()["jobs"] == ["blueprints", "create", "delete", "list", "pause", "resume", "run", "runs"]
+    assert command_tree()["jobs"] == ["blueprints", "create", "delete", "edit", "list", "pause", "resume", "run", "runs"]
     assert "jobs) COMPREPLY" in completion_script("bash")
 
 
@@ -533,3 +533,47 @@ def test_tools_bounds_the_number_of_events_it_asks_for():
         code, _out, _err, hub = _run(["tools", "-n", str(asked)], hub=hub)
         assert code == EXIT_OK, (asked, hub.calls)
         assert any(f"limit={sent}" in call[1] for call in hub.calls), (asked, hub.calls)
+
+
+def test_jobs_edit_sends_only_the_flags_that_were_given():
+    """`nerva jobs edit` is the shell half of the H146/H449 gap."""
+    hub = _FakeHub({"PATCH /api/jobs/abc": {"ok": True, "job": {
+        "id": "abc", "name": "stretch", "schedule_text": "every day at 9", "cron": "0 9 * * *"}}})
+    code, out, _err, hub = _run(["jobs", "edit", "abc", "--when", "every day at 9"], hub=hub)
+    assert code == 0
+    assert hub.calls == [("PATCH", "/api/jobs/abc", {"schedule_text": "every day at 9"})]
+    assert "edited abc" in out and "0 9 * * *" in out
+
+
+def test_jobs_edit_carries_name_schedule_and_action_together():
+    hub = _FakeHub({"PATCH /api/jobs/abc": {"ok": True, "job": {"id": "abc"}}})
+    code, _out, _err, hub = _run(
+        ["jobs", "edit", "abc", "--name", "stretch", "--when", "every day at 9",
+         "--action", '{"type":"remind","message":"m"}'], hub=hub)
+    assert code == 0
+    assert hub.calls[0][2] == {
+        "name": "stretch",
+        "schedule_text": "every day at 9",
+        "action": {"type": "remind", "message": "m"},
+    }
+
+
+def test_jobs_edit_with_no_flags_is_a_usage_error_and_calls_nothing():
+    code, _out, err, hub = _run(["jobs", "edit", "abc"])
+    assert code == EXIT_USAGE
+    assert "nothing to change" in err
+    assert hub.calls == [], "a no-op edit must not reach the hub"
+
+
+def test_jobs_edit_rejects_unparseable_action_json_before_calling():
+    code, _out, err, hub = _run(["jobs", "edit", "abc", "--action", "{not json"])
+    assert code == EXIT_USAGE and err.strip()
+    assert hub.calls == []
+
+
+def test_jobs_edit_prints_the_hubs_refusal_rather_than_claiming_success():
+    hub = _FakeHub({"PATCH /api/jobs/abc": {"error": "a schedule that fires every minute"}})
+    code, out, _err, _hub = _run(["jobs", "edit", "abc", "--when", "every minute"], hub=hub)
+    assert code == 0
+    assert "a schedule that fires every minute" in out
+    assert "edited" not in out

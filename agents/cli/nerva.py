@@ -143,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
+    jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
+    jobs_edit.add_argument("job_id")
+    jobs_edit.add_argument("--name")
+    jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
+    jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
+    jobs_edit.add_argument("--json", action="store_true")
     for name, help_text in (
         ("pause", "stop a job from firing"),
         ("resume", "let a paused job fire again"),
@@ -668,6 +674,31 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             return EXIT_OK
         job = reply.get("job") or {}
         ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
+        return EXIT_OK
+    if ns.action == "edit":
+        body = {}
+        if ns.name:
+            body["name"] = ns.name
+        if ns.when:
+            body["schedule_text"] = ns.when
+        if ns.action_json:
+            try:
+                body["action"] = json.loads(ns.action_json)
+            except ValueError as exc:
+                ctx.err.write(f"{exc}\n")
+                return EXIT_USAGE
+        if not body:
+            ctx.err.write("nothing to change — pass --name, --when or --action\n")
+            return EXIT_USAGE
+        reply = client.request("PATCH", f"/api/jobs/{ns.job_id}", body) or {}
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        job = reply.get("job") or {}
+        if not reply.get("ok"):
+            ctx.say(f"{ns.job_id}: {reply.get('error') or reply}")
+            return EXIT_OK
+        ctx.say(f"edited {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "runs":
         reply = client.get(f"/api/jobs/{ns.job_id}/runs") or {}

@@ -127,3 +127,74 @@ def test_a_hub_without_a_runner_says_so(hub, monkeypatch):
     orch.jobs = None
     assert client.get("/api/jobs", headers=ADMIN).status_code == 503
     assert client.post("/api/jobs", json={"blueprint": "reminder"}, headers=ADMIN).status_code == 503
+
+
+def test_patch_edits_a_job_and_reports_the_cron_it_will_fire_on(hub):
+    """H146/H449's named gap: an owner could arm and delete, never change."""
+    client, _orch, _tg = hub
+    created = client.post(
+        "/api/jobs",
+        json={"name": "stand up", "schedule_text": "every weekday at 7",
+              "action": {"type": "remind", "message": "stand up"}},
+        headers=ADMIN,
+    )
+    job_id = created.json()["job"]["id"]
+
+    edited = client.patch(
+        f"/api/jobs/{job_id}",
+        json={"name": "stretch", "schedule_text": "every day at 9"},
+        headers=ADMIN,
+    )
+    assert edited.status_code == 200
+    body = edited.json()["job"]
+    assert body["name"] == "stretch"
+    assert body["schedule_text"] == "every day at 9"
+    assert body["cron"] == "0 9 * * *", "the cron must follow the text, not lag behind it"
+    # and the change is what a later reader gets, not just what the write echoed
+    assert client.get(f"/api/jobs/{job_id}", headers=ADMIN).json()["job"]["cron"] == "0 9 * * *"
+
+
+def test_patch_leaves_omitted_fields_alone(hub):
+    client, _orch, _tg = hub
+    created = client.post(
+        "/api/jobs",
+        json={"name": "stand up", "schedule_text": "every weekday at 7",
+              "action": {"type": "remind", "message": "stand up"}},
+        headers=ADMIN,
+    )
+    job_id = created.json()["job"]["id"]
+    body = client.patch(f"/api/jobs/{job_id}", json={"name": "stretch"}, headers=ADMIN).json()["job"]
+    assert body["schedule_text"] == "every weekday at 7" and body["cron"] == "0 7 * * 1-5"
+    assert body["action"] == {"type": "remind", "message": "stand up"}
+
+
+def test_patch_refuses_what_creation_would_refuse(hub):
+    client, _orch, _tg = hub
+    created = client.post(
+        "/api/jobs",
+        json={"name": "stand up", "schedule_text": "every weekday at 7",
+              "action": {"type": "remind", "message": "stand up"}},
+        headers=ADMIN,
+    )
+    job_id = created.json()["job"]["id"]
+    assert client.patch(f"/api/jobs/{job_id}", json={"schedule_text": "every minute"},
+                        headers=ADMIN).status_code == 422
+    assert client.patch(f"/api/jobs/{job_id}", json={"action": {"type": "remind"}},
+                        headers=ADMIN).status_code == 422
+    assert client.patch(f"/api/jobs/{job_id}", json={}, headers=ADMIN).status_code == 422
+    # a field the body model does not know is refused before it reaches the store
+    assert client.patch(f"/api/jobs/{job_id}", json={"enabled": True}, headers=ADMIN).status_code == 422
+    # and none of that changed the job
+    assert client.get(f"/api/jobs/{job_id}", headers=ADMIN).json()["job"]["cron"] == "0 7 * * 1-5"
+
+
+def test_patch_on_an_unknown_job_is_404_and_is_owner_only(hub):
+    client, _orch, _tg = hub
+    assert client.patch("/api/jobs/nope", json={"name": "x"}).status_code == 401
+    assert client.patch("/api/jobs/nope", json={"name": "x"}, headers=ADMIN).status_code == 404
+
+
+def test_patch_without_a_runner_says_so(hub):
+    client, orch, _tg = hub
+    orch.jobs = None
+    assert client.patch("/api/jobs/x", json={"name": "y"}, headers=ADMIN).status_code == 503

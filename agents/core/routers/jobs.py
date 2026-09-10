@@ -30,6 +30,16 @@ class JobCreateBody(BaseModel):
     params: dict[str, Any] | None = None
 
 
+class JobEditBody(BaseModel):
+    """The three fields an owner authored. Everything else about a job is an outcome."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=80)
+    schedule_text: str | None = Field(default=None, max_length=200)
+    action: dict[str, Any] | None = None
+
+
 class JobPauseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +106,28 @@ async def jobs_get(job_id: str):
     if job is None:
         return JSONResponse({"error": "no such job"}, status_code=404)
     return nocache_json({"job": job.as_dict(), "runs": [run.as_dict() for run in runner.store.runs(job_id)]})
+
+
+@router.patch("/api/jobs/{job_id}", dependencies=[Depends(admin_guard)])
+async def jobs_edit(job_id: str, body: JobEditBody):
+    """Change a job's name, schedule or action. Omitted fields keep their value.
+
+    PATCH rather than PUT: a job carries run history and failure counters the owner never
+    authored, so a whole-record replace would either drop them or invite a caller to send
+    them back stale.
+    """
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        job = runner.edit(
+            job_id, name=body.name, schedule_text=body.schedule_text, action=body.action
+        )
+    except KeyError:
+        return JSONResponse({"error": "no such job"}, status_code=404)
+    except ValueError as exc:
+        return _refused(str(exc))
+    return nocache_json({"ok": True, "job": job.as_dict()})
 
 
 @router.get("/api/jobs/{job_id}/runs", dependencies=[Depends(admin_guard)])
