@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from .tool_protocol import ToolSpec
+from .tool_protocol import TokenUsage, ToolSpec
 
 SYNTHETIC_ID_PREFIX = "nerva_call_"
 _synthetic_counter = itertools.count(1)
@@ -149,6 +149,65 @@ def anthropic_tools(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
         {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema}
         for tool in tools
     ]
+
+
+#: What Anthropic calls a cache breakpoint. `ephemeral` is the only type the
+#: Messages API defines; the entry lives about five minutes and is refreshed by
+#: every hit, which is exactly the shape of one working session.
+CACHE_BREAKPOINT = {"type": "ephemeral"}
+
+
+def cache_marked_system(system: str) -> list[dict[str, Any]]:
+    """The system prompt as one cacheable block.
+
+    A string `system` cannot carry a breakpoint, so it becomes a single text block
+    with the mark on it. The system prompt is the largest thing that does not change
+    between the turns of a session — re-sending it uncached on every tool-loop
+    iteration is the bill this row is about.
+    """
+    return [{"type": "text", "text": str(system or ""), "cache_control": dict(CACHE_BREAKPOINT)}]
+
+
+def cache_marked_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark the tool array as a cacheable prefix, with one breakpoint on the last tool.
+
+    A `cache_control` mark covers everything *before* it, so one mark on the final
+    entry caches the whole array. Marking every tool would spend the four-breakpoint
+    budget re-describing a prefix already covered, and buy nothing.
+
+    The input is not mutated: the caller's list is a freshly built dialect payload,
+    but a helper that edits its argument in place is a trap for the next caller.
+    """
+    if not tools:
+        return tools
+    marked = [dict(tool) for tool in tools]
+    marked[-1]["cache_control"] = dict(CACHE_BREAKPOINT)
+    return marked
+
+
+def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
+    """The provider's own token counts, or an empty usage when it said nothing.
+
+    Every field is coerced and floored at zero rather than trusted: this is a parsed
+    response body from outside the box, and a negative or non-numeric count reaching
+    the cost meter would report a negative bill.
+    """
+    raw = data.get("usage") if isinstance(data, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return TokenUsage()
+
+    def _count(key: str) -> int:
+        try:
+            return max(0, int(raw.get(key) or 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+    return TokenUsage(
+        input_tokens=_count("input_tokens"),
+        output_tokens=_count("output_tokens"),
+        cache_read=_count("cache_read_input_tokens"),
+        cache_write=_count("cache_creation_input_tokens"),
+    )
 
 
 def anthropic_messages(messages: Sequence[Mapping[str, Any]]) -> tuple[str, list[dict[str, Any]]]:

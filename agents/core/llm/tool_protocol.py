@@ -46,11 +46,44 @@ class ToolCall:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """What the provider says the turn cost, as opposed to what we guessed.
+
+    The meter has always estimated with the heuristic tokenizer because no backend
+    carried the provider's own numbers back out — `GeminiBackend._extract_text`
+    drops `usageMetadata`, and the Anthropic client never looked at `usage` at all.
+    An estimate is fine for a budget check and wrong for a bill, and the cost table
+    prices a `cached` rate that no Claude route could ever earn.
+
+    ``cache_read`` is what the vendor billed at the discounted rate; ``cache_write``
+    is the premium paid to *create* the entry, which is not a saving and must not be
+    reported as one. All four default to zero, which reads as "the provider said
+    nothing" — never as "the turn was free".
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+
+    @property
+    def reported(self) -> bool:
+        """True when a provider actually supplied numbers, so a caller can fall back."""
+        return bool(self.input_tokens or self.output_tokens
+                    or self.cache_read or self.cache_write)
+
+    def as_dict(self) -> dict[str, int]:
+        return {"input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
+                "cache_read": self.cache_read, "cache_write": self.cache_write}
+
+
 @dataclass(frozen=True)
 class ToolTurn:
     content: str = ""
     tool_calls: tuple[ToolCall, ...] = ()
     finish_reason: str | None = None
+    usage: TokenUsage = TokenUsage()
 
     def as_assistant_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {"role": "assistant", "content": self.content}

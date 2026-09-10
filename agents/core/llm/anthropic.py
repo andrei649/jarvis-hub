@@ -18,6 +18,9 @@ from .tool_dialects import (
     anthropic_text,
     anthropic_tool_calls,
     anthropic_tools,
+    anthropic_usage,
+    cache_marked_system,
+    cache_marked_tools,
     normalize_finish_reason,
 )
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -124,9 +127,14 @@ class ClaudeBackend(LLMBackend):
             "messages": converted,
         }
         if system:
-            payload["system"] = system
+            payload["system"] = cache_marked_system(system)
         if tools:
-            payload["tools"] = anthropic_tools(tools)
+            # The breakpoint goes on the LAST tool because a `cache_control` mark
+            # covers everything *before* it: one mark caches the whole tool array,
+            # and the array plus the system prompt are the two things that do not
+            # change between the turns of one session. Marking each tool instead
+            # would spend the four-breakpoint budget on a prefix already covered.
+            payload["tools"] = cache_marked_tools(anthropic_tools(tools))
             payload["tool_choice"] = {"type": "auto"}
         data, error = await self._post_messages(payload)
         if data is None:
@@ -136,6 +144,7 @@ class ClaudeBackend(LLMBackend):
             content=self._finalize_cloud(anthropic_text(blocks)),
             tool_calls=parse_openai_tool_calls(anthropic_tool_calls(blocks)),
             finish_reason=normalize_finish_reason(ANTHROPIC_FINISH_REASONS, data.get("stop_reason")),
+            usage=anthropic_usage(data),
         )
 
     async def generate_stream(
