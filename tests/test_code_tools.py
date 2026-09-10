@@ -21,6 +21,7 @@ contract, exercised by the sandbox suite and provable only on a host that has on
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -376,3 +377,78 @@ async def test_a_script_that_raises_reports_the_failure_without_pretending_it_wo
     assert result["exit_code"] != 0
     assert "ValueError" in result["stderr"]
     assert result["timed_out"] is False
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_tool_name_reads_the_same_as_a_hidden_one(tmp_path):
+    """Probing must not map the registry: 'not registered' and 'not offered' agree."""
+    _server_, tool = _tool(tmp_path, principal=GUEST)
+    result = await _run(tool, """
+for name in ["no_such_tool_at_all", "send_email"]:
+    print(name, jarvis_tool_call(name, {}).get("reason"))
+""")
+    assert "no_such_tool_at_all tool_not_offered" in result["stdout"]
+    assert "send_email tool_not_offered" in result["stdout"]
+
+
+# ── the acceptance clause: a real tool loop, end to end ──────────────────────
+
+@pytest.mark.asyncio
+async def test_a_real_tool_loop_selects_the_tool_and_gets_bounded_filtered_stdout(tmp_path):
+    """The plan's K1 acceptance, run *through* `AgentToolRuntime` rather than around it.
+
+    The model asks for one script; the script makes three tool calls and prints a
+    summary; the loop hands back one observation. The intermediate results never
+    enter the transcript — which is the entire reason this tool exists.
+    """
+    from agents.core.agent_runtime import AgentToolRuntime
+    from agents.core.llm.tool_protocol import ToolCall, ToolTurn
+
+    server = _server()
+    register_code_tools(
+        server, sandbox=lambda: _sandbox(tmp_path), settings=_settings(),
+        agent_patterns=lambda agent: None, principal=lambda: OWNER,
+        session_id=lambda: "session_k1",
+    )
+    script = (
+        'sizes = [len(jarvis_tool_call("echo", {"value": w})["result"]["echo"])\n'
+        '         for w in ["a", "bb", "ccc"]]\n'
+        'print("LONGEST", max(sizes))\n'
+    )
+
+    class _Backend:
+        supports_tools = True
+
+        def __init__(self):
+            self.turns = [
+                ToolTurn(tool_calls=(ToolCall(
+                    id="call-code", name=TOOL,
+                    raw_arguments=json.dumps({"code": script}),
+                    arguments={"code": script},
+                ),), finish_reason="tool_calls"),
+                ToolTurn(content="The longest was 3 characters.", finish_reason="stop"),
+            ]
+            self.offered: list = []
+            self.messages: list = []
+
+        async def generate_tool_turn(self, **kwargs):
+            self.offered.append([spec.name for spec in (kwargs.get("tools") or ())])
+            self.messages.append([dict(message) for message in kwargs["messages"]])
+            return self.turns.pop(0)
+
+    backend = _Backend()
+    answer = await AgentToolRuntime(server, enabled=lambda: True).run(
+        agent_id="jarvis", backend=backend, model="local-model",
+        prompt="how long is the longest word", system="You are Jarvis.",
+        max_tokens=256, temperature=0.2,
+    )
+
+    assert answer == "The longest was 3 characters."
+    assert TOOL in backend.offered[0]
+    observation = "".join(
+        str(message.get("content") or "")
+        for message in backend.messages[-1] if message.get("role") == "tool")
+    # One bounded observation carrying the script's summary...
+    assert "LONGEST 3" in observation
+    # ...and not the three intermediate results it was computed from.
+    assert "bb" not in observation

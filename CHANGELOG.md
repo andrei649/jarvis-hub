@@ -32,7 +32,11 @@ the allowlist and the secret scrubbing are the ones that were already there.
   That invariant is the whole reason `execute_code` itself is ungated.
 - Without a Docker/WASM backend the call answers `sandbox_not_isolated`. Model-written
   code never falls back to the host interpreter, even where `allow_subprocess` would let a
-  developer's own script run.
+  developer's own script run. **Deviation from the delivery plan**, stated rather than
+  glossed: the plan asked for the tool to be *offered* only when a backend is usable, and
+  it is offered on the owner's switch and refuses at call time. A per-turn availability
+  probe is exactly H295's open gap, and a boot-time probe would make the offered set
+  depend on whether a daemon happened to be up when the hub started.
 - Output is capped per stream at the smaller of 50 KB and the sandbox's own
   `max_output_bytes`, and only the binding layer truncates — one notice, never two nested.
 

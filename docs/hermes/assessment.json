@@ -950,15 +950,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "2e9b2d192e5893723966df97aca2ec5753ef0dab6e1148e70cb2704049935a08"
+          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
         },
         {
           "path": "agents/core/tool_rpc.py",
           "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
         },
         {
-          "path": "tests/test_execute_code_tool.py",
-          "sha256": "2259ba2a55f7a1a30d378c31c948b01bd59ae0033dc040a86960be20b39e91c7"
+          "path": "tests/test_code_tools.py",
+          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
         }
       ]
     },
@@ -1083,15 +1083,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "2e9b2d192e5893723966df97aca2ec5753ef0dab6e1148e70cb2704049935a08"
+          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
         },
         {
           "path": "agents/core/tool_rpc.py",
           "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
         },
         {
-          "path": "tests/test_execute_code_tool.py",
-          "sha256": "2259ba2a55f7a1a30d378c31c948b01bd59ae0033dc040a86960be20b39e91c7"
+          "path": "tests/test_code_tools.py",
+          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
         }
       ]
     },
@@ -2116,15 +2116,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "2e9b2d192e5893723966df97aca2ec5753ef0dab6e1148e70cb2704049935a08"
+          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
         },
         {
           "path": "agents/core/tool_rpc.py",
           "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
         },
         {
-          "path": "tests/test_execute_code_tool.py",
-          "sha256": "2259ba2a55f7a1a30d378c31c948b01bd59ae0033dc040a86960be20b39e91c7"
+          "path": "tests/test_code_tools.py",
+          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
         }
       ]
     },
@@ -2404,11 +2404,11 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "2e9b2d192e5893723966df97aca2ec5753ef0dab6e1148e70cb2704049935a08"
+          "sha256": "eaaba68199bd55851e6d44fdd74f88e48c8077bd32ff96b8347b06bb37bd12cf"
         },
         {
-          "path": "tests/test_execute_code_tool.py",
-          "sha256": "2259ba2a55f7a1a30d378c31c948b01bd59ae0033dc040a86960be20b39e91c7"
+          "path": "tests/test_code_tools.py",
+          "sha256": "4f502c02548607aa05ac45cc01d07aff66f39c825f24c1ef29db60f8612424b0"
         }
       ]
     },

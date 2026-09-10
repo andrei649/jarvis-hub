@@ -19,7 +19,12 @@ Four properties make offering it safe, and each is a refusal a test pins:
   container, one budget, no recursive fan-out.
 * **It never runs outside isolation.** Without a Docker/WASM backend the call is
   refused rather than falling back to the host interpreter. The subprocess fallback
-  is for a developer at a terminal, never for model-written code.
+  is for a developer at a terminal, never for model-written code. The delivery plan
+  asked for the tool to be *offered* only when a backend is usable; it is offered on
+  the owner's switch and refuses at call time instead, because a per-turn
+  availability probe is a mechanism this codebase does not have — that is H295's
+  own open gap, and registering on a boot-time probe would make the offered set
+  depend on whether a daemon happened to be up when the hub started.
 * **It is off until the owner turns it on.** ``llm.execute_code`` defaults to False and
   the tool is not registered at all while it is off — an unusable tool on the surface
   costs the model context and teaches it to try something that always refuses.
