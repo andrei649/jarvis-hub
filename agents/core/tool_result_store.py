@@ -49,14 +49,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+# The three limits live in one module (H298). They are re-exported here because
+# this is the surface the tool loop imports, but they are not redeclared: a second
+# literal is how the byte figure ended up meaning three different things.
+from .environments.output_limits import (
+    MAX_LINE_LENGTH,
+    MAX_OUTPUT_BYTES,
+    MAX_OUTPUT_LINES,
+    cap_lines,
+)
+
 logger = logging.getLogger("jarvis.tool_result_store")
 
 #: The global default when nothing more specific applies.
-DEFAULT_MAX_RESULT_BYTES = 50_000
-#: Hermes's own centralised output limits, kept under one name here too.
-MAX_OUTPUT_BYTES = 50_000
-MAX_OUTPUT_LINES = 2_000
-MAX_LINE_LENGTH = 2_000
+DEFAULT_MAX_RESULT_BYTES = MAX_OUTPUT_BYTES
 #: How much of a spilled result the model still sees inline.
 PREVIEW_CHARS = 1_500
 
@@ -160,9 +166,15 @@ def threshold_for(
 
 
 def _positive_int(raw: object) -> int | None:
+    """A usable byte count, or None so the next rule down applies.
+
+    ``OverflowError`` is caught alongside the obvious two: ``int(float("inf"))``
+    raises it, and an override of ``inf`` reaching this function must fall through
+    to the next rule rather than take the whole resolution down with it.
+    """
     try:
         value = int(raw)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return value if value > 0 else None
 
@@ -229,6 +241,12 @@ class ToolResultStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             temporary.replace(target)
+            # Stamp the file from the store's own clock rather than leaving it to
+            # the filesystem. Retention compares against this clock, so letting the
+            # two disagree would make the injected clock decorative and the age
+            # limit untestable — which is how an unbounded directory ships.
+            written = self._clock()
+            os.utime(target, (written, written))
         except OSError:
             logger.warning("tool result spill failed; falling back to truncation",
                            exc_info=True)
@@ -349,5 +367,5 @@ __all__ = [
     "MAX_OUTPUT_BYTES", "MAX_OUTPUT_LINES", "MCP_DEFAULT_BYTES", "MCP_PREFIX",
     "PER_RESULT_FLOOR_BYTES", "PER_TURN_FLOOR_BYTES", "PINNED_THRESHOLDS",
     "PREVIEW_CHARS", "SPILL_DIRNAME", "SpilledResult", "ToolResultStore",
-    "budget_for_context_window", "preview_envelope", "threshold_for",
+    "budget_for_context_window", "cap_lines", "preview_envelope", "threshold_for",
 ]

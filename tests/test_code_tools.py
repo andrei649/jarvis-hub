@@ -362,12 +362,54 @@ async def test_a_generous_sandbox_still_meets_this_tools_own_ceiling(tmp_path):
     """A host configured to allow more than 50 KB does not get to flood the turn."""
     sandbox = _sandbox(tmp_path, max_output_bytes=10 * code_tools.MAX_OUTPUT_BYTES)
     _server_, tool = _tool(tmp_path, sandbox=sandbox)
-    result = await _run(tool, f"print('x' * {code_tools.MAX_OUTPUT_BYTES + 20_000})")
+    # Forty lines just under the per-line limit: a shape the line caps leave alone,
+    # so what this test measures is the byte ceiling and nothing else. (A single
+    # 70 KB line would now be elided by the line cap before the byte cap ever saw
+    # it — still bounded, but it would stop testing the ceiling this test is named
+    # for.)
+    result = await _run(
+        tool,
+        f"print(('x' * ({code_tools.MAX_LINE_LENGTH} - 1) + chr(10)) * 40)",
+    )
     assert result["output_limit"] == code_tools.MAX_OUTPUT_BYTES
     assert result["truncated"] is True
     assert "STDOUT TRUNCATED" in result["stdout"]
     assert "bytes omitted" in result["stdout"]
     assert result["stdout"].count("TRUNCATED") == 1
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_stays_under_the_byte_budget_can_still_be_shaped(tmp_path):
+    """H298: bytes are not a proxy for shape, and the sandbox's cap only sees bytes.
+
+    Forty thousand short lines is well under 50 KB and still a wall nobody — model or
+    owner — can read. The elision keeps both ends and says how many lines went.
+    """
+    _server_, tool = _tool(tmp_path)
+    result = await _run(tool, "for i in range(40000): print(i)")
+
+    assert result["truncated"] is True
+    lines = result["stdout"].rstrip("\n").split("\n")
+    assert len(lines) <= code_tools.MAX_OUTPUT_LINES + 1
+    assert lines[0] == "0"
+    assert lines[-1] == "39999", "the tail is the half that says what happened"
+    # Two notices, and neither erased the other: the sandbox's byte cap ran first
+    # over the whole 240 KB and left its record in the middle of the stream — which
+    # is exactly where the line cap cuts — and the line cap kept it.
+    assert "bytes omitted" in result["stdout"]
+    assert "lines omitted out of" in result["stdout"]
+
+
+@pytest.mark.asyncio
+async def test_one_enormous_line_is_elided_in_the_middle_not_dropped(tmp_path):
+    _server_, tool = _tool(tmp_path)
+    result = await _run(tool, "print('a' + 'b' * 9000 + 'c')")
+
+    assert result["truncated"] is True
+    assert result["stdout"].startswith("ab")
+    assert result["stdout"].rstrip("\n").endswith("bc")
+    assert "chars omitted" in result["stdout"]
+    assert len(result["stdout"]) < 9_002
 
 
 @pytest.mark.asyncio

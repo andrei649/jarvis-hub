@@ -1,8 +1,31 @@
-"""Output truncation helpers for future execute_code transports."""
+"""The one place that says how much output a tool may return.
+
+H298 made this module the single source for the three limits Hermes keeps in
+``tools/tool_output_limits.py``. Before that the byte figure was copied into
+``code_tools`` and ``session_kernels`` — three literals that could drift apart —
+and the two line limits did not exist at all, so a single 5 MB line and a
+50,000-line wall of output both passed every check the loop had. Bytes are not a
+proxy for either: one enormous line is unreadable to a model and murder on a
+terminal, and neither shape is what a byte cap is measuring.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+#: The byte ceiling on a single tool's output. Import it; do not re-declare it.
+MAX_OUTPUT_BYTES = 50_000
+#: How many lines survive. The middle goes, not the tail — the end of a build log
+#: or a traceback is the half that says what happened.
+MAX_OUTPUT_LINES = 2_000
+#: How long one line may be before its middle is elided.
+MAX_LINE_LENGTH = 2_000
+#: The signature every truncation notice in this module carries. A line containing it
+#: is the audit record of an earlier layer's cut, and :func:`cap_lines` will not drop
+#: it: byte truncation puts its notice in the *middle*, which is precisely the part a
+#: line cap elides, so without this a shape pass silently erases the evidence that
+#: bytes went missing at all.
+NOTICE_MARK = "TRUNCATED - "
 
 
 @dataclass(frozen=True)
@@ -146,3 +169,79 @@ def render_capped(
         original_bytes=total_bytes,
         omitted_bytes=omitted,
     )
+
+
+@dataclass(frozen=True)
+class CappedLines:
+    """What :func:`cap_lines` did, so a caller can say so honestly."""
+
+    text: str
+    lines_omitted: int
+    lines_shortened: int
+
+    @property
+    def capped(self) -> bool:
+        return bool(self.lines_omitted or self.lines_shortened)
+
+
+def cap_lines(
+    text: str,
+    *,
+    max_lines: int = MAX_OUTPUT_LINES,
+    max_line_length: int = MAX_LINE_LENGTH,
+) -> CappedLines:
+    """Bound the *shape* of output, which a byte budget cannot see.
+
+    Long lines lose their middle and keep both ends; too many lines lose the
+    middle of the run and keep the head and the tail, because the last lines of a
+    build log or a traceback are the ones that say what happened. Both notices are
+    inline and count what was dropped — a silent elision here would be the same
+    audit-versus-model divergence the spill exists to end.
+
+    A line already carrying an earlier layer's truncation notice is never dropped,
+    wherever it sits: that line is the only record that bytes went missing, and a
+    byte cap always leaves it in the middle, where this function cuts.
+    """
+    body = str(text or "")
+    limit_lines = max(2, int(max_lines))
+    limit_length = max(16, int(max_line_length))
+    shortened = 0
+    lines = body.split("\n")
+    trimmed: list[str] = []
+    for line in lines:
+        if len(line) <= limit_length:
+            trimmed.append(line)
+            continue
+        shortened += 1
+        keep = limit_length // 2
+        dropped = len(line) - (keep + (limit_length - keep))
+        trimmed.append(
+            line[:keep]
+            + f" ... [{dropped:,} chars omitted] ... "
+            + line[-(limit_length - keep):]
+        )
+    omitted = 0
+    if len(trimmed) > limit_lines:
+        head = limit_lines // 2
+        keep = set(range(head)) | set(range(len(trimmed) - (limit_lines - head), len(trimmed)))
+        keep |= {index for index, line in enumerate(trimmed) if NOTICE_MARK in line}
+        omitted = len(trimmed) - len(keep)
+        marker = f"... [{omitted:,} lines omitted out of {len(trimmed):,} total] ..."
+        rebuilt: list[str] = []
+        previous = -1
+        for index in sorted(keep):
+            if index != previous + 1 and marker not in rebuilt:
+                rebuilt.append(marker)
+            rebuilt.append(trimmed[index])
+            previous = index
+        trimmed = rebuilt
+    return CappedLines(text="\n".join(trimmed), lines_omitted=omitted,
+                       lines_shortened=shortened)
+
+
+__all__ = [
+    "MAX_LINE_LENGTH", "MAX_OUTPUT_BYTES", "MAX_OUTPUT_LINES", "NOTICE_MARK",
+    "CappedLines",
+    "TruncatedText", "cap_lines", "read_capped_stream", "render_capped",
+    "truncate_text",
+]

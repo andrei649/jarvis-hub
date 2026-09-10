@@ -388,9 +388,11 @@ class AgentToolRuntime:
         tool_counts: dict[str, int] = {}
         seen_results: dict[str, str] = {}
 
-        # H298 — what this turn has already put in the window. One cap cannot express
-        # it: five results at 40% of the limit each still bury a small context.
-        spent: dict[str, int] = {"bytes": 0}
+        # H298 — what this turn has already put in the window, and how big that window
+        # is. One cap cannot express the first: five results at 40% of the limit each
+        # still bury a small context. The second rides along because the runtime is
+        # shared between concurrent runs and the model is known only here.
+        spent: dict[str, int] = {"bytes": 0, "window": max(0, int(window_for(model) or 0))}
         while budget.consume():
             if len(messages) > 2 and not await self._compact_context(
                 messages,
@@ -926,6 +928,7 @@ class AgentToolRuntime:
                 reason="repeated_call",
                 event_sink=event_sink,
                 extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
+                spent=spent,
             )
         if capped_at:
             limit = self._per_tool_cap()
@@ -939,6 +942,7 @@ class AgentToolRuntime:
                     "limit": limit,
                     "notice": _CAP_NOTICE.format(calls=capped_at - 1, limit=limit),
                 },
+                spent=spent,
             )
 
         if gated:
@@ -961,10 +965,14 @@ class AgentToolRuntime:
                     approval_state["required"] = True
                 return observation
 
+        # `spent` belongs here above all: this is the path an ordinary tool call
+        # takes, so leaving it off made the per-turn budget apply to gated calls and
+        # refusals only — the many-largish-results case it exists for went uncounted.
         return await self._execute_rpc(
             call,
             agent_id=agent_id,
             event_sink=event_sink,
+            spent=spent,
         )
 
     async def _execute_rpc(
@@ -1020,19 +1028,30 @@ class AgentToolRuntime:
         await self._emit_result(event_sink, call, agent_id, prepared)
         return prepared, content
 
-    def _result_budget(self) -> Budget | None:
-        """This turn's caps, scaled to the model's real window when one is known."""
-        if self._context_window_tokens is None:
-            return None
-        try:
-            window = int(self._context_window_tokens())
-        except Exception:
-            return None
+    def _result_budget(self, window_tokens: int = 0) -> Budget | None:
+        """This turn's caps, scaled to the window the turn is actually running in.
+
+        The owner's override wins when they set one; otherwise the window comes from
+        the model itself, read from the same table compaction reads. Falling back to
+        "no budget" when nobody configured anything would leave the scaling inert on
+        every default deployment — a constant cap is generous on a 200k cloud model
+        and ruinous on the 8k local one, which is the whole reason this exists.
+        """
+        window = 0
+        if self._context_window_tokens is not None:
+            try:
+                window = int(self._context_window_tokens())
+            except Exception:
+                logger.warning("tool result window override unreadable; using the model's",
+                               exc_info=True)
+                window = 0
+        if window <= 0:
+            window = max(0, int(window_tokens or 0))
         if window <= 0:
             return None
         return budget_for_context_window(window)
 
-    def _result_threshold(self, tool_name: str) -> float:
+    def _result_threshold(self, tool_name: str, budget: Budget | None = None) -> float:
         """How many bytes this particular tool may put in the context window."""
         overrides: Mapping[str, object] | None = None
         if self._result_thresholds is not None:
@@ -1041,10 +1060,23 @@ class AgentToolRuntime:
                 overrides = candidate if isinstance(candidate, Mapping) else None
             except Exception:
                 logger.warning("tool result thresholds unreadable", exc_info=True)
-        budget = self._result_budget()
         default = self._max_result_bytes if budget is None else min(
             self._max_result_bytes, budget.per_result_bytes)
-        return threshold_for(tool_name, overrides=overrides, default=max(8, int(default)))
+        # The tool's own statement about its output, when it made one. Guarded because
+        # the runtime accepts any object with `handle`; a server without the accessor
+        # simply has nothing to declare.
+        declared = None
+        reader = getattr(self._server, "declared_result_bytes", None)
+        if callable(reader):
+            try:
+                declared = reader(tool_name)
+            except Exception:
+                logger.warning("declared tool result limit unreadable", exc_info=True)
+                declared = None
+        return threshold_for(
+            tool_name, overrides=overrides, declared=declared,
+            default=max(8, int(default)),
+        )
 
     def _prepare_result(
         self, raw_result: Any, tool_name: str, spent: dict[str, int] | None = None,
@@ -1056,11 +1088,14 @@ class AgentToolRuntime:
             result = _non_json(tool_name)
             encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
         size = len(encoded.encode("utf-8"))
-        threshold = self._result_threshold(tool_name)
+        # `spent` carries the running turn's window alongside its running total: the
+        # runtime is shared between concurrent runs, so the model's window cannot be
+        # state on `self` — it has to travel with the turn that declared it.
+        budget = self._result_budget(int((spent or {}).get("window", 0)))
+        threshold = self._result_threshold(tool_name, budget)
         # The per-turn budget is the part one cap cannot express: five results at 40%
         # of the limit each still bury a small window. Once the turn has spent its
         # allowance, what is left of it becomes this result's ceiling.
-        budget = self._result_budget()
         if budget is not None and spent is not None and threshold != math.inf:
             remaining = max(0, budget.per_turn_bytes - int(spent.get("bytes", 0)))
             threshold = min(threshold, max(_MIN_TURN_REMAINDER_BYTES, remaining))

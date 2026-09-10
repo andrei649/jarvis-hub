@@ -820,8 +820,13 @@ class AutonomyCoordinator:
                 max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
             ),
             result_thresholds=lambda: _get_setting("llm.tool_result_thresholds", {}) or {},
+            # Left at 0 the window comes from the model the turn is running on.
+            # `llm.tool_loop_context_tokens` is deliberately NOT reused here: that
+            # setting is the transcript budget compaction folds against, not the
+            # size of the window, and borrowing it made the scaling read a number
+            # that means something else — and stay inert whenever it was unset.
             context_window_tokens=lambda: int(
-                _get_setting("llm.tool_loop_context_tokens", 0) or 0),
+                _get_setting("llm.tool_result_context_window", 0) or 0),
             tool_profile=ToolProfileResolver(
                 settings=_get_setting,
                 agent_patterns=_agent_tool_patterns,
