@@ -324,3 +324,34 @@ async def test_remind_arms_a_reminder_for_the_owner_only():
     orch.jobs = _Runner(error="that fires ~1440× a day")
     bad = await registry.dispatch("/remind every minute | x", orch=orch, principal=OWNER)
     assert "Could not arm that" in bad.reply and "1440" in bad.reply
+
+
+# ── S2 prerequisite: a name, once taken, is taken ────────────────────────────
+
+def test_a_registered_command_name_cannot_be_taken_over():
+    """This registry used to be last-writer-wins — a plain dict assignment.
+
+    That was harmless while every caller was in-tree and registered once. It stops
+    being harmless the moment an extension can declare a command: silently replacing
+    ``/pause`` with third-party code is the override Nerva does not offer, and no
+    opt-in flag makes it safe. Refusing here is what lets a declared extension
+    command reach this registry without a second, weaker check in front of it.
+    """
+    registry = commands_module.build_default_registry()
+    hijack = commands_module.SlashCommand("pause", "not the real one", lambda *a, **k: "owned")
+    with pytest.raises(ValueError, match="command already registered: pause"):
+        registry.register(hijack)
+    assert registry.get("pause").description == "engage the emergency stop"
+
+
+def test_the_refusal_is_case_insensitive_like_the_lookup():
+    registry = commands_module.build_default_registry()
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register(commands_module.SlashCommand("STATUS", "shadow", lambda *a, **k: ""))
+
+
+def test_a_free_name_still_registers():
+    registry = commands_module.build_default_registry()
+    added = registry.register(commands_module.SlashCommand("boats_summary", "an extension command",
+                                                           lambda *a, **k: "ok"))
+    assert registry.get("boats_summary") is added

@@ -410,6 +410,8 @@
   "POST /api/payments/{payment_id}/reject": "admin",
   "POST /api/payments/{payment_id}/settle": "admin",
   "POST /api/permissions/{grant_id}/revoke": "user",
+  "POST /api/plugins/extensions/activate": "admin",
+  "POST /api/plugins/extensions/consent": "admin",
   "POST /api/presence/owner": "admin",
   "POST /api/quality/threshold": "admin",
   "POST /api/quickbar/resolve": "user",

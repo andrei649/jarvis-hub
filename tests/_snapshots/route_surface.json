@@ -406,6 +406,8 @@
   "POST /api/payments/{payment_id}/reject",
   "POST /api/payments/{payment_id}/settle",
   "POST /api/permissions/{grant_id}/revoke",
+  "POST /api/plugins/extensions/activate",
+  "POST /api/plugins/extensions/consent",
   "POST /api/presence/owner",
   "POST /api/quality/threshold",
   "POST /api/quickbar/resolve",

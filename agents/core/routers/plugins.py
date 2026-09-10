@@ -12,6 +12,7 @@ import logging
 
 from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict
 
 from agents.core.app_state import get_orch
 from agents.core.plugins.honesty import degradation_info as _plugin_degradation
@@ -110,3 +111,80 @@ async def inspect_extensions():
     if error is not None:
         return error
     return nocache_json(inspect_acquisition(runtime))
+
+
+class ExtensionConsentBody(BaseModel):
+    """The owner grants against a manifest they submitted, not against an id.
+
+    That is the whole point of the consent hash: consenting to *an extension* would
+    be consenting to whatever it declares next. Consenting to this exact document
+    is a decision that can be checked later.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    manifest: dict
+    revoke: bool = False
+
+
+class ExtensionActivateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    manifest: dict
+
+
+def _extension_manifest(body):
+    from agents.core.extensions.manifest import ManifestError, parse_manifest
+
+    try:
+        return parse_manifest(body.manifest), None
+    except ManifestError as exc:
+        return None, nocache_json({"ok": False, "reason": str(exc)}, status_code=422)
+
+
+@router.post("/api/plugins/extensions/consent", dependencies=[Depends(admin_guard)])
+async def extension_consent(body: ExtensionConsentBody):
+    """Record or withdraw the owner's consent to exactly these declarations."""
+    from agents.core.extensions.consent import ExtensionConsentStore
+
+    manifest, refusal = _extension_manifest(body)
+    if refusal is not None:
+        return refusal
+    store = ExtensionConsentStore()
+    if body.revoke:
+        # Withdrawing consent also takes the tools off the surface, if a runtime
+        # is composed: a grant the owner took back must not stay callable.
+        removed = store.revoke(manifest.id)
+        _, acquisition, error = require_component("acquisition", "extension acquisition not available")
+        if error is None:
+            runtime = acquisition.extensions()
+            if runtime is not None:
+                await runtime.deactivate(manifest.id)
+        return nocache_json({"ok": True, "revoked": removed, **store.check(manifest).as_dict()})
+    try:
+        decision = store.grant(manifest)
+    except ValueError as exc:
+        return nocache_json({"ok": False, "reason": str(exc)}, status_code=422)
+    return nocache_json({"ok": True, "revoked": False, **decision.as_dict()})
+
+
+@router.post("/api/plugins/extensions/activate", dependencies=[Depends(admin_guard)])
+async def extension_activate(body: ExtensionActivateBody):
+    """Prove the declared surface inside the sandbox, then make its tools callable."""
+    from agents.core.extensions.runtime import ExtensionRuntimeError
+
+    manifest, refusal = _extension_manifest(body)
+    if refusal is not None:
+        return refusal
+    _, acquisition, error = require_component("acquisition", "extension acquisition not available")
+    if error is not None:
+        return error
+    runtime = acquisition.extensions()
+    if runtime is None:
+        return nocache_json({"ok": False, "reason": "extensions_unavailable"}, status_code=503)
+    try:
+        activation = await runtime.activate(manifest)
+    except ExtensionRuntimeError as exc:
+        # Bounded reason codes only; nothing the extension printed reaches here.
+        return nocache_json({"ok": False, "reason": exc.reason}, status_code=422)
+    return nocache_json({"ok": True, "activation": activation.as_dict()})

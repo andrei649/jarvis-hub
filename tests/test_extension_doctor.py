@@ -236,3 +236,121 @@ async def test_inspection_endpoint_requires_user_identity_and_never_initializes_
         monkeypatch.setattr(web, "USER_TOKEN", "")
         assert (await client.get("/api/plugins/extensions")).status_code == 403
     assert not (tmp_path / "absent").exists()
+
+
+# ── S2: the owner-facing CLI verbs ───────────────────────────────────────────
+
+DESCRIPTOR_S2 = {
+    "manifest_version": 1, "api_version": 1, "id": "boats", "version": "1.0.0",
+    "capabilities": ["tools"], "tools": ["summarize"], "commands": [], "events": [],
+    "requires": {"extensions": {}, "python": {}},
+}
+
+
+def _descriptor_file(tmp_path, **overrides):
+    path = tmp_path / "boats.json"
+    path.write_text(json.dumps({**DESCRIPTOR_S2, **overrides}), encoding="utf-8")
+    return str(path)
+
+
+def test_cli_consent_sends_the_validated_descriptor_not_the_raw_file(tmp_path):
+    """An unknown field in the file must not ride along to the route: what the hub
+    records consent for is exactly what the local validator accepted."""
+    path = tmp_path / "boats.json"
+    path.write_text(json.dumps({**DESCRIPTOR_S2, "id": "boats"}), encoding="utf-8")
+    posted = []
+
+    def post(route, body):
+        posted.append((route, body))
+        return {"ok": True, "revoked": False, "consent": "granted", "declared_digest": "a" * 64}
+
+    context = Context(environ={}, out=io.StringIO(), err=io.StringIO(),
+                      client_factory=lambda _: SimpleNamespace(post=post))
+    assert main(["extensions", "consent", str(path)], context=context) == 0
+    route, body = posted[0]
+    assert route == "/api/plugins/extensions/consent"
+    assert body == {"manifest": DESCRIPTOR_S2, "revoke": False}
+
+
+def test_cli_consent_revoke_says_so(tmp_path):
+    out = io.StringIO()
+    context = Context(environ={}, out=out, err=io.StringIO(),
+                      client_factory=lambda _: SimpleNamespace(
+                          post=lambda route, body: {"ok": True, "revoked": True,
+                                                    "consent": "not_granted"}))
+    assert main(["extensions", "consent", _descriptor_file(tmp_path), "--revoke"], context=context) == 0
+    assert "Consent withdrawn" in out.getvalue()
+
+
+def test_cli_refuses_a_malformed_descriptor_without_reaching_the_hub(tmp_path):
+    path = tmp_path / "broken.json"
+    path.write_text('{"manifest_version": 1}', encoding="utf-8")
+    calls = []
+    err = io.StringIO()
+    context = Context(environ={}, out=io.StringIO(), err=err,
+                      client_factory=lambda _: SimpleNamespace(post=lambda *a: calls.append(a)))
+    assert main(["extensions", "consent", str(path)], context=context) == 1
+    assert calls == [] and "invalid_manifest_fields" in err.getvalue()
+
+
+def test_cli_activate_reports_the_tools_that_were_proved(tmp_path):
+    out = io.StringIO()
+    reply = {"ok": True, "activation": {"id": "boats", "version": "1.0.0",
+                                        "callable_tools": ["boats.summarize"],
+                                        "callable_commands": [], "observed_events": []}}
+    context = Context(environ={}, out=out, err=io.StringIO(),
+                      client_factory=lambda _: SimpleNamespace(post=lambda route, body: reply))
+    assert main(["extensions", "activate", _descriptor_file(tmp_path)], context=context) == 0
+    assert "callable tools: 1" in out.getvalue() and "boats.summarize" in out.getvalue()
+
+
+def test_cli_activate_surfaces_a_refusal_reason_and_fails(tmp_path):
+    out = io.StringIO()
+    context = Context(environ={}, out=out, err=io.StringIO(),
+                      client_factory=lambda _: SimpleNamespace(
+                          post=lambda route, body: {"ok": False, "reason": "registration_mismatch"}))
+    assert main(["extensions", "activate", _descriptor_file(tmp_path)], context=context) == 1
+    assert "registration_mismatch" in out.getvalue()
+
+
+def test_cli_list_accepts_an_activated_row_now_that_one_can_exist():
+    """This pin moved in S2 on purpose. Before it, `callable` was unreachable by
+    construction, so the CLI could assert it was always empty. Now the assertion is
+    the narrower true one: only an activated row may advertise tools, and only tools."""
+    report = {"mode": "inspection_only", "reason": "activated", "extensions": [{
+        "id": "boats", "version": "1.0.0", "reason": "activated",
+        "execution_available": True, "callable_tools": ["boats.summarize"],
+        "callable_commands": [], "issues": [],
+    }]}
+    out = io.StringIO()
+    context = Context(environ={}, out=out, err=io.StringIO(),
+                      client_factory=lambda _: SimpleNamespace(get=lambda path: report))
+    assert main(["extensions", "list", "--json"], context=context) == 0
+    assert json.loads(out.getvalue()) == report
+
+
+def test_cli_list_still_refuses_a_row_that_claims_tools_while_inactive():
+    report = {"mode": "inspection_only", "reason": "sdk_dispatch_unavailable", "extensions": [{
+        "id": "boats", "version": "1.0.0", "reason": "sdk_dispatch_unavailable",
+        "execution_available": False, "callable_tools": ["boats.summarize"],
+        "callable_commands": [],
+    }]}
+    err = io.StringIO()
+    context = Context(environ={}, out=io.StringIO(), err=err,
+                      client_factory=lambda _: SimpleNamespace(get=lambda path: report))
+    assert main(["extensions", "list", "--json"], context=context) == 1
+    assert "malformed" in err.getvalue()
+
+
+def test_doctor_reports_consent_state_for_each_descriptor(tmp_path, monkeypatch):
+    from agents.core.extensions.consent import ExtensionConsentStore
+    from agents.core.extensions.manifest import parse_manifest
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    path = _descriptor_file(tmp_path)
+    assert doctor().doctor_paths([path])["extensions"][0]["consent"] == "not_granted"
+    ExtensionConsentStore().grant(parse_manifest(DESCRIPTOR_S2))
+    row = doctor().doctor_paths([path])["extensions"][0]
+    assert row["consent"] == "granted" and len(row["declared_digest"]) == 64
+    # A consented descriptor is still not an executable one; the doctor activates nothing.
+    assert row["execution_available"] is False and row["callable_tools"] == []
