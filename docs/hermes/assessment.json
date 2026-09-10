@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "5bdea1c30686efa2ee49cbb160665c752a5b2209",
-  "assessed_at": "2026-09-10T16:00:00Z",
+  "base_sha": "75b73cb79b18d44b6f197c8bbfcdd8b30fbbfbc0",
+  "assessed_at": "2026-09-10T16:30:00Z",
   "reviews": [
     {
       "id": "H001",
