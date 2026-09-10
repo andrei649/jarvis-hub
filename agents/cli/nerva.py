@@ -164,10 +164,12 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--agent", help="address one agent instead of the router")
     chat.add_argument("--json", action="store_true")
 
-    send = verbs.add_parser("send", help="queue a governed reply to a known inbox target")
+    send = verbs.add_parser("send", help="message a configured channel, or reply to an inbox thread")
     target = send.add_mutually_exclusive_group(required=True)
-    target.add_argument("--list", action="store_true", help="list recent inbox targets")
-    target.add_argument("--to", metavar="THREAD_ID", help="exact target id from --list")
+    target.add_argument("--list", action="store_true", help="list configured channels and inbox targets")
+    target.add_argument("--to", metavar="THREAD_ID", help="exact thread id from --list (a governed reply)")
+    target.add_argument("--channel", metavar="CHANNEL",
+                        help="a configured destination from --list (telegram, ntfy, …) — no thread needed")
     send.add_argument("message", nargs="?", help="reply text (up to 4,000 characters)")
     send.add_argument("--json", action="store_true")
 
@@ -734,6 +736,18 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("--list does not take a message\n")
             return EXIT_USAGE
         client = ctx.client()
+        # A hub that does not serve destinations (older, or the route disabled) must not
+        # cost the owner the inbox listing too: --list reports what it can reach.
+        try:
+            targets = client.get("/api/channels/targets")
+        except HubError:
+            targets = None
+        rows_t = targets.get("targets") if isinstance(targets, dict) else None
+        if isinstance(rows_t, list) and not ns.json:
+            ctx.say("configured destinations (no inbox thread needed):")
+            for row in rows_t:
+                mark = "ready " if row.get("ready") else "not ok"
+                ctx.say(f"--channel {str(row.get('channel', '?')):<9} {mark}  {row.get('reason', '')}")
         status = client.get("/api/channels/inbox/status")
         if not isinstance(status, dict) or status.get("enabled") is not True:
             ctx.err.write("channel inbox unavailable\n")
@@ -743,7 +757,7 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise HubError(0, "malformed inbox target list")
         if ns.json:
-            ctx.dump(rows)
+            ctx.dump({"targets": rows_t, "threads": rows})
         elif not rows:
             ctx.say("no inbox targets — receive a message in a configured channel first")
         else:
@@ -751,6 +765,31 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             for row in rows:
                 ctx.say(f"{row.get('thread_id', '?')}  {row.get('channel', '?')}  {row.get('from', '')}")
         return EXIT_OK
+
+    if ns.channel:
+        # A configured destination, not a thread: reversible tier, recorded in the
+        # IntentLog by the route. `audited:false` is surfaced, never hidden — an
+        # unrecorded send is a real (small) governance gap the owner should see.
+        if not re.fullmatch(r"[a-z0-9_-]{1,32}", ns.channel):
+            ctx.err.write("--channel takes a channel id from `nerva send --list`\n")
+            return EXIT_USAGE
+        if not ns.message or not ns.message.strip() or len(ns.message) > 4_000:
+            ctx.err.write("message must contain 1-4,000 characters; nothing was sent\n")
+            return EXIT_USAGE
+        reply = ctx.client().post(
+            "/api/channels/send",
+            {"channel": ns.channel, "text": ns.message, "source": "nerva.cli.send"},
+        )
+        sent = isinstance(reply, dict) and reply.get("ok") is True
+        if ns.json:
+            ctx.dump(reply)
+        elif sent:
+            note = "" if reply.get("audited") else "  (WARNING: not recorded in the audit log)"
+            ctx.say(f"sent to {ns.channel}{note}")
+        else:
+            reason = reply.get("error") or reply.get("reason") if isinstance(reply, dict) else None
+            ctx.err.write(f"not sent: {reason or 'the hub refused the message'}\n")
+        return EXIT_OK if sent else EXIT_FAILED
 
     # An id is a single path segment, never a URL, a display name or a guessed recipient.
     if not re.fullmatch(r"[A-Za-z0-9_:-]{1,200}", ns.to or ""):

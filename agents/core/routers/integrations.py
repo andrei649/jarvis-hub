@@ -213,6 +213,45 @@ async def channels_send_rate_limit():
     return nocache_json(status_snapshot())
 
 
+class ChannelSendBody(BaseModel):
+    channel: str = Field(..., max_length=32)
+    text: str = Field(..., max_length=4_000)
+    source: str = Field("api", max_length=64)
+
+
+@router.get("/api/channels/targets", dependencies=[Depends(admin_guard)])
+async def channels_targets():
+    """H018/H480 — the destinations this hub can send to with no inbound thread first.
+
+    Lists every direct-send channel, whether it is ready and, when it is not, the
+    missing piece by name (`no owner chat is configured (autonomy.owner_chat_id)`).
+    Unready channels are listed rather than hidden: an empty list would read as "this
+    hub cannot send", which is a different and usually wrong diagnosis."""
+    from agents.core.channels.outbound import configured_targets
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "no orchestrator on this hub"}, status_code=503)
+    return nocache_json({"targets": configured_targets(orch)})
+
+
+@router.post("/api/channels/send", dependencies=[Depends(admin_guard)])
+async def channels_send(body: ChannelSendBody):
+    """H018/H480 — send one message to a configured destination.
+
+    Admin-guarded and reversible-tier: a bare outbound message to the owner's own
+    channel does not queue for approval, so the IntentLog record is its only trace and
+    `audited` is reported back rather than assumed. A reply into a live conversation is
+    a different action (`channel.reply`, KERNEL) and does not come through here."""
+    from agents.core.channels.outbound import send_to_target
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "no orchestrator on this hub"}, status_code=503)
+    result = await send_to_target(orch, body.channel, body.text, source=body.source)
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("reason", "send refused"), **result}, status_code=422)
+    return nocache_json(result)
+
+
 @router.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(user_guard)])
 async def channel_inbound(channel_id: str, request: Request):
     """H12.16 — deliver an inbound webhook payload to a governed channel adapter.

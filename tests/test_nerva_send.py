@@ -27,7 +27,12 @@ def test_list_distinguishes_unavailable_from_empty():
     hub = _FakeHub({"GET /api/channels/inbox/status": {"enabled": False}})
     code, out, err, hub = _run(["send", "--list"], hub)
     assert code == EXIT_FAILED and "unavailable" in out + err
-    assert len(hub.calls) == 1
+    # `--list` used to make exactly one call. Since H018/H480 it has two things to list —
+    # configured destinations and inbox threads — so the pin that matters is the one the
+    # original assertion was protecting: listing never mutates anything.
+    assert all(method == "GET" for method, _, _ in hub.calls)
+    assert [path for _m, path, _b in hub.calls] == [
+        "/api/channels/targets", "/api/channels/inbox/status"]
 
 
 def test_send_queues_exact_text_and_does_not_approve_or_claim_delivery():

@@ -476,6 +476,13 @@ MACHINE_FACING: dict[str, str] = {
     "/api/admin/tool-events":
         "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
         "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
+    "/api/channels/targets":
+        "the configured send destinations, read by `nerva send --list` — the CLI is not "
+        "in the client globs above; H018/H480 is a shell primitive, and a HUD composer for "
+        "it is not part of that row",
+    "/api/channels/send":
+        "one outbound message to a configured destination, sent by `nerva send --channel`; "
+        "the HUD's own path into a conversation is the governed channel.reply broker",
     "/api/nodes": "node mesh peer registry",
     "/api/nodes/register": "node mesh peer registration",
     "/api/nodes/{node_id}": "node mesh peer",

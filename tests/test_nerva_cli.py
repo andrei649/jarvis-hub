@@ -533,3 +533,54 @@ def test_tools_bounds_the_number_of_events_it_asks_for():
         code, _out, _err, hub = _run(["tools", "-n", str(asked)], hub=hub)
         assert code == EXIT_OK, (asked, hub.calls)
         assert any(f"limit={sent}" in call[1] for call in hub.calls), (asked, hub.calls)
+
+
+def test_send_to_a_configured_channel_needs_no_inbox_thread():
+    """H018/H480: the gap was that `send` could only answer, never speak first."""
+    hub = _FakeHub({"POST /api/channels/send": {"ok": True, "channel": "telegram", "audited": True}})
+    code, out, _err, hub = _run(["send", "--channel", "telegram", "the roof is leaking"], hub=hub)
+    assert code == 0
+    assert hub.calls == [("POST", "/api/channels/send", {
+        "channel": "telegram", "text": "the roof is leaking", "source": "nerva.cli.send"})]
+    assert "sent to telegram" in out
+    assert "WARNING" not in out
+
+
+def test_an_unaudited_send_is_reported_not_hidden():
+    """Reversible tier means the audit record is the only trace; a missing one is news."""
+    hub = _FakeHub({"POST /api/channels/send": {"ok": True, "channel": "telegram", "audited": False}})
+    code, out, _err, _hub = _run(["send", "--channel", "telegram", "hi"], hub=hub)
+    assert code == 0 and "not recorded in the audit log" in out
+
+
+def test_send_prints_the_hubs_refusal_and_fails():
+    hub = _FakeHub({"POST /api/channels/send": {
+        "ok": False, "error": "no owner chat is configured (autonomy.owner_chat_id)"}})
+    code, _out, err, _hub = _run(["send", "--channel", "telegram", "hi"], hub=hub)
+    assert code == EXIT_FAILED and "autonomy.owner_chat_id" in err
+
+
+def test_send_rejects_a_channel_id_that_is_not_one():
+    code, _out, err, hub = _run(["send", "--channel", "../etc/passwd", "hi"])
+    assert code == EXIT_USAGE and "channel id" in err
+    assert hub.calls == [], "a malformed target must not reach the hub"
+
+
+def test_send_to_a_channel_still_requires_a_message():
+    code, _out, err, hub = _run(["send", "--channel", "telegram"])
+    assert code == EXIT_USAGE and "1-4,000" in err
+    assert hub.calls == []
+
+
+def test_send_list_shows_configured_destinations_as_well_as_threads():
+    hub = _FakeHub({
+        "GET /api/channels/targets": {"targets": [
+            {"channel": "telegram", "ready": True, "reason": ""},
+            {"channel": "ntfy", "ready": False, "reason": "ntfy is not connected on this hub"}]},
+        "GET /api/channels/inbox/status": {"enabled": True},
+        "GET /api/channels/inbox?limit=200": {"threads": []},
+    })
+    code, out, _err, _hub = _run(["send", "--list"], hub=hub)
+    assert code == 0
+    assert "--channel telegram" in out and "ready" in out
+    assert "ntfy is not connected on this hub" in out

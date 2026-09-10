@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Hermes sprint — send to a configured destination (H018 / H480)
+
+`nerva send` could only propose a reply into a thread Nerva had already received, so a
+script had no way to say anything first. The resolution it needed was not missing: it
+was inside `JobRunner._send`, reachable only by a firing job.
+
+**Added**
+
+- `agents/core/channels/outbound.py` — `configured_targets()`, `resolve_destination()`
+  and `send_to_target()`. Reversible tier: no approval queue stands between the call and
+  the transport, which makes the IntentLog record the only trace, so `channel.send` is
+  recorded on the refusal path too and `audited` is *reported* rather than assumed.
+  Email stays out, exactly as it is out of `ChannelManager.send`.
+- `GET /api/channels/targets` and `POST /api/channels/send` (both admin).
+- `nerva send --channel <id> <message>`; `nerva send --list` now enumerates configured
+  destinations as well as inbox threads, and names the missing piece for one that is not
+  ready (`no owner chat is configured (autonomy.owner_chat_id)`).
+
+**Fixed while building**
+
+- `--list` degrades instead of dying on a hub that does not serve the destinations route;
+  losing the inbox listing because the other half is unavailable is not acceptable.
+- The owner-chat environment read goes through `env_str`, keeping the raw-env ratchet flat.
+
+**Assessment**
+
+- H018 and H480 stay **partial**. H018 asks for *any* configured platform: Slack and
+  Discord are reply-only through the `channel.reply` broker and cannot be addressed.
+  H480 also wants a body from a file or stdin, a subject, `MEDIA:` attachments, distinct
+  0/1/2 exit codes, and to work with **no gateway running** — ours goes through the HTTP
+  API, so it needs the hub up.
+- Named and not done: `JobRunner._send` still carries its own copy of the destination
+  resolution; unifying it is a separate change so this one does not collide with #1070.
+
+
 ### Wave 2026-09-08b — the two ledgers answer questions instead of being read
 
 `BACKLOG.md` (~957 KB, ~176K tokens) and the Hermes absorption ledger (1.4 MB JSON,
