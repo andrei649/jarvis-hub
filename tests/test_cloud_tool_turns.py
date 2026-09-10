@@ -144,6 +144,11 @@ def _claude(*responses: Any, auth_pool=None) -> tuple[ClaudeBackend, _Client]:
     backend.api_key = "sk-ant-test"
     backend.model = "claude-test"
     backend.auth_pool = auth_pool
+    # H364 — the fixture bypasses __init__, so it has to mirror it: no effort
+    # asked for, no overrides. "claude-test" is not a known family either, so
+    # nothing is added to or removed from these payloads.
+    backend.reasoning_effort = ""
+    backend.effort_overrides = {}
     backend.client = _Client(*responses)
     return backend, backend.client
 

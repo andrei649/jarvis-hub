@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+### Hermes sprint — ask for more or less thinking, and never 400 on the wire (H364)
+
+Nerva's only "think harder" lever was swapping to a different *local* model. Nothing
+under `agents/core/llm/` ever constructed a thinking, effort or reasoning parameter,
+so a cloud model was always asked for whatever its default happened to be.
+
+Reading the current Anthropic contract to build the ladder turned up a second thing,
+already live: the sampling parameters were removed on the 4.7 generation and later,
+and `anthropic.py` sent `temperature` on **every** request. Any route to
+`claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5` or Fable 5 was a 400 — not a
+future risk, a present one. The shipped default (`claude-sonnet-4-6`) still accepts
+sampling, which is why nobody had seen it.
+
+**Added**
+
+- `agents/core/llm/reasoning_effort.py` — one 8-rung ladder (`none` … `ultra`) that the
+  rest of the system speaks, plus a per-model-family capability table that decides,
+  per request, whether the wire has an effort vocabulary at all, which rung of ours it
+  accepts, and which parameters it rejects once thinking is in play.
+- The clamp walks **down**, never up: a family that tops out at `high` answers a
+  request for `max` with `high`. When the wire has nothing weaker than the request,
+  the answer is the wire's weakest rung rather than silence — silence would hand the
+  request the vendor's own default (`high` on the current models), the opposite of
+  what was asked.
+- Six Anthropic families, three thinking contracts: adaptive (`{"type": "adaptive"}`)
+  on 4.6 and later, a manual `budget_tokens` on the older ones (kept above the
+  1024-token floor and strictly under `max_tokens`, or dropped when the answer budget
+  leaves no room), and none at all where this build has not verified one. `none` is
+  three different requests depending on the family: said out loud where thinking is on
+  by default and can be disabled, floored to the weakest rung where it cannot be
+  (Fable 5), and simply omitted where omission already means off.
+- `llm.reasoning_effort` (empty by default) and `llm.reasoning_effort_overrides` —
+  an owner setting and a per-model-prefix override map, read by the router and handed
+  to the backend. An empty list in the map silences the parameter for that family
+  without a release; the map's keys are matched longest-first.
+- `ProviderProfile.reasoning_efforts` publishes the vendor vocabulary from the same
+  table the request path uses, so a profile cannot advertise a rung the wire rejects.
+
+**Fixed**
+
+- `temperature` / `top_p` / `top_k` are now removed before a request reaches a family
+  that rejects them. This runs on every Anthropic request — plain, tool turn and
+  stream — because the rejection is a property of the model, not of the effort knob.
+
+**Unchanged on a default install.** With no effort configured and a model that still
+accepts sampling, the payload comes out byte-identical; a model this build has never
+heard of is left exactly as it was, because silence is the only answer that cannot 400.
+
+**H364: `missing` → `partial`.** The row asks for ~18 per-vendor vocabularies; one
+vendor is delivered. There is no xAI/Grok wire in Nerva for the Grok capability clause
+to live on, and Gemini and the OpenAI-compatible wire are still left alone. Equivalence
+is unchanged at 115/697.
+
 ### Hermes sprint — ask Anthropic to cache the stable prefix, and read the bill back (H363)
 
 `cost_estimator.py` prices a `cached` rate for every Claude row — opus-5 at 0.50

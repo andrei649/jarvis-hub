@@ -34,7 +34,9 @@
   disk instead of dropped, with the caps scaled to the model's real context window)
   and the `execute_code` stdout spill it left open (H305/H595, on the K1 path),
   then H363 (Anthropic prompt caching, and a cost meter that hears the provider
-  instead of guessing), then native overlay and channel streaming.
+  instead of guessing), then H364 (one reasoning-effort ladder, clamped to the nearest
+  weaker level each wire accepts — and the sampling parameter the current Anthropic
+  models reject taken back off), then native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.

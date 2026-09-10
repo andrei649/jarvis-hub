@@ -12,6 +12,7 @@ from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
+from .reasoning_effort import apply_anthropic, parse_overrides
 from .tool_dialects import (
     ANTHROPIC_FINISH_REASONS,
     anthropic_messages,
@@ -34,9 +35,22 @@ class ClaudeBackend(LLMBackend):
     # tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str, model: str = DEFAULT_CLAUDE_MODEL, auth_pool=None):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = DEFAULT_CLAUDE_MODEL,
+        auth_pool=None,
+        reasoning_effort: str = "",
+        effort_overrides=None,
+    ):
         self.api_key = api_key
         self.model = model
+        # H364 — one ladder rung for this install, clamped per model at send time.
+        # Empty means "ask for nothing", which is what every install did before.
+        # The override map is the escape hatch for a family whose contract moves
+        # under us: it can widen or, by naming an empty list, silence a model.
+        self.reasoning_effort = str(reasoning_effort or "")
+        self.effort_overrides = parse_overrides(effort_overrides)
         # H12.20 — optional multi-key auth pool. When set, the active key is drawn
         # from the pool and a rotatable error (401/403/429) fails over to the next
         # healthy key. None → single-key behavior, unchanged.
@@ -54,6 +68,21 @@ class ClaudeBackend(LLMBackend):
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
+
+    def _fit_to_wire(self, payload: dict, model: str):
+        """Add what this model accepts and remove what it rejects (H364).
+
+        Runs on every request, not only the ones that ask to think harder: the
+        sampling parameters return a 400 on the 4.7 generation and later whether
+        or not an effort was requested, so `temperature` has to come off there
+        even on a default install that never touches the ladder.
+        """
+        return apply_anthropic(
+            payload,
+            model or self.model,
+            self.reasoning_effort,
+            overrides=self.effort_overrides,
+        )
 
     def _build_messages(self, prompt: str, system: str = "") -> list[dict]:
         return [{"role": "user", "content": prompt}]
@@ -103,6 +132,7 @@ class ClaudeBackend(LLMBackend):
             "system": system,
             "messages": self._build_messages(prompt, system),
         }
+        self._fit_to_wire(payload, model)
         data, error = await self._post_messages(payload)
         if data is None:
             return error
@@ -136,6 +166,7 @@ class ClaudeBackend(LLMBackend):
             # would spend the four-breakpoint budget on a prefix already covered.
             payload["tools"] = cache_marked_tools(anthropic_tools(tools))
             payload["tool_choice"] = {"type": "auto"}
+        self._fit_to_wire(payload, payload["model"])
         data, error = await self._post_messages(payload)
         if data is None:
             return ToolTurn(content=error)
@@ -161,6 +192,7 @@ class ClaudeBackend(LLMBackend):
             "messages": self._build_messages(prompt, system),
             "stream": True,
         }
+        self._fit_to_wire(payload, model)
         full = ""
         stream_key = self._active_key()
         try:
@@ -181,7 +213,16 @@ class ClaudeBackend(LLMBackend):
                             event_type = data.get("type", "")
                             if event_type == "content_block_delta":
                                 delta = data.get("delta", {})
-                                text = delta.get("text", "")
+                                # Only the answer's own deltas. H364 makes thinking
+                                # reachable on this stream for the first time, and a
+                                # reasoning delta must never be concatenated into the
+                                # reply — so the block type decides, not the presence
+                                # of a `text` key.
+                                text = (
+                                    delta.get("text", "")
+                                    if delta.get("type") == "text_delta"
+                                    else ""
+                                )
                                 if text:
                                     full += text
                                     if on_token:

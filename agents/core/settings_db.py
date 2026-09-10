@@ -13,6 +13,7 @@ from agents.core.llm.model_config import (
     DEFAULT_CLAUDE_MODEL,
     RETIRED_CLAUDE_DEFAULT,
 )
+from agents.core.llm.reasoning_effort import LADDER as REASONING_EFFORT_LADDER
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.settings")
@@ -127,6 +128,10 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="cloud_fallback",   value="on-demand",           label="Cloud LLM fallback", kind="select",  opts=["never","on-demand","always"]),
     dict(category="llm",     key="gemini_model",     value="gemini-2.5-flash",     label="Gemini model",       kind="select",  opts=["gemini-2.5-flash","gemini-2.5-pro","gemini-3.1-pro"]),
     dict(category="llm",     key="claude_model",     value=DEFAULT_CLAUDE_MODEL,      label="Claude model",   kind="text"),
+    # H364 — one ladder rung for cloud reasoning, clamped per model at send time.
+    # "" (the default) asks for nothing, which is what every install did before.
+    dict(category="llm",     key="reasoning_effort", value="",                    label="Cloud reasoning effort (empty = ask for nothing; clamped to what each model accepts)", kind="select", opts=["", *REASONING_EFFORT_LADDER]),
+    dict(category="llm",     key="reasoning_effort_overrides", value="",          label="Reasoning-effort overrides — JSON {\"model-prefix\": [\"low\",\"high\"]}; an empty list silences the parameter for that model", kind="text"),
     dict(category="llm",     key="control_enabled",  value=True,                  label="LM Studio control (start/load/unload)", kind="toggle"),
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
     dict(category="llm",     key="hybrid_local_max", value=131072,                 label="Local routing threshold — prompts up to N input tokens stay local (0 = unlimited)", kind="number"),
