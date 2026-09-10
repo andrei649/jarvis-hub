@@ -6324,6 +6324,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Targets
+         * @description H018/H480 — the destinations this hub can send to with no inbound thread first.
+         *
+         *     Lists every direct-send channel, whether it is ready and, when it is not, the
+         *     missing piece by name (`no owner chat is configured (autonomy.owner_chat_id)`).
+         *     Unready channels are listed rather than hidden: an empty list would read as "this
+         *     hub cannot send", which is a different and usually wrong diagnosis.
+         */
+        get: operations["channels_targets_api_channels_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Channels Send
+         * @description H018/H480 — send one message to a configured destination.
+         *
+         *     Admin-guarded and reversible-tier: a bare outbound message to the owner's own
+         *     channel does not queue for approval, so the IntentLog record is its only trace and
+         *     `audited` is reported back rather than assumed. A reply into a live conversation is
+         *     a different action (`channel.reply`, KERNEL) and does not come through here.
+         */
+        post: operations["channels_send_api_channels_send_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/{channel_id}/inbound": {
         parameters: {
             query?: never;
@@ -9209,6 +9259,18 @@ export interface components {
             /**
              * Source
              * @default
+             */
+            source: string;
+        };
+        /** ChannelSendBody */
+        ChannelSendBody: {
+            /** Channel */
+            channel: string;
+            /** Text */
+            text: string;
+            /**
+             * Source
+             * @default api
              */
             source: string;
         };
@@ -19556,6 +19618,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    channels_targets_api_channels_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    channels_send_api_channels_send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelSendBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

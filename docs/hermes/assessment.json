@@ -3,7 +3,7 @@
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
   "base_sha": "bbfe1eec4b17f3aefa7ee30978e4f3b98489e064",
-  "assessed_at": "2026-09-10T03:05:00Z",
+  "assessed_at": "2026-09-10T05:00:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -14,11 +14,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -56,11 +56,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -73,11 +73,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -90,11 +90,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -107,11 +107,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -119,20 +119,28 @@
       "id": "H018",
       "row_sha256": "19f831ae4d1a512e44f9f594b12cfb23bb9d76a3c9b131b6f8f99060d6a6b6c2",
       "status": "partial",
-      "summary": "nerva send enumeră threaduri persistate și propune un răspuns prin aprobările existente.",
-      "remaining": "Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general.",
+      "summary": "`nerva send --channel <id> <mesaj>` livreaza fara thread primit anterior, iar `nerva send --list` enumera destinatiile configurate cu motivul cand una nu e gata. Trece prin POST /api/channels/send (admin), respecta rate-limit-ul de trimitere si se inregistreaza in IntentLog ca `channel.send`.",
+      "remaining": "Randul cere orice platforma configurata. Nerva expune doar canalele direct-send (telegram, web, voice, ntfy). Slack si Discord sunt reply-only prin brokerul channel.reply si nu pot fi adresate de `send`; email-ul e exclus deliberat, ca mailul inbound neincrezut sa nu capete efect SMTP.",
       "evidence": [
         {
+          "path": "agents/core/channels/outbound.py",
+          "sha256": "4091694b36f3b095201bb2b77939141e15d7bb2f43c70432c1d9022745e1dea2"
+        },
+        {
+          "path": "agents/core/routers/integrations.py",
+          "sha256": "019b69f7d10d848e4f584bc8e7470a5b545f4a09ab0aa19c101110ef51decbe8"
+        },
+        {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+        },
+        {
+          "path": "tests/test_channel_outbound.py",
+          "sha256": "815f452f05a3db138d12ded5fb205e02b767907d170e3a0697316ea551fb2a78"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
-        },
-        {
-          "path": "tests/test_nerva_send.py",
-          "sha256": "3261d6e85be72d1cf656846b123a407728948df5f89bc798097d0fe190a5e0b8"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -145,11 +153,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -162,11 +170,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -213,11 +221,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -230,11 +238,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
@@ -255,11 +263,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
@@ -339,11 +347,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
@@ -397,11 +405,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
@@ -737,7 +745,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         }
       ]
     },
@@ -821,7 +829,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         }
       ]
     },
@@ -855,11 +863,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -876,11 +884,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -897,11 +905,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1485,7 +1493,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         }
       ]
     },
@@ -1593,20 +1601,28 @@
       "id": "H480",
       "row_sha256": "0def80cdcc721c3c0d8900dd3a9b0aaba8f7f35c37fe38a7a00fb02656c295a7",
       "status": "partial",
-      "summary": "nerva send enumeră threaduri persistate și propune un răspuns prin aprobările existente.",
-      "remaining": "Trimiterea către orice destinație configurată fără un thread primit anterior nu este implementată; nu este un send general.",
+      "summary": "Trimiterea catre o destinatie configurata exista end-to-end din shell, cu descoperirea tintelor, rate-limit si inregistrare in jurnalul de audit.",
+      "remaining": "Randul cere mult mai mult decat un mesaj pe argument: corp din fisier sau stdin (-f PATH sau -), subiect (-s), atasamente MEDIA:<path>, coduri de iesire 0/1/2 distincte si - cerinta structurala - functionare fara gateway pornit pentru platformele cu bot-token. Implementarea noastra merge prin API-ul HTTP, deci cere hub-ul pornit. Ramane si duplicarea rezolvarii destinatiei: JobRunner._send are propria copie, neunificata inca cu channels/outbound.py.",
       "evidence": [
         {
+          "path": "agents/core/channels/outbound.py",
+          "sha256": "4091694b36f3b095201bb2b77939141e15d7bb2f43c70432c1d9022745e1dea2"
+        },
+        {
+          "path": "agents/core/routers/integrations.py",
+          "sha256": "019b69f7d10d848e4f584bc8e7470a5b545f4a09ab0aa19c101110ef51decbe8"
+        },
+        {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
+        },
+        {
+          "path": "tests/test_channel_outbound.py",
+          "sha256": "815f452f05a3db138d12ded5fb205e02b767907d170e3a0697316ea551fb2a78"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
-        },
-        {
-          "path": "tests/test_nerva_send.py",
-          "sha256": "3261d6e85be72d1cf656846b123a407728948df5f89bc798097d0fe190a5e0b8"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -1619,11 +1635,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         }
       ]
     },
@@ -2065,7 +2081,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         }
       ]
     },
@@ -2203,11 +2219,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "be574bb1f01d19d4dc55c1c2a4d4a2e114d48be257c8b57f6d63204013c64f08"
+          "sha256": "c473649b8cfdc5879ad6f4b3ea359bd295fce350dcffd3bbb9ec4f800db9ed45"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "868d13d713a9e4fc7d9711e0612613585f6e8e5c2cf696fd408feb1273ed0f7f"
+          "sha256": "b78164ed03f0acfb52ddc1f37169556defc62e6babad47a96e4792ef3535e043"
         },
         {
           "path": "agents/core/commands.py",
