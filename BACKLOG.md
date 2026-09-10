@@ -30,7 +30,9 @@
   messaging, image controls/gallery, SDK S2/S3, then K0 (a sandbox run's authority)
   and K1 (`execute_code` on the tool surface, default off), then K2 (a resident
   interpreter per authorized session, state persisting and permission not) and K3 (the
-  owner's status/reset controls over it), then native overlay and channel streaming.
+  owner's status/reset controls over it), then H298 (an oversized tool result spilled to
+  disk instead of dropped, with the caps scaled to the model's real context window),
+  then native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.

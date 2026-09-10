@@ -48,6 +48,12 @@ from .security.quarantine import (
 )
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import TAINTED_RECALL_ORIGIN, is_untrusted_source
+from .tool_result_store import (
+    Budget,
+    budget_for_context_window,
+    preview_envelope,
+    threshold_for,
+)
 from .tool_rpc import ToolRPCServer
 
 logger = logging.getLogger("jarvis.agent_runtime")
@@ -67,6 +73,10 @@ _REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool
 # burning every turn and telling the model nothing. The third identical call is refused with
 # the reason (the model can change course); a fourth ends the turn with a named reply.
 _DEFAULT_REPEAT_LIMIT = 3
+#: Even a turn that has spent its whole budget gets this much for the next result, so
+#: an exhausted budget degrades to small previews rather than to an empty answer the
+#: model cannot act on at all.
+_MIN_TURN_REMAINDER_BYTES = 2_000
 _REPEATED_NOTICE = (
     "This exact call (same tool, same arguments) was already made {repeats} times this turn "
     "and was not run again: repeating it will not produce a different answer. Change the "
@@ -164,6 +174,9 @@ class AgentToolRuntime:
         tool_profile: ToolProfileHook | None = None,
         per_tool_limit: int | Callable[[], int] = 0,
         duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
+        result_store: Any | None = None,
+        result_thresholds: Callable[[], Mapping[str, object]] | None = None,
+        context_window_tokens: Callable[[], int] | None = None,
     ) -> None:
         self._server = server
         self._tool_profile = tool_profile
@@ -185,6 +198,12 @@ class AgentToolRuntime:
             _safe_int(max_tool_calls_per_turn, default=0, minimum=0),
         )
         self._max_result_bytes = _safe_int(max_result_bytes, default=50_000, minimum=8)
+        # H298 — an oversized result is spilled to disk rather than thrown away, so
+        # the audit record and the model's view stop diverging. Absent a store the
+        # loop keeps its old truncating behaviour exactly.
+        self._result_store = result_store
+        self._result_thresholds = result_thresholds
+        self._context_window_tokens = context_window_tokens
         self._tool_timeout_seconds = _safe_float(tool_timeout_seconds, default=30.0)
         self._max_wall_seconds = _safe_float(max_wall_seconds, default=120.0)
         self._gap_callback = gap_callback
@@ -369,6 +388,11 @@ class AgentToolRuntime:
         tool_counts: dict[str, int] = {}
         seen_results: dict[str, str] = {}
 
+        # H298 — what this turn has already put in the window, and how big that window
+        # is. One cap cannot express the first: five results at 40% of the limit each
+        # still bury a small context. The second rides along because the runtime is
+        # shared between concurrent runs and the model is known only here.
+        spent: dict[str, int] = {"bytes": 0, "window": max(0, int(window_for(model) or 0))}
         while budget.consume():
             if len(messages) > 2 and not await self._compact_context(
                 messages,
@@ -419,6 +443,7 @@ class AgentToolRuntime:
                 event_sink=event_sink,
                 repeated=repeated,
                 capped=capped,
+                spent=spent,
             )
             # The fence's granularity is this loop, not the individual call: the batch
             # above ran concurrently and every call in it was composed from a transcript
@@ -746,6 +771,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
         repeated: Mapping[str, int] | None = None,
         capped: Mapping[str, int] | None = None,
+        spent: dict[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
         repeated = repeated or {}
         capped = capped or {}
@@ -769,6 +795,7 @@ class AgentToolRuntime:
                 event_sink=event_sink,
                 repeats=repeated.get(call.id, 0),
                 capped_at=capped.get(call.id, 0),
+                spent=spent,
             )
             for index, call in enumerate(calls)
         ]
@@ -868,6 +895,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
         repeats: int = 0,
         capped_at: int = 0,
+        spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
             return await self._local_failure(
@@ -875,6 +903,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="too_many_tool_calls",
                 event_sink=event_sink,
+                spent=spent,
             )
         if not offered:
             return await self._local_failure(
@@ -882,6 +911,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="tool_not_allowed",
                 event_sink=event_sink,
+                spent=spent,
             )
         if call.parse_error or not isinstance(call.arguments, dict):
             return await self._local_failure(
@@ -889,6 +919,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="bad_tool_arguments",
                 event_sink=event_sink,
+                spent=spent,
             )
         if repeats:
             return await self._local_failure(
@@ -897,6 +928,7 @@ class AgentToolRuntime:
                 reason="repeated_call",
                 event_sink=event_sink,
                 extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
+                spent=spent,
             )
         if capped_at:
             limit = self._per_tool_cap()
@@ -910,6 +942,7 @@ class AgentToolRuntime:
                     "limit": limit,
                     "notice": _CAP_NOTICE.format(calls=capped_at - 1, limit=limit),
                 },
+                spent=spent,
             )
 
         if gated:
@@ -920,20 +953,26 @@ class AgentToolRuntime:
                         agent_id=agent_id,
                         reason="approval_required",
                         event_sink=event_sink,
+                        spent=spent,
                     )
                 observation = await self._execute_rpc(
                     call,
                     agent_id=agent_id,
                     event_sink=event_sink,
+                    spent=spent,
                 )
                 if observation[0].get("reason") == "approval_required":
                     approval_state["required"] = True
                 return observation
 
+        # `spent` belongs here above all: this is the path an ordinary tool call
+        # takes, so leaving it off made the per-turn budget apply to gated calls and
+        # refusals only — the many-largish-results case it exists for went uncounted.
         return await self._execute_rpc(
             call,
             agent_id=agent_id,
             event_sink=event_sink,
+            spent=spent,
         )
 
     async def _execute_rpc(
@@ -942,6 +981,7 @@ class AgentToolRuntime:
         *,
         agent_id: str,
         event_sink: ToolEventSink | None,
+        spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
         await self._emit(
             event_sink,
@@ -969,7 +1009,7 @@ class AgentToolRuntime:
                 "tool": call.name,
             }
 
-        result, content = self._prepare_result(raw_result, call.name)
+        result, content = self._prepare_result(raw_result, call.name, spent)
         await self._emit_result(event_sink, call, agent_id, result)
         return result, content
 
@@ -981,28 +1021,115 @@ class AgentToolRuntime:
         reason: str,
         event_sink: ToolEventSink | None,
         extra: Mapping[str, Any] | None = None,
+        spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
         result = {"ok": False, "reason": reason, "tool": call.name, **(extra or {})}
-        prepared, content = self._prepare_result(result, call.name)
+        prepared, content = self._prepare_result(result, call.name, spent)
         await self._emit_result(event_sink, call, agent_id, prepared)
         return prepared, content
 
-    def _prepare_result(self, raw_result: Any, tool_name: str) -> tuple[dict[str, Any], str]:
+    def _result_budget(self, window_tokens: int = 0) -> Budget | None:
+        """This turn's caps, scaled to the window the turn is actually running in.
+
+        The owner's override wins when they set one; otherwise the window comes from
+        the model itself, read from the same table compaction reads. Falling back to
+        "no budget" when nobody configured anything would leave the scaling inert on
+        every default deployment — a constant cap is generous on a 200k cloud model
+        and ruinous on the 8k local one, which is the whole reason this exists.
+        """
+        window = 0
+        if self._context_window_tokens is not None:
+            try:
+                window = int(self._context_window_tokens())
+            except Exception:
+                logger.warning("tool result window override unreadable; using the model's",
+                               exc_info=True)
+                window = 0
+        if window <= 0:
+            window = max(0, int(window_tokens or 0))
+        if window <= 0:
+            return None
+        return budget_for_context_window(window)
+
+    def _result_threshold(self, tool_name: str, budget: Budget | None = None) -> float:
+        """How many bytes this particular tool may put in the context window."""
+        overrides: Mapping[str, object] | None = None
+        if self._result_thresholds is not None:
+            try:
+                candidate = self._result_thresholds()
+                overrides = candidate if isinstance(candidate, Mapping) else None
+            except Exception:
+                logger.warning("tool result thresholds unreadable", exc_info=True)
+        default = self._max_result_bytes if budget is None else min(
+            self._max_result_bytes, budget.per_result_bytes)
+        # The tool's own statement about its output, when it made one. Guarded because
+        # the runtime accepts any object with `handle`; a server without the accessor
+        # simply has nothing to declare.
+        declared = None
+        reader = getattr(self._server, "declared_result_bytes", None)
+        if callable(reader):
+            try:
+                declared = reader(tool_name)
+            except Exception:
+                logger.warning("declared tool result limit unreadable", exc_info=True)
+                declared = None
+        return threshold_for(
+            tool_name, overrides=overrides, declared=declared,
+            default=max(8, int(default)),
+        )
+
+    def _prepare_result(
+        self, raw_result: Any, tool_name: str, spent: dict[str, int] | None = None,
+    ) -> tuple[dict[str, Any], str]:
         result = raw_result if _is_strict_json(raw_result) else _non_json(tool_name)
         try:
             encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
         except (TypeError, ValueError):
             result = _non_json(tool_name)
             encoded = json.dumps(result, ensure_ascii=False, allow_nan=False)
-        if len(encoded.encode("utf-8")) <= self._max_result_bytes:
+        size = len(encoded.encode("utf-8"))
+        # `spent` carries the running turn's window alongside its running total: the
+        # runtime is shared between concurrent runs, so the model's window cannot be
+        # state on `self` — it has to travel with the turn that declared it.
+        budget = self._result_budget(int((spent or {}).get("window", 0)))
+        threshold = self._result_threshold(tool_name, budget)
+        # The per-turn budget is the part one cap cannot express: five results at 40%
+        # of the limit each still bury a small window. Once the turn has spent its
+        # allowance, what is left of it becomes this result's ceiling.
+        if budget is not None and spent is not None and threshold != math.inf:
+            remaining = max(0, budget.per_turn_bytes - int(spent.get("bytes", 0)))
+            threshold = min(threshold, max(_MIN_TURN_REMAINDER_BYTES, remaining))
+        if size <= threshold:
+            if spent is not None:
+                spent["bytes"] = int(spent.get("bytes", 0)) + size
             return result, encoded
-        return result, _bounded_result_envelope(
-            encoded,
-            tool_name=tool_name,
-            ok=isinstance(result, dict) and result.get("ok") is True,
-            reason=result.get("reason") if isinstance(result, dict) else None,
-            max_bytes=self._max_result_bytes,
-        )
+
+        ok = isinstance(result, dict) and result.get("ok") is True
+        reason = result.get("reason") if isinstance(result, dict) else None
+        spill = None
+        if self._result_store is not None:
+            try:
+                spill = self._result_store.spill(encoded, tool=tool_name)
+            except Exception:
+                logger.warning("tool result spill raised; truncating instead",
+                               exc_info=True)
+                spill = None
+        if spill is not None:
+            content = preview_envelope(
+                encoded, tool=tool_name, ok=ok, reason=reason, spill=spill)
+        else:
+            # No store, or the write failed. The old behaviour is still correct — the
+            # model gets a bounded, honest answer — it is only lossy.
+            content = _bounded_result_envelope(
+                encoded,
+                tool_name=tool_name,
+                ok=ok,
+                reason=reason,
+                max_bytes=int(min(threshold, self._max_result_bytes)),
+            )
+        if spent is not None:
+            spent["bytes"] = int(spent.get("bytes", 0)) + len(content.encode("utf-8"))
+        return result, content
 
     async def _emit_result(
         self,

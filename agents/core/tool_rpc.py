@@ -134,6 +134,7 @@ class ToolRPCServer:
         trusted_execution: bool = False,
         untrusted_output: bool = False,
         gated_intake: GatedIntake | None = None,
+        max_result_bytes: int | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -142,7 +143,20 @@ class ToolRPCServer:
         loop fences such a result as DATA before the model reads it and raises the
         turn's recall taint so an action built from it queues for approval
         (Hermes absorption 5a). The declaration is per tool, never per call.
+
+        ``max_result_bytes`` is this tool's own statement of how much it may put in
+        the context window (H298). It is the fourth rung of the threshold ladder —
+        below a pinned tool and the owner's override, above the global default — and
+        is the rung only the registrar can fill: a tool that knows its output is
+        always small says so here rather than waiting for someone to configure it.
         """
+        if max_result_bytes is not None:
+            try:
+                max_result_bytes = int(max_result_bytes)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("max_result_bytes must be a byte count") from exc
+            if max_result_bytes <= 0:
+                raise ValueError("max_result_bytes must be positive")
         if trusted_execution and not gated:
             raise ValueError("trusted execution is only valid for gated tools")
         if gated_intake is not None and (
@@ -179,6 +193,7 @@ class ToolRPCServer:
             "trusted_execution": bool(trusted_execution),
             "untrusted_output": bool(untrusted_output),
             "gated_intake": gated_intake,
+            "max_result_bytes": max_result_bytes,
             "active_tasks": set(),
         }
         return self
@@ -228,6 +243,16 @@ class ToolRPCServer:
                 row["untrusted_output"] = True
             tools.append(row)
         return tools
+
+    def declared_result_bytes(self, name: str) -> int | None:
+        """What this tool said about its own output size, if it said anything.
+
+        Deliberately not part of :meth:`tools`: that list is snapshotted and shipped
+        to the model, and a budgeting detail is neither the model's business nor
+        something that should move a pinned allowlist.
+        """
+        spec = self._tools.get(str(name or ""))
+        return None if spec is None else spec.get("max_result_bytes")
 
     def allows(self, name: str) -> bool:
         return name in self._tools

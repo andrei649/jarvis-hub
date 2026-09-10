@@ -56,13 +56,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environments.file_rpc import FileRPCStore
+from .environments.output_limits import MAX_OUTPUT_BYTES
 
 logger = logging.getLogger("jarvis.session_kernels")
 
 DEFAULT_MAX_KERNELS = 4
 DEFAULT_IDLE_TTL_SECONDS = 900.0
 DEFAULT_CELL_TIMEOUT_SECONDS = 30.0
-DEFAULT_MAX_OUTPUT_BYTES = 50_000
+#: Imported, not redeclared (H298): a kernel cell's stdout is a tool result
+#: like any other, and a second literal is how two 50 KB limits drift apart.
+DEFAULT_MAX_OUTPUT_BYTES = MAX_OUTPUT_BYTES
 MAX_CELL_CHARS = 32_768
 #: How many dead keys keep their loss reason. Oldest first out.
 _MAX_REMEMBERED_LOSSES = 256

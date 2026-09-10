@@ -333,6 +333,22 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   off and restart: the card reads `one_shot · sessions_disabled` and offers no reset.
   **The plan's remaining K3 clause is here** — two-cell, restart and cancel proof on a
   real isolated host.
+- [ ] **Spilled tool results (H298)** ❌🔑 — With the tool loop on, get a tool to
+  return something large (a `file_read` of a big file will not do it — `file_read` is
+  pinned to no limit on purpose; use `terminal_run` on a long log, or set
+  `llm.tool_result_thresholds` to `{"web_extract": 2000}` and fetch a long page). The
+  model's transcript must show `spilled: true`, a head+tail preview, `original_bytes`
+  and a `result_file` path. Then ask the model to read that path with `file_read`: it
+  must open — if it is refused, the spill root and the file-tool roots have drifted
+  apart and the feature is a truncation with extra steps. Confirm the file is under
+  `data/workspace/tool_results/` and its sha256 matches the envelope's. Set
+  `llm.tool_result_retention_seconds` to `60`, wait, trigger another spill and confirm
+  the old file is gone but the new one is not. Then run something that prints tens of
+  thousands of short lines through `execute_code`: the output must come back with BOTH
+  a byte notice and a line notice — a single notice means one layer erased the other's
+  record. **Known gap, do not report as a bug:** `execute_code`'s own stdout is capped
+  before the result is built, so the spilled copy of an `execute_code` result carries
+  the already-truncated stdout (H305/H595).
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

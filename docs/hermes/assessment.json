@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "bbfe1eec4b17f3aefa7ee30978e4f3b98489e064",
-  "assessed_at": "2026-09-10T05:00:00Z",
+  "base_sha": "3eac55b6475e265b9c1c29303bce4074458cf9d3",
+  "assessed_at": "2026-09-10T14:00:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -934,7 +934,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -950,19 +950,19 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
+          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
+          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -988,6 +988,59 @@
       ]
     },
     {
+      "id": "H298",
+      "row_sha256": "d516cf7e38eda13e728191a930ad08eecc1fdf248dd718e220a19b1713ded66f",
+      "status": "equivalent",
+      "summary": "Toate cele cinci trepte ale pragului există și sunt cablate în bucla reală: pinned (`file_read` = fără limită, ca să nu se spill-eze citirea unui spill) → override-ul owner-ului (`llm.tool_result_thresholds`) → familia `mcp_` → declarația uneltei (`register_tool(max_result_bytes=…)`) → implicitul global. Un rezultat peste prag e scris integral sub `data/workspace/tool_results/` — în rădăcina implicită a uneltelor de fișiere, deci calea din subsolul preview-ului e una pe care `file_read` chiar o poate deschide — iar modelul primește un preview mărginit cu cap+coadă, dimensiunea originală și sha256. `budget_for_context_window` scalează 15 % pe rezultat și 30 % pe tură, cu praguri minime de 8 KB / 16 KB, pornind de la fereastra modelului pe care rulează tura (nu de la o constantă și nu doar când o configurează cineva). Retenția — vârstă, număr de fișiere, total octeți — rulează la fiecare scriere, deci dependența pe care o numea rândul e livrată, nu amânată. Cele trei limite de output (50 KB / 2 000 linii / 2 000 caractere pe linie) stau acum într-un singur modul, iar cele două limite de formă chiar se aplică: o linie de 5 MB și cincizeci de mii de linii scurte treceau amândouă de un plafon pe octeți. Neverificat pe servicii reale: bucla e probată cu un backend de model simulat (runtime-ul este cel real), iar store-ul pe un sistem de fișiere real în teste — nicio cerință acceptată a rândului nu depinde de hardware sau de un serviciu extern. Nicio unealtă din producție nu declară încă `max_result_bytes`; treapta există, e testată și e opțională prin construcție.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/tool_result_store.py",
+          "sha256": "07915d3b5632cc75c88b416266acc4ff2f43803ac6d7a4f53cdad936f54a6032"
+        },
+        {
+          "path": "tests/test_tool_result_store.py",
+          "sha256": "6078c34ca83acb3b1f03bda8baea65976f9fdf0c5a062d9fd5c4459bc546cb2a"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
+        },
+        {
+          "path": "tests/test_tool_loop_result_spill.py",
+          "sha256": "3817bd24ef458e4f1359610e66fc3ea307cd11544a5f9ae3bf81bbd938e92243"
+        },
+        {
+          "path": "agents/core/environments/output_limits.py",
+          "sha256": "7c2413ca9e8ac334f2ec73d96753af36b7802d547cab3a28d04d9469b5925b89"
+        },
+        {
+          "path": "tests/test_environment_output_limits.py",
+          "sha256": "9d91f2204468308d4b9020e30af6a00bf83e2a41a5d58204fb2406a751df09d0"
+        },
+        {
+          "path": "agents/core/code_tools.py",
+          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
+        },
+        {
+          "path": "tests/test_code_tools.py",
+          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
+        },
+        {
+          "path": "agents/core/session_kernels.py",
+          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
+        }
+      ]
+    },
+    {
       "id": "H299",
       "row_sha256": "fc44c9a79c8339d4489b4f1e35417e22f4279111c4ca8229e74bb6a9fed6f5fb",
       "status": "equivalent",
@@ -996,7 +1049,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1021,7 +1074,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -1055,7 +1108,7 @@
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
       "summary": "K1, K2 si K3 sunt livrate: execute_code inregistrat pentru model, celule intr-un interpreter rezident pe sesiune si controale de operator peste el. Lipseste scurgerea stdout intr-un fisier.",
-      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si kernelul remote. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real.",
+      "remaining": "Ramane spill-ul stdout peste 50 KB intr-un fisier al carui path calatoreste in rezultat (azi surplusul este taiat cu o nota cinstita) si kernelul remote. Apelurile din celula nu trec prin plafoanele per-tool ale buclei, ci prin security.sandbox_max_tool_calls si ceasul sandboxului. Nedovedit pe un backend izolat real. H298 a livrat spill-ul la nivel de rezultat de unealtă (store, praguri, buget pe fereastră, retenție), dar NU închide clauza de aici: stdout-ul unei rulări `execute_code` este tăiat în `code_tools._cap` înainte ca rezultatul să fie construit, deci copia scrisă pe disc conține deja textul trunchiat — octeții peste plafon rămân pierduți, iar calea din rezultat nu e a stdout-ului integral. Rămâne de făcut: `code_tools` să scrie stdout/stderr complet în `ToolResultStore` și să pună referința în rezultat, în locul tăierii.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -1067,7 +1120,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1091,19 +1144,19 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
+          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
+          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -1202,7 +1255,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1244,7 +1297,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1273,7 +1326,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1319,7 +1372,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1348,7 +1401,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1369,7 +1422,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1390,7 +1443,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -1444,7 +1497,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1469,7 +1522,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1494,7 +1547,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2108,7 +2161,7 @@
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
       "summary": "K1, K2 si K3 sunt livrate: execute_code pentru model, celule rezidente pe sesiune cu autoritate relegata la fiecare celula, si o suprafata de operator care spune modul, motivul si ce s-a pierdut la reset.",
-      "remaining": "Ramane spill-ul stdout intr-un fisier si kernelul remote. Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real.",
+      "remaining": "Ramane spill-ul stdout intr-un fisier si kernelul remote. Modul project|strict al Hermes nu este copiat: postura o decide profilul de unelte (agent x suprafata x principal), nu un mod de proiect. Nedovedit pe un backend izolat real. H298 a livrat spill-ul la nivel de rezultat de unealtă (store, praguri, buget pe fereastră, retenție), dar NU închide clauza de aici: stdout-ul unei rulări `execute_code` este tăiat în `code_tools._cap` înainte ca rezultatul să fie construit, deci copia scrisă pe disc conține deja textul trunchiat — octeții peste plafon rămân pierduți, iar calea din rezultat nu e a stdout-ului integral. Rămâne de făcut: `code_tools` să scrie stdout/stderr complet în `ToolResultStore` și să pună referința în rezultat, în locul tăierii.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -2120,7 +2173,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2144,19 +2197,19 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
+          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "2513475ad09df99547c04e079a50249ea1f4d77d7f48757e6c5353b42e1df7ba"
+          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -2444,7 +2497,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "7fa3d7ff198153294a2ae3f27fca83dc64f71090f86d8e5b2941a5c5dff22b38"
+          "sha256": "1b6e4e671be83efc096eaef214691e4fe1aea0c3628378049d5db3431a26a72b"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2452,15 +2505,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "a2ce1fd302afe3ef46091e267dbd6fa1bfb01af23961be63e5fa254a2a94c840"
+          "sha256": "6ff06a7a22ebae3977c17dd4d09ae8ad93ea7521c08ee530a15b85a87d8df95d"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "2a5da7f49e178ad5690b1021f1041770460c4232dca6b429781a5b4e02a145a8"
+          "sha256": "242739da46ee6cf411b2967a4913bb6232051da714cd97f79246c6e260774a69"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "48d033098d9027084b68e80dd222c18c10d68c654a2914ec668c3b765fc8c494"
+          "sha256": "78bb654bc181dac8f82a8bc8c6f874ba410b448c057d7abbf8d6e076faf4c44e"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -2530,7 +2583,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5777e4966320eedef1d0b0bc4aa971353c4fcbdb3574f6a456cc5de6992efde4"
+          "sha256": "96200ea5ccb418e777ffa663e3f44a93d5336a40eefbab63a59641ef16d801bc"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",

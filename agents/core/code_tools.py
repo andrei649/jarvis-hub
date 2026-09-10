@@ -43,7 +43,14 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 
 from .action_origin import current_action_origin
-from .environments.output_limits import TruncatedText, truncate_text
+from .environments.output_limits import (
+    MAX_LINE_LENGTH,
+    MAX_OUTPUT_BYTES,
+    MAX_OUTPUT_LINES,
+    TruncatedText,
+    cap_lines,
+    truncate_text,
+)
 from .sandbox_invocation import bind
 from .tool_rpc import ToolRPCValidationError, current_tool_actor
 
@@ -59,9 +66,9 @@ MAX_CODE_CHARS = 32_768
 #: sandbox already bounds each stream at ``max_output_bytes`` while it reads the child,
 #: with an honest inline notice. So this pass runs only on a host configured to allow
 #: more than this, and is skipped when the sandbox's own cap is already the tighter of
-#: the two — one truncation, one notice, never two nested ones. Spilling the remainder
-#: to a file instead of dropping it is a separate row and is not implemented here.
-MAX_OUTPUT_BYTES = 50_000
+#: the two — one truncation, one notice, never two nested ones.
+#: The figure itself is imported (H298): it is the same limit the tool loop applies,
+#: and a second copy of it here is how the two silently drifted apart.
 DEFAULT_MAX_TOOL_CALLS = 50
 
 CODE_REQUIRED = "code_required"
@@ -121,12 +128,44 @@ def _output_ceiling(sandbox) -> tuple[int, bool]:
 
 
 def _cap(text: str, limit: int, label: str, binding: bool) -> TruncatedText:
-    """Apply this layer's ceiling, or hand the sandbox's own capped text straight back."""
+    """Apply this layer's ceilings, or hand the sandbox's own capped text back.
+
+    Shape first, then bytes (H298), and the order is load-bearing in both directions.
+
+    The line limits catch what a byte cap cannot see: a run that emitted one 5 MB
+    line, or fifty thousand short ones, can come back under the byte budget and still
+    bury the window and the terminal. They run on every path, including the one where
+    the sandbox did the byte truncation itself.
+
+    They run *first* because a byte-truncated stream carries its notice in the middle,
+    between the head and the tail — exactly the part a line cap elides. Shaping
+    afterwards silently ate that notice, and a truncation the reader is not told about
+    is the audit-versus-model divergence this whole row exists to end. Run this way
+    each layer counts the true total it was handed, and the byte notice, applied last,
+    survives.
+    """
     body = str(text or "")
+    original = len(body.encode("utf-8"))
+    shaped = cap_lines(body, max_lines=MAX_OUTPUT_LINES, max_line_length=MAX_LINE_LENGTH)
     if not binding:
-        return TruncatedText(text=body, truncated=False,
-                             original_bytes=len(body.encode("utf-8")), omitted_bytes=0)
-    return truncate_text(body, max_content_bytes=limit, label=label)
+        if not shaped.capped:
+            return TruncatedText(text=body, truncated=False,
+                                 original_bytes=original, omitted_bytes=0)
+        return TruncatedText(
+            text=shaped.text,
+            truncated=True,
+            original_bytes=original,
+            omitted_bytes=max(0, original - len(shaped.text.encode("utf-8"))),
+        )
+    capped = truncate_text(shaped.text, max_content_bytes=limit, label=label)
+    if not shaped.capped:
+        return capped
+    return TruncatedText(
+        text=capped.text,
+        truncated=True,
+        original_bytes=original,
+        omitted_bytes=max(0, original - len(capped.text.encode("utf-8"))),
+    )
 
 
 def _int_setting(settings: Callable[[str, object], object], key: str, default: int) -> int:
