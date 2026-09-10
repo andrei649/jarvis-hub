@@ -168,6 +168,36 @@ def window_for(model: str | None) -> int:
 
 
 @dataclass(frozen=True)
+class UsageAnchor:
+    """The provider's own token count for a prefix of the transcript (H673).
+
+    ``prompt_tokens`` is what the provider said the last main-loop request cost
+    on the way in: system prompt, tool schemas and history together, measured
+    rather than guessed. ``covers`` is how many leading turns of the transcript
+    that number accounts for, so only what has been appended since is still
+    estimated.
+
+    That is the whole point. A chars/4 estimate errs across the *entire*
+    conversation and the error compounds; anchoring shrinks the error window to
+    one turn and re-anchors on every response. On a 32k local window a 10%
+    error decides between compacting a turn too early — losing detail nobody
+    needed to lose — and being truncated by the provider, which cuts the TAIL,
+    i.e. what is happening right now.
+
+    A zero ``prompt_tokens`` means no provider ever reported one; every local
+    backend is in that case, so the estimator remains the fallback and not a
+    deprecated path.
+    """
+
+    prompt_tokens: int = 0
+    covers: int = 0
+
+    @property
+    def usable(self) -> bool:
+        return int(self.prompt_tokens) > 0
+
+
+@dataclass(frozen=True)
 class CompactionPolicy:
     """When to compact, and what to give up first.
 
@@ -329,6 +359,39 @@ class ContextCompressor:
             cost += IMAGE_TOKEN_COST
         return cost
 
+    def _used(
+        self,
+        rows: "list[dict]",
+        anchor: "UsageAnchor | None" = None,
+        *,
+        dropped_in_prefix: int = 0,
+    ) -> int:
+        """What the transcript costs, measured where a provider measured it (H673).
+
+        Without an anchor this is the estimate it always was, so every local
+        backend and every first turn behaves exactly as before.
+
+        With one, the anchored prefix contributes the provider's own number and
+        only the turns appended since are estimated. The anchor also covers what
+        the transcript does not contain at all — the system prompt and the tool
+        schemas — which is why it is normally *larger* than the estimate of the
+        same turns, and why taking the estimate instead silently under-counts a
+        request by everything that is not conversation.
+
+        ``dropped_in_prefix`` is the honest caveat: the anchor describes the
+        prefix *as it was sent*, and dropping an image rewrites it. The provider
+        never said what that image really cost, so the flat figure comes back for
+        exactly those turns. The result is floored at the plain estimate, so an
+        anchor can only ever make compaction happen sooner or at the same point,
+        never later — the same direction the window bound already runs in.
+        """
+        if anchor is None or not anchor.usable:
+            return sum(self._cost(t) for t in rows)
+        covers = max(0, min(int(anchor.covers), len(rows)))
+        prefix_estimate = sum(self._cost(t) for t in rows[:covers])
+        anchored = int(anchor.prompt_tokens) - int(dropped_in_prefix) * IMAGE_TOKEN_COST
+        return max(prefix_estimate, anchored) + sum(self._cost(t) for t in rows[covers:])
+
     async def compact(
         self,
         turns: "list[dict]",
@@ -338,6 +401,7 @@ class ContextCompressor:
         session_id: str = "",
         prior: Optional[dict] = None,
         sink: Callable[[dict], Any] | None = None,
+        anchor: "UsageAnchor | None" = None,
     ) -> dict:
         """Fit a transcript into a model's window, giving up the cheapest thing first.
 
@@ -351,7 +415,7 @@ class ContextCompressor:
         """
         rows = list(turns or [])
         pol = policy or CompactionPolicy()
-        used = sum(self._cost(t) for t in rows)
+        used = self._used(rows, anchor)
         tier = pol.tier(used, model)
         # The tighter of the two bounds wins. ``max_tokens`` is the owner's own
         # budget (``memory.compression_max_tokens``) and predates this policy;
@@ -373,6 +437,12 @@ class ContextCompressor:
         head = max(0, int(pol.protect_head))
         tail = max(0, int(pol.protect_last_n))
         dropped = 0
+        # How many of those came out of the anchored prefix. The provider's
+        # number described that prefix with its images in it, so each one removed
+        # has to be taken back off a count we can no longer read off the wire.
+        dropped_in_prefix = 0
+        covered = max(0, min(int(anchor.covers), len(rows))) if (
+            anchor is not None and anchor.usable) else 0
         working: list[dict] = []
         for index, turn in enumerate(rows):
             in_tail = index >= len(rows) - tail if tail else False
@@ -381,9 +451,11 @@ class ContextCompressor:
                 # about. Older ones have already been described in text.
                 working.append(_strip_image(turn))
                 dropped += 1
+                if index < covered:
+                    dropped_in_prefix += 1
             else:
                 working.append(dict(turn))
-        used_after = sum(self._cost(t) for t in working)
+        used_after = self._used(working, anchor, dropped_in_prefix=dropped_in_prefix)
 
         under_budget = not self.max_tokens or used_after <= self.max_tokens
         if tier == "images" or (under_budget and pol.tier(used_after, model) == "none"):

@@ -38,8 +38,10 @@
   weaker level each wire accepts — and the sampling parameter the current Anthropic
   models reject taken back off), then H679 (that ladder given a per-model tri-state
   vocabulary — undeclared, declared-empty and a vocabulary to clamp into are three
-  different request bodies, and collapsing the first two is the 400), then native
-  overlay and channel streaming.
+  different request bodies, and collapsing the first two is the 400), then H673
+  (context pressure anchored on the provider's own prompt-token count, so the
+  estimate's error window is one turn instead of the whole conversation), then
+  native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
