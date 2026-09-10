@@ -8,9 +8,13 @@ acquisition sandbox, and only then do its tools appear on the tool surface.
 The rule the whole design hangs on: **the host never imports third-party code, and
 never trusts a declaration it has not seen the code make from inside the sandbox.**
 
-What S2 still does not do: deliver lifecycle events (that is S3), bind a declared
-*command* to the chat registry, hand extensions a `ctx` capability object, or let an
-extension override a core command or a built-in tool. The acquisition pipeline
+**S3 adds the other half a declaration can ask for:** an extension may be *told* that
+something happened. What it still cannot do is act on it — see "Watching, not hooking"
+below, which is the most important section on this page.
+
+What is still not done: binding a declared *command* to the chat registry, handing
+extensions a `ctx` capability object, or letting an extension override a core command
+or a built-in tool. The acquisition pipeline
 remains the only authority for signed packages, quarantine, approval, promotion and
 revocation — an extension **is** an acquired package, so there is deliberately no
 second store, no second signing key and no second sandbox it could arrive through.
@@ -187,3 +191,66 @@ pinned Docker image. The runtime tests execute the real invocation scripts with 
 real interpreter against real files, so the protocol is exercised — but the isolation
 itself is the acquisition profile's, tested with the acquisition profile, and live
 proof on a host with Docker is the owner's.
+
+## Watching, not hooking
+
+A declared event is delivered to an activated extension. It is **observation only**,
+and the distance between that and a hook is deliberate.
+
+The rows that ask for lifecycle extensibility (H567, H622) ask for more than this: 37
+hook points, shell hooks whose exit code blocks a call, `pre_tool_call` able to veto,
+`pre_llm_call` able to inject text into the turn. Three other rows in the same
+inventory — **H021**, **H163** and **H514** — deliberately exclude exactly that, and
+their reasons are the right ones:
+
+> a hook is *"arbitrary owner-authored code executing beside the kernel on every
+> lifecycle event, governed by a consent file and an mtime check rather than by an
+> action kind — a second, weaker authorization system parallel to the one that is the
+> product"*, firing *"with no human in the loop at fire time"*, running **around** the
+> HARDLINE denylist and the accepted-task requirement rather than through them.
+
+Each of those exclusions names the same re-open path: a `hook.exec` kernel kind with a
+per-hook capability token and a hash-pinned script. That is an owner decision about the
+kernel, not something to take by writing code. **So Nerva ships the watching half and
+not the blocking half**, and these rows stay partial until that decision is made.
+
+### What makes it watching
+
+| property | how |
+|---|---|
+| **Nothing comes back** | the delivery script prints no envelope, and `observe` reads the exit code and not one byte of output — there is no channel for a veto, an injection, an identity or an escalation, so none is filtered out |
+| **Allowlist, not redaction** | each event has a fixed, tiny field set, built from scratch here; a body, an argument, a result or a principal is never assembled, and a caller passing one is **refused**, not stripped |
+| **Never blocks** | `emit` builds the payload, picks observers and returns; delivery runs on its own task, from the loop thread or a worker thread |
+| **Bounded** | past `MAX_PENDING` deliveries in flight, events are dropped and counted — a wedged observer costs a counter, never the chat |
+
+### The four events, and exactly what they carry
+
+| event | fields | raised at |
+|---|---|---|
+| `command.completed` | `command`, `status` | `CommandRegistry.dispatch` — the **reply never goes**, and an *unknown* command is not observed at all, because its "name" is whatever the sender typed |
+| `session.started` | `session_id` | `Orchestrator.new_session`, after the checkpoint is flushed |
+| `session.ended` | `session_id` | the same boundary, emitted before `session.started` |
+| `tool.completed` | `tool`, `status` | the tool-event store, on `tool_result`/`tool_failed` only — arguments and results are not omitted there, they never reach it |
+
+Every payload also carries `event`, a unique `event_id` and `occurred_at`.
+
+### An observing extension
+
+```python
+def register():
+    return {"tools": [], "commands": [], "events": ["tool.completed"]}
+
+
+def on_event(event, payload):
+    # Whatever this returns is discarded. There is no way to answer.
+    log(payload["tool"], payload["status"])
+```
+
+Declaring an event and shipping no `on_event` is an authoring mistake with its own
+reason (`observer_missing`, exit 96) rather than a generic failure. An event the code
+no longer declares is refused inside the sandbox (`event_not_declared`, exit 97), so a
+stale host view cannot deliver one.
+
+**The cost is one container per delivered event.** That is the price of not handing
+third-party code the host, and it is why this is not, and does not try to be, a
+hot-path hook system.

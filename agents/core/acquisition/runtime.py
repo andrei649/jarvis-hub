@@ -182,6 +182,7 @@ class AcquisitionRuntime:
             return None
         from pathlib import Path as _Path
 
+        from agents.core.extensions.events import EXTENSION_EVENTS
         from agents.core.extensions.runtime import ExtensionRuntime
         from agents.core.paths import data_path
 
@@ -193,6 +194,9 @@ class AcquisitionRuntime:
             enabled=self.is_enabled,
             rpc=(self._promotion_config or {}).get("tool_rpc"),
         )
+        # Lifecycle events have somewhere to go only once a runtime exists; before
+        # that every emitting call site is a no-op that costs a None check.
+        EXTENSION_EVENTS.bind(self.extension_runtime)
         return self.extension_runtime
 
     async def synthesize_and_propose(

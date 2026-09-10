@@ -3166,10 +3166,20 @@ class Orchestrator:
     async def new_session(self) -> str:
         """Wrapper around memory.new_session() that flushes the checkpoint first
         so the outgoing session is not lost before we switch context.
+
+        This is also the one place a session boundary is observable, so watching
+        extensions are told the old one ended and the new one began — ids only, in
+        that order, and after the checkpoint is safely on disk.
         """
+        from .extensions.events import EXTENSION_EVENTS
+
         await self._flush_checkpoint()
+        previous = self.session_id
         sid = await self.memory.new_session()
         self.session_id = sid
+        if previous:
+            EXTENSION_EVENTS.emit("session.ended", session_id=str(previous))
+        EXTENSION_EVENTS.emit("session.started", session_id=str(sid))
         return sid
 
     async def aclose(self):

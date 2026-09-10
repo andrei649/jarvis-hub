@@ -23,10 +23,13 @@ a leak into a surface the owner reads casually.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections import Counter, deque
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger("jarvis.tool_events")
 
 #: Events kept. A busy turn emits a handful per tool call, so this is roughly the last
 #: few dozen turns — enough to answer "what did it just do", short of a log file.
@@ -85,6 +88,32 @@ class ToolEventLog:
             row["at"] = datetime.now(UTC).isoformat()
             self._events.append(row)
             self._counts[str(row.get("event", "unknown"))] += 1
+        self._observed(row)
+
+    @staticmethod
+    def _observed(row: dict[str, Any]) -> None:
+        """Tell watching extensions a tool call finished.
+
+        The fan-out lives here rather than in the tool loop because this is already
+        the one place every tool event lands, it is already bounded, and it already
+        promises never to raise — so an extension observer costs the hot path a
+        dict lookup and a None check. Only the terminal pair is forwarded, and only
+        the two fields `_bounded` has already cut: the tool's name and its status.
+        Arguments and results are not omitted here, they never reached this store.
+        """
+        event = row.get("event")
+        if event not in {"tool_result", "tool_failed"}:
+            return
+        try:
+            from agents.core.extensions.events import EXTENSION_EVENTS
+
+            EXTENSION_EVENTS.emit("tool.completed", tool=row.get("tool"),
+                                  status=row.get("status"))
+        except Exception:
+            # Observability must never break the turn it observes — but a failure
+            # that leaves no trace at all is the thing this module exists to stop,
+            # so it goes to the log rather than into a bare `pass`.
+            logger.debug("extension event fan-out failed", exc_info=True)
 
     def snapshot(self, limit: int = 100) -> list[dict[str, Any]]:
         """The most recent events, newest last (reading order for a trail)."""
