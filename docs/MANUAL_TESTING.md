@@ -291,6 +291,14 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   memory work. Localhost still works with no token.
 - [ ] **Sandbox (code execution)** ❌🔑 — Run a sandboxed snippet; confirm isolation
   limits (size cap H7.5, timeouts) hold.
+- [ ] **Sandbox tool authority (K0)** ❌🔑 — `POST /sandbox/execute` with
+  `"tools": true` and a script that calls `jarvis_tool_call(...)`. **With** a valid
+  `X-Admin-Token`, a gated tool answers `approval_required` and leaves exactly one
+  card in the Decision Inbox — and never executes. **Without** one, the same script
+  gets `tool_not_offered` and queues *nothing*: a non-owner cannot put a card in the
+  owner's inbox from the dev sandbox. A tool that is not registered at all also reads
+  `tool_not_offered`, so probing cannot map the registry. Every refusal happens before
+  the tool runs, so a refused read has no side effect to observe.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

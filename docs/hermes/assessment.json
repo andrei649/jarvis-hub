@@ -921,12 +921,12 @@
       "id": "H287",
       "row_sha256": "46e5a8383b36d68402b047fc573f46f40ef9851b87f952db804c5530973dfe43",
       "status": "partial",
-      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
-      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "summary": "Provenienta pe tura exista in ContextVar si nu intra niciodata in mediul procesului; K0 inchide calea sandbox, care apela serverul fara actor.",
+      "remaining": "Ramane identitatea dusa prin celelalte subprocese (terminal.exec, desktop) si contractul canonic sesiune/sursa din DataSpaces. K1 expune execute_code; nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -939,6 +939,14 @@
         {
           "path": "tests/test_tool_rpc_h20_1.py",
           "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        },
+        {
+          "path": "agents/core/sandbox_invocation.py",
+          "sha256": "ae054726c360139e44279bc9145fd60aac1e9f85bbc5ffb377a9ec13ba96b761"
+        },
+        {
+          "path": "tests/test_sandbox_invocation.py",
+          "sha256": "c5a0ce38184a8a1120e4bdf60cac80b990cd47339db72d519e4214c2ec560b61"
         }
       ]
     },
@@ -1026,12 +1034,12 @@
       "id": "H305",
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
-      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
-      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "summary": "Pipeline-ul sandbox si RPC exista; K0 leaga acum identitatea, oferta de unelte si durata invocarii inainte de orice apel, dar execute_code inca nu este inregistrat pentru model.",
+      "remaining": "K0 este livrat: principal/agent/sesiune/origine rezolvate de gazda, obiect inghetat cu expirare, intersectie cu oferta turei exterioare si refuz inainte de citire si de scrierea in coada. Ramane K1 (expunerea execute_code catre model), apoi K2/K3; H660 (kernel persistent) depinde de ele. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1044,6 +1052,22 @@
         {
           "path": "tests/test_tool_rpc_h20_1.py",
           "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        },
+        {
+          "path": "agents/core/sandbox_invocation.py",
+          "sha256": "ae054726c360139e44279bc9145fd60aac1e9f85bbc5ffb377a9ec13ba96b761"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "f7c89005779024f8ee91e2740dbc3ba8fc00121aae8fc7db4dfb77d7682df869"
+        },
+        {
+          "path": "tests/test_sandbox_invocation.py",
+          "sha256": "c5a0ce38184a8a1120e4bdf60cac80b990cd47339db72d519e4214c2ec560b61"
+        },
+        {
+          "path": "tests/test_sandbox_tool_rpc_pipeline.py",
+          "sha256": "c8527a44d2a60dd43cce8643908d89c3413ad78f9c7109d5ea07484ccd8ab447"
         }
       ]
     },
@@ -1118,7 +1142,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1360,7 +1384,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1385,7 +1409,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1410,7 +1434,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2031,12 +2055,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "Pipeline-ul sandbox și RPC există, dar execute_code nu este înregistrat pentru model.",
-      "remaining": "K0 trebuie să lege identitatea, oferta de unelte și granturile de date ale invocării; apoi K1 poate expune codul.",
+      "summary": "Pipeline-ul sandbox si RPC exista; K0 leaga acum identitatea, oferta de unelte si durata invocarii inainte de orice apel, dar execute_code inca nu este inregistrat pentru model.",
+      "remaining": "K0 este livrat: principal/agent/sesiune/origine rezolvate de gazda, obiect inghetat cu expirare, intersectie cu oferta turei exterioare si refuz inainte de citire si de scrierea in coada. Ramane K1 (expunerea execute_code catre model), apoi K2/K3; H660 (kernel persistent) depinde de ele. Nedovedit pe un backend izolat real.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2049,6 +2073,22 @@
         {
           "path": "tests/test_tool_rpc_h20_1.py",
           "sha256": "11d411af44923486848a5a21100d7523c1ec44bc326c8803a8664fc7c34918ef"
+        },
+        {
+          "path": "agents/core/sandbox_invocation.py",
+          "sha256": "ae054726c360139e44279bc9145fd60aac1e9f85bbc5ffb377a9ec13ba96b761"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "f7c89005779024f8ee91e2740dbc3ba8fc00121aae8fc7db4dfb77d7682df869"
+        },
+        {
+          "path": "tests/test_sandbox_invocation.py",
+          "sha256": "c5a0ce38184a8a1120e4bdf60cac80b990cd47339db72d519e4214c2ec560b61"
+        },
+        {
+          "path": "tests/test_sandbox_tool_rpc_pipeline.py",
+          "sha256": "c8527a44d2a60dd43cce8643908d89c3413ad78f9c7109d5ea07484ccd8ab447"
         }
       ]
     },
@@ -2312,7 +2352,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "ccd0bae0a7370c56b5b2ddb4d4dceb17a6de5168870015022cb19e05415cf352"
+          "sha256": "ba1f01be8cf4accb63240eb92b3e315166aa33f82f3052b7fc29561f1208db24"
         },
         {
           "path": "agents/core/memory/session_search.py",
