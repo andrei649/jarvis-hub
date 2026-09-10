@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ..model_config import DEFAULT_CLAUDE_MODEL
+from ..reasoning_effort import vendor_efforts
 
 
 @dataclass(frozen=True)
@@ -28,11 +29,18 @@ class ProviderProfile:
     base_url_env: str | None = None
     capabilities: frozenset[str] = field(default_factory=lambda: frozenset({"chat"}))
     fallback_models: tuple[str, ...] = ()
+    # H364 — the reasoning-effort vocabulary this vendor can express, weakest
+    # first. It is a vendor-level union: which rungs a *given* model accepts is
+    # decided per request by `reasoning_effort.anthropic_capability`, because
+    # the families under one vendor disagree. Empty means this build never
+    # sends an effort parameter to the provider.
+    reasoning_efforts: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", self.id.strip().lower())
         object.__setattr__(self, "capabilities", frozenset(self.capabilities))
         object.__setattr__(self, "fallback_models", tuple(self.fallback_models))
+        object.__setattr__(self, "reasoning_efforts", tuple(self.reasoning_efforts))
         if not self.id:
             raise ValueError("provider profile id is required")
         if not self.display_name:
@@ -66,6 +74,7 @@ class ProviderProfile:
             "base_url_env": self.base_url_env,
             "capabilities": sorted(self.capabilities),
             "fallback_models": list(self.fallback_models),
+            "reasoning_efforts": list(self.reasoning_efforts),
         }
 
 
@@ -132,6 +141,9 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         auth_env="ANTHROPIC_API_KEY",
         capabilities=frozenset({"chat", "reasoning", "cloud"}),
         fallback_models=(DEFAULT_CLAUDE_MODEL,),
+        # Read from the same table the request path uses, so the profile cannot
+        # advertise a rung the wire would reject.
+        reasoning_efforts=vendor_efforts("anthropic"),
     ),
     ProviderProfile(
         id="openrouter",

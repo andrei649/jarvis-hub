@@ -871,7 +871,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
         }
       ]
     },
@@ -892,7 +892,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
         }
       ]
     },
@@ -913,7 +913,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "1ad66bfe7c159e2f02e114551aaf398305b77117e046d0884dd7412db889f0da"
+          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
         }
       ]
     },
@@ -1325,7 +1325,7 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -1333,7 +1333,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
+          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
         }
       ]
     },
@@ -1346,7 +1346,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
+          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
@@ -1370,11 +1370,44 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
           "sha256": "14769a140cb90f2fbfce29eb9dd484804e9d2ec20e1e1d3416d1c42cb7e10ace"
+        }
+      ]
+    },
+    {
+      "id": "H364",
+      "row_sha256": "aa28f4bd66a0b0cad787c89c53e8795fef8f045c34ba18918ae65681e3d5e832",
+      "status": "partial",
+      "summary": "Există acum o scară unică de efort cu 8 trepte (none…ultra) în `agents/core/llm/reasoning_effort.py`, cu clamp la treapta **mai slabă** cea mai apropiată dintre cele acceptate de wire: a cere `xhigh` unei familii care nu-l are întoarce `high`, niciodată mai mult decât s-a cerut. Când wire-ul nu are nicio treaptă mai slabă (s-a cerut `minimal`, iar familia începe la `low`), răspunsul e podeaua vocabularului, nu tăcerea: tăcerea ar preda cererea default-ului vânzătorului (`high` pe modelele Anthropic curente), adică exact opusul a ce s-a cerut. Tabelul de capabilități decide per familie trei lucruri separate: dacă wire-ul are vocabular de efort, ce bloc de gândire acceptă (`{\"type\": \"adaptive\"}` pe 4.6+, `{\"type\": \"enabled\", \"budget_tokens\": N}` pe familiile mai vechi, cu bugetul strict sub `max_tokens` și peste podeaua de 1024) și ce parametri **respinge**. Ultimul punct era un 400 viu înainte de această livrare, independent de scară: Anthropic a scos parametrii de sampling pe generația 4.7 și mai nouă, iar `anthropic.py` trimitea `temperature` pe fiecare cerere — deci orice rută către `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5` sau Fable 5 era respinsă. De aceea potrivirea rulează pe **fiecare** cerere (generate, tool turn și stream), nu doar când cineva cere efort. Un model necunoscut primește exact cererea pe care ar fi primit-o și înainte: tăcerea e singurul răspuns care nu poate da 400. Treapta e un setting `/admin` (`llm.reasoning_effort`, gol implicit) plus o hartă de override per prefix de model (`llm.reasoning_effort_overrides`), citite de router și date backend-ului; o listă goală în hartă amuțește parametrul pentru familia aceea fără release. `ProviderProfile` publică vocabularul de vânzător din același tabel pe care îl folosește calea de cerere, deci profilul nu poate anunța o treaptă pe care wire-ul ar refuza-o.",
+      "remaining": "Rândul cere ~18 vocabulare per-vânzător; livrat e unul singur (Anthropic, cu 6 familii distincte) plus harta de override. Clauza `providers.grok-effort-capability` nu are corespondent: Nerva nu are wire xAI/Grok, deci tabelul care ar decide dacă cheia de reasoning pleacă sau nu spre Grok nu are unde să existe încă. Gemini și wire-ul compatibil OpenAI (`openrouter.py`) rămân nepotrivite: tabelul le tratează ca necunoscute și nu le trimite nimic — comportamentul de dinainte, fără regresie, dar și fără scară. `openrouter.py` oricum nu e construit de `HybridRouter` azi, deci conectarea lui e o lucrare separată de acest rând. Neverificat pe serviciu real: niciun apel către api.anthropic.com nu a fost făcut aici — testele conduc clienți HTTP falși și fixează corpul cererii. Că `output_config.effort` e chiar acceptat, că `thinking: {\"type\": \"disabled\"}` trece la `high` și pică la `xhigh`, și că `temperature` chiar era 400-ul descris se văd doar pe o cheie reală.",
+      "evidence": [
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "c18e6e67a443a2fed44e4bd2db03e70dcd220414be4aee8ab959dcac43e8ace3"
+        },
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "a5b3d2e6a5d5775fb2821ee0ff052c9ba602f370c20c7462d379b4e14d1bd079"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "cbba6ab8a97505bb2080e543aee63b4d77926619ca424e9f7adbcfcf260b67e1"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
+        },
+        {
+          "path": "tests/test_reasoning_effort_ladder.py",
+          "sha256": "d6296c3b3429ea16e4e11eeeb437875f8397242f8f035f256601c37a0f575bf7"
         }
       ]
     },
@@ -1399,7 +1432,7 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -1407,7 +1440,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "d4d15afb3b947bc25f8eb8c77422fa2cdfd2fa221dea67400ecd924f49317b56"
+          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
         }
       ]
     },
@@ -1449,7 +1482,7 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -1478,7 +1511,7 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
@@ -2676,7 +2709,7 @@
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "9d1e69387b98210078ffb500b0ebd75db53ce0a26462b74180257a00d141c94c"
+          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",

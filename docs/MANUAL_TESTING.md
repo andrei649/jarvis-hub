@@ -373,6 +373,20 @@ Each needs a real token/account and a live round-trip (send → receive → repl
   **Nothing in the repository's tests can show this:** they drive a fake HTTP client
   and pin the request body and the response parsing, never that the vendor honours
   the mark.
+- [ ] **Reasoning effort on a real Anthropic key (H364)** ❌🔑🤖 — **The only place
+  the wire contract is provable.** Set `llm.claude_model` to `claude-opus-5` and leave
+  `llm.reasoning_effort` empty: the request must succeed. Before this change it would
+  not have — `temperature` was sent on every request and that generation rejects it —
+  so if you have an older build to hand, that 400 is the thing being fixed. Then walk
+  the ladder: `low` and `max` should both come back, `xhigh` on `claude-sonnet-4-6`
+  should be accepted as `high` (the request body, not the reply, is where the clamp is
+  visible — watch it with `JARVIS_LOG_LEVEL=DEBUG` or a proxy), and `none` on
+  `claude-opus-5` should send `thinking: disabled` alongside `effort: high` and be
+  accepted, while the same pair at `xhigh` is the 400 the pairing rule exists to avoid.
+  Finally set an override of `{"claude-opus-5": []}` and confirm the effort key stops
+  being sent while the request still succeeds. **Nothing in the repository's tests can
+  show this:** they drive fake HTTP clients and pin the request body, never that the
+  vendor accepts it.
 - [ ] **Rate limit + CORS (HF-2)** ✅🔑 — From **another LAN device** with no token,
   hammer any endpoint past `JARVIS_RATE_LIMIT` (default 120/min) → expect **429
   + Retry-After**; confirm localhost and a valid `X-User-Token` are **not**

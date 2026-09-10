@@ -284,9 +284,12 @@ async def test_claude_generate_strips_think():
 
 
 async def test_claude_stream_strips_think():
+    # `delta.type` is on every real content_block_delta; the fixture used to omit
+    # it, and since H364 the block type is what decides whether a delta is part of
+    # the answer (a reasoning delta is not).
     lines = [
-        'data: {"type":"content_block_delta","delta":{"text":"<think>x</think>Done"}}',
-        'data: {"type":"content_block_delta","delta":{"text":", sir."}}',
+        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"<think>x</think>Done"}}',
+        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":", sir."}}',
         'data: {"type":"message_stop"}',
     ]
     b = ClaudeBackend(api_key="k")

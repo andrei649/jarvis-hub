@@ -342,10 +342,15 @@ class HybridRouter(LLMRouter):
         if self._claude_available:
             from .anthropic import ClaudeBackend
 
+            # H364 — the effort rung and its per-model override map are /admin
+            # settings, read here so a change lands on the next detect() without
+            # a restart. Empty (the default) sends nothing.
             self._claude_backend = ClaudeBackend(
                 api_key=self.anthropic_api_key,
                 model=self._claude_model,
                 auth_pool=self._anthropic_pool,
+                reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                effort_overrides=self._admin_setting("reasoning_effort_overrides", ""),
             )
             logger.info(
                 f"Claude API available ({self._claude_model}; {self._anthropic_pool.size} auth profile(s))"
