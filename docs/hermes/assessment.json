@@ -326,7 +326,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
         },
         {
           "path": "agents/core/commands.py",
@@ -347,7 +347,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
         },
         {
           "path": "agents/core/commands.py",
@@ -1387,7 +1387,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1578,7 +1578,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -2681,6 +2681,27 @@
       ]
     },
     {
+      "id": "H671",
+      "row_sha256": "b9a5e8778376a36ec6f418ae6719f515f06293d18ee86954c840c13ce2b1d05c",
+      "status": "partial",
+      "summary": "Promptul de sistem poartă acum ceasul conversației. `conversation_clock.py` construiește două linii după blocul de identitate: „Conversation started: <Zi, Lună ZZ, AAAA> (<zonă IANA>, abreviere, UTC±HH:MM)\" și — **doar** când ziua rebuild-ului diferă de ziua nașterii — „Today's date (as of the last context rebuild): … — trust this over the start date\". Proprietatea load-bearing e că o sesiune din aceeași zi randează o **singură** linie, deci prefixul rămâne stabil: promptul de sistem e exact una dintre cele două lucruri marcate drept prefix cacheabil la H363, iar un șir care se schimbă la fiecare tură ar arunca discountul pe fiecare cerere. Linia de refresh apare abia la granița de zi, unde cache-ul oricum se invalidează. Data se scrie pe litere, niciodată numeric: 09/11 sunt două zile diferite după malul Atlanticului, iar o dată pe care modelul o poate citi greșit e mai rea decât niciuna. Zona duce întotdeauna offsetul, fiindcă o abreviere singură e ambiguă (`EST` e două offseturi diferite). Data de naștere e rezolvată prin **id-ul sesiunii** (`Orchestrator._session_birth`), semănată o singură dată și niciodată reîmprospătată, deci compactarea, o restaurare din checkpoint sau o rotație păstrează ziua în care conversația chiar a început — recalcularea la rebuild ar reseta tăcut ziua de naștere a unei sesiuni perpetue la azi, exact defectul pe care rândul îl previne. Fără id de sesiune sau fără dată de naștere nu se inventează nimic: promptul se întoarce neatins, fiindcă o secțiune goală ar fi doar o altă cheie de cache pentru nimic.",
+      "remaining": "Ceasul e montat pe calea de streaming a orchestratorului (`_call_agents_parallel` → promptul de sistem), singura care asamblează promptul central; `Agent.process` și `Agent.process_stream` citesc încă `soul['content']` direct, deci un apel care ocolește orchestratorul nu primește ceasul. Data de naștere e ținută în memorie per proces (`_session_born`), nu citită din tabela `sessions` a checkpoint-ului (`started_at` există acolo): după un restart al hub-ului o sesiune reluată își ia o nouă dată de naștere. `parse_started_at` e jumătatea de citire care face legătura, dar n-are încă apelant — conectarea ei la store e lucrare separată și e chiar clauza „session-lineage ROOT\" în forma ei tare. Nu există noțiune de lineage părinte-copil între sesiuni în Nerva, deci „rădăcina\" e id-ul curent, nu un lanț. Rândul se împerechează explicit cu reconstrucția la granița de compactare: linia de refresh se recalculează la fiecare asamblare a promptului, nu la commit-ul de compactare. Neverificat pe serviciu real: niciun apel către un provider — testele fixează textul blocului și identitatea datei de naștere, nu că un model chiar îl citește.",
+      "evidence": [
+        {
+          "path": "agents/core/conversation_clock.py",
+          "sha256": "4ede00f200f7145e11585f554c40fa8a230126eeb39be3ab5126974aeb730dc1"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+        },
+        {
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "88d4196421544191433cb61b21bdbed3bc0d77387e7e4e23f4b36efcc6f00023"
+        }
+      ]
+    },
+    {
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
@@ -2693,7 +2714,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "381df53ac6045c118eae791e8a37e6af4dca376c6b0d1cf1c37dc733f19a7b28"
+          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
