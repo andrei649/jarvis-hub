@@ -29,6 +29,7 @@ from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
 from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
+from .conversation_clock import with_clock
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -81,6 +82,7 @@ from .channels.base import ChannelAdapter
 from .channels.manager import ChannelManager
 from .channels.session import DeliveryRouter, SessionSource, build_session_key
 from .settings_db import get_all as _get_settings
+from datetime import UTC
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -1807,6 +1809,9 @@ class Orchestrator:
         self._context_anchor = {}
         # H673 — {agent_id: (provider-reported input tokens, turns that covered)}.
         self._context_anchor: dict = {}
+        # H671 — {session_id: birth datetime}. A forever-session must keep the day
+        # it actually began, so this is seeded once per id and never refreshed.
+        self._session_born: dict = {}
         # How many history turns the last prompt was built from, so the anchor
         # knows where measurement stops and estimation resumes.
         self._ctx_turns_at_build = 0
@@ -1819,7 +1824,13 @@ class Orchestrator:
         for agent_id in target:
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                system_prompt = agent.soul.get("content", "")
+                # H671 — a forever-session that still believes it is its birth
+                # date schedules "tomorrow" against the wrong day. Same-day
+                # sessions render byte-identically bar the start line, so the
+                # cached prefix (H363) survives.
+                system_prompt = with_clock(
+                    agent.soul.get("content", ""), self._session_birth(),
+                )
                 turn_text = await self._build_agent_turn_text(
                     agent_id,
                     text,
@@ -3301,6 +3312,25 @@ class Orchestrator:
         """
         await asyncio.to_thread(self.checkpoints.save, self)
         self._turns_since_checkpoint = 0
+
+    def _session_birth(self):
+        """When the CURRENT session began — seeded once, never refreshed (H671).
+
+        Read through the session id rather than recomputed, so compaction, a
+        checkpoint restore or a rotation keeps the day the conversation actually
+        started. Recomputing it at rebuild time would quietly reset a
+        forever-session's birthday to today, which is the fault this guards.
+        """
+        from datetime import datetime
+
+        sid = str(self.session_id or "")
+        if not sid:
+            return None
+        born = self._session_born.get(sid)
+        if born is None:
+            born = datetime.now(UTC).astimezone()
+            self._session_born[sid] = born
+        return born
 
     async def new_session(self) -> str:
         """Wrapper around memory.new_session() that flushes the checkpoint first

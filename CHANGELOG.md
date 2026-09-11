@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Hermes sprint — a long-lived conversation knows what day it is (H671)
+
+Nerva is built to run forever on one box: a house brain, ambient capture, heartbeats,
+24/7 autonomy. A forever-session that silently believes it is still its birth date
+schedules "tomorrow" against the wrong day, files an episode under the wrong date, and
+misreads every relative thing the owner says. Nothing in the prompt ever told it
+otherwise — `rg 'date.today|utcnow|datetime.now'` over the prompt path returned nothing.
+
+**Added**
+
+- `agents/core/conversation_clock.py` — two lines after the identity block: the day the
+  conversation began (with the IANA zone, the abbreviation and the offset), and — only
+  once the rebuild day differs — today's date, marked as the one to trust.
+- `Orchestrator._session_birth()` — the birth date resolved through the **session id**,
+  seeded once and never refreshed, so compaction, a checkpoint restore or a rotation
+  keeps the day the conversation actually started.
+
+**Why it is shaped this way**
+
+- A same-day session renders **one line**. The system prompt is one of the two things
+  marked as the cacheable stable prefix (H363), and a string that changed every turn
+  would throw that discount away on every request. The refresh line appears at the day
+  boundary, where the cached prefix is already being invalidated.
+- The date is spelled out, never numeric: `09/11` is two different days depending on
+  which side of the Atlantic the model learned its formats on.
+- The zone always carries the offset, because an abbreviation alone is ambiguous — `EST`
+  is two different offsets depending on the country.
+- An unknown birth date produces **nothing**. An invented start date is worse than a
+  missing one, because the model reasons from it confidently.
+
+**Fixed while building it**
+
+The first working version converted an already-aware moment into the host's zone, so a
+moment stamped 00:01 at UTC+03:00 became 21:01 the previous day and the block
+confidently named yesterday — the exact off-by-one-day the row exists to remove. An
+aware moment now keeps its own zone unless a zone is explicitly requested.
+
 ### Hermes sprint — see where the prompt budget goes (H048)
 
 Nerva's stated advantage is running well on a local model with a small context

@@ -1690,11 +1690,19 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     call = dict(seam_calls[0])
     meter = call.pop("usage_sink")
     assert callable(meter)
+    # H671: the system prompt now carries the conversation's clock, whose second
+    # line only exists once the rebuild day differs from the birth day — so the
+    # exact text is date-dependent and pinning it verbatim would make this test
+    # fail on a future day, which is the very bug H671 removes. The kwargs stay
+    # pinned exactly; `system` is asserted by structure instead: the soul comes
+    # first and unaltered, and the clock follows it.
+    system = call.pop("system")
+    assert system.startswith("agent system")
+    assert "Conversation started:" in system
     assert call == {
         "backend": backend,
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",
-        "system": "agent system",
         "wall_seconds": 120.0,
         "max_tokens": 777,
         "temperature": 0.15,

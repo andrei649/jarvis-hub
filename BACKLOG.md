@@ -43,7 +43,10 @@
   estimate's error window is one turn instead of the whole conversation), then
   H048 (`nerva prompt-size` — the fixed per-call floor by component, offline, with
   the per-call figure led rather than the sum of all eighteen personas), then
-  native overlay and channel streaming.
+  H671 (the system prompt carries the conversation's clock, so a forever-session
+  stops believing it is still its birth date — with the same-day render kept
+  byte-stable so the cached prefix survives), then native overlay and channel
+  streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
