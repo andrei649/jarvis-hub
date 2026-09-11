@@ -66,6 +66,16 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
 
+    prompt_size = verbs.add_parser(
+        "prompt-size",
+        help="what a fresh turn costs before anybody has said anything (offline)",
+    )
+    prompt_size.add_argument("--json", action="store_true")
+    prompt_size.add_argument("--agent", default="",
+                             help="cost the named agent's soul instead of the heaviest")
+    prompt_size.add_argument("--window", type=int, default=0,
+                             help="compare the floor against a context window of this many tokens")
+
     extensions = verbs.add_parser("extensions", help="inspect declarative extensions without executing them")
     extension_verbs = extensions.add_subparsers(dest="action", required=True, metavar="action")
     extension_doctor = extension_verbs.add_parser("doctor", help="validate named JSON descriptors and dependency metadata (offline)")
@@ -961,8 +971,52 @@ def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
+    """H048 — the fixed per-call floor, by component, largest first.
+
+    Offline on purpose: it reads the personas off disk and asks the tool registry
+    for the specs it already declares. No hub, no backend, no request. That is
+    what makes it usable for the question it answers — "what am I paying before
+    the conversation starts" — on a box where the hub is not even running.
+    """
+    import json as _json
+    from pathlib import Path
+
+    from agents.core.prompt_size import breakdown, render
+
+    root = Path(__file__).resolve().parent.parent          # …/agents
+    specs: list = []
+    try:
+        from agents.core.tool_rpc import ToolRPCServer  # declared specs only
+        server = ToolRPCServer.__new__(ToolRPCServer)
+        specs = server.tools() if getattr(server, "_tools", None) else []
+    except Exception:
+        # A registry that will not construct offline is not a reason to refuse the
+        # report: the personas are the dominant term and they are always readable.
+        specs = []
+
+    report = breakdown(agents_root=root, tool_specs=specs, skills=())
+    if not specs:
+        report.notes.append(
+            "Tool schemas are not included: the registry is populated at boot, and "
+            "this verb deliberately does not boot one. Run it against a live hub's "
+            "`nerva tools` output to add them."
+        )
+    if getattr(ns, "json", False):
+        payload = report.as_dict()
+        floor, soul = report.per_call(getattr(ns, "agent", "") or "")
+        payload["per_call_tokens"] = floor
+        payload["per_call_soul"] = soul.name if soul else None
+        ctx.out.write(_json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        return EXIT_OK
+    ctx.out.write(render(report, window=int(getattr(ns, "window", 0) or 0),
+                         agent=getattr(ns, "agent", "") or "") + "\n")
+    return EXIT_OK
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "doctor": cmd_doctor,
+    "prompt-size": cmd_prompt_size,
     "extensions": cmd_extensions,
     "status": cmd_status,
     "config": cmd_config,

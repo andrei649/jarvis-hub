@@ -34,7 +34,13 @@ NOW = datetime.now().astimezone()
 
 
 def _task(i, status="done", title="cleaned the downloads folder"):
-    when = (NOW - timedelta(hours=1)).isoformat()
+    # An hour ago, but never earlier than today's midnight. The report counts a
+    # LOCAL-DAY window (day_report: anchor.replace(hour=0, ...)), so between
+    # 00:00 and 01:00 a plain "an hour ago" lands in yesterday, the row falls
+    # outside the window and `counts.accepted` reads 0. The test passed 23 hours
+    # a day and failed in the first one — CI caught it at 00:02 UTC.
+    midnight = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    when = max(NOW - timedelta(hours=1), midnight).isoformat()
     return SimpleNamespace(
         id=i, agent="ops", kind="fs.clean", title=title, payload={"token": SECRET}, risk_tier=1,
         status=status, autonomy_level="ask", origin="generated", attempts=1,
