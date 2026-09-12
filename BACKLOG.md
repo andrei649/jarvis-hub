@@ -50,8 +50,15 @@
   crosses hardline → target policy → durable approval → the `terminal.exec` contract
   on operator-declared remote roots → the Action Kernel before the wire; key-only,
   host key pinned, no `~/.ssh/config`, no agent, no forwarding, default-off behind
-  `JARVIS_TERMINAL_SSH_HOST`; fleet management is explicitly NOT in it), then native
-  overlay and channel streaming.
+  `JARVIS_TERMINAL_SSH_HOST`; fleet management is explicitly NOT in it), then
+  H044-partial (the road from install to first click: `nerva desktop status` reads
+  the host probe's tri-state facts back as an ordered setup path — display, driver
+  libraries, the OS grants, elevation — and `nerva desktop grant <step>` opens the
+  pane where the owner awards a permission, granting nothing itself. An
+  unestablished fact renders `unknown`, never ready. Fixes on the way: the command
+  tree H001 promises had no `__main__` block and no console script, so
+  `python -m agents.cli.nerva <verb>` imported, ran nothing and exited 0 — for
+  every verb), then native overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
