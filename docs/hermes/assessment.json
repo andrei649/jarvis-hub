@@ -825,7 +825,7 @@
         },
         {
           "path": "tests/test_ssh_transport.py",
-          "sha256": "e0b6652f73af9a771d194f6b8a1644bc8500476f954dc581eb270e63b5ae6548"
+          "sha256": "1a0f3dd1b6e8da0cc2046106bc4d5b1ae98b598dc7688f1f3199786c3ca00924"
         }
       ]
     },
