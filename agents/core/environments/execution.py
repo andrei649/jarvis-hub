@@ -23,9 +23,12 @@ transport existed. This module is that transport, deliberately minimal:
   Action Kernel (bound ``authorizer``, kernel flag on) GRANTs it. Any missing
   piece is a named refusal; with the flag off the refusal is byte-identical to
   the pre-transport behaviour.
-- ``ssh`` returns an explicit not-implemented refusal. Shipping SSH means a
-  new hash-pinned dependency plus a credential design that does not exist
-  yet; saying so beats pretending.
+- ``ssh`` executes through ``SshTransport`` on the same terms as ``local``:
+  ``JARVIS_TERMINAL_SSH_HOST`` on, a plain argv, the ``terminal.exec``
+  contract (against the roots the operator declared for that remote host) and
+  an Action Kernel GRANT. It adds no dependency — OpenSSH is the client — and
+  no credential store: the key is a file path the operator names, never a
+  secret this process reads.
 
 The runner performs no gating of its own beyond target policy + contract +
 kernel: reach it through the gated ``terminal_run`` ToolRPC tool, which carries
@@ -53,6 +56,7 @@ _MAX_COMMAND_CHARS = 4000
 _MAX_OUTPUT_CHARS = 16_000
 _SHELL_PUNCTUATION = frozenset("();<>|&")
 LOCAL_HOST_FLAG = "JARVIS_TERMINAL_LOCAL_HOST"
+SSH_HOST_FLAG = "JARVIS_TERMINAL_SSH_HOST"
 
 
 def parse_argv(command: str, *, windows: bool | None = None) -> tuple[list[str] | None, str | None]:
@@ -95,6 +99,7 @@ class GovernedTargetRunner:
         sandbox,
         *,
         local_transport=None,
+        ssh_transport=None,
         authorizer: Callable[..., Any] | None = None,
         approval_check: Callable[[int], bool] | None = None,
     ) -> None:
@@ -102,6 +107,8 @@ class GovernedTargetRunner:
             raise ValueError("registry must be a TargetRegistry")
         if local_transport is not None and not callable(getattr(local_transport, "run", None)):
             raise TypeError("local_transport must expose an async run(argv, ...)")
+        if ssh_transport is not None and not callable(getattr(ssh_transport, "run", None)):
+            raise TypeError("ssh_transport must expose an async run(argv, ...)")
         if authorizer is not None and not callable(authorizer):
             raise TypeError("authorizer must be callable")
         if approval_check is not None and not callable(approval_check):
@@ -109,6 +116,7 @@ class GovernedTargetRunner:
         self._registry = registry
         self._sandbox = sandbox
         self._local_transport = local_transport
+        self._ssh_transport = ssh_transport
         self._authorizer = authorizer
         self._approval_check = approval_check
 
@@ -193,7 +201,16 @@ class GovernedTargetRunner:
                 timeout=timeout,
             )
         if decision.backend == "ssh":
-            return {"ok": False, "reason": "ssh_transport_not_implemented", **base}
+            if not env_flag(SSH_HOST_FLAG):
+                return {"ok": False, "reason": "ssh_transport_not_implemented", **base}
+            return await self._run_ssh(
+                base,
+                agent=decision.agent,
+                command=command,
+                approved_task_id=approved_task_id,
+                cwd=cwd,
+                timeout=timeout,
+            )
         return {"ok": False, "reason": "backend_unknown", **base}
 
     def _durable_approval(self, approved_task_id: int | None) -> str | None:
@@ -262,6 +279,61 @@ class GovernedTargetRunner:
         result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
 
+    async def _run_ssh(
+        self,
+        base: dict,
+        *,
+        agent: str,
+        command: str,
+        approved_task_id: int | None,
+        cwd: str | None,
+        timeout: int | None,
+    ) -> dict:
+        """Same gate order as the local host; only the wire at the end differs."""
+        argv, refusal = parse_argv(command)
+        if refusal is not None:
+            return {"ok": False, "reason": refusal, **base}
+        transport = self._ssh_transport
+        if transport is None:
+            from .ssh_transport import SshTransport
+
+            try:
+                transport = SshTransport.from_env()
+            except (ValueError, OSError):
+                return {"ok": False, "reason": "ssh_transport_unavailable", **base}
+            self._ssh_transport = transport
+
+        host = transport.host_for(base["target"])
+        if host is None:
+            return {"ok": False, "reason": "ssh_target_not_declared", **base}
+        bounded = transport.bound_timeout(timeout)
+        if bounded is None:
+            return {"ok": False, "reason": "invalid_timeout", **base}
+        workdir = transport.resolve_cwd(host.target, cwd)
+        if workdir is None:
+            return {"ok": False, "reason": "cwd_outside_roots", **base}
+
+        payload = terminal_exec_payload(
+            target=base["target"],
+            backend="ssh",
+            argv=argv,
+            cwd=workdir,
+            roots=host.roots,
+            timeout=bounded,
+            approved_task_id=approved_task_id,
+            max_timeout=transport.max_timeout,
+        )
+        verdict = TERMINAL_EXEC_CONTRACT.evaluate(payload)
+        if not verdict.admissible:
+            return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
+
+        kernel_refusal = await self._kernel_grant(agent, payload)
+        if kernel_refusal is not None:
+            return {"ok": False, **kernel_refusal, **base}
+
+        result = await transport.run(argv, target=host.target, cwd=workdir, timeout=bounded)
+        return {**result, **base, "approved_task_id": approved_task_id}
+
     async def _kernel_grant(self, agent: str, payload: dict) -> dict | None:
         """Cross the Action Kernel; return a refusal dict unless it GRANTs."""
         from agents.core.action_origin import current_action_origin
@@ -293,4 +365,4 @@ class GovernedTargetRunner:
         return None
 
 
-__all__ = ["GovernedTargetRunner", "LOCAL_HOST_FLAG", "parse_argv"]
+__all__ = ["GovernedTargetRunner", "LOCAL_HOST_FLAG", "SSH_HOST_FLAG", "parse_argv"]

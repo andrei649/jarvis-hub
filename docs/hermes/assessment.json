@@ -805,6 +805,31 @@
       ]
     },
     {
+      "id": "H176",
+      "row_sha256": "6dee261f6dd6b317aaa0f5680018ce8fe89c31022269f343ce5fd53f7804ee01",
+      "status": "partial",
+      "summary": "Execuția guvernată pe altă mașină există. Ținta declarată de owner intră în registrul de politici din aceeași sursă ca detaliile de conexiune, iar o comandă trece hardline → politica țintei → aprobare durabilă → contractul terminal.exec pe rădăcinile remote declarate → Action Kernel înainte să atingă firul. Firul rulează un argv reconstruit cu shlex pe shell-ul remote (niciun string de shell nu pleacă de aici), cu cheia de gazdă pinuită, doar pe cheie, fără ~/.ssh/config, fără agent și fără forwarding. Default-off în spatele JARVIS_TERMINAL_SSH_HOST; cu flagul nesetat inventarul rămâne identic.",
+      "remaining": "Rândul cere mult peste execuție și restul nu e livrat: manager de conexiuni ControlMaster, erori clasificate, sugestii de gazde din ~/.ssh/config, bootstrap care refolosește-sau-pornește un serviciu remote, revalidare de liveness, tranzacție de update cu jurnal de recuperare și linii de restore per profil, fan-out \"update all instances\". ControlMaster e o divergență deliberată, nu o scăpare: un socket de control partajat e un canal autentificat reutilizabil lăsat pe disc, iar transportul îl dezactivează explicit. NEVERIFICAT pe hardware: nicio sesiune SSH reală nu a fost deschisă din această livrare — suita e ermetică, fără socket și fără binar ssh, deci interoperabilitatea cu un sshd real rămâne nedovedită.",
+      "evidence": [
+        {
+          "path": "agents/core/environments/ssh_transport.py",
+          "sha256": "919c382625be44a351892b1abd4d360a9daa03643f77500f417f0d280a1fc2f9"
+        },
+        {
+          "path": "agents/core/environments/execution.py",
+          "sha256": "4f023b1165fe4ca37fd38f7b21160bc0b3cbb1e8d98d4da5dce7dc8c71981a4f"
+        },
+        {
+          "path": "agents/core/environments/targets.py",
+          "sha256": "9f2c070972b9dcafcf1bc14b097c637c835ebc574ba4a8dbecf6677ca5da4226"
+        },
+        {
+          "path": "tests/test_ssh_transport.py",
+          "sha256": "1a0f3dd1b6e8da0cc2046106bc4d5b1ae98b598dc7688f1f3199786c3ca00924"
+        }
+      ]
+    },
+    {
       "id": "H178",
       "row_sha256": "06a781401ea40ab7592728fd485af700bb9b9375a89d874aab91f459871f49fd",
       "status": "missing",

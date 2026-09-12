@@ -1207,3 +1207,40 @@ built on your Windows box:
 
   Nothing above is assumed from the fact that the lane is green, and no option has been taken.
 
+
+---
+
+## P27 — `NERVA_VISION.md` now says something the code contradicts (protected path)
+
+**One sentence, five places, and it is a lie as of this PR.** The SSH transport shipped
+(`agents/core/environments/ssh_transport.py`), so every passage below is now false:
+
+| line | claim |
+|---|---|
+| 87, 90 | "SSH is profile/policy inventory only today — no transport exists in-repo" |
+| 106 | "environments (local/docker) merged (no SSH transport exists)" |
+| 198 | "`ssh` still refuse honestly, and no SSH transport exists" |
+| 571 | "host/SSH transports remain disabled by default" — still true, but reads as "absent" |
+| 605–606 | "`local`/`ssh` return explicit not-implemented refusals and there is still no paramiko/asyncssh anywhere, so the no-SSH-transport half stands" |
+
+**Why this is yours and not taken here.** `NERVA_VISION.md` is in `selfdev-policy.json`'s
+`protected_paths`. The doc was not edited, and `tests/test_vision_execution_claim_honesty.py`
+was not weakened to hide the contradiction — it still passes, because the half it can check
+(`"no paramiko/asyncssh"`) remains literally true: the wire drives the OpenSSH **client as a
+subprocess**, adding no Python SSH library and no new hash-pinned dependency.
+`tests/test_ssh_transport.py::test_the_transport_adds_no_python_ssh_library` pins that half so
+it cannot rot silently.
+
+**The accurate replacement text**, if you want it lifted verbatim:
+
+> SSH is a governed execution target: the policy inventory, the connection details and the
+> transport all exist, default-off behind `JARVIS_TERMINAL_SSH_HOST`. The wire is the OpenSSH
+> client as a subprocess — no Python SSH library in-repo — and a remote command crosses the
+> hardline screen, the target policy, a durable approval, the `terminal.exec` contract against
+> operator-declared remote roots, and the Action Kernel before it runs. Fleet management
+> (ControlMaster pooling, remote bootstrap, managed updates) is not built.
+
+**Also needs your decision, separately:** `tests/test_vision_execution_claim_honesty.py` should
+probably be retargeted to assert the *new* pairing (transport exists ⇒ the doc must not deny it),
+which would fail until the doc is corrected. Retargeting it before the doc change would put CI
+red on purpose, so it is left alone.
