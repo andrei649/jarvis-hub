@@ -176,7 +176,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **10,397** · frontend **1,153** · mobile **137** · **486** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **288 done · 16 open or blocked of 304 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `cb29b073677b`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **10,397** · frontend **1,153** · mobile **137** · **486** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **288 done · 16 open or blocked of 304 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `9fefe3608a58`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
