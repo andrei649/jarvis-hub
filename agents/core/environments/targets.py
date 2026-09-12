@@ -340,16 +340,60 @@ class TargetRegistry:
         return token
 
 
-def default_targets() -> tuple[TerminalTarget, ...]:
-    """Conservative named inventory; host/SSH transports remain disabled by default.
+def operator_ssh_targets() -> tuple[TerminalTarget, ...]:
+    """Policy rows for the remote hosts the operator declared, or nothing.
 
-    ``local-host`` is the one row with an owner enable path: the same
-    ``JARVIS_TERMINAL_LOCAL_HOST`` flag that arms the transport also enables
-    the inventory row, so an unset flag leaves the inventory byte-identical.
+    The connection details live in ``JARVIS_TERMINAL_SSH_HOSTS`` (see
+    ``ssh_transport``); this reads the same inventory so declaring a machine in
+    one place gives it both a wire and a policy row, and the two can never name
+    different sets of hosts. Every row is conservative by construction —
+    ``terminal.exec`` is always approval-required and the row is enabled only
+    while ``JARVIS_TERMINAL_SSH_HOST`` is on — and a malformed inventory yields
+    no rows at all rather than a permissive guess.
     """
     from agents.core.env_config import env_flag
 
-    return (
+    enabled = env_flag("JARVIS_TERMINAL_SSH_HOST")
+    if not enabled:
+        return ()
+    try:
+        from agents.core.env_config import env_json_object
+
+        from .ssh_transport import parse_hosts
+
+        hosts = parse_hosts(env_json_object("JARVIS_TERMINAL_SSH_HOSTS"))
+    except Exception:
+        return ()
+    rows = []
+    for name in sorted(hosts):
+        try:
+            rows.append(TerminalTarget(
+                name=name,
+                backend="ssh",
+                enabled=True,
+                allowed_agents=frozenset({"jarvis", "ultron"}),
+                capabilities=frozenset({"terminal.read", "terminal.exec", "file.read"}),
+                approval_required=frozenset({"terminal.exec"}),
+            ))
+        except ValueError:
+            continue
+    return tuple(rows)
+
+
+def default_targets() -> tuple[TerminalTarget, ...]:
+    """Conservative named inventory; host/SSH transports remain disabled by default.
+
+    ``local-host`` and ``pi-house`` are the rows with an owner enable path: the
+    same flag that arms a transport (``JARVIS_TERMINAL_LOCAL_HOST``,
+    ``JARVIS_TERMINAL_SSH_HOST``) enables its inventory row, so unset flags
+    leave the inventory byte-identical. Remote machines the operator declared
+    are appended by :func:`operator_ssh_targets`; a declared name that collides
+    with a built-in row does not replace it, because the built-in row's policy
+    is the one that was reviewed.
+    """
+    from agents.core.env_config import env_flag
+
+    builtin = (
         # The machine Nerva runs on. Disabled until the owner sets
         # JARVIS_TERMINAL_LOCAL_HOST; even then every terminal.exec is
         # approval-required and crosses the hardline screen, the terminal.exec
@@ -375,7 +419,7 @@ def default_targets() -> tuple[TerminalTarget, ...]:
         TerminalTarget(
             name="pi-house",
             backend="ssh",
-            enabled=False,
+            enabled=env_flag("JARVIS_TERMINAL_SSH_HOST"),
             allowed_agents=frozenset({"jarvis", "frigga", "ultron"}),
             capabilities=frozenset({"terminal.read", "terminal.exec", "file.read"}),
             approval_required=frozenset({"terminal.exec"}),
@@ -391,3 +435,6 @@ def default_targets() -> tuple[TerminalTarget, ...]:
             approval_required=frozenset(),
         ),
     )
+    known = {row.name for row in builtin}
+    extra = tuple(row for row in operator_ssh_targets() if row.name not in known)
+    return builtin + extra

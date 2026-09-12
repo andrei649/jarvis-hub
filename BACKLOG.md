@@ -45,8 +45,13 @@
   the per-call figure led rather than the sum of all eighteen personas), then
   H671 (the system prompt carries the conversation's clock, so a forever-session
   stops believing it is still its birth date — with the same-day render kept
-  byte-stable so the cached prefix survives), then native overlay and channel
-  streaming.
+  byte-stable so the cached prefix survives), then H176-partial (the governed SSH
+  transport — the owner's other machines become declared targets and a command
+  crosses hardline → target policy → durable approval → the `terminal.exec` contract
+  on operator-declared remote roots → the Action Kernel before the wire; key-only,
+  host key pinned, no `~/.ssh/config`, no agent, no forwarding, default-off behind
+  `JARVIS_TERMINAL_SSH_HOST`; fleet management is explicitly NOT in it), then native
+  overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
@@ -3005,7 +3010,14 @@ absorbed them, not as independently shipped work.
   (`environments/execution.py:32-33`) authorizes against the policy plane then runs docker, and it is
   constructed in production at `autonomy_coordinator.py:461-465`. Only the falsified half was changed —
   `local`/`ssh` still refuse honestly and there is still no paramiko/asyncssh, so the no-SSH-transport
-  half is preserved verbatim. `tests/test_vision_execution_claim_honesty.py` pins it against the CODE,
+  half is preserved verbatim.
+  **Superseded 2026-09-12 (H176-partial):** the no-SSH-transport half is no longer true —
+  `agents/core/environments/ssh_transport.py` is the wire. The paramiko/asyncssh half still holds
+  (the transport drives the OpenSSH *client* as a subprocess), and
+  `tests/test_ssh_transport.py::test_the_transport_adds_no_python_ssh_library` pins it. Correcting
+  the five passages in `NERVA_VISION.md` is an owner edit — the file is a protected path — and is
+  written up as `docs/OWNER_TASKS.md` P27; `tests/test_vision_execution_claim_honesty.py` was left
+  untouched rather than weakened to hide the gap. `tests/test_vision_execution_claim_honesty.py` pins it against the CODE,
   not the prose: it first asserts the production constructor exists, so if that caller is ever removed
   the guard inverts rather than forcing the doc to stay silent.
   **Process note:** this row was the one finding that fell through the swarm's lane partition — it was
