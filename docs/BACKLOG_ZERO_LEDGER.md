@@ -62,7 +62,7 @@
 |----|---------|--------|------|---------------|------------------------|
 | H22.4 | ORIZONT 22, line 2869 | OWNER-CONFIG | XS | Runbook already written (`docs/GPU_RUNBOOK.md` §H22.4); just needs a GPU-box validation run | OWNER-PACKET |
 | H22.7 | ORIZONT 22, line 2872 | OWNER-CONFIG | XS | SKILL.md files delivered; `superpowers` plugin install = 1 host command | OWNER-PACKET |
-| H22.8 | ORIZONT 22, line 2873 | OWNER-CONFIG | XS | Scaffold delivered; install `codebase-memory-mcp` binary + trial `index_repository` | OWNER-PACKET |
+| H22.8 | ORIZONT 22, line 2873 | OWNER-CONFIG | XS | ~~Scaffold delivered; install binary + trial~~ — **CLOSED 2026-09-12** on the trial's own disposal rule; scaffold and manifest entry removed, nothing was ever installed | ✅ ANSWERED |
 | LMS-VALIDATE | LM Studio control, line 2024 | OWNER-CONFIG | XS | Validate end-to-end against a real `lms` binary on the RTX 5090 box (current tests are mock-only) | OWNER-PACKET |
 | LMS-GEMMA-ID | LM Studio control, line 2033 | OWNER-CONFIG | XS | Confirm the real LM Studio id for Gemma 4 12B (`google/gemma-4-12b` is a placeholder) | OWNER-PACKET |
 | FB4-BENCHMARK | Alpha signals, line 1100 | OWNER-CONFIG | S | Skeleton table exists (`docs/HARDWARE_BENCHMARKS.md`); owner fills measured 8/12/16/24GB numbers | OWNER-PACKET |
