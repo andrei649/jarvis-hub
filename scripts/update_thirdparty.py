@@ -18,7 +18,7 @@ Two kinds of source (mirrors the manifest's ``kind``):
     vendored dir, strip ``.git``, refresh the mirrored license file if the entry
     records one (``license``), and bump the pin + ``version_source`` file so the
     consistency check stays green.
-  * **doc-pinned** (e.g. codebase-memory-mcp): no tree to re-vendor — just bump
+  * **doc-pinned** (a host binary named only in a doc): no tree to re-vendor — just bump
     the pin, and rewrite a plain version string in the doc if one is present.
 
 The clone/replace step goes through an **injectable runner** (``VendorRunner``)

@@ -4,7 +4,7 @@ that have drifted behind their latest upstream release.
 
 Covers what Dependabot can't see: code we *vendor* into the repo (e.g. the
 superpowers plugin under `.claude/plugins/`) and tools we *doc-pin* (e.g. the
-codebase-memory-mcp binary). Package deps (pip/npm/github-actions) stay with
+a host binary pinned only in a doc). Package deps (pip/npm/github-actions) stay with
 Dependabot — see `.github/dependabot.yml`.
 
 Manifest: `.github/third-party-manifest.json`.

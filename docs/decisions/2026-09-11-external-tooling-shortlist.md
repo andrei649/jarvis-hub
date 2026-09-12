@@ -36,3 +36,19 @@ check the record first, resolve the URL yourself, ask what Nerva already has,
 and treat anything that writes to `.claude/` or `.mcp.json` as an owner
 decision. Verdicts land here so they are not re-litigated — which is exactly
 what happened to OpenMontage.
+
+## Outcome — item 3 (2026-09-12)
+
+The owner chose **A: close it**. The trial's own disposal rule was applied:
+`.mcp.json.example`, `docs/dev/codebase-memory-mcp.md` and the doc-pinned entry in
+`.github/third-party-manifest.json` are removed, and BACKLOG **H22.8 is closed**.
+
+No runtime changed — `.mcp.json` never existed, so the server never ran. The
+`doc-pinned` source kind stays in `update_thirdparty.py` / `check_thirdparty_drift.py`:
+it is a real shape, exercised by fixtures, and simply has no live entry now.
+
+The one genuine gap this trial was reaching for — a **queryable call graph**, since
+`ARCHITECTURE.md` §3 is a hand-maintained index that can drift — is not closed. If it
+is ever wanted, the repo's own pattern covers it without a dependency: a stdlib
+`scripts/*.py` emitting a snapshot pinned by a parity test, exactly like
+`gen_api_sweep.py` and `system_map/topology.json`.
