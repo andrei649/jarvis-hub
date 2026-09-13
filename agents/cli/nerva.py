@@ -196,6 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("message", nargs="?", help="reply text (up to 4,000 characters)")
     send.add_argument("--json", action="store_true")
 
+    desktop = verbs.add_parser(
+        "desktop", help="can this machine run the desktop operator, and what is missing (offline)")
+    desktop_verbs = desktop.add_subparsers(dest="sub", required=True)
+    desktop_status = desktop_verbs.add_parser(
+        "status", help="the ordered setup path for this host, and the first thing to do")
+    desktop_status.add_argument("--json", action="store_true")
+    desktop_grant = desktop_verbs.add_parser(
+        "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
+    desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
     completion = verbs.add_parser("completion", help="print a shell completion script")
     completion.add_argument("shell", choices=("bash", "zsh"))
     return parser
@@ -219,6 +229,56 @@ def command_tree(parser: argparse.ArgumentParser | None = None) -> dict[str, lis
 
 
 # ── verbs ─────────────────────────────────────────────────────────────────────
+
+
+def _desktop_plan():
+    """Probe this host and build the setup path. Imported late: the probe is heavy."""
+    from agents.core.desktop_setup import plan
+    from agents.core.host_probe import probe_host
+
+    return plan(probe_host())
+
+
+def cmd_desktop(ns: argparse.Namespace, ctx: Context) -> int:
+    """Read-only by default; `grant` opens a settings pane and still grants nothing."""
+    from agents.core.desktop_setup import open_settings, render
+
+    try:
+        report = _desktop_plan()
+    except Exception as exc:  # a host fact we could not establish is not a crash
+        ctx.err.write(f"could not probe this host: {type(exc).__name__}\n")
+        return EXIT_FAILED
+
+    if ns.sub == "status":
+        if ns.json:
+            ctx.out.write(json.dumps(report.to_dict(), indent=2, ensure_ascii=False) + "\n")
+        else:
+            ctx.out.write(render(report))
+        return EXIT_OK if report.ready else EXIT_FAILED
+
+    step = report.step(ns.step)
+    if step is None:
+        keys = ", ".join(s.key for s in report.steps)
+        ctx.err.write(f"no step named {ns.step!r} on this host. Steps here: {keys}\n")
+        return EXIT_USAGE
+    import subprocess  # nosec B404 - fixed argv from a closed table, never a shell
+
+    # The argv can only be one of desktop_setup._OPENERS' own values: open_settings
+    # checks the Opener by identity, so neither this call site nor a caller can
+    # substitute one. tests/test_desktop_setup.py pins that with a value-equal
+    # forgery that must still be refused.
+    result = open_settings(
+        step,
+        spawn=lambda argv: subprocess.run(argv, check=False),  # nosec B603 - see above
+    )
+    if not result.get("ok"):
+        ctx.err.write(f"{result.get('reason', 'grant_failed')}\n")
+        return EXIT_FAILED
+    ctx.out.write(
+        f"opened {result['opened']}\n"
+        "Grant it there, then run `nerva desktop status` again — the re-probe is the proof.\n"
+    )
+    return EXIT_OK
 
 
 def cmd_doctor(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1029,6 +1089,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "sessions": cmd_sessions,
     "chat": cmd_chat,
     "send": cmd_send,
+    "desktop": cmd_desktop,
     "completion": cmd_completion,
 }
 
@@ -1060,3 +1121,11 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
     except argparse.ArgumentTypeError as exc:
         ctx.err.write(f"{exc}\n")
         return EXIT_USAGE
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised as a subprocess in tests
+    # Without this, `python -m agents.cli.nerva <verb>` imports the module, runs
+    # nothing and exits 0 — silently, for every verb. There is no console script
+    # in pyproject.toml either, so this is the only way the command tree H001
+    # promises can actually be invoked outside a test that calls main() in-process.
+    raise SystemExit(main())
