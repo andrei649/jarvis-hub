@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**115 / 697 = 16.5% echivalente complet în evaluarea documentată.**
+**116 / 697 = 16.6% echivalente complet în evaluarea documentată.**
 
-Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 115 | 16.5% |
+| Echivalent | 116 | 16.6% |
 | Parțial | 375 | 53.8% |
-| Lipsă | 100 | 14.3% |
+| Lipsă | 99 | 14.2% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 590 rânduri; progres 115/590 = **19.5%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
+**Ținta acceptată în produs:** 590 rânduri; progres 116/590 = **19.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 105/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 108/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -41,7 +41,7 @@ Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păst
 | memory | 27 | 8 | 14 | 3 | 2 | 0 |
 | automation | 32 | 1 | 24 | 4 | 3 | 0 |
 | security | 34 | 7 | 18 | 4 | 5 | 0 |
-| media | 27 | 4 | 17 | 5 | 1 | 0 |
+| media | 27 | 5 | 17 | 4 | 1 | 0 |
 | acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
 | docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |

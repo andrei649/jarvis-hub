@@ -15,11 +15,13 @@ JARVIS_STT_COMPUTE_TYPE) so a transcription-quality job can opt back into
 beam search without a code change.
 """
 
+import io
 import logging
 import os
 from typing import Optional
 
 from agents.core.env_config import env_int
+from agents.core.voice.hallucination import is_hallucination
 
 logger = logging.getLogger("jarvis.voice.stt")
 
@@ -80,23 +82,54 @@ class STTEngine:
             logger.warning(f"Whisper init failed: {e}")
             self._model = None
 
-    def transcribe(self, audio_path: str, language: str = "ro") -> str:
+    def transcribe(self, audio, language: str = "ro") -> str:
+        """Transcribe *audio* — a path, raw bytes, or any binary file object.
+
+        Bytes are accepted so a caller holding a recording in memory (an inbound
+        voice note off a chat channel) never has to write someone's speech to
+        disk to have it read. faster-whisper decodes a file object the same way
+        it decodes a path.
+
+        A transcript that is only Whisper talking to itself comes back as
+        ``[silence]`` — see :mod:`agents.core.voice.hallucination`. That is the
+        sentinel this method already returned for genuinely empty audio, and
+        every existing caller treats a leading ``[`` as "nothing was said"
+        (`routers/voice.py` skips dictation cleanup on it, `frontend/src/voice.ts`
+        drops it), so the filter needs no new contract to be honoured.
+        """
         if not self._model:
             return "[STT unavailable]"
 
         try:
             segments, info = self._model.transcribe(
-                audio_path,
+                self._as_source(audio),
                 language=language,
                 beam_size=self.beam_size,
                 vad_filter=True,
             )
-            text = " ".join(seg.text for seg in segments)
-            return text.strip() or "[silence]"
+            text = " ".join(seg.text for seg in segments).strip()
+            if not text:
+                return "[silence]"
+            # The duration comes from the decoded audio, not from whoever sent
+            # it: it is what actually reached the decoder, so a short-recording
+            # rule cannot be steered by a number in an envelope.
+            seconds = getattr(info, "duration", None)
+            if is_hallucination(text, audio_seconds=seconds):
+                logger.info("STT: discarded a silence hallucination (%.2fs)",
+                            float(seconds) if isinstance(seconds, (int, float)) else -1.0)
+                return "[silence]"
+            return text
         except Exception as e:
             logger.error(f"Transcription error: {e}")
             return f"[STT error: {e}]"
 
-    async def transcribe_async(self, audio_path: str, language: str = "ro") -> str:
+    @staticmethod
+    def _as_source(audio):
+        """Bytes become an in-memory stream; a path or file object passes through."""
+        if isinstance(audio, (bytes, bytearray, memoryview)):
+            return io.BytesIO(bytes(audio))
+        return audio
+
+    async def transcribe_async(self, audio, language: str = "ro") -> str:
         loop = __import__("asyncio").get_event_loop()
-        return await loop.run_in_executor(None, self.transcribe, audio_path, language)
+        return await loop.run_in_executor(None, self.transcribe, audio, language)

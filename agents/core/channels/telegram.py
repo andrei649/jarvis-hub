@@ -17,12 +17,18 @@ from .base import ChannelAdapter
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
 from .inbound_media import (
+    KIND_PHOTO,
+    KIND_VOICE,
     READABLE_KINDS,
     RECOGNISED_KINDS,
     classify,
     describe,
     turn_text,
 )
+from .inbound_voice import InboundVoiceReader, Transcript
+from .inbound_voice import REASON_DOWNLOAD as VOICE_REASON_DOWNLOAD
+from .inbound_voice import note as voice_note
+from .inbound_voice import turn_text as voice_turn_text
 from .media_reader import (
     REASON_DOWNLOAD,
     Description,
@@ -188,6 +194,9 @@ class TelegramChannel(ChannelAdapter):
         # model. Built on first use from the environment, so a deployment with
         # no local VLM costs nothing and simply refuses with a reason.
         self._image_reader: Optional[InboundImageReader] = None
+        # The same shape for a voice note, transcribed on the host's own speech
+        # engine. Built on first use; a host without one simply refuses.
+        self._voice_reader: Optional[InboundVoiceReader] = None
 
     async def start(self):
         self._running = True
@@ -367,30 +376,16 @@ class TelegramChannel(ChannelAdapter):
                     turn = decision.text
                     if attachment is not None:
                         logger.info("Telegram inbound media: %s", attachment.to_dict())
-                        description = None
-                        if attachment.readable:
-                            await self.send_action(chat_id, "typing")
-                            description = await self._read_image(attachment)
-                            logger.info("Telegram media read: %s", description.to_dict())
-                        if description is not None and description.ok:
-                            # The model reads the *description*, never the bytes,
-                            # and reads it inside Wave 5a's tool fence — so text
-                            # in a photo is data, exactly like a fetched page. The
-                            # turn keeps this channel's own untrusted origin
-                            # ("inbound"), which is what holds an action derived
-                            # from someone's photo for approval instead of running
-                            # it; `tests/test_inbound_media_read.py` pins that.
-                            turn = image_turn_text(description, decision.text)
+                        read, why = await self._read_attachment(
+                            attachment, decision.text, chat_id)
+                        if read:
+                            turn = read
                         else:
-                            # Nothing was observed. Say exactly that, rather than
-                            # answering about a photo nobody read — and rather
+                            # Nothing was read. Say exactly that, rather than
+                            # answering about a file nobody opened — and rather
                             # than arriving into silence, which is what this
                             # whole path exists to stop.
-                            await self.send(
-                                describe(attachment,
-                                         note=read_note(description) if description else ""),
-                                chat_id=chat_id,
-                            )
+                            await self.send(describe(attachment, note=why), chat_id=chat_id)
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
                     if turn:
@@ -507,6 +502,53 @@ class TelegramChannel(ChannelAdapter):
                     logger.info("Telegram download exceeded %d bytes; abandoned", max_bytes)
                     return b""
         return bytes(buf)
+
+    async def _read_attachment(self, attachment, spoken: str, chat_id) -> tuple[str, str]:
+        """Turn one readable attachment into a turn, or into the reason it is not.
+
+        Returns ``(turn_text, note)``: exactly one is ever non-empty. The two
+        readers stay separate on purpose — a photo description is a machine's
+        observation of someone else's bytes and travels fenced, while a
+        transcript is the sender's own words and travels as an ordinary turn
+        (see :mod:`inbound_voice`). Collapsing them into one "read the file"
+        helper would lose that distinction, which is the security design.
+        """
+        if not attachment.readable:
+            return "", ""
+        # Reading takes seconds; say so rather than leaving the chat silent.
+        await self.send_action(chat_id, "typing")
+        if attachment.kind == KIND_PHOTO:
+            description = await self._read_image(attachment)
+            logger.info("Telegram photo read: %s", description.to_dict())
+            return ((image_turn_text(description, spoken), "") if description.ok
+                    else ("", read_note(description)))
+        if attachment.kind == KIND_VOICE:
+            transcript = await self._read_voice(attachment)
+            logger.info("Telegram voice read: %s", transcript.to_dict())
+            return ((voice_turn_text(transcript, spoken), "") if transcript.ok
+                    else ("", voice_note(transcript)))
+        # A kind in READABLE_KINDS with no branch here would silently answer
+        # nothing; say so instead, and the descriptor invariant catches the
+        # declaration half.
+        logger.warning("Telegram: %s is readable but has no reader", attachment.kind)
+        return "", ""
+
+    async def _read_voice(self, attachment) -> Transcript:
+        """Download and transcribe one voice note. Failures are Transcripts, not raises."""
+        if self._voice_reader is None:
+            self._voice_reader = InboundVoiceReader()
+        reader = self._voice_reader
+        refused = reader.refusal()
+        if refused is not None:
+            return refused
+        try:
+            data = await self._download_file(attachment.file_id, reader.max_bytes)
+        except Exception as e:
+            logger.warning("Telegram voice download failed: %s", e)
+            return Transcript(False, reason=VOICE_REASON_DOWNLOAD)
+        if not data:
+            return Transcript(False, reason=VOICE_REASON_DOWNLOAD)
+        return await reader(data)
 
     async def _read_image(self, attachment) -> Description:
         """Download and describe one photo. Every failure is a Description, not a raise."""
