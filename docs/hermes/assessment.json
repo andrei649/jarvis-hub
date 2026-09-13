@@ -430,7 +430,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "98316fc062aa48b30650ed2aa1f0fd260ea3692d37f16683f473b85dec73a872"
+          "sha256": "79c4bead64150a51e9002ead3708d411dd66e151e85e17a12513698b37307469"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -488,7 +488,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -517,7 +517,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -546,7 +546,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -575,7 +575,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -609,7 +609,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         },
         {
           "path": "tests/test_channel_render.py",
@@ -646,7 +646,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "98316fc062aa48b30650ed2aa1f0fd260ea3692d37f16683f473b85dec73a872"
+          "sha256": "79c4bead64150a51e9002ead3708d411dd66e151e85e17a12513698b37307469"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -658,24 +658,32 @@
       "id": "H108",
       "row_sha256": "772dbe6813680421be38906f32a7ebe5dd746817b070c5d4e4f7455046e285ba",
       "status": "partial",
-      "summary": "O poză nu mai dispare. Bucla de polling Telegram citea `msg[\"text\"]` și făcea `if not text: continue`, deci o poză — chiar și una cu legenda „ce e asta?\" — se pierdea fără niciun răspuns. Acum ce sosește e recunoscut din plicul folosit de Telegram (niciodată din `mime_type`/`file_name`, pe care le alege expeditorul), mărginit la cele 20 MB pe care un bot le poate descărca, și primește o singură propoziție cinstită; legenda devine tura. Handle-ul fișierului nu iese niciodată din proces — nici în log, nici în mesajul de răspuns — iar canalul declară acum, prin descriptor, ce tipuri recunoaște.",
-      "remaining": "Rândul cere mult peste recunoaștere și nimic din rest nu e livrat: descărcarea efectivă și cache-ul pe disc ca fișiere pe care uneltele de vedere le pot deschide, gruparea rafalelor de poze și debounce-ul pe albume, înțelegerea stickerelor prin vedere, pinuri de locație și venue, cache pentru media din grupuri observate și din mesaje la care se răspunde, raportarea eșecurilor de descărcare, plus ingestia pe WhatsApp, Discord și Teams. `READABLE_KINDS` e gol intenționat: nimic nu pretinde că fișierul a fost citit până nu există seam-ul de descărcare ȘI predarea în tură în spatele gardului de taint — a doua jumătate, deliberat separată pentru că trece octeți netrusted din internet în intrarea modelului. NEVERIFICAT pe serviciu real: suita e ermetică, niciun mesaj Telegram adevărat nu a fost primit.",
+      "summary": "Poza e acum *citită*, nu doar recunoscută. Un `InboundImageReader` o descrie printr-un VLM dovedit local și predă descrierea în tură; textul dintr-o poză intră ca date, niciodată ca instrucțiuni. Regula de localitate e cea din `screen_locator` aplicată pozei altcuiva: `is_local` derivă exclusiv din `resolve_vlm_config().is_local`, se verifică *înainte* să existe un backend, și încă o dată în `_backend_call` împotriva URL-ului la care chiar s-ar posta — două citiri independente, deci un VLM non-loopback nu primește niciun octet. Descărcarea e mărginită de octeții care chiar sosesc, nu de `file_size` (număr ales de expeditor), iar `file_path` primit de la Telegram e validat înainte să ajungă într-un URL care poartă tokenul botului. Descrierea vine în gardul Wave 5a (`fence_tool_result`), deliberat *fără* datamark — `spotlight` ar înlocui spațiile cu „▁\" și ar orbi `detect_injection` la gateway, unde clauza de guvernanță a rândului cere marcajul de taint — și normalizată pe o singură linie, ca o poză cu „<<END UNTRUSTED>>\" scris pe ea să nu-și poată închide propriul gard. Legenda nu ajunge niciodată la descriitor: e vorba expeditorului, iar un descriitor care ar citi-o i-ar lăsa pe el să aleagă ce „vede\" Nerva. Tura merge pe ușa normală, deci `Gateway._inbound_meta` o marchează `inbound:telegram` și rulează detectorul peste exact ce citește modelul. Descriptorul separă acum `recognises_media` de `reads_media`, cu invariantul verificat la construcție.",
+      "remaining": "Doar fotografii, doar pe Telegram. Nu sunt livrate: vocea (STT e rândul ei), audio, video, documentele și stickerele; cache-ul pe disc sub un director de media, ca uneltele de vedere să poată deschide o cale; gruparea rafalelor de poze și debounce-ul pe albume; pinurile de locație și venue; cache pentru media din grupuri observate și din mesaje la care se răspunde; ingestia pe WhatsApp, Discord, Teams, Google Chat și email. `READABLE_KINDS` conține exact `{photo}` și nimic nu intră acolo înainte să existe calea de citire pentru tipul respectiv. Limitare pusă pe hârtie, nu rezolvată: taint-ul nu poate fi urmărit *prin* model — ce se transportă e faptul grosier că tura a citit material netrusted, iar originea `inbound` a canalului e cea care ține o acțiune derivată dintr-o poză în aprobare; `mark_turn_recall_tainted()` nu e chemat aici pentru că ar fi un no-op (escalate-only peste o origine deja netrusted), iar un apel decorativ ar fi un control doar cu numele. NEVERIFICAT pe servicii reale: suita e ermetică — niciun mesaj Telegram adevărat primit, niciun VLM local chemat cu adevărat, `getFile` și descărcarea probate doar contra unui client fals.",
       "evidence": [
         {
+          "path": "agents/core/channels/media_reader.py",
+          "sha256": "3195d82aa8faa59b39a3eaed2955ddf9d40f5853d4b72a87d0d6b6dd77306ccb"
+        },
+        {
           "path": "agents/core/channels/inbound_media.py",
-          "sha256": "9bfa4a53d704f67d486844317043b2520cb81c11444f4f335356f70c6deafb64"
+          "sha256": "4dd084268f1796b41140151f878a0eea4ae40b1a0b030cbd4a30d5011b512341"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "98316fc062aa48b30650ed2aa1f0fd260ea3692d37f16683f473b85dec73a872"
+          "sha256": "79c4bead64150a51e9002ead3708d411dd66e151e85e17a12513698b37307469"
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
+        },
+        {
+          "path": "tests/test_inbound_media_read.py",
+          "sha256": "7924b3b0128b624cd262cef1da7344b627bf840ad05c8c59659b15a39b2efc7d"
         },
         {
           "path": "tests/test_telegram_inbound_media.py",
-          "sha256": "b5cc7203922e9d5d03e8746902517a8d2b8dba0e149f194ee668e3b3bf537941"
+          "sha256": "41c799efe0364c93493cdd1d7e805650f53b060d961836ff99f440e65d981ec7"
         }
       ]
     },
@@ -721,7 +729,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -775,7 +783,7 @@
         },
         {
           "path": "agents/core/channels/descriptor.py",
-          "sha256": "25a8abf4e9df109697c83e6f7569e647be18fdf226d089215dfd3506f5595b5a"
+          "sha256": "eefcf39c0b8e959bcff38a175d62fd4c7e1777d804f0d9bb325b2693fe63469d"
         }
       ]
     },
@@ -2926,7 +2934,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "98316fc062aa48b30650ed2aa1f0fd260ea3692d37f16683f473b85dec73a872"
+          "sha256": "79c4bead64150a51e9002ead3708d411dd66e151e85e17a12513698b37307469"
         },
         {
           "path": "tests/test_telegram_streaming.py",

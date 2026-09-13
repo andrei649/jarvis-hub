@@ -8,8 +8,12 @@ the sender's own words into the turn.
 
 Two properties matter more than the rest, and both have mutants behind them:
 the kind is taken from the envelope Telegram used and never from the
-sender-chosen `mime_type`/`file_name`, and nothing claims the file was read —
-`READABLE_KINDS` is empty until the download seam exists.
+sender-chosen `mime_type`/`file_name`, and nothing claims a file was read that
+was not — `READABLE_KINDS` names only the kinds with a reading path (photos,
+via `media_reader`), and a per-message failure still overrides it.
+
+The reading path itself — the local-only gate, the bounded download, the fence —
+is pinned in `test_inbound_media_read.py`.
 
 Hermetic: no network, no Telegram client, a recording handler.
 """
@@ -166,26 +170,41 @@ def test_the_sentence_sent_back_never_carries_the_handle_or_the_caption():
 # ── nothing claims the file was read ────────────────────────────────────────
 
 
-def test_no_kind_reports_readable_while_the_download_seam_does_not_exist():
-    assert not READABLE_KINDS
+def test_only_kinds_with_a_reading_path_report_readable():
+    """Photos read (media_reader); nothing else does, and nothing else may claim to.
+
+    This is the honesty invariant, not a snapshot of today's set: a kind belongs
+    in READABLE_KINDS only once code exists that turns it into model input. Voice
+    needs transcription, which is a different capability and is not built.
+    """
+    assert set(READABLE_KINDS) == {"photo"}
     for kind in RECOGNISED_KINDS:
         att = classify({kind: {"file_id": "x"} if kind not in ("photo",)
                         else [{"file_id": "x"}]})
         assert att is not None
-        assert att.readable is False, kind
+        assert att.readable is (kind == "photo"), kind
 
 
-def test_the_sentence_says_it_was_not_read():
-    assert "not wired up yet" in describe(classify({"photo": [{"file_id": "p"}]}))
+def test_a_photo_says_it_was_received_rather_than_that_nothing_can_read_it():
+    assert describe(classify({"photo": [{"file_id": "p"}]})) == "Got your photo."
 
 
-def test_a_readable_kind_would_say_so(monkeypatch):
-    """The switch: adding a kind to READABLE_KINDS is what turns this on."""
-    monkeypatch.setattr("agents.core.channels.inbound_media.READABLE_KINDS",
-                        frozenset({"photo"}))
+def test_a_kind_with_no_reading_path_still_says_so():
+    assert "not wired up yet" in describe(classify({"voice": {"file_id": "v"}}))
+
+
+def test_a_read_failure_beats_the_pipeline_answer(monkeypatch):
+    """`readable` is about the pipeline; `note` is about *this* message, and wins.
+
+    A photo is readable in general and can still fail to be read here — no local
+    vision model, a refused download. Reporting "Got your photo." then answering
+    nothing would be the dishonesty the whole module exists to prevent.
+    """
     att = classify({"photo": [{"file_id": "p"}]})
     assert att.readable is True
-    assert describe(att) == "Got your photo."
+    assert describe(att, note="the local vision model did not answer") == (
+        "I can see you sent a photo, but the local vision model did not answer."
+    )
 
 
 # ── how it reads to a person ────────────────────────────────────────────────
@@ -290,8 +309,12 @@ def _channel(policy=None):
 async def test_a_bare_photo_gets_an_answer_instead_of_silence():
     ch, turns, sent = _channel()
     await _drain(ch, [_update(photo=[{"file_id": "p", "file_size": 10}])])
-    assert sent == [("I can see you sent a photo, but reading photos is not wired up yet.", 42)]
-    assert turns == [], "a bare file is not a prompt; do not invent one"
+    # No local VLM is configured in the test environment, so the read is refused
+    # at the gate — before any download — and the sender is told why.
+    assert sent == [
+        ("I can see you sent a photo, but no local vision model is configured here yet.", 42)
+    ]
+    assert turns == [], "a bare file nobody could read is not a prompt; do not invent one"
 
 
 @pytest.mark.asyncio
@@ -378,3 +401,21 @@ async def test_a_pairing_deeplink_still_never_reaches_the_handler():
 def test_the_channel_declares_what_it_now_recognises():
     assert set(TelegramChannel.descriptor.recognises_media) == set(RECOGNISED_KINDS)
     assert "photo" in TelegramChannel.descriptor.recognises_media
+
+
+def test_the_descriptor_separates_recognising_from_reading():
+    d = TelegramChannel.descriptor
+    assert d.reads_media == ("photo",)
+    assert set(d.reads_media) < set(d.recognises_media)
+    assert "voice" in d.recognises_media and "voice" not in d.reads_media
+
+
+def test_a_descriptor_cannot_claim_to_read_what_it_never_recognised():
+    """The invariant is checked at construction, so the two fields cannot drift."""
+    from agents.core.channels.descriptor import ChannelDescriptor
+
+    ChannelDescriptor(recognises_media=("photo",), reads_media=("photo",))
+    with pytest.raises(ValueError, match="not recognised"):
+        ChannelDescriptor(recognises_media=("voice",), reads_media=("photo",))
+    with pytest.raises(ValueError):
+        ChannelDescriptor(reads_media="photo")
