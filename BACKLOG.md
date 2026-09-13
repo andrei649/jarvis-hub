@@ -58,7 +58,14 @@
   unestablished fact renders `unknown`, never ready. Fixes on the way: the command
   tree H001 promises had no `__main__` block and no console script, so
   `python -m agents.cli.nerva <verb>` imported, ran nothing and exited 0 — for
-  every verb), then native overlay and channel streaming.
+  every verb), then H108-partial (a photo stops vanishing: the Telegram poll loop
+  read `msg["text"]` and dropped everything else, so a photo — even one captioned
+  "what is this?" — got no reply at all. Inbound items are now recognised from the
+  envelope Telegram used, never from the sender-chosen `mime_type`/`file_name`,
+  bounded by the 20 MB a bot may download, and answered with one honest line; the
+  caption becomes the turn. Nothing claims the file was read: `READABLE_KINDS` is
+  empty until the download seam and the taint-fenced hand-off exist), then native
+  overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
