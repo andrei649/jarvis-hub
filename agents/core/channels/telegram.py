@@ -7,6 +7,7 @@ Uses the PermissionGate to enforce domain restrictions.
 """
 
 import logging
+import re
 import time
 from typing import Callable, Optional
 
@@ -15,7 +16,20 @@ import httpx
 from .base import ChannelAdapter
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
-from .inbound_media import RECOGNISED_KINDS, classify, describe, turn_text
+from .inbound_media import (
+    READABLE_KINDS,
+    RECOGNISED_KINDS,
+    classify,
+    describe,
+    turn_text,
+)
+from .media_reader import (
+    REASON_DOWNLOAD,
+    Description,
+    InboundImageReader,
+)
+from .media_reader import note as read_note
+from .media_reader import turn_text as image_turn_text
 from .render import chunk, to_plain, to_telegram_html
 from ..log_safe import log_safe
 
@@ -145,6 +159,7 @@ class TelegramChannel(ChannelAdapter):
         supports_media=True,
         supports_threads=True,
         recognises_media=RECOGNISED_KINDS,
+        reads_media=tuple(sorted(READABLE_KINDS)),
     )
 
     def __init__(self, token: str, handler: Optional[Callable] = None,
@@ -169,6 +184,10 @@ class TelegramChannel(ChannelAdapter):
         # Injectable so deeplink pairing is testable without touching the data
         # root; production leaves it None and the store is built on first use.
         self._pairing = None
+        # H108 second half: reads an inbound photo over a *proven-local* vision
+        # model. Built on first use from the environment, so a deployment with
+        # no local VLM costs nothing and simply refuses with a reason.
+        self._image_reader: Optional[InboundImageReader] = None
 
     async def start(self):
         self._running = True
@@ -345,17 +364,37 @@ class TelegramChannel(ChannelAdapter):
                     if decision.action != ANSWER:
                         logger.debug("Ignored group message (%s)", decision.reason)
                         continue
+                    turn = decision.text
                     if attachment is not None:
-                        # Say what came in before anything else. Nerva has not
-                        # read the file — `describe` says exactly that — so this
-                        # is a reply to the sender, never a line handed to the
-                        # model as if the file had been observed.
                         logger.info("Telegram inbound media: %s", attachment.to_dict())
-                        await self.send(describe(attachment), chat_id=chat_id)
+                        description = None
+                        if attachment.readable:
+                            await self.send_action(chat_id, "typing")
+                            description = await self._read_image(attachment)
+                            logger.info("Telegram media read: %s", description.to_dict())
+                        if description is not None and description.ok:
+                            # The model reads the *description*, never the bytes,
+                            # and reads it inside Wave 5a's tool fence — so text
+                            # in a photo is data, exactly like a fetched page. The
+                            # turn keeps this channel's own untrusted origin
+                            # ("inbound"), which is what holds an action derived
+                            # from someone's photo for approval instead of running
+                            # it; `tests/test_inbound_media_read.py` pins that.
+                            turn = image_turn_text(description, decision.text)
+                        else:
+                            # Nothing was observed. Say exactly that, rather than
+                            # answering about a photo nobody read — and rather
+                            # than arriving into silence, which is what this
+                            # whole path exists to stop.
+                            await self.send(
+                                describe(attachment,
+                                         note=read_note(description) if description else ""),
+                                chat_id=chat_id,
+                            )
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
-                    if decision.text:
-                        await self.receive(decision.text, chat_id=chat_id, sender=str(uid))
+                    if turn:
+                        await self.receive(turn, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)
@@ -413,6 +452,80 @@ class TelegramChannel(ChannelAdapter):
         except Exception as e:
             logger.warning(f"Telegram callback dispatch error: {e}")
             await self._answer_callback(cb.get("id", ""))
+
+    # ---- inbound media ----------------------------------------------------
+
+    #: One path segment as Telegram spells them (``photos``, ``file_0.jpg``).
+    #: A ``file_path`` is a value from the network, so it is checked segment by
+    #: segment before it is pasted into a URL that carries the bot token —
+    #: otherwise a hostile one could redirect that request, and the token with
+    #: it, at a host of the sender's choosing. The alphabet has no ``:``, ``/``
+    #: or whitespace, so a scheme, an authority or a forged line cannot survive.
+    _FILE_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+    def _safe_file_path(self, file_path: object) -> str:
+        """Return ``file_path`` if Telegram-shaped, else "" — never a partial fix-up.
+
+        Rejecting outright rather than sanitising is deliberate: a "cleaned" path
+        is still a path someone else chose, and there is no legitimate case where
+        Telegram hands back something this refuses.
+        """
+        path = file_path if isinstance(file_path, str) else ""
+        if not path or len(path) > 512:
+            return ""
+        # An empty segment is a leading, trailing or doubled slash; "." and ".."
+        # are traversal. Neither can appear in a real Telegram file_path.
+        segments = path.split("/")
+        if any(seg in ("", ".", "..") or not self._FILE_PATH_SEGMENT_RE.match(seg)
+               for seg in segments):
+            return ""
+        return path
+
+    async def _download_file(self, file_id: str, max_bytes: int) -> bytes:
+        """Fetch one attachment's bytes, bounded by what actually arrives.
+
+        The cap is enforced against the stream, not against ``file_size``: the
+        declared size is a number in an update, and believing it would let a
+        message that claims 1 KB spend the host's memory. The transfer is
+        abandoned the moment it crosses the ceiling.
+        """
+        resp = await self.client.get(f"{self.api_base}/getFile",
+                                     params={"file_id": file_id}, timeout=15.0)
+        resp.raise_for_status()
+        path = self._safe_file_path((resp.json().get("result") or {}).get("file_path"))
+        if not path:
+            logger.warning("Telegram getFile returned an unusable file_path")
+            return b""
+        url = f"https://api.telegram.org/file/bot{self.token}/{path}"
+        buf = bytearray()
+        async with self.client.stream("GET", url, timeout=httpx.Timeout(15.0, read=60.0)) as r:
+            r.raise_for_status()
+            async for piece in r.aiter_bytes():
+                buf.extend(piece)
+                if len(buf) > max_bytes:
+                    # Stop reading; the context manager closes the response.
+                    logger.info("Telegram download exceeded %d bytes; abandoned", max_bytes)
+                    return b""
+        return bytes(buf)
+
+    async def _read_image(self, attachment) -> Description:
+        """Download and describe one photo. Every failure is a Description, not a raise."""
+        if self._image_reader is None:
+            self._image_reader = InboundImageReader.from_env()
+        reader = self._image_reader
+        # Ask the gate before spending a download: a deployment with no local
+        # vision model must not pull someone's photo onto the host for nothing.
+        refused = reader.refusal()
+        if refused is not None:
+            return refused
+        try:
+            data = await self._download_file(attachment.file_id, reader.max_bytes)
+        except Exception as e:
+            logger.warning("Telegram media download failed: %s", e)
+            return Description(False, reason=REASON_DOWNLOAD)
+        if not data:
+            return Description(False, reason=REASON_DOWNLOAD)
+        return await reader(data, caption=attachment.caption)
 
     async def _get_me(self) -> Optional[dict]:
         try:

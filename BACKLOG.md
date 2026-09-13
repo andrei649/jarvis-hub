@@ -64,7 +64,20 @@
   envelope Telegram used, never from the sender-chosen `mime_type`/`file_name`,
   bounded by the 20 MB a bot may download, and answered with one honest line; the
   caption becomes the turn. Nothing claims the file was read: `READABLE_KINDS` is
-  empty until the download seam and the taint-fenced hand-off exist), then native
+  empty until the download seam and the taint-fenced hand-off exist), then the
+  second half of H108 (the photo is now *read*: an `InboundImageReader` describes it
+  over a VLM proven local — `is_local` derived only from `resolve_vlm_config()`,
+  checked before any backend is built and again against the URL the backend would
+  post to, so a non-loopback VLM gets no byte — the download bounded by the bytes
+  that actually arrive rather than the sender-chosen `file_size`, Telegram's
+  `file_path` validated before it enters a URL carrying the bot token, and the
+  description handed to the turn inside Wave 5a's `fence_tool_result`: no datamark,
+  because `spotlight`'s `▁` blinds `detect_injection` at the gateway where the row's
+  governance clause wants the taint marking, and normalised to one line so a photo
+  with `<<END UNTRUSTED>>` written on it cannot close its own fence. The caption
+  never reaches the describer. `READABLE_KINDS` is now exactly `{photo}`, and the
+  descriptor separates `recognises_media` from `reads_media` with the invariant
+  checked at construction; voice still needs STT, which is its own row), then native
   overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked

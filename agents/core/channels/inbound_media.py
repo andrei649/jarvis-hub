@@ -16,11 +16,15 @@ Three rules shape everything here:
   from attacker-controlled text is how "it's just an image" becomes something
   else entirely.
 - **Recognising is not reading.** :data:`READABLE_KINDS` is the set Nerva can
-  currently turn into something a model sees. It is deliberately empty: the
-  download seam and the taint-fenced hand-off into a turn are not built yet, and
-  a field that quietly reported otherwise would be the exact dishonesty the
-  approval surfaces exist to prevent. Filling this set is the switch that turns
-  the capability on, in one reviewable line.
+  currently turn into something a model sees, and nothing may be added to it
+  before the reading path for that kind actually exists — a field that quietly
+  reported otherwise would be the exact dishonesty the approval surfaces exist
+  to prevent. Photos are in it because :mod:`media_reader` reads them over a
+  proven-local vision model. Voice is not: transcription is a different
+  capability and is not built, so a voice note still gets the honest line.
+  *Readable* remains a statement about the pipeline, never about one message:
+  a photo is readable here and can still fail to be read (no local model
+  configured, download refused), which is why :func:`describe` takes a ``note``.
 - **Nothing sender-supplied is echoed unescaped, and the handle never is.**
   `file_id` is an opaque capability: anyone holding it and the bot token can
   fetch the bytes, so it stays inside the process and never reaches a chat
@@ -59,10 +63,10 @@ RECOGNISED_KINDS: tuple[str, ...] = _FIELD_ORDER
 #: Kinds carrying a downloadable file (location and contact do not).
 FILE_KINDS: frozenset[str] = frozenset(_FIELD_ORDER) - {KIND_LOCATION, KIND_CONTACT}
 
-#: What Nerva can currently turn into model input. Empty on purpose — see the
-#: module docstring. Adding a kind here is how the capability is switched on,
-#: once the download seam and the taint-fenced hand-off exist.
-READABLE_KINDS: frozenset[str] = frozenset()
+#: What Nerva can currently turn into model input — see the module docstring.
+#: Adding a kind here is how the capability is switched on, and it is only ever
+#: correct once that kind's reading path exists.
+READABLE_KINDS: frozenset[str] = frozenset({KIND_PHOTO})
 
 #: Telegram's own ceiling for what a bot may download. A declared size above it
 #: can never be fetched, so it is refused here rather than at the wire.
@@ -192,20 +196,29 @@ def display(kind: str, *, plural: bool = False) -> str:
     return names[1] if plural else names[0]
 
 
-def describe(attachment: Attachment) -> str:
-    """The one honest line the sender gets, so nothing arrives into silence."""
+def describe(attachment: Attachment, *, note: str = "") -> str:
+    """The one honest line the sender gets, so nothing arrives into silence.
+
+    ``note`` is how a caller that *tried* to read a readable kind reports why it
+    could not — the reading path owns those reasons (see
+    :func:`media_reader.note`), and this module owns the sentence. A note always
+    wins over :data:`READABLE_KINDS`: what happened to this message is more
+    truthful than what the pipeline supports in general.
+    """
     if not isinstance(attachment, Attachment):
         raise TypeError("describe() needs an Attachment")
     one = display(attachment.kind)
-    if attachment.readable:
-        return f"Got your {one}."
-    template = _NOTES.get(attachment.reason, "it cannot be read")
-    note = template.format(
-        plural=display(attachment.kind, plural=True),
-        cap=MAX_DECLARED_BYTES // (1024 * 1024),
-    )
+    clause = note.strip() if isinstance(note, str) else ""
+    if not clause:
+        if attachment.readable:
+            return f"Got your {one}."
+        template = _NOTES.get(attachment.reason, "it cannot be read")
+        clause = template.format(
+            plural=display(attachment.kind, plural=True),
+            cap=MAX_DECLARED_BYTES // (1024 * 1024),
+        )
     article = "an" if one[0].lower() in "aeiou" else "a"
-    return f"I can see you sent {article} {one}, but {note}."
+    return f"I can see you sent {article} {one}, but {clause}."
 
 
 def turn_text(attachment: Attachment, text: str = "") -> str:
