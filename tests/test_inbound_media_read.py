@@ -523,10 +523,11 @@ async def test_a_failed_download_says_so_instead_of_answering():
 
 
 @pytest.mark.asyncio
-async def test_a_voice_note_is_untouched_by_the_reading_path():
+async def test_a_document_is_untouched_by_the_image_path():
+    """Only a photo goes to the image reader; a kind with no reader says so."""
     ch, turns, sent = _channel(_reader(spy=_Spy()))
-    await _drain(ch, [_update(voice={"file_id": "v", "file_size": 10})])
-    assert sent == ["I can see you sent a voice note, but reading voice notes "
+    await _drain(ch, [_update(document={"file_id": "d", "file_size": 10})])
+    assert sent == ["I can see you sent a file, but reading files "
                     "is not wired up yet."]
 
 

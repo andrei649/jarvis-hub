@@ -20,8 +20,9 @@ Three rules shape everything here:
   before the reading path for that kind actually exists — a field that quietly
   reported otherwise would be the exact dishonesty the approval surfaces exist
   to prevent. Photos are in it because :mod:`media_reader` reads them over a
-  proven-local vision model. Voice is not: transcription is a different
-  capability and is not built, so a voice note still gets the honest line.
+  proven-local vision model, and voice notes because :mod:`inbound_voice`
+  transcribes them on the host's own speech engine. Documents, video and
+  stickers are not: nothing reads those yet, so they still get the honest line.
   *Readable* remains a statement about the pipeline, never about one message:
   a photo is readable here and can still fail to be read (no local model
   configured, download refused), which is why :func:`describe` takes a ``note``.
@@ -66,7 +67,7 @@ FILE_KINDS: frozenset[str] = frozenset(_FIELD_ORDER) - {KIND_LOCATION, KIND_CONT
 #: What Nerva can currently turn into model input — see the module docstring.
 #: Adding a kind here is how the capability is switched on, and it is only ever
 #: correct once that kind's reading path exists.
-READABLE_KINDS: frozenset[str] = frozenset({KIND_PHOTO})
+READABLE_KINDS: frozenset[str] = frozenset({KIND_PHOTO, KIND_VOICE})
 
 #: Telegram's own ceiling for what a bot may download. A declared size above it
 #: can never be fetched, so it is refused here rather than at the wire.

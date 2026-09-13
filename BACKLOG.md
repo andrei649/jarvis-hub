@@ -77,7 +77,23 @@
   with `<<END UNTRUSTED>>` written on it cannot close its own fence. The caption
   never reaches the describer. `READABLE_KINDS` is now exactly `{photo}`, and the
   descriptor separates `recognises_media` from `reads_media` with the invariant
-  checked at construction; voice still needs STT, which is its own row), then native
+  checked at construction), then H530 + H071-partial (a voice note becomes what
+  the sender said. Whisper does not go quiet on silence — it invents a fluent
+  sentence from its training data, and H530's own governance note is why that
+  matters here rather than in a dictation box: a voice note becomes an *inbound*
+  turn, an inbound turn can ask for things, so a hallucinated transcript is an
+  un-authored instruction entering a governed system. The filter is shaped by the
+  asymmetry — losing a real message is unacceptable, letting one through costs an
+  ignorable turn — so it has two tiers, matches the whole transcript rather than
+  any substring, and drops the phrases people really say only when the *decoded*
+  duration shows the audio was too short to contain them. It runs inside
+  `STTEngine` and returns the `[silence]` sentinel that already existed, so the
+  browser dictation route gets it too. A transcript travels **unfenced**, unlike a
+  photo description: it is the sender's own words at the trust level they would
+  have had typed, and fencing them would tell the model to read the owner's own
+  request as quarantined data. H530 closes: the audit called it `missing`, but half
+  of it — silence auto-stop on the recorder — already existed in
+  `frontend/src/voice.ts` and merely had no test; it has five now), then native
   overlay and channel streaming.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked

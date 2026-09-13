@@ -171,18 +171,18 @@ def test_the_sentence_sent_back_never_carries_the_handle_or_the_caption():
 
 
 def test_only_kinds_with_a_reading_path_report_readable():
-    """Photos read (media_reader); nothing else does, and nothing else may claim to.
+    """Photos and voice notes read; nothing else does, and nothing else may claim to.
 
     This is the honesty invariant, not a snapshot of today's set: a kind belongs
     in READABLE_KINDS only once code exists that turns it into model input. Voice
-    needs transcription, which is a different capability and is not built.
+    needs a local speech engine, documents need extraction that is not built.
     """
-    assert set(READABLE_KINDS) == {"photo"}
+    assert set(READABLE_KINDS) == {"photo", "voice"}
     for kind in RECOGNISED_KINDS:
         att = classify({kind: {"file_id": "x"} if kind not in ("photo",)
                         else [{"file_id": "x"}]})
         assert att is not None
-        assert att.readable is (kind == "photo"), kind
+        assert att.readable is (kind in ("photo", "voice")), kind
 
 
 def test_a_photo_says_it_was_received_rather_than_that_nothing_can_read_it():
@@ -190,7 +190,7 @@ def test_a_photo_says_it_was_received_rather_than_that_nothing_can_read_it():
 
 
 def test_a_kind_with_no_reading_path_still_says_so():
-    assert "not wired up yet" in describe(classify({"voice": {"file_id": "v"}}))
+    assert "not wired up yet" in describe(classify({"document": {"file_id": "d"}}))
 
 
 def test_a_read_failure_beats_the_pipeline_answer(monkeypatch):
@@ -211,7 +211,6 @@ def test_a_read_failure_beats_the_pipeline_answer(monkeypatch):
 
 
 @pytest.mark.parametrize("kind,expected", [
-    ("voice", "I can see you sent a voice note, but reading voice notes is not wired up yet."),
     ("audio", "I can see you sent an audio file, but reading audio files is not wired up yet."),
     ("animation", "I can see you sent a GIF, but reading GIFs is not wired up yet."),
     ("video_note", "I can see you sent a video note, but reading video notes is not wired up yet."),
@@ -405,9 +404,9 @@ def test_the_channel_declares_what_it_now_recognises():
 
 def test_the_descriptor_separates_recognising_from_reading():
     d = TelegramChannel.descriptor
-    assert d.reads_media == ("photo",)
+    assert d.reads_media == ("photo", "voice")
     assert set(d.reads_media) < set(d.recognises_media)
-    assert "voice" in d.recognises_media and "voice" not in d.reads_media
+    assert "document" in d.recognises_media and "document" not in d.reads_media
 
 
 def test_a_descriptor_cannot_claim_to_read_what_it_never_recognised():
