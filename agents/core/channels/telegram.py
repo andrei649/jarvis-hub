@@ -15,6 +15,7 @@ import httpx
 from .base import ChannelAdapter
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
+from .inbound_media import RECOGNISED_KINDS, classify, describe, turn_text
 from .render import chunk, to_plain, to_telegram_html
 from ..log_safe import log_safe
 
@@ -143,6 +144,7 @@ class TelegramChannel(ChannelAdapter):
         supports_edit=True,
         supports_media=True,
         supports_threads=True,
+        recognises_media=RECOGNISED_KINDS,
     )
 
     def __init__(self, token: str, handler: Optional[Callable] = None,
@@ -302,7 +304,12 @@ class TelegramChannel(ChannelAdapter):
                         continue
                     text = msg.get("text", "")
                     chat_id = msg["chat"]["id"]
-                    if not text:
+                    # A photo, a voice note or a captioned image used to land
+                    # here and be dropped by `if not text`, with no reply and
+                    # nothing the sender could learn from. Recognise it first;
+                    # a text-only message is unaffected (classify returns None).
+                    attachment = classify(msg)
+                    if not text and attachment is None:
                         continue
                     # A `/start <token>` deeplink pairs this sender and stops here:
                     # the payload is a credential, so it must never be forwarded to
@@ -310,13 +317,18 @@ class TelegramChannel(ChannelAdapter):
                     if await self._maybe_pair_deeplink(text, uid, chat_id):
                         continue
                     chat = msg.get("chat") or {}
+                    # A caption is the sender's own words about what they sent,
+                    # so it is what the group gate must judge and what the turn
+                    # carries — with its own entity list, or an @mention in a
+                    # caption would not count as addressing the bot.
+                    spoken = turn_text(attachment, text) if attachment else text
                     decision = gate_message(
                         self.group_policy,
                         chat_type=chat.get("type", "private"),
                         chat_id=chat_id,
                         thread_id=msg.get("message_thread_id"),
-                        text=text,
-                        entities=msg.get("entities") or (),
+                        text=spoken,
+                        entities=msg.get("entities") or msg.get("caption_entities") or (),
                         reply_to_from_id=(
                             ((msg.get("reply_to_message") or {}).get("from") or {}).get("id")
                         ),
@@ -324,16 +336,26 @@ class TelegramChannel(ChannelAdapter):
                         bot_username=self._bot_username,
                     )
                     if decision.action == OBSERVE:
-                        await self.receive(
-                            decision.text, chat_id=chat_id, sender=str(uid), observe_only=True
-                        )
+                        if decision.text:
+                            await self.receive(
+                                decision.text, chat_id=chat_id, sender=str(uid),
+                                observe_only=True,
+                            )
                         continue
                     if decision.action != ANSWER:
                         logger.debug("Ignored group message (%s)", decision.reason)
                         continue
+                    if attachment is not None:
+                        # Say what came in before anything else. Nerva has not
+                        # read the file — `describe` says exactly that — so this
+                        # is a reply to the sender, never a line handed to the
+                        # model as if the file had been observed.
+                        logger.info("Telegram inbound media: %s", attachment.to_dict())
+                        await self.send(describe(attachment), chat_id=chat_id)
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
-                    await self.receive(decision.text, chat_id=chat_id, sender=str(uid))
+                    if decision.text:
+                        await self.receive(decision.text, chat_id=chat_id, sender=str(uid))
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)

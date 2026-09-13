@@ -34,8 +34,12 @@ class ChannelDescriptor:
     max_message_length: int | None = None
     #: Can a sent message be edited in place (streaming replies need it)?
     supports_edit: bool = False
-    #: Can the channel carry images / files?
+    #: Can the channel carry images / files *outbound*?
     supports_media: bool = False
+    #: Kinds of inbound non-text item the adapter recognises. Recognising is not
+    #: reading: `inbound_media.READABLE_KINDS` says what can reach a model.
+    #: Empty means the adapter still drops anything that is not text.
+    recognises_media: tuple[str, ...] = ()
     #: Does the channel have threads / topics a reply can be addressed to?
     supports_threads: bool = False
 
@@ -45,6 +49,11 @@ class ChannelDescriptor:
         cap = self.max_message_length
         if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int) or cap < 16):
             raise ValueError("max_message_length must be an int of at least 16, or None")
+        kinds = self.recognises_media
+        if isinstance(kinds, (str, bytes)) or not isinstance(kinds, tuple):
+            raise ValueError("recognises_media must be a tuple of kind names")
+        if any(not isinstance(k, str) or not k for k in kinds):
+            raise ValueError("recognises_media entries must be non-empty strings")
 
 
 __all__ = [
