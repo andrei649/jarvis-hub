@@ -82,7 +82,7 @@ function Dossier({ id, onClose, onOpen }) {
         <div className="dossier-head">
           <span className="big-glyph"><Glyph id={id} size={46}/></span>
           <div><div className="nm">{a.name}</div><div className="ar">{d.archetype || a.role} · {a.tier}</div></div>
-          <button className="close" onClick={onClose}>✕</button>
+          <button className="close" onClick={onClose} aria-label="Close dossier">✕</button>
         </div>
         <div className="dossier-body">
           <div className="dsec"><div className="dl">Soul{soul!=null?' · SOUL.md':''}</div><div className="dtx soul">{soulText}</div></div>

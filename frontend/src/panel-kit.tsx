@@ -64,7 +64,7 @@ export function Card({ title, sub, live, onReload, children }: { title?: any; su
         <span className="ttl">{title}</span>
         <PanelChip live={live} />
         {sub != null && <span className="st">{sub}</span>}
-        {onReload && <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onReload} title="reload">↻</button>}
+        {onReload && <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onReload} title="reload" aria-label="Reload">↻</button>}
       </div>
       <div className="panel-body tight" tabIndex={0}>{children}</div>
     </div>

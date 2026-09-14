@@ -11,14 +11,14 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 116 | 16.6% |
-| Parțial | 375 | 53.8% |
+| Parțial | 371 | 53.2% |
 | Lipsă | 99 | 14.2% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 0 | 0.0% |
+| De reverificat | 4 | 0.6% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 116/590 = **19.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 108/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 104/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -30,20 +30,20 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | gateway | 33 | 5 | 17 | 6 | 5 | 0 |
 | platforms | 39 | 5 | 21 | 5 | 8 | 0 |
 | web | 40 | 7 | 17 | 9 | 7 | 0 |
-| desktop | 54 | 6 | 34 | 8 | 6 | 0 |
+| desktop | 54 | 6 | 33 | 8 | 6 | 1 |
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
 | config | 18 | 4 | 10 | 3 | 1 | 0 |
 | env | 28 | 2 | 19 | 2 | 5 | 0 |
 | tools — the agent-callable surface | 32 | 8 | 19 | 3 | 2 | 0 |
 | skills | 33 | 6 | 13 | 6 | 8 | 0 |
 | providers | 27 | 4 | 13 | 3 | 7 | 0 |
-| agent-core | 36 | 8 | 15 | 9 | 4 | 0 |
-| memory | 27 | 8 | 14 | 3 | 2 | 0 |
+| agent-core | 36 | 8 | 14 | 9 | 4 | 1 |
+| memory | 27 | 8 | 13 | 3 | 2 | 1 |
 | automation | 32 | 1 | 24 | 4 | 3 | 0 |
 | security | 34 | 7 | 18 | 4 | 5 | 0 |
 | media | 27 | 5 | 17 | 4 | 1 | 0 |
 | acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
-| docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
+| docs-features | 48 | 8 | 25 | 5 | 9 | 1 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
 | delta | 42 | 1 | 30 | 6 | 5 | 0 |
 

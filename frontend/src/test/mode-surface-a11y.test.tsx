@@ -9,7 +9,8 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render } from '@testing-library/react';
-import { AgentsMode, MemoryMode } from '../modes';
+import { AgentsMode, Dossier, MemoryMode } from '../modes';
+import { Card } from '../panel-kit';
 import { V2 } from '../data';
 
 const AGENTS = [
@@ -31,6 +32,20 @@ describe('mode surfaces keep their accessibility contract', () => {
     // which the mode walk could not fail on because axe files that rule under `incomplete`.
     // Pinned here so the pair cannot drift apart again in the PR lane, without a browser.
     expect(body.getAttribute('role')).toBe('group');
+  });
+
+  it('adds an aria-label to the Card reload button', () => {
+    const { container } = render(<Card title="Test" onReload={() => {}} />);
+    const reloadBtn = container.querySelector('button.tool-btn');
+    expect(reloadBtn).toBeTruthy();
+    expect(reloadBtn.getAttribute('aria-label')).toBe('Reload');
+  });
+
+  it('adds an aria-label to the Dossier close button', () => {
+    const { container } = render(<Dossier id="jarvis" onClose={() => {}} onOpen={() => {}} />);
+    const closeBtn = container.querySelector('button.close');
+    expect(closeBtn).toBeTruthy();
+    expect(closeBtn.getAttribute('aria-label')).toBe('Close dossier');
   });
 
   it('names the MEMORY time-travel slider in the active locale', () => {
