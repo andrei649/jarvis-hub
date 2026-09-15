@@ -34,3 +34,9 @@ Ruff and baseline Bandit passed. Independent review found no issues and repeated
 but not executed. Integrated full-backend verification remains pending. The separate
 H298 reassessment also identified ordinary Ollama effective-window budgeting as a
 remaining gap; this isolated durability repair does not claim whole-row equivalence.
+
+Integrated verification first collected 11,310 tests and found two generated Hermes
+evidence/report failures, with no runtime test failures. The inspected H595 store
+evidence was refreshed without changing its partial status; H298 was explicitly
+reassessed as partial with the effective-window and shape-only capture defects
+recorded. All 28 Hermes status checks then passed; the complete suite is rerunning.
