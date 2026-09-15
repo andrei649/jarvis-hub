@@ -91,7 +91,7 @@ export function SessionsModal({
               </Pressable>
             )}
             ListEmptyComponent={
-              !loading && !error ? <Text style={styles.empty}>No saved sessions</Text> : null
+              !loading && !error ? <Text style={styles.empty}>No saved sessions</Text> : undefined
             }
           />
         </Pressable>
