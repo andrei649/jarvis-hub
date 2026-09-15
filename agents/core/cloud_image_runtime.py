@@ -126,7 +126,29 @@ class CloudImageRuntime:
                 _write(path, json.dumps(old).encode(), replace=True)
         return key, old["generation"]
 
-    def _available(self):
+    def status(self):
+        from .media_backends.openai_image import MODEL, SIZES
+
+        configured = False
+        try:
+            self._available(probe_signing=False)
+            key = self.key()
+            configured = isinstance(key, str) and bool(key.strip())
+        except Exception:
+            configured = False
+        return {
+            "configured": configured,
+            "provider": "openai",
+            "model": MODEL,
+            "local": False,
+            "approval_required": True,
+            "reachable": None,
+            "reason": "not_probed" if configured else "unavailable",
+            "sizes": sorted(SIZES),
+            "qualities": ["low", "medium", "high"],
+        }
+
+    def _available(self, *, probe_signing=True):
         from .plugin_gate import BUILTIN_PLUGINS
         from .system_profiles import heavy_features_enabled
 
@@ -141,9 +163,8 @@ class CloudImageRuntime:
         ):
             raise ValueError("cloud image enforced mediation unavailable")
         signer = getattr(self.worker, "_mediation_signer", None)
-        if (
-            not callable(getattr(signer, "sign", None))
-            or signer.sign(b"cloud-image availability") is None
+        if not callable(getattr(signer, "sign", None)) or (
+            probe_signing and signer.sign(b"cloud-image availability") is None
         ):
             raise ValueError("cloud image signing unavailable")
 

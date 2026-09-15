@@ -368,14 +368,17 @@ async def media_status():
     """Configured kinds, with explicit unprobed reachability for the local backend."""
     from agents.core.image_generation_runtime import configuration_status
     status = configuration_status()
+    runtime = getattr(get_orch(), "cloud_images", None)
+    cloud = runtime.status() if runtime is not None else {"configured": False}
     return nocache_json({
-        "kinds": {"image": status["configured"], "thumbnail": False, "video": False},
+        "cloud_image": cloud,
+        "kinds": {"image": status["configured"] or cloud["configured"], "thumbnail": False, "video": False},
         "local_image": status,
     })
 
 
 @router.post("/api/media/generate", dependencies=[Depends(user_guard)], responses={
-    202: {"description": "Local image proposal queued for human approval"},
+    202: {"description": "Image proposal queued for human approval"},
 })
 async def media_generate(body: MediaGenBody):
     """Propose a local image through ToolRPC or use the existing cloud approval queue.

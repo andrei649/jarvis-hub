@@ -21663,7 +21663,7 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Local image proposal queued for human approval */
+            /** @description Image proposal queued for human approval */
             202: {
                 headers: {
                     [name: string]: unknown;

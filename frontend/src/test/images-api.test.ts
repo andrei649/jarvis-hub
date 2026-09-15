@@ -139,3 +139,31 @@ it('binds configured backend, model, reference blend and upscale in one proposal
   await proposeImage('blend', { references: [id, 'b'.repeat(32)], strength: 40, backend: 'studio', model: 'b.safetensors', upscale: 2 });
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body as string)).toEqual({kind:'image', cloud:false, prompt:'blend', references:[id,'b'.repeat(32)], strength:40, backend:'studio', model:'b.safetensors', upscale:2});
 });
+
+const cloudCapability = {configured:true, provider:'openai', model:'gpt-image-1.5', local:false, approval_required:true, reachable:null, sizes:['1024x1024','1536x1024','1024x1536'], qualities:['low','medium','high']};
+it('reads cloud independently of unavailable local metadata', async()=>{
+  vi.mocked(fetch).mockResolvedValue(reply({local_image:{configured:false},cloud_image:cloudCapability}));
+  expect((await imageStatus()).cloud?.configured).toBe(true);
+});
+it('does not enable malformed cloud metadata', async()=>{
+  vi.mocked(fetch).mockResolvedValue(reply({local_image:{configured:true,local:true,approval_required:true},cloud_image:{...cloudCapability,model:'other'}}));
+  expect((await imageStatus()).cloud).toBeUndefined();
+});
+it('sends exact finite cloud body without inherited local controls', async()=>{
+  const {proposeCloudImage}=await import('../api/images');
+  vi.mocked(fetch).mockResolvedValue(reply({reason:'approval_required',task_id:23},202));
+  expect(await proposeCloudImage(' exact prompt ',{size:'1536x1024',quality:'high'})).toBe(23);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body as string)).toEqual({kind:'image',cloud:true,prompt:' exact prompt ',size:'1536x1024',quality:'high'});
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+it.each([{size:'auto',quality:'low'},{size:'1024x1024',quality:'low',reference:id}])('refuses unsupported cloud options before request',async options=>{
+  const {proposeCloudImage}=await import('../api/images');
+  await expect(proposeCloudImage('prompt',options as any)).rejects.toMatchObject({code:'refused'});
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('never retries an ambiguous cloud proposal',async()=>{
+  const {proposeCloudImage}=await import('../api/images');
+  vi.mocked(fetch).mockRejectedValue(new TypeError('lost response'));
+  await expect(proposeCloudImage('prompt',{size:'1024x1024',quality:'low'})).rejects.toMatchObject({code:'uncertain'});
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

@@ -3,7 +3,9 @@ import { apiFetchOnce } from './client';
 export type ImageArtifact = { id: string; bytes: number; width: number; height: number };
 export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'rejected' | 'deferred' | 'refused' | 'uncertain';
 export type ImageTask = { task_id: number; state: ImageState; artifact: ImageArtifact | null };
-export type ImageCapability = { configured: boolean; edit: boolean; backends?: { id: string; models: string[] }[]; max_references?: number; upscale?: number[] };
+export type CloudImageOptions = {size: '1024x1024' | '1536x1024' | '1024x1536'; quality: 'low' | 'medium' | 'high'};
+export type CloudImageCapability = {configured:boolean; provider:'openai'; model:'gpt-image-1.5'};
+export type ImageCapability = { cloud?: CloudImageCapability; configured: boolean; edit: boolean; backends?: { id: string; models: string[] }[]; max_references?: number; upscale?: number[] };
 /** An edit of an artifact this hub already produced: its opaque id, plus how much of
  *  it to keep. There is deliberately no field here for a path, a URL or a filename. */
 export type ImageEdit = { reference?: string; references?: string[]; strength?: number; backend?: string; model?: string; upscale?: number };
@@ -81,22 +83,45 @@ function readStatus(response: Response) {
 export async function imageStatus(signal?: AbortSignal): Promise<ImageCapability> {
   return timed(signal, async signal => {
     const response = await apiFetchOnce('/api/media', { admin: true, signal }); readStatus(response);
-    const status = (await json(response, signal))?.local_image;
-    if (!status || typeof status.configured !== 'boolean' || status.local !== true || status.approval_required !== true) fail();
+    const value = await json(response, signal);
+    const status = value?.local_image;
+    const raw = value?.cloud_image;
+    const cloud: CloudImageCapability | undefined = raw && typeof raw.configured === 'boolean'
+      && raw.provider === 'openai' && raw.model === 'gpt-image-1.5' && raw.local === false
+      && raw.approval_required === true && raw.reachable === null
+      && Array.isArray(raw.sizes) && raw.sizes.length === 3 && new Set(raw.sizes).size === 3
+      && raw.sizes.every((v:unknown)=>['1024x1024','1536x1024','1024x1536'].includes(v as string))
+      && Array.isArray(raw.qualities) && raw.qualities.length === 3 && new Set(raw.qualities).size === 3
+      && raw.qualities.every((v:unknown)=>['low','medium','high'].includes(v as string))
+      ? {configured:raw.configured,provider:'openai',model:'gpt-image-1.5'} : undefined;
+    if (!status || typeof status.configured !== 'boolean' || status.local !== true || status.approval_required !== true) {
+      if (cloud) return {configured:false,edit:false,cloud};
+      fail();
+    }
     // `edit` is read, never required: a hub that predates image editing still reports
     // a usable generator, and refusing the whole status over a missing capability flag
     // would break generation to advertise editing.
     const backends = Array.isArray(status.backends) ? status.backends.filter((b: any) => typeof b?.id === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(b.id) && Array.isArray(b.models) && b.models.every((m: any) => typeof m === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors$/.test(m))) : undefined;
-    return { configured: status.configured, edit: status.edit === true, ...(backends ? {backends, max_references: status.max_references, upscale: status.upscale} : {}) };
+    return { ...(cloud ? {cloud} : {}), configured: status.configured, edit: status.edit === true, ...(backends ? {backends, max_references: status.max_references, upscale: status.upscale} : {}) };
   });
 }
 export async function proposeImage(prompt: string, edit?: ImageEdit | null, signal?: AbortSignal): Promise<number> {
   if (!prompt.trim() || prompt.length > 4000) fail('refused');
   if (edit && !editValid(edit)) fail('refused');
+  return proposeBody({kind:'image', prompt, cloud:false, ...(edit ? Object.fromEntries(Object.entries(edit).filter(([key,value])=>['reference','references','strength','backend','model','upscale'].includes(key) && value !== undefined)) : {})}, signal);
+}
+export async function proposeCloudImage(prompt:string, options:CloudImageOptions, signal?:AbortSignal):Promise<number> {
+  if (!prompt.trim() || prompt.length > 4000 || !options || typeof options !== 'object'
+    || Object.keys(options).some(key=>!['size','quality'].includes(key))
+    || !['1024x1024','1536x1024','1024x1536'].includes(options.size)
+    || !['low','medium','high'].includes(options.quality)) fail('refused');
+  return proposeBody({kind:'image',prompt,cloud:true,size:options.size,quality:options.quality},signal);
+}
+async function proposeBody(body:Record<string,unknown>, signal?:AbortSignal):Promise<number> {
   try {
     return await timed(signal, async signal => {
       const response = await apiFetchOnce('/api/media/generate', { method: 'POST', admin: true, signal,
-        body: { kind: 'image', prompt, cloud: false, ...(edit ? Object.fromEntries(Object.entries(edit).filter(([key, value]) => ["reference", "references", "strength", "backend", "model", "upscale"].includes(key) && value !== undefined)) : {}) } });
+        body });
       if (response.status === 401 || response.status === 403) fail('auth');
       if ([400, 422].includes(response.status)) fail('refused');
       const value = await json(response, signal);
