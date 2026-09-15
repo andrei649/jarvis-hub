@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 H515 cloud tool: explicit model-callable cloud generation reuses the existing single signed paid approval task; local editing stays default. Trusted actor/origin, strict options, agent-loop stop and cancellation/restart no-replay are verified with mocked transport. H515 remains partial for real VRAM swap orchestration and frozen action-kind mapping.
+
 - 2026-09-15 reasoning tri-state and no-escalation (H679): explicit empty declarations now omit all reasoning controls, including Anthropic thinking, while known below-minimum requests refuse before HTTP. Budget-only product levels never invent a wire effort field. Independent 162-case review and real-adapter mocked counterexamples support the frozen contract; the guarded full suite has 11,535 passes, 23 skips and one expected failure (11,559 collected). H364 stays partial for broader vendor coverage. See [contract and limits](docs/hermes/h679-reasoning-contract.md).
 
 - 2026-09-15 desktop HUD width: zero-minimum grid tracks and cockpit composer wrapping keep controls and the context column inside1101/1280/1440px layouts. Independent review also verifies393/800/1000px stacked controls. The real approved cloud-image workflow now passes at1280px and Pixel7. No overflow-hiding workaround or routing/appearance preference change. See [regressions and evidence](docs/superpowers/plans/2026-09-15-hud-grid-width.md).

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "2ca400ccf049c11d2db64ac051a459ce918e440b",
-  "assessed_at": "2026-09-15T17:29:30.649419Z",
+  "base_sha": "76f68944cbd5133c8454f267d8e4c6685bec5b9c",
+  "assessed_at": "2026-09-15T17:50:05.909462Z",
   "reviews": [
     {
       "id": "H001",
@@ -1321,7 +1321,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -1349,7 +1349,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "a48af9a04094a0986a50145ba59c6fe98deb5ed0a30a63dab559477ca722e092"
+          "sha256": "141423a6613466b13d2b02308a7e170f87ef5f1125308d662d81ef26b4659737"
         },
         {
           "path": "docs/superpowers/plans/2026-09-15-effective-tool-window.md",
@@ -1727,7 +1727,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "a48af9a04094a0986a50145ba59c6fe98deb5ed0a30a63dab559477ca722e092"
+          "sha256": "141423a6613466b13d2b02308a7e170f87ef5f1125308d662d81ef26b4659737"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -2467,8 +2467,8 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow.",
-      "remaining": "The model-callable image_generate tool remains local-only; the real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need an explicit architecture decision within the protected-control-plane boundary; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation needs one cloud seam, not eight-provider fan-out. Ambiguous POST attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow. The model-callable image_generate tool now accepts an explicit cloud selector with only the existing fixed OpenAI model/size/quality vocabulary. Server-owned gated intake preserves the trusted actor and turn origin and proposes one signed plugin.egress task; the agent loop stops for the same human approval. Local generation/edit remains the default. Cloud arguments cannot execute as a local tool.rpc task, and missing runtime or ambiguous enqueue does not trigger fallback or resubmission. Actual ToolRPC/approval/worker/mock-provider/PNG/catalog and cancellation/restart regressions pass.",
+      "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2508,7 +2508,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "eed0dbad743fe40497a231fabb75eb2c67b2b7b8c71c6bfbbbb03844bdb401e2"
+          "sha256": "1fdd25ae2efa630520066c903b9af9fe4fb7e6dc09701687efddb9d3715d7258"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -2561,6 +2561,26 @@
         {
           "path": "docs/superpowers/plans/2026-09-15-cloud-image-hud.md",
           "sha256": "e5be1aec775081236cfb8c0c8f75ec6719c36941879bbcc139c2edc0380ad619"
+        },
+        {
+          "path": "agents/core/image_tool_dispatcher.py",
+          "sha256": "18547bfa1d73f1307b2f5feb5bbfcc0f7343629ebd3b7afa8ab4639a111f956b"
+        },
+        {
+          "path": "tests/test_cloud_image_tool.py",
+          "sha256": "03b5996f75fc290794e9316140a4b6d21f1318214cc04f06674e7aa6d84510fe"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-cloud-image-tool.md",
+          "sha256": "484acadbbc1a7f4339a57df24a2a25e7f26dd6413a0aa136039a31a12c7fce99"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
+        },
+        {
+          "path": "agents/core/orchestrator_bindings.py",
+          "sha256": "20dfd6ec66ae27aef7cd54636e5d8c9c67768cf75c3a7084af677d82328d0a5b"
         }
       ]
     },
@@ -2641,7 +2661,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "eed0dbad743fe40497a231fabb75eb2c67b2b7b8c71c6bfbbbb03844bdb401e2"
+          "sha256": "1fdd25ae2efa630520066c903b9af9fe4fb7e6dc09701687efddb9d3715d7258"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -2686,7 +2706,7 @@
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
+          "sha256": "a9641d8cc418f527aa38840471a258711533cf0724acefbdd4d0fdde0a01218f"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
@@ -3106,7 +3126,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -3203,7 +3223,7 @@
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
+          "sha256": "a9641d8cc418f527aa38840471a258711533cf0724acefbdd4d0fdde0a01218f"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
@@ -3450,7 +3470,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -4108,7 +4128,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_job_scripts.py",

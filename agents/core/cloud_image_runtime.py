@@ -206,7 +206,7 @@ class CloudImageRuntime:
             raise ValueError("cloud image configuration changed")
         return key
 
-    def submit(self, prompt, options, origin):
+    def submit(self, prompt, options, origin, *, actor="jarvis"):
         body = normalize_request(prompt, options)
         self._available()
         _, generation = self._configuration()
@@ -223,7 +223,7 @@ class CloudImageRuntime:
         }
         self.validate(payload)
         task_id = self.worker.govern_enqueue(
-            agent="jarvis",
+            agent=actor,
             kind="plugin.egress",
             title="Paid OpenAI image generation: one image and local artifact",
             payload=payload,
