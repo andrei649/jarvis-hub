@@ -64,6 +64,12 @@ def inspect_jobs(runner) -> dict:
             issue = script_problem(job.options.get('monitor_script') or job.options['script'])
             if issue:
                 problem(job.id, 'script_unavailable', issue)
+        if 'workdir' in job.options:
+            from .jobs_workdir import validate_workdir
+            try:
+                validate_workdir(job.options['workdir'])
+            except ValueError as exc:
+                problem(job.id, 'workdir_unavailable', str(exc))
         if not job.runnable:
             continue
         entry = registered.get(f"job-{job.id}")
@@ -96,8 +102,8 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir"],
         "model_pin_contract": "Configured providers only; cloud must match policy route. Changed local models require loaded context metadata; other changes require known windows. Current defaults retain existing window estimates; completion caps at 25%. Recent conversation and agent context remain; compression is deterministic and embedding recall is omitted.",
-        "script_contract": "Bounded self-contained Python, fresh approval each run; no shell or project cwd",
-        "unsupported_options": ["workdir", "enabled_toolsets", "skills"],
+        "script_contract": "Bounded Python, fresh approval each run; no shell. Optional approved workdir only with script and no_agent true; no model workspace context",
+        "unsupported_options": ["model_workdir", "enabled_toolsets", "skills"],
     }

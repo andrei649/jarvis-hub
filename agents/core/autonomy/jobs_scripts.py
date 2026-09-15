@@ -265,6 +265,9 @@ class ScriptRuntime:
             prepared = snapshot_script(options.get('monitor_script') or options['script'])
             payload = {'tool': 'terminal_run', 'target': 'terminal_run',
                        'args': {'target': 'local-host', 'command': prepared['command'], 'timeout': 60}}
+            if 'workdir' in options:
+                from .jobs_workdir import validate_workdir
+                payload['args']['cwd'] = validate_workdir(options['workdir'])
             data = {**row['data'], 'payload': payload, 'sha256': prepared['sha256']}
             if not self.attempts.transition(row, 'submitting', data):
                 return self.run_result(job.id, run_id)

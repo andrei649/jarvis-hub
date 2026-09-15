@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "be7a08160ddb447d2c571669c8f687a25ee0d5b3",
-  "assessed_at": "2026-09-15T16:48:52.873215Z",
+  "base_sha": "c3e6437d178d5d0668f00b9404267652b1b6fe08",
+  "assessed_at": "2026-09-15T17:10:34.583861Z",
   "reviews": [
     {
       "id": "H001",
@@ -34,16 +34,16 @@
       "id": "H004",
       "row_sha256": "81b6bfbfc65b2f2f591c6d659d1189946a76f76c5d1a47ff6aa88bbb8887cf8a",
       "status": "equivalent",
-      "summary": "Bash, zsh și fish primesc completări de comenzi/subcomenzi generate din arborele argparse instalat. Fish parcurge recursiv subparser-ele și tratează literal metadatele, fără apeluri către hub sau executarea CLI-ului la completare. Teste cu fish real acoperă fiecare cale curentă, extensii imbricate, prefixe parțiale, comenzi terminale și substituții ostile; Bash/Zsh rămân identice cu baza. Contractul H004 privește arborele de comenzi, nu completarea opțiunilor ori valorilor argumentelor. Scripturile salvate se regenerează după upgrade.",
+      "summary": "Bash, zsh și fish primesc completări de comenzi/subcomenzi generate din arborele argparse instalat. Fish parcurge recursiv subparser-ele și tratează literal metadatele, fără apeluri către hub sau executarea CLI-ului la completare. Teste cu fish real acoperă fiecare cale curentă, extensii imbricate, prefixe parțiale, comenzi terminale și substituții ostile; Bash/Zsh rămân identice cu baza. Contractul H004 privește arborele de comenzi, nu completarea opțiunilor ori valorilor argumentelor. Scripturile salvate se regenerează după upgrade. Workdir integration rechecked previously-current evidence against base 837d6d08: the parser adds options without changing the command tree or completion implementation. Existing CLI/completion regression coverage is retained.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d16c40c44fc9c9c5e567ae0619c571f6ef71220ac198c67690082e323ac00671"
+          "sha256": "bc06a7e198e24f3fb9ebad669308380227b8e32bc866bb085e5a50e6540f5d6c"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "39b61ecc6f6400747fd15df218ce0e90da4b3179240eed79f15e6cfd75166404"
+          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -836,12 +836,12 @@
       "id": "H146",
       "row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
       "status": "partial",
-      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution. Ask jobs now persist effective request-local model/provider pins through CLI/HUD options, with preflight routing, closed lifetimes, approved-model enforcement and resolved context budgets. Unavailable pins fail explicitly; ordinary chat configuration is unchanged. Independent review repaired file_read re-spilling under a pinned window. Owner-authored reminder media IDs now produce actual bounded Telegram file/text delivery with frozen content/recipient bindings, a validated total deadline and durable held/partial/unknown outcomes. CLI/HUD authoring and status expose these outcomes; editing an explicit empty options document clears prior settings correctly.",
-      "remaining": "Lipsesc contextul izolat per job pentru workdir, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall.",
+      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution. Ask jobs now persist effective request-local model/provider pins through CLI/HUD options, with preflight routing, closed lifetimes, approved-model enforcement and resolved context budgets. Unavailable pins fail explicitly; ordinary chat configuration is unchanged. Independent review repaired file_read re-spilling under a pinned window. Owner-authored reminder media IDs now produce actual bounded Telegram file/text delivery with frozen content/recipient bindings, a validated total deadline and durable held/partial/unknown outcomes. CLI/HUD authoring and status expose these outcomes; editing an explicit empty options document clears prior settings correctly. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
+      "remaining": "Lipsesc contextul izolat per job pentru model workdir, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "9370afcf7cc9cb252c6b6f810c5f345a19f8f362188cd82963326f14bd9a2805"
+          "sha256": "826980232fae0da254b82de16ea3b4526bd7e582ed5956eb589454b9dda36098"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -853,15 +853,15 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d16c40c44fc9c9c5e567ae0619c571f6ef71220ac198c67690082e323ac00671"
+          "sha256": "bc06a7e198e24f3fb9ebad669308380227b8e32bc866bb085e5a50e6540f5d6c"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "3ba705e5483ca0691da7e45da2912bef754467c5ca953bf74f6dfcda8e76bb25"
+          "sha256": "1bf8326042713381ac9985731acc504300b684256bf1099438b9462ef0cf9ed2"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
-          "sha256": "2d801c645f7f1658042929479a2f703d2e7a155e2ab1dea1595c79e1f1206e3d"
+          "sha256": "85b4231028927f44debd6d7881298504598b5d2b7c182900cd49c7d9cb4567b0"
         },
         {
           "path": "tests/test_jobs_advanced.py",
@@ -873,11 +873,11 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "39b61ecc6f6400747fd15df218ce0e90da4b3179240eed79f15e6cfd75166404"
+          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
-          "sha256": "0b28f54448be0c52fb053430d2ad86c16cf36d957c56153c555ac861f73e90b2"
+          "sha256": "45ca06910e7900b22dc0dff09fa58ac0bc5dcccc404af89574114406f283e12b"
         },
         {
           "path": "frontend/src/panels/job-create-dialog.tsx",
@@ -905,7 +905,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "9e096e4ad7cd8aa7f5e66b38eb962df31d8918aff64cfedade093e73082d0c3d"
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -913,7 +913,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
@@ -974,6 +974,18 @@
         {
           "path": "docs/hermes/h523-media-serving-contract.md",
           "sha256": "f0f9963a8a21728231a2cf8b19855de5882b4d1a03292c8cb48f8e7be2fbae5a"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "tests/test_job_workdir.py",
+          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
+          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
         }
       ]
     },
@@ -2136,12 +2148,12 @@
       "id": "H449",
       "row_sha256": "5fd839c96d6e105a4c8ebea64d497efd9a5086a6a3086923e007e385db609d43",
       "status": "partial",
-      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution. Ask jobs now persist effective request-local model/provider pins through CLI/HUD options, with preflight routing, closed lifetimes, approved-model enforcement and resolved context budgets. Unavailable pins fail explicitly; ordinary chat configuration is unchanged. Independent review repaired file_read re-spilling under a pinned window. Owner-authored reminder media IDs now produce actual bounded Telegram file/text delivery with frozen content/recipient bindings, a validated total deadline and durable held/partial/unknown outcomes. CLI/HUD authoring and status expose these outcomes; editing an explicit empty options document clears prior settings correctly.",
-      "remaining": "Lipsesc contextul izolat per job pentru workdir, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall.",
+      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution. Ask jobs now persist effective request-local model/provider pins through CLI/HUD options, with preflight routing, closed lifetimes, approved-model enforcement and resolved context budgets. Unavailable pins fail explicitly; ordinary chat configuration is unchanged. Independent review repaired file_read re-spilling under a pinned window. Owner-authored reminder media IDs now produce actual bounded Telegram file/text delivery with frozen content/recipient bindings, a validated total deadline and durable held/partial/unknown outcomes. CLI/HUD authoring and status expose these outcomes; editing an explicit empty options document clears prior settings correctly. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
+      "remaining": "Lipsesc contextul izolat per job pentru model workdir, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "9370afcf7cc9cb252c6b6f810c5f345a19f8f362188cd82963326f14bd9a2805"
+          "sha256": "826980232fae0da254b82de16ea3b4526bd7e582ed5956eb589454b9dda36098"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -2153,15 +2165,15 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d16c40c44fc9c9c5e567ae0619c571f6ef71220ac198c67690082e323ac00671"
+          "sha256": "bc06a7e198e24f3fb9ebad669308380227b8e32bc866bb085e5a50e6540f5d6c"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "3ba705e5483ca0691da7e45da2912bef754467c5ca953bf74f6dfcda8e76bb25"
+          "sha256": "1bf8326042713381ac9985731acc504300b684256bf1099438b9462ef0cf9ed2"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
-          "sha256": "2d801c645f7f1658042929479a2f703d2e7a155e2ab1dea1595c79e1f1206e3d"
+          "sha256": "85b4231028927f44debd6d7881298504598b5d2b7c182900cd49c7d9cb4567b0"
         },
         {
           "path": "tests/test_jobs_advanced.py",
@@ -2173,11 +2185,11 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "39b61ecc6f6400747fd15df218ce0e90da4b3179240eed79f15e6cfd75166404"
+          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
-          "sha256": "0b28f54448be0c52fb053430d2ad86c16cf36d957c56153c555ac861f73e90b2"
+          "sha256": "45ca06910e7900b22dc0dff09fa58ac0bc5dcccc404af89574114406f283e12b"
         },
         {
           "path": "frontend/src/panels/job-create-dialog.tsx",
@@ -2205,7 +2217,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "9e096e4ad7cd8aa7f5e66b38eb962df31d8918aff64cfedade093e73082d0c3d"
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -2213,7 +2225,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
@@ -2274,6 +2286,18 @@
         {
           "path": "docs/hermes/h523-media-serving-contract.md",
           "sha256": "f0f9963a8a21728231a2cf8b19855de5882b4d1a03292c8cb48f8e7be2fbae5a"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "tests/test_job_workdir.py",
+          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
+          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
         }
       ]
     },
@@ -2597,7 +2621,7 @@
       "id": "H523",
       "row_sha256": "a0fab30d78e84c7347418373ea736c26ee895f31fe9a9fbec2e274fab2b3dd62",
       "status": "equivalent",
-      "summary": "Generated/cache and attachment bytes are served by opaque ID through one authenticated shared reader, bounded canonical roots, 16 MiB file caps and MIME/disposition checks. The unified gallery opens and exports retained entries. Scheduled reminders now send 1..8 exact owner-bound media IDs (32 MiB aggregate) through the real Telegram binary/text adapter under one validated 1..300-second total deadline, default 300, including lookup, reads, all files, final text and held flushing. Durable sending/partial/unknown states, current recipient/content checks and process locks prevent automatic replay, stale-held duplication and late-ack continuation. Independent review confirms owner-authored IDs satisfy the frozen cron-media clause; no model MEDIA parser or every-channel requirement was accepted. Fresh148 reader/generation/media checks, independent98 backend/16 frontend checks and full1,315 frontend tests pass. Synchronous local I/O is not preemptible, but no subsequent dispatch occurs after expiry. This is code equivalence with mocked HTTP; no live Telegram, new-provider/native-codec or arbitrary-path guarantee. The complete integrated backend suite collected11,428 tests with11,404 passes,23 skips and one expected failure; no unexpected failures.",
+      "summary": "Generated/cache and attachment bytes are served by opaque ID through one authenticated shared reader, bounded canonical roots, 16 MiB file caps and MIME/disposition checks. The unified gallery opens and exports retained entries. Scheduled reminders now send 1..8 exact owner-bound media IDs (32 MiB aggregate) through the real Telegram binary/text adapter under one validated 1..300-second total deadline, default 300, including lookup, reads, all files, final text and held flushing. Durable sending/partial/unknown states, current recipient/content checks and process locks prevent automatic replay, stale-held duplication and late-ack continuation. Independent review confirms owner-authored IDs satisfy the frozen cron-media clause; no model MEDIA parser or every-channel requirement was accepted. Fresh148 reader/generation/media checks, independent98 backend/16 frontend checks and full1,315 frontend tests pass. Synchronous local I/O is not preemptible, but no subsequent dispatch occurs after expiry. This is code equivalence with mocked HTTP; no live Telegram, new-provider/native-codec or arbitrary-path guarantee. The complete integrated backend suite collected11,428 tests with11,404 passes,23 skips and one expected failure; no unexpected failures. Workdir integration rechecked previously-current evidence against base 837d6d08: additive script-only option validation and adjacent HUD fields leave the media contract unchanged. Existing media and frontend regressions remain green.",
       "remaining": "",
       "evidence": [
         {
@@ -2650,7 +2674,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "9370afcf7cc9cb252c6b6f810c5f345a19f8f362188cd82963326f14bd9a2805"
+          "sha256": "826980232fae0da254b82de16ea3b4526bd7e582ed5956eb589454b9dda36098"
         },
         {
           "path": "agents/core/channels/telegram.py",
@@ -2694,11 +2718,11 @@
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "3ba705e5483ca0691da7e45da2912bef754467c5ca953bf74f6dfcda8e76bb25"
+          "sha256": "1bf8326042713381ac9985731acc504300b684256bf1099438b9462ef0cf9ed2"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
-          "sha256": "0b28f54448be0c52fb053430d2ad86c16cf36d957c56153c555ac861f73e90b2"
+          "sha256": "45ca06910e7900b22dc0dff09fa58ac0bc5dcccc404af89574114406f283e12b"
         },
         {
           "path": "docs/hermes/h523-media-serving-contract.md",
@@ -3877,16 +3901,16 @@
       "id": "H684",
       "row_sha256": "2dfb19c76d1078cfffce0f9cb37dec15780e7a0665575b265de31e5f972b40a3",
       "status": "partial",
-      "summary": "Read-only jobs doctor reports scheduler stop/pause, missing registrations, missing/invalid/overdue next runs, execution failures and delivery failures. CLI failures exit non-zero. Bounded native scheduler outcomes and owner delivery results survive restart; intentional skips do not erase failures. Real APScheduler and migration tests pass; the two diagnostic modules have 97% branch-inclusive coverage. Doctor also checks script paths and no_agent configuration without reading source; persisted jobs remain inspectable when a script disappears.",
-      "remaining": "Workdir and wider per-job tool context remain unsupported. Production-host observation, complete runtime-availability diagnostics and the wider job-option contract remain open; this is not full Hermes cron-doctor equivalence.",
+      "summary": "Read-only jobs doctor reports scheduler stop/pause, missing registrations, missing/invalid/overdue next runs, execution failures and delivery failures. CLI failures exit non-zero. Bounded native scheduler outcomes and owner delivery results survive restart; intentional skips do not erase failures. Real APScheduler and migration tests pass; the two diagnostic modules have 97% branch-inclusive coverage. Doctor also checks script paths and no_agent configuration without reading source; persisted jobs remain inspectable when a script disappears. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
+      "remaining": "Model workdir and wider per-job tool context remain unsupported. Production-host observation, complete runtime-availability diagnostics and the wider job-option contract remain open; this is not full Hermes cron-doctor equivalence.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "9370afcf7cc9cb252c6b6f810c5f345a19f8f362188cd82963326f14bd9a2805"
+          "sha256": "826980232fae0da254b82de16ea3b4526bd7e582ed5956eb589454b9dda36098"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
-          "sha256": "f1f2579fd8ed3e627ea79adeeffa51c492cc4a130ec8285b6f8013e0f3337d4f"
+          "sha256": "683da2157b1cf69d5f51459a47c913f69ecfb08626d3b3911b5d7233c0d536ec"
         },
         {
           "path": "agents/core/scheduler_health.py",
@@ -3902,7 +3926,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d16c40c44fc9c9c5e567ae0619c571f6ef71220ac198c67690082e323ac00671"
+          "sha256": "bc06a7e198e24f3fb9ebad669308380227b8e32bc866bb085e5a50e6540f5d6c"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -3914,11 +3938,11 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "39b61ecc6f6400747fd15df218ce0e90da4b3179240eed79f15e6cfd75166404"
+          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "9e096e4ad7cd8aa7f5e66b38eb962df31d8918aff64cfedade093e73082d0c3d"
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -3926,7 +3950,19 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "tests/test_job_workdir.py",
+          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
+          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
         }
       ]
     },
@@ -3987,16 +4023,16 @@
       "id": "H453",
       "row_sha256": "150123684a4f0e7e58a4e47c6a7303d0b9b79cc043b060869eef81a0c3aa631f",
       "status": "partial",
-      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests. Successful script stdout can suppress model and delivery with a final JSON boolean wakeAgent:false, except when transport output is truncated. Model replies support bounded-position [SILENT] and whole-response silence markers before truncation; suppression is successful history without notification spend. Bounded approved script monitors hash complete raw stdout on the trusted host, compare scrubbed snapshots and atomically persist each baseline before the model runs. Unchanged observations skip model/delivery; source/config generations prevent stale baseline updates and stale delivery. Invalid UTF-8, incomplete or oversized observations leave the baseline intact. URL monitors now use the existing signed enforced task queue for one exact plugin.egress GET per human-approved hop, with fresh approval for redirects. Public-address DNS validation/IP pinning, live post-DNS kernel/e-stop checks, one-use dispatch claims, credential screening and scrub-before-persistence are verified with real queue/worker/executor tests. Only complete final successful UTF-8 identity responses within 256 KiB advance the baseline.",
-      "remaining": "Unattended execution is not granted: each script firing and URL hop needs fresh approval, with live enforced signed mediation required for URL authoring. URL scope is credential-free public ASCII HTTP(S), at most five redirects, 30 seconds per hop and 256 KiB uncompressed UTF-8; private, credentialed, compressed or invalid-text observations are unsupported. Script snapshots remain bounded by the terminal cap (at most 50,000 bytes). Monitor mode excludes no_agent and treats wake JSON literally. Workdir/tool contexts and script/URL authoring UI remain unsupported. No live production egress, scheduler/channel or full production-kernel proof.",
+      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests. Successful script stdout can suppress model and delivery with a final JSON boolean wakeAgent:false, except when transport output is truncated. Model replies support bounded-position [SILENT] and whole-response silence markers before truncation; suppression is successful history without notification spend. Bounded approved script monitors hash complete raw stdout on the trusted host, compare scrubbed snapshots and atomically persist each baseline before the model runs. Unchanged observations skip model/delivery; source/config generations prevent stale baseline updates and stale delivery. Invalid UTF-8, incomplete or oversized observations leave the baseline intact. URL monitors now use the existing signed enforced task queue for one exact plugin.egress GET per human-approved hop, with fresh approval for redirects. Public-address DNS validation/IP pinning, live post-DNS kernel/e-stop checks, one-use dispatch claims, credential screening and scrub-before-persistence are verified with real queue/worker/executor tests. Only complete final successful UTF-8 identity responses within 256 KiB advance the baseline. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
+      "remaining": "Unattended execution is not granted: each script firing and URL hop needs fresh approval, with live enforced signed mediation required for URL authoring. URL scope is credential-free public ASCII HTTP(S), at most five redirects, 30 seconds per hop and 256 KiB uncompressed UTF-8; private, credentialed, compressed or invalid-text observations are unsupported. Script snapshots remain bounded by the terminal cap (at most 50,000 bytes). Monitor mode excludes no_agent and treats wake JSON literally. Model workdir/tool contexts and monitor/URL authoring UI remain unsupported; script-only workdir and script/no_agent UI are implemented. No live production egress, scheduler/channel or full production-kernel proof.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "9370afcf7cc9cb252c6b6f810c5f345a19f8f362188cd82963326f14bd9a2805"
+          "sha256": "826980232fae0da254b82de16ea3b4526bd7e582ed5956eb589454b9dda36098"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "9e096e4ad7cd8aa7f5e66b38eb962df31d8918aff64cfedade093e73082d0c3d"
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -4008,7 +4044,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
         },
         {
           "path": "agents/core/autonomy/jobs_gates.py",
@@ -4049,6 +4085,18 @@
         {
           "path": "tests/test_job_url_monitor.py",
           "sha256": "ab20e7807e836701a59da45162ccb7b43ec5c2d8adef3e1531940e84887c9b6b"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "tests/test_job_workdir.py",
+          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
+          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
         }
       ]
     },

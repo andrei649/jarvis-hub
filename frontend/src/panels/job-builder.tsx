@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { inpS } from '../panel-kit';
 
-export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string };
+export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string; script?: string; no_agent?: boolean; workdir?: string };
 
 export function ScheduleBuilder({ onChange }: { onChange: (value: string) => void }) {
   const [mode, setMode] = useState('daily');
@@ -33,6 +33,10 @@ export function OptionsEditor({value,onChange}: {value:JobOptions;onChange:(v:Jo
   const mode = value.deliver === undefined ? 'default' : value.deliver.length === 0 ? 'history' : 'channels';
   return <fieldset style={{border:'1px solid var(--panel-line)',display:'grid',gap:6}}>
     <legend>Advanced</legend>
+    <label>Python script (ask jobs)<input aria-label="job script" style={inpS} value={value.script ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.script=e.target.value;else {delete next.script;delete next.no_agent;delete next.workdir;}onChange(next);}}/></label>
+    <label><input type="checkbox" aria-label="skip model" checked={value.no_agent === true} onChange={e=>{const next={...value,no_agent:e.target.checked};if(!e.target.checked)delete next.workdir;onChange(next);}}/> Skip model; deliver script output</label>
+    {value.script && value.no_agent === true && <label>Workdir (optional)<input aria-label="job workdir" maxLength={1024} style={inpS} value={value.workdir ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.workdir=e.target.value;else delete next.workdir;onChange(next);}}/><small>Existing absolute directory inside configured terminal roots. Each run still needs approval. Applies only to the script subprocess; grants no model workspace access.</small></label>}
+
     <label>Model pin (ask jobs)<input aria-label="job model" style={inpS} maxLength={256} value={value.model ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.model=e.target.value;else delete next.model;onChange(next);}}/></label>
     <label>Provider pin (ask jobs)<select aria-label="job provider" style={inpS} value={value.provider ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.provider=e.target.value;else delete next.provider;onChange(next);}}>
       <option value="">Existing routing</option>{['lm-studio','ollama','gemini','anthropic','openrouter','openai-compatible'].map(p=><option key={p} value={p}>{p}</option>)}

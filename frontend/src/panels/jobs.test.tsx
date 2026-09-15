@@ -301,3 +301,17 @@ it('authors explicit media reminders and shows unknown delivery progress', async
   fireEvent.click(screen.getByText('create job'));
   await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.action.media_ids).toEqual(['ba-'+ 'a'.repeat(32)]));
 });
+
+it('authors a script-only workdir with real script options', async()=>{
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job action'),{target:{value:'ask'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job script'),{target:{value:'watch.py'}});
+  fireEvent.click(screen.getByLabelText('skip model'));
+  fireEvent.change(screen.getByLabelText('job workdir'),{target:{value:'/workspace/report'}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.options).toEqual({script:'watch.py',no_agent:true,workdir:'/workspace/report'}));
+});
