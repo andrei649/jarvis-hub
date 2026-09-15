@@ -555,3 +555,47 @@ async def test_newly_known_secret_during_dns_refuses_before_dial(cloud):
     cloud.runtime.resolver = resolve
     await finish(cloud)
     assert not cloud.requests
+
+
+def test_cloud_status_is_nonsecret_readonly_and_never_probes(cloud, monkeypatch):
+    monkeypatch.setattr(
+        cloud.runtime, "_configuration", lambda: pytest.fail("status wrote configuration")
+    )
+    monkeypatch.setattr(
+        type(cloud.worker._mediation_signer), "sign", lambda *args: pytest.fail("status signed data")
+    )
+    status = cloud.runtime.status()
+    assert status["configured"] and status["reachable"] is None
+    assert status["provider"] == "openai" and status["model"] == "gpt-image-1.5"
+    assert status["approval_required"] is True and status["local"] is False
+    assert cloud.state.key not in str(status) and "generation" not in status
+    assert not (cloud.root / "media" / "cloud-image").exists()
+    assert cloud.queue.list() == [] and not cloud.requests
+
+
+def test_cloud_status_missing_key_is_unavailable_without_persistence(cloud):
+    cloud.state.key = ""
+    assert cloud.runtime.status()["configured"] is False
+    assert not (cloud.root / "media" / "cloud-image").exists()
+
+
+def test_media_status_exposes_independent_cloud_capability(cloud, monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core import image_generation_runtime
+
+    monkeypatch.setattr(web, "USER_TOKEN", "fixture-owner")
+    monkeypatch.setattr(web, "orch", SimpleNamespace(cloud_images=cloud.runtime))
+    monkeypatch.setattr(
+        image_generation_runtime,
+        "configuration_status",
+        lambda: {"configured": False, "local": True, "approval_required": True},
+    )
+    response = TestClient(web.app).get("/api/media", headers={"X-User-Token": "fixture-owner"})
+    assert response.status_code == 200
+    assert response.json()["cloud_image"]["configured"]
+    assert response.json()["local_image"]["configured"] is False
+    assert response.json()["kinds"]["image"] is True

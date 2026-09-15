@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 cloud Images HUD (H515 partial): local-default provider selection, strict cloud size/quality requests and exact paid proposal details now lead through a visible post-approval return link to the saved PNG and gallery/export. Independent review corrected disappearing task navigation; two real browser cases and all1,326 frontend tests pass. Model-callable cloud selection, VRAM coordination and explicit action-kind mapping remain open. See [workflow and evidence](docs/superpowers/plans/2026-09-15-cloud-image-hud.md).
+
 - 2026-09-15 script-only workdir (H146/H449/H453/H684 partial): approved Python jobs with no_agent now select canonical existing directories inside current terminal roots. CLI/HUD author the field; doctor diagnoses missing directories. Concurrent real subprocesses, frozen approved cwd, denial/e-stop and changed-task rejection are verified. The integrated guarded backend suite has 11,460 passes, 23 skips and one expected failure (11,484 collected); all 1,316 frontend tests pass. Full model project instructions/tool workspace isolation remains unsupported. See [plan and evidence](docs/superpowers/plans/2026-09-15-job-workdir.md).
 
 - 2026-09-15 effective tool context and complete captures (H298): known backend windows now constrain actual guarded tool requests without shared mutable state; shape-only truncation preserves complete stdout/stderr. Both reproduced gaps are independently cleared. Unknown capacity remains estimated and retention limits stay explicit. See [window evidence](docs/superpowers/plans/2026-09-15-effective-tool-window.md) and [capture evidence](docs/superpowers/plans/2026-09-15-shape-capture.md).

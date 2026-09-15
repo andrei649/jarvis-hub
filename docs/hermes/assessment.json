@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c3e6437d178d5d0668f00b9404267652b1b6fe08",
-  "assessed_at": "2026-09-15T17:10:34.583861Z",
+  "base_sha": "05d2229ab0764bc0b0ea682ffcd492749b62c88d",
+  "assessed_at": "2026-09-15T17:11:30.595466Z",
   "reviews": [
     {
       "id": "H001",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
+          "sha256": "83fae0b58eb9101c80541a91785d91bc6bca79dfd40e6b779dbe514977f777c2"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2209,7 +2209,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
+          "sha256": "83fae0b58eb9101c80541a91785d91bc6bca79dfd40e6b779dbe514977f777c2"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2451,8 +2451,8 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed.",
-      "remaining": "Cloud HUD authoring and an exact cloud proposal presentation/return flow in Decision Inbox remain unfinished; the API runtime is the supported entry point. Additional cloud providers, cloud edits and learned super-resolution remain absent. Local reference blending is pixel composition and upscale is bicubic resampling. Ambiguous POST attempts never retry automatically. Catalog opt-out is respected. No real ComfyUI, billed cloud generation or native-device validation is claimed.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport.",
+      "remaining": "The model-callable image_generate tool remains local-only; the real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need an explicit architecture decision within the protected-control-plane boundary; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation needs one cloud seam, not eight-provider fan-out. Ambiguous POST attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2472,11 +2472,11 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
+          "sha256": "d0b5453747fa64b80966e8facc1ef58b99c0b13094df15816e4ed0cfa4f3d029"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2492,7 +2492,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "ec312616e60c46877aaec95cc7e0f9bfddb2614726c469a20598215a45cf425b"
+          "sha256": "eed0dbad743fe40497a231fabb75eb2c67b2b7b8c71c6bfbbbb03844bdb401e2"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -2504,15 +2504,47 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+          "sha256": "f75cf19854b376823cb7b133a441282a36a4870225ee2436e9ded214d7cbcb82"
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "191197b67e73d69a066252394eb5e1dc15e25c196480e02937ee849a5e233fc3"
+          "sha256": "bda8a68768e5de159d3b551aff5241351cc4e15578b59b5af5adf45bd2be1d13"
         },
         {
           "path": "docs/cloud-image-generation.md",
-          "sha256": "db449937a8347d03cc8ce4c0ea90c9319218279647806b1ddcfd96991e811a2a"
+          "sha256": "7ab5fefee88194c7754d46d3480506360a292308249077f45a3c069cc164cf80"
+        },
+        {
+          "path": "frontend/src/api/images.ts",
+          "sha256": "cc84a52c52198a09599e568fc671496b95728edf40fb07c923f2f06abaf7a3ee"
+        },
+        {
+          "path": "frontend/src/test/images-api.test.ts",
+          "sha256": "86232e09c438a86534e9234ae384aa6025ddf2d12221064e21c80ba75ca9cfbc"
+        },
+        {
+          "path": "frontend/src/test/images-panel.test.tsx",
+          "sha256": "d92cf8d6c763a022cf1fa95257341380b4b6288d26698a6e28a6f30bd60947b9"
+        },
+        {
+          "path": "frontend/src/test/decision-inbox-panel.test.tsx",
+          "sha256": "753dda961076e93d75ec166344430cb043510785c41b22b68d89fd68f8405636"
+        },
+        {
+          "path": "frontend/cloud-image-browser/server.py",
+          "sha256": "d528ce69e05cf4630bbbb3fa818a1c5ce2c848d03eb48c8a759e2b2d071f60ad"
+        },
+        {
+          "path": "frontend/cloud-image-browser/workflow.spec.ts",
+          "sha256": "cbda7675f55891f62625e05127fc1a586a6f9898821a190c7f4615957366a841"
+        },
+        {
+          "path": "frontend/playwright.cloud-image.config.ts",
+          "sha256": "456da680e3a3b1ffbcb4bd36c045ddb0a566d347191dc1c3549fecf6835bf664"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-cloud-image-hud.md",
+          "sha256": "e5be1aec775081236cfb8c0c8f75ec6719c36941879bbcc139c2edc0380ad619"
         }
       ]
     },
@@ -2541,11 +2573,11 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
+          "sha256": "d0b5453747fa64b80966e8facc1ef58b99c0b13094df15816e4ed0cfa4f3d029"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2593,7 +2625,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "ec312616e60c46877aaec95cc7e0f9bfddb2614726c469a20598215a45cf425b"
+          "sha256": "eed0dbad743fe40497a231fabb75eb2c67b2b7b8c71c6bfbbbb03844bdb401e2"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -2605,15 +2637,15 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+          "sha256": "f75cf19854b376823cb7b133a441282a36a4870225ee2436e9ded214d7cbcb82"
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "191197b67e73d69a066252394eb5e1dc15e25c196480e02937ee849a5e233fc3"
+          "sha256": "bda8a68768e5de159d3b551aff5241351cc4e15578b59b5af5adf45bd2be1d13"
         },
         {
           "path": "docs/cloud-image-generation.md",
-          "sha256": "db449937a8347d03cc8ce4c0ea90c9319218279647806b1ddcfd96991e811a2a"
+          "sha256": "7ab5fefee88194c7754d46d3480506360a292308249077f45a3c069cc164cf80"
         }
       ]
     },
@@ -2634,7 +2666,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+          "sha256": "f75cf19854b376823cb7b133a441282a36a4870225ee2436e9ded214d7cbcb82"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -3106,7 +3138,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3151,7 +3183,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+          "sha256": "f75cf19854b376823cb7b133a441282a36a4870225ee2436e9ded214d7cbcb82"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -3171,7 +3203,7 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
+          "sha256": "d0b5453747fa64b80966e8facc1ef58b99c0b13094df15816e4ed0cfa4f3d029"
         }
       ]
     },
@@ -3434,7 +3466,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3991,7 +4023,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "frontend/src/route-boundary.tsx",
@@ -4451,7 +4483,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
+          "sha256": "83fae0b58eb9101c80541a91785d91bc6bca79dfd40e6b779dbe514977f777c2"
         },
         {
           "path": "tests/test_composer_vision.py",
