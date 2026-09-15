@@ -59,9 +59,9 @@ def inspect_jobs(runner) -> dict:
             row['script_task_id'] = attempt['data'].get('task_id')
         if job.options.get('no_agent') and not job.options.get('script'):
             problem(job.id, 'script_required', 'no_agent requires a script')
-        if job.options.get('script'):
+        if job.options.get('script') or job.options.get('monitor_script'):
             from .jobs_scripts import script_problem
-            issue = script_problem(job.options['script'])
+            issue = script_problem(job.options.get('monitor_script') or job.options['script'])
             if issue:
                 problem(job.id, 'script_unavailable', issue)
         if not job.runnable:
@@ -96,7 +96,7 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script"],
         "script_contract": "Bounded self-contained Python, fresh approval each run; no shell or project cwd",
         "unsupported_options": ["workdir", "model", "provider", "enabled_toolsets", "skills"],
     }

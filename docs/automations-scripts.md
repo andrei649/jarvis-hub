@@ -54,3 +54,15 @@ A successful approved script can end with a JSON line such as `{"wakeAgent": fal
 Scheduled model replies can suppress delivery with `[SILENT]` as the whole reply or a standalone first or last line. Matching ignores surrounding whitespace and case. Whole-response `SILENT`, `NO_REPLY`, and `NO REPLY` also suppress delivery; mentions embedded in prose do not. This check happens before response truncation. A `no_agent` script printing `[SILENT]` still delivers that literal text: this convention belongs to model responses.
 
 Completed suppression is visible in run history as `Suppressed: wake_gate` or `Suppressed: model_silent`, with successful status. It does not consume a delivery interrupt or create a missing/pending run. Script approval is still required for every firing. Monitor hashes, diffs, and URL monitoring are not implemented by these gates.
+
+## Bounded script monitors
+
+Use `options.monitor_script` instead of `options.script` on an `ask` job to compare observations before calling the model. It names the same bounded Python file under the scripts root and still requires fresh approval for each firing. It cannot combine with `script` or `no_agent`. Monitor stdout is literal data: a JSON `wakeAgent` line is not interpreted as a wake gate in this mode. URL monitoring remains unsupported.
+
+The first successful observation supplies baseline context, even when stdout is empty. Identical subsequent observations finish as `Suppressed: no_change`, without a model call or delivery. Changes supply a unified diff and current output inside the existing untrusted-data fence. The comparison digest and snapshot are committed before the model runs, so a failed model response cannot repeatedly alert on the same change.
+
+The trusted host hashes every stdout byte before display truncation. Monitor evaluation requires successful, complete, valid UTF-8 output whose complete snapshot fits the existing terminal cap (at most 50,000 bytes). Invalid, incomplete, or oversized observations fail explicitly and leave the baseline unchanged. Output rendering for other terminal uses remains unchanged. No raw output file is written.
+
+The normal secret scrubber still applies before task results reach the jobs runtime. Comparison uses the trusted raw digest, while stored/displayed snapshots contain only scrubbed text. A `scrubbed` label identifies comparisons whose raw and displayed contents differ; changes in hidden secret values can therefore trigger a change with no visible text difference. Diffs are displayed up to 4,000 characters and current output up to 8,000, with explicit truncation indicators.
+
+Editing the job configuration invalidates its baseline generation. Already approved work keeps its approved meaning, but a stale completion cannot replace the new baseline or deliver the old configuration's answer. Editing the source file affects only subsequent approvals and starts a new source baseline. Baselines survive restarts; interrupted model/delivery work follows the existing explicit unknown-outcome behavior rather than automatic replay.

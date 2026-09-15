@@ -93,6 +93,8 @@ class ScriptAttempts:
     """Transactions share the job store connection and its existing lock."""
     def __init__(self, store):
         self.store = store
+        from .jobs_monitor import install
+        install(store)
         with store._lock:
             store._conn.execute('''CREATE TABLE IF NOT EXISTS job_script_attempts (
                 id INTEGER PRIMARY KEY, job_id TEXT NOT NULL, state TEXT NOT NULL,
@@ -128,8 +130,13 @@ class ScriptAttempts:
                     '(job_id,started_at,finished_at,status,summary) VALUES (?,?,?, ?,?)',
                     (job.id, started, '', 'pending', 'Awaiting a fresh script approval'))
                 run_id = run.lastrowid
+                live_job = conn.execute('SELECT * FROM jobs WHERE id=?', (job.id,)).fetchone()
+                job = self.store._row_to_job(live_job)
                 data = {'job': {'action': job.action, 'options': job.options, 'notepad': job.notepad,
                                 'name': job.name}, 'origin': f'job-script:{job.id}:{run_id}'}
+                if job.options.get('monitor_script'):
+                    from .jobs_monitor import generation
+                    data['monitor_generation'] = generation(conn, job.id)
                 conn.execute('INSERT INTO job_script_attempts VALUES (?,?,?,?,?)',
                              (run_id, job.id, 'preparing', time.time(), json.dumps(data)))
                 conn.execute("UPDATE jobs SET last_status='pending',last_summary=? WHERE id=?",
@@ -143,6 +150,11 @@ class ScriptAttempts:
     def transition(self, row, state, data=None):
         value = row['data'] if data is None else data
         with self.store._lock:
+            if (state == 'delivering' and row['data']['job']['options'].get('monitor_script')
+                    and row['data'].get('suppressed_reason') != 'stale_configuration'):
+                from .jobs_monitor import generation
+                if generation(self.store._conn, row['job_id']) != row['data'].get('monitor_generation'):
+                    return False
             changed = self.store._conn.execute(
                 'UPDATE job_script_attempts SET state=?,updated=?,data=? WHERE id=? AND state=? AND updated=?',
                 (state, time.time(), json.dumps(value), row['id'], row['state'], row['updated'])).rowcount
@@ -244,7 +256,8 @@ class ScriptRuntime:
         try:
             if not callable(self.submit):
                 raise ValueError('governed script intake is unavailable')
-            prepared = snapshot_script(row['data']['job']['options']['script'])
+            options = row['data']['job']['options']
+            prepared = snapshot_script(options.get('monitor_script') or options['script'])
             payload = {'tool': 'terminal_run', 'target': 'terminal_run',
                        'args': {'target': 'local-host', 'command': prepared['command'], 'timeout': 60}}
             data = {**row['data'], 'payload': payload, 'sha256': prepared['sha256']}
@@ -319,7 +332,15 @@ class ScriptRuntime:
                     from .jobs_gates import wake_agent_suppressed
                     raw_output = str(result['result'].get('stdout', ''))
                     output = raw_output[:MAX_TEXT]
-                    if wake_agent_suppressed(raw_output, truncated=bool(result['result'].get('truncated'))):
+                    monitor = bool(frozen.options.get('monitor_script'))
+                    if monitor:
+                        from .jobs_monitor import detect
+                        data = detect(self.runner.store, row, raw_output, result['result'].get('stdout_capture'))
+                        row = self.row(row['id'])
+                        output = json.dumps(data.get('monitor_context', {}))
+                    if monitor and data.get('suppressed_reason'):
+                        final = {**data, 'output': ''}
+                    elif not monitor and wake_agent_suppressed(raw_output, truncated=bool(result['result'].get('truncated'))):
                         final = {**data, 'output': '', 'suppressed_reason': 'wake_gate'}
                     elif frozen.options.get('no_agent') or not output.strip():
                         final = {**data, 'output': output}
@@ -329,7 +350,8 @@ class ScriptRuntime:
                             reset_action_origin,
                         )
                         from agents.core.security.quarantine import fence_tool_result
-                        fenced, _ = fence_tool_result(json.dumps({'stdout': output}), source='scheduled-script')
+                        fenced, _ = fence_tool_result(json.dumps(data['monitor_context']) if monitor else json.dumps({'stdout': output}),
+                                                     source='scheduled-script')
                         action = {**frozen.action, 'deliver': False, 'prompt': frozen.action.get('prompt', '') +
                                   '\n\nScheduled script output (untrusted data):\n' + fenced}
                         origin_token = bind_turn_action_origin('job')
@@ -350,6 +372,14 @@ class ScriptRuntime:
                 data = row['data']
             if row['state'] != 'ready':
                 continue
+            if frozen.options.get('monitor_script'):
+                from .jobs_monitor import current
+                if not current(self.runner.store, row):
+                    data = {**data, 'output': '', 'suppressed_reason': 'stale_configuration'}
+                    data.pop('notepad', None)
+                    if not self.attempts.transition(row, 'ready', data):
+                        continue
+                    row = self.row(row['id'])
             output = data.get('output', '')
             targets = frozen.options.get('deliver', ['telegram']) if frozen.action.get('deliver', True) else []
             if not output.strip():
@@ -373,11 +403,13 @@ class ScriptRuntime:
             try:
                 for target in targets:
                     if (self.runner.store.get(job.id) is None
-                            or estop.check_paused('job-script-completion', logger)):
+                            or estop.check_paused('job-script-completion', logger)
+                            or (frozen.options.get('monitor_script') and not current(self.runner.store, row))):
                         raise RuntimeError('Job deleted or emergency stop engaged during fan-out')
                     await asyncio.wait_for(self.runner._send_tracked(output, target, job.id), 30)
                     if (self.runner.store.get(job.id) is None
-                            or estop.check_paused('job-script-completion', logger)):
+                            or estop.check_paused('job-script-completion', logger)
+                            or (frozen.options.get('monitor_script') and not current(self.runner.store, row))):
                         raise RuntimeError('Job deleted or emergency stop engaged during delivery')
                 if self.finish(row):
                     count += 1

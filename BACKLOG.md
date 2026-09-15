@@ -38,6 +38,7 @@
 
 - 2026-09-15 H129: 18 HUD modes and 113 console panels now have stable URLs, history, titles and lazy loading. Desktop/Pixel 7 navigation tests pass; independent review verified historical overlay return-state repairs. Multi-profile and plugin route integration remain open, so H129 is partial.
 
+- 2026-09-15 script monitors (H453 partial): complete trusted stdout hashes and scrubbed snapshots drive first/no-change/diff outcomes; baseline state is committed before the model and fenced by source/config generation. 26 new cases, 364 focused checks and 95% branch-inclusive coverage across the new helpers. Complete UTF-8 snapshots are bounded; URL monitoring remains open.
 - 2026-09-15 automation gates (H453 partial): final JSON `wakeAgent:false` skips model/delivery; model silence markers skip notifications before output caps. Malformed/truncated gate data continues normally; literal no_agent silence text is preserved. 31 new cases, 316 focused checks and 100% branch coverage for the new gate helper. Script/URL monitoring remains open.
 - 2026-09-15 scheduled scripts: bounded Python source is snapshotted into each approved local terminal task; pending outcomes, repeat reservations and delivery survive restart. Direct no_agent output and fenced script context skip empty observations. API/CLI and doctor are wired; 285 focused tests pass. Workdir, monitor diffs and full unattended authority remain open. Wake/silence gates were added in the subsequent verified increment. [Operator guide](docs/automations-scripts.md).
 

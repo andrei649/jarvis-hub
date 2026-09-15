@@ -293,7 +293,7 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
-    if options and options.get("script") and kind != "ask":
+    if options and (options.get("script") or options.get("monitor_script")) and kind != "ask":
         return ["script options require an ask action"]
     if kind not in ACTION_TYPES:
         return [f"action.type must be one of {', '.join(ACTION_TYPES)}"]
@@ -338,20 +338,26 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
 def validate_options(options: Any, *, check_scripts: bool = True) -> dict:
     if not isinstance(options, dict):
         raise ValueError("options must be an object")
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'no_agent' in options and type(options['no_agent']) is not bool:
         raise ValueError('no_agent must be true or false')
     if options.get('no_agent') and not options.get('script'):
         raise ValueError('no_agent requires a script')
-    if 'script' in options and (not isinstance(options['script'], str) or not options['script'] or len(options['script']) > 1024):
-        raise ValueError('script must name a bounded Python file')
-    if 'script' in options and check_scripts:
-        from .jobs_scripts import script_problem
-        problem = script_problem(options['script'])
-        if problem:
-            raise ValueError(problem)
+    if options.get('monitor_script') and (options.get('script') or options.get('no_agent')):
+        raise ValueError('monitor_script excludes script and no_agent')
+    for source_key in ('script', 'monitor_script'):
+        if source_key not in options:
+            continue
+        source = options[source_key]
+        if not isinstance(source, str) or not source or len(source) > 1024:
+            raise ValueError('script must name a bounded Python file')
+        if check_scripts:
+            from .jobs_scripts import script_problem
+            problem = script_problem(source)
+            if problem:
+                raise ValueError(problem)
     repeat = options.get("repeat")
     if repeat is not None and (type(repeat) is not int or not 1 <= repeat <= 10000):
         raise ValueError("repeat must be null or an integer from 1 to 10000 attempts")
@@ -902,7 +908,7 @@ class JobRunner:
             if job.runnable and self.register(job):
                 registered += 1
         self.register_flush()
-        if any(j.options.get('script') for j in self.store.list()) or self.store.script_attempts.rows():
+        if any((j.options.get('script') or j.options.get('monitor_script')) for j in self.store.list()) or self.store.script_attempts.rows():
             self.register_scripts()
         return registered
 
@@ -973,7 +979,7 @@ class JobRunner:
 
     def create(self, **kwargs: Any) -> Job:
         job = self.store.create(**kwargs)
-        if job.options.get('script'):
+        if job.options.get('script') or job.options.get('monitor_script'):
             self.register_scripts()
         self.register(job)
         return job
@@ -988,7 +994,7 @@ class JobRunner:
         stale trigger armed for it would resume it by accident.
         """
         job = self.store.edit(job_id, **fields)
-        if job.options.get('script'):
+        if job.options.get('script') or job.options.get('monitor_script'):
             self.register_scripts()
         if job.runnable:
             self.register(job)
@@ -1037,7 +1043,7 @@ class JobRunner:
                 raise ValueError('; '.join(errors))
         except ValueError as exc:
             return self._failed(job, started, exc)
-        if job.options.get('script'):
+        if job.options.get('script') or job.options.get('monitor_script'):
             return await self._script_runtime.fire(job, started)
         if not self.store.reserve_attempt(job_id):
             self.unregister(job_id)

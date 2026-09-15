@@ -206,10 +206,12 @@ class LocalHostTransport:
         except OSError:
             return {"ok": False, "reason": "spawn_failed", "argv_sha256": fingerprint}
 
+        from .output_capture import OutputCapture
+        capture = OutputCapture()
         try:
             (out_head, out_tail, out_total), (err_head, err_tail, err_total) = await asyncio.wait_for(
                 asyncio.gather(
-                    read_capped_stream(proc.stdout, max_content_bytes=cap),
+                    read_capped_stream(proc.stdout, max_content_bytes=cap, sink=capture.feed),
                     read_capped_stream(proc.stderr, max_content_bytes=cap),
                 ),
                 timeout=bounded,
@@ -232,6 +234,7 @@ class LocalHostTransport:
             "ok": exit_code == 0,
             "exit_code": exit_code,
             "stdout": stdout.text,
+            "stdout_capture": capture.seal(cap, successful=exit_code == 0),
             "stderr": stderr.text,
             "truncated": bool(stdout.truncated or stderr.truncated),
             "duration": round(time.monotonic() - start, 3),
