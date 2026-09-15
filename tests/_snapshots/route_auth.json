@@ -377,6 +377,7 @@
   "POST /api/mcp/server/rpc": "open",
   "POST /api/mcp/token": "admin",
   "POST /api/media/devices": "admin",
+  "POST /api/media/export": "user",
   "POST /api/media/generate": "user",
   "POST /api/media/present": "user",
   "POST /api/media/restore/{device_id}": "user",

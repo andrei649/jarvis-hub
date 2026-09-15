@@ -873,7 +873,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "83aae67588f96aafb9c4382ab8e5afdac2ef7b1aa766be1457d8b88d385292b1"
+          "sha256": "9176c3e1ff880cab6f74bb08b1dc238ab96b630682b96aff874a42b13c4f41fd"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -885,7 +885,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "5130fbbceef9c406e2707dd2cdeb118b5058dcdf809fb0eb03e1139b410f0c2f"
+          "sha256": "44fe4fc31cf5f9d300e32687f2c3849ac05aad9c600c9a212177834b2ff3523d"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2073,7 +2073,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "83aae67588f96aafb9c4382ab8e5afdac2ef7b1aa766be1457d8b88d385292b1"
+          "sha256": "9176c3e1ff880cab6f74bb08b1dc238ab96b630682b96aff874a42b13c4f41fd"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2085,7 +2085,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "5130fbbceef9c406e2707dd2cdeb118b5058dcdf809fb0eb03e1139b410f0c2f"
+          "sha256": "44fe4fc31cf5f9d300e32687f2c3849ac05aad9c600c9a212177834b2ff3523d"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2243,40 +2243,40 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
-      "remaining": "Lipsesc upscalingul, alegerea modelului/backend-ului si mai multe imagini de referinta; editarea nu este probata pe un ComfyUI real.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices.",
+      "remaining": "No real ComfyUI validation or cloud provider execution was performed. Upscale is bicubic resampling, not a learned super-resolution model; reference blending is pixel composition, not provider-specific multi-image semantic conditioning. Cloud generation remains unwired.",
       "evidence": [
         {
-          "path": "agents/core/image_generation_runtime.py",
-          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
-        },
-        {
-          "path": "agents/core/image_generation_view.py",
-          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
-        },
-        {
-          "path": "agents/core/routers/multimodal.py",
-          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
-        },
-        {
-          "path": "tests/test_image_mediation_composition.py",
-          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
-        },
-        {
-          "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
-        },
-        {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+          "sha256": "4edd83a175b701eca6febcdf7fe47012eb23d821481cd1d363698a1fac13f96c"
         },
         {
-          "path": "tests/test_image_edit.py",
-          "sha256": "53e12057285f6fa58db63016212ed85d090b843a17089f9a8bcb88bc54edc142"
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "1dc5952279ff3931bf21d3c1e0ff68ce3f4fffac7ea24ff38cc7f4be85f19a39"
+        },
+        {
+          "path": "agents/core/media_library.py",
+          "sha256": "aad1b2f1e8290504c97a59e4a65c0416ef4daa72102c6f522f445fcc89c03197"
+        },
+        {
+          "path": "agents/core/routers/artifact_store.py",
+          "sha256": "6bb62c57267b5b8a9a9b05db55b3d91d06f7b03c8c2bb58ddef1b639f8a2fa38"
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "7dbf2b41de7fda0b8a0729feaf03a9675f6f291bc6148bf05db7c905a8ded296"
+          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+        },
+        {
+          "path": "tests/test_image_options_extended.py",
+          "sha256": "973c5d923c80efbe75a666e31b398418b5c2b958957f5d9324a6728aad0ef673"
+        },
+        {
+          "path": "tests/test_media_library.py",
+          "sha256": "7bc996116ed5db5276499418cef986ce0355cab850f337f739524aa7ec350e08"
         }
       ]
     },
@@ -2284,40 +2284,40 @@
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
       "status": "partial",
-      "summary": "Catalogul si exportul exista; imaginile noi pot fi citite autentificat prin ID, printr-un singur cititor de artefacte partajat cu calea de editare.",
-      "remaining": "Ramane experienta unificata de galerie si servirea tuturor tipurilor generate/cache; rezultatul selectat PNG nu este intreaga suprafata.",
+      "summary": "Unified bounded gallery includes cataloged generated/cache media and binary attachments with search, authenticated preview/download and selected in-memory ZIP export. Data portability includes validated generated/cache bytes and hashes. Host paths never reach the public gallery.",
+      "remaining": "Legacy catalog files outside producer-owned media/generated or media/cache roots remain metadata-only. Gallery is bounded to newest 200 entries; unsupported, missing and oversized files are explicitly unavailable. Native mobile controls remain a follow-up.",
       "evidence": [
         {
-          "path": "agents/core/image_generation_runtime.py",
-          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
-        },
-        {
-          "path": "agents/core/image_generation_view.py",
-          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
-        },
-        {
-          "path": "agents/core/routers/multimodal.py",
-          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
-        },
-        {
-          "path": "tests/test_image_mediation_composition.py",
-          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
-        },
-        {
-          "path": "tests/test_image_generation_api_flow.py",
-          "sha256": "e8e07b2fe21cea05a90666989e6dc33689c8187bae4a15b91a64202891adbfba"
-        },
-        {
-          "path": "agents/core/media_catalog.py",
-          "sha256": "fee42dd45f00540fe5c77ff413222ea1e5d85d63016f5914b920f5af6f72c7ce"
-        },
-        {
-          "path": "agents/core/media_export.py",
-          "sha256": "a03b08ae99be921571e6c2121986e3cf72ebbc88893c838912c015bdc6e9d669"
-        },
-        {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+          "sha256": "4edd83a175b701eca6febcdf7fe47012eb23d821481cd1d363698a1fac13f96c"
+        },
+        {
+          "path": "agents/core/image_generation_runtime.py",
+          "sha256": "1dc5952279ff3931bf21d3c1e0ff68ce3f4fffac7ea24ff38cc7f4be85f19a39"
+        },
+        {
+          "path": "agents/core/media_library.py",
+          "sha256": "aad1b2f1e8290504c97a59e4a65c0416ef4daa72102c6f522f445fcc89c03197"
+        },
+        {
+          "path": "agents/core/routers/artifact_store.py",
+          "sha256": "6bb62c57267b5b8a9a9b05db55b3d91d06f7b03c8c2bb58ddef1b639f8a2fa38"
+        },
+        {
+          "path": "frontend/src/panels/images.tsx",
+          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+        },
+        {
+          "path": "tests/test_image_options_extended.py",
+          "sha256": "973c5d923c80efbe75a666e31b398418b5c2b958957f5d9324a6728aad0ef673"
+        },
+        {
+          "path": "tests/test_media_library.py",
+          "sha256": "7bc996116ed5db5276499418cef986ce0355cab850f337f739524aa7ec350e08"
         }
       ]
     },
@@ -2738,7 +2738,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "ed87d8fab3881b604e432a4d5e162c8fa434552cbbc1f768212a3e4ae7ad2ec6"
+          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -2766,20 +2766,20 @@
       "id": "H598",
       "row_sha256": "0011c0e1c0c25d51aa1a5e78fa488aaf33410af4bd2964a4f43955ff621fb66c",
       "status": "partial",
-      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
-      "remaining": "Lipsesc upscalingul, alegerea modelului si controlul de aspect ratio la editare (dimensiunea vine din referinta); editarea nu este probata pe un ComfyUI real.",
+      "summary": "Local image generation and editing retain exact single-use approvals; the HUD now offers configured local ComfyUI backend/checkpoint choices, up to four blended opaque references, and explicit 2x bicubic upscale.",
+      "remaining": "Local ComfyUI only. Vendor model inventories, provider quality controls and per-platform delivery validation remain absent. Reference blending is pixel composition and upscale is bicubic; no real ComfyUI or cloud provider proof was performed.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
+          "sha256": "1dc5952279ff3931bf21d3c1e0ff68ce3f4fffac7ea24ff38cc7f4be85f19a39"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+          "sha256": "ef72a07e7858cdb782cb479dc8ecd4ca58b5871542033d73a378b2ef5d1520aa"
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
+          "sha256": "415b9a67bac42949ee6078c1d3e1f84c1c96e33b4d92db8f46c7fa3a54633c9a"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -2791,7 +2791,7 @@
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+          "sha256": "4edd83a175b701eca6febcdf7fe47012eb23d821481cd1d363698a1fac13f96c"
         },
         {
           "path": "tests/test_image_edit.py",
@@ -2799,7 +2799,7 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "7dbf2b41de7fda0b8a0729feaf03a9675f6f291bc6148bf05db7c905a8ded296"
+          "sha256": "6ffce8f7920ee25409e1e5bd011b1f4ee83b7d29a74d5ea6e7fbd210154e0482"
         }
       ]
     },
@@ -3062,7 +3062,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "ed87d8fab3881b604e432a4d5e162c8fa434552cbbc1f768212a3e4ae7ad2ec6"
+          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",

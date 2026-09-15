@@ -373,6 +373,7 @@
   "POST /api/mcp/server/rpc": "mcp_server_rpc_api_mcp_server_rpc_post",
   "POST /api/mcp/token": "mcp_issue_token_api_mcp_token_post",
   "POST /api/media/devices": "media_register_device_api_media_devices_post",
+  "POST /api/media/export": "media_export_api_media_export_post",
   "POST /api/media/generate": "media_generate_api_media_generate_post",
   "POST /api/media/present": "media_present_api_media_present_post",
   "POST /api/media/restore/{device_id}": "media_restore_api_media_restore__device_id__post",

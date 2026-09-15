@@ -262,6 +262,8 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
 
     from .artifact_store import BinaryArtifactStore
     binary_artifacts = BinaryArtifactStore(src).export()
+    from .media_library import export_generated
+    generated_media = export_generated(src)
     vault_export = _dump_vault(src)
 
     doc = {
@@ -274,6 +276,7 @@ def export_data(source_root: Optional[str] = None, out_dir: Optional[str] = None
         "legacy_private_ingestion": legacy_ingestion,
         "vault": vault_export,
         "binary_artifacts": binary_artifacts,
+        "generated_media": generated_media,
     }
     # Filename is a server-generated timestamp only — no user value in the path.
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")

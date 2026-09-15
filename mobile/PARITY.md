@@ -231,3 +231,5 @@ no live channel was enabled. Generated OpenAPI types now include all four added 
 2026-09-15 — H12.26 binary attachments: desktop Artifacts supports opt-in upload,
 validated authenticated delivery, pin/delete. Native mobile attachment controls
 remain a parity gap; existing text Canvas is unchanged.
+
+2026-09-15 — H515/H518 desktop supports configured local backend/model selection, reference blending, 2× bicubic upscale, unified gallery and ZIP export. Native mobile generation/gallery parity remains open; no cloud or device validation claimed.

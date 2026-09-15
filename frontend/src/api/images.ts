@@ -3,10 +3,10 @@ import { apiFetchOnce } from './client';
 export type ImageArtifact = { id: string; bytes: number; width: number; height: number };
 export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'rejected' | 'deferred' | 'refused' | 'uncertain';
 export type ImageTask = { task_id: number; state: ImageState; artifact: ImageArtifact | null };
-export type ImageCapability = { configured: boolean; edit: boolean };
+export type ImageCapability = { configured: boolean; edit: boolean; backends?: { id: string; models: string[] }[]; max_references?: number; upscale?: number[] };
 /** An edit of an artifact this hub already produced: its opaque id, plus how much of
  *  it to keep. There is deliberately no field here for a path, a URL or a filename. */
-export type ImageEdit = { reference: string; strength: number };
+export type ImageEdit = { reference?: string; references?: string[]; strength?: number; backend?: string; model?: string; upscale?: number };
 export class ImageRequestError extends Error {
   constructor(public code: 'auth' | 'refused' | 'uncertain' | 'unavailable') { super(code); }
 }
@@ -15,9 +15,19 @@ const positiveInt = (value: unknown, limit = Number.MAX_SAFE_INTEGER): value is 
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= limit;
 const artifactValid = (value: any): value is ImageArtifact => value && typeof value.id === 'string'
   && /^[a-f0-9]{32}$/.test(value.id) && positiveInt(value.bytes, 16 * 1024 * 1024)
-  && positiveInt(value.width, 1024) && positiveInt(value.height, 1024);
-export const editValid = (value: any): value is ImageEdit => !!value && typeof value.reference === 'string'
-  && /^[a-f0-9]{32}$/.test(value.reference) && positiveInt(value.strength, 100);
+  && positiveInt(value.width, 2048) && positiveInt(value.height, 2048);
+export const editValid = (value: any): value is ImageEdit => {
+  if (!value || typeof value !== 'object') return false;
+  if (value.reference !== undefined && value.references !== undefined) return false;
+  const refs = value.references ?? (value.reference ? [value.reference] : []);
+  if (!Array.isArray(refs) || refs.length > 4 || new Set(refs).size !== refs.length || refs.some(r => typeof r !== 'string' || !/^[a-f0-9]{32}$/.test(r))) return false;
+  if (value.references !== undefined && refs.length === 0) return false;
+  if (value.reference !== undefined && refs.length !== 1) return false;
+  if (refs.length ? !positiveInt(value.strength, 100) : value.strength !== undefined) return false;
+  if (value.backend !== undefined && !/^[a-z][a-z0-9_-]{0,31}$/.test(value.backend)) return false;
+  if (value.model !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors$/.test(value.model)) return false;
+  return value.upscale === undefined || value.upscale === 2;
+};
 const states: ImageState[] = ['awaiting_approval', 'queued', 'generating', 'ready', 'rejected', 'deferred', 'refused', 'uncertain'];
 
 async function boundedBody(response: Response, limit: number, signal: AbortSignal): Promise<Uint8Array> {
@@ -76,7 +86,8 @@ export async function imageStatus(signal?: AbortSignal): Promise<ImageCapability
     // `edit` is read, never required: a hub that predates image editing still reports
     // a usable generator, and refusing the whole status over a missing capability flag
     // would break generation to advertise editing.
-    return { configured: status.configured, edit: status.edit === true };
+    const backends = Array.isArray(status.backends) ? status.backends.filter((b: any) => typeof b?.id === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(b.id) && Array.isArray(b.models) && b.models.every((m: any) => typeof m === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors$/.test(m))) : undefined;
+    return { configured: status.configured, edit: status.edit === true, ...(backends ? {backends, max_references: status.max_references, upscale: status.upscale} : {}) };
   });
 }
 export async function proposeImage(prompt: string, edit?: ImageEdit | null, signal?: AbortSignal): Promise<number> {
@@ -85,7 +96,7 @@ export async function proposeImage(prompt: string, edit?: ImageEdit | null, sign
   try {
     return await timed(signal, async signal => {
       const response = await apiFetchOnce('/api/media/generate', { method: 'POST', admin: true, signal,
-        body: { kind: 'image', prompt, cloud: false, ...(edit ? { reference: edit.reference, strength: edit.strength } : {}) } });
+        body: { kind: 'image', prompt, cloud: false, ...(edit ? Object.fromEntries(Object.entries(edit).filter(([key, value]) => ["reference", "references", "strength", "backend", "model", "upscale"].includes(key) && value !== undefined)) : {}) } });
       if (response.status === 401 || response.status === 403) fail('auth');
       if ([400, 422].includes(response.status)) fail('refused');
       const value = await json(response, signal);

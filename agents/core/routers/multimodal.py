@@ -353,6 +353,10 @@ class MediaGenBody(BaseModel):
     # generator at a file the owner did not produce through this same route.
     reference: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
     strength: int | None = Field(None, strict=True, ge=1, le=100)
+    references: list[str] | None = Field(None, min_length=1, max_length=4)
+    upscale: int | None = Field(None, strict=True, ge=2, le=2)
+    backend: str | None = Field(None, pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+    model: str | None = Field(None, max_length=173)
 
 
 @router.get("/api/media", dependencies=[Depends(user_guard)])
@@ -388,7 +392,7 @@ async def media_generate(body: MediaGenBody):
         if error is not None:
             return error
         args = {"prompt": body.prompt}
-        args.update({key: value for key in ("seed", "width", "height", "steps", "reference", "strength")
+        args.update({key: value for key in ("seed", "width", "height", "steps", "reference", "strength", "references", "upscale", "backend", "model")
                      if (value := getattr(body, key)) is not None})
         result = await server.handle({"tool": "image_generate", "args": args}, actor="pepper")
         queued = result.get("reason") == "approval_required" and "task_id" in result
@@ -431,17 +435,23 @@ async def media_generated_artifact(artifact_id: str):
 
 
 @router.get("/api/media/catalog", dependencies=[Depends(user_guard)])
-async def media_catalog(q: str | None = None, kind: str | None = None):
+def media_catalog(q: str | None = None, kind: str | None = None):
     """0.46 read surface: the generated-media catalog (newest-first, optionally
     filtered by prompt substring ``q`` / ``kind``) + stats. Reports
     ``enabled: false`` with empty data when JARVIS_MEDIA_CATALOG is unset."""
-    from agents.core.media_catalog import default_catalog_if_enabled
-    cat = default_catalog_if_enabled()
-    if cat is None:
-        return nocache_json({"enabled": False, "items": [],
-                             "stats": {"total": 0, "cloud": 0, "by_kind": {}}})
-    items = cat.search(q, kind=kind) if (q or kind) else cat.all()
-    return nocache_json({"enabled": True, "items": items[:200], "stats": cat.stats()})
+    from agents.core.env_config import env_flag
+    from agents.core.media_library import gallery
+    generated, attached = env_flag("JARVIS_MEDIA_CATALOG"), env_flag("JARVIS_BINARY_ARTIFACTS")
+    items = gallery(generated=generated, attached=attached)
+    if q:
+        items = [r for r in items if q.lower() in (r.get("prompt", "") + " " + r.get("mime", "") + " " + r["id"]).lower()]
+    if kind:
+        items = [r for r in items if r["kind"] == kind]
+    by_kind = {}
+    for item in items:
+        by_kind[item['kind']] = by_kind.get(item['kind'], 0) + 1
+    return nocache_json({"enabled": generated or attached, "items": items,
+                         "stats": {"total": len(items), "cloud": sum(bool(r.get("cloud")) for r in items), "by_kind": by_kind}})
 
 
 @router.get("/api/media/generation-tasks/{task_id}", dependencies=[Depends(admin_guard)],

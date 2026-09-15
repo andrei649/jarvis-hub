@@ -29,19 +29,19 @@ Din acestea, **6** au fost reevaluate pe cod în această livrare; **108** păst
 | cli | 56 | 15 | 16 | 3 | 10 | 12 |
 | gateway | 33 | 5 | 11 | 6 | 5 | 6 |
 | platforms | 39 | 5 | 20 | 5 | 8 | 1 |
-| web | 40 | 7 | 16 | 9 | 7 | 1 |
+| web | 40 | 7 | 17 | 9 | 7 | 0 |
 | desktop | 54 | 6 | 33 | 7 | 6 | 2 |
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
 | config | 18 | 4 | 9 | 3 | 1 | 1 |
 | env | 28 | 2 | 16 | 2 | 5 | 3 |
-| tools — the agent-callable surface | 32 | 7 | 17 | 3 | 2 | 3 |
+| tools — the agent-callable surface | 32 | 7 | 16 | 3 | 2 | 4 |
 | skills | 33 | 6 | 13 | 6 | 8 | 0 |
 | providers | 27 | 4 | 12 | 3 | 7 | 1 |
 | agent-core | 36 | 7 | 11 | 9 | 4 | 5 |
 | memory | 27 | 8 | 10 | 3 | 2 | 4 |
-| automation | 32 | 1 | 18 | 4 | 3 | 6 |
+| automation | 32 | 1 | 19 | 4 | 3 | 5 |
 | security | 34 | 7 | 17 | 4 | 5 | 1 |
-| media | 27 | 5 | 17 | 4 | 1 | 0 |
+| media | 27 | 5 | 16 | 4 | 1 | 1 |
 | acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
 | docs-features | 48 | 8 | 24 | 5 | 9 | 2 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |

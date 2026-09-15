@@ -1255,6 +1255,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/media/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Media Export
+         * @description In-memory portable bundle; no host path or arbitrary file-write surface.
+         */
+        post: operations["media_export_api_media_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/browser/check": {
         parameters: {
             query?: never;
@@ -9931,6 +9951,11 @@ export interface components {
              */
             top_k: number;
         };
+        /** MediaExportBody */
+        MediaExportBody: {
+            /** Ids */
+            ids: string[];
+        };
         /** MediaGenBody */
         MediaGenBody: {
             /** Kind */
@@ -9954,6 +9979,14 @@ export interface components {
             reference?: string | null;
             /** Strength */
             strength?: number | null;
+            /** References */
+            references?: string[] | null;
+            /** Upscale */
+            upscale?: number | null;
+            /** Backend */
+            backend?: string | null;
+            /** Model */
+            model?: string | null;
         };
         /** MoERouteBody */
         MoERouteBody: {
@@ -12629,6 +12662,37 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    media_export_api_media_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaExportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

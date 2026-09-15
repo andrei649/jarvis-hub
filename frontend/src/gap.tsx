@@ -9,6 +9,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
+import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
 import { ImagesPanel } from './panels/images';
 import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
@@ -3223,9 +3224,12 @@ export function SkillHistoryPanel() {
    endpoint reports enabled:false and the panel says so (prompts are sensitive, so nothing
    is recorded by default). */
 export function MediaGalleryPanel() {
+  const [query, setQuery] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [exporting, setExporting] = useState(false);
   const { d, e, loading, reload } = useApi('/api/media/catalog');
   const enabled = !!(d && d.enabled);
-  const items = arr(d && d.items);
+  const items = arr(d && d.items).filter(it => `${it.prompt || ''} ${it.mime || ''} ${it.id}`.toLowerCase().includes(query.toLowerCase()));
   const byKind = (d && d.stats && d.stats.by_kind) || {};
   return (
     <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} items` : 'disabled') : null} onReload={reload}>
@@ -3239,12 +3243,19 @@ export function MediaGalleryPanel() {
           </span>
         </Row>
       )}
-      {items.slice(0, 8).map((it, i) => (
-        <Row key={it.id || i}>
-          <span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(it.prompt || '').slice(0, 40)}</span>
-        </Row>
-      ))}
+      <label>Search media <input aria-label="Search media" style={inpS} value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <button className="tool-btn" disabled={exporting || !items.some(it => it.available)} onClick={async () => {
+        setExporting(true); setExportError('');
+        try { await downloadMediaBundle(items.filter(it => it.available).map(it => it.id)); }
+        catch (e) { setExportError(String(e)); }
+        finally { setExporting(false); }
+      }}>Export visible media</button>
+      {exportError && <p role="alert">{exportError}</p>}
+      {items.map((it, i) => <div key={it.id || i}>
+        <Row><span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10 }}>{it.prompt || it.id}</span></Row>
+        {it.available && it.mime ? <BinaryCard item={it} refresh={reload} /> : it.available === false && <small>File missing or unsupported for delivery.</small>}
+      </div>)}
     </Card>
   );
 }

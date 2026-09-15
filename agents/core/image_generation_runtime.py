@@ -15,8 +15,9 @@ from pathlib import Path
 
 from .media_backends.comfyui import (
     ComfyUIBackend,
-    ComfyUIConfig,
     ImageGenerationError,
+    backend_catalog,
+    resolve_config,
     validate_options,
 )
 from .paths import data_path
@@ -40,18 +41,23 @@ INPUT_SCHEMA = {
         # width/height, which an edit takes from the reference itself.
         "reference": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
         "strength": {"type": "integer", "minimum": 1, "maximum": 100},
+        "references": {"type": "array", "items": {"type": "string", "pattern": "^[a-f0-9]{32}$"}, "minItems": 1, "maxItems": 4, "uniqueItems": True},
+        "upscale": {"type": "integer", "enum": [2]},
+        "backend": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"},
+        "model": {"type": "string", "maxLength": 173},
     },
 }
 
 
 def configuration_status():
     try:
-        config = ComfyUIConfig.from_env()
+        config = resolve_config()
     except ImageGenerationError as exc:
         return {"configured": False, "backend": "comfyui", "reason": exc.reason, "reachable": None}
     return {"configured": config is not None, "backend": "comfyui" if config else "off",
             "reason": "not_probed" if config else "disabled", "reachable": None,
-            "local": True, "approval_required": True, "edit": True}
+            "local": True, "approval_required": True, "edit": True, "max_references": 4, "upscale": [2],
+            "backends": [{"id": name, "models": row["checkpoints"]} for name, row in backend_catalog().items()]}
 
 
 def _digest(value):
@@ -92,10 +98,10 @@ class LocalImageRuntime:
         self._authorizer = authorizer
         self._enqueue = enqueue
 
-    def _config(self):
+    def _config(self, options=None):
         from .kernel import kernel_enabled
         from .system_profiles import heavy_features_enabled
-        config = ComfyUIConfig.from_env()
+        config = resolve_config(options)
         if config is None:
             raise ImageGenerationError("local_image_disabled")
         if self._authorizer is None or not kernel_enabled():
@@ -118,7 +124,7 @@ class LocalImageRuntime:
 
     def preflight(self, args):
         try:
-            config = self._config()
+            config = self._config(args)
             task = self._approved_task()
             allowed = set(INPUT_SCHEMA["properties"])
             if task is not None:
@@ -149,7 +155,7 @@ class LocalImageRuntime:
         from .kernel import Action, Decision, Verdict
         from .security.taint import mark_if_untrusted
 
-        self._config()
+        self._config(args)
         if self._queue is None:
             raise ImageGenerationError("queue_required")
         origin = current_action_origin()
@@ -214,7 +220,7 @@ class LocalImageRuntime:
 
         reason = "local_refused"
         try:
-            config = self._config()
+            config = self._config(args)
             task = self._approval(args, config)
         except (ImageGenerationError, OSError, KeyError, TypeError, ValueError) as exc:
             return {"ok": False, "reason": getattr(exc, "reason", "approval_binding_invalid")}
@@ -227,7 +233,7 @@ class LocalImageRuntime:
             try:
                 if kind != "image" or prompt != args["prompt"] or opts != options:
                     raise ImageGenerationError("approved_payload_changed")
-                live_config = self._config()
+                live_config = self._config(args)
                 persisted = self._approval(args, live_config)
                 if live_config != config:
                     raise ImageGenerationError("backend_binding_changed")
@@ -250,7 +256,7 @@ class LocalImageRuntime:
                 # FileTools semantics: QUEUE is satisfied by this exact durable
                 # human approval; it is not rewritten to GRANT. The exclusive
                 # durable marker consumes that authority before the only POST.
-                self._approval(args, self._config())
+                self._approval(args, self._config(args))
                 try:
                     _write_exclusive(self._record_path(persisted, "attempt"), {
                         "task_id": persisted.id, "digest": _task_binding(persisted),

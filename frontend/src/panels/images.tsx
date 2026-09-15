@@ -20,6 +20,10 @@ export function ImagesPanel() {
   const [mode, setMode] = useState<'create' | 'edit'>('create');
   const [reference, setReference] = useState('');
   const [strength, setStrength] = useState(60);
+  const [additionalReferences, setAdditionalReferences] = useState('');
+  const [backend, setBackend] = useState('');
+  const [model, setModel] = useState('');
+  const [upscale, setUpscale] = useState(false);
   const [existingId, setExistingId] = useState('');
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<number | null>(null);
@@ -69,7 +73,10 @@ export function ImagesPanel() {
     return () => { controller.abort(); clearTimeout(timer); if (ownedUrl) URL.revokeObjectURL(ownedUrl); };
   }, [taskId, watching, readVersion]);
 
-  const edit = mode === 'edit' ? { reference: reference.trim(), strength } : null;
+  const extras = additionalReferences.split(/[\s,]+/).filter(Boolean);
+  const selection = { ...(backend ? {backend} : {}), ...(model ? {model} : {}), ...(upscale ? {upscale:2} : {}) };
+  const edit = mode === 'edit' ? { ...(extras.length ? {references:[reference.trim(), ...extras]} : {reference:reference.trim()}), strength, ...selection }
+    : Object.keys(selection).length ? selection : null;
   const submittable = !!configuration?.configured && !!prompt.trim() && (edit === null || editValid(edit));
 
   const submit = async (event: React.FormEvent) => {
@@ -112,6 +119,15 @@ export function ImagesPanel() {
           <input type="radio" name="image-mode" checked={mode === 'edit'} onChange={() => setMode('edit')} /> Edit an image
         </label>
       </div>}
+      {!!configuration?.backends?.length && <div>
+        <label>Image backend <select aria-label="Image backend" value={backend} onChange={e => {setBackend(e.target.value); setModel('');}}>
+          <option value="">Hub default</option>{configuration.backends.map(b => <option key={b.id} value={b.id}>{b.id} · local ComfyUI</option>)}
+        </select></label>
+        <label>Image model <select aria-label="Image model" value={model} onChange={e => setModel(e.target.value)}>
+          <option value="">Backend default</option>{configuration.backends.find(b => b.id === (backend || 'comfyui'))?.models.map(m => <option key={m} value={m}>{m}</option>)}
+        </select></label>
+      </div>}
+      {configuration?.upscale?.includes(2) && <label><input aria-label="2× bicubic upscale" type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} />2× bicubic upscale</label>}
       <label style={{ display: 'block', marginTop: 10 }}>Image prompt
         <textarea aria-label="Image prompt" value={prompt} maxLength={4000} required style={{ ...taS, minHeight: 100 }}
           onChange={event => setPrompt(event.target.value)} />
@@ -121,6 +137,10 @@ export function ImagesPanel() {
           <input aria-label="Reference artifact ID" value={reference} required pattern="[a-f0-9]{32}"
             onChange={event => setReference(event.target.value.trim())} style={{ width: '100%' }} />
         </label>
+        {(configuration?.max_references || 1) > 1 && <label>Additional reference IDs (up to three, comma separated)
+          <input aria-label="Additional reference IDs" value={additionalReferences} maxLength={100} onChange={e => setAdditionalReferences(e.target.value)} />
+          <small>References are resized to the first image and blended equally before editing.</small>
+        </label>}
         <label style={{ display: 'block', fontSize: 12 }}>Change strength · {strength}%
           <input aria-label="Change strength" type="range" min={1} max={100} value={strength}
             onChange={event => setStrength(Number(event.target.value))} style={{ width: '100%' }} />
