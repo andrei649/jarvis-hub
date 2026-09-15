@@ -11,6 +11,7 @@
      directly; remote http(s) images sit behind an explicit consent click and
      load with referrerPolicy="no-referrer";
    - nothing here auto-saves — a reply is persisted only on a user click. */
+import { BinaryArtifacts } from './panels/binary-artifacts';
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, apiDelete } from './api/client';
 
@@ -248,6 +249,7 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
         </span>
         <button className="tool-btn" onClick={load} title="refresh artifacts">↻ {L.refresh}</button>
       </div>
+      <BinaryArtifacts />
       {actionErr && <div className="art-note err" role="alert">{actionErr}</div>}
       {loading ? (
         <div className="art-note">{L.loading}</div>

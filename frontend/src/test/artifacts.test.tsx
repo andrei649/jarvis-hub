@@ -30,6 +30,7 @@ const ELS = [
 function mockCanvas(elements) {
   global.fetch = vi.fn((url, init) => {
     const path = String(url);
+    if (path === '/api/artifacts') return ok({ enabled: false, items: [] });
     if (path === '/api/canvas' && (!init || !init.method || init.method === 'GET')) {
       return ok({ elements });
     }
@@ -130,6 +131,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
     const el = ELS[0];
     global.fetch = vi.fn((url, init) => {
       const path = String(url);
+    if (path === '/api/artifacts') return ok({ enabled: false, items: [] });
       if (path === '/api/canvas') return ok({ elements: [el] });
       if (path === '/api/canvas/e1/pin?pinned=true' && init?.method === 'POST') return ok({ ...el, pinned: true });
       if (path === '/api/canvas/e1/pin?pinned=false' && init?.method === 'POST') return ok({ ...el, pinned: false });
@@ -147,6 +149,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
   it('delete calls the existing endpoint and removes the card', async () => {
     global.fetch = vi.fn((url, init) => {
       const path = String(url);
+    if (path === '/api/artifacts') return ok({ enabled: false, items: [] });
       if (path === '/api/canvas') return ok({ elements: [ELS[0]] });
       if (path === '/api/canvas/e1' && init?.method === 'DELETE') return ok({ removed: true });
       return Promise.reject(new Error('unexpected fetch: ' + path));
@@ -172,7 +175,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
 
   it('shows an honest API-error state with a working retry', async () => {
     let first = true;
-    global.fetch = vi.fn(() => { const r = first ? fail(500) : ok({ elements: [ELS[0]] }); first = false; return r; });
+    global.fetch = vi.fn((url) => { if (url === '/api/artifacts') return ok({enabled:false, items:[]}); const r = first ? fail(500) : ok({ elements: [ELS[0]] }); first = false; return r; });
     render(<ArtifactsPanel refreshKey={0} lang="en" />);
     expect(await screen.findByText(/couldn.t load artifacts/i)).toBeTruthy();
     fireEvent.click(screen.getByText(/retry/i));
@@ -183,9 +186,9 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
     const f = mockCanvas([ELS[0]]);
     render(<ArtifactsPanel refreshKey={0} lang="en" />);
     await screen.findByText('plain text body');
-    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls.filter(([url]) => url === '/api/canvas')).toHaveLength(1);
     fireEvent.click(screen.getByText(/refresh/i));
-    await waitFor(() => expect(f).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(f.mock.calls.filter(([url]) => url === '/api/canvas')).toHaveLength(2));
   });
 
   it('refreshes when refreshKey changes (post-save signal from the cockpit)', async () => {
@@ -193,7 +196,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
     const { rerender } = render(<ArtifactsPanel refreshKey={0} lang="en" />);
     await screen.findByText('plain text body');
     rerender(<ArtifactsPanel refreshKey={1} lang="en" />);
-    await waitFor(() => expect(f).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(f.mock.calls.filter(([url]) => url === '/api/canvas')).toHaveLength(2));
   });
 });
 
@@ -265,7 +268,7 @@ describe('SaveArtifactButton — explicit response saving', () => {
 
   it('shows an honest failure state and allows a retry', async () => {
     let first = true;
-    global.fetch = vi.fn(() => { const r = first ? fail(500) : ok({ id: 'n' }); first = false; return r; });
+    global.fetch = vi.fn((url) => { if (url === '/api/artifacts') return ok({enabled:false, items:[]}); const r = first ? fail(500) : ok({ id: 'n' }); first = false; return r; });
     render(<SaveArtifactButton message={mkMsg()} onSaved={() => {}} lang="en" />);
     fireEvent.click(screen.getByTitle('save to artifacts'));
     expect(await screen.findByText(/save failed/i)).toBeTruthy();

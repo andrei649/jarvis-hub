@@ -157,6 +157,8 @@ def run_retention(get_setting: Callable, audit_logger=None, root: Optional[Path]
     conv_ttl = int(get_setting("retention.conversation_ttl_days", 0) or 0)
     audit_ttl = int(get_setting("retention.audit_ttl_days", 0) or 0)
     ingestion_ttl = int(get_setting("retention.ingestion_ttl_days", 0) or 0)
+    from .artifact_store import BinaryArtifactStore
+    artifacts = BinaryArtifactStore(root).retain(int(get_setting("retention.artifact_ttl_days", 0) or 0), now=now)
     conv = purge_old_conversations(conv_ttl, root=root, now=now)
     audit = purge_old_audit(audit_ttl, audit_logger, now=now)
     ingestion = purge_old_private_ingestion(
@@ -165,4 +167,4 @@ def run_retention(get_setting: Callable, audit_logger=None, root: Optional[Path]
     logger.info("retention sweep: %d conversation(s), %d audit row(s), %d ingestion root(s) pruned",
                 len(conv["deleted"]), audit["deleted"], len(ingestion["deleted"]))
     return {"enabled": True, "conversations": conv, "audit": audit,
-            "private_ingestion": ingestion}
+            "private_ingestion": ingestion, "artifacts": artifacts}

@@ -570,84 +570,90 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
         "legacy_private_ingestion": legacy_ingestion,
     }
 
-    if backup_first:
-        # AUDIT-2c. Three deliberate changes from the old call, each closing a way the
-        # safety net worked against the user:
-        #   out_dir=  the archive lands OUTSIDE the data root, so purging the root cannot
-        #             leave a full copy of everything sitting inside the folder it just
-        #             cleaned (it used to default to <data_root>/backups);
-        #   encrypt=  unconditional. This archive is, by construction, the most
-        #             concentrated copy of the user's data that will ever exist — every
-        #             marker the audit planted was recoverable from the plaintext one,
-        #             including a settings.db token. The cipher key resolves under
-        #             $JARVIS_KEY_DIR, outside the archive, and is generated if unset;
-        #   prune     old pre-forget archives are removed, because retaining N full copies
-        #             of data the owner asked to be deleted is not a safety net.
-        out_dir = _backup.pre_forget_dir(root)
-        snap = _backup.create_backup(source_root=str(root), out_dir=str(out_dir),
-                                     label="pre-forget", encrypt=True)
-        verdict = _backup.verify_backup(snap["archive"])
-        if not verdict.get("ok"):
-            raise PurgeError(
-                f"pre-forget backup failed verification ({snap['archive']}); aborting purge"
+    # Binary wave 2 explicitly excludes attachment bytes from recovery archives.
+    # The disk-backed store has no live cache to re-persist after this deletion.
+    from .artifact_store import BinaryArtifactStore
+    with BinaryArtifactStore(root).forget():
+
+        if backup_first:
+            # AUDIT-2c. Three deliberate changes from the old call, each closing a way the
+            # safety net worked against the user:
+            #   out_dir=  the archive lands OUTSIDE the data root, so purging the root cannot
+            #             leave a full copy of everything sitting inside the folder it just
+            #             cleaned (it used to default to <data_root>/backups);
+            #   encrypt=  unconditional. This archive is, by construction, the most
+            #             concentrated copy of the user's data that will ever exist — every
+            #             marker the audit planted was recoverable from the plaintext one,
+            #             including a settings.db token. The cipher key resolves under
+            #             $JARVIS_KEY_DIR, outside the archive, and is generated if unset;
+            #   prune     old pre-forget archives are removed, because retaining N full copies
+            #             of data the owner asked to be deleted is not a safety net.
+            out_dir = _backup.pre_forget_dir(root)
+            snap = _backup.create_backup(source_root=str(root), out_dir=str(out_dir),
+                                         label="pre-forget", encrypt=True)
+            verdict = _backup.verify_backup(snap["archive"])
+            if not verdict.get("ok"):
+                raise PurgeError(
+                    f"pre-forget backup failed verification ({snap['archive']}); aborting purge"
+                )
+            report["backup"] = {
+                "archive": snap["archive"],
+                "verified": True,
+                "encrypted": True,
+                "outside_data_root": True,
+                "pruned": _backup.prune_pre_forget_archives(source_root=root),
+            }
+
+        # Howard's RAG reader and embedding LRU hold private text outside the data
+        # root. Drop them before erasing files so a successful forget is process-wide,
+        # including the CLI/direct-function path that has no live orchestrator.
+        from agents.core.ingestion.pipeline import clear_live_ingestion
+        report["purged"]["live_ingestion"] = clear_live_ingestion()
+
+        for name in PURGE_DBS:
+            p = root / name
+            if not p.exists():
+                continue
+            deleted = _purge_db(p)
+            report["purged"][name] = deleted
+            report["total_rows"] += sum(deleted.values())
+
+        for name in PURGE_JSON:
+            p = root / name
+            if not p.exists():
+                continue
+            before = _json_entries(p)
+            p.write_text("{}", encoding="utf-8")
+            report["purged"][name] = {"reset": before}
+
+        if memory:
+            report["purged"]["memory"] = _purge_memory_at_rest(root, sessions)
+
+        # AUDIT-2: the named passes above handle the stores whose erasure has a *specific*
+        # shape (schema-preserving row deletes, the confirmed-session transcript rule). This
+        # sweep then catches everything else under the data root that is not explicitly kept —
+        # which is where the twelve surviving stores were, and where the thirteenth would have
+        # been. It runs last so the specific rules win where they apply.
+        sweep = _purge_everything_but_keep(root)
+        report["purged"]["sweep"] = sweep
+        report["total_rows"] += sweep["rows"]
+        not_erased = list(sweep.get("failed") or [])
+        legacy_remaining = legacy_import_status()
+        report["legacy_private_ingestion"] = legacy_remaining
+        if legacy_remaining["detected"]:
+            not_erased.append(
+                "legacy ingestion root outside configured data authority: "
+                + str(legacy_remaining["path"])
             )
-        report["backup"] = {
-            "archive": snap["archive"],
-            "verified": True,
-            "encrypted": True,
-            "outside_data_root": True,
-            "pruned": _backup.prune_pre_forget_archives(source_root=root),
-        }
+        if not_erased:
+            report["ok"] = False
+            report["not_erased"] = not_erased
 
-    # Howard's RAG reader and embedding LRU hold private text outside the data
-    # root. Drop them before erasing files so a successful forget is process-wide,
-    # including the CLI/direct-function path that has no live orchestrator.
-    from agents.core.ingestion.pipeline import clear_live_ingestion
-    report["purged"]["live_ingestion"] = clear_live_ingestion()
+        logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
+                    report["total_rows"], len(report["purged"]), memory,
+                    report["backup"]["archive"] if report["backup"] else "none")
+        return report
 
-    for name in PURGE_DBS:
-        p = root / name
-        if not p.exists():
-            continue
-        deleted = _purge_db(p)
-        report["purged"][name] = deleted
-        report["total_rows"] += sum(deleted.values())
-
-    for name in PURGE_JSON:
-        p = root / name
-        if not p.exists():
-            continue
-        before = _json_entries(p)
-        p.write_text("{}", encoding="utf-8")
-        report["purged"][name] = {"reset": before}
-
-    if memory:
-        report["purged"]["memory"] = _purge_memory_at_rest(root, sessions)
-
-    # AUDIT-2: the named passes above handle the stores whose erasure has a *specific*
-    # shape (schema-preserving row deletes, the confirmed-session transcript rule). This
-    # sweep then catches everything else under the data root that is not explicitly kept —
-    # which is where the twelve surviving stores were, and where the thirteenth would have
-    # been. It runs last so the specific rules win where they apply.
-    sweep = _purge_everything_but_keep(root)
-    report["purged"]["sweep"] = sweep
-    report["total_rows"] += sweep["rows"]
-    not_erased = list(sweep.get("failed") or [])
-    legacy_remaining = legacy_import_status()
-    report["legacy_private_ingestion"] = legacy_remaining
-    if legacy_remaining["detected"]:
-        not_erased.append(
-            "legacy ingestion root outside configured data authority: "
-            + str(legacy_remaining["path"])
-        )
-    if not_erased:
-        report["ok"] = False
-        report["not_erased"] = not_erased
-
-    logger.info("forget purge complete: %s rows across %s targets (memory=%s, backup=%s)",
-                report["total_rows"], len(report["purged"]), memory,
-                report["backup"]["archive"] if report["backup"] else "none")
-    return report
 
 
 # ── CLI ───────────────────────────────────────────────────────────
