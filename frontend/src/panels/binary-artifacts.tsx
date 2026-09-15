@@ -1,5 +1,5 @@
 import { appUrl } from '../base-path';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getToken } from '../api/client';
 
 type BinaryItem = { id: string; mime: string; size: number; agent: string; pinned: boolean; validation?: 'on_download' };
@@ -15,17 +15,34 @@ export function BinaryCard({ item, refresh }: { item: BinaryItem; refresh: () =>
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const previewRequest = useRef<AbortController | null>(null);
+  const previewURL = useRef('');
+  useEffect(() => () => {
+    previewRequest.current?.abort();
+    previewRequest.current = null;
+    if (previewURL.current) URL.revokeObjectURL(previewURL.current);
+    previewURL.current = '';
+  }, []);
   const load = async () => {
+    if (previewRequest.current) return;
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    const current = () => previewRequest.current === controller && !controller.signal.aborted;
     setBusy(true); setError('');
     try {
-      const response = await request(`/api/artifacts/${encodeURIComponent(item.id)}/blob`);
+      const response = await request(`/api/artifacts/${encodeURIComponent(item.id)}/blob`, { signal: controller.signal });
+      if (!current()) return;
       if (Number(response.headers.get('content-length')) > LIMIT) throw new Error('Attachment too large');
       const blob = await response.blob();
+      if (!current()) return;
       if (blob.size > LIMIT || blob.type !== item.mime) throw new Error('Invalid attachment response');
-      setUrl(URL.createObjectURL(blob));
-    } catch (e) { setError(String(e)); }
-    finally { setBusy(false); }
+      if (previewURL.current) URL.revokeObjectURL(previewURL.current);
+      previewURL.current = URL.createObjectURL(blob);
+      setUrl(previewURL.current);
+    } catch (e) { if (current()) setError(String(e)); }
+    finally {
+      if (current()) { previewRequest.current = null; setBusy(false); }
+    }
   };
   const mutate = async (pin: boolean) => {
     setBusy(true); setError('');

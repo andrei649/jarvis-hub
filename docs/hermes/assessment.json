@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "d0bf8a4afe678bc2faeaba3d9feb9c5cfbb4d11c",
-  "assessed_at": "2026-09-15T14:15:11Z",
+  "base_sha": "22596935d65a2799be133f1737ef932c6ea3fa25",
+  "assessed_at": "2026-09-15T14:22:20Z",
   "reviews": [
     {
       "id": "H001",
@@ -2320,7 +2320,7 @@
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
       "status": "partial",
-      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection.",
+      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection. Shared attachment previews now abort on card unmount and reject late fetch/body continuations; owned object URLs are revoked even before a pending React state update commits.",
       "remaining": "Traversal covers currently retained metadata only (generated store bounded to 10,000 records/10 MB; attachments use their configured retention). Legacy files outside producer-owned roots, missing/unsupported/oversized files remain unavailable. The upper timestamp/key watermark excludes newer appends but does not freeze membership against later backdated or equal-time inserts. Native mobile gallery controls and restoration of evicted records remain absent; this is not proof of cloud-generation writeback or live providers.",
       "evidence": [
         {
@@ -2374,6 +2374,18 @@
         {
           "path": "frontend/docs/h518-gallery-pagination.md",
           "sha256": "41aa7511283e855fd8e4ca7f3de141728e0e461fb7bf2ae60b7f546463b53aeb"
+        },
+        {
+          "path": "frontend/src/panels/binary-artifacts.tsx",
+          "sha256": "ed169ed2ce320c87be07a197d1e9dc45880280f3dfb6bb519ac39f73e714d7f7"
+        },
+        {
+          "path": "frontend/src/test/attachment-preview-lifecycle.test.tsx",
+          "sha256": "4d533b91449c5e56ef066e58465e7ceed46c4017e180f0432f4eb025daa22e51"
+        },
+        {
+          "path": "frontend/docs/h12-attachment-preview-lifecycle.md",
+          "sha256": "3748af2b763b033965e7fa81380f7c7607c8d8c22ad681cd10bc220f91a3b427"
         }
       ]
     },
