@@ -282,17 +282,30 @@ class Agent:
                     await emitted
             return response
 
-    async def process(self, text: str, context: dict) -> str:
+    async def process(self, text: str, context: dict, *, prepared=None) -> str:
         system_prompt = self.soul.get("content", "")
         model = self.default_model()
 
         if not self.llm_router:
             return f"[{self.name} no LLM backend]"
 
-        prompt = self.build_prompt(text, context)
+        if prepared is not None and getattr(prepared, "input_text", None) is not None:
+            from .route_compaction import RouteRefused
+            if text != prepared.input_text:
+                raise RouteRefused()
+            prompt = prepared.prompt
+        else:
+            prompt = self.build_prompt(text, context)
 
         try:
-            res = self.llm_router.select_backend(self.id, prompt)
+            if prepared is not None:
+                from .route_compaction import PreparedRoute, RouteRefused
+                if not isinstance(prepared, PreparedRoute):
+                    raise RouteRefused()
+                prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
+                res = (prepared.backend, prepared.model, prepared.route)
+            else:
+                res = self.llm_router.select_backend(self.id, prompt)
         except LocalBackendUnavailableError:
             return LOCAL_SELECTION_UNAVAILABLE_REPLY
         route_name = ""
@@ -303,7 +316,7 @@ class Agent:
         else:
             backend, _ = res
         from .llm.effective_window import resolve_effective_window
-        effective_window = resolve_effective_window(backend, model)
+        effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
         backend = bind_guardrails(self.guardrails, backend)
 
         if self._checkpoint_manager:
@@ -319,10 +332,13 @@ class Agent:
         await self._ensure_resident(route_name, model)
         residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
-        max_tokens, temperature = self._gen_params(route_name)
+        max_tokens, temperature = ((prepared.max_tokens, prepared.temperature) if prepared is not None
+                                   else self._gen_params(route_name))
         start = time.monotonic()
         try:
             async with residency:
+                if prepared is not None:
+                    prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
                 response = await self.generate_response(
                     backend=backend,
                     model=model,
