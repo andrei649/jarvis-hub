@@ -1,6 +1,7 @@
 import base64
 import json
 from pathlib import Path
+
 import pytest
 
 
@@ -119,7 +120,8 @@ def test_real_settings_can_enable_artifact_retention(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, '_wal_set', False)
     settings_db.init_db()
     assert settings_db.put_category('retention', {'enabled': True, 'artifact_ttl_days': 1}) == (2, [])
-    s = store(tmp_path); s.put(PDF, now=1)
+    s = store(tmp_path)
+    s.put(PDF, now=1)
     def get_setting(key, default):
         category, name = key.split('.', 1)
         return settings_db.get_value(category, name, default)
@@ -128,7 +130,9 @@ def test_real_settings_can_enable_artifact_retention(tmp_path, monkeypatch):
 
 
 def test_interrupted_put_is_reclaimed_before_next_quota_decision(tmp_path):
-    import subprocess, sys, os
+    import os
+    import subprocess
+    import sys
     code = '''import os, sqlite3, sys
 from agents.core.artifact_store import BinaryArtifactStore
 class Interrupted(sqlite3.Connection):
@@ -150,8 +154,11 @@ BinaryArtifactStore(sys.argv[1]).put(b'%PDF-1.7\\ncrash fixture\\n%%EOF')
 
 
 def test_forget_lock_excludes_another_process(tmp_path):
-    import subprocess, sys, os
-    s = store(tmp_path); s.put(PDF)
+    import os
+    import subprocess
+    import sys
+    s = store(tmp_path)
+    s.put(PDF)
     with s.forget():
         code = '''import sys
 from agents.core.artifact_store import BinaryArtifactStore

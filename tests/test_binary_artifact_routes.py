@@ -6,8 +6,8 @@ PDF = b'%PDF-1.7\nsmall document\n%%EOF'
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    from agents.core.routers.artifact_store import router
     from agents.core.routers._deps import user_guard
+    from agents.core.routers.artifact_store import router
     monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
     monkeypatch.setenv('JARVIS_BINARY_ARTIFACTS', '1')
     app = FastAPI()

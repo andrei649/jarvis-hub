@@ -9,8 +9,8 @@ import base64
 import hashlib
 import os
 import re
-import sqlite3
 import shutil
+import sqlite3
 import stat
 import time
 import uuid
@@ -81,7 +81,8 @@ class BinaryArtifactStore:
                 if os.name == 'nt':
                     import msvcrt
                     if os.fstat(handle.fileno()).st_size == 0:
-                        handle.write(b'\0'); handle.flush()
+                        handle.write(b'\0')
+                        handle.flush()
                     handle.seek(0)
                     msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
@@ -142,9 +143,9 @@ class BinaryArtifactStore:
             raise ValueError('store_quota_exceeded')
         if not isinstance(agent, str) or not 1 <= len(agent) <= 80:
             raise ValueError('invalid_agent')
-        row = dict(id='ba-' + uuid.uuid4().hex, kind=detected.split('/')[0], mime=detected,
-                   size=len(data), sha256=hashlib.sha256(data).hexdigest(), agent=agent,
-                   created_at=time.time() if now is None else now, pinned=False)
+        row = {'id': 'ba-' + uuid.uuid4().hex, 'kind': detected.split('/')[0], 'mime': detected,
+               'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'agent': agent,
+               'created_at': time.time() if now is None else now, 'pinned': False}
         with self._upload_lock(), self._db() as db:
             rows = [dict(r) for r in db.execute('SELECT * FROM artifacts ORDER BY created_at ASC')]
             # Recover the only crash window: blob fsynced, metadata uncommitted.

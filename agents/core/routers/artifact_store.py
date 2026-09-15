@@ -5,7 +5,7 @@ from email.parser import BytesParser
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
-from ..artifact_store import BinaryArtifactStore, MAX_UPLOAD, resolve_blob
+from ..artifact_store import MAX_UPLOAD, BinaryArtifactStore, resolve_blob
 from ..env_config import env_flag
 from ._deps import user_guard
 
