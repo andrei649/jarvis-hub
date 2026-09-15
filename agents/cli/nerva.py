@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
 
     completion = verbs.add_parser("completion", help="print a shell completion script")
-    completion.add_argument("shell", choices=("bash", "zsh"))
+    completion.add_argument("shell", choices=("bash", "zsh", "fish"))
     return parser
 
 
@@ -1016,7 +1016,48 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK if queued else EXIT_FAILED
 
 
+def _fish_completion(parser: argparse.ArgumentParser) -> str:
+    """Complete command paths only; do not execute the CLI while completing."""
+    def quote(value: str) -> str:
+        # fish single quotes recognize only escaped backslashes and single quotes.
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+    lines = [
+        "# nerva fish completion — generated from the live parser tree",
+        "# Current session: nerva completion fish | source",
+        "function __nerva_complete_path",
+        "    set -l words (commandline -opc)",
+        "    set -e words[1]",
+        "    test (count $words) -eq (count $argv); or return 1",
+        "    for word in $argv",
+        '        test "$words[1]" = "$word"; or return 1',
+        "        set -e words[1]",
+        "    end",
+        "    return 0",
+        "end",
+        "complete -c nerva -f",
+    ]
+
+    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
+        condition = "__nerva_complete_path" + "".join(" " + quote(part) for part in path)
+        for action in node._actions:
+            if not isinstance(action, argparse._SubParsersAction):
+                continue
+            for name, child in sorted(action.choices.items()):
+                # -a and -n are evaluated by fish later; quote metadata at both
+                # the definition and completion stages, never as shell code.
+                lines.append(f"complete -c nerva -n {quote(condition)} -a {quote(quote(name))}")
+                walk(child, (*path, name))
+
+    walk(parser, ())
+    return "\n".join(lines) + "\n"
+
+
 def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
+    if shell not in {"bash", "zsh", "fish"}:
+        raise ValueError(f"unsupported completion shell: {shell!r}")
+    if shell == "fish":
+        return _fish_completion(parser or build_parser())
     tree = command_tree(parser)
     verbs = " ".join(sorted(tree))
     if shell == "bash":

@@ -40,6 +40,8 @@
 
 - 2026-09-15 scheduled scripts: bounded Python source is snapshotted into each approved local terminal task; pending outcomes, repeat reservations and delivery survive restart. Direct no_agent output and fenced script context skip empty observations. API/CLI and doctor are wired; 285 focused tests pass. Workdir, wake gates, monitor diffs and full unattended authority remain open. [Operator guide](docs/automations-scripts.md).
 
+- 2026-09-15 H004: fish joins bash/zsh command-tree completion, recursively generated from the installed parser. Real fish syntax/completion and hostile-metadata tests pass; existing Bash/Zsh output is unchanged. Independent review clears the frozen H004 contract; option/value completion is not claimed. [Usage](docs/cli-completion.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted
