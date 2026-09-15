@@ -2365,7 +2365,7 @@
         },
         {
           "path": "frontend/src/test/media-gallery-panel.test.tsx",
-          "sha256": "a76f29d4ebbb7a4548837b22b2e0eab177291a07840015cf7936656c60db3ccf"
+          "sha256": "d07f0433122d8b4c39269e1a741f9d985eefcc7df43d347e881fe983145a2ce0"
         },
         {
           "path": "frontend/e2e/media-gallery.spec.ts",

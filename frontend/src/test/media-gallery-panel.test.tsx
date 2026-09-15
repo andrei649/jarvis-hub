@@ -111,8 +111,10 @@ it('drops stale selections when continuation authorization changes', async () =>
   fireEvent.click(await screen.findByLabelText('Select md-recent'));
   fireEvent.click(screen.getByRole('button',{name:'Load more'}));
   await screen.findByRole('button',{name:'Retry gallery'});
-  expect(screen.getByRole('button',{name:'Export selected media (0)'}).disabled).toBe(true);
-  expect(screen.queryByText('recent')).toBeNull();
+  await waitFor(() => {
+    expect(screen.getByRole('button',{name:'Export selected media (0)'}).disabled).toBe(true);
+    expect(screen.queryByText('recent')).toBeNull();
+  });
 });
 
 it('does not present a legacy response count as the full retained catalog total', async () => {
