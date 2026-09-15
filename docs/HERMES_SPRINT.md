@@ -100,6 +100,14 @@ H453 rămâne parțial. Scripturile aprobate pot opri apelul la model și livrar
 Monitorizarea prin hash și diff pentru scripturi/URL-uri rămâne deschisă.
 [Contract și limite](automations-scripts.md#wake-and-silence-gates).
 
+Monitorizarea scripturilor este acum verificată separat: hash pe întregul stdout,
+capturi complete cu secrete mascate, suprimare fără schimbări și diff la schimbare.
+Baseline-ul se persistă înainte de model; generația configurației protejează
+înlocuirile și livrările întârziate. 26 de teste noi, 364 țintite trecute și 95%
+acoperire a ramurilor pentru modulele noi. Capturile sunt limitate la UTF-8 complet
+în plafonul terminalului; monitorizarea URL rămâne deschisă.
+[Contract și limite](automations-scripts.md#bounded-script-monitors).
+
 ## Ordinea sprintului
 
 1. **Reevaluarea restului inventarului pe clustere**, începând cu cele mai vechi
