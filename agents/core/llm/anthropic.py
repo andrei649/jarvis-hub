@@ -130,7 +130,7 @@ class ClaudeBackend(LLMBackend):
             "model": model,
             "max_tokens": cloud_cap(max_tokens),
             "temperature": temperature,
-            "system": system,
+            "system": cache_marked_system(system) if system else system,
             "messages": self._build_messages(prompt, system),
         }
         self._fit_to_wire(payload, model)
@@ -189,7 +189,7 @@ class ClaudeBackend(LLMBackend):
             "model": model,
             "max_tokens": cloud_cap(max_tokens),
             "temperature": temperature,
-            "system": system,
+            "system": cache_marked_system(system) if system else system,
             "messages": self._build_messages(prompt, system),
             "stream": True,
         }
