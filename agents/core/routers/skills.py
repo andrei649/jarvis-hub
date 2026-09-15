@@ -151,6 +151,8 @@ async def sandbox_kernels(request: Request):
         return body
     body["kernel"] = next(
         (row for row in kernels.status() if row.get("token") == key.token), None)
+    if body["kernel"] and body["kernel"].get("quarantined"):
+        body["reason"] = body["kernel"]["reason"]
     return body
 
 
@@ -168,14 +170,17 @@ async def sandbox_kernel_reset(request: Request):
         orch, server, getattr(orch, "get_setting", None), request) if server else None
     if invocation is None:
         return {"reset": False, "mode": mode, "reason": "authority_unavailable"}
-    # `reset` answers "was there state to lose", not "did the call succeed". False
-    # here is a successful call over an empty seat, and the panel says so — a reset
-    # that reads as success when nothing existed teaches an owner to distrust it.
+    # A false reset either names an empty seat or carries an explicit unresolved
+    # teardown reason. Never tell the panel the worker is gone without evidence.
     from agents.core.session_kernels import KernelKey
 
     destroyed = await kernels.reset(invocation)
+    key = KernelKey.from_invocation(invocation)
+    row = next((item for item in kernels.status() if item.get("token") == key.token), None)
+    if row and row.get("quarantined"):
+        reason = row["reason"]
     return {"reset": bool(destroyed), "mode": mode, "reason": reason,
-            "kernel_token": KernelKey.from_invocation(invocation).token}
+            "kernel_token": key.token}
 
 
 def _sandbox_invocation(orch, server, get_setting, request):

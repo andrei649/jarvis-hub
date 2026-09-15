@@ -287,3 +287,30 @@ def test_both_routes_are_pinned_as_user_guarded_in_the_auth_matrix():
         (repo_root / "tests" / "_snapshots" / "route_auth.json").read_text(encoding="utf-8"))
     assert snapshot["GET /sandbox/kernels"] == "user"
     assert snapshot["POST /sandbox/kernels/reset"] == "user"
+
+@pytest.mark.asyncio
+async def test_unconfirmed_reset_is_reported_and_remains_visible(client, monkeypatch, tmp_path):
+    from agents.core import sandbox_invocation
+    orch = _orch(tmp_path)
+    _bind(monkeypatch, orch)
+    _owner(monkeypatch)
+    invocation, _ = sandbox_invocation.bind(
+        tools=orch.tool_rpc.tools(), agent='jarvis',
+        principal=SimpleNamespace(admin=True, channel='web'), origin='operator', session_id='s1')
+    manager = orch.session_kernels
+    await manager.run(invocation, 'marker = 1')
+    original = manager._backend.stop
+    async def unavailable(handle):
+        raise OSError('transport unavailable')
+    manager._backend.stop = unavailable
+    try:
+        result = client.post('/sandbox/kernels/reset').json()
+        assert result['reset'] is False and result['reason'] == 'teardown_unconfirmed'
+        status = client.get('/sandbox/kernels').json()
+        assert status['reason'] == 'teardown_unconfirmed'
+        assert status['kernel']['quarantined']
+        _guest(monkeypatch)
+        assert client.get('/sandbox/kernels').json()['kernel'] is None
+    finally:
+        manager._backend.stop = original
+        await manager.shutdown()

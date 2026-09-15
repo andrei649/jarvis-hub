@@ -329,7 +329,6 @@ class CodeExecutionTool:
     # ── the call ─────────────────────────────────────────────────────────────
 
     async def execute(self, args: Mapping[str, object]) -> dict:
-        from .tool_rpc_runtime import ToolRPCSandboxRuntime
 
         if self._settings(SETTING, False) is not True:
             return {"ok": False, "reason": DISABLED}
@@ -364,6 +363,10 @@ class CodeExecutionTool:
         if self.sessions_on():
             return await self._session_cell(
                 invocation, code, reset=bool(args.get("reset")), sandbox=sandbox)
+        return await self._oneshot(invocation, code, sandbox, max_calls=max_calls)
+
+    async def _oneshot(self, invocation, code, sandbox, *, max_calls, before_execute=None):
+        from .tool_rpc_runtime import ToolRPCSandboxRuntime
         # Opened before the run because that is the only moment it can be: the
         # sandbox's reader discards the middle of a long stream as it goes, so a
         # spill taken afterwards would be a copy of the truncation. Whether either
@@ -372,7 +375,8 @@ class CodeExecutionTool:
         try:
             run = await ToolRPCSandboxRuntime(
                 self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
-            ).run_python(code, sinks=sinks)
+            ).run_python(code, sinks=sinks,
+                         **({"before_execute": before_execute} if before_execute else {}))
         except BaseException:
             self._abandon_stream_spills(out_spill, err_spill)
             raise
@@ -443,11 +447,32 @@ class CodeExecutionTool:
 
         if reset:
             await self._kernels.reset(invocation)
-        outcome = await self._kernels.run(
-            invocation, code,
-            authorize=lambda cell: self._authorize_cell(invocation),
-            broker=ToolCallBroker(self._server, invocation),
-        )
+        out_spill, err_spill, sinks = self._open_stream_spills()
+        try:
+            outcome = await self._kernels.run(
+                invocation, code,
+                authorize=lambda cell: self._authorize_cell(invocation),
+                broker=ToolCallBroker(self._server, invocation),
+                sinks=sinks,
+            )
+        except BaseException:
+            self._abandon_stream_spills(out_spill, err_spill)
+            raise
+        if outcome.fallback_safe:
+            self._abandon_stream_spills(out_spill, err_spill)
+            from .session_kernels import KernelRefused
+            try:
+                result = await self._oneshot(invocation, code, sandbox, max_calls=max(0,
+                    _int_setting(self._settings, MAX_TOOL_CALLS_SETTING, DEFAULT_MAX_TOOL_CALLS)),
+                    before_execute=lambda: self._authorize_fallback(invocation))
+            except (KernelRefused, ToolRPCValidationError) as refusal:
+                return {"ok": False, "reason": refusal.reason, "session": False,
+                        "state_lost": outcome.state_lost, "continuity": outcome.continuity}
+            return {**result, "session": False, "fallback_reason": outcome.reason,
+                    "state_lost": outcome.state_lost, "continuity": outcome.continuity}
+        if outcome.reason:
+            self._abandon_stream_spills(out_spill, err_spill)
+            out_spill = err_spill = None
         limit, binding = _output_ceiling(sandbox)
         stdout = _cap(outcome.stdout, limit, "STDOUT", binding)
         stderr = _cap(outcome.stderr, limit, "STDERR", binding)
@@ -455,11 +480,23 @@ class CodeExecutionTool:
             **outcome.as_dict(),
             "stdout": stdout.text,
             "stderr": stderr.text,
+            **_stream_fields("STDOUT", stdout, out_spill),
+            **_stream_fields("STDERR", stderr, err_spill),
             "truncated": stdout.truncated or stderr.truncated,
             "output_limit": limit,
             "session": True,
             "offered_tools": sorted(invocation.offered),
         }
+
+    def _authorize_fallback(self, invocation):
+        from .session_kernels import KernelRefused
+        reason = self._kernels.dispatch_refusal(invocation)
+        if reason:
+            raise KernelRefused(reason)
+        self._authorize_cell(invocation)
+        reason = self._kernels.dispatch_refusal(invocation)
+        if reason:
+            raise KernelRefused(reason)
 
     def _authorize_cell(self, invocation) -> None:
         """Cross the Action Kernel for this cell, or refuse it.

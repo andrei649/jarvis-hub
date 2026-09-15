@@ -2113,8 +2113,10 @@ export function SandboxPanel() {
         /* A successful call over an empty seat is NOT a failure, and a failed call
            is NOT an empty seat. Saying "reset" for both would teach an owner to
            distrust the button on the one day it mattered. */
-        setResetNote(res?.reset ? 'kernel destroyed — the next cell starts over'
-          : 'nothing to reset · ' + (res?.reason || 'no kernel was running'));
+        setResetNote(res?.reason === 'teardown_unconfirmed'
+          ? 'reset UNCONFIRMED — the kernel may still be running; retry reset'
+          : res?.reset ? 'kernel destroyed — the next cell starts over'
+            : 'nothing to reset · ' + (res?.reason || 'no kernel was running'));
         reloadKernels();
       })
       .catch((err) => setResetNote('reset UNCONFIRMED · ' + refusalReason(err, err?.message || '')
@@ -2173,7 +2175,9 @@ export function SandboxPanel() {
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
           <Tag>{kernel.cells_run} cells</Tag>
           <Tag>idle {Math.round(kernel.idle_seconds)}s</Tag>
-          <Tag c={kernel.alive ? 'var(--green)' : 'var(--red)'}>{kernel.alive ? 'alive' : 'gone'}</Tag>
+          <Tag c={kernel.quarantined ? 'var(--amber)' : kernel.alive ? 'var(--green)' : 'var(--red)'}>
+            {kernel.quarantined ? 'teardown unconfirmed' : kernel.alive ? 'alive' : 'gone'}
+          </Tag>
         </span>
       </Row>
         : <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>

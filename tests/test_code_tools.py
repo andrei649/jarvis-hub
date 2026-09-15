@@ -21,6 +21,7 @@ contract, exercised by the sandbox suite and provable only on a host that has on
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sys
@@ -725,3 +726,58 @@ async def test_the_spill_is_kept_by_byte_count_not_by_this_layers_truncated_flag
     assert result["stdout_bytes"] == 150 * 1501
     assert Path(result["stdout_file"]).read_bytes() == b"q" * 1500 + b"\n" + \
         (b"q" * 1500 + b"\n") * 149
+
+@pytest.mark.asyncio
+async def test_session_output_spills_complete_middle(tmp_path):
+    _, tool = _session_tool(tmp_path, result_store=_store(tmp_path))
+    try:
+        result = await _run(tool, "print('a' * 60000 + 'MIDDLE' + 'z' * 60000)")
+        assert Path(result['stdout_file']).read_text() == 'a' * 60000 + 'MIDDLE' + 'z' * 60000 + '\n'
+    finally:
+        await tool._kernels.shutdown()
+
+@pytest.mark.asyncio
+async def test_session_startup_failure_uses_explicit_isolated_per_call_fallback(tmp_path):
+    _, tool = _session_tool(tmp_path)
+    from agents.core.session_kernels import KERNEL_UNAVAILABLE, KernelRefused
+    async def unavailable(*args, **kwargs):
+        raise KernelRefused(KERNEL_UNAVAILABLE)
+    tool._kernels._backend.start = unavailable
+    result = await _run(tool, "print('one shot')")
+    assert result['ok'] and 'one shot' in result['stdout']
+    assert result['session'] is False
+    assert result['fallback_reason'] == KERNEL_UNAVAILABLE
+
+@pytest.mark.asyncio
+async def test_session_ambiguous_dispatch_never_retries(tmp_path):
+    _, tool = _session_tool(tmp_path)
+    from agents.core.session_kernels import KERNEL_UNAVAILABLE, KernelRefused
+    async def ambiguous(*args, **kwargs):
+        raise KernelRefused(KERNEL_UNAVAILABLE)
+    tool._kernels._backend.run_cell = ambiguous
+    result = await _run(tool, "print('must not retry')")
+    assert result['ok'] is False
+    assert result['state_lost'] is True
+    assert 'must not retry' not in result['stdout']
+    assert 'fallback_reason' not in result
+
+@pytest.mark.asyncio
+async def test_cancelled_session_discards_open_stream_spills(tmp_path):
+    _, tool = _session_tool(tmp_path, result_store=_store(tmp_path))
+    task = asyncio.create_task(_run(tool, "import time\nprint('x' * 100000)\ntime.sleep(30)"))
+    try:
+        for _ in range(100):
+            if any(p.stat().st_size > 1000 for p in (tmp_path / 'spills').glob('*') if p.is_file()):
+                break
+            await asyncio.sleep(.02)
+        else:
+            pytest.fail('cell never reached the stream sink')
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert list((tmp_path / 'spills').iterdir()) == []
+        assert tool._kernels.status() == []
+    finally:
+        if not task.done():
+            task.cancel()
+        await tool._kernels.shutdown()

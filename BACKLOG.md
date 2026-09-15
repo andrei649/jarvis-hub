@@ -37,6 +37,14 @@
   owner's status/reset controls over it), then H298 (an oversized tool result spilled to
   disk instead of dropped, with the caps scaled to the model's real context window)
   and the `execute_code` stdout spill it left open (H305/H595, on the K1 path),
+  then H660's detached Docker transport and complete session stream spills (bounded
+  mailbox packets, asynchronous liveness, explicit pre-dispatch fallback, cancellation
+  teardown and directory-pinned RPC I/O). SSH/Modal remain unsupported; real-daemon
+  two-cell/reset/cancel tests are added to the existing opt-in isolation lane but
+  were skipped locally, so H660 remains partial pending live evidence. Independent
+  review fixes preserve quarantined handles after failed teardown (with operator
+  retry), recheck fallback at dispatch, reject malformed stream labels, and keep
+  stop/deadline monitoring active during broker calls,
   then H363 (Anthropic prompt caching, and a cost meter that hears the provider
   instead of guessing), then H364 (one reasoning-effort ladder, clamped to the nearest
   weaker level each wire accepts — and the sampling parameter the current Anthropic

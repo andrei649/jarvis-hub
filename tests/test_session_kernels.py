@@ -557,7 +557,7 @@ async def test_a_cell_that_prints_too_much_keeps_its_head_and_says_what_went(tmp
     assert outcome.stdout.startswith("HEAD"), "the head is the half that says what ran"
     assert outcome.stdout.rstrip().endswith("TAIL")
     assert NOTICE_MARK in outcome.stdout
-    assert "chars omitted out of" in outcome.stdout
+    assert "bytes omitted" in outcome.stdout
     await manager.shutdown()
 
 
@@ -571,3 +571,93 @@ async def test_a_cell_whose_output_fits_is_returned_untouched(tmp_path):
     assert outcome.stdout.strip() == "exactly what I printed"
     assert "TRUNCATED" not in outcome.stdout
     await manager.shutdown()
+
+@pytest.mark.asyncio
+async def test_full_cell_stream_reaches_sink_with_bounded_preview(tmp_path):
+    from agents.core.environments.output_limits import StreamSinks
+    chunks = []
+    manager = _manager(tmp_path)
+    try:
+        result = await manager.run(_bind(_server()),
+            "print('a' * 60000 + 'UNIQUE_MIDDLE' + 'z' * 60000)",
+            sinks=StreamSinks(stdout=chunks.append))
+        assert result.ok
+        assert b'UNIQUE_MIDDLE' in b''.join(chunks)
+        assert len(b''.join(chunks)) == 120014
+        assert len(result.stdout) < 51000
+        assert 'TRUNCATED' in result.stdout
+    finally:
+        await manager.shutdown()
+
+@pytest.mark.asyncio
+async def test_cancelled_cell_kills_namespace_before_reuse(tmp_path):
+    manager = _manager(tmp_path)
+    invocation = _bind(_server())
+    task = asyncio.create_task(manager.run(invocation,
+        "import time\nmarker = 123\ntime.sleep(30)"))
+    await asyncio.sleep(.15)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    try:
+        assert manager.status() == []
+        result = await manager.run(invocation, "print('marker' in globals())")
+        assert result.state_lost and 'False' in result.stdout
+    finally:
+        await manager.shutdown()
+
+@pytest.mark.asyncio
+async def test_estop_during_cell_kills_it_without_waiting_for_timeout(tmp_path):
+    stopped = False
+    manager = _manager(tmp_path, estop=lambda: stopped)
+    task = asyncio.create_task(manager.run(_bind(_server()), 'import time\ntime.sleep(30)'))
+    await asyncio.sleep(.15)
+    stopped = True
+    try:
+        result = await asyncio.wait_for(task, 4)
+        assert result.reason == sk.STOPPED
+        assert manager.status() == []
+    finally:
+        await manager.shutdown()
+
+@pytest.mark.asyncio
+async def test_session_rpc_response_cannot_follow_worker_symlink(tmp_path):
+    manager = _manager(tmp_path)
+    server = _server()
+    invocation = _bind(server)
+    victim = tmp_path / 'outside'
+    victim.write_text('untouched')
+    # Local test interpreter can name the test path; in Docker a malicious cell
+    # can construct the same symlink text without having access to that host file.
+    code = (
+        "import os\n"
+        "from pathlib import Path\n"
+        "rpc = Path(jarvis_tool_call.__globals__['CELL']['dir'])\n"
+        f"(rpc / 'res_000001.json.tmp').symlink_to({str(victim)!r})\n"
+        "print(jarvis_tool_call('echo', {'value':'safe'}))"
+    )
+    try:
+        result = await _run(manager, invocation, code, server)
+        assert result.ok
+        assert victim.read_text() == 'untouched'
+    finally:
+        await manager.shutdown()
+
+@pytest.mark.asyncio
+async def test_failed_restart_still_reports_the_previous_namespace_loss(tmp_path):
+    manager = _manager(tmp_path)
+    invocation = _bind(_server())
+    await manager.run(invocation, 'marker = 1')
+    handle = next(iter(manager._records.values())).handle
+    handle.process.kill()
+    await handle.process.wait()
+    async def unavailable(*args, **kwargs):
+        raise KernelRefused(KERNEL_UNAVAILABLE)
+    manager._backend.start = unavailable
+    try:
+        result = await manager.run(invocation, 'print(marker)')
+        assert result.fallback_safe
+        assert result.state_lost and result.continuity == CRASHED
+        assert manager.status() == []
+    finally:
+        await manager.shutdown()
