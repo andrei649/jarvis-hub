@@ -16,6 +16,10 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { JobsPanel } from './jobs';
 
+// jsdom does not implement native dialog methods; focus/keyboard behavior stays production code.
+HTMLDialogElement.prototype.showModal ||= function () { this.setAttribute('open', ''); };
+HTMLDialogElement.prototype.close ||= function () { this.removeAttribute('open'); };
+
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
 
 const JOB = {
@@ -120,4 +124,67 @@ describe('JobsPanel', () => {
     fireEvent.click(screen.getByTitle('delete'));
     await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/jobs/abc123abc123'))).toBe(true));
   });
+});
+
+describe('advanced job builder', () => {
+  it('creates a custom job from visual schedule and bounded options', async () => {
+    const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{alive:true}},'POST /api/jobs':{ok:true,job:JOB}});
+    render(<JobsPanel />);
+    fireEvent.click(screen.getByText('custom job'));
+    fireEvent.change(screen.getByLabelText('job name'),{target:{value:'Stretch'}});
+    fireEvent.change(screen.getByLabelText('job message'),{target:{value:'Walk'}});
+    fireEvent.change(screen.getByLabelText('schedule mode'),{target:{value:'weekdays'}});
+    fireEvent.change(screen.getByLabelText('schedule time'),{target:{value:'10:30'}});
+    fireEvent.change(screen.getByLabelText('maximum attempts'),{target:{value:'3'}});
+    fireEvent.change(screen.getByLabelText('delivery mode'),{target:{value:'history'}});
+    fireEvent.click(screen.getByText('create job'));
+    await waitFor(()=>expect(calls.find(c=>c.method==='POST')).toBeTruthy());
+    expect(calls.find(c=>c.method==='POST').body).toEqual({name:'Stretch',schedule_text:'30 10 * * 1-5',action:{type:'remind',message:'Walk'},options:{repeat:3,deliver:[]}});
+  });
+});
+
+it('shows diagnostics and updates job notes through admin endpoints', async()=>{
+  const calls=mockFetch({'GET /api/jobs/doctor':{problems:[{reason:'ntfy missing'}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[JOB],scheduler:{alive:true}},'PUT /api/jobs/abc123abc123/notepad':{ok:true}});
+  render(<JobsPanel />);
+  await screen.findByText('stand-up');
+  fireEvent.click(screen.getByText('doctor'));
+  await screen.findByText(/ntfy missing/);
+  fireEvent.click(screen.getByText('edit'));
+  fireEvent.change(screen.getByLabelText('notepad for abc123abc123'),{target:{value:'memo'}});
+  fireEvent.click(screen.getByText('save notes'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='PUT')?.body).toEqual({text:'memo'}));
+});
+
+it('edits action and advanced options without resuming the job',async()=>{
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[PAUSED],scheduler:{alive:true}},'PATCH /api/jobs/def456def456':{ok:true,job:PAUSED}});
+  render(<JobsPanel/>); await screen.findByText('inbox');
+  fireEvent.click(screen.getByText('edit'));
+  fireEvent.change(screen.getByLabelText('action for def456def456'),{target:{value:'{"type":"ask","prompt":"Review changes","agent":"friday"}'}});
+  fireEvent.change(screen.getByLabelText('maximum attempts'),{target:{value:'5'}});
+  fireEvent.click(screen.getByText('save'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='PATCH')).toBeTruthy());
+  const body=calls.find(c=>c.method==='PATCH').body;
+  expect(body.action.prompt).toBe('Review changes'); expect(body.options.repeat).toBe(5);
+  expect(calls.some(c=>c.url.endsWith('/resume'))).toBe(false);
+});
+
+it('uses numeric fields from a blueprint gallery card',async()=>{
+ const catalog={blueprints:[{id:'price_watch',title:'Price watch',description:'Public prices',schedule_text:'0 9 * * *',params:['product','threshold'],fields:[{key:'product',label:'Product',type:'text',required:true},{key:'threshold',label:'Threshold',type:'number',default:100}]}]};
+ const calls=mockFetch({'GET /api/jobs/blueprints':catalog,'GET /api/jobs':{jobs:[]},'POST /api/jobs':{ok:true,job:JOB}});
+ render(<JobsPanel/>); fireEvent.click(await screen.findByRole('button',{name:'Price watch'}));
+ fireEvent.change(screen.getByLabelText('product'),{target:{value:'desk'}});
+ fireEvent.change(screen.getByLabelText('threshold'),{target:{value:'75'}});
+ fireEvent.click(screen.getByText('arm'));
+ await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.params).toEqual({product:'desk',threshold:75}));
+});
+
+it('contains create-dialog focus and restores the opening button on Escape',async()=>{
+ mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[]}});
+ render(<JobsPanel/>); const trigger=screen.getByRole('button',{name:'custom job'}); trigger.focus(); fireEvent.click(trigger);
+ const dialog=screen.getByRole('dialog',{name:'Create scheduled job'});
+ expect(screen.getByLabelText('job name')).toBe(document.activeElement);
+ const submit=screen.getByRole('button',{name:'create job'}); submit.focus(); fireEvent.keyDown(dialog,{key:'Tab'});
+ expect(screen.getByRole('button',{name:'Cancel creation'})).toBe(document.activeElement);
+ fireEvent.keyDown(dialog,{key:'Escape'});
+ expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
 });

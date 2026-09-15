@@ -1,0 +1,19 @@
+# H146/H449 scheduled automation delivery
+
+Generated 2026-09-15. Goal: complete the owner job builder and bounded recurring delivery on the existing JobStore. Base/head before changes: f75d7c326dfd378a22edc53564cdbdb6f17cc1fa. Lease none. Next: red regression tests.
+
+Existing architecture: jobs.py owns SQLite jobs/runs/held and JobRunner; routers/jobs.py provides admin-only CRUD; process(prompt, agent, channel) has no isolated execution configuration API. Extend these, never bypass task queue, e-stop, quiet hours or interrupt budget. No live jobs/channels, paid APIs, protected roots, push or merge.
+
+Implementation: additive JSON options column for bounded repeat and configured owner-channel deliveries; repeat attempt counter cannot be bypassed by manual run; atomic SQLite attempt reservation prevents concurrent manual runners exceeding the repeat bound. Sixteen typed blueprints generate validated existing action kinds with concrete form parameters. Custom action create/edit and daily/weekday/weekly/interval schedule UI. CLI options plus diagnostics, incidents, notepad, tick/status/remove. Tick checks due cron slots through the same fire path and prevents repeated slots. Unsupported workdir/provider/model/toolsets/skills are refused rather than stored ineffectively; these require a separate isolated orchestration contract, as does schedule.create authority in protected kernel roots.
+
+Tests before code: persisted options and validation; repeat exhaustion/manual/concurrent; delivery/quiet/estop regressions; all 16 templates instantiate and reject invalid fields; due tick idempotence; admin routes; CLI request payloads; UI custom builder/edit and typed blueprint parameters. Run focused pytest with JARVIS_TESTING=1 NERVA_PUBLIC_PROFILE=1 PYTHON_DOTENV_DISABLED=1 and temporary data root; Vitest jobs tests, tsc, relevant HUD and route guards. No live network.
+
+Paths: agents/core/autonomy/jobs.py, optional jobs_blueprints.py, agents/core/routers/jobs.py, agents/cli/nerva.py, frontend/src/panels/jobs.tsx and companion/tests; mobile/PARITY.md, HUD remaining, scoped BACKLOG/Hermes truth. Shared root/front node_modules read-only.
+
+Rollback: revert this coherent branch commit; additive SQLite options column is backwards compatible with previous explicit inserts/updates. No scheduler/live-data migration run during development. Retain old data and audit history.
+
+## H146 focused UI followup — 2026-09-15
+Base/head 4fb6ad2e; parent browser proved actual temporary CRUD but exposed cramped Console layout. Add topbar Automations entry and dedicated full-width Jobs workspace, retaining Console. Native create dialog contains focus, starts at name, closes on Escape/cancel, restores trigger focus and keeps refusals visible. Tests: dedicated entry independent of generic preview data; dialog open/focus/Tab/Escape/restore; existing CRUD/form tests; current OpenAPI route generation gate. Regenerate schema with pinned openapi-typescript 7.13.0 from local exported app schema (no live channels). Refresh bundle/counts; coordinate broad tests with controller. Roll back followup commit independently; no backend behavior or authority changes.
+
+## Controller review repair — 2026-09-15
+Base 3a4fe46c. Fix update/reservation lost-write with validated field-only SQL updates (never replay an old job snapshot), including independent SQLite connections. Fallback tick uses scheduler timezone or APScheduler's canonical local-zone default, normalizing only durable slot identity to UTC; test Bucharest across spring/fall DST. Keep actual bounded brief/reminder text when delivery is history-only. Red regressions first, focused jobs/CLI/routes then whole Ruff; regenerate runtime route-auth snapshot (only four admin additions), API sweep, Hermes projections, counts and changed HUD label/bundle. No guard policy or live runtime changes. Rollback this repair commit independently.

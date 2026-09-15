@@ -12,6 +12,7 @@ import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
 import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
+import { JobsWorkspace } from './panels/jobs';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
 import { ChatMode, CommsMode, AdminMode } from './modes3';
 import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
@@ -421,7 +422,7 @@ function App() {
         )}
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
           llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
-          onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
+          onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
         <div className="main" data-ia={ia}>
@@ -456,6 +457,10 @@ function App() {
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
+              </div>
+            ) : mode === 'jobs' ? (
+              <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                <JobsWorkspace />
               </div>
             ) : mode === 'agents' ? (
               <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>

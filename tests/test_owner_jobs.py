@@ -15,6 +15,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from tzlocal import get_localzone
 
 from agents.core import estop
 from agents.core.autonomy import jobs as jobs_module
@@ -230,7 +231,7 @@ async def test_a_reminder_is_delivered_and_recorded(store, no_estop):
     assert [r.status for r in store.runs(job.id)] == ["ok"]
     assert runner.snapshot() == {
         "alive": True, "registered": [job.id], "jobs": 1, "runnable": 1, "paused": 0,
-        "held": 0, "quiet_hours": False,
+        "held": 0, "quiet_hours": False, "timezone": str(get_localzone()),
     }
 
 

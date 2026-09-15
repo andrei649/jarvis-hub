@@ -48,3 +48,11 @@ def test_ci_fails_when_generated_openapi_types_drift():
     assert "openapi-types:" in workflow
     assert "npm run typegen:openapi" in workflow
     assert "git diff --exit-code -- frontend/src/api/schema.gen.ts" in workflow
+
+
+def test_generated_job_types_include_advanced_routes_and_options():
+    text = (ROOT / 'frontend/src/api/schema.gen.ts').read_text(encoding='utf-8')
+    for path in ('/api/jobs/doctor', '/api/jobs/incidents', '/api/jobs/tick', '/api/jobs/{job_id}/notepad'):
+        assert f'"{path}"' in text
+    schema = text.split('JobCreateBody: {', 1)[1].split('\n        };', 1)[0]
+    assert 'options?' in schema

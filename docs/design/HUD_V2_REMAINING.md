@@ -272,6 +272,20 @@ this extension-specific UI gap. Native mobile inspection also remains pending in
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
 coverage.*
 
+
+### 2026-09-15 — scheduled automation depth (H146/H449)
+Jobs now wires all admin diagnostics/tick/notepad routes and adds a sixteen-card typed
+blueprint gallery, custom four-action builder, full action/options editing and visual schedules.
+Per-job repeat counts attempts, including failures; manual runs cannot exceed the bound.
+Explicit configured channel names retain owner destinations and existing delivery gates.
+Remaining: isolated per-job provider/model/workdir/toolsets/skills, cross-profile listing and
+real scheduler/channel proof. Tick uses the scheduler timezone (including DST) and refuses to compete with a live scheduler.
+
+H146 followup: the topbar Automations entry now opens a roomy dedicated Jobs workspace;
+Console integration remains. Custom creation uses a native modal with initial focus,
+Tab containment, Escape/cancel and focus restoration. Browser proof uses mocked job reads;
+no live channel was enabled. Generated OpenAPI types now include all four added job routes.
+
 2026-09-15 — H12.26: Artifacts now includes default-off binary upload, authenticated
 preview/download, pin/delete and honest errors. Supported magic-sniffed image,
 audio, video and PDF only; active formats and office documents remain refused.

@@ -480,7 +480,7 @@ def test_jobs_verbs_ride_the_admin_routes():
 
 
 def test_jobs_is_in_the_tree_and_the_completion():
-    assert command_tree()["jobs"] == ["blueprints", "create", "delete", "edit", "list", "pause", "resume", "run", "runs"]
+    assert command_tree()["jobs"] == ["blueprints", "create", "delete", "doctor", "edit", "incidents", "list", "notepad", "pause", "remove", "resume", "run", "runs", "status", "tick"]
     assert "jobs) COMPREPLY" in completion_script("bash")
 
 
@@ -631,3 +631,12 @@ def test_send_list_shows_configured_destinations_as_well_as_threads():
     assert code == 0
     assert "--channel telegram" in out and "ready" in out
     assert "ntfy is not connected on this hub" in out
+
+
+def test_jobs_advanced_cli_payloads():
+    hub=_FakeHub({'POST /api/jobs':{'ok':True,'job':JOB},'PUT /api/jobs/x/notepad':{'ok':True},'GET /api/jobs/doctor':{},'GET /api/jobs/incidents':{},'POST /api/jobs/tick':{},'GET /api/jobs/x':{'job':JOB}})
+    code,_,_,hub=_run(['jobs','create','--blueprint','reminder','--param','message=x','--options','{"repeat":2,"deliver":[]}'],hub)
+    assert code==EXIT_OK and hub.calls[-1][2]['options']=={'repeat':2,'deliver':[]}
+    for args,method,path in [(['doctor'],'GET','/api/jobs/doctor'),(['incidents'],'GET','/api/jobs/incidents'),(['tick'],'POST','/api/jobs/tick'),(['notepad','x','--text','memo'],'PUT','/api/jobs/x/notepad'),(['status','x'],'GET','/api/jobs/x')]:
+        code,_,_,hub=_run(['jobs',*args],hub)
+        assert code==EXIT_OK and hub.calls[-1][:2]==(method,path)

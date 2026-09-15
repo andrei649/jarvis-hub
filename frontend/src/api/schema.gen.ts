@@ -560,6 +560,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/doctor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Doctor */
+        get: operations["jobs_doctor_api_jobs_doctor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Incidents */
+        get: operations["jobs_incidents_api_jobs_incidents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/tick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Tick */
+        post: operations["jobs_tick_api_jobs_tick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/notepad": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Jobs Notepad */
+        put: operations["jobs_notepad_api_jobs__job_id__notepad_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -9754,6 +9822,10 @@ export interface components {
             action?: {
                 [key: string]: unknown;
             } | null;
+            /** Options */
+            options?: {
+                [key: string]: unknown;
+            } | null;
             /** Blueprint */
             blueprint?: string | null;
             /** Params */
@@ -9763,7 +9835,7 @@ export interface components {
         };
         /**
          * JobEditBody
-         * @description The three fields an owner authored. Everything else about a job is an outcome.
+         * @description Owner-authored job configuration; run outcomes stay internal.
          */
         JobEditBody: {
             /** Name */
@@ -9774,6 +9846,15 @@ export interface components {
             action?: {
                 [key: string]: unknown;
             } | null;
+            /** Options */
+            options?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** JobNotepadBody */
+        JobNotepadBody: {
+            /** Text */
+            text: string;
         };
         /** JobPauseBody */
         JobPauseBody: {
@@ -11347,6 +11428,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_doctor_api_jobs_doctor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_incidents_api_jobs_incidents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_tick_api_jobs_tick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_notepad_api_jobs__job_id__notepad_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobNotepadBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

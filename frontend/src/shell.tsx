@@ -30,7 +30,7 @@ const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; 
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, t }){
   const tr = trust || { mic:'on', strict_local:false };
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
@@ -63,6 +63,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
         <div className="clock-date">{fmtDate(clock,lang)}</div>
       </div>
       <div className="badges">
+        <button className="tool-btn" onClick={onJobs} title="Scheduled automations">Automations</button>
         <button className="tool-btn" onClick={()=>setDemo&&setDemo(!demo)} title="toggle demo data (seeded sample vs live-only)" style={demo?{color:'var(--amber)',borderColor:'var(--amber)'}:undefined}>{demo?'◐ demo':'○ demo'}</button>
         <button className="tool-btn" onClick={()=>setLang(lang==='en'?'ro':'en')} title="language"><Icon d={ICONS.globe} size={13}/>{t.langName}</button>
         <button className="tool-btn" onClick={onAmbient} title="ambient"><Icon d={ICONS.ambient} size={13}/>{t.enterAmbient}</button>
