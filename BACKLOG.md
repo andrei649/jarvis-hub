@@ -38,6 +38,8 @@
 
 - 2026-09-15 H129: 18 HUD modes and 113 console panels now have stable URLs, history, titles and lazy loading. Desktop/Pixel 7 navigation tests pass; independent review verified historical overlay return-state repairs. Multi-profile and plugin route integration remain open, so H129 is partial.
 
+- 2026-09-15 scheduled scripts: bounded Python source is snapshotted into each approved local terminal task; pending outcomes, repeat reservations and delivery survive restart. Direct no_agent output and fenced script context skip empty observations. API/CLI and doctor are wired; 285 focused tests pass. Workdir, wake gates, monitor diffs and full unattended authority remain open. [Operator guide](docs/automations-scripts.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

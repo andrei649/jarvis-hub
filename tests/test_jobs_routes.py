@@ -213,3 +213,18 @@ def test_advanced_routes_and_options(hub):
     assert client.get('/api/jobs/doctor',headers=ADMIN).status_code==200
     assert client.get('/api/jobs/incidents',headers=ADMIN).json()['incidents']==[]
     assert client.post('/api/jobs/tick',headers=ADMIN).status_code==409
+
+
+def test_script_run_is_accepted_pending_not_reported_as_finished(hub, tmp_path, monkeypatch):
+    client, orch, _ = hub
+    monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    (scripts / 'watch.py').write_text("print('ready')")
+    orch.jobs.bind_scripts(submit=lambda *a: 17, get=lambda _: None, find=lambda _: [])
+    made = client.post('/api/jobs', headers=ADMIN, json={'name': 'watch', 'schedule_text': '0 9 * * *',
+        'action': {'type': 'ask', 'prompt': ''}, 'options': {'script': 'watch.py', 'no_agent': True, 'deliver': []}})
+    assert made.status_code == 201
+    result = client.post('/api/jobs/' + made.json()['job']['id'] + '/run', headers=ADMIN)
+    assert result.status_code == 202
+    assert result.json()['pending'] is True and result.json()['run']['status'] == 'pending'

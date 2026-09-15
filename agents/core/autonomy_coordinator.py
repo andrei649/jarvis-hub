@@ -342,6 +342,21 @@ class AutonomyCoordinator:
             return worker.govern_enqueue(*args, **kwargs)
         return self._orch.autonomy_queue.enqueue(*args, **kwargs)
 
+    def _submit_job_script(self, payload, origin):
+        """A scheduler proposal gets a new ask-tier task, never a standing grant."""
+        from .autonomy.jobs_scripts import ScriptSubmissionRefused
+        from .env_config import env_flag
+
+        worker = getattr(self._orch, 'autonomy', None)
+        if (not env_flag('JARVIS_TERMINAL_TARGETS') or not env_flag('JARVIS_TERMINAL_LOCAL_HOST')
+                or not callable(getattr(worker, 'govern_enqueue', None))):
+            raise ScriptSubmissionRefused('governed local terminal script intake is unavailable')
+        if payload.get('tool') != 'terminal_run' or payload.get('args', {}).get('target') != 'local-host':
+            raise ScriptSubmissionRefused('scheduled scripts require the governed local terminal')
+        return worker.govern_enqueue(agent='jarvis', kind='toolrpc.terminal_run',
+            title='Scheduled Python script awaiting this run approval', payload=payload,
+            risk_tier=3, autonomy_level='ask', origin=origin)
+
     def _wire_agent_tool_runtime(self, action_kernel=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
         # Keep imports local: AgentToolRuntime imports ToolRPCServer, while the
@@ -843,6 +858,11 @@ class AutonomyCoordinator:
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)
+        jobs = getattr(self._orch, 'jobs', None)
+        queue = getattr(self._orch, 'autonomy_queue', None)
+        if callable(getattr(jobs, 'bind_scripts', None)) and queue is not None:
+            jobs.bind_scripts(submit=self._submit_job_script, get=queue.get,
+                              find=lambda origin: queue.list(origin=origin, limit=2))
 
         async def _approved_desktop_tool_rpc_execute(task):
             # Publish the durable row for the length of this turn so a gated tool can

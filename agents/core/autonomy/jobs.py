@@ -288,11 +288,13 @@ def cron_kwargs(cron: str) -> dict[str, str]:
 # ── actions ──────────────────────────────────────────────────────────────────
 
 
-def validate_action(action: Any) -> list[str]:
+def validate_action(action: Any, options: dict | None = None) -> list[str]:
     """Named reasons an action is not acceptable; empty when it is."""
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
+    if options and options.get("script") and kind != "ask":
+        return ["script options require an ask action"]
     if kind not in ACTION_TYPES:
         return [f"action.type must be one of {', '.join(ACTION_TYPES)}"]
     errors = [f"unknown action key {key!r}" for key in sorted(set(action) - _ACTION_KEYS[kind])]
@@ -314,7 +316,7 @@ def validate_action(action: Any) -> list[str]:
         _text("message", required=True)
         _text("channel", required=False)
     elif kind == "ask":
-        _text("prompt", required=True)
+        _text("prompt", required=not bool((options or {}).get("no_agent")))
         _text("agent", required=False)
         if "deliver" in action and not isinstance(action["deliver"], bool):
             errors.append("action.deliver must be true or false")
@@ -333,12 +335,23 @@ def validate_action(action: Any) -> list[str]:
     return errors
 
 
-def validate_options(options: Any) -> dict:
+def validate_options(options: Any, *, check_scripts: bool = True) -> dict:
     if not isinstance(options, dict):
         raise ValueError("options must be an object")
-    unknown = set(options) - {"repeat", "deliver"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    if 'no_agent' in options and type(options['no_agent']) is not bool:
+        raise ValueError('no_agent must be true or false')
+    if options.get('no_agent') and not options.get('script'):
+        raise ValueError('no_agent requires a script')
+    if 'script' in options and (not isinstance(options['script'], str) or not options['script'] or len(options['script']) > 1024):
+        raise ValueError('script must name a bounded Python file')
+    if 'script' in options and check_scripts:
+        from .jobs_scripts import script_problem
+        problem = script_problem(options['script'])
+        if problem:
+            raise ValueError(problem)
     repeat = options.get("repeat")
     if repeat is not None and (type(repeat) is not int or not 1 <= repeat <= 10000):
         raise ValueError("repeat must be null or an integer from 1 to 10000 attempts")
@@ -502,12 +515,15 @@ class JobStore:
                 "(job_id TEXT PRIMARY KEY, status TEXT NOT NULL, recorded_at TEXT NOT NULL)"
             )
             self._conn.commit()
+        from .jobs_scripts import ScriptAttempts
+        self.script_attempts = ScriptAttempts(self)
+
 
     def record_scheduler_result(self, job_id: str, status: str) -> None:
         """Keep only bounded, structured native execution outcomes, never payloads."""
         if not isinstance(job_id, str) or not job_id or len(job_id) > 200:
             raise ValueError("invalid scheduler job id")
-        if status not in {"ok", "failed", "missed", "max_instances"}:
+        if status not in {"ok", "pending", "failed", "missed", "max_instances"}:
             raise ValueError("invalid scheduler result status")
         with self._lock:
             self._conn.execute(
@@ -552,7 +568,7 @@ class JobStore:
             consecutive_failures=int(row["consecutive_failures"] or 0),
             notepad=row["notepad"] or "",
             paused_reason=row["paused_reason"],
-            options=validate_options(json.loads(row["options"])),
+            options=json.loads(row["options"]) if isinstance(json.loads(row["options"]), dict) else {},
             attempts=int(row["attempts"]),
             last_delivery_status=row["last_delivery_status"],
         )
@@ -572,7 +588,7 @@ class JobStore:
             raise ValueError("a job needs a name")
         if len(name) > MAX_NAME:
             raise ValueError(f"the name is longer than {MAX_NAME} characters")
-        errors = validate_action(action)
+        errors = validate_action(action, options)
         if errors:
             raise ValueError("; ".join(errors))
         cron, _description = resolve_schedule(schedule_text)
@@ -680,11 +696,13 @@ class JobStore:
             if len(cleaned) > MAX_NAME:
                 raise ValueError(f"the name is longer than {MAX_NAME} characters")
             fields["name"] = cleaned
-        if action is not None:
-            errors = validate_action(action)
+        if action is not None or options is not None:
+            errors = validate_action(action if action is not None else current.action,
+                                     fields.get('options', current.options))
             if errors:
                 raise ValueError("; ".join(errors))
-            fields["action"] = dict(action)
+            if action is not None:
+                fields["action"] = dict(action)
         if schedule_text is not None:
             text = str(schedule_text).strip()
             if not text:
@@ -748,6 +766,8 @@ class JobStore:
             run_id = int(cursor.lastrowid)
             self._conn.execute(
                 """DELETE FROM job_runs WHERE job_id = ? AND id NOT IN (
+                       SELECT id FROM job_script_attempts WHERE state NOT IN ('done','failed'))
+                       AND id NOT IN (
                        SELECT id FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?)""",
                 (str(job_id), str(job_id), MAX_RUNS_KEPT),
             )
@@ -824,6 +844,21 @@ class JobRunner:
         self._now = now
         # Test seam; production reads the ambient quiet-hours window per call.
         self._quiet = quiet
+        from .jobs_scripts import ScriptRuntime
+        self._script_runtime = ScriptRuntime(self)
+
+    def bind_scripts(self, *, submit, get, find):
+        self._script_runtime.bind(submit=submit, get=get, find=find)
+
+    async def reconcile_scripts(self):
+        return await self._script_runtime.reconcile()
+
+    def register_scripts(self):
+        sched = self._scheduler()
+        if sched is not None:
+            sched.add_job(self.reconcile_scripts, 'interval', seconds=30,
+                          id='jobs-script-completion', replace_existing=True,
+                          misfire_grace_time=300, max_instances=1)
 
     # scheduler --------------------------------------------------------------
 
@@ -867,6 +902,8 @@ class JobRunner:
             if job.runnable and self.register(job):
                 registered += 1
         self.register_flush()
+        if any(j.options.get('script') for j in self.store.list()) or self.store.script_attempts.rows():
+            self.register_scripts()
         return registered
 
     def register_flush(self) -> bool:
@@ -918,6 +955,7 @@ class JobRunner:
         from apscheduler.triggers.cron import CronTrigger
         if self.scheduler_alive():
             raise ValueError("scheduler is running; manual tick would compete with it")
+        await self.reconcile_scripts()
         timezone = self.scheduler_timezone()
         now = (now or datetime.now(UTC)).astimezone(timezone)
         slot = now.replace(second=0, microsecond=0)
@@ -935,6 +973,8 @@ class JobRunner:
 
     def create(self, **kwargs: Any) -> Job:
         job = self.store.create(**kwargs)
+        if job.options.get('script'):
+            self.register_scripts()
         self.register(job)
         return job
 
@@ -948,6 +988,8 @@ class JobRunner:
         stale trigger armed for it would resume it by accident.
         """
         job = self.store.edit(job_id, **fields)
+        if job.options.get('script'):
+            self.register_scripts()
         if job.runnable:
             self.register(job)
         else:
@@ -988,6 +1030,15 @@ class JobRunner:
                 job_id, started_at=started, finished_at=utc_now(), status=STATUS_SKIPPED,
                 summary="emergency stop engaged",
             )
+        try:
+            validate_options(job.options, check_scripts=False)
+            errors = validate_action(job.action, job.options)
+            if errors:
+                raise ValueError('; '.join(errors))
+        except ValueError as exc:
+            return self._failed(job, started, exc)
+        if job.options.get('script'):
+            return await self._script_runtime.fire(job, started)
         if not self.store.reserve_attempt(job_id):
             self.unregister(job_id)
             return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),

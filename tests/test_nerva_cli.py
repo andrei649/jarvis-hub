@@ -654,3 +654,10 @@ def test_jobs_advanced_cli_payloads():
     for args,method,path in [(['doctor'],'GET','/api/jobs/doctor'),(['incidents'],'GET','/api/jobs/incidents'),(['tick'],'POST','/api/jobs/tick'),(['notepad','x','--text','memo'],'PUT','/api/jobs/x/notepad'),(['status','x'],'GET','/api/jobs/x')]:
         code,_,_,hub=_run(['jobs',*args],hub)
         assert code==EXIT_OK and hub.calls[-1][:2]==(method,path)
+
+
+def test_jobs_run_pending_approval_is_an_accepted_request():
+    hub = _FakeHub({'POST /api/jobs/x/run': {'ok': True, 'pending': True,
+        'run': {'status': 'pending', 'summary': 'Awaiting this run approval'}}})
+    code, out, _, _ = _run(['jobs', 'run', 'x'], hub)
+    assert code == 0 and 'pending' in out
