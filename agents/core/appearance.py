@@ -7,6 +7,7 @@ import uuid
 from agents.core import settings_db
 
 OPTIONS = {
+    'font': ('theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'),
     'accent': ('cyan', 'amber', 'green', 'violet'),
     'look': ('obsidian', 'graphite'),
     'density': ('normal', 'compact', 'comfy'),

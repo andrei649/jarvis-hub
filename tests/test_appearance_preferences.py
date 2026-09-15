@@ -30,7 +30,7 @@ def test_new_instance_defaults_are_not_an_explicit_motion_override(client):
     assert response.status_code == 200
     assert response.json() == {'revision': '0', 'configured': False, 'preferences': {
         'accent': 'cyan', 'look': 'obsidian', 'density': 'normal',
-        'motion': 'system', 'scanline': 'on', 'dotgrid': 'off'}}
+        'motion': 'system', 'scanline': 'on', 'dotgrid': 'off', 'font': 'theme'}}
     assert 'no-store' in response.headers['cache-control']
 
 
@@ -113,3 +113,23 @@ def test_stale_revision_cannot_overwrite_an_acknowledged_newer_choice(client):
     assert stale.status_code == 409
     assert client.get(PATH).json()['preferences']['accent'] == 'violet'
     assert client.put(PATH, json={'look': 'graphite', '_revision': saved.json()['revision']}).status_code == 200
+
+
+@pytest.mark.parametrize('font', ['theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'])
+def test_font_choices_persist_without_changing_other_axes(client, font):
+    client.put(PATH, json={'accent': 'violet', 'motion': 'system'})
+    saved = client.put(PATH, json={'font': font})
+    assert saved.status_code == 200
+    prefs = client.get(PATH).json()['preferences']
+    assert prefs['font'] == font and prefs['accent'] == 'violet'
+    client.put(PATH, json={'look': 'graphite'})
+    assert client.get(PATH).json()['preferences']['font'] == font
+
+
+def test_stale_font_coerces_and_cas_protects_new_choice(client):
+    first = client.get(PATH).json()
+    assert first['preferences']['font'] == 'theme'
+    saved = client.put(PATH, json={'font': 'system-serif', '_revision': first['revision']}).json()
+    assert client.put(PATH, json={'font': 'system-mono', '_revision': first['revision']}).status_code == 409
+    assert client.get(PATH).json()['preferences']['font'] == 'system-serif'
+    assert client.put(PATH, json={'font': 'url(https://example.com/font)', '_revision': saved['revision']}).json()['preferences']['font'] == 'theme'

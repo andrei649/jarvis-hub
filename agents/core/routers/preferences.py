@@ -14,6 +14,7 @@ router = APIRouter(tags=['preferences'], dependencies=[Depends(user_guard)])
 class AppearancePatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
     expected_revision: str | None = Field(None, alias='_revision', max_length=64)
+    font: str | None = Field(None, max_length=32)
     accent: str | None = Field(None, max_length=32)
     look: str | None = Field(None, max_length=32)
     density: str | None = Field(None, max_length=32)

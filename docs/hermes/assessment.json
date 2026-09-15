@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "9ae5838c3d696baa9a4bb1f919318a9567b93b29",
-  "assessed_at": "2026-09-15T14:36:48Z",
+  "base_sha": "fbf30f6489dbfd48eb2f575a1f89ea6cfca5192d",
+  "assessed_at": "2026-09-15T14:47:33Z",
   "reviews": [
     {
       "id": "H001",
@@ -885,11 +885,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
+          "sha256": "d705a7e75116056a884adc7fbf898a68d130ce927ddb3701a29a07760de2ac87"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
+          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2097,11 +2097,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
+          "sha256": "d705a7e75116056a884adc7fbf898a68d130ce927ddb3701a29a07760de2ac87"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -2109,7 +2109,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
+          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -3671,7 +3671,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3817,7 +3817,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3873,16 +3873,16 @@
       "id": "H135",
       "row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
       "status": "partial",
-      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss.",
-      "remaining": "The separate native mobile application has no appearance API consumer and keeps its existing static theme. Font override choices are not implemented. Scope is the existing single-owner instance, not per-account/profile identity. Storage-unavailable clients retain choices only in memory; offline data cannot survive browser closure without storage. No native GUI/provider proof.",
+      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss. Five fixed local UI font choices now share that normalization, revision and offline journal contract. The HUD applies the body/display override at its root; code and explicitly monospace elements retain their independent font stack. Real root/prefix browser tests verify computed families, persistence in a fresh browser, look independence, offline replay and code font invariance.",
+      "remaining": "The separate native mobile application has no appearance API consumer and keeps its existing static theme. The finite local font choices do not claim the full Hermes curated font catalog or a webfont loader. Scope is the existing single-owner instance, not per-account/profile identity. Storage-unavailable clients retain choices only in memory; offline data cannot survive browser closure without storage. No native GUI/provider proof.",
       "evidence": [
         {
           "path": "agents/core/appearance.py",
-          "sha256": "fecd8404504ba2eb6b0e2965cb8754f57a7f3764229e9f29e69cb420a7a1aa89"
+          "sha256": "4619bff46044e5e95c540b8cacd4d2cbfb61b6868f5d5a0869fb3e617fb78615"
         },
         {
           "path": "agents/core/routers/preferences.py",
-          "sha256": "6e5abca3a96f15cfce52741a8bc398582dda758f4e3ec3da86c33b7a035ff492"
+          "sha256": "91b1b5d3ff7c8b5f9e5873779b42db6688da97459a269515ec8b1c11bc673803"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3894,15 +3894,15 @@
         },
         {
           "path": "frontend/src/appearance.ts",
-          "sha256": "fae5fa35e7772187fa611a3a907787ecd4898f2e17212c7bc812bbcf0dc6f7b8"
+          "sha256": "24f6897df76a5aae5fbb968bc0c00a8fbd1220e9e7caa56784a57461fa804992"
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
+          "sha256": "d705a7e75116056a884adc7fbf898a68d130ce927ddb3701a29a07760de2ac87"
         },
         {
           "path": "frontend/src/api/client.ts",
@@ -3910,15 +3910,15 @@
         },
         {
           "path": "frontend/src/test/appearance-sync.test.tsx",
-          "sha256": "a53986ac8e870c2549c1cbe7175e1953645351616a08436efdc9882789b3d327"
+          "sha256": "b17d850bc3973a38c6d4a0dbdb30f84356d4b742a24567fb69ae2fdd2e49096e"
         },
         {
           "path": "frontend/src/test/appearance-state.test.tsx",
-          "sha256": "7c04cc2cde208191711595cdada9540dbe67760821d67af4626dd1862a2ccba3"
+          "sha256": "a1f5f3435c5b8cf4346333f771e1ec7c6b2a3d205a8f91a76fca1cf6161b187b"
         },
         {
           "path": "tests/test_appearance_preferences.py",
-          "sha256": "171dae9a803d95358774521cf961eb3110596fc7056e77c8ad217960d9490418"
+          "sha256": "dd2941ea32342fd29bf65726435fa1e3c080c216c881fc04765aa5265159f940"
         },
         {
           "path": "frontend/e2e/appearance.spec.ts",
@@ -3926,7 +3926,19 @@
         },
         {
           "path": "frontend/docs/h135-appearance-sync.md",
-          "sha256": "1a3bf74561e73ab6fb19d059ed984658340ca7d701615f0b1157b095661b0be7"
+          "sha256": "9d661be36645802d1271294301f9d897910e2417a9d02ab80c32602bb08ed0d5"
+        },
+        {
+          "path": "frontend/src/styles.css",
+          "sha256": "384f1600e61ebd1827adc938f59ae5ab671019b370b01319fcd85498f2071a24"
+        },
+        {
+          "path": "frontend/e2e/appearance-fonts.spec.ts",
+          "sha256": "8e33e2e9def84747350c190c88006dab8a17ff71223482ed62a37458273a7d82"
+        },
+        {
+          "path": "frontend/docs/h135-font-preferences.md",
+          "sha256": "269646c4456bcf829ce80d735de9d298e38c31e56b5011978f287d82235c1206"
         }
       ]
     },
@@ -3959,7 +3971,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
         },
         {
           "path": "frontend/src/cockpit.tsx",
@@ -3967,7 +3979,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
+          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
         },
         {
           "path": "tests/test_composer_vision.py",

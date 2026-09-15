@@ -199,3 +199,24 @@ it('acknowledges a completed save after unmount without replaying it on reload',
   await waitFor(()=>expect(next.result.current.status).toBe('synced'));
   expect(writes).toBe(1);
 });
+
+it('defaults old replies to theme and preserves an explicit offline font through reload', async () => {
+  let offline=false, server={...defaults};
+  const fetch=vi.fn().mockImplementation(async(_p,init)=>{
+    if(offline)throw new TypeError('offline');
+    if(init.method==='PUT'){const {_revision,...patch}=JSON.parse(init.body);server={...server,...patch};}
+    return result(server);
+  });vi.stubGlobal('fetch',fetch);
+  let hook=renderHook(()=>useAppearance());
+  await waitFor(()=>expect(hook.result.current.status).toBe('synced'));
+  expect(hook.result.current.preferences.font).toBe('theme');
+  expect(fetch.mock.calls.every(call=>call[1].method==='GET')).toBe(true);
+  offline=true;act(()=>hook.result.current.setPreference('font','system-serif'));
+  await waitFor(()=>expect(hook.result.current.status).toBe('unsynced'));
+  hook.unmount();hook=renderHook(()=>useAppearance());
+  await waitFor(()=>expect(hook.result.current.status).toBe('unsynced'));
+  expect(hook.result.current.preferences.font).toBe('system-serif');
+  offline=false;act(()=>hook.result.current.retry());
+  await waitFor(()=>expect(hook.result.current.status).toBe('synced'));
+  expect(hook.result.current.preferences.font).toBe('system-serif');
+});

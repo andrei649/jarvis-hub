@@ -831,3 +831,10 @@ input { font-family: inherit; }
 
 /* Bookmark links remain readable on the console's dark background. */
 .console-link { color: var(--accent-light); text-underline-offset: 3px; padding: 6px 0; }
+
+/* Fixed local body/display font choices. Code and mono UI keep --font-mono. */
+.hud-root { font-family: var(--font-ui); }
+.hud-root[data-font="system-sans"] { --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.hud-root[data-font="system-serif"] { --font-ui: Georgia, "Times New Roman", serif; }
+.hud-root[data-font="system-mono"] { --font-ui: ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.hud-root[data-font="jetbrains-mono"] { --font-ui: "JetBrains Mono", ui-monospace, monospace; }

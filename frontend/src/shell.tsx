@@ -278,6 +278,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
       { name:'Toggle language EN / RO', act:()=>setLang(l=>l==='en'?'ro':'en'), icon:'globe' },
     ]},
     { g:'Display', items:[
+      ...[['theme','Theme Default'],['system-sans','System Sans'],['system-serif','System Serif'],['system-mono','System Mono'],['jetbrains-mono','JetBrains Mono']].map(([id,label])=>({name:'Font · '+label+(u.font===id?' ✓':''),act:()=>u.setFont&&u.setFont(id),icon:'bolt'})),
       { name:'Look · '+(u.look==='obsidian'||!u.look?'Obsidian ✓':'Obsidian'), act:()=>u.setLook&&u.setLook('obsidian'), icon:'bolt' },
       { name:'Look · '+(u.look==='graphite'?'Graphite ✓':'Graphite'), act:()=>u.setLook&&u.setLook('graphite'), icon:'bolt' },
       { name:'Density · '+(u.density==='compact'?'Compact ✓':'Compact'), act:()=>u.setDensity&&u.setDensity('compact'), icon:'bolt' },

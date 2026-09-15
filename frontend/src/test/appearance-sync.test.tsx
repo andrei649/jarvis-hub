@@ -39,3 +39,13 @@ it('shows failed explicit saves without reopening the palette', async () => {
   await screen.findByText('Appearance saved on this browser only. Sync failed.');
   expect(screen.getByRole('button',{name:'Retry sync'})).toBeTruthy();
 });
+
+it('applies a palette font to the HUD root with only a finite font patch', async () => {
+  const fetch=vi.fn().mockImplementation(async(_path,init)=>new Response(JSON.stringify({configured:true,revision:'0',preferences:init?.body?JSON.parse(init.body):{}})));
+  vi.stubGlobal('fetch',fetch);
+  const {container}=render(<App/>);
+  fireEvent.keyDown(window,{key:'k',ctrlKey:true});
+  fireEvent.click(await screen.findByText('Font · System Serif'));
+  await waitFor(()=>expect(container.querySelector('.hud-root')?.getAttribute('data-font')).toBe('system-serif'));
+  expect(fetch.mock.calls.filter(call=>call[1]?.method==='PUT').map(call=>JSON.parse(call[1].body))).toEqual([{font:'system-serif',_revision:'0'}]);
+});

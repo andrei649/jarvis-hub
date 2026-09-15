@@ -9369,6 +9369,8 @@ export interface components {
         AppearancePatch: {
             /** Revision */
             _revision?: string | null;
+            /** Font */
+            font?: string | null;
             /** Accent */
             accent?: string | null;
             /** Look */
