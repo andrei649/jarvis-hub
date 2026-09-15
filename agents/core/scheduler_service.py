@@ -437,7 +437,7 @@ class SchedulerService:
                 }
             except Exception:
                 logger.warning("Decay inspection failed", exc_info=True)
-                decay_summary = {"available": False, "ranked": 0, "candidates": 0}
+                decay_summary = {"available": False, "ranked": 0, "candidates": 0, "reason": "decay_failed"}
 
         result = {
             "skipped": False,
@@ -462,7 +462,7 @@ class SchedulerService:
     async def run_retention_purge(self):
         """Run the retention sweep off the event loop (file + SQLite I/O)."""
         if not self._orch.get_setting("retention.enabled", False):
-            return
+            return {"_scheduler_status": "skipped"}
 
         from agents.core import retention
         try:
@@ -477,11 +477,12 @@ class SchedulerService:
             return result
         except Exception as e:
             logger.warning(f"Retention sweep failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_log_quick_scan(self):
         """15-min scan: submit autonomy alert on spike or new error code."""
         if not self._orch.get_setting("system.log_scan_enabled", True):
-            return
+            return {"_scheduler_status": "skipped"}
         try:
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.quick_scan(problems_path)
@@ -507,11 +508,12 @@ class SchedulerService:
             )
         except Exception as e:
             logger.warning(f"Log quick scan failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_log_hourly_scan(self):
         """Hourly scan: trend analysis and backlog sync."""
         if not self._orch.get_setting("system.log_scan_enabled", True):
-            return
+            return {"_scheduler_status": "skipped"}
         try:
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.hourly_scan(problems_path)
@@ -534,11 +536,12 @@ class SchedulerService:
                 )
         except Exception as e:
             logger.warning(f"Log hourly scan failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_log_daily_scan(self):
         """07:05 daily scan: write 24-h bug-report digest."""
         if not self._orch.get_setting("system.log_scan_enabled", True):
-            return
+            return {"_scheduler_status": "skipped"}
         try:
             problems_path = str(data_path("problems.jsonl"))
             result = self._orch.log_scanner.daily_scan(problems_path)
@@ -563,6 +566,7 @@ class SchedulerService:
             )
         except Exception as e:
             logger.warning(f"Log daily scan failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_daily_digest(self, kind: str):
         """Build and ship the morning brief / evening retro to the owner."""
@@ -579,16 +583,20 @@ class SchedulerService:
                 text = build_evening_retro(self._orch.autonomy_queue)
         except Exception as e:
             logger.warning(f"Digest build failed ({kind}): {e}")
-            return
+            return {"_scheduler_status": "failed"}
         owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
             self._orch.get_setting("autonomy.owner_chat_id", "") or ""
         )
         tg = self._orch.channels.get("telegram")
         if tg and owner:
             try:
-                await tg.send(text, chat_id=int(owner))
+                if not await tg.send(text, chat_id=int(owner)):
+                    return {"_scheduler_status": "failed"}
             except Exception as e:
                 logger.warning(f"Digest send failed ({kind}): {e}")
+                return {"_scheduler_status": "failed"}
+        else:
+            return {"_scheduler_status": "failed"}
         logger.info(f"Daily digest ready: {kind}")
 
     async def _memory_entries_for_brief(self) -> list[dict]:

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "75b73cb79b18d44b6f197c8bbfcdd8b30fbbfbc0",
-  "assessed_at": "2026-09-10T16:30:00Z",
+  "base_sha": "8e358b870ca7797c12c518d711a3216a227a3a66",
+  "assessed_at": "2026-09-15T11:25:11Z",
   "reviews": [
     {
       "id": "H001",
@@ -829,7 +829,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "37bcd518e19b76350362a4f1a88d3060c4dc3af2d2096713fb2f80e45e3fd121"
+          "sha256": "55a8aea32536df9839dfda57f52933518891459a858d5f5f001229d67efd5771"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -841,7 +841,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "30bb10337f94b0489e7beb37a9b2e6a970ec223e6d8f8badcd3336c56bfa9d87"
+          "sha256": "a8f3fd31ac4a0fa5a427ecf8dff485dfcb938ec8cc9262919d2b45843f025385"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -861,7 +861,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "fe1b321702ad7a31c1a5c9fb46e4f67e5c5ff18816c716bc4a4a156217d134cc"
+          "sha256": "ddf5cdbb8d56f3d8d1898accd1b21bc1ca09cb78d0e14788c23c372b206df9ae"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -1595,7 +1595,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+          "sha256": "c61c50702d97dfc0e26c01ffa674d3b0104c52fc1cf430f042151d07334c77e9"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1696,7 +1696,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+          "sha256": "c61c50702d97dfc0e26c01ffa674d3b0104c52fc1cf430f042151d07334c77e9"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2029,7 +2029,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "37bcd518e19b76350362a4f1a88d3060c4dc3af2d2096713fb2f80e45e3fd121"
+          "sha256": "55a8aea32536df9839dfda57f52933518891459a858d5f5f001229d67efd5771"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -2041,7 +2041,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "30bb10337f94b0489e7beb37a9b2e6a970ec223e6d8f8badcd3336c56bfa9d87"
+          "sha256": "a8f3fd31ac4a0fa5a427ecf8dff485dfcb938ec8cc9262919d2b45843f025385"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2061,7 +2061,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "fe1b321702ad7a31c1a5c9fb46e4f67e5c5ff18816c716bc4a4a156217d134cc"
+          "sha256": "ddf5cdbb8d56f3d8d1898accd1b21bc1ca09cb78d0e14788c23c372b206df9ae"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -3143,7 +3143,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+          "sha256": "c61c50702d97dfc0e26c01ffa674d3b0104c52fc1cf430f042151d07334c77e9"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3228,7 +3228,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+          "sha256": "c61c50702d97dfc0e26c01ffa674d3b0104c52fc1cf430f042151d07334c77e9"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3383,7 +3383,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+          "sha256": "c61c50702d97dfc0e26c01ffa674d3b0104c52fc1cf430f042151d07334c77e9"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3470,6 +3470,51 @@
         {
           "path": "tests/test_telegram_streaming.py",
           "sha256": "6a5d795dae44884d089b3632f248a422a3b452a8561637d3153aa6cf1484d585"
+        }
+      ]
+    },
+    {
+      "id": "H684",
+      "row_sha256": "2dfb19c76d1078cfffce0f9cb37dec15780e7a0665575b265de31e5f972b40a3",
+      "status": "partial",
+      "summary": "Read-only jobs doctor reports scheduler stop/pause, missing registrations, missing/invalid/overdue next runs, execution failures and delivery failures. CLI failures exit non-zero. Bounded native scheduler outcomes and owner delivery results survive restart; intentional skips do not erase failures. Real APScheduler and migration tests pass; the two diagnostic modules have 97% branch-inclusive coverage.",
+      "remaining": "Hermes script/no_agent/workdir diagnostics are not implemented: these per-job options are currently rejected by Nerva. Production host observation and complete integration of the wider job-option contract remain open.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "55a8aea32536df9839dfda57f52933518891459a858d5f5f001229d67efd5771"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_health.py",
+          "sha256": "7a1566a45019a63625e5ed864e022814b27180944cde756cf5a339033619d2fd"
+        },
+        {
+          "path": "agents/core/scheduler_health.py",
+          "sha256": "81eb62dd42fb49d1b69944e7edecb16a865901f2c37b62cc9a8011d03ae94ce5"
+        },
+        {
+          "path": "agents/core/scheduler_service.py",
+          "sha256": "bc70e0ece72e34de7b1f26d24ec4a45e5151126f7c6e72e7fa5a05fa3ac37d94"
+        },
+        {
+          "path": "agents/core/heartbeat.py",
+          "sha256": "ce816c7bb5da87a62242e436ed531d9c191ff7558e2bf282932934c617bf6352"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "a8f3fd31ac4a0fa5a427ecf8dff485dfcb938ec8cc9262919d2b45843f025385"
+        },
+        {
+          "path": "tests/test_jobs_doctor.py",
+          "sha256": "9793d7361fb73879ea98f925bd1e3dcf8e9abadd368ca5fab50c41a639bbc41b"
+        },
+        {
+          "path": "tests/test_scheduler_health.py",
+          "sha256": "1ca64cf22cfabc30821945780a0a82bdfdc1e4296b6d3102d0d5e82155369841"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "ddf5cdbb8d56f3d8d1898accd1b21bc1ca09cb78d0e14788c23c372b206df9ae"
         }
       ]
     }

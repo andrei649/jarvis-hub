@@ -26,6 +26,14 @@
 
 - 2026-09-15 models/conversations: checkpoint-backed birth and request-local session identity; explicit compatible provider cache/effort capabilities; Gemini level/budget normalization; configured/probed Ollama context ceiling and 85% threshold. H363/H364/H671/H673/H679 remain partial with bounded provider, lineage and heterogeneous-route gaps in the Hermes assessment. Offline tests only; no billing or live-provider claim.
 
+- 2026-09-15 host metrics: preserve each available GPU measurement when another probe returns a missing or invalid value. Fourteen metric regressions and the 100-test hardware/lifecycle/route suite pass; Linux CI collected 10,714 backend tests. This fixes host reporting and does not close Hermes parity rows.
+
+- 2026-09-15 query tools: backlog and ledger commands now handle buffered output when a downstream pipe closes, preserving exit codes and closing the temporary descriptor. Forty query-tool and Windows encoding checks pass; no Hermes parity row is closed by this robustness fix.
+
+- 2026-09-15 H684: owner/native scheduler health now reports stalls and persistent execution/delivery failures through read-only diagnostics and non-zero CLI exits. Real APScheduler, migration and 438 focused tests pass; new diagnostic modules have 97% branch-inclusive coverage. Script/no_agent/workdir options and production-host proof remain open; H684 is partial.
+
+- 2026-09-15 heartbeat resume: startup and resume now share cron weekday conversion, preserving Sunday/named-weekday schedules and rejecting invalid weekdays. Real APScheduler trigger regressions cover resume and named ranges; this is a scheduling correction, with Hermes row statuses preserved.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted
