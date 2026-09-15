@@ -160,14 +160,14 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
-    jobs_create.add_argument("--options", help='JSON options: {"repeat":3,"deliver":["ntfy"]}; [] disables delivery')
+    jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
     jobs_edit.add_argument("--name")
     jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
-    jobs_edit.add_argument("--options", help="replace advanced options as JSON")
+    jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
     for verb in ("doctor", "incidents", "tick"):
         sub = jobs_verbs.add_parser(verb)
         sub.add_argument("--json", action="store_true")

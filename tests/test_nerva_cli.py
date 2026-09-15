@@ -671,3 +671,11 @@ def test_manual_dispatch_acceptance_and_receipt_lookup():
     assert code == 0 and 'accepted' in out and 'r1' in out
     code, out, _, _ = _run(['jobs','status','j1','--request','r1'], hub)
     assert code == 0 and 'queued' in out
+
+
+def test_jobs_model_provider_authored_options():
+    hub = _FakeHub({'POST /api/jobs': {'ok': True, 'job': JOB}})
+    code, _, _, hub = _run(['jobs', 'create', '--blueprint', 'inbox_watch',
+                            '--options', '{"model":"org/model","provider":"lm-studio"}'], hub)
+    assert code == EXIT_OK
+    assert hub.calls[-1][2]['options'] == {'model':'org/model', 'provider':'lm-studio'}

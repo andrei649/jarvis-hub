@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { inpS } from '../panel-kit';
 
-export type JobOptions = { repeat?: number | null; deliver?: string[] };
+export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string };
 
 export function ScheduleBuilder({ onChange }: { onChange: (value: string) => void }) {
   const [mode, setMode] = useState('daily');
@@ -33,6 +33,11 @@ export function OptionsEditor({value,onChange}: {value:JobOptions;onChange:(v:Jo
   const mode = value.deliver === undefined ? 'default' : value.deliver.length === 0 ? 'history' : 'channels';
   return <fieldset style={{border:'1px solid var(--panel-line)',display:'grid',gap:6}}>
     <legend>Advanced</legend>
+    <label>Model pin (ask jobs)<input aria-label="job model" style={inpS} maxLength={256} value={value.model ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.model=e.target.value;else delete next.model;onChange(next);}}/></label>
+    <label>Provider pin (ask jobs)<select aria-label="job provider" style={inpS} value={value.provider ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.provider=e.target.value;else delete next.provider;onChange(next);}}>
+      <option value="">Existing routing</option>{['lm-studio','ollama','gemini','anthropic','openrouter','openai-compatible'].map(p=><option key={p} value={p}>{p}</option>)}
+    </select></label>
+    <small>Pins require a configured, policy-permitted adapter. Cloud pins must match the existing route; unavailable pins fail instead of falling back. Changing local models requires loaded context metadata; other model changes require a known window. The current default retains its existing window estimate. Completion is capped at 25% of the resolved window. Pinned jobs retain recent conversation and agent context, use deterministic history compression, and omit embedding-based long-term recall.</small>
     <label>Maximum attempts (blank = unlimited)<input aria-label="maximum attempts" type="number" min="1" max="10000" style={inpS} value={value.repeat ?? ''} onChange={e=>onChange({...value,repeat:e.target.value ? Number(e.target.value):null})}/></label>
     <label>Delivery <select aria-label="delivery mode" style={inpS} value={mode} onChange={e=>{
       const next={...value}; if(e.target.value==='default') delete next.deliver; else next.deliver=e.target.value==='history'?[]:['telegram']; onChange(next);

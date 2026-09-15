@@ -407,3 +407,56 @@ def test_a_declaration_stays_out_of_what_the_model_is_shown():
     assert server.declared_result_bytes("echo") == 1_234
     assert server.declared_result_bytes("nope") is None
     assert "max_result_bytes" not in server.tools()[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload_chars', [4000, 60000])
+async def test_pinned_file_read_compacts_in_memory_without_respilling(tmp_path, payload_chars):
+    from types import SimpleNamespace
+
+    from agents.core.llm.job_selection import apply_selection, selection_scope
+
+    store = ToolResultStore(tmp_path / 'spills')
+    raw = _Backend(tool_calls=1, tool='file_read')
+    raw.context_window = lambda model: 4096
+    router = SimpleNamespace(_backend_name='lm-studio', _ollama_backend=None)
+    runtime = AgentToolRuntime(
+        _server(payload_chars=payload_chars, name='file_read'),
+        enabled=lambda: True, max_result_bytes=5000, result_store=store,
+        context_window_tokens=lambda: 100000,
+    )
+    with selection_scope({'model':'small', 'provider':'lm-studio'}):
+        backend, model, _ = apply_selection(router, 'nerva', raw, 'small', 'local')
+        assert await _run(runtime, backend, model=model) == 'done'
+        assert not list((tmp_path / 'spills').glob('*.json'))
+        # The raw read is not sent unchecked: the loop folds it before the next
+        # provider request, which also crosses the resolved-window wrapper.
+        assert len(raw.calls) == 2
+        assert agent_runtime.estimate_messages(raw.calls[-1]) <= runtime._context_budget(model,256)
+        payload = json.loads(_tool_messages(raw)[0]['content'])
+        assert payload.get('spilled') is not True
+        if payload_chars == 4000:
+            assert payload['result']['blob'] == 'y' * payload_chars
+        else:
+            assert len(_tool_messages(raw)[0]['content']) < payload_chars
+
+
+@pytest.mark.asyncio
+async def test_pinned_unfoldable_file_read_stops_before_second_model_call(tmp_path):
+    from types import SimpleNamespace
+
+    from agents.core.llm.job_selection import apply_selection, selection_scope
+
+    store = ToolResultStore(tmp_path / 'spills')
+    raw = _Backend(tool_calls=1, tool='file_read')
+    raw.context_window = lambda model: 4096
+    router = SimpleNamespace(_backend_name='lm-studio', _ollama_backend=None)
+    runtime = AgentToolRuntime(
+        _server(payload_chars=60000, name='file_read'), enabled=lambda: True,
+        result_store=store, compacted_result_bytes=100000,
+    )
+    with selection_scope({'model':'small', 'provider':'lm-studio'}):
+        backend, model, _ = apply_selection(router,'nerva',raw,'small','local')
+        assert await _run(runtime,backend,model=model) == agent_runtime._CONTEXT_REPLY
+    assert len(raw.calls) == 1
+    assert not list((tmp_path / 'spills').glob('*.json'))

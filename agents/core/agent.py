@@ -220,6 +220,11 @@ class Agent:
         out; the legacy backend path has no deadline of its own to align
         (Hermes absorption 5c).
         """
+        from .llm.job_selection import selected_window
+        pinned_window = selected_window(model)
+        if pinned_window is not None:
+            cap = pinned_window // 4
+            max_tokens = min(max_tokens, cap) if max_tokens > 0 else cap
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
             # Forwarded only when a ceiling was given, so a caller without one keeps

@@ -465,6 +465,8 @@ class HybridRouter(LLMRouter):
         compatible = getattr(self, "_compatible_backend", None)
         if compatible is not None and route.startswith("cloud"):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
+        from .job_selection import apply_selection
+        backend, model, route = apply_selection(self, agent_id, backend, model, route)
         self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 
