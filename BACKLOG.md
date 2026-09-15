@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 specialist context planning (H673 partial): shared compression now plans against each actual governed backend/model and completion reserve, stabilizes final routes, and publishes one accepted clock/history update. Usage anchors require matching session generation, backend/model and retained history. Disabled compression retains existing unmanaged behavior. See [scope and verification](docs/superpowers/plans/2026-09-15-route-compaction.md).
+
 - 2026-09-15 model-job toolsets (H146/H449 partial): CLI, HUD and doctor now author and inspect explicit installed basic/files/terminal groups. Revocable per-run restrictions intersect actual model offers and ToolRPC intake; empty selection is text-only and saved approvals keep concrete arguments. Model workdir, skill attachment, profile aggregation and schedule.create remain separate. See [scope and verification](docs/superpowers/plans/2026-09-15-job-toolsets.md).
 
 - 2026-09-15 xAI Responses (H363/H364/H673 partial): exact Grok4.5/4.6 reasoning now drives text/stream and invocation-owned encrypted function replay through the existing guarded router. Identity, expiry, overflow and malformed native items refuse safely; no provider state is persisted as conversation context. Invocation model/provider authoring and broader verified declarations remain open. No live billing/cache claim. See [scope and evidence](docs/superpowers/plans/2026-09-15-xai-responses.md).

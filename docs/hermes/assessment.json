@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "b33ecee6997ec89ffb926116276908e89598690c",
-  "assessed_at": "2026-09-15T20:01:39Z",
+  "base_sha": "c58de044dddd5712e4e89f160cccd6cefc1bbecc",
+  "assessed_at": "2026-09-15T20:05:58Z",
   "reviews": [
     {
       "id": "H001",
@@ -937,7 +937,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -945,7 +945,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1365,11 +1365,11 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -1687,7 +1687,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1747,7 +1747,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1836,7 +1836,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -1888,7 +1888,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2389,7 +2389,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -2397,7 +2397,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3707,7 +3707,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3751,7 +3751,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3839,12 +3839,12 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate. Ordinary tool turns now also use immutable configured/cached backend capacity forwarded before guardrails; known limits include completion, initial/later transcript, schemas and structured tool-call arguments. Unknown capacity remains estimated rather than discovered. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Responses completed text/tool turns and validated terminal streams now retain reported input/output usage. Inclusive input totals split cached_tokens once into disjoint uncached input and cache_read; output reasoning detail is not added to output totals. Missing/malformed metadata does not invent counts. Stream errors, incomplete/contradictory terminal items, cancellation or failed close do not publish usage; request-local sinks preserve existing single-publication semantics. The xAI Responses dialect inherits the same strict reported input/output/cache split and complete terminal accounting, while its own completed-response acceptance rechecks reasoning/replay lifetimes. Reasoning token detail is not added twice to output totals. Opaque function replay preserves main-loop provider usage without introducing ciphertext persistence, per-vendor prices or cache discount assumptions.",
-      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates remain incomplete. Gemini usage-only final frames, absent terminal-local counts, unknown terminal semantics and ambiguous multi-candidate streams deliberately remain unreported. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof. Responses accounting is limited to supported API-key GPT-4.1 and exact xAI Grok4.5/4.6 dialects, not Codex subscription usage or general OpenAI reasoning-model replay. Cache counts do not establish live discounts, prices or physical context occupancy.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate. Ordinary tool turns now also use immutable configured/cached backend capacity forwarded before guardrails; known limits include completion, initial/later transcript, schemas and structured tool-call arguments. Unknown capacity remains estimated rather than discovered. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Responses completed text/tool turns and validated terminal streams now retain reported input/output usage. Inclusive input totals split cached_tokens once into disjoint uncached input and cache_read; output reasoning detail is not added to output totals. Missing/malformed metadata does not invent counts. Stream errors, incomplete/contradictory terminal items, cancellation or failed close do not publish usage; request-local sinks preserve existing single-publication semantics. The xAI Responses dialect inherits the same strict reported input/output/cache split and complete terminal accounting, while its own completed-response acceptance rechecks reasoning/replay lifetimes. Reasoning token detail is not added twice to output totals. Opaque function replay preserves main-loop provider usage without introducing ciphertext persistence, per-vendor prices or cache discount assumptions. Shared history compression now preplans each actual governed specialist route and its finite or dynamic completion reserve instead of borrowing the router default model. The strictest input budget stages one shared summary; final prompts/routes are revalidated through at most three monotonically tightening passes before a single accepted clock/history publication. Prepared text/SSE dispatch preserves backend/model/session/lifetime identity, policy gates and known-versus-estimated context metadata. Selected Ollama resolves its own context. Usage anchors require matching backend/model, session generation and retained-history digest; unmanaged old anchors are not promoted to exact managed measurements. Existing disabled-compression behavior and direct local auto output remain unchanged.",
+      "remaining": "A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates remain incomplete. Gemini usage-only final frames, absent terminal-local counts, unknown terminal semantics and ambiguous multi-candidate streams deliberately remain unreported. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof. Responses accounting is limited to supported API-key GPT-4.1 and exact xAI Grok4.5/4.6 dialects, not Codex subscription usage or general OpenAI reasoning-model replay. Cache counts do not establish live discounts, prices or physical context occupancy. Actual specialist planning applies to the existing opt-in shared-compression path; disabled/unmanaged callers retain their existing behavior. Unknown capacity remains a conservative planning estimate, not verified provider metadata.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3888,7 +3888,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4001,6 +4001,18 @@
         {
           "path": "docs/superpowers/plans/2026-09-15-xai-responses.md",
           "sha256": "3f04132cdd175c2522d071ee5d1c02269f7f4089b6a08707e55bb604c149ed09"
+        },
+        {
+          "path": "agents/core/route_compaction.py",
+          "sha256": "20c29084afc1e561cc38c424f4d38035c797d33275319227c20fe63ee1024f5e"
+        },
+        {
+          "path": "tests/test_route_compaction.py",
+          "sha256": "d423838e10c96c063178711e268c4ab9228cb85f840c182fdf481c668263cb40"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-route-compaction.md",
+          "sha256": "8ae84bbc5cccefd7953d9b9df98be0ad9751456c4c8e2ab9ed182f37a71657e0"
         }
       ]
     },
@@ -4071,7 +4083,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
+          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -4123,7 +4135,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
+          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
         },
         {
           "path": "agents/core/settings_db.py",
