@@ -202,6 +202,9 @@ def build_parser() -> argparse.ArgumentParser:
     chat = verbs.add_parser("chat", help="one scripted turn: send a message, print the reply")
     chat.add_argument("message")
     chat.add_argument("--agent", help="address one agent instead of the router")
+    # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
+    chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                      help="reasoning effort for this invocation only")
     chat.add_argument("--json", action="store_true")
 
     send = verbs.add_parser("send", help="message a configured channel, or reply to an inbox thread")
@@ -957,6 +960,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     body: dict[str, Any] = {"message": ns.message}
     if ns.agent:
         body["agent"] = ns.agent
+    if getattr(ns, "reasoning", None) is not None:
+        body["reasoning"] = ns.reasoning
     reply = ctx.client().post("/chat", body)
     if ns.json:
         ctx.dump(reply)

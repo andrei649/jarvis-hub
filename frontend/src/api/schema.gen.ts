@@ -9613,6 +9613,8 @@ export interface components {
              * @default jarvis
              */
             agent: string;
+            /** Reasoning */
+            reasoning?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
         };
         /** ChatResponse */
         ChatResponse: {
