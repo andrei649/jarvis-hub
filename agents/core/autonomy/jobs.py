@@ -261,7 +261,9 @@ def _dow_for_apscheduler(field: str) -> str:
 
 
 def _dow_name(token: str) -> str:
-    text = token.strip()
+    text = token.strip().lower()
+    if text in _DOW_NAMES:
+        return text
     if not text.isdigit() or not 0 <= int(text) <= 7:
         raise ValueError(f"day-of-week must be 0-7 or a name, not {token!r}")
     return _DOW_NAMES[int(text)]

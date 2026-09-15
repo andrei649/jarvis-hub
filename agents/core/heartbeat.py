@@ -119,6 +119,8 @@ class HeartbeatScheduler:
         for p in parts:
             if "-" in p:
                 lo, hi = p.split("-")
+                if not (lo.isdigit() and hi.isdigit()):
+                    return max_val
                 total += int(hi) - int(lo) + 1
             else:
                 try:
@@ -302,15 +304,18 @@ class HeartbeatScheduler:
             cron_expr = cadence[5:]
             parts = cron_expr.strip().split()
             if len(parts) == 5:
+                from .autonomy.jobs import cron_kwargs
+
+                try:
+                    cron_fields = cron_kwargs(cron_expr)
+                except ValueError as exc:
+                    logger.warning("Cannot resume heartbeat %s: %s", agent_id, exc)
+                    return False
                 jitter = random.randint(JITTER_MIN, JITTER_MAX)
                 self.scheduler.add_job(
                     self._run_heartbeat,
                     "cron",
-                    minute=parts[0],
-                    hour=parts[1],
-                    day=parts[2],
-                    month=parts[3],
-                    day_of_week=parts[4],
+                    **cron_fields,
                     args=[agent_id, orchestrator],
                     id=f"heartbeat-{agent_id}",
                     replace_existing=True,
