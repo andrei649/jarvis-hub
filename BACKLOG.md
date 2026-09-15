@@ -14,11 +14,13 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 H671 durable continuation: an explicit owner-created child retains root birth and accepted rebuild date through two generations and restart. Corrupt or reused history refuses before model or observed-turn writes. Production IANA/DST rendering and independent source/integration tests support the full frozen clock contract; no automatic rotation or live-model claim. See [contract and verification](docs/superpowers/plans/2026-09-15-session-continuation.md).
+
 - 2026-09-15 Responses transport (H363/H364/H673 partial): explicit API-key GPT-4.1 text/stream/function requests now use the public Responses endpoint, bounded stateless replay, cache retention and reported usage. Existing routing/approval and invocation-lifetime limits remain. Codex OAuth/subscription, Grok and reasoning-item replay are not claimed. See [plan/evidence](docs/superpowers/plans/2026-09-15-openai-responses.md).
 
 - 2026-09-15 H364 invocation reasoning: CLI chat --reasoning and optional HTTP/SSE reasoning apply canonical effort to one request without settings writes. Independent actual-provider mock tests verify defaults, scope revocation, retries and concurrent shared backends. H364 remains partial for named Grok and Codex/Responses paths. See [scoped plan](docs/superpowers/plans/2026-09-15-invocation-reasoning.md).
 
-- 2026-09-15 H671 compaction clock: durable same-session clock revisions advance only with accepted compaction. Failed commits stop dispatch, late managed child tasks cannot commit, and unmanaged requests preserve legacy behavior. Independent review covers midnight, restart, concurrent snapshots and creator metadata. H671 remains partial for cross-ID/root lineage; no rotation is invented. See [plan and evidence](docs/superpowers/plans/2026-09-15-compaction-clock.md).
+- 2026-09-15 H671 compaction clock: durable same-session clock revisions advance only with accepted compaction. Failed commits stop dispatch, late managed child tasks cannot commit, and unmanaged requests preserve legacy behavior. Independent review covers midnight, restart, concurrent snapshots and creator metadata. This earlier same-session increment is completed by the explicit root-lineage continuation evidence above; no rotation is invented. See [plan and evidence](docs/superpowers/plans/2026-09-15-compaction-clock.md).
 
 - 2026-09-15 H363 Claude prefix caching: ordinary text/stream requests now mark nonempty system text using the existing ephemeral helper. Empty systems, auth retry bodies, reasoning and usage semantics stay unchanged. Twelve new mocked-HTTP regressions pass; H363 remains partial for the named Responses transport, and H364 still lacks invocation-only reasoning authoring and named provider paths.
 

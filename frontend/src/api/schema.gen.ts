@@ -8162,6 +8162,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue Session */
+        post: operations["continue_session_sessions_continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bench": {
         parameters: {
             query?: never;
@@ -9615,6 +9632,8 @@ export interface components {
             agent: string;
             /** Reasoning */
             reasoning?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
+            /** Session Id */
+            session_id?: string | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -9693,6 +9712,16 @@ export interface components {
              * @default 4
              */
             keep_recent: number;
+        };
+        /** ContinueSessionRequest */
+        ContinueSessionRequest: {
+            /** Source Session Id */
+            source_session_id: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
         };
         /** CorrelateBody */
         CorrelateBody: {
@@ -22659,6 +22688,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    continue_session_sessions_continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinueSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -179,6 +179,7 @@ class ClockSnapshot:
     started_at: datetime
     rebuilt_at: datetime
     revision: int
+    instance_id: str = ""
 
 
 CONTEXT_REFUSED_REPLY = "I stopped this turn because its context compaction could not be safely committed. Please retry."
@@ -246,7 +247,28 @@ def active_clock():
     return _active_clock.get()
 
 
+def _owner_zone() -> tzinfo | None:
+    """Resolve an actual IANA key; never infer one from a local abbreviation.
+
+    Explicit TZ wins. Invalid configuration or unavailable host discovery keeps
+    the existing offset-only fallback rather than naming an unrelated zone.
+    tzlocal is already the scheduler's cross-platform host discovery dependency.
+    """
+    from zoneinfo import ZoneInfo
+
+    from .env_config import env_str
+
+    try:
+        name = env_str("TZ")
+        if not name:
+            from tzlocal import get_localzone_name
+            name = get_localzone_name()
+        return ZoneInfo(name)
+    except Exception:
+        return None
+
+
 def render_snapshot(system: str, snapshot: ClockSnapshot | None) -> str:
     if snapshot is None:
         return system
-    return with_clock(system, snapshot.started_at.astimezone(), snapshot.rebuilt_at)
+    return with_clock(system, snapshot.started_at.astimezone(), snapshot.rebuilt_at, zone=_owner_zone())

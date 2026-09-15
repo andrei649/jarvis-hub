@@ -446,6 +446,7 @@ class Orchestrator:
         self.mcp = MCPManager()
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()
+        self.memory.set_checkpoint_manager(self.checkpoints)
         self.learning = LearningLoop()
         rules = config.get_promotion_rules() if hasattr(config, "get_promotion_rules") else None
         if rules:
@@ -1542,11 +1543,15 @@ class Orchestrator:
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
+        from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY
+        except ContinuationRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
@@ -1562,6 +1567,9 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
@@ -1707,11 +1715,15 @@ class Orchestrator:
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
+        from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY
+        except ContinuationRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
@@ -1720,6 +1732,9 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
@@ -2856,6 +2871,9 @@ class Orchestrator:
         import json
 
         sid = str(self.session_id or "")
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, sid)
         manager = getattr(self, "checkpoints", None)
         snapshot = capture_clock(manager, sid)
         prompt_clock.set(snapshot)
@@ -3388,7 +3406,8 @@ class Orchestrator:
         """When the CURRENT session began — seeded once, never refreshed (H671).
 
         Read through the same session id rather than recomputing it, so checkpoint
-        restore keeps the day this session started. Cross-ID lineage is not modeled. Recomputing it at rebuild time would quietly reset a
+        restore keeps the physical session birth. Prompt continuation lineage is
+        resolved separately by capture_clock. Recomputing birth at rebuild time would quietly reset a
         forever-session's birthday to today, which is the fault this guards.
         """
         from datetime import datetime
