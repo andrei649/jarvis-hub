@@ -44,6 +44,7 @@ import logging
 import math
 import os
 import re
+import tempfile
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -237,11 +238,15 @@ class ToolResultStore:
         raw = body.encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
         reference = f"{_safe_tool_name(tool)}-{digest[:16]}.json"
+        temporary = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             target = self.root / reference
-            temporary = target.with_suffix(".json.tmp")
-            with temporary.open("wb") as handle:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=self.root, prefix=f".{_safe_tool_name(tool)}-",
+                suffix=".tmp", delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
                 handle.write(raw)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -253,6 +258,8 @@ class ToolResultStore:
             written = self._clock()
             os.utime(target, (written, written))
         except OSError:
+            if temporary is not None:
+                self._unlink(temporary)
             logger.warning("tool result spill failed; falling back to truncation",
                            exc_info=True)
             return None
@@ -278,8 +285,11 @@ class ToolResultStore:
         """
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            temporary = self.root / f".{_safe_tool_name(tool)}-{os.getpid()}-{id(self):x}.part"
-            handle = temporary.open("wb")
+            handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 — StreamSpill owns close/discard.
+                mode="wb", dir=self.root, prefix=f".{_safe_tool_name(tool)}-",
+                suffix=".part", delete=False,
+            )
+            temporary = Path(handle.name)
         except OSError:
             logger.warning("tool result stream spill could not be opened; "
                            "falling back to truncation", exc_info=True)
@@ -438,10 +448,15 @@ class StreamSpill:
         try:
             self._handle.flush()
             os.fsync(self._handle.fileno())
-            self._handle.close()
         except (OSError, ValueError):
             logger.warning("tool result stream spill failed to close", exc_info=True)
             self._failed = True
+        finally:
+            try:
+                self._handle.close()
+            except (OSError, ValueError):
+                logger.warning("tool result stream spill failed to close", exc_info=True)
+                self._failed = True
         if self._failed or self._written <= 0:
             self._store._unlink(self._temporary)
             return None

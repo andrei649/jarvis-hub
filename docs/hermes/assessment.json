@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "4440baeb81eac435374ca49c4373a9b382746242",
-  "assessed_at": "2026-09-15T15:39:59.099731Z",
+  "base_sha": "33572419d2423fff5cd606318b4cc155436b6e0c",
+  "assessed_at": "2026-09-15T16:13:14.526168Z",
   "reviews": [
     {
       "id": "H001",
@@ -1215,17 +1215,17 @@
     {
       "id": "H298",
       "row_sha256": "d516cf7e38eda13e728191a930ad08eecc1fdf248dd718e220a19b1713ded66f",
-      "status": "equivalent",
-      "summary": "Toate cele cinci trepte ale pragului există și sunt cablate în bucla reală: pinned (`file_read` = fără limită, ca să nu se spill-eze citirea unui spill) → override-ul owner-ului (`llm.tool_result_thresholds`) → familia `mcp_` → declarația uneltei (`register_tool(max_result_bytes=…)`) → implicitul global. Un rezultat peste prag e scris integral sub `data/workspace/tool_results/` — în rădăcina implicită a uneltelor de fișiere, deci calea din subsolul preview-ului e una pe care `file_read` chiar o poate deschide — iar modelul primește un preview mărginit cu cap+coadă, dimensiunea originală și sha256. `budget_for_context_window` scalează 15 % pe rezultat și 30 % pe tură, cu praguri minime de 8 KB / 16 KB, pornind de la fereastra modelului pe care rulează tura (nu de la o constantă și nu doar când o configurează cineva). Retenția — vârstă, număr de fișiere, total octeți — rulează la fiecare scriere, deci dependența pe care o numea rândul e livrată, nu amânată. Store-ul are acum și un scriitor în flux (`open_stream`), folosit de H305/H595 pentru stdout-ul unei rulări; retenția și poarta de citire acoperă ambele forme. Cele trei limite de output (50 KB / 2 000 linii / 2 000 caractere pe linie) stau acum într-un singur modul, iar cele două limite de formă chiar se aplică: o linie de 5 MB și cincizeci de mii de linii scurte treceau amândouă de un plafon pe octeți. Neverificat pe servicii reale: bucla e probată cu un backend de model simulat (runtime-ul este cel real), iar store-ul pe un sistem de fișiere real în teste — nicio cerință acceptată a rândului nu depinde de hardware sau de un serviciu extern. Nicio unealtă din producție nu declară încă `max_result_bytes`; treapta există, e testată și e opțională prin construcție.",
-      "remaining": "",
+      "status": "partial",
+      "summary": "Threshold precedence, never-respill file_read, bounded previews with recoverable paths and hashes, and finalized-file retention are wired into the real tool loop. Independent review and 180 focused checks verify exclusive temporary writers, complete bytes and receipts across overlapping streams and identical whole-result writes, plus cleanup after failed finalization. Reassessment found two remaining accepted-contract defects; this repair does not claim complete effective-window or shape-only capture behavior.",
+      "remaining": "Ordinary tool loops use the model-family context estimate instead of the actual configured/loaded Ollama window: a 4,096-token backend can receive a 7,521-token request after a 30 KB result. Separately, code_tools._stream_fields can discard complete stdout when shape truncation adds a notice longer than the omitted content (a 2,001-character line reproduces it). Preserve the full stream whenever shape capping truncated, and resolve ordinary tool-loop budgets from effective backend capacity. Interrupted captures and arbitrary filesystem loss are not complete-output guarantees; retention keeps a newest-file exception and does not establish crash-orphan collection.",
       "evidence": [
         {
           "path": "agents/core/tool_result_store.py",
-          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
+          "sha256": "2026e456e05be1d619714f11cc55242e78c5f58630181533ca495b0f53424597"
         },
         {
           "path": "tests/test_tool_result_store.py",
-          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
+          "sha256": "1384edef022d3a2da196b5fa3fa43b0d019e5fc4a311105f9a118498735fef74"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1245,15 +1245,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
+          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
+          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
+          "sha256": "5adddc9deb061dd23a335da593a4666f6c606ecd8de24388360b2b5604916e0e"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -1261,7 +1261,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "5efd03a1e6f1032125fe6bf979a5edc368883bd8ef9624405d3cbfc19c34b6ff"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -1269,7 +1269,7 @@
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         }
       ]
     },
@@ -2778,7 +2778,7 @@
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
       "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and complete redirected Python stdout/stderr stream spills on both one-shot and session paths. Bounded previews retain file references, byte counts and hashes without buffering the full stream. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes.",
-      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
+      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch. H298 reassessment also reproduced a shape-only stdout truncation case where the complete capture is discarded because the annotated preview is longer than the original; that capture-finalization defect remains open.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -2850,7 +2850,7 @@
         },
         {
           "path": "agents/core/tool_result_store.py",
-          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
+          "sha256": "2026e456e05be1d619714f11cc55242e78c5f58630181533ca495b0f53424597"
         },
         {
           "path": "agents/core/environments/output_limits.py",
@@ -2858,7 +2858,7 @@
         },
         {
           "path": "tests/test_tool_result_store.py",
-          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
+          "sha256": "1384edef022d3a2da196b5fa3fa43b0d019e5fc4a311105f9a118498735fef74"
         },
         {
           "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
