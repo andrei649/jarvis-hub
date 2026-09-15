@@ -138,12 +138,13 @@ input { font-family: inherit; }
 
 /* MAIN GRID */
 .main { flex:1; min-height:0; display:grid; gap:var(--gap); padding:var(--gap); grid-template-rows:minmax(0,1fr); }
-.main[data-ia="rail"] { grid-template-columns:60px 1fr; }
-.main[data-ia="tabs"] { grid-template-columns:1fr; }
-.workzone { min-height:0; display:grid; gap:var(--gap); }
-.workzone.cockpit { grid-template-columns:270px 1fr 322px; }
-.workzone.wide { grid-template-columns:1fr 322px; }
-.workzone.full { grid-template-columns:1fr; }
+.main[data-ia="rail"] { grid-template-columns:60px minmax(0,1fr); }
+.main[data-ia="tabs"] { grid-template-columns:minmax(0,1fr); }
+.main > * { min-width:0; }
+.workzone { min-width:0; min-height:0; display:grid; gap:var(--gap); }
+.workzone.cockpit { grid-template-columns:270px minmax(0,1fr) 322px; }
+.workzone.wide { grid-template-columns:minmax(0,1fr) 322px; }
+.workzone.full { grid-template-columns:minmax(0,1fr); }
 
 /* RAIL */
 .rail { display:flex; flex-direction:column; gap:4px; align-items:center; padding-top:4px; }
@@ -260,6 +261,9 @@ input { font-family: inherit; }
 .inputbar .field:focus-within { border-color:var(--accent); box-shadow:0 0 16px var(--accent-glow); }
 .inputbar .field input { flex:1; background:transparent; border:0; outline:0; color:var(--ink); font-size:13px; }
 .inputbar .field input::placeholder { color:var(--ink-3); }
+.workzone.cockpit .inputbar { flex-wrap:wrap; }
+.workzone.cockpit .inputbar .field { min-width:0; flex-basis:200px; }
+.workzone.cockpit .inputbar .field input { min-width:0; width:100%; }
 .mic { width:34px; height:34px; border-radius:var(--radius); border:1px solid var(--panel-line); background:var(--surface); color:var(--ink-2); display:flex; align-items:center; justify-content:center; transition:all .16s; }
 .mic.on { color:var(--green); border-color:var(--green-dim); animation:pulse-mic 1.4s infinite; }
 .transmit { display:flex; align-items:center; gap:7px; background:var(--accent-faint); border:1px solid var(--accent-dim); color:var(--accent-light); font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; padding:9px 14px; border-radius:var(--radius); transition:all .16s; }
