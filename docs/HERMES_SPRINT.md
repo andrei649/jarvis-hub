@@ -108,6 +108,20 @@ acoperire a ramurilor pentru modulele noi. Capturile sunt limitate la UTF-8 comp
 în plafonul terminalului; monitorizarea URL rămâne deschisă.
 [Contract și limite](automations-scripts.md#bounded-script-monitors).
 
+## Context local — actualizare verificată la 15 septembrie
+
+Notele istorice H671/H673 de mai sus descriu golurile de la acele PR-uri. Între timp,
+nașterea conversației se recuperează din checkpoint și calea Agent primește ceasul;
+limita Ollama `num_ctx`, plafonul de 85% și rezerva Gemini sunt implementate.
+Identitatea pe rădăcina unei linii de sesiuni și refresh-ul strict la compactare
+rămân deschise.
+
+Acest increment transmite și contoarele Ollama/LM Studio din răspunsurile cu
+apeluri de unelte: contorizarea însumează cererile, iar ancora de context reține
+ultima cerere. Metadatele invalide nu pierd răspunsul. 38 de teste noi și 215
+verificări țintite trecute; H673 rămâne parțial pentru restul traseelor/providerilor
+și estimarea imaginilor. [Plan și probe](superpowers/plans/2026-09-15-local-usage.md).
+
 ## Ordinea sprintului
 
 1. **Reevaluarea restului inventarului pe clustere**, începând cu cele mai vechi

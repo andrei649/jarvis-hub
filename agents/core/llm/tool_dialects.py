@@ -185,6 +185,36 @@ def cache_marked_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return marked
 
 
+def _local_count(data: Mapping[str, Any], key: str) -> int:
+    """Local usage is metadata, never a reason to discard a valid model turn."""
+    value = data.get(key)
+    return value if type(value) is int and value >= 0 else 0
+
+
+def ollama_usage(data: Mapping[str, Any]) -> TokenUsage:
+    """/api/chat totals; prompt_eval_count already includes cached prompt tokens.
+
+    Protocol: https://docs.ollama.com/api/chat (reviewed 2026-09-15).
+    """
+    if not isinstance(data, Mapping):
+        return TokenUsage()
+    return TokenUsage(input_tokens=_local_count(data, "prompt_eval_count"),
+                      output_tokens=_local_count(data, "eval_count"))
+
+
+def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:
+    """OpenAI-compatible structured turns report usage alongside choices.
+
+    Protocol: https://lmstudio.ai/docs/developer/openai-compat/tools
+    (reviewed 2026-09-15). Do not infer cache billing from local token totals.
+    """
+    raw = data.get("usage") if isinstance(data, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return TokenUsage()
+    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
+                      output_tokens=_local_count(raw, "completion_tokens"))
+
+
 def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
     """The provider's own token counts, or an empty usage when it said nothing.
 

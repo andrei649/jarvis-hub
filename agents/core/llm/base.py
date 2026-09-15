@@ -14,7 +14,7 @@ import httpx
 
 from .egress import llm_async_client
 from .repetition_guard import is_repetition_dominated
-from .tool_dialects import ollama_messages, ollama_tool_calls
+from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.base")
@@ -554,7 +554,8 @@ class LMStudioBackend(LLMBackend):
             payload["max_tokens"] = max_tokens
         try:
             resp = await self._post_chat(payload)
-            choice = resp.json()["choices"][0]
+            data = resp.json()
+            choice = data["choices"][0]
             message = choice.get("message", {})
             finish = choice.get("finish_reason")
             tool_calls = parse_openai_tool_calls(message.get("tool_calls", []) or [])
@@ -567,6 +568,7 @@ class LMStudioBackend(LLMBackend):
                 content=content,
                 tool_calls=tool_calls,
                 finish_reason=finish,
+                usage=lmstudio_usage(data),
             )
         except Exception as e:
             return ToolTurn(
@@ -799,7 +801,8 @@ class OllamaBackend(LLMBackend):
                 reasoning = message.get("thinking") or message.get("reasoning_content") or ""
                 if strip_thinking(reasoning).strip():
                     content = THINKING_EXHAUSTED_REPLY
-            return ToolTurn(content=content, tool_calls=tool_calls, finish_reason=finish)
+            return ToolTurn(content=content, tool_calls=tool_calls, finish_reason=finish,
+                            usage=ollama_usage(data))
         except Exception as e:
             return ToolTurn(
                 content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
