@@ -116,7 +116,7 @@ def test_catalog_route_does_not_run_disk_work_on_event_loop(tmp_path, monkeypatc
     _catalog_fixture(tmp_path, 1)
     monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
     monkeypatch.setenv('JARVIS_MEDIA_CATALOG', '1')
-    original = media_library.gallery
+    original = media_library.gallery_page
     checked = []
     def disk_work(*args, **kwargs):
         try:
@@ -125,7 +125,7 @@ def test_catalog_route_does_not_run_disk_work_on_event_loop(tmp_path, monkeypatc
         except RuntimeError:
             checked.append(True)
         return original(*args, **kwargs)
-    monkeypatch.setattr(media_library, 'gallery', disk_work)
+    monkeypatch.setattr(media_library, 'gallery_page', disk_work)
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[user_guard] = lambda: None

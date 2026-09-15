@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "3b42871e66bd5f88019fbd14fca2935bce9aac33",
-  "assessed_at": "2026-09-15T13:48:43Z",
+  "base_sha": "d0bf8a4afe678bc2faeaba3d9feb9c5cfbb4d11c",
+  "assessed_at": "2026-09-15T14:15:11Z",
   "reviews": [
     {
       "id": "H001",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
+          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2109,7 +2109,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
+          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2292,7 +2292,7 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "aad1b2f1e8290504c97a59e4a65c0416ef4daa72102c6f522f445fcc89c03197"
+          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
         },
         {
           "path": "agents/core/routers/artifact_store.py",
@@ -2304,7 +2304,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
+          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2312,7 +2312,7 @@
         },
         {
           "path": "tests/test_media_library.py",
-          "sha256": "7bc996116ed5db5276499418cef986ce0355cab850f337f739524aa7ec350e08"
+          "sha256": "f575fe76204f7b38b48f1f2f6ea642c6b49e3475bdd818e49ab5966dee8edcb1"
         }
       ]
     },
@@ -2320,8 +2320,8 @@
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
       "status": "partial",
-      "summary": "Unified bounded gallery includes cataloged generated/cache media and binary attachments with search, authenticated preview/download and selected in-memory ZIP export. Data portability includes validated generated/cache bytes and hashes. Host paths never reach the public gallery.",
-      "remaining": "Legacy catalog files outside producer-owned media/generated or media/cache roots remain metadata-only. Gallery is bounded to newest 200 entries; unsupported, missing and oversized files are explicitly unavailable. Native mobile controls remain a follow-up.",
+      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection.",
+      "remaining": "Traversal covers currently retained metadata only (generated store bounded to 10,000 records/10 MB; attachments use their configured retention). Legacy files outside producer-owned roots, missing/unsupported/oversized files remain unavailable. The upper timestamp/key watermark excludes newer appends but does not freeze membership against later backdated or equal-time inserts. Native mobile gallery controls and restoration of evicted records remain absent; this is not proof of cloud-generation writeback or live providers.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2333,7 +2333,7 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "aad1b2f1e8290504c97a59e4a65c0416ef4daa72102c6f522f445fcc89c03197"
+          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
         },
         {
           "path": "agents/core/routers/artifact_store.py",
@@ -2345,7 +2345,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
+          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2353,7 +2353,27 @@
         },
         {
           "path": "tests/test_media_library.py",
-          "sha256": "7bc996116ed5db5276499418cef986ce0355cab850f337f739524aa7ec350e08"
+          "sha256": "f575fe76204f7b38b48f1f2f6ea642c6b49e3475bdd818e49ab5966dee8edcb1"
+        },
+        {
+          "path": "frontend/src/media-gallery.ts",
+          "sha256": "17546354bf6b264df0956de40ba842b492153248d998e8ac8ba4fcea3eb27985"
+        },
+        {
+          "path": "tests/test_media_gallery_pagination.py",
+          "sha256": "ef1b062f12f35179f7584b67140a425befca28bf75b99300c057cef65dda99db"
+        },
+        {
+          "path": "frontend/src/test/media-gallery-panel.test.tsx",
+          "sha256": "a76f29d4ebbb7a4548837b22b2e0eab177291a07840015cf7936656c60db3ccf"
+        },
+        {
+          "path": "frontend/e2e/media-gallery.spec.ts",
+          "sha256": "56332f6532478362f3756fbaf4d0df2233f724ae1e60e6e49891b42112659cfd"
+        },
+        {
+          "path": "frontend/docs/h518-gallery-pagination.md",
+          "sha256": "41aa7511283e855fd8e4ca7f3de141728e0e461fb7bf2ae60b7f546463b53aeb"
         }
       ]
     },
@@ -2774,7 +2794,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
+          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -2819,7 +2839,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "415b9a67bac42949ee6078c1d3e1f84c1c96e33b4d92db8f46c7fa3a54633c9a"
+          "sha256": "00c0faada4c2cac966bf2f95c16064fac311d572ae8acb3a69db0dde66313c1c"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -3102,7 +3122,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
+          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3635,7 +3655,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
+          "sha256": "f4c0da1e34706604f8157d7013dcf774f7d8a6c6400a571758a97c03f4b5a565"
         },
         {
           "path": "frontend/src/route-boundary.tsx",
@@ -3923,7 +3943,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
+          "sha256": "1501b2ed9e9b16d7d72fa8a17b97250c991e5d975a0dc1713548ed4af1077317"
         },
         {
           "path": "tests/test_composer_vision.py",

@@ -7503,9 +7503,10 @@ export interface paths {
         };
         /**
          * Media Catalog
-         * @description 0.46 read surface: the generated-media catalog (newest-first, optionally
-         *     filtered by prompt substring ``q`` / ``kind``) + stats. Reports
-         *     ``enabled: false`` with empty data when JARVIS_MEDIA_CATALOG is unset.
+         * @description Bounded retained-catalog scan. Empty matching pages may have continuation.
+         *
+         *     stats describes this response; page.catalog_total counts retained authorized
+         *     metadata, not all filtered matches or an exact ingestion snapshot.
          */
         get: operations["media_catalog_api_media_catalog_get"];
         put?: never;
@@ -21668,6 +21669,8 @@ export interface operations {
             query?: {
                 q?: string | null;
                 kind?: string | null;
+                limit?: number;
+                cursor?: string | null;
             };
             header?: never;
             path?: never;

@@ -228,3 +228,7 @@ The final full frontend suite passes 1,229 tests; 146 affected backend tests and
 ### 2026-09-15 — H139 shared composer images
 
 Authenticated transient vision turns support choose/paste/drop and explicit destination consent. Raster validation, one configuration snapshot, cross-process revision binding and cancellation were independently reviewed. Source tests: 27 new backend and 10 frontend cases; 1,257 frontend tests and six browser checks passed. The integration adds exactly two user-guarded routes (500 total), regenerates their OpenAPI types and preserves ordinary text chat. H139 remains partial: persisted artifacts, native agent image context/mobile and learn seeding remain open. See [the bounded contract](../frontend/docs/h139-composer-images.md).
+
+### 2026-09-15 — H518 retained gallery pagination
+
+A reproduced 220-record fixture exposed the old newest-200 search ceiling. Timestamp/key cursors now advance through at most 200 scanned candidates per request, including zero-match pages. Authenticated resolution and 200-file/128 MiB ZIP limits remain; selection is explicit and stale searches are cancelled. Independent review: 34 backend and nine gallery frontend tests pass, with two real-route browser cases. Native mobile and exact ingestion snapshots remain open. The existing catalog GET gains bounded limit/cursor parameters; route count remains 500. [Contract](../frontend/docs/h518-gallery-pagination.md).

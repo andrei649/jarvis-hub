@@ -16,7 +16,9 @@ edge back into `agents.web`.
 """
 
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, SkipValidation
@@ -435,23 +437,24 @@ async def media_generated_artifact(artifact_id: str):
 
 
 @router.get("/api/media/catalog", dependencies=[Depends(user_guard)])
-def media_catalog(q: str | None = None, kind: str | None = None):
-    """0.46 read surface: the generated-media catalog (newest-first, optionally
-    filtered by prompt substring ``q`` / ``kind``) + stats. Reports
-    ``enabled: false`` with empty data when JARVIS_MEDIA_CATALOG is unset."""
-    from agents.core.env_config import env_flag
-    from agents.core.media_library import gallery
+def media_catalog(
+    q: Annotated[str | None, Query(max_length=256)] = None,
+    kind: Annotated[str | None, Query(max_length=32)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    cursor: Annotated[str | None, Query(max_length=1024)] = None,
+):
+    """Bounded retained-catalog scan. Empty matching pages may have continuation.
+
+    stats describes this response; page.catalog_total counts retained authorized
+    metadata, not all filtered matches or an exact ingestion snapshot.
+    """
+    from agents.core.media_library import gallery_page
     generated, attached = env_flag("JARVIS_MEDIA_CATALOG"), env_flag("JARVIS_BINARY_ARTIFACTS")
-    items = gallery(generated=generated, attached=attached)
-    if q:
-        items = [r for r in items if q.lower() in (r.get("prompt", "") + " " + r.get("mime", "") + " " + r["id"]).lower()]
-    if kind:
-        items = [r for r in items if r["kind"] == kind]
-    by_kind = {}
-    for item in items:
-        by_kind[item['kind']] = by_kind.get(item['kind'], 0) + 1
-    return nocache_json({"enabled": generated or attached, "items": items,
-                         "stats": {"total": len(items), "cloud": sum(bool(r.get("cloud")) for r in items), "by_kind": by_kind}})
+    try:
+        result = gallery_page(generated=generated, attached=attached, q=q or '', kind=kind or '', limit=limit, cursor=cursor)
+    except ValueError:
+        return nocache_json({'error': 'Invalid gallery request; refresh the catalog.'}, status_code=400)
+    return nocache_json({"enabled": generated or attached, **result})
 
 
 @router.get("/api/media/generation-tasks/{task_id}", dependencies=[Depends(admin_guard)],

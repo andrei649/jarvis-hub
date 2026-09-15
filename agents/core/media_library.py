@@ -140,3 +140,100 @@ def export_generated(root):
         except ValueError:
             missing.append(row['id'])
     return {'items': items, 'missing': missing, 'invalid_count': invalid_count, 'complete': not missing and invalid_count == 0}
+
+
+def _gallery_key(row):
+    return (row.get('created_at', 0), row['source'], row['id'])
+
+
+def _page_cursor(value, filters):
+    """Bounded position token, never a path or authorization capability."""
+    import base64
+    import json
+    import math
+
+    try:
+        if not isinstance(value, str) or not 1 <= len(value) <= 1024 or not re.fullmatch(r'[A-Za-z0-9_-]+', value):
+            raise ValueError
+        payload = json.loads(base64.b64decode(value + '=' * (-len(value) % 4), altchars=b'-_', validate=True))
+        if not isinstance(payload, dict) or set(payload) != {'v', 'filters', 'upper', 'after'}:
+            raise ValueError
+        if type(payload['v']) is not int or payload['v'] != 1 or payload['filters'] != filters:
+            raise ValueError
+        for name in ('upper', 'after'):
+            key = payload[name]
+            if not isinstance(key, list) or len(key) != 3:
+                raise ValueError
+            timestamp, source, item_id = key
+            if type(timestamp) not in (int, float) or not math.isfinite(timestamp):
+                raise ValueError
+            if not isinstance(source, str) or not isinstance(item_id, str):
+                raise ValueError
+            pattern = {'generated': r'md-[a-f0-9]{12}', 'attachment': r'ba-[a-f0-9]{32}'}.get(source)
+            if pattern is None or not re.fullmatch(pattern, item_id):
+                raise ValueError
+        upper, after = tuple(payload['upper']), tuple(payload['after'])
+        if after > upper:
+            raise ValueError
+        return upper, after
+    except (ValueError, TypeError, OverflowError, UnicodeError) as exc:
+        raise ValueError('invalid_gallery_cursor') from exc
+
+
+def gallery_page(root=None, *, generated=False, attached=False, q='', kind='', limit=200, cursor=None):
+    """Scan <=200 candidates, preserving continuation through zero-match pages.
+
+    The upper key excludes newer appends, not later backdated insertions. Metadata
+    loads remain bounded by existing stores; only candidate headers are opened.
+    """
+    import base64
+    import json
+
+    if not isinstance(q, str) or len(q) > 256 or not isinstance(kind, str) or len(kind) > 32:
+        raise ValueError('invalid_gallery_filter')
+    if type(limit) is not int or not 1 <= limit <= 200:
+        raise ValueError('invalid_gallery_limit')
+    q = q.lower()
+    filters = hashlib.sha256(json.dumps([q, kind, bool(generated), bool(attached)]).encode()).hexdigest()
+    upper, after = _page_cursor(cursor, filters) if cursor is not None else (None, None)
+    root = Path(root) if root is not None else data_root()
+    records, invalid = catalog_snapshot(root) if generated else ({}, 0)
+    candidates = [dict(row, source='generated') for row in records.values()]
+    if attached:
+        candidates.extend(dict(row, source='attachment') for row in BinaryArtifactStore(root).all())
+    candidates.sort(key=_gallery_key, reverse=True)
+    total = len(candidates)
+    if upper is None and candidates:
+        upper = _gallery_key(candidates[0])
+    remaining = [row for row in candidates if _gallery_key(row) <= upper and (after is None or _gallery_key(row) < after)]
+    items, scanned, last = [], 0, None
+    for row in remaining[:200]:
+        scanned += 1
+        last = _gallery_key(row)
+        if row['source'] == 'generated':
+            public = {key: row[key] for key in ('id', 'kind', 'prompt', 'backend', 'cloud', 'created_at', 'tags') if key in row}
+            public.update(source='generated', available=False)
+            try:
+                path = catalog_path(row['id'], root, records=records)
+                header, size = _read_bytes(path, 4096, header_only=True)
+                public.update(mime=_mime_hint(header), size=size, available=True, validation='on_download')
+            except (ValueError, OSError):
+                pass
+        else:
+            public = dict(row, prompt='', available=True)
+        text = f"{public.get('prompt', '')} {public.get('mime', '')} {public['id']}".lower()
+        if (not q or q in text) and (not kind or public['kind'] == kind):
+            items.append(public)
+            if len(items) == limit:
+                break
+    has_more = scanned < len(remaining)
+    next_cursor = None
+    if has_more:
+        payload = {'v': 1, 'filters': filters, 'upper': upper, 'after': last}
+        next_cursor = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode().rstrip('=')
+    by_kind = {}
+    for item in items:
+        by_kind[item['kind']] = by_kind.get(item['kind'], 0) + 1
+    return {'items': items, 'stats': {'total': len(items), 'cloud': sum(bool(r.get('cloud')) for r in items), 'by_kind': by_kind},
+            'page': {'catalog_total': total, 'scanned': scanned, 'matches': len(items), 'has_more': has_more,
+                     'next_cursor': next_cursor, 'invalid_count': invalid}}
