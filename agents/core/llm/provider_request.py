@@ -9,7 +9,7 @@ import json
 from dataclasses import replace
 
 from .reasoning_effort import ReasoningEffortRefused
-from .request_context import current_session
+from .request_context import current_session, selected_reasoning
 
 # Exact model IDs, not speculative family prefixes. Gemini 2.5 uses budgets,
 # not levels; the adapter translates these product rungs into bounded budgets.
@@ -43,6 +43,7 @@ def profile_with_declarations(profile, declarations, *, defaults=None):
 
 
 def compatible_parameters(profile, model, effort):
+    effort = selected_reasoning(effort)
     params = {}
     sid = current_session()
     if profile.supports_prompt_cache_key and sid:

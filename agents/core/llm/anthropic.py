@@ -78,10 +78,11 @@ class ClaudeBackend(LLMBackend):
         or not an effort was requested, so `temperature` has to come off there
         even on a default install that never touches the ladder.
         """
+        from .request_context import selected_reasoning
         return apply_anthropic(
             payload,
             model or self.model,
-            self.reasoning_effort,
+            selected_reasoning(self.reasoning_effort),
             overrides=self.effort_overrides,
         )
 
@@ -96,6 +97,8 @@ class ClaudeBackend(LLMBackend):
         attempts = self.auth_pool.size if self.auth_pool else 1
         last_err = ""
         for _ in range(max(1, attempts)):
+            from .request_context import ensure_reasoning_active
+            ensure_reasoning_active()
             key = self._active_key()
             try:
                 resp = await self.client.post(

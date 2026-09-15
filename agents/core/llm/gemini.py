@@ -130,7 +130,8 @@ class GeminiBackend(LLMBackend):
         return f"{GEMINI_API_BASE}/models/{model}:{action}{suffix}"
 
     def _fit_effort(self, payload, model):
-        level, reason = self.profile.clamp_reasoning_effort(model, self.reasoning_effort)
+        from .request_context import selected_reasoning
+        level, reason = self.profile.clamp_reasoning_effort(model, selected_reasoning(self.reasoning_effort))
         if reason == "below-minimum":
             raise ReasoningEffortRefused()
         if level is not None:
@@ -388,6 +389,8 @@ class GeminiBackend(LLMBackend):
         attempts = max(1, self.auth_pool.size if self.auth_pool is not None else 1)
         for attempt in range(attempts):
             try:
+                from .request_context import ensure_reasoning_active
+                ensure_reasoning_active()
                 response = await self.client.post(
                     self._build_url(actual_model),
                     headers={"x-goog-api-key": binding.lease.api_key},
