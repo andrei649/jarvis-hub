@@ -18,6 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from .env_config import env_str
 from .session_kernels import (
     CHILD_RPC_ROOT,
     CRASHED,
@@ -152,7 +153,7 @@ class DetachedDockerBackend(PipeKernelBackend):
         # These configure the trusted host CLI, never the container worker.
         executable = shutil.which('docker')
         self._docker_executable = os.path.realpath(executable) if executable else None
-        self._docker_selection = {key: os.environ[key] for key in (
+        self._docker_selection = {key: env_str(key) for key in (
             'HOME', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST',
             'DOCKER_API_VERSION') if key in os.environ}
         self._docker_selection.setdefault('HOME', os.path.expanduser('~'))
