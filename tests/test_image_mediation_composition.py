@@ -315,7 +315,7 @@ async def test_initial_kernel_refusal_never_registers_a_proposal(composed, failu
 @pytest.mark.parametrize("change", ["title", "payload", "origin", "kind"])
 @pytest.mark.asyncio
 async def test_finalized_intake_mismatch_still_fails_at_existing_bridge(composed, change):
-    runtime = composed.orch.tool_rpc._tools["image_generate"]["gated_intake"].__self__
+    runtime = composed.orch.tool_rpc._tools["image_generate"]["gated_intake"].__self__.local
     governed = runtime._enqueue
 
     def mismatched(agent, kind, title, **kwargs):

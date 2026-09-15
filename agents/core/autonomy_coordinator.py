@@ -405,13 +405,18 @@ class AutonomyCoordinator:
                 logger.warning("agent tool runtime setting read failed closed")
                 return default
 
-        from .image_generation_runtime import INPUT_SCHEMA, LocalImageRuntime, is_image_task
+        from .image_generation_runtime import LocalImageRuntime, is_image_task
+        from .image_tool_dispatcher import INPUT_SCHEMA, ImageToolDispatcher
 
         image_runtime = LocalImageRuntime(
             queue=getattr(self._orch, "autonomy_queue", None),
             approved_task=_APPROVED_TASK.get,
             authorizer=action_kernel,
             enqueue=self._governed_enqueue,
+        )
+        image_dispatcher = ImageToolDispatcher(
+            image_runtime, cloud_runtime=lambda: getattr(self._orch, "cloud_images", None),
+            approved_task=_APPROVED_TASK.get,
         )
         server = ToolRPCServer(
             secret_broker=getattr(self._orch, "secret_broker", None),
@@ -421,11 +426,11 @@ class AutonomyCoordinator:
             execution_context_check=_approved_execution_context,
         )
         server.register_tool(
-            "image_generate", image_runtime.execute, gated=True,
-            description="Propose one local image using the owner's configured ComfyUI checkpoint; approval required.",
+            "image_generate", image_dispatcher.execute, gated=True,
+            description="Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
             input_schema=INPUT_SCHEMA, capability_id="tool:image_generate",
-            preflight=image_runtime.preflight, trusted_execution=True,
-            gated_intake=image_runtime.intake,
+            preflight=image_dispatcher.preflight, trusted_execution=True,
+            gated_intake=image_dispatcher.intake,
         )
 
         async def _rpc_echo(args):
