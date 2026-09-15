@@ -31,12 +31,14 @@ def identifier(value):
     return value
 
 
-def input_items(messages):
+def input_items(messages, *, allow_provider_replay=False):
     if not isinstance(messages, list) or len(messages) > 4096:
         raise ResponsesRefused()
     items, pending, used = [], set(), set()
     for message in messages:
         if not isinstance(message, dict):
+            raise ResponsesRefused()
+        if "_provider_replay" in message and not allow_provider_replay:
             raise ResponsesRefused()
         role = message.get("role")
         content = message.get("content", "")

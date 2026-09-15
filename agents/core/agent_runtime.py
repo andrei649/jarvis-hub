@@ -297,6 +297,11 @@ class AgentToolRuntime:
             return _WINDOW_REPLY
         if effective_window.tokens is not None and max_tokens <= 0:
             max_tokens = max(1, effective_window.tokens // 4)
+        from .llm.provider_replay import ReplayRefused, active_replay, replay_scope
+        try:
+            active_replay()
+        except ReplayRefused:
+            return _CONTEXT_REPLY
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -313,15 +318,18 @@ class AgentToolRuntime:
         # turn's context; whatever recall taint the loop raised there is carried back into
         # the caller's context below, on a normal return and on a deadline alike
         # (Hermes absorption 5a).
-        turn_context = contextvars.copy_context()
-        try:
-            return await self._await_owned(
-                loop, timeout=effective_wall_seconds, context=turn_context,
-            )
-        except _OwnedTimeout:
-            return _DEADLINE_REPLY
-        finally:
-            self._carry_turn_taint(turn_context)
+        with replay_scope(enabled=bool(getattr(backend, "supports_provider_replay", False))):
+            turn_context = contextvars.copy_context()
+            try:
+                return await self._await_owned(
+                    loop, timeout=effective_wall_seconds, context=turn_context,
+                )
+            except _OwnedTimeout:
+                return _DEADLINE_REPLY
+            except ReplayRefused:
+                return _CONTEXT_REPLY
+            finally:
+                self._carry_turn_taint(turn_context)
 
     @staticmethod
     def _report_usage(
@@ -470,6 +478,18 @@ class AgentToolRuntime:
             # fan-out plus one representative overflow call so both scheduling
             # and the next-turn context stay O(configured cap), not O(provider N).
             bounded_calls = turn.tool_calls[: self._max_tool_calls_per_turn + 1]
+            if turn.provider_replay is not None:
+                from .llm.provider_replay import replay_size
+                if len(turn.tool_calls) > self._max_tool_calls_per_turn:
+                    return _CONTEXT_REPLY
+                proposed = [*messages, turn.as_assistant_message()]
+                replay_size(proposed)  # Validate before any tool side effect.
+                if not await self._compact_context(
+                    proposed, set(compacted), model=model, max_tokens=max_tokens,
+                    effective_window=known_window, schema_tokens=schema_tokens,
+                    agent_id=agent_id, event_sink=event_sink,
+                ):
+                    return _CONTEXT_REPLY
             repeated, looping = self._note_repeats(bounded_calls, seen_calls)
             if looping is not None:
                 await self._emit(
@@ -482,13 +502,9 @@ class AgentToolRuntime:
                 )
                 return _REPEAT_REPLY
             capped = self._note_tool_counts(bounded_calls, tool_counts)
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": turn.content,
-                    "tool_calls": [call.as_openai() for call in bounded_calls],
-                }
-            )
+            assistant_message = turn.as_assistant_message()
+            assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
+            messages.append(assistant_message)
             observations = await self._execute_turn_calls(
                 bounded_calls,
                 agent_id=agent_id,
@@ -613,7 +629,14 @@ class AgentToolRuntime:
             # assistant tool-call arguments, which remain in the provider payload.
             budget -= sum(estimate_tokens(json.dumps(message["tool_calls"]))
                           for message in messages if message.get("tool_calls"))
+        from .llm.provider_replay import replay_size
+        opaque_bytes = replay_size(messages)
+        # Ciphertext is never summarized or silently dropped. One byte per token
+        # is intentionally conservative when provider tokenization is unavailable.
+        budget -= opaque_bytes
         before = estimate_messages(messages)
+        if opaque_bytes and before > budget:
+            return False
         if before <= budget:
             return True
         assistant_positions = [
