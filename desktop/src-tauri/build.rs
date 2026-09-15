@@ -1,4 +1,6 @@
-// H11.1 — Tauri build script (source only; runs during `cargo tauri build`).
 fn main() {
-    tauri_build::build()
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&["desktop_action", "desktop_capabilities"]),
+    ))
+    .expect("desktop build configuration");
 }

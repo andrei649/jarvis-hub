@@ -204,6 +204,15 @@ note *why* if you add one.
 Keeping this list honest is task **H18.10** — the always-open umbrella in ORIZONT 18.
 
 
+### H178 native floating chat — 2026-09-15
+
+Desktop-only: Tauri tray/main controls open a frameless chat using the existing HUD
+conversation and authentication; geometry recovery and handoff are implemented.
+Mobile retains its normal chat. macOS host validation covers the bounded window
+surface; Windows/Linux, compositor-exclusive overlays, transparency/frost, click-through,
+global shortcuts, move-to-pointer and underlying-window capture remain unverified or unimplemented.
+See `desktop/README.md`; full Hermes H178 remains partial.
+
 ### 2026-09-15 — H146/H449 advanced automations
 HUD Jobs now provides custom action creation/edit, visual schedule controls, sixteen typed
 blueprints, repeat limits, per-job channel/history delivery, diagnostics and notepad editing.

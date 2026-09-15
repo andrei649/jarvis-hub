@@ -4,30 +4,25 @@
   "version": "0.9.2",
   "identifier": "com.jarvis.hub",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../../agents/web/v2",
     "beforeBuildCommand": "",
     "devUrl": "http://127.0.0.1:8080"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Jarvis Hub",
-        "width": 1280,
-        "height": 820,
-        "resizable": true,
-        "url": "http://127.0.0.1:8080/"
-      }
-    ],
-    "security": { "csp": "default-src 'self' http://127.0.0.1:8080; script-src 'self' 'unsafe-inline' http://127.0.0.1:8080; style-src 'self' 'unsafe-inline' http://127.0.0.1:8080; img-src 'self' data: https: http://127.0.0.1:8080; connect-src 'self' http://127.0.0.1:8080 ws://127.0.0.1:8080 wss://127.0.0.1:8080; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'" },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "tooltip": "Jarvis Hub",
-      "menuOnLeftClick": false
-    }
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self' http://127.0.0.1:8080; script-src 'self' 'unsafe-inline' http://127.0.0.1:8080; style-src 'self' 'unsafe-inline' http://127.0.0.1:8080; img-src 'self' data: https: http://127.0.0.1:8080; connect-src 'self' http://127.0.0.1:8080 ws://127.0.0.1:8080 wss://127.0.0.1:8080; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'",
+      "capabilities": [
+        "desktop"
+      ]
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/icon.png"
+    ]
   }
 }
