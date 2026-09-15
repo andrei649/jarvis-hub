@@ -28,7 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from ..env_config import env_flag
+from ..env_config import env_flag, env_str
 from . import model_config
 from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
@@ -349,7 +349,7 @@ class HybridRouter(LLMRouter):
             from .openrouter import OpenRouterBackend
             from .providers import DEFAULT_REGISTRY
             profile = DEFAULT_REGISTRY.get(provider_id)
-            key = os.getenv(profile.auth_env, "")
+            key = env_str(profile.auth_env, "")
             if key:
                 caps = set(profile.capabilities)
                 if self._admin_setting("compatible_reasoning_enabled", False):
@@ -358,7 +358,7 @@ class HybridRouter(LLMRouter):
                     caps.add("prompt-cache-key")
                 profile = replace(profile, capabilities=frozenset(caps))
                 self._compatible_backend = OpenRouterBackend(
-                    api_key=key, base_url=os.getenv(profile.base_url_env) or profile.default_base_url,
+                    api_key=key, base_url=env_str(profile.base_url_env) or profile.default_base_url,
                     profile=profile, reasoning_effort=self._admin_setting("reasoning_effort", ""),
                     effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
                 )

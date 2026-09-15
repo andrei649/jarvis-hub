@@ -35,12 +35,10 @@ class _Intent:
         self.context = {"keywords_found": [], "scores": {}, "source": "keyword_match"}
 
 
-class _FakeAgent:
-    name = "Jarvis"
-    soul = {"content": ""}
-    config = {"model": "stub"}
-    tool_runtime = None
-    generate_response = Agent.generate_response
+class _FakeAgent(Agent):
+    def __init__(self):
+        # Exercise the real generation seam with its required constructor state.
+        super().__init__("jarvis", {"name": "Jarvis", "model": "stub"})
 
 
 @pytest.fixture

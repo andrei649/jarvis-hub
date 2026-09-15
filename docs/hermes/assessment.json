@@ -1567,7 +1567,7 @@
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+          "sha256": "bb93050daaad2115a424080dfef289d20d4e14be5b5f917a8712fde032fbe020"
         },
         {
           "path": "agents/core/llm/openrouter.py",
@@ -1672,7 +1672,7 @@
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+          "sha256": "bb93050daaad2115a424080dfef289d20d4e14be5b5f917a8712fde032fbe020"
         },
         {
           "path": "agents/core/llm/openrouter.py",
@@ -1870,7 +1870,7 @@
         },
         {
           "path": "tests/test_tool_result_taint.py",
-          "sha256": "a95868e866aae109f2c6332ea425706def375bdf63020c86ba45f3ae44ea5008"
+          "sha256": "24c108beb6421645e2053a144346dac76615265518973f86fdc08b55d4bf4e90"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -3103,7 +3103,7 @@
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+          "sha256": "bb93050daaad2115a424080dfef289d20d4e14be5b5f917a8712fde032fbe020"
         },
         {
           "path": "agents/core/llm/openrouter.py",
@@ -3188,7 +3188,7 @@
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+          "sha256": "bb93050daaad2115a424080dfef289d20d4e14be5b5f917a8712fde032fbe020"
         },
         {
           "path": "agents/core/llm/openrouter.py",
@@ -3339,7 +3339,7 @@
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+          "sha256": "bb93050daaad2115a424080dfef289d20d4e14be5b5f917a8712fde032fbe020"
         },
         {
           "path": "agents/core/llm/openrouter.py",
