@@ -374,6 +374,10 @@ class AgentToolRuntime:
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
     ) -> str:
+        from .conversation_clock import active_clock
+        inherited_clock = active_clock()
+        if inherited_clock is not None and not inherited_clock.active:
+            return _CONTEXT_REPLY
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
         if registry_mode:
@@ -595,6 +599,14 @@ class AgentToolRuntime:
         content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
         Returns False when the transcript still exceeds the budget with everything folded.
         """
+        from .conversation_clock import active_clock
+        binding = active_clock()
+        if binding is not None and not binding.active:
+            return False
+        # Stage edits locally. Neither a rejected budget nor a failed clock commit
+        # can expose a transcript that was never accepted.
+        original_messages, original_compacted = messages, compacted
+        messages, compacted = list(messages), set(compacted)
         budget = self._context_budget(model, max_tokens, effective_window) - schema_tokens
         if effective_window is not None:
             # The legacy message estimator covers content/roles, not structured
@@ -637,6 +649,24 @@ class AgentToolRuntime:
                 folded += 1
                 used = estimate_messages(messages)
         exhausted = used > budget
+        if not exhausted and folded:
+            from .conversation_clock import _active_clock, render_snapshot
+            if binding is not None and binding.snapshot is not None:
+                from dataclasses import replace
+                from datetime import UTC, datetime
+
+                manager, snapshot = binding.manager, binding.snapshot
+                now = max(datetime.now(UTC), snapshot.rebuilt_at.astimezone())
+                proposed = replace(snapshot, rebuilt_at=now, revision=snapshot.revision + 1)
+                messages[0] = {**messages[0], "content": render_snapshot(messages[0]["content"], proposed)}
+                if estimate_messages(messages) > budget:
+                    return False
+                committed = manager.commit_clock(snapshot, json.dumps(messages, sort_keys=True, default=str), now=now)
+                if committed is None:
+                    return False
+                _active_clock.set(replace(binding, snapshot=committed))
+            original_messages[:] = messages
+            original_compacted.update(compacted)
         await self._emit(
             event_sink,
             {

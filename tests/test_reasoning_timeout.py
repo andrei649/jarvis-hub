@@ -182,7 +182,7 @@ async def test_agent_context_carries_the_wall_clock_without_touching_the_shared_
     orch = _orch(routes={"jarvis": "local-deep"}, agents={"jarvis": agent})
     shared = {"session_id": "s"}
     await orch._call_agents_parallel(["jarvis"], "hi", shared)
-    assert agent.seen_context == {"session_id": "s", "wall_seconds": 600.0}
+    assert agent.seen_context == {"session_id": "s", "wall_seconds": 600.0, "_clock_snapshot": None}
     assert shared == {"session_id": "s"}, "the shared turn context is copied, never mutated"
 
 

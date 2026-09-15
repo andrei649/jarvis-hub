@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "16f229ceba3a9a6c2c0226942d0767a9967a79c4",
-  "assessed_at": "2026-09-15T18:07:06.783156Z",
+  "base_sha": "347259b5f037194196a44480eb9e700c8a1fc0b1",
+  "assessed_at": "2026-09-15T18:25:27.643944Z",
   "reviews": [
     {
       "id": "H001",
@@ -937,15 +937,15 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1289,7 +1289,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "tests/test_tool_loop_result_spill.py",
@@ -1337,11 +1337,11 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -1349,7 +1349,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "141423a6613466b13d2b02308a7e170f87ef5f1125308d662d81ef26b4659737"
+          "sha256": "6d113ff9356e910a1f4f3b875710dd12780403a740415311b436936bedc9f8fe"
         },
         {
           "path": "docs/superpowers/plans/2026-09-15-effective-tool-window.md",
@@ -1370,7 +1370,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1395,7 +1395,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -1659,15 +1659,15 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -1675,7 +1675,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -1719,7 +1719,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1727,7 +1727,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "141423a6613466b13d2b02308a7e170f87ef5f1125308d662d81ef26b4659737"
+          "sha256": "6d113ff9356e910a1f4f3b875710dd12780403a740415311b436936bedc9f8fe"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1776,11 +1776,11 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -1788,7 +1788,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -1828,7 +1828,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1993,7 +1993,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -2273,15 +2273,15 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3558,16 +3558,16 @@
       "id": "H671",
       "row_sha256": "b9a5e8778376a36ec6f418ae6719f515f06293d18ee86954c840c13ce2b1d05c",
       "status": "partial",
-      "summary": "Checkpoint sessions.started_at is now the durable birth source, including restart and duplicate session creation. Streaming no longer resets the birthday map each turn. Agent.generate_response binds session identity and clock for direct/process/stream paths; parallel orchestrator calls propagate their request session. UTC storage converts to local time, midnight comparisons use one zone, and a reused trailing clock block refreshes without duplication. Review repair: for persisted local birth with a fixed historical offset, current local date resolves the current offset independently across DST; explicit ZoneInfo/fixed-zone requests retain their chosen zone. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained.",
-      "remaining": "No parent-child lineage root abstraction; identity is the existing session ID. Callers without a session ID/checkpoint manager cannot recover a durable birth and retain unknown behavior. Clock refresh remains prompt rebuild based. No live model comprehension proof.",
+      "summary": "Checkpoint sessions.started_at is now the durable birth source, including restart and duplicate session creation. Streaming no longer resets the birthday map each turn. Agent.generate_response binds session identity and clock for direct/process/stream paths; parallel orchestrator calls propagate their request session. UTC storage converts to local time, midnight comparisons use one zone, and a reused trailing clock block refreshes without duplication. Review repair: for persisted local birth with a fixed historical offset, current local date resolves the current offset independently across DST; explicit ZoneInfo/fixed-zone requests retain their chosen zone. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Accepted compaction now durably commits its identity and clock revision together using SQLite compare-and-swap. Request snapshots freeze the prompt date until accepted history or tool compaction; restart preserves the last accepted rebuild date. Failed/stale history commits stop text/stream/process dispatch with a bounded reply, while failed tool compaction cannot publish the staged transcript. Request lifetimes revoke inherited late compaction without sharing mutable snapshots between siblings. Unmanaged requests retain legacy behavior, and direct Agent birth records preserve creator metadata. Independent actual-boundary regressions verify commit races, cancellation, midnight, restart, scope closure and no-op behavior.",
+      "remaining": "Cross-ID continuation/root lineage is not implemented; no rotation or ancestry is inferred. Missing or corrupt durable birth remains unknown rather than invented. Full summary/transcript storage and cross-database atomic publication are not introduced: the accepted compaction identity and clock revision are durable, while existing transcript/cache rendering remains in process. This closes the same-session accepted-compaction clock boundary only.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3575,7 +3575,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3607,7 +3607,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3636,6 +3636,22 @@
         {
           "path": "agents/core/llm/reasoning_effort.py",
           "sha256": "4d7b2b8b4841bc6117fd1471e9684e88c3d2ea5214d74947f65fad643912bc6c"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "7ca24b9a6479f0cc024f8e83e2e4b4d08d1ba31d970ec82b1b5937ee88703584"
+        },
+        {
+          "path": "tests/test_compaction_clock.py",
+          "sha256": "b14286424bf21f77cc005d4776502a1e0140b063b09a022331e366efad85aa20"
+        },
+        {
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-compaction-clock.md",
+          "sha256": "0805331aadead237d2fd1b47ab626ead861091ebd05ef539ee39744edba502d6"
         }
       ]
     },
@@ -3648,11 +3664,11 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3660,7 +3676,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3692,7 +3708,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3843,11 +3859,11 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+          "sha256": "7ddb99ce69e18a1bd69e6f1c396a1aecce3591c84c8b8fb368cc842bd18454d9"
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3855,7 +3871,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -3895,7 +3911,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
         },
         {
           "path": "agents/core/settings_db.py",

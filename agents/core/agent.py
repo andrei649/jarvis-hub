@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Optional
 
+from .conversation_clock import CLOCK_UNSET
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .security import bind_guardrails
@@ -32,6 +33,7 @@ class _NullCtx:
 
     async def __aexit__(self, *exc):
         return False
+
 
 
 class Agent:
@@ -176,19 +178,20 @@ class Agent:
 
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
-                                usage_sink=None, session_id=None, effective_window=None) -> str:
-        from .conversation_clock import parse_started_at, with_clock
+                                usage_sink=None, session_id=None, effective_window=None,
+                                clock_snapshot=CLOCK_UNSET) -> str:
+        from .conversation_clock import capture_clock, clock_scope, render_snapshot
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager
-        if sid and manager is not None and hasattr(manager, "session_started_at"):
-            manager.create_session_record(sid, agent_id=self.id)
-            born = parse_started_at(manager.session_started_at(sid))
-            system = with_clock(system, born.astimezone() if born is not None else None)
+        snapshot = capture_clock(manager, sid, agent_id=self.id) if clock_snapshot is CLOCK_UNSET else clock_snapshot
+        if snapshot is not None and snapshot.session_id != sid:
+            snapshot = None
+        system = render_snapshot(system, snapshot)
         sink = usage_sink if usage_sink is not None else current_observer()
-        with session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
+        with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
             return await self._generate_response(
                 backend, model, prompt, system, max_tokens, temperature,
                 on_token=on_token, wall_seconds=wall_seconds,
@@ -331,6 +334,7 @@ class Agent:
                     # (Hermes absorption 5c); absent, the tool loop keeps its default.
                     effective_window=effective_window,
                     session_id=context.get("session_id"),
+                    clock_snapshot=context.get("_clock_snapshot", CLOCK_UNSET),
                     wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
                 )
             latency = time.monotonic() - start

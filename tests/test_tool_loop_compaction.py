@@ -189,3 +189,70 @@ def test_the_truncation_envelope_keeps_its_original_notice():
         _bounded_result_envelope('{"ok":true}', tool_name="t", ok=True, reason=None, max_bytes=400)
     )
     assert envelope["notice"] == "TOOL RESULT TRUNCATED"
+
+
+@pytest.mark.asyncio
+async def test_tool_loop_compaction_refreshes_only_after_durable_commit(tmp_path):
+    from agents.core.checkpoint import CheckpointManager
+    from agents.core.conversation_clock import clock_scope, render_snapshot
+    manager = CheckpointManager(str(tmp_path / 'clock.db'))
+    manager.initialize()
+    manager.create_session_record('a')
+    manager._conn.execute("UPDATE sessions SET started_at='2026-09-01T12:00:00+00:00' WHERE id='a'")
+    manager._conn.commit()
+    first = manager.clock_snapshot('a')
+    backend = _Backend(tool_calls=3)
+    runtime = AgentToolRuntime(_server(4000), enabled=lambda: True,
+                              context_budget_tokens=lambda: 2400, compaction_keep_recent=1)
+    with clock_scope(manager, first):
+        assert await _run(runtime, backend, system=render_snapshot('soul', first)) == 'done'
+    assert "Today's date" not in backend.calls[0][0]['content']
+    assert "Today's date" in backend.calls[-1][0]['content']
+    assert manager.clock_snapshot('a').revision > 0
+    manager.close()
+
+
+@pytest.mark.asyncio
+async def test_tool_loop_failed_commit_stops_before_next_provider_call(tmp_path, monkeypatch):
+    from agents.core.checkpoint import CheckpointManager
+    from agents.core.conversation_clock import clock_scope, render_snapshot
+    manager = CheckpointManager(str(tmp_path / 'clock.db'))
+    manager.initialize()
+    manager.create_session_record('a')
+    first = manager.clock_snapshot('a')
+    monkeypatch.setattr(manager, 'commit_clock', lambda *a, **k: None)
+    backend = _Backend(tool_calls=3)
+    runtime = AgentToolRuntime(_server(4000), enabled=lambda: True,
+                              context_budget_tokens=lambda: 2400, compaction_keep_recent=1)
+    with clock_scope(manager, first):
+        answer = await _run(runtime, backend, system=render_snapshot('soul', first))
+    assert answer == CONTEXT_REPLY
+    assert len(backend.calls) == 3
+    assert manager.clock_snapshot('a') == first
+    manager.close()
+
+
+@pytest.mark.asyncio
+async def test_clock_refresh_must_fit_before_commit(tmp_path, monkeypatch):
+    from agents.core.checkpoint import CheckpointManager
+    from agents.core.conversation_clock import clock_scope, render_snapshot
+    manager = CheckpointManager(str(tmp_path / 'clock.db'))
+    manager.initialize()
+    manager.create_session_record('a')
+    manager._conn.execute("UPDATE sessions SET started_at='2026-09-01T12:00:00+00:00' WHERE id='a'")
+    manager._conn.commit()
+    first = manager.clock_snapshot('a')
+    runtime = AgentToolRuntime(_server(4000), enabled=lambda: True)
+    monkeypatch.setattr(runtime, '_context_budget', lambda *args: 100)
+    monkeypatch.setattr(agent_runtime, 'estimate_messages', lambda rows:
+                        (101 if len(rows[-1]['content']) > 1000 else 90)
+                        + (20 if "Today's date" in rows[0]['content'] else 0))
+    messages = [{'role': 'system', 'content': render_snapshot('soul', first)},
+                {'role': 'tool', 'content': 'x' * 5000}]
+    original = [dict(m) for m in messages]
+    with clock_scope(manager, first):
+        assert not await runtime._compact_context(messages, set(), model='local', max_tokens=10,
+                                                   agent_id='jarvis', event_sink=None)
+    assert messages == original
+    assert manager.clock_snapshot('a') == first
+    manager.close()
