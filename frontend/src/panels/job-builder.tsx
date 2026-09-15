@@ -54,8 +54,14 @@ export function JobBuilder({onSave}: {onSave:(body:Record<string,unknown>)=>void
   const [taskKind,setTaskKind]=useState(''); const [payload,setPayload]=useState('{}');
   const [tier,setTier]=useState(3); const [options,setOptions]=useState<JobOptions>({});
   const [error,setError]=useState('');
+  const [mediaIds,setMediaIds]=useState('');
   const save=()=>{try {
     const action=kind==='remind'?{type:kind,message:text}:kind==='ask'?{type:kind,prompt:text,agent,deliver:true}:kind==='brief'?{type:kind,kind:brief}:{type:kind,kind:taskKind,title:text,payload:JSON.parse(payload),risk_tier:tier};
+    if(kind==='remind' && mediaIds.trim()) {
+      const ids=mediaIds.split(/[\s,]+/).filter(Boolean);
+      if(ids.length>8 || new Set(ids).size!==ids.length || ids.some(id=>!/^(ba-[a-f0-9]{32}|md-[a-f0-9]{12}|[a-f0-9]{32})$/.test(id))) throw new Error('Use 1–8 unique opaque media IDs');
+      Object.assign(action,{media_ids:ids});
+    }
     if(!name.trim()) throw new Error('A job needs a name');
     setError(''); onSave({name:name.trim(),schedule_text:when,action,options});
   } catch(e) {setError(String(e));}};
@@ -65,6 +71,7 @@ export function JobBuilder({onSave}: {onSave:(body:Record<string,unknown>)=>void
     <label>Schedule<input aria-label="job schedule" style={inpS} value={when} onChange={e=>setWhen(e.target.value)}/></label>
     <label>Action<select aria-label="job action" style={inpS} value={kind} onChange={e=>setKind(e.target.value)}>{['remind','ask','brief','task'].map(k=><option key={k}>{k}</option>)}</select></label>
     {kind!=='brief' && <label>{kind==='ask'?'Prompt':kind==='task'?'Task title':'Message'}<textarea aria-label="job message" style={{...inpS,width:'100%'}} value={text} onChange={e=>setText(e.target.value)}/></label>}
+    {kind==='remind' && <label>Media IDs (optional)<textarea aria-label="scheduled media IDs" style={inpS} value={mediaIds} onChange={e=>setMediaIds(e.target.value)}/><small>Up to 8 retained artifact IDs from the gallery, separated by commas. Saving binds these files to the current Telegram owner and bot. 16 MiB per file, 32 MiB total. No paths or URLs.</small></label>}
     {kind==='ask' && <label>Agent<input aria-label="job agent" style={inpS} value={agent} onChange={e=>setAgent(e.target.value)}/></label>}
     {kind==='brief' && <select aria-label="brief kind" style={inpS} value={brief} onChange={e=>setBrief(e.target.value)}><option>morning</option><option>evening</option></select>}
     {kind==='task' && <><label>Registered task kind<input aria-label="task kind" style={inpS} value={taskKind} onChange={e=>setTaskKind(e.target.value)}/></label><label>Payload JSON<textarea aria-label="task payload" style={inpS} value={payload} onChange={e=>setPayload(e.target.value)}/></label><label>Requested risk tier<select aria-label="task tier" style={inpS} value={tier} onChange={e=>setTier(Number(e.target.value))}>{[0,1,2,3].map(n=><option key={n}>{n}</option>)}</select></label><small>Enqueued for the autonomy policy; a requested tier grants no authority.</small></>}

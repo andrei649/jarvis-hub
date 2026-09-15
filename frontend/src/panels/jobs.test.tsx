@@ -289,3 +289,15 @@ it('authors model and provider pins in a custom ask job', async()=>{
   await waitFor(()=>expect(calls.some(c=>c.method==='POST')).toBe(true));
   expect(calls.find(c=>c.method==='POST').body.options).toEqual({model:'org/model',provider:'lm-studio'});
 });
+
+it('authors explicit media reminders and shows unknown delivery progress', async () => {
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[{...JOB,media_delivery:{status:'unknown',sent:1,total:3,reason:'deadline expired'}}],scheduler:{}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  await screen.findByText(/media.*unknown.*1\/3/i);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('scheduled media IDs'),{target:{value:'ba-'+ 'a'.repeat(32)}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.action.media_ids).toEqual(['ba-'+ 'a'.repeat(32)]));
+});

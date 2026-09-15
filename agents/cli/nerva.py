@@ -160,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
+    jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -167,6 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
+    jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
     for verb in ("doctor", "incidents", "tick"):
         sub = jobs_verbs.add_parser(verb)
@@ -816,6 +818,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         try:
             if ns.options is not None:
                 body["options"] = json.loads(ns.options)
+            if ns.media_id and ns.blueprint:
+                raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
             if ns.blueprint:
                 body["blueprint"] = ns.blueprint
                 params = _params(ns.param)
@@ -826,6 +830,10 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
                     ctx.err.write("without --blueprint, --name, --when and --action are all required\n")
                     return EXIT_USAGE
                 body["action"] = json.loads(ns.action_json)
+                if ns.media_id:
+                    if not isinstance(body["action"], dict) or body["action"].get("type") != "remind":
+                        raise ValueError("--media-id requires a reminder action")
+                    body["action"]["media_ids"] = ns.media_id
             if ns.name:
                 body["name"] = ns.name
             if ns.when:
@@ -841,6 +849,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "edit":
+        if ns.media_id and not ns.action_json:
+            ctx.err.write("--media-id requires --action to explicitly reauthorize the reminder\n")
+            return EXIT_USAGE
         body = {}
         if ns.options is not None:
             try:
@@ -855,6 +866,10 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         if ns.action_json:
             try:
                 body["action"] = json.loads(ns.action_json)
+                if ns.media_id:
+                    if not isinstance(body["action"], dict) or body["action"].get("type") != "remind":
+                        raise ValueError("--media-id requires a reminder action")
+                    body["action"]["media_ids"] = ns.media_id
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
