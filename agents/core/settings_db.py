@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS settings (
 # ── default settings — seed values ────────────────────────────────
 
 DEFAULTS: list[dict[str, Any]] = [
+    # H135: only explicit owner choices; empty preserves device motion defaults.
+    dict(category="appearance", key="preferences", value={}, label="Appearance preferences", kind="json"),
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),

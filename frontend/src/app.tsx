@@ -1,3 +1,4 @@
+import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
@@ -57,28 +58,17 @@ function ModeStub({ label }) {
   );
 }
 
-// Client-only UI prefs persisted to localStorage (mirrors v1). Pure look/feel —
-// no backend involved — so the HUD remembers density/scanline/dotgrid/theme across
-// reloads. Each is read lazily with a safe default and written back on change.
-const UI_PREFS = { look: 'obsidian', density: 'normal', scanline: 'on', dotgrid: 'off' };
-function loadPref(key, def) { try { return localStorage.getItem('hud.' + key) || def; } catch { return def; } }
-function defaultMotion() {
-  try {
-    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'calm' : 'lively';
-  } catch { return 'lively'; }
-}
-
 function App({ floating = false }: { floating?: boolean } = {}) {
-  // tweak axes — persisted client-side prefs (restored regression: v1 remembered
-  // these). Accent + language are user-changeable via the command palette / top bar.
-  const [look, setLook] = useState(() => loadPref('look', UI_PREFS.look));
-  const [density, setDensity] = useState(() => loadPref('density', UI_PREFS.density));
-  const [scanline, setScanline] = useState(() => loadPref('scanline', UI_PREFS.scanline));
-  const [dotgrid, setDotgrid] = useState(() => loadPref('dotgrid', UI_PREFS.dotgrid));
-  // P5 — default to OS reduced-motion, but let the user override it in the palette.
-  const [motion, setMotion] = useState(() => loadPref('motion', defaultMotion()));
+  const appearance = useAppearance();
+  const { look, density, scanline, dotgrid, accent } = appearance.preferences;
+  const motion = appearance.motion;
+  const setLook = useCallback((value: string) => appearance.setPreference('look', value), [appearance.setPreference]);
+  const setDensity = useCallback((value: string) => appearance.setPreference('density', value), [appearance.setPreference]);
+  const setScanline = useCallback((value: string) => appearance.setPreference('scanline', value), [appearance.setPreference]);
+  const setDotgrid = useCallback((value: string) => appearance.setPreference('dotgrid', value), [appearance.setPreference]);
+  const setMotion = useCallback((value: string) => appearance.setPreference('motion', value), [appearance.setPreference]);
+  const setAccent = useCallback((value: string) => appearance.setPreference('accent', value), [appearance.setPreference]);
   const ia = 'rail' as 'rail' | 'tabs';
-  const [accent, setAccent] = useState(() => { try { return localStorage.getItem('hud.accent') || 'cyan'; } catch { return 'cyan'; } });
   const [lang, setLang] = useState(() => { try { return localStorage.getItem('hud.lang') || 'en'; } catch { return 'en'; } });
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
@@ -166,13 +156,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     if (_firstView.current) { _firstView.current = false; return; }
     trackPageview(route.path);
   }, [route.path]);
-  useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
-  useEffect(() => { try { localStorage.setItem('hud.look', look); } catch { /* ignore */ } }, [look]); // client-only UI prefs
-  useEffect(() => { try { localStorage.setItem('hud.density', density); } catch { /* ignore */ } }, [density]);
-  useEffect(() => { try { localStorage.setItem('hud.motion', motion); } catch { /* ignore */ } }, [motion]);
-  useEffect(() => { try { localStorage.setItem('hud.scanline', scanline); } catch { /* ignore */ } }, [scanline]);
-  useEffect(() => { try { localStorage.setItem('hud.dotgrid', dotgrid); } catch { /* ignore */ } }, [dotgrid]);
   useEffect(() => { try { localStorage.setItem('hud.voice', JSON.stringify(voiceCfg)); } catch { /* ignore */ } }, [voiceCfg]);
   // Re-seed (or clear) the demo-only cockpit corpus when DEMO toggles at runtime.
   // Demo ON also restores the pristine ADMIN/OBSERVE fiction — the live cycles in
@@ -438,8 +422,13 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
   };
 
+  const appearanceNotice = appearance.error && <div role="status" style={{fontSize:11, color:'var(--amber)', padding:'4px 8px'}}>
+    {appearance.error} <button className="tool-btn" onClick={appearance.retry}>Retry sync</button>
+  </div>;
+
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
+    {appearanceNotice}
     {demo && <DemoBanner onExit={exitDemo} />}
     <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
@@ -453,6 +442,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
+        {appearanceNotice}
         {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
         {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
@@ -533,7 +523,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
-        ui={{ look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
+        ui={{ look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
       {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
     </div>

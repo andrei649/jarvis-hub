@@ -1265,6 +1265,9 @@ from agents.core.routers.wyoming import router as _wyoming_router  # noqa: E402
 
 app.include_router(_wyoming_router)
 app.include_router(_onboarding_router)
+from agents.core.routers.preferences import router as _preferences_router  # noqa: E402
+
+app.include_router(_preferences_router)
 app.include_router(_feedback_router)
 # Owner-scheduled jobs (Hermes absorption, wave 2): every route carries admin_guard itself.
 from agents.core.routers.jobs import router as _jobs_router  # noqa: E402

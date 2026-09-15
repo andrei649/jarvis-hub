@@ -3,7 +3,9 @@
 No app lifespan/providers run. Three shallow app instances share the actual route
 objects, with independent configured roots and middleware stacks. Read-only app
 requests reach those routes. Mutations and cognition streaming are fixture-only
-responses before dispatch, so no user data or model services are involved.
+responses before dispatch, except the offline schedule parser and appearance
+preferences (real guarded routes over the temporary Settings DB). No user data
+or model services are involved.
 """
 from __future__ import annotations
 
@@ -48,7 +50,7 @@ async def isolated(scope, receive, send):
         async def frames():
             yield 'data: {"type":"test","text":"ready"}\n\n'
         return await StreamingResponse(frames(), media_type='text/event-stream')(scope, receive, send)
-    if scope['method'] not in ('GET', 'HEAD') and scope['path'] != '/api/schedule/parse':
+    if scope['method'] not in ('GET', 'HEAD') and scope['path'] not in ('/api/schedule/parse', '/api/preferences/appearance'):
         # Observe body delivery/streaming without invoking business mutations.
         body = b''
         while True:

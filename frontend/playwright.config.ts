@@ -89,12 +89,12 @@ export default defineConfig({
   },
   projects: [
     ...(BROWSER_MATRIX ? [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts'], use: { ...devices['Desktop Chrome'] } },
-      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts'], use: { ...devices['Desktop Firefox'] } },
-      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts'], use: { ...devices['Desktop Safari'] } },
-      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts'], use: { ...devices['Pixel 5'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts'], use: { ...devices['Desktop Chrome'] } },
+      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts'], use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts'], use: { ...devices['Desktop Safari'] } },
+      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts'], use: { ...devices['Pixel 5'] } },
     ] : [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts'], use: { ...devices['Desktop Chrome'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts'], use: { ...devices['Desktop Chrome'] } },
     ]),
     // 1920x1080 because the output is footage, not a regression screenshot: the shot
     // list feeds a README hero and social previews, and upscaling a 1280-wide capture

@@ -122,6 +122,16 @@ ultima cerere. Metadatele invalide nu pierd răspunsul. 38 de teste noi și 215
 verificări țintite trecute; H673 rămâne parțial pentru restul traseelor/providerilor
 și estimarea imaginilor. [Plan și probe](superpowers/plans/2026-09-15-local-usage.md).
 
+## Preferințe vizuale — progres H135 la 15 septembrie
+
+H135 trece din lipsă în parțial: browserul, modul ambient și interfața responsive
+folosesc preferințe persistente în Settings DB. Jurnalul local păstrează modificări
+offline între tab-uri, iar reviziile serverului refuză salvările vechi. Preferința
+System păstrează setarea OS pentru mișcare redusă. 13 teste backend și 18 frontend
+noi; 24 de probe în browser și suita frontend de 1.247 teste trecute.
+Consumatorul din aplicația mobilă nativă și opțiunile de font rămân de implementat.
+[Contract și verificări](../frontend/docs/h135-appearance-sync.md).
+
 ## Ordinea sprintului
 
 1. **Reevaluarea restului inventarului pe clustere**, începând cu cele mai vechi

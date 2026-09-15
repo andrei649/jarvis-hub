@@ -485,6 +485,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/preferences/appearance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Appearance Get */
+        get: operations["appearance_get_api_preferences_appearance_get"];
+        /** Appearance Put */
+        put: operations["appearance_put_api_preferences_appearance_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/feedback": {
         parameters: {
             query?: never;
@@ -9312,6 +9330,23 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** AppearancePatch */
+        AppearancePatch: {
+            /** Revision */
+            _revision?: string | null;
+            /** Accent */
+            accent?: string | null;
+            /** Look */
+            look?: string | null;
+            /** Density */
+            density?: string | null;
+            /** Motion */
+            motion?: string | null;
+            /** Scanline */
+            scanline?: string | null;
+            /** Dotgrid */
+            dotgrid?: string | null;
+        };
         /** AssignSpaceBody */
         AssignSpaceBody: {
             /** Agent */
@@ -11316,6 +11351,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FunnelBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    appearance_get_api_preferences_appearance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    appearance_put_api_preferences_appearance_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppearancePatch"];
             };
         };
         responses: {

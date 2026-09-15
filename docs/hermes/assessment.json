@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f9bf0489bd679ecd50815a55fb77b59a715e3484",
-  "assessed_at": "2026-09-15T13:01:40.088752Z",
+  "base_sha": "2ca7ddfa8b22cd0df270a9503461af7c8eddecf3",
+  "assessed_at": "2026-09-15T13:17:58.631569Z",
   "reviews": [
     {
       "id": "H001",
@@ -885,11 +885,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
+          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "c2126d9790d31635bc96936139f347e13c6450a5ada5bceee522583ca34c1a7a"
+          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "44fe4fc31cf5f9d300e32687f2c3849ac05aad9c600c9a212177834b2ff3523d"
+          "sha256": "9cc14c1adad39063c2a4328b0ec393f205aaee9432ec15222ff0875503e5a572"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -1623,7 +1623,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
@@ -1724,7 +1724,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -2097,11 +2097,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
+          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "c2126d9790d31635bc96936139f347e13c6450a5ada5bceee522583ca34c1a7a"
+          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -2109,7 +2109,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "44fe4fc31cf5f9d300e32687f2c3849ac05aad9c600c9a212177834b2ff3523d"
+          "sha256": "9cc14c1adad39063c2a4328b0ec393f205aaee9432ec15222ff0875503e5a572"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -3191,7 +3191,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -3276,7 +3276,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
@@ -3439,7 +3439,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -3599,7 +3599,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
+          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3705,7 +3705,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "402d9e72f5e2008dedd1157680807a39a7cb1832b564987ce9c30d5e0f02aeb4"
+          "sha256": "fdebb90e7b4ef2689822777f76095b65b5b89dd64ac6f32fed05c7d0c9f53adc"
         },
         {
           "path": "agents/core/routers/swarm.py",
@@ -3733,7 +3733,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
+          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3741,7 +3741,7 @@
         },
         {
           "path": "frontend/src/api/client.ts",
-          "sha256": "fec3509aa8a9600b90736dbfbaaf0c1d1192c588d3e228b0e1928249a6ada21d"
+          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
         },
         {
           "path": "frontend/vite.config.ts",
@@ -3777,11 +3777,72 @@
         },
         {
           "path": "frontend/e2e/support/base_path_server.py",
-          "sha256": "4beb22d330c1dc7e235ed4e1b0e8d7b993155d7542e7adad473e7ae3619e0097"
+          "sha256": "a0196fe11912c8d7a18bd3ccbdca19f0b83b0c049756e7659705a710f736fd6d"
         },
         {
           "path": "frontend/docs/h130-base-path.md",
           "sha256": "75c274252fdecb3c8ce43196b150d911bf1737f038080a5a37a44b9e3d33e148"
+        }
+      ]
+    },
+    {
+      "id": "H135",
+      "row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
+      "status": "partial",
+      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss.",
+      "remaining": "The separate native mobile application has no appearance API consumer and keeps its existing static theme. Font override choices are not implemented. Scope is the existing single-owner instance, not per-account/profile identity. Storage-unavailable clients retain choices only in memory; offline data cannot survive browser closure without storage. No native GUI/provider proof.",
+      "evidence": [
+        {
+          "path": "agents/core/appearance.py",
+          "sha256": "fecd8404504ba2eb6b0e2965cb8754f57a7f3764229e9f29e69cb420a7a1aa89"
+        },
+        {
+          "path": "agents/core/routers/preferences.py",
+          "sha256": "6e5abca3a96f15cfce52741a8bc398582dda758f4e3ec3da86c33b7a035ff492"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "b028ec38b527a09764e686e71b4de1e7df1060abd551228eacadd280b6df133d"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "fdebb90e7b4ef2689822777f76095b65b5b89dd64ac6f32fed05c7d0c9f53adc"
+        },
+        {
+          "path": "frontend/src/appearance.ts",
+          "sha256": "fae5fa35e7772187fa611a3a907787ecd4898f2e17212c7bc812bbcf0dc6f7b8"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+        },
+        {
+          "path": "frontend/src/shell.tsx",
+          "sha256": "02002bbd1f6b79303359e58dbdf5cee40a006e88e41789c7ab231541da07b2bc"
+        },
+        {
+          "path": "frontend/src/api/client.ts",
+          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
+        },
+        {
+          "path": "frontend/src/test/appearance-sync.test.tsx",
+          "sha256": "a53986ac8e870c2549c1cbe7175e1953645351616a08436efdc9882789b3d327"
+        },
+        {
+          "path": "frontend/src/test/appearance-state.test.tsx",
+          "sha256": "7c04cc2cde208191711595cdada9540dbe67760821d67af4626dd1862a2ccba3"
+        },
+        {
+          "path": "tests/test_appearance_preferences.py",
+          "sha256": "171dae9a803d95358774521cf961eb3110596fc7056e77c8ad217960d9490418"
+        },
+        {
+          "path": "frontend/e2e/appearance.spec.ts",
+          "sha256": "8aab6475d20bb07d73cf3215ddc46ce2cc464aa6d03f2f0f2536fa21eeab3dde"
+        },
+        {
+          "path": "frontend/docs/h135-appearance-sync.md",
+          "sha256": "1a3bf74561e73ab6fb19d059ed984658340ca7d701615f0b1157b095661b0be7"
         }
       ]
     }
