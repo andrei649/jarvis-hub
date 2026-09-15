@@ -146,3 +146,7 @@ Independent review corrections for H684: actual owner JobRun results now preserv
 ## 2026-09-15 — heartbeat resume (#1105)
 
 Startup and resume share the same cron conversion, including numeric Sunday and named weekdays. Invalid weekdays fail without arming a job; named ranges no longer crash cadence estimation. Regression tests use actual APScheduler triggers. Evidence hashes are refreshed only for previously matching inspected sources; no parity status is promoted.
+
+## 2026-09-15 — H660 real Docker and native CLI selection
+
+The unchanged containment suite passed all seven tests on Linux and again from native macOS through a local Lima daemon. Two additional real-container checks verified current/explicit context precedence, absence of proxy credentials in container environment, frozen daemon identity after configuration changes, and cancellation/removal/reuse. The verified CLI fix has 67 focused tests and an independent read-only review. Runtime versions, image digest, integrity hashes and limits are recorded in [the dated evidence](hermes/evidence/2026-09-15-docker-containment.json). Containers were removed and the disposable VM stopped. H595/H660 remain partial for the named unsupported transports; these are actual containment observations, not production deployment proof.

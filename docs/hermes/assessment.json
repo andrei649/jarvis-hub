@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "8e358b870ca7797c12c518d711a3216a227a3a66",
-  "assessed_at": "2026-09-15T11:25:11Z",
+  "base_sha": "ffa035f70e2babde71e98f4451a07c3ba80a9d9b",
+  "assessed_at": "2026-09-15T11:41:02Z",
   "reviews": [
     {
       "id": "H001",
@@ -2677,8 +2677,8 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and complete redirected Python stdout/stderr stream spills on both one-shot and session paths. Bounded previews retain file references, byte counts and hashes without buffering the full stream. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal.",
-      "remaining": "Actual Docker-daemon evidence remains pending locally; new real-container two-cell/reset/cancel tests use the existing opt-in CI lane and skip on this Mac. Generic SSH/Modal provisioning remains unsupported. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
+      "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and complete redirected Python stdout/stderr stream spills on both one-shot and session paths. Bounded previews retain file references, byte counts and hashes without buffering the full stream. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes.",
+      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -2759,6 +2759,10 @@
         {
           "path": "tests/test_tool_result_store.py",
           "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
+          "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
         }
       ]
     },
@@ -3017,8 +3021,8 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2/K3 now include a production detached Docker worker over run-to-completion CLI calls, with a private size-limited container mailbox, bounded response packets/backpressure, ready handshake, cell nonces, asynchronous liveness monitoring, and kill/reset/cancel lifecycle. Each cell still crosses the current host authorization and ToolCallBroker. Only a proved pre-dispatch startup refusal permits explicit isolated per-call fallback; dispatched/ambiguous cells never retry. Python cell stdout/stderr streams now reach existing ToolResultStore spills before preview truncation, retaining the middle without unbounded worker buffers. Session tool-RPC uses directory-pinned no-follow I/O and random cell directories, closing a reproduced host-write symlink issue. Existing opt-in settings and digest-pinned Docker isolation remain. Independent-review repairs recheck e-stop/expiry and authorization inside fallback dispatch, retain unconfirmed removals as quarantined records with retryable operator reset, validate hostile stream labels, and keep deadline/stop monitoring independent of awaited tool calls. Late broker replies cannot write after cancellation; old-cell cleanup cannot destroy a replacement kernel.",
-      "remaining": "Generic SSH and Modal are unsupported: they still require an explicitly isolated provisioning and governed transport design. Two-cell/reset/cancel and containment tests were added to the existing opt-in real-Docker CI lane, but were skipped locally because this Mac has no Docker daemon; actual daemon evidence remains pending. Local fixed-interpreter mailbox tests prove protocol/lifecycle behavior, not container isolation. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Full spills cover Python redirected stdout/stderr; deliberate native-fd bypasses are not captured as Python streams.",
+      "summary": "K2/K3 now include a production detached Docker worker over run-to-completion CLI calls, with a private size-limited container mailbox, bounded response packets/backpressure, ready handshake, cell nonces, asynchronous liveness monitoring, and kill/reset/cancel lifecycle. Each cell still crosses the current host authorization and ToolCallBroker. Only a proved pre-dispatch startup refusal permits explicit isolated per-call fallback; dispatched/ambiguous cells never retry. Python cell stdout/stderr streams now reach existing ToolResultStore spills before preview truncation, retaining the middle without unbounded worker buffers. Session tool-RPC uses directory-pinned no-follow I/O and random cell directories, closing a reproduced host-write symlink issue. Existing opt-in settings and digest-pinned Docker isolation remain. Independent-review repairs recheck e-stop/expiry and authorization inside fallback dispatch, retain unconfirmed removals as quarantined records with retryable operator reset, validate hostile stream labels, and keep deadline/stop monitoring independent of awaited tool calls. Late broker replies cannot write after cancellation; old-cell cleanup cannot destroy a replacement kernel. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes.",
+      "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Full spills cover redirected Python stdout/stderr, not deliberate native-fd bypasses. Production deployment evidence is separate from these real-container tests.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -3070,7 +3074,7 @@
         },
         {
           "path": "agents/core/detached_kernel.py",
-          "sha256": "12719a75c1b78493cd8c4f371fa6404437869d2a187db4f23a8f45fca7ca57e2"
+          "sha256": "19efafe0bc8ac448c9c20bf1ff3ec143bdf27770883b1a0e049d68aa4200fd7f"
         },
         {
           "path": "agents/core/session_kernel_mailbox.py",
@@ -3078,7 +3082,7 @@
         },
         {
           "path": "tests/test_detached_kernel.py",
-          "sha256": "6c6c86769c232ddd56427a8c8aee4b17fee1499ef563145ce060ef6594b2fed7"
+          "sha256": "2e7b499263c09147b4f062d96f3193372bc1bfd633fc4f4137064678aa1d99c9"
         },
         {
           "path": "tests/test_sandbox_isolation.py",
@@ -3087,6 +3091,10 @@
         {
           "path": "tests/test_session_kernel_safety.py",
           "sha256": "e2356cb76d7a2356bfca4baaa8522bc9e9787f31cb1688cd9113bba29cd794c7"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
+          "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
         }
       ]
     },

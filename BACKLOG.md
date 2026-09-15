@@ -34,6 +34,8 @@
 
 - 2026-09-15 heartbeat resume: startup and resume now share cron weekday conversion, preserving Sunday/named-weekday schedules and rejecting invalid weekdays. Real APScheduler trigger regressions cover resume and named ranges; this is a scheduling correction, with Hermes row statuses preserved.
 
+- 2026-09-15 H660: real Docker containment verified on Linux and from native macOS (7/7 each), plus two context/proxy/cleanup checks. Frozen local CLI/daemon selection and a private CLI config preserve isolation without forwarding host proxy credentials. SSH/Modal/TLS provisioning remains unsupported; see the dated Docker evidence record.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted
@@ -49,7 +51,7 @@
   mailbox packets, asynchronous liveness, explicit pre-dispatch fallback, cancellation
   teardown and directory-pinned RPC I/O). SSH/Modal remain unsupported; real-daemon
   two-cell/reset/cancel tests are added to the existing opt-in isolation lane but
-  were skipped locally, so H660 remains partial pending live evidence. Independent
+  now pass on real Linux Docker and through the native macOS CLI (7/7 each). H660 remains partial for the explicitly unsupported remote transports. Independent
   review fixes preserve quarantined handles after failed teardown (with operator
   retry), recheck fallback at dispatch, reject malformed stream labels, and keep
   stop/deadline monitoring active during broker calls,
