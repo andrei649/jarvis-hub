@@ -1707,6 +1707,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
         "backend": backend,
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",
+        "clock_snapshot": None,
         "wall_seconds": 120.0,
         "max_tokens": 777,
         "temperature": 0.15,

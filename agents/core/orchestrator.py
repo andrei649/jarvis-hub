@@ -29,7 +29,7 @@ from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
 from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
-from .conversation_clock import with_clock
+from .conversation_clock import CONTEXT_REFUSED_REPLY, CompactionClockRefused, capture_clock, prompt_clock
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -1524,6 +1524,8 @@ class Orchestrator:
             return ""
         try:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
         except RuntimeError:
             # No LLM backend up — degrade quietly (callers swallow errors anyway).
             log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
@@ -1543,6 +1545,8 @@ class Orchestrator:
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
@@ -1706,6 +1710,8 @@ class Orchestrator:
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
@@ -1830,9 +1836,7 @@ class Orchestrator:
                 # date schedules "tomorrow" against the wrong day. Same-day
                 # sessions render byte-identically bar the start line, so the
                 # cached prefix (H363) survives.
-                system_prompt = with_clock(
-                    agent.soul.get("content", ""), self._session_birth(),
-                )
+                system_prompt = agent.soul.get("content", "")
                 turn_text = await self._build_agent_turn_text(
                     agent_id,
                     text,
@@ -2000,6 +2004,7 @@ class Orchestrator:
                         wall_seconds=wall_seconds,
                         usage_sink=_meter,
                         session_id=self.session_id,
+                        clock_snapshot=prompt_clock.get(),
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -2848,9 +2853,15 @@ class Orchestrator:
         like ``get_context`` (``[speaker]: content`` lines) so prompt assembly
         downstream is unchanged.
         """
+        import json
+
+        sid = str(self.session_id or "")
+        manager = getattr(self, "checkpoints", None)
+        snapshot = capture_clock(manager, sid)
+        prompt_clock.set(snapshot)
         if not self.get_setting("memory.context_compression", False):
-            return await self.memory.get_context(self.session_id, last_n=last_n)
-        turns = await self.memory.get_history(self.session_id, last_n)
+            return await self.memory.get_context(sid, last_n=last_n)
+        turns = await self.memory.get_history(sid, last_n)
         # H673 — where measurement stops and estimation resumes on the next turn.
         self._ctx_turns_at_build = len(turns)
         if not turns:
@@ -2868,7 +2879,7 @@ class Orchestrator:
         cache = getattr(self, "_ctx_summary_cache", None)
         if cache is None:
             cache = self._ctx_summary_cache = {}
-        prior = cache.get(self.session_id) if summarizer is not None else None
+        prior = cache.get(sid) if summarizer is not None else None
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
         # than by a fixed token budget that is wrong for every model but one.
@@ -2897,13 +2908,20 @@ class Orchestrator:
             turns,
             model=model,
             policy=policy,
-            session_id=str(self.session_id or ""),
+            session_id=sid,
             prior=prior,
             anchor=None if pinned_window is not None else self._usage_anchor(len(turns)),
         )
+        if result["compressed"] and snapshot is not None:
+            # This synchronous CAS and publication have no cancellation point between
+            # them. A stale/failed commit cannot publish an unaccepted summary.
+            committed = manager.commit_clock(snapshot, json.dumps(result, sort_keys=True, default=str))
+            if committed is None:
+                raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
+            prompt_clock.set(committed)
         if summarizer is not None and result["compressed"]:
             # Iterative merge state (bounded: one entry per live session key).
-            cache[self.session_id] = {"summary": result["summary"],
+            cache[sid] = {"summary": result["summary"],
                                       "covered": result["covered"]}
         def _fmt(ts):
             return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
@@ -2963,6 +2981,7 @@ class Orchestrator:
         # was a hard-coded 6, so changing the setting silently left this tail behind.
         history = await self._history_for_prompt(
             self.get_setting("memory.context_window", 6))
+        clock_snapshot = prompt_clock.get()
         plugin_block = self._format_plugin_data(plugin_data or {})
         recall_block = await self._recall_block(text)
         runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
@@ -2994,6 +3013,7 @@ class Orchestrator:
             # shared turn context must not carry one agent's budget into another's.
             agent_context = dict(context or {})
             agent_context["session_id"] = self.session_id
+            agent_context["_clock_snapshot"] = clock_snapshot
             agent_context["wall_seconds"] = seconds
 
             def meter(usage):
@@ -3367,9 +3387,8 @@ class Orchestrator:
     def _session_birth(self):
         """When the CURRENT session began — seeded once, never refreshed (H671).
 
-        Read through the session id rather than recomputed, so compaction, a
-        checkpoint restore or a rotation keeps the day the conversation actually
-        started. Recomputing it at rebuild time would quietly reset a
+        Read through the same session id rather than recomputing it, so checkpoint
+        restore keeps the day this session started. Cross-ID lineage is not modeled. Recomputing it at rebuild time would quietly reset a
         forever-session's birthday to today, which is the fault this guards.
         """
         from datetime import datetime
