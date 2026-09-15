@@ -1,3 +1,4 @@
+import { notifyHudRouteChange } from './hud-routing';
 import { useCallback, useEffect, useState } from 'react';
 
 export function readDemoMode(search: string): boolean {
@@ -23,6 +24,7 @@ export function useDemoMode(): [boolean, (enabled: boolean) => void] {
   const setDemo = useCallback((enabled: boolean) => {
     window.history.replaceState(window.history.state, '', replaceDemoMode(enabled));
     setDemoState(enabled);
+    notifyHudRouteChange();
   }, []);
 
   return [demo, setDemo];

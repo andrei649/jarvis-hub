@@ -1,6 +1,6 @@
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy } from 'react';
 import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
@@ -11,17 +11,35 @@ import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet } from './api/client';
-import { AgentsMode, Dossier, TrustMode, MemoryMode } from './modes';
-import { JobsWorkspace } from './panels/jobs';
-import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from './modes2';
-import { ChatMode, CommsMode, AdminMode } from './modes3';
-import { FinanceMode, HealthMode, KnowledgeMode, FamilyMode } from './modes4';
-import { ConsoleOverlay, FirstRunGate, shouldShowFirstRun, FIRST_RUN_DISMISS_KEY, ProjectsMode } from './gap';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
 import { DesktopControls, notifyDesktopConversation, useDesktopConversation } from './desktop';
+
+import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
+import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
+import { RouteBoundary } from './route-boundary';
+
+const AgentsMode = lazy(() => import('./modes').then(m => ({ default: m.AgentsMode })));
+const Dossier = lazy(() => import('./modes').then(m => ({ default: m.Dossier })));
+const TrustMode = lazy(() => import('./modes').then(m => ({ default: m.TrustMode })));
+const MemoryMode = lazy(() => import('./modes').then(m => ({ default: m.MemoryMode })));
+const JobsWorkspace = lazy(() => import('./panels/jobs').then(m => ({ default: m.JobsWorkspace })));
+const AutonomyMode = lazy(() => import('./modes2').then(m => ({ default: m.AutonomyMode })));
+const BuildMode = lazy(() => import('./modes2').then(m => ({ default: m.BuildMode })));
+const ObserveMode = lazy(() => import('./modes2').then(m => ({ default: m.ObserveMode })));
+const InteropMode = lazy(() => import('./modes2').then(m => ({ default: m.InteropMode })));
+const ChatMode = lazy(() => import('./modes3').then(m => ({ default: m.ChatMode })));
+const CommsMode = lazy(() => import('./modes3').then(m => ({ default: m.CommsMode })));
+const AdminMode = lazy(() => import('./modes3').then(m => ({ default: m.AdminMode })));
+const FinanceMode = lazy(() => import('./modes4').then(m => ({ default: m.FinanceMode })));
+const HealthMode = lazy(() => import('./modes4').then(m => ({ default: m.HealthMode })));
+const KnowledgeMode = lazy(() => import('./modes4').then(m => ({ default: m.KnowledgeMode })));
+const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyMode })));
+const ConsoleOverlay = lazy(() => import('./gap').then(m => ({ default: m.ConsoleOverlay })));
+const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
+const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
 
 function ModeStub({ label }) {
   return (
@@ -69,7 +87,16 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
-  const [mode, setMode] = useState(floating ? 'chat' : 'cockpit');
+  const { route, notice, dismissNotice } = useHudRoute(floating);
+  const mode = route.mode === 'console' || route.mode === 'world' ? 'cockpit' : route.mode;
+  const setMode = useCallback((next: string) => navigateHud('/v2/' + next), []);
+  const consoleOpen = route.mode === 'console';
+  const setConsoleOpen = useCallback((next: boolean | ((current: boolean) => boolean)) => {
+    const current = parseHudRoute(window.location.pathname).mode === 'console';
+    const open = typeof next === 'function' ? next(current) : next;
+    if (open) navigateHud('/v2/console');
+    else closeHudOverlay();
+  }, []);
   useEffect(() => { const handoff = () => setMode('chat'); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
   const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
   const [activeId, setActiveId] = useState('jarvis');
@@ -88,7 +115,6 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const [cinema, setCinema] = useState(false);
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
-  const [consoleOpen, setConsoleOpen] = useState(false);
   // Owner B0 finding: onboarding must find the user, not vice-versa. On boot
   // (never in demo mode, never after a dismiss) ask the command center whether
   // the install is usable; if not, land on it. An API error never blocks the HUD.
@@ -129,16 +155,16 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const { pct: localPct, source: localPctSource } = localityFigure({ locality, trust, demo });
   const liveModes = useLiveModes(); // P4: stream live data into the capability modes; reports which keys are live
   // H22 — first-party page-view beacon. Fires once on load (privacy-first, no
-  // cookies/PII; see analytics.ts), then once per HUD view change. The SPA has no
-  // real URL routing, so we report the current `mode` as the path. initAnalytics()
+  // cookies/PII; see analytics.ts), then once per HUD view change.
+  // URL routing reports the actual mode or selected console page. initAnalytics()
   // is idempotent and already fired the initial view, so the per-mode effect skips
   // its first run to avoid a duplicate on mount.
   useEffect(() => { initAnalytics(); }, []);
   const _firstView = useRef(true);
   useEffect(() => {
     if (_firstView.current) { _firstView.current = false; return; }
-    trackPageview('/' + mode);
-  }, [mode]);
+    trackPageview(route.path);
+  }, [route.path]);
   useEffect(() => { try { localStorage.setItem('hud.accent', accent); } catch { /* ignore */ } }, [accent]); // P5 persist
   useEffect(() => { try { localStorage.setItem('hud.lang', lang); } catch { /* ignore */ } }, [lang]);
   useEffect(() => { try { localStorage.setItem('hud.look', look); } catch { /* ignore */ } }, [look]); // client-only UI prefs
@@ -411,12 +437,12 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
   };
 
-  if (floating) return <div {...rootAttrs} className="hud-root desktop-floating">
+  if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {demo && <DemoBanner onExit={exitDemo} />}
     <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
-  </div>;
+  </div></RouteBoundary>;
 
   return (
     <div {...rootAttrs}>
@@ -426,6 +452,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       <div className="tex-scanbar"></div>
 
       <div className="shell">
+        {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
         {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
@@ -442,6 +469,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
             {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
 
+            <RouteBoundary routeKey={`${route.path}:${demo}`}>
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
                 <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} llm={llm} demo={demo} t={t} />
@@ -491,14 +519,15 @@ function App({ floating = false }: { floating?: boolean } = {}) {
                 </div>
               </div>
             )}
+            </RouteBoundary>
           </div>
         </div>
       </div>
 
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
-      {dossier && <Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} />}
-      {consoleOpen && <ConsoleOverlay onClose={() => setConsoleOpen(false)} />}
-      {firstRun && <FirstRunGate onClose={() => setFirstRun(false)} />}
+      {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} /></RouteBoundary>}
+      {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
+      {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
       <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}

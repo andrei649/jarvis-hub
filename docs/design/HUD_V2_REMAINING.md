@@ -313,3 +313,5 @@ audio, video and PDF only; active formats and office documents remain refused.
 2026-09-15 — H515/H518: Images exposes configured local backend/checkpoint selection, up to four blended references and explicit 2× bicubic upscale. Media Gallery searches and downloads supported catalog/cache/attached files through authenticated object URLs and exports visible supported rows to ZIP. Runtime ComfyUI proof remains unperformed.
 
 2026-09-15 — H684: Jobs doctor displays the additive structured health report through the existing diagnostic control. Backend and CLI detect scheduler stalls and stored failures. Script/no_agent/workdir options and production-host proof remain open.
+
+H129 (2026-09-15): all 18 existing HUD modes and 113 console panels have explicit URLs, history, titles and lazy loading, with selected-panel focus and mobile navigation. Profile/plugin routing remains outside the implemented single-owner route registry. Browser smoke is local and backend-stubbed.

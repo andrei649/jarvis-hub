@@ -151,7 +151,7 @@ ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
-| <a id="h129"></a>H129 | Deep-link / bookmark a UI surface (URL routing) | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
+| <a id="h129"></a>H129 | Deep-link / bookmark a UI surface (URL routing) | copy | Parțial | Reevaluat | Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services. [d1](../frontend/src/hud-routing.ts) [d2](../frontend/src/console-routes.ts) [d3](../frontend/src/app.tsx) |
 | <a id="h130"></a>H130 | Serve the UI under a reverse-proxy sub-path | copy | Lipsă | Audit 07.09 | Reevaluare pe cod; cerințele și lipsurile sunt în rândul original.  |
 | <a id="h131"></a>H131 | Keyboard-first navigation and a command palette | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
 | <a id="h132"></a>H132 | Persistent navigation chrome (rail, mobile drawer, page-header slots) | keep | Echivalent | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |

@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useCallback, lazy } from 'react';
 import App from './app';
 import { V2 } from './data';
 import { Icon, ICONS } from './ui';
-import { WorldIntelligenceMode } from './modes_world';
+import { useHudRoute, navigateHud, closeHudOverlay } from './hud-routing';
+import { RouteBoundary } from './route-boundary';
+const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
 
 /* The bottom-left WORLD button's geometry, and the strip the mode rail gives up for it.
    Exported so the reservation can be proved as arithmetic: jsdom performs no layout, so
@@ -19,22 +21,25 @@ export const WORLD_BUTTON_HEIGHT = 30;
 export const RAIL_RESERVED_PX = WORLD_BUTTON_INSET * 2 + WORLD_BUTTON_HEIGHT;
 
 function WorldAwareApp() {
-  const [open, setOpen] = useState(() => {
-    try { return window.location.hash === '#world' || /[?&]world=1/.test(window.location.search); } catch { return false; }
-  });
+  const { route } = useHudRoute();
+  const open = route.mode === 'world';
+  const setOpen = useCallback((next: boolean) => {
+    if (next) navigateHud('/v2/world');
+    else closeHudOverlay();
+  }, []);
 
   useEffect(() => {
     function onKey(e) {
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
       if (e.key.toLowerCase() === 'w') setOpen(true);
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape' && window.location.pathname === '/v2/world') setOpen(false);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => { const handoff = () => setOpen(false); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
+  useEffect(() => { const handoff = () => navigateHud('/v2/chat'); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
 
   const t = V2.I18N.en;
 
@@ -78,7 +83,7 @@ function WorldAwareApp() {
             </div>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <WorldIntelligenceMode t={t} />
+            <RouteBoundary routeKey={`${route.path}:${window.location.search}`}><WorldIntelligenceMode t={t} /></RouteBoundary>
           </div>
         </div>
       )}

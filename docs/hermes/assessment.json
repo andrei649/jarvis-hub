@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "ffa035f70e2babde71e98f4451a07c3ba80a9d9b",
-  "assessed_at": "2026-09-15T11:41:02Z",
+  "base_sha": "a5038f0971cb95d201c0402b871d25055f94f8f5",
+  "assessed_at": "2026-09-15T11:42:27Z",
   "reviews": [
     {
       "id": "H001",
@@ -873,7 +873,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9176c3e1ff880cab6f74bb08b1dc238ab96b630682b96aff874a42b13c4f41fd"
+          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2073,7 +2073,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9176c3e1ff880cab6f74bb08b1dc238ab96b630682b96aff874a42b13c4f41fd"
+          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2268,7 +2268,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2309,7 +2309,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2738,7 +2738,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3066,7 +3066,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "68b889463966c90aae5c1a096b28b3c8cfa4803077be92e6060ab96006fac86a"
+          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3523,6 +3523,59 @@
         {
           "path": "tests/test_nerva_cli.py",
           "sha256": "ddf5cdbb8d56f3d8d1898accd1b21bc1ca09cb78d0e14788c23c372b206df9ae"
+        }
+      ]
+    },
+    {
+      "id": "H129",
+      "row_sha256": "3039b07bc8e85331b1baf5a2651a97bbc2bd6ea8f52a8c9cd5f1b6c2b7e42c50",
+      "status": "partial",
+      "summary": "All 18 existing HUD modes and 113 console panels now have explicit stable URLs, browser history, titles, unknown-route handling and real lazy chunks with loading/error fallback. Existing rail, palette, hotkeys, desktop and World navigation share URL state. Selected panels receive focus; demo/floating context is preserved. Overlay return destinations are bound to individual history entries and independently verified across historical/nested visits and malformed state. Desktop and Pixel 7 browser smoke passed against a local stubbed backend.",
+      "remaining": "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services.",
+      "evidence": [
+        {
+          "path": "frontend/src/hud-routing.ts",
+          "sha256": "ea980f0677fe7dcb127ec8c62b09c0f202ff98023c884ab6cb49b36a69a2744a"
+        },
+        {
+          "path": "frontend/src/console-routes.ts",
+          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
+        },
+        {
+          "path": "frontend/src/world_app.tsx",
+          "sha256": "dfadc0ef4d295ba4b7e5a95a7aa531c8098a9800f33e9709a1c2a93a5efadeb8"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+        },
+        {
+          "path": "frontend/src/route-boundary.tsx",
+          "sha256": "21a3a6b3369530451db0c62cf40e893d80cc55bc4d257a502aa9ba8a715e8c98"
+        },
+        {
+          "path": "frontend/src/test/hud-routing.test.tsx",
+          "sha256": "37ca08180530f6f8f6f97d387d19879615606b6c60310d9bcfee5d0cf9bb5b16"
+        },
+        {
+          "path": "frontend/src/test/app-routing.test.tsx",
+          "sha256": "ce76ecd736895e42c546e214a2cf47a4f3e5d41835a22e2f9b2f152738215ac7"
+        },
+        {
+          "path": "frontend/src/test/console-routing.test.tsx",
+          "sha256": "8f943a255ce2d0804d898c587a95ee1d29934e88a4cf859c6cdd71bd0e2381ee"
+        },
+        {
+          "path": "frontend/src/test/route-boundary.test.tsx",
+          "sha256": "84819d47b17acb6bcdb2c7ad5b88781fa2f14cce3368eca142344d4dbf67ecb6"
+        },
+        {
+          "path": "frontend/e2e/routing.spec.ts",
+          "sha256": "13a744349d07c2d4ad81228a68afad362f6974fd950b11b78a0ae0bc089d45e3"
         }
       ]
     }
