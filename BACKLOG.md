@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 gallery contract reassessment (H518): frozen bounded browse/search/export requirements verified against unchanged source with88 backend and13 frontend checks, plus prior merged browser evidence. Marked equivalent; native controls, evicted-history recovery and unlimited exports were not required. Future approved cloud generation must write back under H515. See [scope and evidence](docs/hermes/h518-gallery-contract.md).
+
 - 2026-09-15 mobile build/dependencies: compatible lock updates remove all nine high audit findings;11 moderate UUID/xcode-chain reports remain recorded. The official RN polyfill replacement restores offline Android/iOS Hermes export with existing SDK versions. Native TypeScript and140 tests pass; native compilation/device validation remain open.
 
 - 2026-09-15 cross-client appearance (H135): native now restores the same owner preference document on boot/foreground, isolates cache by connection and updates all19 consumers. Delayed hydration cannot undo an explicit connection clear. Together with merged browser/font persistence this fulfills the frozen row; platform font fallbacks and lack of device GUI evidence remain explicit. See [native contract](mobile/docs/h135-native-appearance.md).
