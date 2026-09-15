@@ -131,6 +131,13 @@ DEFAULTS: list[dict[str, Any]] = [
     # H364 — one ladder rung for cloud reasoning, clamped per model at send time.
     # "" (the default) asks for nothing, which is what every install did before.
     dict(category="llm",     key="reasoning_effort", value="",                    label="Cloud reasoning effort (empty = ask for nothing; clamped to what each model accepts)", kind="select", opts=["", *REASONING_EFFORT_LADDER]),
+    dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
+    dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
+    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible"]),
+    dict(category="llm", key="compatible_model", value="", label="Compatible provider model ID", kind="text"),
+    dict(category="llm", key="compatible_prompt_cache_key", value=False, label="Compatible endpoint explicitly supports prompt_cache_key", kind="toggle"),
+    dict(category="llm", key="compatible_reasoning_enabled", value=False, label="Compatible endpoint explicitly supports reasoning effort", kind="toggle"),
+    dict(category="llm", key="compatible_effort_declarations", value="", label='Compatible effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
     dict(category="llm",     key="reasoning_effort_overrides", value="",          label="Reasoning-effort overrides — JSON {\"model-prefix\": [\"low\",\"high\"]}; an empty list silences the parameter for that model", kind="text"),
     dict(category="llm",     key="control_enabled",  value=True,                  label="LM Studio control (start/load/unload)", kind="toggle"),
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),

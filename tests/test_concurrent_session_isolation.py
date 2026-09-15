@@ -176,6 +176,8 @@ async def test_two_concurrent_stream_turns_keep_separate_histories(orch):
         config = {"model": "stub"}
         tool_runtime = None
         generate_response = Agent.generate_response
+        _generate_response = Agent._generate_response
+        _checkpoint_manager = None
 
     o.router.classify = _fake_classify
     o._gather_plugin_data = _fake_plugin_data

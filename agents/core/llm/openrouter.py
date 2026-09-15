@@ -27,7 +27,13 @@ class OpenRouterBackend(LLMBackend):
     # OpenRouter speaks the runtime's dialect natively (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None) -> None:
+    def __init__(self, api_key: str = "", base_url: str = OPENROUTER_BASE, client=None, *, profile=None, reasoning_effort="", effort_declarations=None) -> None:
+        from .provider_request import profile_with_declarations
+        from .providers import DEFAULT_REGISTRY
+        self.profile = profile_with_declarations(
+            profile or DEFAULT_REGISTRY.get("openrouter"), effort_declarations,
+        )
+        self.reasoning_effort = reasoning_effort
         self.api_key = api_key
         self.base_url = base_url
         self.client = client or llm_async_client("openrouter", base_url=base_url, timeout=120.0)
@@ -52,6 +58,8 @@ class OpenRouterBackend(LLMBackend):
                          {"role": "user", "content": prompt}],
             "max_tokens": cloud_cap(max_tokens), "temperature": temperature, "stream": False,
         }
+        from .provider_request import compatible_parameters
+        payload.update(compatible_parameters(self.profile, model, self.reasoning_effort))
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
             resp.raise_for_status()
@@ -81,6 +89,8 @@ class OpenRouterBackend(LLMBackend):
         if tools:
             payload["tools"] = [tool.as_openai() for tool in tools]
             payload["tool_choice"] = "auto"
+        from .provider_request import compatible_parameters
+        payload.update(compatible_parameters(self.profile, model, self.reasoning_effort))
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
             resp.raise_for_status()

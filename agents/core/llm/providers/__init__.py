@@ -11,10 +11,14 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from ..model_config import DEFAULT_CLAUDE_MODEL
 from ..reasoning_effort import (
+    _model_key,
     clamp_reasoning_effort,
+    clamp_vocabulary,
+    normalize_efforts,
     supported_reasoning_efforts,
     vendor_efforts,
 )
@@ -39,18 +43,32 @@ class ProviderProfile:
     # the families under one vendor disagree. Empty means this build never
     # sends an effort parameter to the provider.
     reasoning_efforts: tuple[str, ...] = ()
+    # None preserves legacy registry lookup; a mapping is a backend-owned
+    # snapshot, where missing models are undeclared, never global fallbacks.
+    reasoning_declarations: Mapping[str, tuple[str, ...]] | None = field(
+        default=None, repr=False, compare=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", self.id.strip().lower())
         object.__setattr__(self, "capabilities", frozenset(self.capabilities))
         object.__setattr__(self, "fallback_models", tuple(self.fallback_models))
         object.__setattr__(self, "reasoning_efforts", tuple(self.reasoning_efforts))
+        if self.reasoning_declarations is not None:
+            object.__setattr__(self, "reasoning_declarations", MappingProxyType({
+                _model_key(model): normalize_efforts(levels)
+                for model, levels in self.reasoning_declarations.items()
+            }))
         if not self.id:
             raise ValueError("provider profile id is required")
         if not self.display_name:
             raise ValueError("provider profile display_name is required")
         if not self.backend_kind:
             raise ValueError("provider profile backend_kind is required")
+
+    @property
+    def supports_prompt_cache_key(self) -> bool:
+        return "prompt-cache-key" in self.capabilities
 
     def supported_reasoning_efforts(self, model: str) -> tuple[str, ...] | None:
         """What *model* accepts under this provider — tri-state (H679).
@@ -66,6 +84,8 @@ class ProviderProfile:
         Answered from cache; a cold catalog reads as undeclared rather than
         blocking a request to find out.
         """
+        if self.reasoning_declarations is not None:
+            return self.reasoning_declarations.get(_model_key(model))
         return supported_reasoning_efforts(self.id, model)
 
     def clamp_reasoning_effort(self, model: str, level: object) -> tuple[str | None, str]:
@@ -75,6 +95,8 @@ class ProviderProfile:
         get to hand-roll this: an inverted ladder is silent, and it is wrong in
         the expensive direction exactly when the owner asked for the cheap one.
         """
+        if self.reasoning_declarations is not None:
+            return clamp_vocabulary(self.supported_reasoning_efforts(model), level)
         return clamp_reasoning_effort(self.id, model, level)
 
     def status(self, environ: Mapping[str, str] | None = None) -> dict:
@@ -104,6 +126,7 @@ class ProviderProfile:
             "capabilities": sorted(self.capabilities),
             "fallback_models": list(self.fallback_models),
             "reasoning_efforts": list(self.reasoning_efforts),
+            "supports_prompt_cache_key": self.supports_prompt_cache_key,
         }
 
 

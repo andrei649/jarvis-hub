@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -211,6 +212,7 @@ class CompactionPolicy:
     protect_head: int = 2
     protect_last_n: int = 6
     per_model: Mapping[str, int] = field(default_factory=dict)
+    output_reserve: int = 0
 
     def __post_init__(self) -> None:
         for name, value in (("soft", self.soft), ("hard", self.hard)):
@@ -220,6 +222,9 @@ class CompactionPolicy:
             # A soft tier above the hard one would summarise before dropping
             # images — the expensive move before the cheap one, every time.
             raise ValueError("soft must not exceed hard")
+        # The effective pair and the target must agree with the hard safety cap.
+        object.__setattr__(self, "hard", min(0.85, float(self.hard)))
+        object.__setattr__(self, "soft", min(float(self.soft), self.hard))
         for name, value in (("protect_head", self.protect_head),
                             ("protect_last_n", self.protect_last_n)):
             if int(value) < 0:
@@ -229,14 +234,14 @@ class CompactionPolicy:
         name = str(model or "").strip().lower()
         for family, size in (self.per_model or {}).items():
             if name.startswith(str(family).lower()):
-                return int(size)
-        return window_for(name)
+                return max(1, int(size) - max(0, int(self.output_reserve)))
+        return max(1, window_for(name) - max(0, int(self.output_reserve)))
 
     def tier(self, used_tokens: int, model: str | None) -> str:
         """``"none"`` | ``"images"`` | ``"summarize"`` for a token count."""
         window = max(1, self.window(model))
         ratio = float(used_tokens) / float(window)
-        if ratio >= float(self.hard):
+        if ratio >= min(0.85, float(self.hard)):
             return "summarize"
         if ratio >= float(self.soft):
             return "images"
@@ -479,7 +484,9 @@ class ContextCompressor:
         # bounds disagreeing is how a compaction silently does nothing. So the
         # target for this call is the soft threshold: compact down to the tier
         # where the cheap moves are enough, not merely to the edge of the window.
-        target = int(float(pol.soft) * pol.window(model))
+        window = pol.window(model)
+        target = min(int(float(pol.soft) * window),
+                     math.ceil(float(pol.hard) * window) - 1)
         if self.max_tokens:
             target = min(target, self.max_tokens)
         previous = (self.keep_first, self.keep_recent, self.max_tokens)

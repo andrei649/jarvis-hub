@@ -1530,12 +1530,60 @@
       "id": "H363",
       "row_sha256": "cd0c402c53fbf7ad02280d90cab250311c91a6767de28d8def4b2e2e7ddd0786",
       "status": "partial",
-      "summary": "Wire-ul Anthropic cere acum caching-ul și citește factura înapoi. Promptul de sistem pleacă drept bloc de text cu un breakpoint efemer (un string simplu nu poate purta unul), iar array-ul de unelte primește un singur breakpoint pe ULTIMA unealtă: o marcă `cache_control` acoperă tot ce e înaintea ei, deci una singură prinde tot array-ul, iar marcarea fiecărei unelte ar cheltui bugetul de patru breakpoint-uri pe un prefix deja acoperit. Promptul de sistem și array-ul de unelte sunt exact cele două lucruri care nu se schimbă între turele unei sesiuni. `anthropic_usage` aduce contoarele providerului pe `ToolTurn.usage`, iar `usage_sink` le duce prin bucla de unelte (mai multe cereri pentru un singur răspuns, deci se însumează) până în contorul de cost, care preferă cifra raportată în locul estimării euristice și marchează `usage_source`. Înainte, `cost_estimator` prețuia un tarif `cached` pe care nicio rută Claude nu-l putea câștiga: nicio cerere nu cerea caching și niciun răspuns nu era citit pentru el. O scriere de cache e facturată ca input, niciodată raportată drept economie.",
-      "remaining": "Rămâne clauza pentru wire-urile compatibile OpenAI: `ProviderProfile.supports_prompt_cache_key` care să poarte un `prompt_cache_key` stabil pe sesiune. `ProviderProfile` există și are deja un set `capabilities` care e locul potrivit pentru declarație, dar backend-ul compatibil OpenAI nu știe azi cărui profil îi aparține — plumbing-ul profil → constructor de cerere e partea reală de făcut, iar implicit trebuie să fie OPRIT: un parametru necunoscut trimis pe un wire care nu-l acceptă întoarce 400. Clauza `prompt_cache_retention` a adaptorului Codex nu are corespondent: Nerva nu are un adaptor Codex, deci nu e o lipsă în acest mecanism, ci un adaptor neconstruit. Neverificat pe serviciu real: niciun apel către api.anthropic.com nu a fost făcut aici — testele conduc un client HTTP fals și fixează corpul cererii și parsarea răspunsului. Că vânzătorul chiar servește prefixul din cache și facturează `cache_read_input_tokens` se vede doar pe o cheie reală.",
+      "summary": "Compatible adapter now carries an explicit ProviderProfile; supports_prompt_cache_key defaults off and gates a hashed session-stable key on text/tool requests. Agent request identity is ContextVar-local, restored on exit. Existing Anthropic cache accounting is preserved.",
+      "remaining": "No Codex Responses adapter or live cache-hit/billing proof. Compatible cache support requires explicit operator declaration; no arbitrary endpoint is assumed to support it.",
       "evidence": [
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+        },
+        {
+          "path": "agents/core/checkpoint.py",
+          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+        },
+        {
+          "path": "agents/core/context_compressor.py",
+          "sha256": "1f978614625d4144915064d7d29a1766f92c0cc92027ba480ee703b272e1e50e"
+        },
+        {
+          "path": "agents/core/conversation_clock.py",
+          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+        },
         {
           "path": "agents/core/llm/anthropic.py",
           "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "fa944e4cf059ba7ae97a3bd2244b97a54ce82b19a1e8aa73f1a77d03862bda1d"
+        },
+        {
+          "path": "agents/core/llm/gemini.py",
+          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+        },
+        {
+          "path": "agents/core/llm/openrouter.py",
+          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+        },
+        {
+          "path": "agents/core/llm/provider_request.py",
+          "sha256": "9246a1b5feff87fe7c480c09a83e7da8e16d1776d773023ad155aced6dfc5032"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "c6b0aef2b8208cb9ec63b9fdec602859a85565c62107b2c561bb47a662071e7c"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "7c67b989320199b6a8d4b886f57187acbc888b61e437e5c86c14b7d8d4520ce0"
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
@@ -1546,24 +1594,44 @@
           "sha256": "5841d5359786b58987159046456a9508b5855c1a94db55969699e72baee5bc31"
         },
         {
-          "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
-        },
-        {
-          "path": "agents/core/agent.py",
-          "sha256": "7a6c8417adf87bb8bff502fb76687fb06844b26c92f543ad1b4298a13400480b"
-        },
-        {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
         },
         {
-          "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "path": "agents/core/settings_db.py",
+          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "327f4f12d22c4a30da47334bb0dcc76741e52dd3eeba0aeb6ff5732e38479b28"
+          "sha256": "45ac28069df580e17d38e8be803affb98264c9e7a5ffe434f46fcf7c1bc632af"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
+        },
+        {
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+        },
+        {
+          "path": "tests/test_provider_context_limits.py",
+          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+        },
+        {
+          "path": "tests/test_provider_request_profiles.py",
+          "sha256": "9c26817278fc74e054ea238bf62a891925d57a8124845a09bb82cdbeb333d8bd"
+        },
+        {
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
+        },
+        {
+          "path": "tests/test_models_review_regressions.py",
+          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
+        },
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "5979e1fa48254720d21954028ad0886a59e7434c0b489bf265c51bf7cd4c2529"
         }
       ]
     },
@@ -1571,32 +1639,92 @@
       "id": "H364",
       "row_sha256": "aa28f4bd66a0b0cad787c89c53e8795fef8f045c34ba18918ae65681e3d5e832",
       "status": "partial",
-      "summary": "Există acum o scară unică de efort cu 8 trepte (none…ultra) în `agents/core/llm/reasoning_effort.py`, cu clamp la treapta **mai slabă** cea mai apropiată dintre cele acceptate de wire: a cere `xhigh` unei familii care nu-l are întoarce `high`, niciodată mai mult decât s-a cerut. Când wire-ul nu are nicio treaptă mai slabă (s-a cerut `minimal`, iar familia începe la `low`), răspunsul e podeaua vocabularului, nu tăcerea: tăcerea ar preda cererea default-ului vânzătorului (`high` pe modelele Anthropic curente), adică exact opusul a ce s-a cerut. Tabelul de capabilități decide per familie trei lucruri separate: dacă wire-ul are vocabular de efort, ce bloc de gândire acceptă (`{\"type\": \"adaptive\"}` pe 4.6+, `{\"type\": \"enabled\", \"budget_tokens\": N}` pe familiile mai vechi, cu bugetul strict sub `max_tokens` și peste podeaua de 1024) și ce parametri **respinge**. Ultimul punct era un 400 viu înainte de această livrare, independent de scară: Anthropic a scos parametrii de sampling pe generația 4.7 și mai nouă, iar `anthropic.py` trimitea `temperature` pe fiecare cerere — deci orice rută către `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-5` sau Fable 5 era respinsă. De aceea potrivirea rulează pe **fiecare** cerere (generate, tool turn și stream), nu doar când cineva cere efort. Un model necunoscut primește exact cererea pe care ar fi primit-o și înainte: tăcerea e singurul răspuns care nu poate da 400. Treapta e un setting `/admin` (`llm.reasoning_effort`, gol implicit) plus o hartă de override per prefix de model (`llm.reasoning_effort_overrides`), citite de router și date backend-ului; o listă goală în hartă amuțește parametrul pentru familia aceea fără release. `ProviderProfile` publică vocabularul de vânzător din același tabel pe care îl folosește calea de cerere, deci profilul nu poate anunța o treaptă pe care wire-ul ar refuza-o.",
-      "remaining": "Rândul cere ~18 vocabulare per-vânzător; livrat e unul singur (Anthropic, cu 6 familii distincte) plus harta de override. Clauza `providers.grok-effort-capability` nu are corespondent: Nerva nu are wire xAI/Grok, deci tabelul care ar decide dacă cheia de reasoning pleacă sau nu spre Grok nu are unde să existe încă. Gemini și wire-ul compatibil OpenAI (`openrouter.py`) rămân nepotrivite: tabelul le tratează ca necunoscute și nu le trimite nimic — comportamentul de dinainte, fără regresie, dar și fără scară. `openrouter.py` oricum nu e construit de `HybridRouter` azi, deci conectarea lui e o lucrare separată de acest rând. Neverificat pe serviciu real: niciun apel către api.anthropic.com nu a fost făcut aici — testele conduc clienți HTTP falși și fixează corpul cererii. Că `output_config.effort` e chiar acceptat, că `thinking: {\"type\": \"disabled\"}` trece la `high` și pică la `xhigh`, și că `temperature` chiar era 400-ul descris se văd doar pe o cheie reală.",
+      "summary": "Existing Anthropic ladder extended to exact reviewed Gemini 2.5 budget models and Gemini 3 level models, with operator model declarations and normalization on text/tool/stream payloads. Admin settings can construct an OpenRouter/custom compatible cloud adapter with explicit wire capabilities and canonical clamping; local-only policy and approved-model checks remain in force. Review repair: per-backend immutable vocabulary snapshots prevent stale removed settings and cross-instance overrides.",
+      "remaining": "Not ~18 vendor implementations. Unknown models omit fields unless explicitly declared. No Grok/Codex adapter or live provider acceptance/billing proof. Gemini effort budget targets are product mappings inside documented ranges, not vendor-defined effort rungs.",
       "evidence": [
         {
-          "path": "agents/core/llm/reasoning_effort.py",
-          "sha256": "93b0d0fc02635d8da5ab532a7545a96da46a22a20be05c7fcfe31c02fb451c12"
+          "path": "agents/core/agent.py",
+          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+        },
+        {
+          "path": "agents/core/checkpoint.py",
+          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+        },
+        {
+          "path": "agents/core/context_compressor.py",
+          "sha256": "1f978614625d4144915064d7d29a1766f92c0cc92027ba480ee703b272e1e50e"
+        },
+        {
+          "path": "agents/core/conversation_clock.py",
+          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
         },
         {
           "path": "agents/core/llm/anthropic.py",
           "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
         },
         {
+          "path": "agents/core/llm/base.py",
+          "sha256": "fa944e4cf059ba7ae97a3bd2244b97a54ce82b19a1e8aa73f1a77d03862bda1d"
+        },
+        {
+          "path": "agents/core/llm/gemini.py",
+          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+        },
+        {
           "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "a5b3d2e6a5d5775fb2821ee0ff052c9ba602f370c20c7462d379b4e14d1bd079"
+          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+        },
+        {
+          "path": "agents/core/llm/openrouter.py",
+          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+        },
+        {
+          "path": "agents/core/llm/provider_request.py",
+          "sha256": "9246a1b5feff87fe7c480c09a83e7da8e16d1776d773023ad155aced6dfc5032"
         },
         {
           "path": "agents/core/llm/providers/__init__.py",
-          "sha256": "71cb8ccae8f7bee58cea40df6af67072484af367f02acdbc9e4a81811788ebfb"
+          "sha256": "c6b0aef2b8208cb9ec63b9fdec602859a85565c62107b2c561bb47a662071e7c"
+        },
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "5979e1fa48254720d21954028ad0886a59e7434c0b489bf265c51bf7cd4c2529"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "7c67b989320199b6a8d4b886f57187acbc888b61e437e5c86c14b7d8d4520ce0"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
+          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+        },
+        {
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+        },
+        {
+          "path": "tests/test_provider_context_limits.py",
+          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+        },
+        {
+          "path": "tests/test_provider_request_profiles.py",
+          "sha256": "9c26817278fc74e054ea238bf62a891925d57a8124845a09bb82cdbeb333d8bd"
         },
         {
           "path": "tests/test_reasoning_effort_ladder.py",
           "sha256": "d6296c3b3429ea16e4e11eeeb437875f8397242f8f035f256601c37a0f575bf7"
+        },
+        {
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
+        },
+        {
+          "path": "tests/test_models_review_regressions.py",
+          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
         }
       ]
     },
@@ -2946,20 +3074,84 @@
       "id": "H671",
       "row_sha256": "b9a5e8778376a36ec6f418ae6719f515f06293d18ee86954c840c13ce2b1d05c",
       "status": "partial",
-      "summary": "Promptul de sistem poartă acum ceasul conversației. `conversation_clock.py` construiește două linii după blocul de identitate: „Conversation started: <Zi, Lună ZZ, AAAA> (<zonă IANA>, abreviere, UTC±HH:MM)\" și — **doar** când ziua rebuild-ului diferă de ziua nașterii — „Today's date (as of the last context rebuild): … — trust this over the start date\". Proprietatea load-bearing e că o sesiune din aceeași zi randează o **singură** linie, deci prefixul rămâne stabil: promptul de sistem e exact una dintre cele două lucruri marcate drept prefix cacheabil la H363, iar un șir care se schimbă la fiecare tură ar arunca discountul pe fiecare cerere. Linia de refresh apare abia la granița de zi, unde cache-ul oricum se invalidează. Data se scrie pe litere, niciodată numeric: 09/11 sunt două zile diferite după malul Atlanticului, iar o dată pe care modelul o poate citi greșit e mai rea decât niciuna. Zona duce întotdeauna offsetul, fiindcă o abreviere singură e ambiguă (`EST` e două offseturi diferite). Data de naștere e rezolvată prin **id-ul sesiunii** (`Orchestrator._session_birth`), semănată o singură dată și niciodată reîmprospătată, deci compactarea, o restaurare din checkpoint sau o rotație păstrează ziua în care conversația chiar a început — recalcularea la rebuild ar reseta tăcut ziua de naștere a unei sesiuni perpetue la azi, exact defectul pe care rândul îl previne. Fără id de sesiune sau fără dată de naștere nu se inventează nimic: promptul se întoarce neatins, fiindcă o secțiune goală ar fi doar o altă cheie de cache pentru nimic.",
-      "remaining": "Ceasul e montat pe calea de streaming a orchestratorului (`_call_agents_parallel` → promptul de sistem), singura care asamblează promptul central; `Agent.process` și `Agent.process_stream` citesc încă `soul['content']` direct, deci un apel care ocolește orchestratorul nu primește ceasul. Data de naștere e ținută în memorie per proces (`_session_born`), nu citită din tabela `sessions` a checkpoint-ului (`started_at` există acolo): după un restart al hub-ului o sesiune reluată își ia o nouă dată de naștere. `parse_started_at` e jumătatea de citire care face legătura, dar n-are încă apelant — conectarea ei la store e lucrare separată și e chiar clauza „session-lineage ROOT\" în forma ei tare. Nu există noțiune de lineage părinte-copil între sesiuni în Nerva, deci „rădăcina\" e id-ul curent, nu un lanț. Rândul se împerechează explicit cu reconstrucția la granița de compactare: linia de refresh se recalculează la fiecare asamblare a promptului, nu la commit-ul de compactare. Neverificat pe serviciu real: niciun apel către un provider — testele fixează textul blocului și identitatea datei de naștere, nu că un model chiar îl citește.",
+      "summary": "Checkpoint sessions.started_at is now the durable birth source, including restart and duplicate session creation. Streaming no longer resets the birthday map each turn. Agent.generate_response binds session identity and clock for direct/process/stream paths; parallel orchestrator calls propagate their request session. UTC storage converts to local time, midnight comparisons use one zone, and a reused trailing clock block refreshes without duplication. Review repair: for persisted local birth with a fixed historical offset, current local date resolves the current offset independently across DST; explicit ZoneInfo/fixed-zone requests retain their chosen zone.",
+      "remaining": "No parent-child lineage root abstraction; identity is the existing session ID. Callers without a session ID/checkpoint manager cannot recover a durable birth and retain unknown behavior. Clock refresh remains prompt rebuild based. No live model comprehension proof.",
       "evidence": [
         {
+          "path": "agents/core/agent.py",
+          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+        },
+        {
+          "path": "agents/core/checkpoint.py",
+          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+        },
+        {
+          "path": "agents/core/context_compressor.py",
+          "sha256": "1f978614625d4144915064d7d29a1766f92c0cc92027ba480ee703b272e1e50e"
+        },
+        {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "4ede00f200f7145e11585f554c40fa8a230126eeb39be3ab5126974aeb730dc1"
+          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "fa944e4cf059ba7ae97a3bd2244b97a54ce82b19a1e8aa73f1a77d03862bda1d"
+        },
+        {
+          "path": "agents/core/llm/gemini.py",
+          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+        },
+        {
+          "path": "agents/core/llm/openrouter.py",
+          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+        },
+        {
+          "path": "agents/core/llm/provider_request.py",
+          "sha256": "9246a1b5feff87fe7c480c09a83e7da8e16d1776d773023ad155aced6dfc5032"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "c6b0aef2b8208cb9ec63b9fdec602859a85565c62107b2c561bb47a662071e7c"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "7c67b989320199b6a8d4b886f57187acbc888b61e437e5c86c14b7d8d4520ce0"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "88d4196421544191433cb61b21bdbed3bc0d77387e7e4e23f4b36efcc6f00023"
+          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+        },
+        {
+          "path": "tests/test_provider_context_limits.py",
+          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+        },
+        {
+          "path": "tests/test_provider_request_profiles.py",
+          "sha256": "9c26817278fc74e054ea238bf62a891925d57a8124845a09bb82cdbeb333d8bd"
+        },
+        {
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
+        },
+        {
+          "path": "tests/test_models_review_regressions.py",
+          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
+        },
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "5979e1fa48254720d21954028ad0886a59e7434c0b489bf265c51bf7cd4c2529"
         }
       ]
     },
@@ -2967,20 +3159,88 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Presiunea de context nu mai e reestimată din zero la fiecare tură. `UsageAnchor` (în `agents/core/context_compressor.py`) poartă numărul **raportat de provider** pentru ultima cerere din bucla principală — prompt de sistem, scheme de unelte și istoric la un loc, măsurate, nu ghicite — plus câte ture de la începutul transcriptului acoperă acel număr. `compact()` îl primește opțional și calculează `used` prin `_used()`: prefixul ancorat contribuie cifra providerului, iar **doar** ce s-a adăugat de atunci se estimează. Fereastra de eroare scade de la toată conversația la o singură tură și se recalibrează la fiecare răspuns. Ancora acoperă și ce transcriptul nu conține deloc — promptul de sistem și schemele de unelte — de aceea e normal mai mare decât estimarea acelorași ture, și de aceea estimarea singură subevaluează o cerere cu tot ce nu e conversație. Un test arată exact eșecul din rând: zece ture scurte estimează ~1k pe o fereastră de 32k și dau tier `none`, în timp ce cererea reală de 28k trece de pragul dur. Fără ancoră (fiecare backend local, prima tură a oricărei sesiuni) rezultatul e identic cu cel de dinainte, deci estimatorul rămâne alternativa, nu o cale abandonată. Direcția erorii e fixată explicit: rezultatul are podea la estimarea simplă, deci o ancoră poate face compactarea să se întâmple mai devreme sau la fel, niciodată mai târziu — aceeași direcție în care merge deja limita de fereastră. Imaginile scoase din prefixul ancorat se scad din ancoră la costul fix, pentru că providerul n-a spus niciodată cât a costat imaginea în realitate, iar ancora descria prefixul **așa cum a fost trimis**. Pe partea de orchestrator, `_record_context_anchor` reține dimensiunea ultimei cereri prin **înlocuire, nu acumulare** — capcana reală a acestui rând: `_last_reported_usage` însumează pe bună dreptate (aia e nota de plată, un răspuns costă mai multe cereri), dar o buclă de unelte retrimite tot prefixul la fiecare iterație, așa că suma ar raporta de câteva ori contextul care există și ar compacta la nimic o sesiune sănătoasă. `_usage_anchor` alege cea mai mare cerere măsurată când au răspuns mai mulți agenți (sub-ancorarea riscă trunchierea pe care rândul o previne; supra-ancorarea doar compactează puțin mai devreme) și **aruncă** o ancoră devenită stală în loc s-o scaleze, dacă istoricul a fost între timp compactat sub ce acoperea. O sesiune nouă își pierde ancora.",
-      "remaining": "Clampul pe `num_ctx`-ul Ollama — companionul pe care chiar raționamentul rândului îl numește cel mai necesar, fiindcă LM Studio/Ollama e calea fierbinte — NU e livrat: `num_ctx` nu apare nicăieri în cod, Nerva nici nu-l trimite, nici nu-l citește, deci ar cere o sondă nouă (`/api/show`) plus un setting. A-l ghici ar însemna exact greșeala evitată la H364 pe wire-urile neverificate. Fereastra rămâne cea din tabelul `MODEL_WINDOWS` plus `CompactionPolicy.per_model`, deci un server pornit cu un `num_ctx` mai mic decât presupune tabelul rămâne supraestimat. Nelivrate și celelalte două companion-uri din același interval: podeaua pragului de compactare plafonată la 85% din fereastră și rezervarea `maxOutputTokens` implicit la Gemini când `max_tokens` nu e setat. Costul fix pe imagine (`IMAGE_TOKEN_COST`) rămâne euristic peste tot în afara prefixului ancorat — ancora îl înlocuiește doar acolo unde providerul a numărat efectiv. Ancora se aplică pe calea de streaming, singura care raportează usage; celelalte canale nu au ce ancora și păstrează estimarea. Neverificat pe serviciu real: niciun apel către un provider nu a fost făcut — testele fixează aritmetica ancorei și pragul, nu că un provider raportează cifra așteptată.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact.",
+      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Image estimates and non-stream usage anchors retain earlier limitations. No live Ollama/Gemini proof.",
       "evidence": [
         {
+          "path": "agents/core/agent.py",
+          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+        },
+        {
+          "path": "agents/core/checkpoint.py",
+          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+        },
+        {
           "path": "agents/core/context_compressor.py",
-          "sha256": "8d8af031713bef8efb1e4df096c35bd22f80d6946701a7cccde4727a857796c4"
+          "sha256": "1f978614625d4144915064d7d29a1766f92c0cc92027ba480ee703b272e1e50e"
+        },
+        {
+          "path": "agents/core/conversation_clock.py",
+          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
+        },
+        {
+          "path": "agents/core/llm/base.py",
+          "sha256": "fa944e4cf059ba7ae97a3bd2244b97a54ce82b19a1e8aa73f1a77d03862bda1d"
+        },
+        {
+          "path": "agents/core/llm/gemini.py",
+          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+        },
+        {
+          "path": "agents/core/llm/openrouter.py",
+          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+        },
+        {
+          "path": "agents/core/llm/provider_request.py",
+          "sha256": "9246a1b5feff87fe7c480c09a83e7da8e16d1776d773023ad155aced6dfc5032"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "c6b0aef2b8208cb9ec63b9fdec602859a85565c62107b2c561bb47a662071e7c"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "7c67b989320199b6a8d4b886f57187acbc888b61e437e5c86c14b7d8d4520ce0"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
           "sha256": "2b9e76d58b6db174b438d4c70fa0b3ff0fcc30ea0c36b442de6d73a6041803aa"
+        },
+        {
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+        },
+        {
+          "path": "tests/test_provider_context_limits.py",
+          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+        },
+        {
+          "path": "tests/test_provider_request_profiles.py",
+          "sha256": "9c26817278fc74e054ea238bf62a891925d57a8124845a09bb82cdbeb333d8bd"
+        },
+        {
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
+        },
+        {
+          "path": "tests/test_models_review_regressions.py",
+          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
+        },
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "5979e1fa48254720d21954028ad0886a59e7434c0b489bf265c51bf7cd4c2529"
         }
       ]
     },
@@ -3046,24 +3306,92 @@
       "id": "H679",
       "row_sha256": "0cf627d19b3738a25a359ba7761a0a2ae5cce2b328a640d82ba84ea29b502237",
       "status": "partial",
-      "summary": "`ProviderProfile.supported_reasoning_efforts(model)` există și răspunde **tri-state**, exact distincția pe care o cere rândul: `None` = nedeclarat, transportul își păstrează default-urile; `()` = modelul nu acceptă nicio treaptă de efort, câmpul se omite; un tuplu nevid = vocabular în care se face clamp. Cele două răspunsuri „fără efort\" nu sunt interschimbabile și de aceea hook-ul nu putea fi un atribut: `reasoning_efforts` rămâne uniunea de vânzător pentru afișare, iar o uniune goală acolo nu spune nimic despre un model anume. Înainte de această livrare Nerva avea exact colapsul pe care rândul îl numește: toate profilele non-Anthropic purtau `()`, adică „respinge\", când adevărul era „nedeclarat\". Registrul trăiește în `agents/core/llm/reasoning_effort.py`, lângă scară și clamp, deci nu introduce ciclu de import cu pachetul `providers`. Cache-ul e citit pe calea fierbinte și nu blochează niciodată: un model pe care nimeni nu l-a declarat răspunde `None` imediat, nu așteaptă un catalog. `declare_reasoning_efforts` e jumătatea de scriere (o sondă de catalog, o corecție de operator), acceptă listă scrisă de om („low, high\"), aruncă treptele care nu-s pe scară și reordonează de la cea mai slabă; `()` declarat explicit e un răspuns real, nu o resetare; `forget_reasoning_efforts` lasă celelalte provider-e neatinse. Clamp-ul e cel canonic, unul singur: cea mai apropiată treaptă **mai slabă**, niciodată escaladare, monoton pe toată scara — un test parcurge toate treptele și verifică monotonia, pentru că bug-ul Nebius (`ultra` căzând la `medium` în timp ce `xhigh` mergea la `high`) e tăcut și greșit tocmai în direcția scumpă. Hook-ul e purtător de sarcină, nu interfață: `apply_anthropic` cere vocabularul registrului, deci o declarație înregistrată în afara căii fierbinți schimbă corpul cererii care pleacă pe sârmă, fără release. Corectat în trecere: un `EffortPlan` fără efort dar cu bloc de gândire raporta `reason=\"budget\"` și pe familiile adaptive, care nu construiesc niciun buget — acum `thinking-only`.",
-      "remaining": "Jumătatea de scriere n-are încă producător viu: nimic din produs nu apelează `declare_reasoning_efforts`, deci în practică singurul vocabular care răspunde sincron e Anthropic (din tabelul de familii, mereu cald). Sondele de catalog care ar putea alimenta registrul există deja (`local_model_inventory.py`, `lmstudio_control.py`, `ollama_control.py` citesc `/v1/models`), dar niciuna nu declară vocabulare — conectarea lor e lucrare separată. Hermes cere „implementări\" la plural, câte una per provider; Nerva are una reală plus mecanismul de declarare pentru restul, deci rândul rămâne `partial`. Nu există în Nerva un echivalent de `provider-nebius-token-factory`: jumătatea portabilă a acelei intrări e clamp-ul, și el e livrat. Registrul guvernează **doar** vocabularul de efort; forma blocului de gândire rămâne la `WireCapability` — o familie poate respinge orice treaptă de efort și totuși să accepte un buget manual (`claude-sonnet-4-5`), iar tratarea celor două ca un singur „acceptă reasoning\" ar fi chiar eroarea pe care rândul o previne. Neverificat pe serviciu real: niciun apel către un gateway de provider nu a fost făcut — testele fixează răspunsul registrului și corpul cererii, nu acceptarea lui de către un serviciu.",
+      "summary": "Production constructors build immutable backend-owned snapshots of reviewed Gemini vocabularies and admin-provided exact model declarations. Empty declarations silence effort and a removed declaration becomes unknown on reconnect; concurrent backend construction cannot overwrite another adapter. Both owned snapshots and the legacy process registry share the same pure normalization and canonical tri-state clamp.",
+      "remaining": "No live catalog-discovery producer or Nebius-specific adapter; supported provider schemas are limited to implemented Anthropic, Gemini and explicitly configured compatible endpoints. Operator declarations require matching actual provider capabilities. No live service proof.",
       "evidence": [
         {
-          "path": "agents/core/llm/reasoning_effort.py",
-          "sha256": "93b0d0fc02635d8da5ab532a7545a96da46a22a20be05c7fcfe31c02fb451c12"
+          "path": "agents/core/agent.py",
+          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
         },
         {
-          "path": "agents/core/llm/providers/__init__.py",
-          "sha256": "71cb8ccae8f7bee58cea40df6af67072484af367f02acdbc9e4a81811788ebfb"
+          "path": "agents/core/checkpoint.py",
+          "sha256": "13d69116b0c284e39aed9e87d5782a63a959ce38d36476057cc4e3a2d39c9a71"
+        },
+        {
+          "path": "agents/core/context_compressor.py",
+          "sha256": "1f978614625d4144915064d7d29a1766f92c0cc92027ba480ee703b272e1e50e"
+        },
+        {
+          "path": "agents/core/conversation_clock.py",
+          "sha256": "3097d88bfe9a952e89c77bcb87a0b920b398585211f7c70dd27668ac2122d5bb"
         },
         {
           "path": "agents/core/llm/anthropic.py",
           "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
         },
         {
+          "path": "agents/core/llm/base.py",
+          "sha256": "fa944e4cf059ba7ae97a3bd2244b97a54ce82b19a1e8aa73f1a77d03862bda1d"
+        },
+        {
+          "path": "agents/core/llm/gemini.py",
+          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "807f17b76ed58d34ca98b9718f55b0723c1da938adaf72fe6119ca3ffdf4ab11"
+        },
+        {
+          "path": "agents/core/llm/openrouter.py",
+          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+        },
+        {
+          "path": "agents/core/llm/provider_request.py",
+          "sha256": "9246a1b5feff87fe7c480c09a83e7da8e16d1776d773023ad155aced6dfc5032"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "c6b0aef2b8208cb9ec63b9fdec602859a85565c62107b2c561bb47a662071e7c"
+        },
+        {
+          "path": "agents/core/llm/reasoning_effort.py",
+          "sha256": "5979e1fa48254720d21954028ad0886a59e7434c0b489bf265c51bf7cd4c2529"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "7c67b989320199b6a8d4b886f57187acbc888b61e437e5c86c14b7d8d4520ce0"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "6078013e2c80298f33e5092fd81c6d7ed277ceeaa50c639e3b15898555feec03"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "73761846f51446fa6c37140ba62c698d1863ba8a4744731882eb30022e31dba5"
+        },
+        {
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+        },
+        {
+          "path": "tests/test_provider_context_limits.py",
+          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+        },
+        {
+          "path": "tests/test_provider_request_profiles.py",
+          "sha256": "9c26817278fc74e054ea238bf62a891925d57a8124845a09bb82cdbeb333d8bd"
+        },
+        {
           "path": "tests/test_reasoning_vocabulary_registry.py",
           "sha256": "ccf7c8cf73dfed83d9ac63da35788b13f1823a277413e68583ac98c4c814ae66"
+        },
+        {
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
+        },
+        {
+          "path": "tests/test_models_review_regressions.py",
+          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
         }
       ]
     },
