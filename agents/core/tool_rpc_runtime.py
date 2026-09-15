@@ -195,6 +195,7 @@ class ToolRPCSandboxRuntime:
         code: str,
         filename: str = "script.py",
         sinks=None,
+        before_execute=None,
     ) -> ToolRPCSandboxRun:
         """``sinks`` is handed straight to the sandbox; see ``Sandbox.execute_python``.
 
@@ -212,14 +213,13 @@ class ToolRPCSandboxRuntime:
             poll_interval=self.poll_interval,
         )
         script = f"{shim}\n{code}"
-        task = asyncio.create_task(
-            self.sandbox.execute_python(
-                script,
-                filename,
-                writable_paths=[rpc_dir],
-                sinks=sinks,
-            )
-        )
+        async def execute():
+            if before_execute is not None:
+                before_execute()
+            return await self.sandbox.execute_python(
+                script, filename, writable_paths=[rpc_dir], sinks=sinks)
+
+        task = asyncio.create_task(execute())
 
         processed: set[int] = set()
         tool_calls = 0

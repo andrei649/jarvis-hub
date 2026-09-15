@@ -2677,12 +2677,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1, K2 si K3 sunt livrate: execute_code pentru model, celule rezidente pe sesiune cu autoritate relegata la fiecare celula, si o suprafata de operator care spune modul, motivul si ce s-a pierdut la reset. Clauza de spill al stdout-ului este închisă pe calea implicită (K1, o rulare per apel): `code_tools` deschide un scriitor în flux înainte de rulare, `Sandbox.execute_python` primește sinks și cititorul mărginit dă fiecare chunk mai departe pe drum, deci fișierul de pe disc conține tot ce a scris procesul copil, nu ce a supraviețuit plafonului — iar rezultatul poartă calea, referința, dimensiunea și sha256. Memoria gazdei rămâne mărginită: cititorul păstrează în continuare doar capetele. Un flux care a încăput nu lasă fișier.",
-      "remaining": "Spill-ul stdout: livrat pe K1, deschis pe K2. Rămâne deschisă pe calea cu kernel de sesiune (K2, `llm.execute_code_sessions`, implicit oprită): worker-ul taie în container, în `run()`, deci gazda nu vede niciodată fluxul întreg — spill-ul complet de acolo cere un protocol pe cadre între worker și gazdă. Ce s-a livrat acum pentru acea cale este onestitatea tăierii: `text[-CAP:]` păstra doar coada, fără niciun marcaj; acum e cap+coadă cu o notiță formulată ca a gazdei, pe care plafonul de linii al gazdei o recunoaște și nu o mai elidează. Rămân de asemenea kernelul remote și proba pe un daemon Docker real. Modul `project|strict` al lui Hermes rămâne necopiat deliberat: postura o decide profilul de unelte (agent × suprafață × principal).",
+      "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and complete redirected Python stdout/stderr stream spills on both one-shot and session paths. Bounded previews retain file references, byte counts and hashes without buffering the full stream. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal.",
+      "remaining": "Actual Docker-daemon evidence remains pending locally; new real-container two-cell/reset/cancel tests use the existing opt-in CI lane and skip on this Mac. Generic SSH/Modal provisioning remains unsupported. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2690,7 +2690,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e746be0e58698113f7b64bb1f193fd55ea676d3f1990236e498aacb2009fbebb"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2702,7 +2702,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
+          "sha256": "a4eb4a7223c78c75c5731ff1d049d63311638773c728f534e93cddce54b94485"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -2714,7 +2714,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
+          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -2722,27 +2722,27 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
+          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
+          "sha256": "5adddc9deb061dd23a335da593a4666f6c606ecd8de24388360b2b5604916e0e"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
+          "sha256": "b243e5cfde7b041a15551d66347bde5448e71a280c87a5e84a313ecde022c4a0"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+          "sha256": "ed87d8fab3881b604e432a4d5e162c8fa434552cbbc1f768212a3e4ae7ad2ec6"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
-          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+          "sha256": "e807de9a6af22d15c6222709ed0e564ab1ad74b1ed3d25201cdd5ca6c0818808"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -3017,12 +3017,12 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2 si K3 sunt livrate: interpreter rezident pe cheia agent x principal x sesiune x data-scope, cu stare care persista si permisiune care nu, plus suprafata de operator (mod, motiv, varsta starii, reset) si inchiderea kernelurilor la sfarsitul sesiunii. Lipseste varianta remote si proba pe container real. Tăierea output-ului unei celule nu mai este tăcută: worker-ul trimitea `text[-CAP:]`, adică doar coada, fără marcaj, așa că o celulă care scria mult arăta ca una care scria puțin; acum e cap+coadă cu o notiță numărată.",
-      "remaining": "Ramane varianta remote (code_kernel_remote: transporturi run-to-completion, runner detasat, liveness kill -0, fallback deschis catre calea per-apel) si proba efectiva pe gazda izolata — doua celule, restart si cancel pe un daemon Docker adevarat. Kernelurile raman opt-in (llm.execute_code_sessions + imagine fixata prin digest), nu mereu pornite ca la Hermes. Spill-ul complet al stdout-ului unei celule rămâne deschis din același motiv ca varianta remote: worker-ul taie în container, iar gazda nu vede fluxul întreg.",
+      "summary": "K2/K3 now include a production detached Docker worker over run-to-completion CLI calls, with a private size-limited container mailbox, bounded response packets/backpressure, ready handshake, cell nonces, asynchronous liveness monitoring, and kill/reset/cancel lifecycle. Each cell still crosses the current host authorization and ToolCallBroker. Only a proved pre-dispatch startup refusal permits explicit isolated per-call fallback; dispatched/ambiguous cells never retry. Python cell stdout/stderr streams now reach existing ToolResultStore spills before preview truncation, retaining the middle without unbounded worker buffers. Session tool-RPC uses directory-pinned no-follow I/O and random cell directories, closing a reproduced host-write symlink issue. Existing opt-in settings and digest-pinned Docker isolation remain. Independent-review repairs recheck e-stop/expiry and authorization inside fallback dispatch, retain unconfirmed removals as quarantined records with retryable operator reset, validate hostile stream labels, and keep deadline/stop monitoring independent of awaited tool calls. Late broker replies cannot write after cancellation; old-cell cleanup cannot destroy a replacement kernel.",
+      "remaining": "Generic SSH and Modal are unsupported: they still require an explicitly isolated provisioning and governed transport design. Two-cell/reset/cancel and containment tests were added to the existing opt-in real-Docker CI lane, but were skipped locally because this Mac has no Docker daemon; actual daemon evidence remains pending. Local fixed-interpreter mailbox tests prove protocol/lifecycle behavior, not container isolation. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Full spills cover Python redirected stdout/stderr; deliberate native-fd bypasses are not captured as Python streams.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -3030,7 +3030,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e746be0e58698113f7b64bb1f193fd55ea676d3f1990236e498aacb2009fbebb"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -3038,35 +3038,55 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
+          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
+          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
+          "sha256": "5adddc9deb061dd23a335da593a4666f6c606ecd8de24388360b2b5604916e0e"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
+          "sha256": "b243e5cfde7b041a15551d66347bde5448e71a280c87a5e84a313ecde022c4a0"
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
+          "sha256": "a4eb4a7223c78c75c5731ff1d049d63311638773c728f534e93cddce54b94485"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+          "sha256": "ed87d8fab3881b604e432a4d5e162c8fa434552cbbc1f768212a3e4ae7ad2ec6"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
-          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+          "sha256": "e807de9a6af22d15c6222709ed0e564ab1ad74b1ed3d25201cdd5ca6c0818808"
+        },
+        {
+          "path": "agents/core/detached_kernel.py",
+          "sha256": "12719a75c1b78493cd8c4f371fa6404437869d2a187db4f23a8f45fca7ca57e2"
+        },
+        {
+          "path": "agents/core/session_kernel_mailbox.py",
+          "sha256": "d026a68c2f9082521acf5428ea20e6992dc0479abcc2d59a9fd67d12e222d85d"
+        },
+        {
+          "path": "tests/test_detached_kernel.py",
+          "sha256": "6c6c86769c232ddd56427a8c8aee4b17fee1499ef563145ce060ef6594b2fed7"
+        },
+        {
+          "path": "tests/test_sandbox_isolation.py",
+          "sha256": "b18019099b882d49fcd69089561090479b44e3613b5505361ac8bf6d494df81f"
+        },
+        {
+          "path": "tests/test_session_kernel_safety.py",
+          "sha256": "e2356cb76d7a2356bfca4baaa8522bc9e9787f31cb1688cd9113bba29cd794c7"
         }
       ]
     },

@@ -111,3 +111,68 @@ async def test_terminal_target_runs_inside_the_real_container(tmp_path):
     assert result["backend"] == "docker"
     assert "governed" in result["stdout"]
     assert registry.audit.entries[-1]["outcome"] == "allow"
+
+
+@pytest.mark.asyncio
+async def test_detached_session_kernel_two_cells_reset_and_containment(tmp_path):
+    """H660: real detached container, same digest resolved by the existing CI lane."""
+    from types import SimpleNamespace
+
+    from agents.core.detached_kernel import DetachedDockerBackend
+    from agents.core.session_kernels import SessionKernelManager
+
+    image = os.environ.get('JARVIS_ACQUISITION_SANDBOX_IMAGE', '')
+    assert '@sha256:' in image, 'Docker lane must provide its resolved digest'
+    backend = DetachedDockerBackend(image)
+    manager = SessionKernelManager(backend, cell_timeout_seconds=60)
+    invocation = SimpleNamespace(agent='test', principal='owner', session_id='docker',
+                                 data_scope=None, expired=lambda: False)
+    try:
+        first = await manager.run(invocation, 'import math\nrows = [math.pi] * 3')
+        assert first.ok, first.as_dict()
+        second = await manager.run(invocation, "print(round(sum(rows), 3))\n"
+            "try:\n open('/escape', 'w').write('bad')\nexcept OSError:\n print('READONLY')\n"
+            "import socket\n"
+            "try:\n socket.create_connection(('1.1.1.1', 53), timeout=2)\n print('CONNECTED')\n"
+            "except OSError:\n print('BLOCKED')")
+        assert second.ok and '9.425' in second.stdout
+        assert 'READONLY' in second.stdout and 'BLOCKED' in second.stdout
+        assert 'CONNECTED' not in second.stdout
+        assert second.continuity == 'continued'
+        assert await manager.reset(invocation)
+        reset = await manager.run(invocation, "print('rows' in globals())")
+        assert reset.ok and reset.state_lost and 'False' in reset.stdout
+    finally:
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_detached_session_cancel_removes_real_container_before_reuse(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from agents.core.detached_kernel import DetachedDockerBackend
+    from agents.core.session_kernels import SessionKernelManager
+
+    image = os.environ.get('JARVIS_ACQUISITION_SANDBOX_IMAGE', '')
+    assert '@sha256:' in image
+    backend = DetachedDockerBackend(image)
+    manager = SessionKernelManager(backend, cell_timeout_seconds=60)
+    invocation = SimpleNamespace(agent='test', principal='owner', session_id='cancel',
+                                 data_scope=None, expired=lambda: False)
+    try:
+        assert (await manager.run(invocation, 'marker = 1')).ok
+        handle = next(iter(manager._records.values())).handle
+        task = asyncio.create_task(manager.run(invocation, 'import time\ntime.sleep(60)'))
+        await asyncio.sleep(.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # Do not trust cached liveness: ask the real daemon for the old name.
+        proc = await asyncio.create_subprocess_exec('docker', 'inspect', handle.name,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        assert await proc.wait() != 0
+        result = await manager.run(invocation, "print('marker' in globals())")
+        assert result.ok and result.state_lost and 'False' in result.stdout
+    finally:
+        await manager.shutdown()

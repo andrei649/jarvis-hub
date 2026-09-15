@@ -35,10 +35,11 @@ supplies the argv that makes that process a pinned, network-less container. Noth
 here relaxes the sandbox profile, and nothing here may run model-written code on the
 host: ``code_tools`` refuses the whole call unless the sandbox reports real isolation.
 
-**Not proven in this repository's tests:** that any of this holds against a real Docker
-daemon. The tests drive real resident interpreters over the real framing with the real
-worker source, so the protocol, the lifecycle and every refusal are exercised — but a
-container is the owner's to prove.
+The opt-in Docker isolation suite exercises the detached production transport on a
+real daemon. Local interpreter protocol tests do not prove container isolation.
+The framing token and cell nonce detect noise/stale replies; they are not a security
+boundary against Python code introspecting the worker's own interpreter. Authority
+is enforced by the host broker, never by a worker's claims.
 """
 
 from __future__ import annotations
@@ -55,8 +56,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .environments.file_rpc import FileRPCStore
-from .environments.output_limits import MAX_OUTPUT_BYTES
+from .environments.output_limits import MAX_OUTPUT_BYTES, render_capped
+from .session_kernel_mailbox import SessionRPCStore
 
 logger = logging.getLogger("jarvis.session_kernels")
 
@@ -73,15 +74,16 @@ _MAX_REMEMBERED_LOSSES = 256
 #: side is a real directory under the data root; only this one path is shared, and
 #: it carries request/response JSON, never source and never a result payload.
 CHILD_RPC_ROOT = "/nerva-rpc"
-#: Replies are framed behind a random per-kernel token, so a cell cannot forge one by
-#: writing to ``sys.__stdout__``. The worker already redirects the cell's own streams;
-#: the token is the second lock on the same door, and it is regenerated per kernel.
+#: Replies carry a random per-kernel token and a per-cell nonce to detect stale
+#: frames and accidental output on the protocol channel. The host broker, not
+#: these worker-readable values, is the authority boundary.
 
 #: Refusal reasons. Bounded strings — never a caller's text and never a path.
 ESTOP_ENGAGED = "estop_engaged"
 AUTHORITY_EXPIRED = "authority_expired"
 CELL_REFUSED = "cell_refused"
 KERNEL_UNAVAILABLE = "kernel_unavailable"
+TEARDOWN_UNCONFIRMED = "teardown_unconfirmed"
 CELL_TOO_LONG = "cell_too_long"
 
 #: Named state loss. The caller is told which of these happened, every time.
@@ -106,12 +108,24 @@ class KernelRefused(Exception):
         super().__init__(reason)
 
 
+class KernelStartupUnavailable(KernelRefused):
+    """No cell was dispatched; the governed isolated per-call path is safe."""
+
+
+class KernelTeardownUnconfirmed(KernelRefused):
+    """Keep an unresolved startup handle visible until removal is confirmed."""
+    def __init__(self, handle, *, cancelled=False):
+        super().__init__(TEARDOWN_UNCONFIRMED)
+        self.handle = handle
+        self.cancelled = cancelled
+
+
 WORKER_SOURCE = r'''
 import contextlib, io, json, os, sys, time, traceback
 
 # The reply token arrives over stdin as the first line, never in the environment: an
 # env var is readable from `docker inspect` and from /proc/1/environ, and this one is
-# the only thing stopping a cell from forging a result. The cell never sees stdin.
+# correlation marker for framed output. It is not a boundary against worker introspection.
 _INIT = json.loads(sys.stdin.readline() or "{}")
 REPLY = str(_INIT.get("token") or "")
 CAP = int(_INIT.get("max_output") or 50000)
@@ -127,12 +141,13 @@ NS = {"__name__": "__main__", "__builtins__": __builtins__}
 CELL = {"dir": "", "calls": 0, "max_calls": 0}
 # Hold the real stdout aside before anything can rebind it, and use it only for
 # framed replies. The cell never gets a handle to it.
+CELL_ID = ""
 CHANNEL = sys.stdout
-sys.stdout = io.StringIO()
+sys.stdout = open(os.devnull, "w")
 
 
 def reply(payload):
-    body = json.dumps(payload, ensure_ascii=False)
+    body = json.dumps({**payload, "cell_id": CELL_ID}, ensure_ascii=False)
     CHANNEL.write("%s %d\n%s" % (REPLY, len(body.encode("utf-8")), body))
     CHANNEL.flush()
 
@@ -181,39 +196,31 @@ def jarvis_tool_call(tool, args=None):
 NS["jarvis_tool_call"] = jarvis_tool_call
 
 
-def _bounded(text, label):
-    # Keep both ends and say what went. The old `text[-CAP:]` kept only the tail and
-    # said nothing, so a cell that printed a lot came back looking like a cell that
-    # printed a little — the head, where a script says what it is doing, gone with no
-    # marker at all. The notice wording matches the host's, so the host's line cap
-    # recognises it as an earlier layer's record and never elides it.
-    if len(text) <= CAP:
-        return text
-    head = CAP // 2
-    omitted = len(text) - CAP
-    return (text[:head]
-            + "\n\n... [%s TRUNCATED - %d chars omitted out of %d total] ...\n\n" % (
-                label, omitted, len(text))
-            + text[len(text) - (CAP - head):])
+class CellStream:
+    def __init__(self, label):
+        self.label = label
+    def write(self, text):
+        # Never hold a second full copy of a large write. Each frame is bounded,
+        # and transport backpressure bounds queued output on both sides.
+        for start in range(0, len(text), 4096):
+            reply({"stream": self.label, "text": text[start:start + 4096]})
+        return len(text)
+    def flush(self):
+        pass
 
 
 def run(source):
-    out, err = io.StringIO(), io.StringIO()
-    failed = ""
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    failed = False
+    with contextlib.redirect_stdout(CellStream("stdout")), contextlib.redirect_stderr(CellStream("stderr")):
+        try:
             exec(compile(source, "<cell>", "exec"), NS)
-    except BaseException:
-        # A cell that raises must not take the kernel with it: the state a caller
-        # built over ten cells is worth more than the eleventh cell's traceback.
-        # SystemExit included — `sys.exit()` in a cell ends the cell, not the kernel.
-        failed = traceback.format_exc()
-    return {
-        "stdout": _bounded(out.getvalue(), "STDOUT"),
-        "stderr": _bounded(err.getvalue() + failed, "STDERR"),
-        "failed": bool(failed),
-    }
+        except BaseException:
+            failed = True
+            traceback.print_exc()
+    return {"failed": failed}
 
+
+reply({"ready": True})
 
 for line in sys.stdin:
     line = line.strip()
@@ -226,6 +233,7 @@ for line in sys.stdin:
         continue
     if request.get("op") == "close":
         break
+    CELL_ID = str(request.get("cell_id") or "")
     CELL["dir"] = str(request.get("rpc_dir") or "")
     CELL["calls"] = 0
     CELL["max_calls"] = int(request.get("max_calls") or 0)
@@ -290,6 +298,7 @@ class CellOutcome:
     cells_run: int = 0
     tool_calls: int = 0
     reason: str = ""
+    fallback_safe: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -311,6 +320,8 @@ class _Record:
     last_used: float = 0.0
     cells_run: int = 0
     pending_loss: str = ""
+    quarantined: bool = False
+    teardown_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class PipeKernelBackend:
@@ -370,7 +381,15 @@ class PipeKernelBackend:
             with contextlib.suppress(Exception):
                 process.kill()
             raise KernelRefused(KERNEL_UNAVAILABLE) from None
-        return _Handle(process=process, token=token, child_rpc_dir=child_rpc_dir)
+        handle = _Handle(process=process, token=token, child_rpc_dir=child_rpc_dir)
+        try:
+            ready = await asyncio.wait_for(self._read_reply(process, token), 10)
+            if not ready.get("ready"):
+                raise KernelRefused(KERNEL_UNAVAILABLE)
+        except BaseException:
+            await self.stop(handle)
+            raise
+        return handle
 
     def _child_env(self) -> dict:
         """A frozen, minimal environment. Nothing of the host's is inherited.
@@ -394,31 +413,34 @@ class PipeKernelBackend:
         return handle is not None and handle.process.returncode is None
 
     async def run_cell(self, handle, cell: str, *, timeout: float,
-                       rpc_dir: str = "", max_tool_calls: int = 0) -> dict:
+                       rpc_dir: str = "", max_tool_calls: int = 0, sinks=None) -> dict:
         process = handle.process
         if process.returncode is not None:
             raise KernelRefused(CRASHED)
+        cell_id = secrets.token_hex(16)
         envelope = json.dumps(
-            {"cell": cell, "rpc_dir": rpc_dir, "max_calls": int(max_tool_calls)},
+            {"cell": cell, "cell_id": cell_id, "rpc_dir": rpc_dir, "max_calls": int(max_tool_calls)},
             ensure_ascii=False,
         ) + "\n"
         try:
             process.stdin.write(envelope.encode("utf-8"))
             await process.stdin.drain()
             return await asyncio.wait_for(
-                self._read_reply(process, handle.token), timeout=max(0.1, float(timeout)))
+                self._read_reply(process, handle.token, sinks=sinks, cell_id=cell_id), timeout=max(0.1, float(timeout)))
         except TimeoutError:
             raise KernelRefused(TIMED_OUT) from None
-        except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+        except (BrokenPipeError, ConnectionResetError, OSError, ValueError, asyncio.IncompleteReadError):
             raise KernelRefused(CRASHED) from None
 
-    async def _read_reply(self, process, token: str) -> dict:
+    async def _read_reply(self, process, token: str, *, sinks=None, cell_id="") -> dict:
         """Read one framed reply, ignoring anything that is not ours.
 
         The worker redirects the cell's streams, so a cell should never reach this
         channel at all. Skipping unframed lines rather than failing on them means a
         cell that finds a way to write one is noise, not a forged result.
         """
+        captures = {label: _Capture(self._max_output_bytes, label, getattr(sinks, label, None))
+                    for label in ("stdout", "stderr")}
         prefix = f"{token} ".encode()
         while True:
             header = await process.stdout.readline()
@@ -439,7 +461,21 @@ class PipeKernelBackend:
                 raise KernelRefused(CRASHED) from None
             if not isinstance(payload, dict):
                 raise KernelRefused(CRASHED)
-            return payload
+            if payload.get("cell_id") != cell_id:
+                raise KernelRefused(CRASHED)
+            if "stream" in payload:
+                label, text = payload.get("stream"), payload.get("text")
+                if not isinstance(label, str) or label not in captures or not isinstance(text, str) or len(text) > 4096:
+                    raise KernelRefused(CRASHED)
+                captures[label].write(text.encode("utf-8"))
+                continue
+            ready = not cell_id and payload.get("ready") is True
+            if not ready and (type(payload.get("ok")) is not bool
+                              or type(payload.get("failed", False)) is not bool
+                              or type(payload.get("tool_calls", 0)) is not int
+                              or payload.get("tool_calls", 0) < 0):
+                raise KernelRefused(CRASHED)
+            return {**payload, **{label: capture.text() for label, capture in captures.items()}}
 
     async def stop(self, handle) -> None:
         process = getattr(handle, "process", None)
@@ -457,6 +493,25 @@ class PipeKernelBackend:
                 process.kill()
             with contextlib.suppress(Exception):
                 await process.wait()
+
+
+class _Capture:
+    """Bounded preview plus an optional full-stream writer."""
+    def __init__(self, cap, label, sink=None):
+        self.cap, self.label, self.sink = cap, label, sink
+        self.head, self.tail, self.total = b"", b"", 0
+
+    def write(self, raw):
+        self.total += len(raw)
+        if self.sink is not None:
+            self.sink(raw)
+        take = max(0, self.cap // 2 - len(self.head))
+        self.head += raw[:take]
+        self.tail = (self.tail + raw[take:])[-(self.cap - self.cap // 2):]
+
+    def text(self):
+        return render_capped(self.head, self.tail, self.total,
+                            max_content_bytes=self.cap, label=self.label.upper()).text
 
 
 @dataclass(slots=True)
@@ -536,7 +591,7 @@ class SessionKernelManager:
 
     async def run(self, invocation, cell: str, *,
                   authorize: Callable[[str], None] | None = None,
-                  broker=None) -> CellOutcome:
+                  broker=None, sinks=None) -> CellOutcome:
         """Run one cell in this invocation's kernel, re-earning the right first.
 
         ``invocation`` is a *fresh* K0 binding for this cell, not the one that started
@@ -549,8 +604,8 @@ class SessionKernelManager:
         if len(cell) > MAX_CELL_CHARS:
             return CellOutcome(ok=False, reason=CELL_TOO_LONG)
         if self._stopped():
-            # Engaged means gone, not paused: leaving interpreters alive to resume
-            # would make the stop a suggestion.
+            # Revoke dispatch immediately and attempt teardown. An unconfirmed
+            # removal remains visible and quarantined; it must never be reused.
             await self.shutdown(STOPPED)
             return CellOutcome(ok=False, reason=ESTOP_ENGAGED)
         if self._expired(invocation):
@@ -577,36 +632,56 @@ class SessionKernelManager:
                 # A backend that cannot start one, or a pool with nothing free to
                 # evict. The caller gets a named refusal: raising out of a tool
                 # handler would reach the model as a generic `tool_error` instead.
-                return CellOutcome(ok=False, reason=refusal.reason)
+                current = self.dispatch_refusal(invocation)
+                if current:
+                    if current == ESTOP_ENGAGED:
+                        await self.shutdown(STOPPED)
+                    return CellOutcome(ok=False, reason=current)
+                return CellOutcome(ok=False, reason=refusal.reason,
+                                   fallback_safe=isinstance(refusal, KernelStartupUnavailable),
+                                   state_lost=key in self._expiries,
+                                   continuity=self._expiries.get(key, ""))
             async with record.lock:
                 if self._stopped():
                     await self.shutdown(STOPPED)
                     return CellOutcome(ok=False, reason=ESTOP_ENGAGED)
+                if self._expired(invocation):
+                    await self._drop(key, EXPIRED)
+                    return CellOutcome(ok=False, reason=AUTHORITY_EXPIRED)
+                if record.quarantined:
+                    return CellOutcome(ok=False, reason=TEARDOWN_UNCONFIRMED)
                 if self._records.get(key) is not record or not self._backend.alive(record.handle):
                     continue
-                return await self._cell(key, record, cell, broker)
+                return await self._cell(key, record, cell, broker, sinks)
         return CellOutcome(ok=False, reason=KERNEL_UNAVAILABLE)
 
     async def _cell(self, key: KernelKey, record: _Record, cell: str,
-                    broker=None) -> CellOutcome:
+                    broker=None, sinks=None) -> CellOutcome:
         """Run one cell on a record whose lock this call holds."""
         continuity, record.pending_loss = record.pending_loss or CONTINUED, ""
         mailbox, child_mailbox = self._cell_mailbox(record, broker)
         try:
             payload = await self._run_serviced(
-                record, cell, mailbox, child_mailbox, broker)
+                record, cell, mailbox, child_mailbox, broker, sinks)
+        except OSError:
+            await self._drop(key, CRASHED, expected=record)
+            return self._failed_cell(key, CRASHED, record)
+        except asyncio.CancelledError:
+            await self._drop(key, STOPPED, expected=record)
+            raise
         except KernelRefused as refusal:
             # A timeout or a crash takes the whole interpreter down. The next cell is
             # told what it lost rather than quietly being handed a new one.
-            await self._drop(key, refusal.reason)
-            return CellOutcome(ok=False, reason=refusal.reason, state_lost=True,
-                               continuity=refusal.reason, kernel_token=key.token)
+            if refusal.reason == STOPPED:
+                await self.shutdown(STOPPED)
+            else:
+                await self._drop(key, refusal.reason, expected=record)
+            return self._failed_cell(key, refusal.reason, record)
         record.cells_run += 1
         record.last_used = self._clock()
         if not payload.get("ok"):
-            await self._drop(key, CRASHED)
-            return CellOutcome(ok=False, reason=str(payload.get("reason") or CRASHED),
-                               state_lost=True, continuity=CRASHED, kernel_token=key.token)
+            await self._drop(key, CRASHED, expected=record)
+            return self._failed_cell(key, CRASHED, record)
         return CellOutcome(
             ok=not payload.get("failed"),
             stdout=str(payload.get("stdout") or ""),
@@ -616,6 +691,14 @@ class SessionKernelManager:
             kernel_token=key.token, cells_run=record.cells_run,
             tool_calls=int(payload.get("tool_calls") or 0),
         )
+
+    def _failed_cell(self, key, reason, record):
+        unresolved = self._records.get(key) is record and record.quarantined
+        return CellOutcome(ok=False,
+                           reason=TEARDOWN_UNCONFIRMED if unresolved else reason,
+                           state_lost=not unresolved,
+                           continuity=TEARDOWN_UNCONFIRMED if unresolved else reason,
+                           kernel_token=key.token)
 
     # ── the per-cell mailbox ─────────────────────────────────────────────────
 
@@ -629,89 +712,139 @@ class SessionKernelManager:
         root = getattr(record.handle, "child_rpc_dir", "")
         if broker is None or self._rpc_root is None or not root:
             return None, ""
-        name = f"cell-{record.cells_run + 1:06d}"
+        name = f"cell-{secrets.token_hex(16)}"
         mailbox = self._rpc_root / record.key.token / name
         try:
-            mailbox.mkdir(parents=True, exist_ok=True)
+            mailbox.mkdir(parents=True, exist_ok=False)
         except OSError:
             logger.warning("session kernel mailbox unavailable", exc_info=True)
             return None, ""
         return mailbox, f"{root}/{name}"
 
     async def _run_serviced(self, record: _Record, cell: str, mailbox: Path | None,
-                            child_mailbox: str, broker) -> dict:
+                            child_mailbox: str, broker, sinks=None) -> dict:
         """Run the cell, answering its tool calls while it runs."""
-        if mailbox is None:
-            return await self._backend.run_cell(
-                record.handle, cell, timeout=self._cell_timeout)
-        store = FileRPCStore(mailbox, max_tool_calls=self._max_tool_calls)
+        store = SessionRPCStore(mailbox, max_tool_calls=self._max_tool_calls) if mailbox else None
         task = asyncio.ensure_future(self._backend.run_cell(
             record.handle, cell, timeout=self._cell_timeout,
-            rpc_dir=child_mailbox, max_tool_calls=self._max_tool_calls))
+            rpc_dir=child_mailbox, max_tool_calls=self._max_tool_calls if store else 0,
+            **({"sinks": sinks} if sinks else {})))
         served: set[int] = set()
+        active = True
+        service = None
+        deadline = asyncio.get_running_loop().time() + self._cell_timeout
         try:
             while not task.done():
-                await self._service(store, served, broker)
+                if self._stopped():
+                    raise KernelRefused(STOPPED)
+                if record.quarantined or self._records.get(record.key) is not record:
+                    raise KernelRefused(CRASHED)
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise KernelRefused(TIMED_OUT)
+                if service is not None and service.done():
+                    await service
+                    service = None
+                if store is not None and service is None:
+                    service = asyncio.create_task(self._service(
+                        store, served, broker, active=lambda: active and not record.quarantined))
                 await asyncio.sleep(self._poll_interval)
-            await self._service(store, served, broker)
+            if record.quarantined or self._records.get(record.key) is not record:
+                raise KernelRefused(CRASHED)
             return await task
         finally:
-            if not task.done():
-                task.cancel()
-            with contextlib.suppress(Exception):
-                shutil.rmtree(mailbox)
+            active = False
+            pending = [item for item in (task, service) if item is not None]
+            for item in pending:
+                if not item.done():
+                    item.cancel()
+            # A tool that suppresses cancellation cannot hold the kernel hostage.
+            # Its eventual response is fenced by active=False before touching I/O.
+            if pending:
+                done, waiting = await asyncio.wait(pending, timeout=.1)
+                for item in done:
+                    self._consume_task(item)
+                for item in waiting:
+                    item.add_done_callback(self._consume_task)
+            if store is not None:
+                store.close()
+            if mailbox is not None:
+                with contextlib.suppress(Exception):
+                    shutil.rmtree(mailbox)
 
-    async def _service(self, store: FileRPCStore, served: set[int], broker) -> None:
+    @staticmethod
+    def _consume_task(task):
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            task.result()
+
+    async def _service(self, store: SessionRPCStore, served: set[int], broker,
+                       *, active=lambda: True) -> None:
         limit = max(64, self._max_tool_calls * 2)
         for request in store.pending_requests(limit=limit):
+            if not active():
+                return
             if request.seq in served:
                 self._consume(store, request.seq)
                 continue
             served.add(request.seq)
             if len(served) > self._max_tool_calls:
-                store.write_response(request.seq, {
-                    "ok": False, "reason": "tool_call_limit_exceeded",
-                    "tool": request.tool})
+                response = {"ok": False, "reason": "tool_call_limit_exceeded",
+                            "tool": request.tool}
             else:
-                store.write_response(request.seq, await broker.call(request.tool, request.args))
+                response = await broker.call(request.tool, request.args)
+            if not active():
+                return
+            store.write_response(request.seq, response)
             self._consume(store, request.seq)
 
     @staticmethod
-    def _consume(store: FileRPCStore, seq: int) -> None:
-        with contextlib.suppress(OSError):
-            store.request_path(seq).unlink(missing_ok=True)
+    def _consume(store: SessionRPCStore, seq: int) -> None:
+        store.consume(seq)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
     async def reset(self, invocation) -> bool:
-        """Destroy this session's kernel. The next cell is told it started over."""
+        """Confirm destruction; on failure retain a quarantined row for retry."""
         return await self._drop(KernelKey.from_invocation(invocation), RESET)
 
     async def close_session(self, session_id: str) -> int:
         keys = [key for key in list(self._records) if key.session_id == str(session_id)]
+        destroyed = 0
         for key in keys:
-            await self._drop(key, STOPPED)
-        return len(keys)
+            destroyed += bool(await self._drop(key, STOPPED))
+        return destroyed
 
     async def shutdown(self, reason: str = STOPPED) -> int:
         keys = list(self._records)
+        destroyed = 0
         for key in keys:
-            await self._drop(key, reason)
-        return len(keys)
+            destroyed += bool(await self._drop(key, reason))
+        return destroyed
 
     def status(self) -> list[dict]:
-        """An owner-readable projection. Keys and counters, never a cell or a value."""
+        """Owner projection; quarantined liveness is unknown, never falsely gone."""
         now = self._clock()
         return sorted(
             ({**key.as_dict(), "cells_run": record.cells_run,
               "idle_seconds": round(max(0.0, now - record.last_used), 3),
-              "alive": self._backend.alive(record.handle),
+              "alive": None if record.quarantined else self._backend.alive(record.handle),
+              **({"quarantined": True, "reason": TEARDOWN_UNCONFIRMED} if record.quarantined else {}),
               "backend": getattr(self._backend, "name", "unknown")}
              for key, record in self._records.items()),
             key=lambda row: row["token"],
         )
 
     # ── internals ────────────────────────────────────────────────────────────
+
+    def dispatch_refusal(self, invocation):
+        """Current synchronous gate, also checked inside one-shot fallback dispatch."""
+        if self._stopped():
+            return ESTOP_ENGAGED
+        if self._expired(invocation):
+            return AUTHORITY_EXPIRED
+        record = self._records.get(KernelKey.from_invocation(invocation))
+        if record is not None and record.quarantined:
+            return TEARDOWN_UNCONFIRMED
+        return ""
 
     def _stopped(self) -> bool:
         if self._estop is None:
@@ -731,16 +864,33 @@ class SessionKernelManager:
         async with self._guard:
             await self._reap()
             record = self._records.get(key)
+            if record is not None and record.quarantined:
+                raise KernelRefused(TEARDOWN_UNCONFIRMED)
+            if record is not None and hasattr(self._backend, "probe"):
+                await self._backend.probe(record.handle)
             if record is not None and self._backend.alive(record.handle):
                 if lost:
                     record.pending_loss = lost
                 return record
             if record is not None:
-                await self._stop_record(key, record)
                 lost = lost or CRASHED
+                if not await self._drop(key, lost):
+                    raise KernelRefused(TEARDOWN_UNCONFIRMED)
             while len(self._records) >= self._max_kernels:
                 await self._evict()
-            handle = await self._backend.start(key, **self._mount(key))
+            try:
+                handle = await self._backend.start(key, **self._mount(key))
+            except KernelTeardownUnconfirmed as refusal:
+                now = self._clock()
+                self._records[key] = _Record(key=key, handle=refusal.handle,
+                    created_at=now, last_used=now, quarantined=True)
+                if refusal.cancelled:
+                    raise asyncio.CancelledError from None
+                raise
+            except KernelRefused as refusal:
+                if refusal.reason == KERNEL_UNAVAILABLE:
+                    raise KernelStartupUnavailable(KERNEL_UNAVAILABLE) from None
+                raise
             now = self._clock()
             record = _Record(key=key, handle=handle, created_at=now, last_used=now,
                              pending_loss=lost or self._expiries.pop(key, "") or NEW_KERNEL)
@@ -762,34 +912,39 @@ class SessionKernelManager:
     async def _reap(self) -> None:
         cutoff = self._clock() - self._idle_ttl
         for key, record in list(self._records.items()):
-            if record.last_used < cutoff and not record.lock.locked():
-                await self._stop_record(key, record)
-                self._records.pop(key, None)
-                self._remember(key, EXPIRED)
+            if record.last_used < cutoff and not record.lock.locked() and not record.quarantined:
+                await self._drop(key, EXPIRED)
 
     async def _evict(self) -> None:
         idle = [(record.last_used, key) for key, record in self._records.items()
-                if not record.lock.locked()]
+                if not record.lock.locked() and not record.quarantined]
         if not idle:
             # Every kernel is mid-cell. Refusing is better than killing a running
             # cell to make room for a new one.
             raise KernelRefused(KERNEL_UNAVAILABLE)
         _, key = min(idle)
-        record = self._records.pop(key)
-        await self._stop_record(key, record)
-        self._remember(key, EVICTED)
+        if not await self._drop(key, EVICTED):
+            raise KernelRefused(TEARDOWN_UNCONFIRMED)
 
-    async def _drop(self, key: KernelKey, reason: str) -> bool:
-        record = self._records.pop(key, None)
-        self._remember(key, reason)
-        if record is None:
+    async def _drop(self, key: KernelKey, reason: str, *, expected=None) -> bool:
+        record = self._records.get(key)
+        if expected is not None and record is not expected:
             return False
-        await self._stop_record(key, record)
-        return True
-
-    async def _stop_record(self, key: KernelKey, record: _Record) -> None:
-        with contextlib.suppress(Exception):
-            await self._backend.stop(record.handle)
+        if record is None:
+            self._remember(key, reason)
+            return False
+        record.quarantined = True
+        async with record.teardown_lock:
+            if self._records.get(key) is not record:
+                return True
+            try:
+                await self._backend.stop(record.handle)
+            except Exception:
+                logger.warning("session kernel teardown unconfirmed")
+                return False
+            self._records.pop(key, None)
+            self._remember(key, reason)
+            return True
 
     def _remember(self, key: KernelKey, reason: str) -> None:
         """Keep the loss reason for the next cell, without growing without bound."""

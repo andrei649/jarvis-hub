@@ -89,3 +89,16 @@ describe('SandboxPanel session kernels (K3)', () => {
     expect(screen.queryByText(/nothing to reset/i)).toBeNull();
   });
 });
+
+it('shows quarantined teardown as unconfirmed and allows reset retry', async () => {
+  stub({ ...SESSION, reason: 'teardown_unconfirmed', kernel: { ...KERNEL,
+    alive: null, quarantined: true, reason: 'teardown_unconfirmed' } },
+  () => response({ reset: false, mode: 'session', reason: 'teardown_unconfirmed' }));
+  render(<SandboxPanel />);
+  await waitFor(() => expect(screen.getByText(/teardown unconfirmed/i)).toBeTruthy());
+  expect(screen.queryByText('gone')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /reset kernel/i }));
+  await waitFor(() => expect(screen.getByText(/reset UNCONFIRMED/i)).toBeTruthy());
+  expect(screen.getByText(/retry reset/i)).toBeTruthy();
+  expect(screen.queryByText(/nothing to reset/i)).toBeNull();
+});

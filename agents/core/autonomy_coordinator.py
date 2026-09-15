@@ -885,17 +885,12 @@ class AutonomyCoordinator:
             return None
         from .estop import is_engaged
         from .paths import data_path
-        from .session_kernels import (
-            PipeKernelBackend,
-            SessionKernelManager,
-            docker_kernel_argv,
-        )
+        from .session_kernels import SessionKernelManager
+        from .detached_kernel import DetachedDockerBackend
 
         sandbox = getattr(self._orch, "sandbox", None)
-        backend = PipeKernelBackend(
-            docker_kernel_argv(image),
-            name="docker",
-            child_root=CHILD_RPC_ROOT,
+        backend = DetachedDockerBackend(
+            image,
             available=lambda: getattr(sandbox, "active_backend", lambda: "")() == "docker",
         )
         return SessionKernelManager(

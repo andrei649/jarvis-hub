@@ -6,6 +6,13 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H660 (2026-09-15): session kernels now use detached Docker internally. Existing
+sandbox status/reset controls remain the operator surface; backend status labels
+identify `docker-detached`. Complete Python cell streams use existing tool-result
+file references. Failed teardown stays visible as unconfirmed; reset can be retried
+without claiming the worker is gone. SSH/Modal provisioning and actual
+Docker-lane evidence remain open; local protocol tests are not isolation proof.
+
 ## 0. Do this first
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
