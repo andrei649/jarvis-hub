@@ -95,6 +95,7 @@ def test_static_mount_serves_actual_asset_after_proxy_strips_prefix(prefixed):
 @pytest.mark.asyncio
 async def test_route_scope_adaptation_does_not_mutate_outer_policy_scope():
     from types import SimpleNamespace
+
     from agents.core.web_base_path import RootPathRoutingMiddleware
     received = []
     async def inner(scope, receive, send):

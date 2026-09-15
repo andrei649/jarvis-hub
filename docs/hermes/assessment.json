@@ -3673,11 +3673,11 @@
         },
         {
           "path": "agents/core/routers/swarm.py",
-          "sha256": "0aca533437153d94a9d37c5ca9e54edd3c15016d910fd57858dabf4c597538ef"
+          "sha256": "8807ca397d093ce521c9f3b1115699a60a63c3e7f54b3f2f2c06987916c28ef0"
         },
         {
           "path": "agents/core/routers/system_map.py",
-          "sha256": "183ceb862cee15e366d413b10a0088ccd80d2e70168ae512b148040d4363ace7"
+          "sha256": "a4f29f5bbe855ae1f86770974ca29b2f1715af999d5c8e7be18c9cab6c4c38d0"
         },
         {
           "path": "agents/web/mission_control.html",
@@ -3729,7 +3729,7 @@
         },
         {
           "path": "tests/test_web_base_path.py",
-          "sha256": "fc4dec43cea30f2002214fd06a8c80d0e6a5a87cb37c5921a6d8fd5399428c9f"
+          "sha256": "241bcc2168595b48b9353d4640cf6ed713bf44f4d0f96e0a8d4c2b12d30fb6e5"
         },
         {
           "path": "tests/test_web_asset_manifest_integrity.py",
@@ -3741,7 +3741,7 @@
         },
         {
           "path": "frontend/e2e/support/base_path_server.py",
-          "sha256": "4d2902cc6d20c2ffd2ddc2fe41ab721721086ff1ee59e8dc49dd7e2841cc058a"
+          "sha256": "4beb22d330c1dc7e235ed4e1b0e8d7b993155d7542e7adad473e7ae3619e0097"
         },
         {
           "path": "frontend/docs/h130-base-path.md",

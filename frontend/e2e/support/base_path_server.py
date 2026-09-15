@@ -10,11 +10,11 @@ from __future__ import annotations
 import copy
 import http.client
 import os
-from pathlib import Path
 import sys
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT), str(ROOT / 'agents')]
@@ -24,9 +24,10 @@ os.environ['JARVIS_USER_HOME'] = TEST_HOME.name
 os.environ['JARVIS_ROOT_PATH'] = '/one'
 os.environ['JARVIS_USER_TOKEN'] = 'h130-isolated-test-token'
 
-from agents import web
-from starlette.responses import JSONResponse, StreamingResponse
 import uvicorn
+from starlette.responses import JSONResponse, StreamingResponse
+
+from agents import web
 
 assert web.app.root_path == '/one', 'process configuration must configure the real app'
 
@@ -101,6 +102,7 @@ server = uvicorn.Server(uvicorn.Config(isolated, host='127.0.0.1', port=PORT + 1
 thread = threading.Thread(target=server.run, daemon=True)
 thread.start()
 import time
+
 while not server.started:
     time.sleep(.02)
 ThreadingHTTPServer(('127.0.0.1', PORT), Proxy).serve_forever()

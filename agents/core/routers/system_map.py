@@ -24,14 +24,14 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag
 from agents.core.routers._deps import user_guard
 from agents.core.system_map import load_topology
-from agents.core.web_helpers import nocache_json
 from agents.core.web_base_path import render_ui_html
+from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["system-map"])
 
