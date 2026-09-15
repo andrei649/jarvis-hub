@@ -27,8 +27,8 @@ from .session_kernels import (
     docker_kernel_argv,
 )
 
-# nosec B108 — private size-limited container tmpfs; never a host path.
-MAILBOX_ROOT = '/tmp/nerva-kernel'  # noqa: S108
+# Private size-limited container tmpfs; never a host path.
+MAILBOX_ROOT = '/tmp/nerva-kernel'  # noqa: S108  # nosec B108
 MAX_PACKET = 262144
 
 # Shared by the worker and the fixed exec helpers. Refuse links, non-regular files

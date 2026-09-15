@@ -3070,7 +3070,7 @@
         },
         {
           "path": "agents/core/detached_kernel.py",
-          "sha256": "c386051a23f2d41dd61be2d73c0050aa958d7f7721233cedeb26ee61aad4abe5"
+          "sha256": "12719a75c1b78493cd8c4f371fa6404437869d2a187db4f23a8f45fca7ca57e2"
         },
         {
           "path": "agents/core/session_kernel_mailbox.py",
