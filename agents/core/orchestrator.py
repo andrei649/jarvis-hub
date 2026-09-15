@@ -2785,8 +2785,8 @@ class Orchestrator:
     def _usage_anchor(self, turn_count: int):
         """The provider's own size for the last request, if one reported (H673).
 
-        Returns ``None`` when nothing measured this session's traffic — every
-        local backend, and the first turn of any session — so the estimator stays
+        Returns ``None`` when nothing measured this session's traffic — an
+        unreported request or the first turn of a session — so the estimator stays
         the fallback rather than becoming a deprecated path.
 
         The strongest anchor wins when several agents answered: they were each
