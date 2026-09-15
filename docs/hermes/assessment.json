@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f57dc4f393706d355787055d8e54630ab85f1bbf",
-  "assessed_at": "2026-09-15T12:13:57.771155Z",
+  "base_sha": "a65f44750d27ab4ec3ac1516f83011610ca34146",
+  "assessed_at": "2026-09-15T12:28:29.239648Z",
   "reviews": [
     {
       "id": "H001",
@@ -33,17 +33,29 @@
     {
       "id": "H004",
       "row_sha256": "81b6bfbfc65b2f2f591c6d659d1189946a76f76c5d1a47ff6aa88bbb8887cf8a",
-      "status": "partial",
-      "summary": "Completarea este generată din parser pentru bash și zsh.",
-      "remaining": "Lipsește fish, cerut explicit de rândul din inventar.",
+      "status": "equivalent",
+      "summary": "Bash, zsh și fish primesc completări de comenzi/subcomenzi generate din arborele argparse instalat. Fish parcurge recursiv subparser-ele și tratează literal metadatele, fără apeluri către hub sau executarea CLI-ului la completare. Teste cu fish real acoperă fiecare cale curentă, extensii imbricate, prefixe parțiale, comenzi terminale și substituții ostile; Bash/Zsh rămân identice cu baza. Contractul H004 privește arborele de comenzi, nu completarea opțiunilor ori valorilor argumentelor. Scripturile salvate se regenerează după upgrade.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "34a97ae2767fcd97808fe295ec9acb77c835eea9f25c449accf93f28cc5ab449"
+        },
+        {
+          "path": "tests/test_cli_fish_completion.py",
+          "sha256": "408c6c83a019c6ef7b570de82cc58ea3f2cb31c923e8640a5aab0a171ed616b4"
+        },
+        {
+          "path": "docs/cli-completion.md",
+          "sha256": "490740d0b842a90f705b5b30ea885952b9db9cf480c98a7b35f8403d5ebf6b15"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-cli-fish.md",
+          "sha256": "6181bf6aa282c7cdb0fbfaa4d5f405b1b12677b96c52c360df2c11188ed825ee"
         }
       ]
     },
@@ -841,7 +853,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43763f528e0d74e66480706fa7e3e00f7d7aa08cdd932e505669230a69990278"
+          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2053,7 +2065,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43763f528e0d74e66480706fa7e3e00f7d7aa08cdd932e505669230a69990278"
+          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -3534,7 +3546,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "43763f528e0d74e66480706fa7e3e00f7d7aa08cdd932e505669230a69990278"
+          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
         },
         {
           "path": "tests/test_jobs_doctor.py",
