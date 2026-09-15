@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 H363 Claude prefix caching: ordinary text/stream requests now mark nonempty system text using the existing ephemeral helper. Empty systems, auth retry bodies, reasoning and usage semantics stay unchanged. Twelve new mocked-HTTP regressions pass; H363 remains partial for the named Responses transport, and H364 still lacks invocation-only reasoning authoring and named provider paths.
+
 - 2026-09-15 H515 residency foundation: strict controller acknowledgments prevent false load/unload accounting; active references no longer manufacture residency. Independent 91-case review verifies default-off and best-effort generation. H515 remains partial: provider identity, request leases, ComfyUI reconciliation and actual VRAM swapping are not delivered. See [scoped plan](docs/superpowers/plans/2026-09-15-residency-ack.md).
 
 - 2026-09-15 H515 cloud tool: explicit model-callable cloud generation reuses the existing single signed paid approval task; local editing stays default. Trusted actor/origin, strict options, agent-loop stop and cancellation/restart no-replay are verified with mocked transport. H515 remains partial for real VRAM swap orchestration and frozen action-kind mapping.
