@@ -1,3 +1,4 @@
+import { internalLink } from './base-path';
 /* HUD v2 · P4c — the net-new gap surfaces from the §5b/§5c audit, hosted in a
    Console overlay (mirrors v1 tools.js). Each panel fetches its real endpoint and
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
@@ -1334,7 +1335,7 @@ export function SwarmPanel() {
             </span>
           </Row>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <a className="tool-btn" href="/mission-control" target="_blank" rel="noopener noreferrer">open full cockpit →</a>
+            <a className="tool-btn" href={internalLink("/mission-control")} target="_blank" rel="noopener noreferrer">open full cockpit →</a>
           </div>
         </>
       )}
@@ -1561,7 +1562,7 @@ export function SystemMapPanel() {
               return (
                 <g key={n.id} style={{ cursor: n.href ? 'pointer' : 'default' }}
                   opacity={info.status === 'off' ? 0.55 : 1}
-                  onClick={() => { if (n.href) window.open(n.href, '_blank', 'noopener'); }}>
+                  onClick={() => { if (n.href) window.open(internalLink(n.href), '_blank', 'noopener'); }}>
                   <title>{`${n.label} — ${info.status}\n${Object.entries(info.stats || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n')}`}</title>
                   <rect x={n.pos[0]} y={n.pos[1]} width={n.size[0]} height={n.size[1]} rx={6}
                     fill="var(--panel, rgba(255,255,255,0.03))" stroke={stroke} strokeWidth={1.6}
@@ -1576,7 +1577,7 @@ export function SystemMapPanel() {
           </svg>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
             <span style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>topology {topo.version} · unknown never renders green</span>
-            <a className="tool-btn" href="/map" target="_blank" rel="noopener noreferrer">open wall map →</a>
+            <a className="tool-btn" href={internalLink("/map")} target="_blank" rel="noopener noreferrer">open wall map →</a>
           </div>
         </>
       )}

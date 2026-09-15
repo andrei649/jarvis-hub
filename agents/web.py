@@ -531,7 +531,10 @@ async def lifespan(application: FastAPI):
 
 
 from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version
-app = FastAPI(title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
+from core.web_base_path import configured_root_path, render_ui_html, RootPathRoutingMiddleware
+
+app = FastAPI(root_path=configured_root_path(), title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
+app.add_middleware(RootPathRoutingMiddleware)
 
 # CORS (HF-2): same-origin only by default — with no header the browser blocks
 # cross-origin reads, which is what we want. Set
@@ -964,16 +967,22 @@ async def service_worker():
 
 @app.get("/manifest.webmanifest")
 @app.get("/v2/manifest.webmanifest")
-async def v2_manifest():
+async def v2_manifest(request: Request):
     path = HERE / "v2" / "manifest.webmanifest"
     if not path.is_file():
         return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
-    return FileResponse(str(path), media_type="application/manifest+json")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    prefix = request.app.root_path
+    manifest.update(start_url=prefix + "/", scope=prefix + "/")
+    for icon in manifest.get("icons", []):
+        if icon["src"].startswith("/"):
+            icon["src"] = prefix + icon["src"]
+    return JSONResponse(manifest, media_type="application/manifest+json", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/sw-v2.js")
 @app.get("/v2/sw-v2.js")
-async def v2_service_worker():
+async def v2_service_worker(request: Request):
     path = HERE / "v2" / "sw-v2.js"
     if not path.is_file():
         return JSONResponse({"error": "v2 bundle not built"}, status_code=404)
@@ -982,18 +991,18 @@ async def v2_service_worker():
         media_type="application/javascript",
         # Explicit root scope: the file is already at the root path, but the
         # header keeps the registration valid if it is ever moved under /v2/.
-        headers={"Service-Worker-Allowed": "/"},
+        headers={"Service-Worker-Allowed": request.app.root_path + "/", "Cache-Control": "no-cache"},
     )
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index(request: Request):
     # The V2 cockpit is the PRIMARY HUD (default). Set JARVIS_HUD=v1 for the legacy
     # HUD; v2 is always at /v2 and the legacy HUD always at /v1. Falls back to legacy
     # if the v2 bundle hasn't been built.
     if os.environ.get("JARVIS_HUD", "").lower() != "v1":
         v2_html = HERE / "v2" / "index.html"
         if v2_html.is_file():
-            return HTMLResponse(v2_html.read_text(encoding="utf-8"))
+            return HTMLResponse(render_ui_html(v2_html.read_text(encoding="utf-8"), request.app.root_path), headers={"Cache-Control": "no-store"})
     return HTMLResponse((HERE / "templates" / "index.html").read_text(encoding="utf-8"))
 
 
@@ -1004,7 +1013,7 @@ async def index_v1():
 
 @app.get("/v2", response_class=HTMLResponse)
 @app.get("/v2/{path:path}", response_class=HTMLResponse)
-async def hud_v2(path: str = ""):
+async def hud_v2(request: Request, path: str = ""):
     # SPA shell for the v2 HUD; client-side routing handles {path}. Static assets
     # are served by the /v2/assets mount above (registered first, so it wins).
     html = HERE / "v2" / "index.html"
@@ -1014,7 +1023,7 @@ async def hud_v2(path: str = ""):
             "&amp;&amp; npm run build</code> (outputs to agents/web/v2/).</p>",
             status_code=503,
         )
-    return HTMLResponse(html.read_text(encoding="utf-8"))
+    return HTMLResponse(render_ui_html(html.read_text(encoding="utf-8"), request.app.root_path), headers={"Cache-Control": "no-store"})
 
 
 

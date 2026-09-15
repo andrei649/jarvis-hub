@@ -20,7 +20,7 @@ const PROXY = [
 ];
 
 export default defineConfig({
-  base: '/v2/',
+  base: './',
   plugins: [react()],
   build: {
     outDir: fileURLToPath(new URL('../agents/web/v2', import.meta.url)),

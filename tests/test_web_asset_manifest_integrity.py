@@ -93,7 +93,7 @@ def test_the_hud_entry_point_is_wired_to_a_real_bundle():
     index = WEB_ROOT / "v2" / "index.html"
     references = REFERENCE.findall(index.read_text(encoding="utf-8"))
 
-    bundles = [r for r in references if r.startswith("/v2/assets/")]
+    bundles = [r for r in references if r.startswith(("/v2/assets/", "./assets/"))]
     assert any(r.endswith(".js") for r in bundles), "the HUD has no script bundle"
     assert any(r.endswith(".css") for r in bundles), "the HUD has no stylesheet"
     for reference in bundles:
@@ -112,7 +112,7 @@ def test_no_committed_bundle_is_orphaned():
         _resolve(page, reference)
         for page in _pages()
         for reference in REFERENCE.findall(page.read_text(encoding="utf-8"))
-        if reference.startswith("/v2/assets/")
+        if reference.startswith(("/v2/assets/", "./assets/"))
     ]
     reachable, missing = _bundle_graph(roots)
     assert not missing, f"missing imported bundles: {sorted(map(str, missing))}"
@@ -149,9 +149,11 @@ def _bundle_graph(roots: list[Path]) -> tuple[set[Path], set[Path]]:
         references = MODULE_REFERENCE.findall(source) if path.suffix == ".js" else CSS_REFERENCE.findall(source)
         targets = [_resolve(path, ref) for ref in references if ref.startswith((".", "/"))]
         if path.suffix == ".js":
-            # Vite preload maps are relative to the build root, unlike imports.
+            # Absolute-base builds use build-root maps; relative-base builds use
+            # importer-relative maps (resolved against import.meta.url by Vite).
             for dependency_map in VITE_DEPS.findall(source):
-                targets.extend(path.parent.parent / ref for ref in QUOTED_REFERENCE.findall(dependency_map))
+                targets.extend((path.parent if ref.startswith(".") else path.parent.parent) / ref
+                               for ref in QUOTED_REFERENCE.findall(dependency_map))
         pending.extend(target for target in targets if target is not None and target.suffix in (".js", ".css"))
     return seen, missing
 
@@ -181,3 +183,11 @@ def test_bundle_graph_follows_vite_preload_css(tmp_path):
     (assets / "lazy.css").write_text('@import "./nested.css";')
     _, missing = _bundle_graph([assets / "entry.js"])
     assert missing == {assets / "nested.css"}
+
+
+def test_bundle_graph_follows_relative_vite_preload_and_missing_css(tmp_path):
+    assets = tmp_path / 'assets'
+    assets.mkdir()
+    (assets / 'entry.js').write_text('const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./lazy.css"])))=>i.map(i=>d[i]);')
+    _, missing = _bundle_graph([assets / 'entry.js'])
+    assert missing == {assets / 'lazy.css'}

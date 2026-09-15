@@ -1,3 +1,4 @@
+import { internalLink } from './base-path';
 /* HUD v2 · ARTIFACTS — saved-response workspace over the governed Agent Canvas
    (H12.18 backend). The cockpit gets a third center tab that lists Canvas
    elements from GET /api/canvas and lets the owner pin/unpin/delete them, plus
@@ -107,7 +108,7 @@ function ImageRefBody({ payload, L }) {
   const [consented, setConsented] = useState(false);
   const src = cleanUrl(payload.src);
   const alt = String(payload.alt || payload.title || 'artifact image');
-  if (isSameOriginPath(src)) return <img className="art-img" src={src} alt={alt} loading="lazy" />;
+  if (isSameOriginPath(src)) return <img className="art-img" src={internalLink(src)} alt={alt} loading="lazy" />;
   if (!isRemoteHttp(src)) return <div className="art-plain">{src}</div>;  // inert (e.g. //host)
   if (!consented) {
     let host = ''; try { host = new URL(src).host; } catch { /* keep empty */ }
@@ -126,7 +127,7 @@ function LinkBody({ payload }) {
   if (!isSameOriginPath(url) && !isRemoteHttp(url)) {
     return <div className="art-plain">{label}{label !== url ? ` · ${url}` : ''}</div>;
   }
-  return <a className="art-link" href={url} target="_blank" rel="noopener noreferrer">{label} ↗</a>;
+  return <a className="art-link" href={internalLink(url)} target="_blank" rel="noopener noreferrer">{label} ↗</a>;
 }
 
 function ArtifactBody({ el, L }) {

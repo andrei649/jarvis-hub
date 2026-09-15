@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "a65f44750d27ab4ec3ac1516f83011610ca34146",
-  "assessed_at": "2026-09-15T12:28:29.239648Z",
+  "base_sha": "f627bcf49f1b6962fb6716f199b077c07e3920f5",
+  "assessed_at": "2026-09-15T12:34:42.200001Z",
   "reviews": [
     {
       "id": "H001",
@@ -885,7 +885,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
+          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2097,7 +2097,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
+          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2304,7 +2304,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2345,7 +2345,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -2444,7 +2444,7 @@
         },
         {
           "path": "frontend/src/voice.ts",
-          "sha256": "cc13955b025e4b4d1110f44b3780e7ff45162c40bec6310ac97e02391f249116"
+          "sha256": "e1da9b196d135e483991433368a8ddc4f7cbf072a46f310d723a069176ab6ff9"
         },
         {
           "path": "tests/test_voice_hallucination.py",
@@ -2774,7 +2774,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3102,7 +3102,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -3583,7 +3583,7 @@
       "evidence": [
         {
           "path": "frontend/src/hud-routing.ts",
-          "sha256": "e67f95cd0ed5171c8285aeddaa653563fae9676a2a732d4b30813639ee292644"
+          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
         },
         {
           "path": "frontend/src/console-routes.ts",
@@ -3591,15 +3591,15 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "264eab526f24f814c987c62f328f539619e8756002f8ebbd05c667e96ccc6e2f"
+          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
         },
         {
           "path": "frontend/src/world_app.tsx",
-          "sha256": "dfadc0ef4d295ba4b7e5a95a7aa531c8098a9800f33e9709a1c2a93a5efadeb8"
+          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "5b99dbf1c50bddaeea9ea76cd78ab401b8373f7973938b3a63299e6cb113eef6"
+          "sha256": "9f09731bba607314f4ba3f85568c5a49ff5687caa0fdf1717db8920edce879cc"
         },
         {
           "path": "frontend/src/route-boundary.tsx",
@@ -3611,7 +3611,7 @@
         },
         {
           "path": "frontend/src/test/app-routing.test.tsx",
-          "sha256": "ce76ecd736895e42c546e214a2cf47a4f3e5d41835a22e2f9b2f152738215ac7"
+          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
         },
         {
           "path": "frontend/src/test/console-routing.test.tsx",
@@ -3653,6 +3653,99 @@
         {
           "path": "docs/automations-scripts.md",
           "sha256": "2dd6ac5b53ffd3e14995f36aa5ef24574df94e9b8f4b77adb00b6000ded2b8f9"
+        }
+      ]
+    },
+    {
+      "id": "H130",
+      "row_sha256": "12b92ce935449c13d67af9de6f1db53cf3be9b9cbe4c6e250a444388a96ddbbc",
+      "status": "equivalent",
+      "summary": "Același bundle SPA funcționează la rădăcină sau sub un JARVIS_ROOT_PATH validat, cu reverse proxy care elimină prefixul. Bootstrap-ul serverului, navigarea și istoricul, API/SSE/streaming, chunk-urile lazy, fonturile, manifestul și service worker-ul folosesc prefixul; cache-urile PWA sunt separate per prefix. Paginile /map și /mission-control legate din SPA sunt adaptate. Teste prin aplicația reală și proxy HTTP verifică reload, shortcut-uri, cache offline, auth pe POST și lipsa cererilor la rădăcina greșită; coliziunile /v2 și /api au regresii. Contractul este pentru browser cu proxy prefix-stripping: wrapper-ul nativ cere prefix gol, /v1 și proxy-urile care păstrează prefixul nu sunt incluse. Fixture-ul dezactivează lifespan/provider startup; nu se pretinde deployment sau probă cu provider live.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/web_base_path.py",
+          "sha256": "cebdbd01a6fa1a3617ccb6747dd0406442d95c653da409c3c996aa77bb703d0a"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "402d9e72f5e2008dedd1157680807a39a7cb1832b564987ce9c30d5e0f02aeb4"
+        },
+        {
+          "path": "agents/core/routers/swarm.py",
+          "sha256": "8807ca397d093ce521c9f3b1115699a60a63c3e7f54b3f2f2c06987916c28ef0"
+        },
+        {
+          "path": "agents/core/routers/system_map.py",
+          "sha256": "a4f29f5bbe855ae1f86770974ca29b2f1715af999d5c8e7be18c9cab6c4c38d0"
+        },
+        {
+          "path": "agents/web/mission_control.html",
+          "sha256": "d72ff833cca8b085149fa6c131627993f1e4b8ad055bc2b68db293caf07e6792"
+        },
+        {
+          "path": "agents/web/system_map.html",
+          "sha256": "1ea2c79644045803e6a0f20c5a702bb7f0f7dd3299e660811f183e6e400f8864"
+        },
+        {
+          "path": "frontend/src/base-path.ts",
+          "sha256": "90025021980e5952d6cb3bc5949a15d0b1247bcd7edfb507daa8986b68ce0068"
+        },
+        {
+          "path": "frontend/src/hud-routing.ts",
+          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "08988f87bd2a1ef9b0fa8563486b997213bdc54fcdaad3128fe7e38ec64103cd"
+        },
+        {
+          "path": "frontend/src/world_app.tsx",
+          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
+        },
+        {
+          "path": "frontend/src/api/client.ts",
+          "sha256": "fec3509aa8a9600b90736dbfbaaf0c1d1192c588d3e228b0e1928249a6ada21d"
+        },
+        {
+          "path": "frontend/vite.config.ts",
+          "sha256": "4509aca46d6667fdbf55b82256de87c692bcd3d0cfe5f609372039c50b1f3442"
+        },
+        {
+          "path": "frontend/public/sw-v2.js",
+          "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+        },
+        {
+          "path": "frontend/src/test/base-path.test.ts",
+          "sha256": "d99ae71a8d287c40d7bbf04c1a256e6e8cc06aabc44a2e78e07a0a09ef63696a"
+        },
+        {
+          "path": "frontend/src/test/service-worker-base.test.ts",
+          "sha256": "dd56100d369865474adddac7184a5c0cc64e0febcbbcb4f79f205ff93c008b5c"
+        },
+        {
+          "path": "frontend/src/test/app-routing.test.tsx",
+          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
+        },
+        {
+          "path": "tests/test_web_base_path.py",
+          "sha256": "241bcc2168595b48b9353d4640cf6ed713bf44f4d0f96e0a8d4c2b12d30fb6e5"
+        },
+        {
+          "path": "tests/test_web_asset_manifest_integrity.py",
+          "sha256": "071b63724e71e367c1b1e78118f359928ff4c16ade072aac667ac356b76b2ff8"
+        },
+        {
+          "path": "frontend/e2e/base-path.spec.ts",
+          "sha256": "ef2c0940f64066e76ba0d705be0a5766966e28ea2229a29a9e8cd8af5bd5b138"
+        },
+        {
+          "path": "frontend/e2e/support/base_path_server.py",
+          "sha256": "4beb22d330c1dc7e235ed4e1b0e8d7b993155d7542e7adad473e7ae3619e0097"
+        },
+        {
+          "path": "frontend/docs/h130-base-path.md",
+          "sha256": "75c274252fdecb3c8ce43196b150d911bf1737f038080a5a37a44b9e3d33e148"
         }
       ]
     }

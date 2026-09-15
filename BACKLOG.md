@@ -42,6 +42,8 @@
 
 - 2026-09-15 H004: fish joins bash/zsh command-tree completion, recursively generated from the installed parser. Real fish syntax/completion and hostile-metadata tests pass; existing Bash/Zsh output is unchanged. Independent review clears the frozen H004 contract; option/value completion is not claimed. [Usage](docs/cli-completion.md).
 
+- 2026-09-15 H130: the same HUD bundle now serves under a trusted reverse-proxy prefix, including routing, streams, lazy assets, PWA and linked map/mission-control pages. Full frontend 1,229/1,229 and 18 browser checks pass; 146 affected backend tests pass. Prefix collisions, keyboard navigation and guarded POST behavior were independently reviewed. Browser/prefix-stripping contract only; native wrapper requires empty prefix. [Deployment guide](frontend/docs/h130-base-path.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

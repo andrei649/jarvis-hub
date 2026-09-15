@@ -4,14 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#04070e" />
-  <link rel="manifest" href="/v2/manifest.webmanifest" />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>NERVA · HUD</title>
-  <script type="module" crossorigin src="/v2/assets/index-D2LBHGeX.js"></script>
-  <link rel="modulepreload" crossorigin href="/v2/assets/client-ByXGojoe.js">
-  <link rel="stylesheet" crossorigin href="/v2/assets/index-Cc0UAO8y.css">
+  <script type="module" crossorigin src="./assets/index-mCZ-X6ni.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/client-BVds23cu.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-CWU9SXWI.css">
 </head>
 <body>
   <div id="root"></div>
@@ -23,7 +23,7 @@
        without a service worker, so a refusal must never block boot. */
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw-v2.js', { scope: '/' }).catch(function () {});
+        navigator.serviceWorker.register((window.__NERVA_BASE_PATH__ || '') + '/sw-v2.js', { scope: (window.__NERVA_BASE_PATH__ || '') + '/' }).catch(function () {});
       });
     }
   </script>

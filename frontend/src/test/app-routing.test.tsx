@@ -121,3 +121,28 @@ it('restores the invoking mode of a historical console visit', async () => {
   fireEvent.click(screen.getByText('Close console'));
   expect(location.pathname).toBe('/v2/chat');
 });
+
+it('closes a prefixed console through the same toggle hotkey', async () => {
+  window.__NERVA_BASE_PATH__ = '/one';
+  try {
+    history.replaceState(null, '', '/one/v2/chat?demo=1');
+    render(<App />);
+    await screen.findByText('Chat route loaded');
+    fireEvent.keyDown(window, {key:'`'});
+    await screen.findByText('Close console');
+    fireEvent.keyDown(window, {key:'`'});
+    expect(location.pathname).toBe('/one/v2/chat');
+  } finally {delete window.__NERVA_BASE_PATH__;}
+});
+it('closes prefixed World with Escape and restores the invoking mode', async () => {
+  window.__NERVA_BASE_PATH__ = '/one';
+  try {
+    history.replaceState(null, '', '/one/v2/chat?demo=1');
+    render(<WorldAwareApp />);
+    await screen.findByText('Chat route loaded');
+    fireEvent.keyDown(window, {key:'w'});
+    await screen.findByText('World route loaded');
+    fireEvent.keyDown(window, {key:'Escape'});
+    expect(location.pathname).toBe('/one/v2/chat');
+  } finally {delete window.__NERVA_BASE_PATH__;}
+});

@@ -1,3 +1,4 @@
+import { appUrl } from '../base-path';
 /* HUD v2 · API client — same-origin fetch with an optional user token and graceful
    errors. The guarded endpoints (/api/agents, /dashboard, /tasks, /ticker) are
    localhost-exempt, so the single-user local case needs no token; on a networked
@@ -36,7 +37,7 @@ export function apiFetchOnce(path: string, opts: {
   const headers = buildHeaders(opts.admin);
   headers.Accept = opts.accept || 'application/json';
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
-  return fetch(path, { method: opts.method || 'GET', headers, signal: opts.signal,
+  return fetch(appUrl(path), { method: opts.method || 'GET', headers, signal: opts.signal,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
     redirect: 'error', credentials: 'same-origin', cache: 'no-store' });
 }
@@ -54,7 +55,7 @@ async function request(
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(path, init);
+  const res = await fetch(appUrl(path), init);
   if (res.status === 401 && !opts._retried && typeof window !== 'undefined') {
     let tok = getToken();
     if (!tok && !_prompted) {

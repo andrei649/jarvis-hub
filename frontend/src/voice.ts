@@ -1,3 +1,4 @@
+import { appUrl } from './base-path';
 /* HUD v2 · voice loop — browser-side, hands-free conversation.
 
    The engines (Whisper STT, edge-tts/XTTS) live on the server, but they were built
@@ -85,7 +86,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   // capabilities — honest "what can this host actually do"
   useEffect(() => {
     let alive = true;
-    fetch('/api/voice/capabilities').then((r) => (r.ok ? r.json() : null)).then((c) => { if (alive && c) setCaps(c); }).catch(() => {});
+    fetch(appUrl('/api/voice/capabilities')).then((r) => (r.ok ? r.json() : null)).then((c) => { if (alive && c) setCaps(c); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -176,7 +177,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   async function transcribe(blob) {
     if (!blob || blob.size < 1400) return '';   // too short to be real speech
-    const res = await fetch(`/api/voice/stt?lang=${encodeURIComponent(langRef.current)}`, { method: 'POST', headers: tok({ 'Content-Type': blob.type || 'audio/webm' }), body: blob });
+    const res = await fetch(appUrl(`/api/voice/stt?lang=${encodeURIComponent(langRef.current)}`), { method: 'POST', headers: tok({ 'Content-Type': blob.type || 'audio/webm' }), body: blob });
     if (res.status === 503) { setCaps((c) => ({ ...(c || {}), stt: false })); throw new Error('local STT not installed (pip install faster-whisper)'); }
     if (!res.ok) throw new Error('stt ' + res.status);
     const d = await res.json();
@@ -234,7 +235,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         );
         if (!cancelled && streamed !== 'streamed' && streamed !== 'cancelled') {
           // Whole-reply fallback (unchanged behavior): synthesize the full reply, then play.
-          const res = await fetch('/tts', { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
+          const res = await fetch(appUrl('/tts'), { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
           if (!cancelled) {
             if (res.ok) {
               const blob = await res.blob();
@@ -293,7 +294,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         if (ttsRef.current === 'browser') {
           await browserSpeak(sentence, langRef.current, () => session.cancelled);
         } else {
-          const res = await fetch('/tts', {
+          const res = await fetch(appUrl('/tts'), {
             method: 'POST',
             headers: tok({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ text: sentence, lang: langRef.current }),

@@ -23,13 +23,14 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag
 from agents.core.routers._deps import user_guard
 from agents.core.system_map import load_topology
+from agents.core.web_base_path import render_ui_html
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["system-map"])
@@ -376,11 +377,11 @@ def build_system_map(orch) -> dict:
 
 
 @router.get("/map", dependencies=[Depends(user_guard)])
-async def system_map_page():
+async def system_map_page(request: Request):
     """The standalone Live System Map page (wall-screen / second monitor)."""
     if not _MAP_HTML.is_file():
         return JSONResponse({"error": "system_map.html not found"}, status_code=404)
-    return FileResponse(str(_MAP_HTML), media_type="text/html")
+    return HTMLResponse(render_ui_html(_MAP_HTML.read_text(encoding="utf-8"), request.app.root_path), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/system-map", dependencies=[Depends(user_guard)])
