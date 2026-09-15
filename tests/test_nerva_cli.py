@@ -686,3 +686,20 @@ def test_jobs_media_flag_authors_reminder_ids():
     code, out, err, hub = _run(['jobs','create','--name','report','--when','daily','--action','{"type":"remind","message":"report"}', '--media-id','ba-'+'a'*32],hub)
     assert code == EXIT_OK, err
     assert hub.calls[-1][2]['action']['media_ids'] == ['ba-'+'a'*32]
+
+
+def test_jobs_workdir_flag_requires_complete_options_and_can_clear():
+    hub = _FakeHub({'POST /api/jobs': {'ok':True,'job':JOB}, 'PATCH /api/jobs/j1': {'ok':True,'job':JOB}})
+    code, _, err, hub = _run(['jobs','create','--name','report','--when','daily','--action','{"type":"ask","prompt":"report"}', '--options','{"script":"watch.py","no_agent":true}', '--workdir','/workspace/report'],hub)
+    assert code == EXIT_OK, err
+    assert hub.calls[-1][2]['options']['workdir'] == '/workspace/report'
+    code, _, err, hub = _run(['jobs','edit','j1','--options','{"script":"watch.py","no_agent":true,"workdir":"/old"}', '--workdir',''],hub)
+    assert code == EXIT_OK, err
+    assert 'workdir' not in hub.calls[-1][2]['options']
+
+
+def test_jobs_workdir_does_not_replace_options_implicitly():
+    hub = _FakeHub({})
+    code, _, err, hub = _run(['jobs','edit','j1','--workdir','/workspace/report'],hub)
+    assert code == EXIT_USAGE and 'complete --options' in err
+    assert hub.calls == []

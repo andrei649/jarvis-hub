@@ -345,9 +345,14 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    if 'workdir' in options:
+        if not options.get('script') or options.get('no_agent') is not True or options.get('monitor_script') or options.get('monitor_url'):
+            raise ValueError('workdir requires script with no_agent true')
+        from .jobs_workdir import validate_workdir
+        options = {**options, 'workdir': validate_workdir(options['workdir'])}
     if 'monitor_url' in options:
         if any(options.get(key) for key in ('script', 'monitor_script', 'no_agent')):
             raise ValueError('URL monitor excludes other sources and no_agent')
