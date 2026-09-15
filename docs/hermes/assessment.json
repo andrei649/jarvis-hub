@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c58de044dddd5712e4e89f160cccd6cefc1bbecc",
-  "assessed_at": "2026-09-15T20:05:58Z",
+  "base_sha": "f24d5f72cccbb556d5811563059f86620d2ab1e9",
+  "assessed_at": "2026-09-15T21:49:18Z",
   "reviews": [
     {
       "id": "H001",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -170,6 +170,31 @@
         {
           "path": "tests/test_nerva_cli.py",
           "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+        }
+      ]
+    },
+    {
+      "id": "H022",
+      "row_sha256": "bbfcf3200f7827679ac4dafb3ec718c402867c9a7af270e624a7042432648797",
+      "status": "partial",
+      "summary": "`nerva security audit` inventariază distribuțiile interpretorului curent și pinurile Python exacte ale descriptorilor de extensie numiți, întreabă OSV.dev prin `PluginHTTPClient` (rezoluție DNS pinată, ancorele TLS ale owner-ului, breaker; querybatch în loturi de 1000 cu paginare urmărită + un detaliu per advisory; pleacă doar perechi nume+versiune, anunțate pe stderr), unește oglinzile GHSA/PYSEC ale aceluiași CVE într-o singură constatare cu cea mai mare severitate declarată, numește fix-ul din intervalul care conține versiunea instalată și iese 0/1/5. Un advisory fără severitate declarată pică orice prag; o bază de date de neatins, un lot rămas paginat după 20 de pagini sau un audit care nu se încheie înseamnă exit 5 și nicio afirmație. O distribuție cu metadate nedecodabile e sărită și numită; textul advisory-urilor e curățat de caractere de control înainte de terminal. MCP (comenzi stdio configurate de owner) e listat ca neauditat, cu motivul. Probat live: 48 distribuții curate; un pin `requests 2.19.0` dă 5 constatări după unirea a 5 oglinzi PYSEC. Recenzie adversarială independentă: nouă defecte, toate remediate în același PR.",
+      "remaining": "Suprafața MCP nu e auditată: comenzile stdio (`npx …`, `uvx …`) din configurația persistată nu sunt rezolvate la pachete și versiuni. Descriptorii de extensie trebuie numiți pe linia de comandă; catalogul pachetelor achiziționate e pe partea hub-ului și nu e citit offline. Nu există `nerva security` implicit (cli-d.security-default) și nici `--skip-venv/--skip-plugins/--skip-mcp`. Vectorii CVSS nu sunt scorați: un advisory doar cu vector rămâne `unknown` și pică orice prag dacă nu se unește cu un frate GHSA evaluat. Pragul implicit `--fail-on low` e deliberat mai strict decât `critical` din Hermes. Nu există setare de proxy pentru operator (H281). Din procesul CLI nu există mediere kernel și registrul de egress nu persistă. Scara de ieșire e cea Nerva (0/1/2/5), nu 0/1/2 din Hermes. Fără probă pe o mașină fără proxy transparent.",
+      "evidence": [
+        {
+          "path": "agents/core/security/dep_audit.py",
+          "sha256": "d47391911335063bd039bd77061ad41849921a5c298ad90568cbab29f444ed4e"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+        },
+        {
+          "path": "tests/test_dep_audit.py",
+          "sha256": "9f614b5bb1d619977082d25f3d7700775711887cd9b2ce3e8c036fad3a316697"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         }
       ]
     },
@@ -833,6 +858,442 @@
       ]
     },
     {
+      "id": "H129",
+      "row_sha256": "3039b07bc8e85331b1baf5a2651a97bbc2bd6ea8f52a8c9cd5f1b6c2b7e42c50",
+      "status": "partial",
+      "summary": "All 18 existing HUD modes and 113 console panels now have explicit stable URLs, browser history, titles, unknown-route handling and real lazy chunks with loading/error fallback. Existing rail, palette, hotkeys, desktop and World navigation share URL state. Selected panels receive focus; demo/floating context is preserved. Overlay return destinations are bound to individual history entries and independently verified across historical/nested visits and malformed state. Desktop and Pixel 7 browser smoke passed against a local stubbed backend. Existing route/history/focus smoke remains green after grid sizing and cockpit composer wrapping. Three actual desktop-width regressions and three independent stacked-layout checks verify contained controls; cloud approval/gallery also passes at1280px.",
+      "remaining": "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services.",
+      "evidence": [
+        {
+          "path": "frontend/src/hud-routing.ts",
+          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
+        },
+        {
+          "path": "frontend/src/console-routes.ts",
+          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
+        },
+        {
+          "path": "frontend/src/world_app.tsx",
+          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+        },
+        {
+          "path": "frontend/src/route-boundary.tsx",
+          "sha256": "21a3a6b3369530451db0c62cf40e893d80cc55bc4d257a502aa9ba8a715e8c98"
+        },
+        {
+          "path": "frontend/src/test/hud-routing.test.tsx",
+          "sha256": "37ca08180530f6f8f6f97d387d19879615606b6c60310d9bcfee5d0cf9bb5b16"
+        },
+        {
+          "path": "frontend/src/test/app-routing.test.tsx",
+          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
+        },
+        {
+          "path": "frontend/src/test/console-routing.test.tsx",
+          "sha256": "8f943a255ce2d0804d898c587a95ee1d29934e88a4cf859c6cdd71bd0e2381ee"
+        },
+        {
+          "path": "frontend/src/test/route-boundary.test.tsx",
+          "sha256": "84819d47b17acb6bcdb2c7ad5b88781fa2f14cce3368eca142344d4dbf67ecb6"
+        },
+        {
+          "path": "frontend/e2e/routing.spec.ts",
+          "sha256": "0f0861e5c8c4bdeb44415e1b15b582164cd4f345d4de755a8bd5f2f1603dc27d"
+        },
+        {
+          "path": "frontend/src/styles.css",
+          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-hud-grid-width.md",
+          "sha256": "8d8cda622223cd333f700b72909f5a384d0079019750ff8ed2caf7d0660ca992"
+        }
+      ]
+    },
+    {
+      "id": "H130",
+      "row_sha256": "12b92ce935449c13d67af9de6f1db53cf3be9b9cbe4c6e250a444388a96ddbbc",
+      "status": "equivalent",
+      "summary": "Același bundle SPA funcționează la rădăcină sau sub un JARVIS_ROOT_PATH validat, cu reverse proxy care elimină prefixul. Bootstrap-ul serverului, navigarea și istoricul, API/SSE/streaming, chunk-urile lazy, fonturile, manifestul și service worker-ul folosesc prefixul; cache-urile PWA sunt separate per prefix. Paginile /map și /mission-control legate din SPA sunt adaptate. Teste prin aplicația reală și proxy HTTP verifică reload, shortcut-uri, cache offline, auth pe POST și lipsa cererilor la rădăcina greșită; coliziunile /v2 și /api au regresii. Contractul este pentru browser cu proxy prefix-stripping: wrapper-ul nativ cere prefix gol, /v1 și proxy-urile care păstrează prefixul nu sunt incluse. Fixture-ul dezactivează lifespan/provider startup; nu se pretinde deployment sau probă cu provider live.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/web_base_path.py",
+          "sha256": "cebdbd01a6fa1a3617ccb6747dd0406442d95c653da409c3c996aa77bb703d0a"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+        },
+        {
+          "path": "agents/core/routers/swarm.py",
+          "sha256": "8807ca397d093ce521c9f3b1115699a60a63c3e7f54b3f2f2c06987916c28ef0"
+        },
+        {
+          "path": "agents/core/routers/system_map.py",
+          "sha256": "a4f29f5bbe855ae1f86770974ca29b2f1715af999d5c8e7be18c9cab6c4c38d0"
+        },
+        {
+          "path": "agents/web/mission_control.html",
+          "sha256": "d72ff833cca8b085149fa6c131627993f1e4b8ad055bc2b68db293caf07e6792"
+        },
+        {
+          "path": "agents/web/system_map.html",
+          "sha256": "1ea2c79644045803e6a0f20c5a702bb7f0f7dd3299e660811f183e6e400f8864"
+        },
+        {
+          "path": "frontend/src/base-path.ts",
+          "sha256": "90025021980e5952d6cb3bc5949a15d0b1247bcd7edfb507daa8986b68ce0068"
+        },
+        {
+          "path": "frontend/src/hud-routing.ts",
+          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
+        },
+        {
+          "path": "frontend/src/world_app.tsx",
+          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
+        },
+        {
+          "path": "frontend/src/api/client.ts",
+          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
+        },
+        {
+          "path": "frontend/vite.config.ts",
+          "sha256": "4509aca46d6667fdbf55b82256de87c692bcd3d0cfe5f609372039c50b1f3442"
+        },
+        {
+          "path": "frontend/public/sw-v2.js",
+          "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+        },
+        {
+          "path": "frontend/src/test/base-path.test.ts",
+          "sha256": "d99ae71a8d287c40d7bbf04c1a256e6e8cc06aabc44a2e78e07a0a09ef63696a"
+        },
+        {
+          "path": "frontend/src/test/service-worker-base.test.ts",
+          "sha256": "dd56100d369865474adddac7184a5c0cc64e0febcbbcb4f79f205ff93c008b5c"
+        },
+        {
+          "path": "frontend/src/test/app-routing.test.tsx",
+          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
+        },
+        {
+          "path": "tests/test_web_base_path.py",
+          "sha256": "241bcc2168595b48b9353d4640cf6ed713bf44f4d0f96e0a8d4c2b12d30fb6e5"
+        },
+        {
+          "path": "tests/test_web_asset_manifest_integrity.py",
+          "sha256": "071b63724e71e367c1b1e78118f359928ff4c16ade072aac667ac356b76b2ff8"
+        },
+        {
+          "path": "frontend/e2e/base-path.spec.ts",
+          "sha256": "ef2c0940f64066e76ba0d705be0a5766966e28ea2229a29a9e8cd8af5bd5b138"
+        },
+        {
+          "path": "frontend/e2e/support/base_path_server.py",
+          "sha256": "a0196fe11912c8d7a18bd3ccbdca19f0b83b0c049756e7659705a710f736fd6d"
+        },
+        {
+          "path": "frontend/docs/h130-base-path.md",
+          "sha256": "75c274252fdecb3c8ce43196b150d911bf1737f038080a5a37a44b9e3d33e148"
+        }
+      ]
+    },
+    {
+      "id": "H135",
+      "row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
+      "status": "equivalent",
+      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss. Five fixed local UI font choices now share that normalization, revision and offline journal contract. The HUD applies the body/display override at its root; code and explicitly monospace elements retain their independent font stack. Real root/prefix browser tests verify computed families, persistence in a fresh browser, look independence, offline replay and code font invariance. The separate native application now reads the same owner Settings DB document at boot and foreground entry. Its connection-scoped finite cache, explicit-save hydration epochs and serialized current-record writes prevent stale credentials or appearance from returning. All19 native consumers react without resetting local component state; code fonts remain independent. The accepted cross-client preference contract is implemented; native authoring and a full curated font catalog are not required by this row. Scope remains one configured owner instance. Unsupported native fonts have explicit platform fallbacks; unavailable storage cannot preserve offline choices across process restarts. Native rendering is covered with real React source and host mocks, not device GUI proof.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/appearance.py",
+          "sha256": "4619bff46044e5e95c540b8cacd4d2cbfb61b6868f5d5a0869fb3e617fb78615"
+        },
+        {
+          "path": "agents/core/routers/preferences.py",
+          "sha256": "91b1b5d3ff7c8b5f9e5873779b42db6688da97459a269515ec8b1c11bc673803"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+        },
+        {
+          "path": "frontend/src/appearance.ts",
+          "sha256": "24f6897df76a5aae5fbb968bc0c00a8fbd1220e9e7caa56784a57461fa804992"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
+        },
+        {
+          "path": "frontend/src/shell.tsx",
+          "sha256": "d705a7e75116056a884adc7fbf898a68d130ce927ddb3701a29a07760de2ac87"
+        },
+        {
+          "path": "frontend/src/api/client.ts",
+          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
+        },
+        {
+          "path": "frontend/src/test/appearance-sync.test.tsx",
+          "sha256": "b17d850bc3973a38c6d4a0dbdb30f84356d4b742a24567fb69ae2fdd2e49096e"
+        },
+        {
+          "path": "frontend/src/test/appearance-state.test.tsx",
+          "sha256": "a1f5f3435c5b8cf4346333f771e1ec7c6b2a3d205a8f91a76fca1cf6161b187b"
+        },
+        {
+          "path": "tests/test_appearance_preferences.py",
+          "sha256": "dd2941ea32342fd29bf65726435fa1e3c080c216c881fc04765aa5265159f940"
+        },
+        {
+          "path": "frontend/e2e/appearance.spec.ts",
+          "sha256": "8aab6475d20bb07d73cf3215ddc46ce2cc464aa6d03f2f0f2536fa21eeab3dde"
+        },
+        {
+          "path": "frontend/docs/h135-appearance-sync.md",
+          "sha256": "1e61479204fe2f0c0df5a7864284cd8f94eecc50c80ad82720328e12b30f7c13"
+        },
+        {
+          "path": "frontend/src/styles.css",
+          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
+        },
+        {
+          "path": "frontend/e2e/appearance-fonts.spec.ts",
+          "sha256": "8e33e2e9def84747350c190c88006dab8a17ff71223482ed62a37458273a7d82"
+        },
+        {
+          "path": "frontend/docs/h135-font-preferences.md",
+          "sha256": "94ee73bab389e1a6cc7bddb88533f4940063f6c53f7c76a9bf6dfc0f57b4e456"
+        },
+        {
+          "path": "frontend/native-tests/appearance.test.tsx",
+          "sha256": "e93497f05eea59ee4aa887dfeb6e1658690c75565ec2fa70fb76c1cfbf55b7b4"
+        },
+        {
+          "path": "frontend/native-tests/consumers.test.tsx",
+          "sha256": "fe6c236ae7b3a5fb30fb2e7349325fec3065fd3aef9c2d29fd31e34db8e852e8"
+        },
+        {
+          "path": "frontend/native-tests/support/audio.ts",
+          "sha256": "7095706cfa8b85da8ef619b2c3607537b1d264606ae557a088ebf64d28e0890c"
+        },
+        {
+          "path": "frontend/native-tests/support/expo.tsx",
+          "sha256": "3f4a4b028a6f6ad5bbfceccf661d2d47f34c327a9566cbfdeec79d06d4b6405e"
+        },
+        {
+          "path": "frontend/native-tests/support/files.ts",
+          "sha256": "798857d30b888d01f380059f1865ae7f3709899d7fa043ba2117b64addadf4c7"
+        },
+        {
+          "path": "frontend/native-tests/support/native.tsx",
+          "sha256": "58d358f58f9cdc888666911e7daff6aa2b1732819ed7ad25906c9796745b157a"
+        },
+        {
+          "path": "frontend/native-tests/support/storage.ts",
+          "sha256": "b5a014bde18479191a7970a45a7005bcdf5377a44c7e673ba0a78a4244126e6e"
+        },
+        {
+          "path": "frontend/native-tests/transport.test.tsx",
+          "sha256": "0177c3ff809ce5216610daeee0fe1e4b0a79f8fe963d30ca0b872a5d0a796fab"
+        },
+        {
+          "path": "frontend/vitest.config.ts",
+          "sha256": "5f422e89adff5bbd37a8b56451f05cc4cec9a3070afa2d8e6f307eb2fa32c154"
+        },
+        {
+          "path": "frontend/vitest.native.config.ts",
+          "sha256": "779c09aa4d8c9c1567cbe9ee4258bb203ffa10bbbde06c3ed5f26c88b3f2adcd"
+        },
+        {
+          "path": "mobile/App.tsx",
+          "sha256": "dd2da40e7739182b3f6612d81c0b49520291203c5e21660d1fda232129026c3a"
+        },
+        {
+          "path": "mobile/docs/h135-native-appearance.md",
+          "sha256": "a3cebf1e368ded240cf8cd41b57500c321b0e0327e2388bb3295d574c308a1f2"
+        },
+        {
+          "path": "mobile/src/api/appearance.ts",
+          "sha256": "4c3f16ce9eaf4937bf6267d8cfbc9cb693934e8a7c3bbf2c61d711fdbaf27659"
+        },
+        {
+          "path": "mobile/src/appearance.ts",
+          "sha256": "0f961fa1c2c4900ca31220eb78603a0f81fcc62ccadf8430ca7d3139d6c0ba53"
+        },
+        {
+          "path": "mobile/src/components/AgentPicker.tsx",
+          "sha256": "e73594f98520f454b13ebc2c401615a9e8c0900ccbc4a7300049268d1a6f39cd"
+        },
+        {
+          "path": "mobile/src/components/MessageBubble.tsx",
+          "sha256": "76047132996a3e5c6c679191fe31421c54301e6060c3537529db96b3851f2884"
+        },
+        {
+          "path": "mobile/src/components/SessionsModal.tsx",
+          "sha256": "dbb515e39f766c1b479cd7c904c572d5eb2130663a1beea962d98f62abcd28ae"
+        },
+        {
+          "path": "mobile/src/components/ThemedText.tsx",
+          "sha256": "2f180a03a94a04468e8388d807de20a18ab5629c89f33abdddbc763aa75fd5d1"
+        },
+        {
+          "path": "mobile/src/context/AppearanceContext.tsx",
+          "sha256": "4f488bdc698c0dbf484a8736475f871329103039cd9c3cde0f4b46f3658d5307"
+        },
+        {
+          "path": "mobile/src/context/ServerContext.tsx",
+          "sha256": "6d55e1867fc0dd302ed20350caeb0dee4c13de752b74c891ae41463dac19ba8e"
+        },
+        {
+          "path": "mobile/src/markdown/Markdown.tsx",
+          "sha256": "9c70656d01fccc09afadc829270b1b7773b1f446b0f0aba5ecf2479aa63fe432"
+        },
+        {
+          "path": "mobile/src/screens/AcquisitionScreen.tsx",
+          "sha256": "2a7ec49f84b8e6ce5413e62d4af85ebf0da1c440df70080ce9bff2238aa8cf51"
+        },
+        {
+          "path": "mobile/src/screens/AmbientScreen.tsx",
+          "sha256": "8d10e901b0adbf478e2148a1b83858f9caab2269aba6131d359326681cfef4ac"
+        },
+        {
+          "path": "mobile/src/screens/ApprovalsScreen.tsx",
+          "sha256": "e88182daa850368bcaebffa6654a72cbd461fecf90c8d75f14404a99b60d008c"
+        },
+        {
+          "path": "mobile/src/screens/CameraScreen.tsx",
+          "sha256": "ab1b4bc1ff169742d7913b5f855ea84b67ce3f5f4df0e8f727bb292796b12ea9"
+        },
+        {
+          "path": "mobile/src/screens/CaptureScreen.tsx",
+          "sha256": "933289e1888ef88f2f044e12f33f850c5b4659de077a88fcb52527ac90336c43"
+        },
+        {
+          "path": "mobile/src/screens/ChatScreen.tsx",
+          "sha256": "8a580ae547aff21c5fb7fa06cb1904ede01a93eb97370302fc7d8fe8aebc877c"
+        },
+        {
+          "path": "mobile/src/screens/CommsScreen.tsx",
+          "sha256": "9cdd632673782b4a23b710413de77ae11be89b6e8f448c8f626223d765fb94c8"
+        },
+        {
+          "path": "mobile/src/screens/HouseScreen.tsx",
+          "sha256": "a6bd606194b606c6bba13266dbc0c97b8fbc3bbff3bad6baabd92a73a0a339b1"
+        },
+        {
+          "path": "mobile/src/screens/MediaScreen.tsx",
+          "sha256": "9c36f381e158b800676b466bfc5447098b2c56ac9af2e7a15693c9dce7e20aed"
+        },
+        {
+          "path": "mobile/src/screens/MemoryScreen.tsx",
+          "sha256": "a284aa1795d6dbd1ba62b0edcb27325c19b84a816417a107093a65c6b0c33e95"
+        },
+        {
+          "path": "mobile/src/screens/SettingsScreen.tsx",
+          "sha256": "1019ce4258168a5280587b768027492c286a7e005b875f150e0747e074665ada"
+        },
+        {
+          "path": "mobile/src/screens/SkillsScreen.tsx",
+          "sha256": "27be5b12ed69be3ba8c28a7d97f7b2f11ac4884e0295ee4948e9f42f590975dd"
+        },
+        {
+          "path": "mobile/src/screens/StatusScreen.tsx",
+          "sha256": "6d8e75575b5d952bc2b801487f1e75bb4efc490ae71c881d1065631de967ca85"
+        },
+        {
+          "path": "mobile/src/screens/TasksScreen.tsx",
+          "sha256": "01dcbcf3a6b3bae8a124d66696d00bbf76f1b1fbbb14f25d8370d37fc700964b"
+        },
+        {
+          "path": "mobile/src/storage/settings.ts",
+          "sha256": "981cd96ef3141aa1f52c576214dccdec522f2490cab18909f4b8086dc5f1fd22"
+        },
+        {
+          "path": "mobile/src/theme.ts",
+          "sha256": "5f6cb9c5d6866ef0a9dd12c363c54982c9282663dee738b5e51308b528b902a6"
+        }
+      ]
+    },
+    {
+      "id": "H139",
+      "row_sha256": "470c26545cfe165fd6e78168c4071f6d8c5392af462069ec03c9277071e079c0",
+      "status": "partial",
+      "summary": "Shared browser composer now accepts image selection, paste and drop, with transient previews, removal and eight pending-read reservations. Authenticated composer-specific vision routes validate static PNG/JPEG/GIF/WebP bytes and bounded raster decoding before provider dispatch. A random persisted destination revision and one configuration snapshot bind explicit remote consent; stale configuration refuses dispatch. Vision replies identify the actual configured model and remain separate from ordinary agent chat. Cancellation and late-response suppression preserve one active turn; ordinary text payloads remain unchanged. Independent source review, 27 new backend cases, 10 frontend cases and desktop/mobile-browser checks pass.",
+      "remaining": "No persisted chat image artifact, native agent multimodal context, native mobile composer or ?learn seed. Vision uses a separate configured VLM turn; no live provider proof. Static images only, at most eight 4 MiB images, 8192 pixels per edge and 16 MP each before downscaling. Destination status stores inert revision metadata in the existing owner Settings DB; this does not provide per-account preferences.",
+      "evidence": [
+        {
+          "path": "agents/core/routers/composer_vision.py",
+          "sha256": "c6825208c17f048ec8aa73a28c741abaf496c23d662700e05a63f4f7a76f8a43"
+        },
+        {
+          "path": "agents/core/llm/vlm.py",
+          "sha256": "8e15678d5f604f811425b47f7edf99394f9834b184a2faffee68595756eec352"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+        },
+        {
+          "path": "frontend/src/composer-images.tsx",
+          "sha256": "020b9d1da510ee12fe627acb9da9d4e6562659ddb68e12b0b486236122b7e19d"
+        },
+        {
+          "path": "frontend/src/vision-turn.ts",
+          "sha256": "6cf8cb2150c93f1b25e826552caa29c856ae9e8d12693606a47ed5a29a619203"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
+        },
+        {
+          "path": "frontend/src/cockpit.tsx",
+          "sha256": "8d845e8dd3e1d2b209b4f331c855bd23476cc04fc7712588fa902215a5cd8483"
+        },
+        {
+          "path": "frontend/src/api/schema.gen.ts",
+          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
+        },
+        {
+          "path": "tests/test_composer_vision.py",
+          "sha256": "260c23da46afd181cceebfeda029d7fd90ec8247960c820c73eff6f0460567c4"
+        },
+        {
+          "path": "frontend/src/test/composer-images.test.tsx",
+          "sha256": "ff21fd871a1a849cd9196a01f2aae62b016777bdfdc471cc07bdd827721bd41e"
+        },
+        {
+          "path": "frontend/src/test/composer-vision-turn.test.tsx",
+          "sha256": "11ec55cb8180c4de9becc8049d62c8a47bf189b79b48400967e67b78454e27f7"
+        },
+        {
+          "path": "frontend/e2e/composer-images.spec.ts",
+          "sha256": "719fdb878a528d9fea73aae4c6987d8379ee780c162c38ed54d2edab2040062e"
+        },
+        {
+          "path": "frontend/docs/h139-composer-images.md",
+          "sha256": "abf416fd5b0db9e078f18baadb65b4ad42aac57bf6c3cd0a60044641fef9d085"
+        }
+      ]
+    },
+    {
       "id": "H146",
       "row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
       "status": "partial",
@@ -853,7 +1314,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -873,7 +1334,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -1936,7 +2397,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "agents/web.py",
@@ -2305,7 +2766,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2325,7 +2786,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -2516,6 +2977,87 @@
         {
           "path": "tests/test_jobs_routes.py",
           "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+        }
+      ]
+    },
+    {
+      "id": "H453",
+      "row_sha256": "150123684a4f0e7e58a4e47c6a7303d0b9b79cc043b060869eef81a0c3aa631f",
+      "status": "partial",
+      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests. Successful script stdout can suppress model and delivery with a final JSON boolean wakeAgent:false, except when transport output is truncated. Model replies support bounded-position [SILENT] and whole-response silence markers before truncation; suppression is successful history without notification spend. Bounded approved script monitors hash complete raw stdout on the trusted host, compare scrubbed snapshots and atomically persist each baseline before the model runs. Unchanged observations skip model/delivery; source/config generations prevent stale baseline updates and stale delivery. Invalid UTF-8, incomplete or oversized observations leave the baseline intact. URL monitors now use the existing signed enforced task queue for one exact plugin.egress GET per human-approved hop, with fresh approval for redirects. Public-address DNS validation/IP pinning, live post-DNS kernel/e-stop checks, one-use dispatch claims, credential screening and scrub-before-persistence are verified with real queue/worker/executor tests. Only complete final successful UTF-8 identity responses within 256 KiB advance the baseline. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
+      "remaining": "Unattended execution is not granted: each script firing and URL hop needs fresh approval, with live enforced signed mediation required for URL authoring. URL scope is credential-free public ASCII HTTP(S), at most five redirects, 30 seconds per hop and 256 KiB uncompressed UTF-8; private, credentialed, compressed or invalid-text observations are unsupported. Script snapshots remain bounded by the terminal cap (at most 50,000 bytes). Monitor mode excludes no_agent and treats wake JSON literally. Model workdir/tool contexts and monitor/URL authoring UI remain unsupported; script-only workdir and script/no_agent UI are implemented. No live production egress, scheduler/channel or full production-kernel proof.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_scripts.py",
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
+        },
+        {
+          "path": "tests/test_job_scripts.py",
+          "sha256": "41588726ca4e90bc85f25d34526637c3b404ae53593e0360ece3402fa5eb6be1"
+        },
+        {
+          "path": "docs/automations-scripts.md",
+          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_gates.py",
+          "sha256": "1c03eca7f3269c452c55dd82074e2fdec82698730987caed47c371fd9dbfd954"
+        },
+        {
+          "path": "tests/test_job_gates.py",
+          "sha256": "9b0f1e1e544c83137d08ad92c8911b9ef4fe90106dfe58d67bdd20951a35cfa2"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_monitor.py",
+          "sha256": "f91b2f9caa5f9bf81c1e1cdc43ee649a3e03e619568f78ea2e7555aa04275ce3"
+        },
+        {
+          "path": "agents/core/environments/local_transport.py",
+          "sha256": "e12cee668a9a651d7439e863bc6857afac019fb5418dbe7bdb9bc069134f6cd0"
+        },
+        {
+          "path": "agents/core/environments/output_capture.py",
+          "sha256": "cdff88a1230324595915990f55e2f5638fd78e13a744db52a43d0cf0fb4f6064"
+        },
+        {
+          "path": "tests/test_job_monitor.py",
+          "sha256": "f9af2c959f6d57f258844b35fe837e5fb5dc960796f273c2bc49e52f9b28c24a"
+        },
+        {
+          "path": "tests/test_monitor_capture.py",
+          "sha256": "205ed438f8a6d2fe8b3bc31e7be898b0bc782ef8d58aa372d39a3c2991afbfff"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_url.py",
+          "sha256": "77582cf517048d0f12200df7f2ea639f17eba45ea9d5b0d87872c38e71ea04a1"
+        },
+        {
+          "path": "tests/test_job_url_executor.py",
+          "sha256": "a54f6e0f559a45ebfb5dfb6df529a9a57aaf75e2a849d19330be6ae98c8ffe83"
+        },
+        {
+          "path": "tests/test_job_url_monitor.py",
+          "sha256": "ab20e7807e836701a59da45162ccb7b43ec5c2d8adef3e1531940e84887c9b6b"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "tests/test_job_workdir.py",
+          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
+          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
         }
       ]
     },
@@ -3823,7 +4365,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -4270,7 +4812,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2af3357c2ec4908986b4f977c2c36dbfc923ded1ee96950c477f556b17bdba2"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -4282,7 +4824,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "f77b09a853356b427b8386771404810d02a2fa59ff8132a2d30087600a34b2ec"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -4307,523 +4849,6 @@
         {
           "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
           "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
-        }
-      ]
-    },
-    {
-      "id": "H129",
-      "row_sha256": "3039b07bc8e85331b1baf5a2651a97bbc2bd6ea8f52a8c9cd5f1b6c2b7e42c50",
-      "status": "partial",
-      "summary": "All 18 existing HUD modes and 113 console panels now have explicit stable URLs, browser history, titles, unknown-route handling and real lazy chunks with loading/error fallback. Existing rail, palette, hotkeys, desktop and World navigation share URL state. Selected panels receive focus; demo/floating context is preserved. Overlay return destinations are bound to individual history entries and independently verified across historical/nested visits and malformed state. Desktop and Pixel 7 browser smoke passed against a local stubbed backend. Existing route/history/focus smoke remains green after grid sizing and cockpit composer wrapping. Three actual desktop-width regressions and three independent stacked-layout checks verify contained controls; cloud approval/gallery also passes at1280px.",
-      "remaining": "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services.",
-      "evidence": [
-        {
-          "path": "frontend/src/hud-routing.ts",
-          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
-        },
-        {
-          "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
-        },
-        {
-          "path": "frontend/src/app.tsx",
-          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
-        },
-        {
-          "path": "frontend/src/world_app.tsx",
-          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
-        },
-        {
-          "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
-        },
-        {
-          "path": "frontend/src/route-boundary.tsx",
-          "sha256": "21a3a6b3369530451db0c62cf40e893d80cc55bc4d257a502aa9ba8a715e8c98"
-        },
-        {
-          "path": "frontend/src/test/hud-routing.test.tsx",
-          "sha256": "37ca08180530f6f8f6f97d387d19879615606b6c60310d9bcfee5d0cf9bb5b16"
-        },
-        {
-          "path": "frontend/src/test/app-routing.test.tsx",
-          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
-        },
-        {
-          "path": "frontend/src/test/console-routing.test.tsx",
-          "sha256": "8f943a255ce2d0804d898c587a95ee1d29934e88a4cf859c6cdd71bd0e2381ee"
-        },
-        {
-          "path": "frontend/src/test/route-boundary.test.tsx",
-          "sha256": "84819d47b17acb6bcdb2c7ad5b88781fa2f14cce3368eca142344d4dbf67ecb6"
-        },
-        {
-          "path": "frontend/e2e/routing.spec.ts",
-          "sha256": "0f0861e5c8c4bdeb44415e1b15b582164cd4f345d4de755a8bd5f2f1603dc27d"
-        },
-        {
-          "path": "frontend/src/styles.css",
-          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
-        },
-        {
-          "path": "docs/superpowers/plans/2026-09-15-hud-grid-width.md",
-          "sha256": "8d8cda622223cd333f700b72909f5a384d0079019750ff8ed2caf7d0660ca992"
-        }
-      ]
-    },
-    {
-      "id": "H453",
-      "row_sha256": "150123684a4f0e7e58a4e47c6a7303d0b9b79cc043b060869eef81a0c3aa631f",
-      "status": "partial",
-      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests. Successful script stdout can suppress model and delivery with a final JSON boolean wakeAgent:false, except when transport output is truncated. Model replies support bounded-position [SILENT] and whole-response silence markers before truncation; suppression is successful history without notification spend. Bounded approved script monitors hash complete raw stdout on the trusted host, compare scrubbed snapshots and atomically persist each baseline before the model runs. Unchanged observations skip model/delivery; source/config generations prevent stale baseline updates and stale delivery. Invalid UTF-8, incomplete or oversized observations leave the baseline intact. URL monitors now use the existing signed enforced task queue for one exact plugin.egress GET per human-approved hop, with fresh approval for redirects. Public-address DNS validation/IP pinning, live post-DNS kernel/e-stop checks, one-use dispatch claims, credential screening and scrub-before-persistence are verified with real queue/worker/executor tests. Only complete final successful UTF-8 identity responses within 256 KiB advance the baseline. Approved script-only options.workdir now persists a canonical existing directory within current terminal roots for script plus no_agent:true. CLI/HUD author it, doctor checks availability, and each task freezes cwd before fresh approval. Real concurrent subprocess tests verify relative reads and unchanged parent cwd; denial, e-stop, deleted/escaping directories, restart and changed task arguments are covered. Model project instructions/tool workspace context remains unsupported.",
-      "remaining": "Unattended execution is not granted: each script firing and URL hop needs fresh approval, with live enforced signed mediation required for URL authoring. URL scope is credential-free public ASCII HTTP(S), at most five redirects, 30 seconds per hop and 256 KiB uncompressed UTF-8; private, credentialed, compressed or invalid-text observations are unsupported. Script snapshots remain bounded by the terminal cap (at most 50,000 bytes). Monitor mode excludes no_agent and treats wake JSON literally. Model workdir/tool contexts and monitor/URL authoring UI remain unsupported; script-only workdir and script/no_agent UI are implemented. No live production egress, scheduler/channel or full production-kernel proof.",
-      "evidence": [
-        {
-          "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
-        },
-        {
-          "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
-        },
-        {
-          "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
-        },
-        {
-          "path": "tests/test_job_scripts.py",
-          "sha256": "41588726ca4e90bc85f25d34526637c3b404ae53593e0360ece3402fa5eb6be1"
-        },
-        {
-          "path": "docs/automations-scripts.md",
-          "sha256": "5c2da12ee9bde641907ace8f5cf58f376092396cd42d812caae1f912aafa37a4"
-        },
-        {
-          "path": "agents/core/autonomy/jobs_gates.py",
-          "sha256": "1c03eca7f3269c452c55dd82074e2fdec82698730987caed47c371fd9dbfd954"
-        },
-        {
-          "path": "tests/test_job_gates.py",
-          "sha256": "9b0f1e1e544c83137d08ad92c8911b9ef4fe90106dfe58d67bdd20951a35cfa2"
-        },
-        {
-          "path": "agents/core/autonomy/jobs_monitor.py",
-          "sha256": "f91b2f9caa5f9bf81c1e1cdc43ee649a3e03e619568f78ea2e7555aa04275ce3"
-        },
-        {
-          "path": "agents/core/environments/local_transport.py",
-          "sha256": "e12cee668a9a651d7439e863bc6857afac019fb5418dbe7bdb9bc069134f6cd0"
-        },
-        {
-          "path": "agents/core/environments/output_capture.py",
-          "sha256": "cdff88a1230324595915990f55e2f5638fd78e13a744db52a43d0cf0fb4f6064"
-        },
-        {
-          "path": "tests/test_job_monitor.py",
-          "sha256": "f9af2c959f6d57f258844b35fe837e5fb5dc960796f273c2bc49e52f9b28c24a"
-        },
-        {
-          "path": "tests/test_monitor_capture.py",
-          "sha256": "205ed438f8a6d2fe8b3bc31e7be898b0bc782ef8d58aa372d39a3c2991afbfff"
-        },
-        {
-          "path": "agents/core/autonomy/jobs_url.py",
-          "sha256": "77582cf517048d0f12200df7f2ea639f17eba45ea9d5b0d87872c38e71ea04a1"
-        },
-        {
-          "path": "tests/test_job_url_executor.py",
-          "sha256": "a54f6e0f559a45ebfb5dfb6df529a9a57aaf75e2a849d19330be6ae98c8ffe83"
-        },
-        {
-          "path": "tests/test_job_url_monitor.py",
-          "sha256": "ab20e7807e836701a59da45162ccb7b43ec5c2d8adef3e1531940e84887c9b6b"
-        },
-        {
-          "path": "agents/core/autonomy/jobs_workdir.py",
-          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
-        },
-        {
-          "path": "tests/test_job_workdir.py",
-          "sha256": "b0506ee67d63ba9a627a7f6deca4d1f59b325d91ec703aabdba111f836273d85"
-        },
-        {
-          "path": "docs/superpowers/plans/2026-09-15-job-workdir.md",
-          "sha256": "2e3edced854df3267fed930089395f0f4cb7b9dd479e99bf3aa92bf9d18608ca"
-        }
-      ]
-    },
-    {
-      "id": "H130",
-      "row_sha256": "12b92ce935449c13d67af9de6f1db53cf3be9b9cbe4c6e250a444388a96ddbbc",
-      "status": "equivalent",
-      "summary": "Același bundle SPA funcționează la rădăcină sau sub un JARVIS_ROOT_PATH validat, cu reverse proxy care elimină prefixul. Bootstrap-ul serverului, navigarea și istoricul, API/SSE/streaming, chunk-urile lazy, fonturile, manifestul și service worker-ul folosesc prefixul; cache-urile PWA sunt separate per prefix. Paginile /map și /mission-control legate din SPA sunt adaptate. Teste prin aplicația reală și proxy HTTP verifică reload, shortcut-uri, cache offline, auth pe POST și lipsa cererilor la rădăcina greșită; coliziunile /v2 și /api au regresii. Contractul este pentru browser cu proxy prefix-stripping: wrapper-ul nativ cere prefix gol, /v1 și proxy-urile care păstrează prefixul nu sunt incluse. Fixture-ul dezactivează lifespan/provider startup; nu se pretinde deployment sau probă cu provider live.",
-      "remaining": "",
-      "evidence": [
-        {
-          "path": "agents/core/web_base_path.py",
-          "sha256": "cebdbd01a6fa1a3617ccb6747dd0406442d95c653da409c3c996aa77bb703d0a"
-        },
-        {
-          "path": "agents/web.py",
-          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
-        },
-        {
-          "path": "agents/core/routers/swarm.py",
-          "sha256": "8807ca397d093ce521c9f3b1115699a60a63c3e7f54b3f2f2c06987916c28ef0"
-        },
-        {
-          "path": "agents/core/routers/system_map.py",
-          "sha256": "a4f29f5bbe855ae1f86770974ca29b2f1715af999d5c8e7be18c9cab6c4c38d0"
-        },
-        {
-          "path": "agents/web/mission_control.html",
-          "sha256": "d72ff833cca8b085149fa6c131627993f1e4b8ad055bc2b68db293caf07e6792"
-        },
-        {
-          "path": "agents/web/system_map.html",
-          "sha256": "1ea2c79644045803e6a0f20c5a702bb7f0f7dd3299e660811f183e6e400f8864"
-        },
-        {
-          "path": "frontend/src/base-path.ts",
-          "sha256": "90025021980e5952d6cb3bc5949a15d0b1247bcd7edfb507daa8986b68ce0068"
-        },
-        {
-          "path": "frontend/src/hud-routing.ts",
-          "sha256": "3347e6f78923bc9caf7306d57f08c7154e338d181e7dbbeb1334e0d4ab1133d7"
-        },
-        {
-          "path": "frontend/src/app.tsx",
-          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
-        },
-        {
-          "path": "frontend/src/world_app.tsx",
-          "sha256": "53b6f3b75ad6acac04eddb709c52ecd4c76357bb2643e3b54aec1f4d8a162a21"
-        },
-        {
-          "path": "frontend/src/api/client.ts",
-          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
-        },
-        {
-          "path": "frontend/vite.config.ts",
-          "sha256": "4509aca46d6667fdbf55b82256de87c692bcd3d0cfe5f609372039c50b1f3442"
-        },
-        {
-          "path": "frontend/public/sw-v2.js",
-          "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
-        },
-        {
-          "path": "frontend/src/test/base-path.test.ts",
-          "sha256": "d99ae71a8d287c40d7bbf04c1a256e6e8cc06aabc44a2e78e07a0a09ef63696a"
-        },
-        {
-          "path": "frontend/src/test/service-worker-base.test.ts",
-          "sha256": "dd56100d369865474adddac7184a5c0cc64e0febcbbcb4f79f205ff93c008b5c"
-        },
-        {
-          "path": "frontend/src/test/app-routing.test.tsx",
-          "sha256": "85305b1bb5d78ceb9d0bacfc9916e78a8cea0f98686ca0e29d540f69ec7a5cac"
-        },
-        {
-          "path": "tests/test_web_base_path.py",
-          "sha256": "241bcc2168595b48b9353d4640cf6ed713bf44f4d0f96e0a8d4c2b12d30fb6e5"
-        },
-        {
-          "path": "tests/test_web_asset_manifest_integrity.py",
-          "sha256": "071b63724e71e367c1b1e78118f359928ff4c16ade072aac667ac356b76b2ff8"
-        },
-        {
-          "path": "frontend/e2e/base-path.spec.ts",
-          "sha256": "ef2c0940f64066e76ba0d705be0a5766966e28ea2229a29a9e8cd8af5bd5b138"
-        },
-        {
-          "path": "frontend/e2e/support/base_path_server.py",
-          "sha256": "a0196fe11912c8d7a18bd3ccbdca19f0b83b0c049756e7659705a710f736fd6d"
-        },
-        {
-          "path": "frontend/docs/h130-base-path.md",
-          "sha256": "75c274252fdecb3c8ce43196b150d911bf1737f038080a5a37a44b9e3d33e148"
-        }
-      ]
-    },
-    {
-      "id": "H135",
-      "row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
-      "status": "equivalent",
-      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss. Five fixed local UI font choices now share that normalization, revision and offline journal contract. The HUD applies the body/display override at its root; code and explicitly monospace elements retain their independent font stack. Real root/prefix browser tests verify computed families, persistence in a fresh browser, look independence, offline replay and code font invariance. The separate native application now reads the same owner Settings DB document at boot and foreground entry. Its connection-scoped finite cache, explicit-save hydration epochs and serialized current-record writes prevent stale credentials or appearance from returning. All19 native consumers react without resetting local component state; code fonts remain independent. The accepted cross-client preference contract is implemented; native authoring and a full curated font catalog are not required by this row. Scope remains one configured owner instance. Unsupported native fonts have explicit platform fallbacks; unavailable storage cannot preserve offline choices across process restarts. Native rendering is covered with real React source and host mocks, not device GUI proof.",
-      "remaining": "",
-      "evidence": [
-        {
-          "path": "agents/core/appearance.py",
-          "sha256": "4619bff46044e5e95c540b8cacd4d2cbfb61b6868f5d5a0869fb3e617fb78615"
-        },
-        {
-          "path": "agents/core/routers/preferences.py",
-          "sha256": "91b1b5d3ff7c8b5f9e5873779b42db6688da97459a269515ec8b1c11bc673803"
-        },
-        {
-          "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
-        },
-        {
-          "path": "agents/web.py",
-          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
-        },
-        {
-          "path": "frontend/src/appearance.ts",
-          "sha256": "24f6897df76a5aae5fbb968bc0c00a8fbd1220e9e7caa56784a57461fa804992"
-        },
-        {
-          "path": "frontend/src/app.tsx",
-          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
-        },
-        {
-          "path": "frontend/src/shell.tsx",
-          "sha256": "d705a7e75116056a884adc7fbf898a68d130ce927ddb3701a29a07760de2ac87"
-        },
-        {
-          "path": "frontend/src/api/client.ts",
-          "sha256": "7db798dcdfe97cd14a3c7af4c9955521e2da22fbae570eea5bcaafcc68459b5c"
-        },
-        {
-          "path": "frontend/src/test/appearance-sync.test.tsx",
-          "sha256": "b17d850bc3973a38c6d4a0dbdb30f84356d4b742a24567fb69ae2fdd2e49096e"
-        },
-        {
-          "path": "frontend/src/test/appearance-state.test.tsx",
-          "sha256": "a1f5f3435c5b8cf4346333f771e1ec7c6b2a3d205a8f91a76fca1cf6161b187b"
-        },
-        {
-          "path": "tests/test_appearance_preferences.py",
-          "sha256": "dd2941ea32342fd29bf65726435fa1e3c080c216c881fc04765aa5265159f940"
-        },
-        {
-          "path": "frontend/e2e/appearance.spec.ts",
-          "sha256": "8aab6475d20bb07d73cf3215ddc46ce2cc464aa6d03f2f0f2536fa21eeab3dde"
-        },
-        {
-          "path": "frontend/docs/h135-appearance-sync.md",
-          "sha256": "1e61479204fe2f0c0df5a7864284cd8f94eecc50c80ad82720328e12b30f7c13"
-        },
-        {
-          "path": "frontend/src/styles.css",
-          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
-        },
-        {
-          "path": "frontend/e2e/appearance-fonts.spec.ts",
-          "sha256": "8e33e2e9def84747350c190c88006dab8a17ff71223482ed62a37458273a7d82"
-        },
-        {
-          "path": "frontend/docs/h135-font-preferences.md",
-          "sha256": "94ee73bab389e1a6cc7bddb88533f4940063f6c53f7c76a9bf6dfc0f57b4e456"
-        },
-        {
-          "path": "frontend/native-tests/appearance.test.tsx",
-          "sha256": "e93497f05eea59ee4aa887dfeb6e1658690c75565ec2fa70fb76c1cfbf55b7b4"
-        },
-        {
-          "path": "frontend/native-tests/consumers.test.tsx",
-          "sha256": "fe6c236ae7b3a5fb30fb2e7349325fec3065fd3aef9c2d29fd31e34db8e852e8"
-        },
-        {
-          "path": "frontend/native-tests/support/audio.ts",
-          "sha256": "7095706cfa8b85da8ef619b2c3607537b1d264606ae557a088ebf64d28e0890c"
-        },
-        {
-          "path": "frontend/native-tests/support/expo.tsx",
-          "sha256": "3f4a4b028a6f6ad5bbfceccf661d2d47f34c327a9566cbfdeec79d06d4b6405e"
-        },
-        {
-          "path": "frontend/native-tests/support/files.ts",
-          "sha256": "798857d30b888d01f380059f1865ae7f3709899d7fa043ba2117b64addadf4c7"
-        },
-        {
-          "path": "frontend/native-tests/support/native.tsx",
-          "sha256": "58d358f58f9cdc888666911e7daff6aa2b1732819ed7ad25906c9796745b157a"
-        },
-        {
-          "path": "frontend/native-tests/support/storage.ts",
-          "sha256": "b5a014bde18479191a7970a45a7005bcdf5377a44c7e673ba0a78a4244126e6e"
-        },
-        {
-          "path": "frontend/native-tests/transport.test.tsx",
-          "sha256": "0177c3ff809ce5216610daeee0fe1e4b0a79f8fe963d30ca0b872a5d0a796fab"
-        },
-        {
-          "path": "frontend/vitest.config.ts",
-          "sha256": "5f422e89adff5bbd37a8b56451f05cc4cec9a3070afa2d8e6f307eb2fa32c154"
-        },
-        {
-          "path": "frontend/vitest.native.config.ts",
-          "sha256": "779c09aa4d8c9c1567cbe9ee4258bb203ffa10bbbde06c3ed5f26c88b3f2adcd"
-        },
-        {
-          "path": "mobile/App.tsx",
-          "sha256": "dd2da40e7739182b3f6612d81c0b49520291203c5e21660d1fda232129026c3a"
-        },
-        {
-          "path": "mobile/docs/h135-native-appearance.md",
-          "sha256": "a3cebf1e368ded240cf8cd41b57500c321b0e0327e2388bb3295d574c308a1f2"
-        },
-        {
-          "path": "mobile/src/api/appearance.ts",
-          "sha256": "4c3f16ce9eaf4937bf6267d8cfbc9cb693934e8a7c3bbf2c61d711fdbaf27659"
-        },
-        {
-          "path": "mobile/src/appearance.ts",
-          "sha256": "0f961fa1c2c4900ca31220eb78603a0f81fcc62ccadf8430ca7d3139d6c0ba53"
-        },
-        {
-          "path": "mobile/src/components/AgentPicker.tsx",
-          "sha256": "e73594f98520f454b13ebc2c401615a9e8c0900ccbc4a7300049268d1a6f39cd"
-        },
-        {
-          "path": "mobile/src/components/MessageBubble.tsx",
-          "sha256": "76047132996a3e5c6c679191fe31421c54301e6060c3537529db96b3851f2884"
-        },
-        {
-          "path": "mobile/src/components/SessionsModal.tsx",
-          "sha256": "dbb515e39f766c1b479cd7c904c572d5eb2130663a1beea962d98f62abcd28ae"
-        },
-        {
-          "path": "mobile/src/components/ThemedText.tsx",
-          "sha256": "2f180a03a94a04468e8388d807de20a18ab5629c89f33abdddbc763aa75fd5d1"
-        },
-        {
-          "path": "mobile/src/context/AppearanceContext.tsx",
-          "sha256": "4f488bdc698c0dbf484a8736475f871329103039cd9c3cde0f4b46f3658d5307"
-        },
-        {
-          "path": "mobile/src/context/ServerContext.tsx",
-          "sha256": "6d55e1867fc0dd302ed20350caeb0dee4c13de752b74c891ae41463dac19ba8e"
-        },
-        {
-          "path": "mobile/src/markdown/Markdown.tsx",
-          "sha256": "9c70656d01fccc09afadc829270b1b7773b1f446b0f0aba5ecf2479aa63fe432"
-        },
-        {
-          "path": "mobile/src/screens/AcquisitionScreen.tsx",
-          "sha256": "2a7ec49f84b8e6ce5413e62d4af85ebf0da1c440df70080ce9bff2238aa8cf51"
-        },
-        {
-          "path": "mobile/src/screens/AmbientScreen.tsx",
-          "sha256": "8d10e901b0adbf478e2148a1b83858f9caab2269aba6131d359326681cfef4ac"
-        },
-        {
-          "path": "mobile/src/screens/ApprovalsScreen.tsx",
-          "sha256": "e88182daa850368bcaebffa6654a72cbd461fecf90c8d75f14404a99b60d008c"
-        },
-        {
-          "path": "mobile/src/screens/CameraScreen.tsx",
-          "sha256": "ab1b4bc1ff169742d7913b5f855ea84b67ce3f5f4df0e8f727bb292796b12ea9"
-        },
-        {
-          "path": "mobile/src/screens/CaptureScreen.tsx",
-          "sha256": "933289e1888ef88f2f044e12f33f850c5b4659de077a88fcb52527ac90336c43"
-        },
-        {
-          "path": "mobile/src/screens/ChatScreen.tsx",
-          "sha256": "8a580ae547aff21c5fb7fa06cb1904ede01a93eb97370302fc7d8fe8aebc877c"
-        },
-        {
-          "path": "mobile/src/screens/CommsScreen.tsx",
-          "sha256": "9cdd632673782b4a23b710413de77ae11be89b6e8f448c8f626223d765fb94c8"
-        },
-        {
-          "path": "mobile/src/screens/HouseScreen.tsx",
-          "sha256": "a6bd606194b606c6bba13266dbc0c97b8fbc3bbff3bad6baabd92a73a0a339b1"
-        },
-        {
-          "path": "mobile/src/screens/MediaScreen.tsx",
-          "sha256": "9c36f381e158b800676b466bfc5447098b2c56ac9af2e7a15693c9dce7e20aed"
-        },
-        {
-          "path": "mobile/src/screens/MemoryScreen.tsx",
-          "sha256": "a284aa1795d6dbd1ba62b0edcb27325c19b84a816417a107093a65c6b0c33e95"
-        },
-        {
-          "path": "mobile/src/screens/SettingsScreen.tsx",
-          "sha256": "1019ce4258168a5280587b768027492c286a7e005b875f150e0747e074665ada"
-        },
-        {
-          "path": "mobile/src/screens/SkillsScreen.tsx",
-          "sha256": "27be5b12ed69be3ba8c28a7d97f7b2f11ac4884e0295ee4948e9f42f590975dd"
-        },
-        {
-          "path": "mobile/src/screens/StatusScreen.tsx",
-          "sha256": "6d8e75575b5d952bc2b801487f1e75bb4efc490ae71c881d1065631de967ca85"
-        },
-        {
-          "path": "mobile/src/screens/TasksScreen.tsx",
-          "sha256": "01dcbcf3a6b3bae8a124d66696d00bbf76f1b1fbbb14f25d8370d37fc700964b"
-        },
-        {
-          "path": "mobile/src/storage/settings.ts",
-          "sha256": "981cd96ef3141aa1f52c576214dccdec522f2490cab18909f4b8086dc5f1fd22"
-        },
-        {
-          "path": "mobile/src/theme.ts",
-          "sha256": "5f6cb9c5d6866ef0a9dd12c363c54982c9282663dee738b5e51308b528b902a6"
-        }
-      ]
-    },
-    {
-      "id": "H139",
-      "row_sha256": "470c26545cfe165fd6e78168c4071f6d8c5392af462069ec03c9277071e079c0",
-      "status": "partial",
-      "summary": "Shared browser composer now accepts image selection, paste and drop, with transient previews, removal and eight pending-read reservations. Authenticated composer-specific vision routes validate static PNG/JPEG/GIF/WebP bytes and bounded raster decoding before provider dispatch. A random persisted destination revision and one configuration snapshot bind explicit remote consent; stale configuration refuses dispatch. Vision replies identify the actual configured model and remain separate from ordinary agent chat. Cancellation and late-response suppression preserve one active turn; ordinary text payloads remain unchanged. Independent source review, 27 new backend cases, 10 frontend cases and desktop/mobile-browser checks pass.",
-      "remaining": "No persisted chat image artifact, native agent multimodal context, native mobile composer or ?learn seed. Vision uses a separate configured VLM turn; no live provider proof. Static images only, at most eight 4 MiB images, 8192 pixels per edge and 16 MP each before downscaling. Destination status stores inert revision metadata in the existing owner Settings DB; this does not provide per-account preferences.",
-      "evidence": [
-        {
-          "path": "agents/core/routers/composer_vision.py",
-          "sha256": "c6825208c17f048ec8aa73a28c741abaf496c23d662700e05a63f4f7a76f8a43"
-        },
-        {
-          "path": "agents/core/llm/vlm.py",
-          "sha256": "8e15678d5f604f811425b47f7edf99394f9834b184a2faffee68595756eec352"
-        },
-        {
-          "path": "agents/web.py",
-          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
-        },
-        {
-          "path": "frontend/src/composer-images.tsx",
-          "sha256": "020b9d1da510ee12fe627acb9da9d4e6562659ddb68e12b0b486236122b7e19d"
-        },
-        {
-          "path": "frontend/src/vision-turn.ts",
-          "sha256": "6cf8cb2150c93f1b25e826552caa29c856ae9e8d12693606a47ed5a29a619203"
-        },
-        {
-          "path": "frontend/src/app.tsx",
-          "sha256": "ff60897ac0b9259b8c57da53946f5dc0ae295302e0693677c83c2f8e97a1bd4b"
-        },
-        {
-          "path": "frontend/src/cockpit.tsx",
-          "sha256": "8d845e8dd3e1d2b209b4f331c855bd23476cc04fc7712588fa902215a5cd8483"
-        },
-        {
-          "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
-        },
-        {
-          "path": "tests/test_composer_vision.py",
-          "sha256": "260c23da46afd181cceebfeda029d7fd90ec8247960c820c73eff6f0460567c4"
-        },
-        {
-          "path": "frontend/src/test/composer-images.test.tsx",
-          "sha256": "ff21fd871a1a849cd9196a01f2aae62b016777bdfdc471cc07bdd827721bd41e"
-        },
-        {
-          "path": "frontend/src/test/composer-vision-turn.test.tsx",
-          "sha256": "11ec55cb8180c4de9becc8049d62c8a47bf189b79b48400967e67b78454e27f7"
-        },
-        {
-          "path": "frontend/e2e/composer-images.spec.ts",
-          "sha256": "719fdb878a528d9fea73aae4c6987d8379ee780c162c38ed54d2edab2040062e"
-        },
-        {
-          "path": "frontend/docs/h139-composer-images.md",
-          "sha256": "abf416fd5b0db9e078f18baadb65b4ad42aac57bf6c3cd0a60044641fef9d085"
         }
       ]
     }
