@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "8aedbe527e9c0b3d82960e04b6926e540249761b",
-  "assessed_at": "2026-09-15T18:48:26.540004Z",
+  "base_sha": "01f26553c1425de5e109a440285526bf50165c75",
+  "assessed_at": "2026-09-15T19:33:48Z",
   "reviews": [
     {
       "id": "H001",
@@ -39,7 +39,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d5ac63119f6b01099249a4d751311d52dd8da81c24672e71ea73d1aeb30c1bc8"
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -853,7 +853,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d5ac63119f6b01099249a4d751311d52dd8da81c24672e71ea73d1aeb30c1bc8"
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "ea5207fabcdb0a308ed2e8d73521544240d7ae6e00bcb33668428d84d2dda188"
+          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -921,7 +921,7 @@
         },
         {
           "path": "tests/test_job_dispatch.py",
-          "sha256": "dfa06020e4a95bd4bfcacc7428c97a8d0f0a3f01eef2a43a8239b8912f6b62c4"
+          "sha256": "9433c50b2e9ae4875894ed2fad6af7f037fd9fbf34173ec7a285a7c22adaf1bb"
         },
         {
           "path": "docs/automations-dispatch.md",
@@ -945,7 +945,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1341,7 +1341,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -1667,7 +1667,7 @@
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
+          "sha256": "9c3ccdfa77e43472c258dc93b12965d761f0e9ad36f47135c6806a68b1b4ed80"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -1675,7 +1675,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
+          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -1719,7 +1719,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1735,7 +1735,7 @@
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
           "path": "tests/test_provider_context_limits.py",
@@ -1796,7 +1796,7 @@
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
+          "sha256": "9c3ccdfa77e43472c258dc93b12965d761f0e9ad36f47135c6806a68b1b4ed80"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -1804,7 +1804,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
+          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -1844,7 +1844,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1852,7 +1852,7 @@
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
           "path": "tests/test_provider_context_limits.py",
@@ -1892,11 +1892,11 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d5ac63119f6b01099249a4d751311d52dd8da81c24672e71ea73d1aeb30c1bc8"
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
         },
         {
           "path": "agents/web.py",
-          "sha256": "9ce5a08a33e54c8e6911142024e75c825995e43bf0ddf3e4e250921fa14732f9"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "tests/test_invocation_reasoning.py",
@@ -2241,7 +2241,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d5ac63119f6b01099249a4d751311d52dd8da81c24672e71ea73d1aeb30c1bc8"
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2285,7 +2285,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "ea5207fabcdb0a308ed2e8d73521544240d7ae6e00bcb33668428d84d2dda188"
+          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2309,7 +2309,7 @@
         },
         {
           "path": "tests/test_job_dispatch.py",
-          "sha256": "dfa06020e4a95bd4bfcacc7428c97a8d0f0a3f01eef2a43a8239b8912f6b62c4"
+          "sha256": "9433c50b2e9ae4875894ed2fad6af7f037fd9fbf34173ec7a285a7c22adaf1bb"
         },
         {
           "path": "docs/automations-dispatch.md",
@@ -2333,7 +2333,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3609,9 +3609,9 @@
     {
       "id": "H671",
       "row_sha256": "b9a5e8778376a36ec6f418ae6719f515f06293d18ee86954c840c13ce2b1d05c",
-      "status": "partial",
-      "summary": "Checkpoint sessions.started_at is now the durable birth source, including restart and duplicate session creation. Streaming no longer resets the birthday map each turn. Agent.generate_response binds session identity and clock for direct/process/stream paths; parallel orchestrator calls propagate their request session. UTC storage converts to local time, midnight comparisons use one zone, and a reused trailing clock block refreshes without duplication. Review repair: for persisted local birth with a fixed historical offset, current local date resolves the current offset independently across DST; explicit ZoneInfo/fixed-zone requests retain their chosen zone. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Accepted compaction now durably commits its identity and clock revision together using SQLite compare-and-swap. Request snapshots freeze the prompt date until accepted history or tool compaction; restart preserves the last accepted rebuild date. Failed/stale history commits stop text/stream/process dispatch with a bounded reply, while failed tool compaction cannot publish the staged transcript. Request lifetimes revoke inherited late compaction without sharing mutable snapshots between siblings. Unmanaged requests retain legacy behavior, and direct Agent birth records preserve creator metadata. Independent actual-boundary regressions verify commit races, cancellation, midnight, restart, scope closure and no-op behavior.",
-      "remaining": "Cross-ID continuation/root lineage is not implemented; no rotation or ancestry is inferred. Missing or corrupt durable birth remains unknown rather than invented. Full summary/transcript storage and cross-database atomic publication are not introduced: the accepted compaction identity and clock revision are durable, while existing transcript/cache rendering remains in process. This closes the same-session accepted-compaction clock boundary only.",
+      "status": "equivalent",
+      "summary": "Durable session birth is resolved through an immutable, generation-checked continuation root. Explicit owner-created child sessions carry bounded retained context and root birth through multiple generations, text/stream/process entrypoints and restart without switching the shared default. SQLite atomically commits child identity, seed, lineage and initial clock; idempotent request receipts resolve retries. Corrupt newer snapshots, reused identities and failed recovery stop dispatch or writes instead of silently replacing context. Accepted history/tool compaction alone advances the durable rebuild clock through compare-and-swap; request snapshots preserve same-day prefix bytes, reject late inherited commits, and add the trusted current-date line only when rebuild and root-birth days differ. Production rendering resolves explicit TZ or existing local IANA discovery and uses historical/current DST rules with an explicit UTC offset. Unknown birth is omitted; invalid or unavailable zone discovery preserves truthful offset-only rendering rather than inventing an IANA name. Independent actual-route, Agent, restart, concurrency, cancellation, failed-resume and observe-only regressions support the full frozen clock contract. This is code-equivalence, not a live-provider claim; ordinary subsequent JSON persistence remains best effort and turn leases are process-local.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/agent.py",
@@ -3619,7 +3619,7 @@
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
+          "sha256": "9c3ccdfa77e43472c258dc93b12965d761f0e9ad36f47135c6806a68b1b4ed80"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3627,7 +3627,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
+          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3659,7 +3659,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3667,7 +3667,7 @@
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
           "path": "tests/test_provider_context_limits.py",
@@ -3704,6 +3704,42 @@
         {
           "path": "docs/superpowers/plans/2026-09-15-compaction-clock.md",
           "sha256": "0805331aadead237d2fd1b47ab626ead861091ebd05ef539ee39744edba502d6"
+        },
+        {
+          "path": "agents/core/session_continuation.py",
+          "sha256": "339afcc1c6e6ae37389bbd9dec7ffb7862d53ac809723839e68bcb3abe750295"
+        },
+        {
+          "path": "agents/core/memory/manager.py",
+          "sha256": "87dbad3f782e19a8cddc25608e001da687a6ed021715588faeaf0445a00993ee"
+        },
+        {
+          "path": "agents/core/memory/conversation.py",
+          "sha256": "ce1fe169eb0b81b4a0e45a00449485842ac601585cfadfe38f1c6b4b4ec3be32"
+        },
+        {
+          "path": "agents/core/memory/persistence.py",
+          "sha256": "a4e2f59657c2fe8be33d7738c59f847de638caa22801dd2f4d688b4feb0a17cd"
+        },
+        {
+          "path": "agents/core/routers/sessions.py",
+          "sha256": "5717808dcd0e3086c28f7c3d2151e7873a40abe73910e766853a6d369209a95f"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
+        },
+        {
+          "path": "tests/test_session_continuation.py",
+          "sha256": "b5e5e5bcf6ec7acf69fd49e30e356c59f721bf2492a4583068417412e2dc450b"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-session-continuation.md",
+          "sha256": "a5ca34b6a1d3493a6a0bb8c57d34119fb20e12dfe448b6e247f317a8b447aea4"
         }
       ]
     },
@@ -3720,7 +3756,7 @@
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
+          "sha256": "9c3ccdfa77e43472c258dc93b12965d761f0e9ad36f47135c6806a68b1b4ed80"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3728,7 +3764,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
+          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3760,7 +3796,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3772,7 +3808,7 @@
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
           "path": "tests/test_provider_context_limits.py",
@@ -3931,7 +3967,7 @@
         },
         {
           "path": "agents/core/checkpoint.py",
-          "sha256": "1767e1ec6d29ace847c7c94a26a6fd3d88923e955d8d153c0e5732aac04f3519"
+          "sha256": "9c3ccdfa77e43472c258dc93b12965d761f0e9ad36f47135c6806a68b1b4ed80"
         },
         {
           "path": "agents/core/context_compressor.py",
@@ -3939,7 +3975,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "2cb4a6532e83c3b93b5048bddcdb65f9b150c24b08546458d315d17cc8df4c17"
+          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -3979,7 +4015,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "cc20829db886381970f737de8fc3b6939a796a0f01e9a57fdc36f43a13ad3f76"
+          "sha256": "ab75927b2574ec98fca1f2f449adc4d7e808c1e2e50cb1d851bd10222cfa16da"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3987,7 +4023,7 @@
         },
         {
           "path": "tests/test_conversation_clock.py",
-          "sha256": "8f6c76a603c09463b59e7ee7b00c5f0a4b5fffd75dded7dc9437b3d4ca0696e1"
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
           "path": "tests/test_provider_context_limits.py",
@@ -4114,7 +4150,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "d5ac63119f6b01099249a4d751311d52dd8da81c24672e71ea73d1aeb30c1bc8"
+          "sha256": "7de6f7621bfed33c24a37fa3029a02831aa79d3601bda96ea52e6653bb5f49a2"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -4309,7 +4345,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "9ce5a08a33e54c8e6911142024e75c825995e43bf0ddf3e4e250921fa14732f9"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "agents/core/routers/swarm.py",
@@ -4410,7 +4446,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "9ce5a08a33e54c8e6911142024e75c825995e43bf0ddf3e4e250921fa14732f9"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "frontend/src/appearance.ts",
@@ -4627,7 +4663,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "9ce5a08a33e54c8e6911142024e75c825995e43bf0ddf3e4e250921fa14732f9"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "frontend/src/composer-images.tsx",
@@ -4647,7 +4683,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "ea5207fabcdb0a308ed2e8d73521544240d7ae6e00bcb33668428d84d2dda188"
+          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
         },
         {
           "path": "tests/test_composer_vision.py",

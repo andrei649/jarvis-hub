@@ -6,11 +6,14 @@ resolved at request time via `get_orch()` (late binding to `web.orch`), matching
 the other extracted routers. Behavior is unchanged from the inline versions.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.validation import is_valid_session_id
 
 router = APIRouter(tags=["sessions"])
@@ -47,3 +50,29 @@ async def resume_session(req: Request):
     orch.session_id = sid
     history = await orch.memory.get_history(sid, last_n=20)
     return JSONResponse({"ok": True, "session": sid, "turns": history})
+
+
+class ContinueSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_session_id: str
+    request_id: UUID
+
+    @field_validator("source_session_id")
+    @classmethod
+    def valid_source(cls, value):
+        if not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
+
+
+@router.post("/sessions/continue", dependencies=[Depends(admin_guard)])
+async def continue_session(body: ContinueSessionRequest):
+    from agents.core.session_continuation import ContinuationRefused, create_continuation
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        result = await create_continuation(orch, body.source_session_id, str(body.request_id))
+    except ContinuationRefused as exc:
+        return JSONResponse({"error": exc.reason}, status_code=exc.status)
+    return JSONResponse(result, status_code=201)

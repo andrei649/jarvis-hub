@@ -293,7 +293,8 @@ async def test_script_approval_reservation_outlives_manual_dispatch(tmp_path, mo
     (scripts / "watch.py").write_text("print('ready')")
     store, runner, job, tasks, outputs, _ = make_runtime(tmp_path, scripts)
     other = JobStore(store._path)
-    second = JobRunner(other, orch=runner._orch, scheduler=lambda: None)
+    # Both runners use the same explicit non-quiet test clock.
+    second = JobRunner(other, orch=runner._orch, scheduler=lambda: None, quiet=lambda: False)
     second.bind_scripts(
         submit=runner._script_runtime.submit,
         get=tasks.get,

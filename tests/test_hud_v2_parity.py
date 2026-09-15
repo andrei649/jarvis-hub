@@ -473,6 +473,9 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/sessions/continue":
+        "explicit owner CLI creation via `nerva sessions continue`; the returned child is "
+        "addressed by `nerva chat --session` without changing the HUD default session",
     "/.well-known/agent-card": "agent discovery, fetched by other agents",
     "/.well-known/oauth-protected-resource": "OAuth resource metadata, fetched by clients",
     "/api/a2a/card": "agent-to-agent discovery",
