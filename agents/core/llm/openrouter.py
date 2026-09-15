@@ -14,7 +14,8 @@ from typing import Any, Optional
 
 from .base import LLMBackend, cloud_cap, strip_thinking
 from .egress import llm_async_client
-from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .tool_dialects import compatible_usage
+from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
@@ -94,12 +95,15 @@ class OpenRouterBackend(LLMBackend):
         try:
             resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
             resp.raise_for_status()
-            choice = resp.json()["choices"][0]
+            data = resp.json()
+            choice = data["choices"][0]
             message = choice.get("message") or {}
             return ToolTurn(
                 content=strip_thinking(message.get("content", "") or ""),
                 tool_calls=parse_openai_tool_calls(message.get("tool_calls") or []),
                 finish_reason=choice.get("finish_reason"),
+                usage=(compatible_usage(data) if self.profile.backend_kind == "openai-compatible"
+                       else TokenUsage()),
             )
         except Exception as e:
             logger.warning("OpenRouter tool turn failed: %s", e)

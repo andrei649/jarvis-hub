@@ -2772,14 +2772,18 @@ class Orchestrator:
         several times the context that actually exists and compact a healthy
         session down to nothing.
 
-        A turn that reported no input leaves the previous anchor alone rather
+        A turn that reported no prompt occupancy leaves the previous anchor alone rather
         than clearing it: the transcript did not shrink because one backend
         stayed quiet.
         """
-        if not getattr(usage, "input_tokens", 0):
+        # TokenUsage stores disjoint input/cache categories. Cached prefixes
+        # occupy context too; totals-only adapters leave both cache fields zero.
+        prompt_tokens = sum(getattr(usage, key, 0) for key in
+                            ("input_tokens", "cache_read", "cache_write"))
+        if not prompt_tokens:
             return
         self._context_anchor[agent_id] = (
-            int(usage.input_tokens), int(self._ctx_turns_at_build),
+            int(prompt_tokens), int(self._ctx_turns_at_build),
         )
 
     def _usage_anchor(self, turn_count: int):

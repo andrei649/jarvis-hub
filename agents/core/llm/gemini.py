@@ -20,6 +20,7 @@ from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
 from .tool_dialects import (
+    gemini_usage,
     GEMINI_FINISH_REASONS,
     gemini_contents,
     gemini_function_declarations,
@@ -301,11 +302,12 @@ class GeminiBackend(LLMBackend):
         return self._fit_effort(payload, model or self.model)
 
     def _tool_turn_from_response(self, data: Any) -> ToolTurn:
+        usage = gemini_usage(data)
         candidates = data.get("candidates") if isinstance(data, dict) else None
         if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
             feedback = data.get("promptFeedback") if isinstance(data, dict) else None
             blocked = isinstance(feedback, dict) and bool(feedback.get("blockReason"))
-            return ToolTurn(content="", finish_reason="content_filter" if blocked else None)
+            return ToolTurn(content="", finish_reason="content_filter" if blocked else None, usage=usage)
         candidate = candidates[0]
         content = candidate.get("content")
         parts = content.get("parts") if isinstance(content, dict) else None
@@ -313,6 +315,7 @@ class GeminiBackend(LLMBackend):
         remember_thought_signatures(self._thought_signatures, signatures)
         return ToolTurn(
             content=self._finalize_cloud(gemini_text(parts)),
+            usage=usage,
             tool_calls=parse_openai_tool_calls(raw_calls),
             finish_reason=normalize_finish_reason(
                 GEMINI_FINISH_REASONS, candidate.get("finishReason")
