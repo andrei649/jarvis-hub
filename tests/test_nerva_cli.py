@@ -96,6 +96,20 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["estop"] == ["engage", "resume", "status"]
 
 
+@pytest.mark.parametrize("report,expected", [
+    ({"ok": True, "problems": []}, EXIT_OK),
+    ({"ok": False, "problems": [{"code": "overdue"}]}, EXIT_FAILED),
+    ({"ok": True, "problems": [{"code": "overdue"}]}, EXIT_FAILED),
+    ({}, EXIT_FAILED),
+    ({"ok": "true", "problems": []}, EXIT_FAILED),
+])
+def test_jobs_doctor_exit_status_requires_verified_health(report, expected):
+    hub = _FakeHub({"GET /api/jobs/doctor": report})
+    code, out, _err, hub = _run(["jobs", "doctor", "--json"], hub=hub)
+    assert code == expected and json.loads(out) == report
+    assert hub.calls == [("GET", "/api/jobs/doctor", None)]
+
+
 def test_no_verb_is_a_usage_error_not_a_traceback():
     code, _out, _err, _hub = _run([])
     assert code == EXIT_USAGE
@@ -634,7 +648,7 @@ def test_send_list_shows_configured_destinations_as_well_as_threads():
 
 
 def test_jobs_advanced_cli_payloads():
-    hub=_FakeHub({'POST /api/jobs':{'ok':True,'job':JOB},'PUT /api/jobs/x/notepad':{'ok':True},'GET /api/jobs/doctor':{},'GET /api/jobs/incidents':{},'POST /api/jobs/tick':{},'GET /api/jobs/x':{'job':JOB}})
+    hub=_FakeHub({'POST /api/jobs':{'ok':True,'job':JOB},'PUT /api/jobs/x/notepad':{'ok':True},'GET /api/jobs/doctor':{'ok':True,'problems':[]},'GET /api/jobs/incidents':{},'POST /api/jobs/tick':{},'GET /api/jobs/x':{'job':JOB}})
     code,_,_,hub=_run(['jobs','create','--blueprint','reminder','--param','message=x','--options','{"repeat":2,"deliver":[]}'],hub)
     assert code==EXIT_OK and hub.calls[-1][2]['options']=={'repeat':2,'deliver':[]}
     for args,method,path in [(['doctor'],'GET','/api/jobs/doctor'),(['incidents'],'GET','/api/jobs/incidents'),(['tick'],'POST','/api/jobs/tick'),(['notepad','x','--text','memo'],'PUT','/api/jobs/x/notepad'),(['status','x'],'GET','/api/jobs/x')]:
