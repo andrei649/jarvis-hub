@@ -1416,6 +1416,19 @@ planning/spec documents for this sprint are in `docs/superpowers/plans/`; no pro
   admin routes with the backend's own refusal words, and lists a job's attempts. The seven
   `/api/jobs` routes left the parity gate's punch list (10 again) and the bundle was rebuilt.
   Tests: `frontend/src/panels/jobs.test.tsx` (4).
+  **2026-09-15 H146/H449 extension:** topbar Automations workspace and accessible native
+  creation dialog (focus containment, Escape, focus restoration), custom four-action editing, visual daily/weekday/
+  weekly/interval builder, 16 typed blueprint cards, per-job configured owner-channel delivery
+  and bounded attempt count persisted in SQLite. CLI adds status/remove, doctor/incidents,
+  writable notepad and idempotent fallback tick (refused while APScheduler is running).
+  Delivery remains behind quiet hours/interrupt budget; held flush now also checks e-stop.
+  Review repairs: concurrent metadata updates cannot reset attempts, tick preserves hub timezone/DST,
+  and history-only brief/reminder runs retain their bounded actual text.
+  **Still partial:** model/provider pins, workdir, toolset/skill isolation and cross-profile
+  aggregation need an execution-context contract; unsupported options are rejected. The
+  original schedule.create kernel grant is not added by this scope. Live connector/clock
+  proof and native-mobile authoring remain unverified/unimplemented.
+
 - [x] ✅ **HA-2c — the weekday heartbeat fires on the weekday.** `HeartbeatScheduler.start`
   passed cron's day-of-week (0 = Sunday) straight to APScheduler (0 = Monday), so every
   `cron:` heartbeat with a weekday field fired one day late; it now goes through

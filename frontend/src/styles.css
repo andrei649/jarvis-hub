@@ -797,3 +797,8 @@ input { font-family: inherit; }
 .art-save.ok { color:var(--green); border-color:var(--green-dim); }
 .art-save.err { color:var(--amber); border-color:rgba(255,194,77,.4); }
 .art-save:disabled { cursor:wait; opacity:.7; }
+
+/* Scheduled-job creation stays readable above the translucent HUD panels. */
+.job-create-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+.job-create-dialog label { display: grid; gap: 6px; }
+.job-create-dialog label > input, .job-create-dialog label > select { width: 100%; box-sizing: border-box; }

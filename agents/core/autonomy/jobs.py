@@ -39,7 +39,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -109,9 +109,12 @@ class Job:
     notepad: str = ""
     paused_reason: str | None = None
 
+    options: dict = field(default_factory=dict)
+    attempts: int = 0
+
     @property
     def runnable(self) -> bool:
-        return self.enabled and not self.paused_reason
+        return self.enabled and not self.paused_reason and (not self.options.get("repeat") or self.attempts < self.options["repeat"])
 
     def as_dict(self) -> dict:
         return {
@@ -131,6 +134,8 @@ class Job:
             "notepad": self.notepad,
             "paused_reason": self.paused_reason,
             "runnable": self.runnable,
+            "options": dict(self.options),
+            "attempts": self.attempts,
         }
 
 
@@ -228,6 +233,9 @@ def resolve_schedule(text: str) -> tuple[str, str]:
         raise ValueError(
             f"that fires ~{rate:.0f}× a day; the floor is once every five minutes"
         )
+    from apscheduler.triggers.cron import CronTrigger
+
+    CronTrigger(**cron_kwargs(cron), timezone=UTC)
     return cron, description
 
 
@@ -321,6 +329,24 @@ def validate_action(action: Any) -> list[str]:
     return errors
 
 
+def validate_options(options: Any) -> dict:
+    if not isinstance(options, dict):
+        raise ValueError("options must be an object")
+    unknown = set(options) - {"repeat", "deliver"}
+    if unknown:
+        raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    repeat = options.get("repeat")
+    if repeat is not None and (type(repeat) is not int or not 1 <= repeat <= 10000):
+        raise ValueError("repeat must be null or an integer from 1 to 10000 attempts")
+    if "deliver" in options:
+        targets = options["deliver"]
+        if not isinstance(targets, list) or len(targets) > 8 or any(
+            not isinstance(t, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", t) for t in targets
+        ) or len(set(targets)) != len(targets):
+            raise ValueError("deliver must list up to 8 unique configured channel names")
+    return json.loads(json.dumps(options))
+
+
 # ── blueprints ───────────────────────────────────────────────────────────────
 
 BLUEPRINTS: dict[str, dict] = {
@@ -377,6 +403,11 @@ BLUEPRINTS: dict[str, dict] = {
 }
 
 
+from .jobs_blueprints import extend_catalog, validate_params
+
+extend_catalog(BLUEPRINTS)
+
+
 def blueprint_catalog() -> list[dict]:
     return [
         {"id": bid, **{key: (dict(value) if isinstance(value, dict) else value) for key, value in spec.items()}}
@@ -393,8 +424,13 @@ def instantiate_blueprint(blueprint_id: str, params: Mapping[str, Any] | None = 
     unknown = sorted(set(params) - set(spec["params"]))
     if unknown:
         raise ValueError(f"blueprint {blueprint_id} takes {', '.join(spec['params'])}; not {', '.join(unknown)}")
+    values = validate_params(spec, params)
     schedule_text = str(params.get("schedule_text") or spec["schedule_text"])
     action = dict(spec["action"])
+    if spec.get("template"):
+        key = "message" if action["type"] == "remind" else "prompt"
+        action[key] = action[key].format_map(values)
+        return str(spec["title"]), schedule_text, action
     for key in spec["params"]:
         if key == "schedule_text":
             continue
@@ -409,15 +445,10 @@ def instantiate_blueprint(blueprint_id: str, params: Mapping[str, Any] | None = 
 
 # ── the store ────────────────────────────────────────────────────────────────
 
-_UPDATE_SQL = (
-    "UPDATE jobs SET name = ?, schedule_text = ?, cron = ?, action = ?, enabled = ?, "
-    "blueprint = ?, updated_at = ?, last_run_at = ?, last_status = ?, last_summary = ?, "
-    "consecutive_failures = ?, notepad = ?, paused_reason = ? WHERE id = ?"
-)
 _JOB_COLUMNS = (
     "id", "name", "schedule_text", "cron", "action", "enabled", "blueprint", "created_at",
     "updated_at", "last_run_at", "last_status", "last_summary", "consecutive_failures",
-    "notepad", "paused_reason",
+    "notepad", "paused_reason", "options", "attempts",
 )
 
 
@@ -447,6 +478,11 @@ class JobStore:
                     summary TEXT NOT NULL DEFAULT '', error TEXT
                 )"""
             )
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")}
+            if "options" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN options TEXT NOT NULL DEFAULT '{}'")
+            if "attempts" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
             self._conn.execute("CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs(job_id, id)")
             self._conn.execute(
                 """CREATE TABLE IF NOT EXISTS job_held (
@@ -454,6 +490,7 @@ class JobStore:
                     text TEXT NOT NULL, channel TEXT, created_at TEXT NOT NULL
                 )"""
             )
+            self._conn.execute("CREATE TABLE IF NOT EXISTS job_ticks (job_id TEXT PRIMARY KEY, slot TEXT NOT NULL)")
             self._conn.commit()
 
     def close(self) -> None:
@@ -482,6 +519,8 @@ class JobStore:
             consecutive_failures=int(row["consecutive_failures"] or 0),
             notepad=row["notepad"] or "",
             paused_reason=row["paused_reason"],
+            options=validate_options(json.loads(row["options"])),
+            attempts=int(row["attempts"]),
         )
 
     def create(
@@ -491,7 +530,9 @@ class JobStore:
         schedule_text: str,
         action: Mapping[str, Any],
         blueprint: str | None = None,
+        options: dict | None = None,
     ) -> Job:
+        options = validate_options(options if options is not None else {})
         name = " ".join(str(name or "").split())
         if not name:
             raise ValueError("a job needs a name")
@@ -509,9 +550,9 @@ class JobStore:
             now = utc_now()
             self._conn.execute(
                 """INSERT INTO jobs (id, name, schedule_text, cron, action, enabled, blueprint,
-                       created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+                       created_at, updated_at, options) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
                 (job_id, name, str(schedule_text).strip(), cron, json.dumps(dict(action), ensure_ascii=False),
-                 blueprint, now, now),
+                 blueprint, now, now, json.dumps(options)),
             )
             self._conn.commit()
         job = self.get(job_id)
@@ -530,38 +571,42 @@ class JobStore:
         return [self._row_to_job(row) for row in rows]
 
     def update(self, job_id: str, **fields: Any) -> Job:
-        """Change a job's fields; one fixed statement, never SQL built from names."""
-        unknown = sorted(set(fields) - set(_JOB_COLUMNS) - {"id"})
+        """Update only named mutable columns; never replay a stale job snapshot.
+
+        SQLite serializes each UPDATE across independent connections. Reservations own
+        the attempts column exclusively, so a notepad/status/config write cannot undo one.
+        """
+        allowed = set(_JOB_COLUMNS) - {"id", "created_at", "attempts"}
+        unknown = sorted(set(fields) - allowed)
         if unknown:
-            raise ValueError(f"unknown job fields {unknown}")
-        current = self.get(job_id)
-        if current is None:
-            raise KeyError(job_id)
+            raise ValueError(f"unknown or immutable job fields {unknown}")
         values = dict(fields)
-        if "action" in values:
-            values["action"] = dict(values["action"])
+        for key in ("action", "options"):
+            if key in values:
+                values[key] = json.dumps(dict(values[key]), ensure_ascii=False)
         if "enabled" in values:
-            values["enabled"] = bool(values["enabled"])
+            values["enabled"] = int(bool(values["enabled"]))
         if "notepad" in values:
             values["notepad"] = str(values["notepad"] or "")[:MAX_NOTEPAD]
         if "last_summary" in values:
             values["last_summary"] = str(values["last_summary"] or "")[:MAX_TEXT]
         if "consecutive_failures" in values:
             values["consecutive_failures"] = int(values["consecutive_failures"])
-        merged = replace(current, updated_at=utc_now(), **values)
+        values["updated_at"] = utc_now()
+        # Column identifiers come exclusively from the fixed allowlist above; data is bound.
+        assignments = ", ".join(f"{key} = ?" for key in values)
         with self._lock:
-            self._conn.execute(
-                _UPDATE_SQL,
-                (
-                    merged.name, merged.schedule_text, merged.cron,
-                    json.dumps(merged.action, ensure_ascii=False), 1 if merged.enabled else 0,
-                    merged.blueprint, merged.updated_at, merged.last_run_at, merged.last_status,
-                    merged.last_summary, merged.consecutive_failures, merged.notepad,
-                    merged.paused_reason, merged.id,
-                ),
+            cursor = self._conn.execute(
+                f"UPDATE jobs SET {assignments} WHERE id = ?",  # nosec B608
+                (*values.values(), str(job_id)),
             )
             self._conn.commit()
-        return merged
+            if cursor.rowcount == 0:
+                raise KeyError(job_id)
+        updated = self.get(job_id)
+        if updated is None:
+            raise KeyError(job_id)
+        return updated
 
     def edit(
         self,
@@ -570,6 +615,7 @@ class JobStore:
         name: str | None = None,
         schedule_text: str | None = None,
         action: Mapping[str, Any] | None = None,
+        options: dict | None = None,
     ) -> Job:
         """Change what an existing job *is*, under the same rules that created it.
 
@@ -580,17 +626,19 @@ class JobStore:
         schedule everywhere while the job kept firing on the old one. So the cron is always
         re-derived from the text here, exactly as ``create`` derives it.
 
-        Only the three fields an owner authored are editable. Run history, failure counts
+        Only owner-authored configuration is editable. Run history, failure counts
         and ``paused_reason`` are outcomes, not settings: an edit must not silently resume a
         paused job or forgive its failures — ``resume`` is the verb for that.
         """
         current = self.get(job_id)
         if current is None:
             raise KeyError(job_id)
-        if name is None and schedule_text is None and action is None:
+        if name is None and schedule_text is None and action is None and options is None:
             raise ValueError("an edit needs a name, a schedule or an action")
 
         fields: dict[str, Any] = {}
+        if options is not None:
+            fields["options"] = validate_options(options)
         if name is not None:
             cleaned = " ".join(str(name).split())
             if not cleaned:
@@ -612,10 +660,30 @@ class JobStore:
             fields["cron"] = cron
         return self.update(job_id, **fields)
 
+    def claim_tick(self, job_id: str, slot: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO job_ticks(job_id, slot) VALUES (?, ?) ON CONFLICT(job_id) "
+                "DO UPDATE SET slot=excluded.slot WHERE job_ticks.slot < excluded.slot", (job_id, slot))
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def reserve_attempt(self, job_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET attempts = attempts + 1 WHERE id = ? AND "
+                "(json_extract(options, '$.repeat') IS NULL OR attempts < json_extract(options, '$.repeat'))",
+                (job_id,),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
     def delete(self, job_id: str) -> bool:
         with self._lock:
             cursor = self._conn.execute("DELETE FROM jobs WHERE id = ?", (str(job_id),))
             self._conn.execute("DELETE FROM job_runs WHERE job_id = ?", (str(job_id),))
+            self._conn.execute("DELETE FROM job_held WHERE job_id = ?", (str(job_id),))
+            self._conn.execute("DELETE FROM job_ticks WHERE job_id = ?", (str(job_id),))
             self._conn.commit()
         return cursor.rowcount > 0
 
@@ -725,6 +793,14 @@ class JobRunner:
 
     # scheduler --------------------------------------------------------------
 
+    def scheduler_timezone(self):
+        """Use the configured scheduler zone, or the same local default as APScheduler."""
+        from apscheduler.util import astimezone
+        from tzlocal import get_localzone
+
+        sched = self._scheduler()
+        return astimezone(getattr(sched, "timezone", None) or get_localzone())
+
     def scheduler_alive(self) -> bool:
         sched = self._scheduler()
         return sched is not None and bool(getattr(sched, "running", False))
@@ -789,6 +865,7 @@ class JobRunner:
         jobs = self.store.list()
         return {
             "alive": self.scheduler_alive(),
+            "timezone": str(self.scheduler_timezone()),
             "registered": self.registered_ids(),
             "jobs": len(jobs),
             "runnable": sum(1 for job in jobs if job.runnable),
@@ -796,6 +873,35 @@ class JobRunner:
             "held": self.store.held_count(),
             "quiet_hours": self.quiet_hours(),
         }
+
+    def doctor(self) -> dict:
+        channels = sorted((getattr(self._orch, "channels", None) or {}).keys())
+        problems = []
+        for job in self.store.list():
+            for target in job.options.get("deliver", []):
+                if target not in channels:
+                    problems.append({"job_id":job.id,"reason":f"channel {target!r} is not connected"})
+        return {"scheduler":self.snapshot(), "channels":channels, "problems":problems,
+                "supported_options":["repeat","deliver"],
+                "unsupported_options":["workdir","model","provider","enabled_toolsets","skills"]}
+
+    async def tick(self, now: datetime | None = None) -> list[JobRun]:
+        """Fallback ticker; never competes with the running APScheduler. No catch-up burst."""
+        from apscheduler.triggers.cron import CronTrigger
+        if self.scheduler_alive():
+            raise ValueError("scheduler is running; manual tick would compete with it")
+        timezone = self.scheduler_timezone()
+        now = (now or datetime.now(UTC)).astimezone(timezone)
+        slot = now.replace(second=0, microsecond=0)
+        runs = []
+        for job in self.store.list():
+            if not job.runnable:
+                continue
+            trigger = CronTrigger(**cron_kwargs(job.cron), timezone=timezone)
+            due = trigger.get_next_fire_time(None, slot)
+            if due == slot and self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+                runs.append(await self.fire(job.id))
+        return runs
 
     # lifecycle --------------------------------------------------------------
 
@@ -854,6 +960,10 @@ class JobRunner:
                 job_id, started_at=started, finished_at=utc_now(), status=STATUS_SKIPPED,
                 summary="emergency stop engaged",
             )
+        if not self.store.reserve_attempt(job_id):
+            self.unregister(job_id)
+            return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
+                                         status=STATUS_SKIPPED, summary="repeat limit exhausted")
         try:
             summary, notepad = await self._execute(job)
         except Exception as exc:
@@ -868,7 +978,9 @@ class JobRunner:
         if notepad is not None:
             fields["notepad"] = notepad
         with contextlib.suppress(KeyError):  # deleted while running
-            self.store.update(job.id, **fields)
+            updated = self.store.update(job.id, **fields)
+            if not updated.runnable:
+                self.unregister(job.id)
         return self.store.record_run(job.id, started_at=started, finished_at=finished, status=STATUS_OK, summary=summary)
 
     def _failed(self, job: Job, started: str, exc: Exception) -> JobRun:
@@ -923,10 +1035,14 @@ class JobRunner:
             delivered = await self._deliver(
                 str(action.get("message", "")), action.get("channel"), job=job, urgent=urgent,
             )
+            if job.options.get("deliver") == []:
+                return str(action.get("message", ""))[:MAX_TEXT], None
             return f"reminder {delivered}", None
         if kind == "brief":
             text = await self._brief(str(action.get("kind", "morning")))
             delivered = await self._deliver(text, None, job=job, urgent=urgent)
+            if job.options.get("deliver") == []:
+                return text[:MAX_TEXT], None
             return f"{action.get('kind')} brief {delivered}", None
         if kind == "ask":
             return await self._ask(job, action)
@@ -1022,7 +1138,9 @@ class JobRunner:
     async def flush_held(self) -> int:
         """Deliver held messages once quiet hours are over. Returns how many went out;
         the first refusal stops the pass so nothing is delivered out of order."""
-        if self.quiet_hours():
+        from agents.core import estop
+
+        if self.quiet_hours() or estop.check_paused("jobs-held-flush", logger):
             return 0
         delivered = 0
         for item in self.store.held():
@@ -1044,6 +1162,16 @@ class JobRunner:
                        urgent: bool = False) -> str:
         """Send *text* to the owner, or hold it through quiet hours; returns a summary
         fragment, raises when it cannot send."""
+        if job is not None and "deliver" in job.options:
+            targets = job.options["deliver"]
+            if not targets:
+                return "kept in run history (delivery disabled)"
+            channels = getattr(self._orch, "channels", None) or {}
+            missing = [target for target in targets if target not in channels]
+            if missing:
+                raise RuntimeError(f"delivery channels are not connected: {', '.join(missing)}")
+            scoped = replace(job, options={k: v for k, v in job.options.items() if k != "deliver"})
+            return "; ".join([await self._deliver(text, target, job=scoped, urgent=urgent) for target in targets])
         if job is not None and self.quiet_hours():
             if urgent and self._spend_interrupt(job):
                 fragment = await self._send(text, channel)

@@ -203,6 +203,19 @@ note *why* if you add one.
 
 Keeping this list honest is task **H18.10** — the always-open umbrella in ORIZONT 18.
 
+
+### 2026-09-15 — H146/H449 advanced automations
+HUD Jobs now provides custom action creation/edit, visual schedule controls, sixteen typed
+blueprints, repeat limits, per-job channel/history delivery, diagnostics and notepad editing.
+Native mobile authoring remains a gap; use the responsive web HUD. New admin operations are
+GET /api/jobs/doctor, GET /api/jobs/incidents, POST /api/jobs/tick and
+PUT /api/jobs/{job_id}/notepad. Mobile has no new adapter and no live delivery was enabled.
+
+H146 followup: the topbar Automations entry now opens a roomy dedicated Jobs workspace;
+Console integration remains. Custom creation uses a native modal with initial focus,
+Tab containment, Escape/cancel and focus restoration. Browser proof uses mocked job reads;
+no live channel was enabled. Generated OpenAPI types now include all four added job routes.
+
 2026-09-15 — H12.26 binary attachments: desktop Artifacts supports opt-in upload,
 validated authenticated delivery, pin/delete. Native mobile attachment controls
 remain a parity gap; existing text Canvas is unchanged.

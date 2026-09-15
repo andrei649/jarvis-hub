@@ -26,18 +26,20 @@ class JobCreateBody(BaseModel):
     name: str | None = Field(default=None, max_length=80)
     schedule_text: str | None = Field(default=None, max_length=200)
     action: dict[str, Any] | None = None
+    options: dict[str, Any] | None = None
     blueprint: str | None = Field(default=None, max_length=40)
     params: dict[str, Any] | None = None
 
 
 class JobEditBody(BaseModel):
-    """The three fields an owner authored. Everything else about a job is an outcome."""
+    """Owner-authored job configuration; run outcomes stay internal."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, max_length=80)
     schedule_text: str | None = Field(default=None, max_length=200)
     action: dict[str, Any] | None = None
+    options: dict[str, Any] | None = None
 
 
 class JobPauseBody(BaseModel):
@@ -91,10 +93,53 @@ async def jobs_create(body: JobCreateBody):
             if not body.name or not body.schedule_text or body.action is None:
                 return _refused("name, schedule_text and action are required (or a blueprint)")
             name, schedule_text, action = body.name, body.schedule_text, body.action
-        job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint)
+        job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint, options=body.options)
     except ValueError as exc:
         return _refused(str(exc))
     return nocache_json({"ok": True, "job": job.as_dict()}, status_code=201)
+
+
+@router.get("/api/jobs/doctor", dependencies=[Depends(admin_guard)])
+async def jobs_doctor():
+    runner = _runner()
+    return nocache_json(runner.doctor()) if runner else _unavailable()
+
+
+@router.get("/api/jobs/incidents", dependencies=[Depends(admin_guard)])
+async def jobs_incidents():
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    return nocache_json({"incidents": [{"job_id":j.id, "reason":j.paused_reason,
+        "failures":j.consecutive_failures} for j in runner.store.list()
+        if j.consecutive_failures >= 3 and j.paused_reason]})
+
+
+@router.post("/api/jobs/tick", dependencies=[Depends(admin_guard)])
+async def jobs_tick():
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        return nocache_json({"runs":[r.as_dict() for r in await runner.tick()]})
+    except ValueError as exc:
+        return JSONResponse({"error":str(exc)}, status_code=409)
+
+
+class JobNotepadBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(max_length=4096)
+
+
+@router.put("/api/jobs/{job_id}/notepad", dependencies=[Depends(admin_guard)])
+async def jobs_notepad(job_id: str, body: JobNotepadBody):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    try:
+        return nocache_json({"ok":True,"job":runner.store.update(job_id, notepad=body.text).as_dict()})
+    except KeyError:
+        return JSONResponse({"error":"no such job"},status_code=404)
 
 
 @router.get("/api/jobs/{job_id}", dependencies=[Depends(admin_guard)])
@@ -121,7 +166,7 @@ async def jobs_edit(job_id: str, body: JobEditBody):
         return _unavailable()
     try:
         job = runner.edit(
-            job_id, name=body.name, schedule_text=body.schedule_text, action=body.action
+            job_id, name=body.name, schedule_text=body.schedule_text, action=body.action, options=body.options
         )
     except KeyError:
         return JSONResponse({"error": "no such job"}, status_code=404)

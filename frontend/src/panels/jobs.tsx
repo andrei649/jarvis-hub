@@ -20,7 +20,9 @@
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
-import { apiDelete, apiGet, apiPatch } from '../api/client';
+import { OptionsEditor, ScheduleBuilder, JobOptions } from './job-builder';
+import { JobCreateDialog } from './job-create-dialog';
+import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 
 const JOBS_PATH = '/api/jobs';
@@ -33,6 +35,7 @@ const Note = ({ c, children }: { c?: any; children?: any }) => (
 );
 
 const stateOf = (job: any): { label: string; color: string } => {
+  if (job?.options?.repeat && job.attempts >= job.options.repeat) return { label: 'complete', color: 'var(--ink-3)' };
   if (job?.paused_reason) return { label: 'paused', color: 'var(--amber)' };
   if (job?.enabled === false) return { label: 'off', color: 'var(--ink-3)' };
   return { label: 'on', color: 'var(--green)' };
@@ -51,6 +54,11 @@ export function JobsPanel() {
   const scheduler: any = (d && (d as any).scheduler) || null;
   const blueprints: any[] = arr(bp.d, 'blueprints');
 
+  const [diagnostic,setDiagnostic] = useState('');
+  const [notes,setNotes] = useState<Record<string,string>>({});
+  const [custom,setCustom] = useState(false);
+  const [typed,setTyped] = useState<Record<string, string | number>>({});
+  const [options,setOptions] = useState<JobOptions>({});
   const [blueprint, setBlueprint] = useState('');
   const [when, setWhen] = useState('');
   const [message, setMessage] = useState('');
@@ -59,14 +67,14 @@ export function JobsPanel() {
   const [note, setNote] = useState<string | null>(null);
   const [runNote, setRunNote] = useState<Record<string, string>>({});
   const [runs, setRuns] = useState<Record<string, any[] | null>>({});
-  const [editing, setEditing] = useState<Record<string, { name: string; when: string } | null>>({});
+  const [editing, setEditing] = useState<Record<string, { name: string; when: string; action: string; options: JobOptions } | null>>({});
 
   const chosen = blueprints.find((b) => b.id === blueprint) || null;
   const params: string[] = (chosen && chosen.params) || [];
 
   const arm = () => {
     if (!chosen) { setNote('pick a blueprint first'); return; }
-    const p: Record<string, string> = {};
+    const p: Record<string, string | number> = { ...typed };
     if (when.trim()) p.schedule_text = when.trim();
     if (params.includes('message') && message.trim()) p.message = message.trim();
     if (params.includes('prompt') && prompt.trim()) p.prompt = prompt.trim();
@@ -74,7 +82,7 @@ export function JobsPanel() {
     setNote(null);
     // Governed effect on the owner's behalf: MUST carry onErr so a 422 (a schedule that fires
     // too often, a blueprint missing its message) is printed, not swallowed.
-    actA(JOBS_PATH, { blueprint: chosen.id, params: p },
+    actA(JOBS_PATH, { blueprint: chosen.id, params: p, ...(Object.keys(options).length ? {options} : {}) },
       (r: any) => { setNote(`armed · ${r?.job?.schedule_text || ''} (${r?.job?.cron || ''})`); setMessage(''); setPrompt(''); reload(); },
       (err: any) => setNote(`refused · ${refusalReason(err, 'could not arm the job')}`));
   };
@@ -100,13 +108,15 @@ export function JobsPanel() {
   // text the owner just typed.
   const openEdit = (job: any) => {
     const id = String(job.id);
-    setEditing((m) => ({ ...m, [id]: m[id] ? null : { name: job.name || '', when: job.schedule_text || '' } }));
+    setNotes(m=>({...m,[id]:job.notepad || ''}));
+    setEditing((m) => ({ ...m, [id]: m[id] ? null : { name: job.name || '', when: job.schedule_text || '', action: JSON.stringify(job.action, null, 2), options: job.options || {} } }));
   };
 
   const saveEdit = (id: string) => {
     const draft = editing[id];
     if (!draft) return;
-    const body: Record<string, string> = {};
+    const body: Record<string, unknown> = {options:draft.options};
+    try { body.action=JSON.parse(draft.action); } catch { setRunNote(m=>({...m,[id]:'refused · invalid action JSON'})); return; }
     if (draft.name.trim()) body.name = draft.name.trim();
     if (draft.when.trim()) body.schedule_text = draft.when.trim();
     if (!Object.keys(body).length) { setRunNote((m) => ({ ...m, [id]: 'nothing to change' })); return; }
@@ -131,6 +141,12 @@ export function JobsPanel() {
   return (
     <Card title="SCHEDULED JOBS" live={asLive(d)} sub={jobs.length} onReload={reload}>
       <State e={e} loading={loading} n={jobs.length} />
+      <div style={{display:'flex',gap:6}}>
+        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/doctor',{admin:true}).then(r=>setDiagnostic(JSON.stringify(r,null,2))).catch(e=>setDiagnostic(refusalReason(e)))}>doctor</button>
+        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/incidents',{admin:true}).then(r=>setDiagnostic(JSON.stringify(r,null,2))).catch(e=>setDiagnostic(refusalReason(e)))}>incidents</button>
+        {alive===false && <button className="tool-btn" onClick={()=>actA('/api/jobs/tick',{},r=>{setDiagnostic(JSON.stringify(r,null,2));reload();},e=>setDiagnostic(refusalReason(e)))}>tick due jobs ({scheduler?.timezone || 'hub time'})</button>}
+      </div>
+      {diagnostic && <pre style={{fontSize:10,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{diagnostic}</pre>}
       {scheduler && alive === false && (
         <Note c="var(--amber)">scheduler not running — nothing will fire until the hub restarts its heartbeat scheduler</Note>
       )}
@@ -164,6 +180,11 @@ export function JobsPanel() {
                 <input aria-label={`when for ${id}`} value={editing[id]!.when}
                   onChange={(ev) => setEditing((m) => ({ ...m, [id]: { ...m[id]!, when: ev.target.value } }))}
                   placeholder="when — plain words or a five-field cron" style={{ ...inpS, width: '100%' }} />
+                <ScheduleBuilder onChange={when=>setEditing(m=>({...m,[id]:{...m[id]!,when}}))}/>
+                <label>Action JSON<textarea aria-label={`action for ${id}`} value={editing[id]!.action} style={{...inpS,width:'100%'}} onChange={ev=>setEditing(m=>({...m,[id]:{...m[id]!,action:ev.target.value}}))}/></label>
+                <label>Notes<textarea aria-label={`notepad for ${id}`} maxLength={4096} style={{...inpS,width:'100%'}} value={notes[id] || ''} onChange={e=>setNotes(m=>({...m,[id]:e.target.value}))}/></label>
+                <button className="tool-btn" onClick={()=>apiPut(`/api/jobs/${encodeURIComponent(id)}/notepad`,{text:notes[id] || ''},{admin:true}).then(()=>{setRunNote(m=>({...m,[id]:'notes saved'}));reload();}).catch(e=>setRunNote(m=>({...m,[id]:refusalReason(e)})))}>save notes</button>
+                <OptionsEditor value={editing[id]!.options} onChange={options=>setEditing(m=>({...m,[id]:{...m[id]!,options}}))}/>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>
                   <button className="tool-btn" onClick={() => setEditing((m) => ({ ...m, [id]: null }))}>cancel</button>
@@ -193,24 +214,44 @@ export function JobsPanel() {
 
       <div style={{ marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 8 }}>
         <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginBottom: 4 }}>ARM A JOB</div>
-        <select aria-label="blueprint" value={blueprint} onChange={(ev) => setBlueprint(ev.target.value)} style={{ ...inpS, width: '100%' }}>
+        <select aria-label="blueprint" value={blueprint} onChange={(ev) => {setBlueprint(ev.target.value);setTyped({});}} style={{ ...inpS, width: '100%' }}>
           <option value="">blueprint…</option>
           {blueprints.map((b: any) => <option key={b.id} value={b.id}>{b.title} — {b.description}</option>)}
         </select>
+        <div aria-label="Automation blueprint gallery" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:6,marginTop:8}}>
+          {blueprints.map((b:any)=><button key={b.id} className="tool-btn" title={b.description} aria-pressed={blueprint===b.id} onClick={()=>{setBlueprint(b.id);setTyped({});}}>{b.title}</button>)}
+        </div>
         {chosen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 5 }}>
             <input aria-label="when" value={when} onChange={(ev) => setWhen(ev.target.value)} placeholder={`when (default: ${chosen.schedule_text})`} style={{ ...inpS, width: '100%' }} />
             {params.includes('message') && <input aria-label="message" value={message} onChange={(ev) => setMessage(ev.target.value)} placeholder="message" style={{ ...inpS, width: '100%' }} />}
             {params.includes('prompt') && <input aria-label="prompt" value={prompt} onChange={(ev) => setPrompt(ev.target.value)} placeholder="prompt for the agent" style={{ ...inpS, width: '100%' }} />}
             {params.includes('agent') && <input aria-label="agent" value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder={`agent (default: ${chosen.action?.agent || 'jarvis'})`} style={{ ...inpS, width: '100%' }} />}
+            {(chosen.fields || []).filter((f:any)=>!['schedule_text','message','prompt','agent'].includes(f.key)).map((f:any)=><label key={f.key}>{f.label}<input aria-label={f.key} type={f.type === 'number' ? 'number' : 'text'} min={f.minimum} required={f.required} style={inpS} value={typed[f.key] ?? f.default ?? ''} onChange={ev=>setTyped(p=>({...p,[f.key]:f.type==='number'?Number(ev.target.value):ev.target.value}))}/></label>)}
+            <ScheduleBuilder onChange={setWhen}/>
+            <OptionsEditor value={options} onChange={setOptions}/>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="tool-btn" onClick={arm}>arm</button>
               <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
             </div>
           </div>
         )}
-        {note && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
+        <button className="tool-btn" onClick={()=>{setNote(null);setCustom(true);}}>custom job</button>
+        {custom && <JobCreateDialog onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(`armed · ${r?.job?.schedule_text}`);setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
+        {note && !custom && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
       </div>
     </Card>
   );
+}
+
+
+/** A full-width home for jobs, usable even before other Autonomy telemetry is connected. */
+export function JobsWorkspace() {
+  return <section aria-label="Scheduled automations" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px' }}>
+    <header style={{ marginBottom: 20 }}>
+      <h1 style={{ margin: '0 0 8px' }}>Scheduled automations</h1>
+      <p style={{ margin: 0, color: 'var(--ink-2)' }}>Manage recurring work, review runs, or start from one of sixteen blueprints.</p>
+    </header>
+    <JobsPanel />
+  </section>;
 }

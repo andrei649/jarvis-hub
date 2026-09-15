@@ -160,13 +160,24 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
+    jobs_create.add_argument("--options", help='JSON options: {"repeat":3,"deliver":["ntfy"]}; [] disables delivery')
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
     jobs_edit.add_argument("--name")
     jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
+    jobs_edit.add_argument("--options", help="replace advanced options as JSON")
+    for verb in ("doctor", "incidents", "tick"):
+        sub = jobs_verbs.add_parser(verb)
+        sub.add_argument("--json", action="store_true")
+    notepad = jobs_verbs.add_parser("notepad", help="read or replace a job's bounded notes")
+    notepad.add_argument("job_id")
+    notepad.add_argument("--text", help="replacement text; an empty string clears notes")
+    notepad.add_argument("--json", action="store_true")
     for name, help_text in (
+        ("status", "job configuration and recent runs"),
+        ("remove", "remove a job and its history"),
         ("pause", "stop a job from firing"),
         ("resume", "let a paused job fire again"),
         ("run", "fire a job now, even if paused"),
@@ -758,6 +769,17 @@ def _params(pairs: list[str]) -> dict[str, str]:
 
 def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
+    if ns.action in ("doctor", "incidents", "tick", "status", "notepad"):
+        if ns.action == "tick":
+            reply = client.post("/api/jobs/tick", {})
+        elif ns.action == "notepad" and ns.text is not None:
+            reply = client.request("PUT", f"/api/jobs/{ns.job_id}/notepad", {"text":ns.text})
+        elif ns.action in ("status", "notepad"):
+            reply = client.get(f"/api/jobs/{ns.job_id}")
+        else:
+            reply = client.get(f"/api/jobs/{ns.action}")
+        ctx.dump(reply)
+        return EXIT_OK
     if ns.action == "list":
         reply = client.get("/api/jobs") or {}
         if ns.json:
@@ -785,6 +807,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
+            if ns.options is not None:
+                body["options"] = json.loads(ns.options)
             if ns.blueprint:
                 body["blueprint"] = ns.blueprint
                 params = _params(ns.param)
@@ -811,6 +835,12 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     if ns.action == "edit":
         body = {}
+        if ns.options is not None:
+            try:
+                body["options"] = json.loads(ns.options)
+            except ValueError as exc:
+                ctx.err.write(f"{exc}\n")
+                return EXIT_USAGE
         if ns.name:
             body["name"] = ns.name
         if ns.when:
@@ -845,7 +875,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         for run in runs:
             ctx.say(f"{run.get('started_at')}  {run.get('status'):7s} {run.get('summary', '')[:100]}")
         return EXIT_OK
-    if ns.action == "delete":
+    if ns.action in ("delete", "remove"):
         reply = client.request("DELETE", f"/api/jobs/{ns.job_id}") or {}
         ctx.say(f"deleted {ns.job_id}" if reply.get("ok") else f"{ns.job_id}: {reply}")
         return EXIT_OK

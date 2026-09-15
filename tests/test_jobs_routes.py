@@ -198,3 +198,18 @@ def test_patch_without_a_runner_says_so(hub):
     client, orch, _tg = hub
     orch.jobs = None
     assert client.patch("/api/jobs/x", json={"name": "y"}, headers=ADMIN).status_code == 503
+
+
+def test_advanced_routes_and_options(hub):
+    client, orch, _ = hub
+    for path in ('doctor','incidents'):
+        assert client.get('/api/jobs/'+path).status_code==401
+    response=client.post('/api/jobs',headers=ADMIN,json={'name':'bounded','schedule_text':'0 9 * * *','action':{'type':'remind','message':'x'},'options':{'repeat':2,'deliver':[]}})
+    assert response.status_code==201
+    jid=response.json()['job']['id']
+    assert client.patch(f'/api/jobs/{jid}',headers=ADMIN,json={'options':{'repeat':3}}).json()['job']['options']=={'repeat':3}
+    assert client.put(f'/api/jobs/{jid}/notepad',headers=ADMIN,json={'text':'remember'}).status_code==200
+    assert client.get(f'/api/jobs/{jid}',headers=ADMIN).json()['job']['notepad']=='remember'
+    assert client.get('/api/jobs/doctor',headers=ADMIN).status_code==200
+    assert client.get('/api/jobs/incidents',headers=ADMIN).json()['incidents']==[]
+    assert client.post('/api/jobs/tick',headers=ADMIN).status_code==409
