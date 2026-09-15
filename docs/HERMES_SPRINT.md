@@ -90,6 +90,16 @@ Sunt incluse și investigațiile rămase locale până acum:
 Acestea sunt capturi datate ale unei investigații. Nu afirmă că izolarea live sau
 contractul K0 sunt implementate și nu autorizează modificări printr-un snapshot vechi.
 
+## Automatizări — increment verificat la 15 septembrie
+
+H453 rămâne parțial. Scripturile aprobate pot opri apelul la model și livrarea prin
+`wakeAgent:false`, iar răspunsurile modelului pot opri notificarea prin convențiile
+`[SILENT]`. Datele trunchiate sau JSON invalid nu declanșează suprimarea; istoricul
+înregistrează motivul fără a consuma bugetul de notificare. Sunt 31 de cazuri noi
+și 316 verificări țintite, cu acoperire integrală a ramurilor noului helper.
+Monitorizarea prin hash și diff pentru scripturi/URL-uri rămâne deschisă.
+[Contract și limite](automations-scripts.md#wake-and-silence-gates).
+
 ## Ordinea sprintului
 
 1. **Reevaluarea restului inventarului pe clustere**, începând cu cele mai vechi

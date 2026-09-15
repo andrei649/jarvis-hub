@@ -46,3 +46,11 @@ Restart recovery preserves pending attempts and their history. If submission or 
 This runtime supports local POSIX targets and self-contained Python only: at most 2,000 UTF-8 source bytes within the existing terminal command limit. Execution uses the configured Python interpreter with `-I -c`; `__file__`, script-relative imports, shell scripts, arbitrary working directories, and per-job provider/model/toolset/skill overrides are unsupported. Source is visible in the durable approval payload, so use the existing secret mechanisms instead of embedding credentials in scripts.
 
 The API and CLI accept these options; a dedicated script-authoring form is not implemented. Existing terminal target configuration, hardline refusals, approval, execution limits and emergency stop remain authoritative. See [the implementation and verification record](superpowers/plans/2026-09-15-governed-job-scripts.md).
+
+## Wake and silence gates
+
+A successful approved script can end with a JSON line such as `{"wakeAgent": false}`. The last non-empty line controls this gate: only the JSON boolean `false` suppresses both the model call and delivery. This also applies to `no_agent` jobs and is the exception to otherwise literal script-output delivery. Invalid JSON, a missing key, `true`, `0`, strings, and null continue normally. The gate inspects returned stdout before the display cap; truncated terminal output is not accepted as a complete gate and continues normally. Script failures remain failures.
+
+Scheduled model replies can suppress delivery with `[SILENT]` as the whole reply or a standalone first or last line. Matching ignores surrounding whitespace and case. Whole-response `SILENT`, `NO_REPLY`, and `NO REPLY` also suppress delivery; mentions embedded in prose do not. This check happens before response truncation. A `no_agent` script printing `[SILENT]` still delivers that literal text: this convention belongs to model responses.
+
+Completed suppression is visible in run history as `Suppressed: wake_gate` or `Suppressed: model_silent`, with successful status. It does not consume a delivery interrupt or create a missing/pending run. Script approval is still required for every firing. Monitor hashes, diffs, and URL monitoring are not implemented by these gates.

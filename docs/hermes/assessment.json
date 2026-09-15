@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f627bcf49f1b6962fb6716f199b077c07e3920f5",
-  "assessed_at": "2026-09-15T12:34:42.200001Z",
+  "base_sha": "aa1c4c5352de7e0db101744547bfc67f71c1c313",
+  "assessed_at": "2026-09-15T12:50:56.194536Z",
   "reviews": [
     {
       "id": "H001",
@@ -841,7 +841,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "78c2188941a0f720c013641a3c9e3423b1a5ec08c212e99e7cc6620cd213dd56"
+          "sha256": "9969fe2c380a45948c86e5d013de920e216f9f1638faf1e58a7074392337fa05"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -905,7 +905,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "efe76e2aae3389e29a134cb9e165177c0a7eed746e07f100143bdb5d6ecfeb8e"
+          "sha256": "ebcbbf2486c31505aa1e912faa6b140bfdbf2e6bc2e1aa89457fa88039640ede"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -913,7 +913,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "2dd6ac5b53ffd3e14995f36aa5ef24574df94e9b8f4b77adb00b6000ded2b8f9"
+          "sha256": "fc38f627e989f1d8c2fba09113faf83a5cbf70b777ba06453c531bbe1643deab"
         }
       ]
     },
@@ -2053,7 +2053,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "78c2188941a0f720c013641a3c9e3423b1a5ec08c212e99e7cc6620cd213dd56"
+          "sha256": "9969fe2c380a45948c86e5d013de920e216f9f1638faf1e58a7074392337fa05"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -2117,7 +2117,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "efe76e2aae3389e29a134cb9e165177c0a7eed746e07f100143bdb5d6ecfeb8e"
+          "sha256": "ebcbbf2486c31505aa1e912faa6b140bfdbf2e6bc2e1aa89457fa88039640ede"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -2125,7 +2125,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "2dd6ac5b53ffd3e14995f36aa5ef24574df94e9b8f4b77adb00b6000ded2b8f9"
+          "sha256": "fc38f627e989f1d8c2fba09113faf83a5cbf70b777ba06453c531bbe1643deab"
         }
       ]
     },
@@ -3526,7 +3526,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "78c2188941a0f720c013641a3c9e3423b1a5ec08c212e99e7cc6620cd213dd56"
+          "sha256": "9969fe2c380a45948c86e5d013de920e216f9f1638faf1e58a7074392337fa05"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -3562,7 +3562,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "efe76e2aae3389e29a134cb9e165177c0a7eed746e07f100143bdb5d6ecfeb8e"
+          "sha256": "ebcbbf2486c31505aa1e912faa6b140bfdbf2e6bc2e1aa89457fa88039640ede"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -3570,7 +3570,7 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "2dd6ac5b53ffd3e14995f36aa5ef24574df94e9b8f4b77adb00b6000ded2b8f9"
+          "sha256": "fc38f627e989f1d8c2fba09113faf83a5cbf70b777ba06453c531bbe1643deab"
         }
       ]
     },
@@ -3631,16 +3631,16 @@
       "id": "H453",
       "row_sha256": "150123684a4f0e7e58a4e47c6a7303d0b9b79cc043b060869eef81a0c3aa631f",
       "status": "partial",
-      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests.",
-      "remaining": "The wakeAgent JSON gate, monitor URL/script byte hashes and unified diffs, and [SILENT] response suppression remain unimplemented. Script size is bounded, execution is POSIX-local with fresh per-run approval, and workdir/provider/tool contexts and script-authoring UI remain unsupported. Real harmless local transport is tested with an injected grant; no live production scheduler/channel or complete production-kernel execution claim.",
+      "summary": "Scheduled self-contained Python scripts cross the existing local terminal approval path with exact source in argv. no_agent returns bounded stdout directly; script-as-context fences output and binds an inbound origin before asking the model. Empty/whitespace stdout skips both model and delivery. Pending approval, repeat reservations, deletion/e-stop races, bounded fair reconciliation, interrupted delivery and retained history survive restart in tests. Successful script stdout can suppress model and delivery with a final JSON boolean wakeAgent:false, except when transport output is truncated. Model replies support bounded-position [SILENT] and whole-response silence markers before truncation; suppression is successful history without notification spend.",
+      "remaining": "Script/URL byte-hash monitoring and unified diffs remain unimplemented. Script size is bounded, execution is POSIX-local with fresh per-run approval, and workdir/provider/tool contexts and script-authoring UI remain unsupported. Real harmless local transport is tested with an injected grant; no live production scheduler/channel or complete production-kernel execution claim.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "78c2188941a0f720c013641a3c9e3423b1a5ec08c212e99e7cc6620cd213dd56"
+          "sha256": "9969fe2c380a45948c86e5d013de920e216f9f1638faf1e58a7074392337fa05"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
-          "sha256": "efe76e2aae3389e29a134cb9e165177c0a7eed746e07f100143bdb5d6ecfeb8e"
+          "sha256": "ebcbbf2486c31505aa1e912faa6b140bfdbf2e6bc2e1aa89457fa88039640ede"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -3652,7 +3652,15 @@
         },
         {
           "path": "docs/automations-scripts.md",
-          "sha256": "2dd6ac5b53ffd3e14995f36aa5ef24574df94e9b8f4b77adb00b6000ded2b8f9"
+          "sha256": "fc38f627e989f1d8c2fba09113faf83a5cbf70b777ba06453c531bbe1643deab"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_gates.py",
+          "sha256": "1c03eca7f3269c452c55dd82074e2fdec82698730987caed47c371fd9dbfd954"
+        },
+        {
+          "path": "tests/test_job_gates.py",
+          "sha256": "9b0f1e1e544c83137d08ad92c8911b9ef4fe90106dfe58d67bdd20951a35cfa2"
         }
       ]
     },
