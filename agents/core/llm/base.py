@@ -601,6 +601,9 @@ class LMStudioBackend(LLMBackend):
             emitted = ""          # filtered text actually streamed to the user
             reasoning_full = ""   # accumulated reasoning_content (never emitted live)
             finish = None
+            usage = None
+            completed = False
+            usage_failed = False
             sf = ThinkingStreamFilter()
             try:
                 async with self.client.stream(
@@ -616,10 +619,18 @@ class LMStudioBackend(LLMBackend):
                         if line.startswith("data: "):
                             chunk = line[6:]
                             if chunk.strip() == "[DONE]":
+                                completed = True
                                 break
                             try:
                                 data = json.loads(chunk)
-                                choice = data.get("choices", [{}])[0]
+                                if "error" in data or data.get("type") == "error":
+                                    usage_failed = True
+                                if "usage" in data:
+                                    usage = lmstudio_usage(data)
+                                choices = data.get("choices") or []
+                                if not choices:
+                                    continue
+                                choice = choices[0]
                                 if choice.get("finish_reason"):
                                     finish = choice["finish_reason"]
                                 delta = choice.get("delta", {})
@@ -634,6 +645,7 @@ class LMStudioBackend(LLMBackend):
                                 if reasoning:
                                     reasoning_full += reasoning
                             except json.JSONDecodeError:
+                                usage_failed = True
                                 continue
             except Exception as e:
                 # Never retry once text is on screen — the user would see the
@@ -663,7 +675,10 @@ class LMStudioBackend(LLMBackend):
         # Return what was actually streamed, not the raw buffer — otherwise a
         # truncated <think> / reasoning_content trace would overwrite the clean
         # bubble and poison conversation memory.
-        return self._finalize_stream(emitted, reasoning_full, finish, model)
+        answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if completed and not usage_failed and usage is not None:
+            report_text_usage(usage)
+        return answer
 
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
@@ -834,6 +849,8 @@ class OllamaBackend(LLMBackend):
         emitted = ""
         reasoning_full = ""
         finish = None
+        usage = None
+        usage_failed = False
         sf = ThinkingStreamFilter()
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
@@ -842,6 +859,8 @@ class OllamaBackend(LLMBackend):
                     if line.strip():
                         try:
                             data = json.loads(line)
+                            if "error" in data or data.get("type") == "error":
+                                usage_failed = True
                             content = data.get("response", "")
                             # Ollama's native field for chain-of-thought is "thinking";
                             # reasoning_content is the OpenAI-style spelling some
@@ -856,10 +875,12 @@ class OllamaBackend(LLMBackend):
                                         await _emit(on_token, safe)
                             if reasoning:
                                 reasoning_full += reasoning
-                            if data.get("done", False):
+                            if data.get("done") is True:
+                                usage = ollama_usage(data)
                                 finish = data.get("done_reason") or finish
                                 break
                         except json.JSONDecodeError:
+                            usage_failed = True
                             continue
         except Exception as e:
             err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
@@ -873,4 +894,7 @@ class OllamaBackend(LLMBackend):
             if on_token:
                 await _emit(on_token, remainder)
 
-        return self._finalize_stream(emitted, reasoning_full, finish, model)
+        answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if usage is not None and not usage_failed:
+            report_text_usage(usage)
+        return answer

@@ -1546,7 +1546,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         }
       ]
     },
@@ -1579,11 +1579,11 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/llm/gemini.py",
@@ -1684,11 +1684,11 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/llm/gemini.py",
@@ -1781,7 +1781,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         }
       ]
     },
@@ -3179,7 +3179,7 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/llm/gemini.py",
@@ -3243,8 +3243,8 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once.",
-      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates and actual streaming-provider terminal usage accounting remain incomplete. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact.",
+      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates and Gemini actual streaming-provider terminal usage accounting remain incomplete. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
@@ -3264,7 +3264,7 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/llm/gemini.py",
@@ -3352,7 +3352,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         },
         {
           "path": "tests/test_text_usage_context.py",
@@ -3361,6 +3361,10 @@
         {
           "path": "tests/test_text_usage_propagation.py",
           "sha256": "5f7d782da54bd04c487b6d1470079e5a5d7625b8122c348eb5c9cd62b311b87d"
+        },
+        {
+          "path": "tests/test_stream_token_usage.py",
+          "sha256": "313bcdb785fd0fc4c942de68fa2f31b1361eaa1253cbfe21da426af3d2f5bcd2"
         }
       ]
     },
@@ -3447,11 +3451,11 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/llm/gemini.py",

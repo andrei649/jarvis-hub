@@ -63,3 +63,7 @@ Gemini and explicit compatible structured turns now retain strict provider token
 ## 2026-09-15 complete text usage (H673 partial)
 
 Successful text responses and non-stream agent gathers now retain provider usage through closed request-local observers; ToolRuntime remains the sole structured-turn publisher. Thirty new cases and 274 focused checks pass, independently reviewed at 29a82ab3. Replayed only that source commit onto H139 f123446c. Actual stream terminal accounting and non-conversational usage remain open; no live-provider or billing proof. See [module plan](../superpowers/plans/2026-09-15-text-usage.md).
+
+## 2026-09-15 terminal streaming usage (H673 partial)
+
+Ollama, LM Studio and Anthropic streams retain usage only after verified terminal completion; malformed final Anthropic usage cannot reuse start/intermediate output. Forty-six new cases and 270 focused checks pass, independently cleared at 2d6a1a52. Only the two stream commits replayed onto gallery cb0b9b87 after touched-source equality verification. Gemini terminal accounting remains deferred; no live-provider/billing claim. See [module plan](../superpowers/plans/2026-09-15-stream-usage.md).

@@ -195,6 +195,8 @@ class ClaudeBackend(LLMBackend):
         }
         self._fit_to_wire(payload, model)
         full = ""
+        raw_usage = {}
+        started = completed = usage_failed = final_output = False
         stream_key = self._active_key()
         try:
             async with self.client.stream(
@@ -212,7 +214,26 @@ class ClaudeBackend(LLMBackend):
                         try:
                             data = json.loads(chunk)
                             event_type = data.get("type", "")
-                            if event_type == "content_block_delta":
+                            if "error" in data or event_type == "error":
+                                usage_failed = True
+                            if event_type == "message_start":
+                                started = True
+                                raw = (data.get("message") or {}).get("usage")
+                                raw_usage = dict(raw) if isinstance(raw, dict) else {}
+                                if not isinstance(raw, dict):
+                                    usage_failed = True
+                            elif event_type == "message_delta":
+                                raw = data.get("usage")
+                                # A start/intermediate count is not final output.
+                                final_output = (isinstance(raw, dict)
+                                                and type(raw.get("output_tokens")) is int
+                                                and raw["output_tokens"] >= 0)
+                                if not isinstance(raw, dict):
+                                    usage_failed = True
+                                if isinstance(raw, dict):
+                                    # Deltas are cumulative snapshots, not increments.
+                                    raw_usage.update(raw)
+                            elif event_type == "content_block_delta":
                                 delta = data.get("delta", {})
                                 # Only the answer's own deltas. H364 makes thinking
                                 # reachable on this stream for the first time, and a
@@ -229,17 +250,24 @@ class ClaudeBackend(LLMBackend):
                                     if on_token:
                                         await _emit(on_token, text)
                             elif event_type == "message_stop":
+                                completed = True
                                 break
                         except json.JSONDecodeError:
+                            usage_failed = True
                             continue
         except httpx.HTTPStatusError as e:
+            usage_failed = True
             # Rotatable error → cool this key down so the next call fails over (H12.20).
             if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
                 self.auth_pool.report_failure(stream_key)
             full = f"[Claude API stream error: {e}]"
         except Exception as e:
+            usage_failed = True
             full = f"[Claude API stream error: {e}]"
-        return self._finalize_cloud(full)
+        answer = self._finalize_cloud(full)
+        if started and completed and final_output and not usage_failed:
+            report_text_usage(anthropic_usage({"usage": raw_usage}))
+        return answer
 
     async def aclose(self):
         """Close the pooled httpx client (BUG-7)."""
