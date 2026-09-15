@@ -727,6 +727,27 @@ async def test_the_spill_is_kept_by_byte_count_not_by_this_layers_truncated_flag
     assert Path(result["stdout_file"]).read_bytes() == b"q" * 1500 + b"\n" + \
         (b"q" * 1500 + b"\n") * 149
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session", [False, True])
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+async def test_shape_only_truncation_keeps_complete_capture(tmp_path, session, stream):
+    store = _store(tmp_path)
+    factory = _session_tool if session else _tool
+    _, tool = factory(tmp_path, result_store=store)
+    original = b"a" * 1000 + b"M" + b"b" * 1000
+    try:
+        result = await _run(tool, f"import sys; sys.{stream}.write('a' * 1000 + 'M' + 'b' * 1000)")
+        assert result["ok"] and result["truncated"]
+        assert "M" not in result[stream]
+        assert len(result[stream].encode()) > len(original), "the notice exceeds the omitted middle"
+        assert Path(result[f"{stream}_file"]).read_bytes() == original
+        assert result[f"{stream}_bytes"] == len(original)
+        assert result[f"{stream}_sha256"] == hashlib.sha256(original).hexdigest()
+    finally:
+        if session:
+            await tool._kernels.shutdown()
+
 @pytest.mark.asyncio
 async def test_session_output_spills_complete_middle(tmp_path):
     _, tool = _session_tool(tmp_path, result_store=_store(tmp_path))

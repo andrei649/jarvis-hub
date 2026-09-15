@@ -39,7 +39,8 @@ from typing import Any
 from .action_origin import current_action_origin
 from .context_compressor import window_for
 from .iteration_budget import IterationBudget
-from .llm.tokenizer import estimate_messages
+from .llm.effective_window import EffectiveWindow, resolve_effective_window
+from .llm.tokenizer import estimate_messages, estimate_tokens
 from .llm.tool_protocol import (
     MAX_PARSED_TOOL_CALLS,
     TokenUsage,
@@ -73,6 +74,7 @@ ToolProfileHook = Callable[[str, list[dict[str, Any]]], tuple[Any, Any]]
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
 _CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safety budget."
+_WINDOW_REPLY = "I stopped the tool loop because the model context window metadata could not be validated."
 _REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool call."
 # Hermes absorption 3a — a model that calls the same tool with the same arguments again and
 # again is looping, not working; the iteration limit would end it eventually, but only after
@@ -264,6 +266,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None = None,
         wall_seconds: float | None = None,
         usage_sink: Callable[[TokenUsage], None] | None = None,
+        effective_window: EffectiveWindow | None = None,
     ) -> str:
         """Run one bounded tool-enabled model turn to a final answer.
 
@@ -289,6 +292,11 @@ class AgentToolRuntime:
             effective_wall_seconds = self._max_wall_seconds
         else:
             effective_wall_seconds = min(max(WALL_SECONDS_MIN, parsed), WALL_SECONDS_CAP)
+        effective_window = effective_window or resolve_effective_window(backend, model)
+        if not effective_window.valid:
+            return _WINDOW_REPLY
+        if effective_window.tokens is not None and max_tokens <= 0:
+            max_tokens = max(1, effective_window.tokens // 4)
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -299,6 +307,7 @@ class AgentToolRuntime:
             temperature=temperature,
             event_sink=event_sink,
             usage_sink=usage_sink,
+            effective_window=effective_window,
         )
         # The loop runs in a child task under the deadline, in this explicit copy of the
         # turn's context; whatever recall taint the loop raised there is carried back into
@@ -363,6 +372,7 @@ class AgentToolRuntime:
         temperature: float,
         event_sink: ToolEventSink | None,
         usage_sink: Callable[[TokenUsage], None] | None = None,
+        effective_window: EffectiveWindow | None = None,
     ) -> str:
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
@@ -425,13 +435,18 @@ class AgentToolRuntime:
         # still bury a small context. The second rides along because the runtime is
         # shared between concurrent runs and the model is known only here.
         from .llm.job_selection import selected_window
-        spent: dict[str, int] = {"bytes": 0, "window": selected_window(model) or max(0, int(window_for(model) or 0))}
+        known_window = effective_window.tokens if effective_window is not None else selected_window(model)
+        spent: dict[str, int] = {"bytes": 0, "window": known_window or max(0, int(window_for(model) or 0)),
+                                 "effective_window": known_window or 0}
+        schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
-            if len(messages) > 2 and not await self._compact_context(
+            if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
                 compacted,
                 model=model,
                 max_tokens=max_tokens,
+                effective_window=known_window,
+                schema_tokens=schema_tokens,
                 agent_id=agent_id,
                 event_sink=event_sink,
             ):
@@ -543,7 +558,7 @@ class AgentToolRuntime:
             "the safety limit."
         )
 
-    def _context_budget(self, model: str, max_tokens: int) -> int:
+    def _context_budget(self, model: str, max_tokens: int, effective_window: int | None = None) -> int:
         """Tokens the transcript may occupy before the next model turn."""
         try:
             configured = _safe_int(self._context_budget_tokens(), default=0, minimum=0)
@@ -551,10 +566,10 @@ class AgentToolRuntime:
             logger.warning("tool loop context budget setting failed closed to auto")
             configured = 0
         from .llm.job_selection import selected_window
-        pinned = selected_window(model)
+        pinned = effective_window if effective_window is not None else selected_window(model)
         if pinned is not None:
             reserve = max_tokens if type(max_tokens) is int and max_tokens > 0 else pinned // 4
-            available = max(1, int(pinned * _CONTEXT_WINDOW_FRACTION) - reserve)
+            available = max(0, int(pinned * _CONTEXT_WINDOW_FRACTION) - reserve)
             return min(configured, available) if configured > 0 else available
         if configured > 0:
             return max(_MIN_CONTEXT_BUDGET, configured)
@@ -570,6 +585,8 @@ class AgentToolRuntime:
         max_tokens: int,
         agent_id: str,
         event_sink: ToolEventSink | None,
+        effective_window: int | None = None,
+        schema_tokens: int = 0,
     ) -> bool:
         """Fold older tool results into bounded envelopes until the transcript fits.
 
@@ -578,7 +595,12 @@ class AgentToolRuntime:
         content shrinks. The most recent ``compaction_keep_recent`` iterations are folded last.
         Returns False when the transcript still exceeds the budget with everything folded.
         """
-        budget = self._context_budget(model, max_tokens)
+        budget = self._context_budget(model, max_tokens, effective_window) - schema_tokens
+        if effective_window is not None:
+            # The legacy message estimator covers content/roles, not structured
+            # assistant tool-call arguments, which remain in the provider payload.
+            budget -= sum(estimate_tokens(json.dumps(message["tool_calls"]))
+                          for message in messages if message.get("tool_calls"))
         before = estimate_messages(messages)
         if before <= budget:
             return True
@@ -1068,11 +1090,12 @@ class AgentToolRuntime:
         await self._emit_result(event_sink, call, agent_id, prepared)
         return prepared, content
 
-    def _result_budget(self, window_tokens: int = 0) -> Budget | None:
+    def _result_budget(self, window_tokens: int = 0, effective_window: int = 0) -> Budget | None:
         """This turn's caps, scaled to the window the turn is actually running in.
 
-        The owner's override wins when they set one; otherwise the window comes from
-        the model itself, read from the same table compaction reads. Falling back to
+        An owner override may tighten a known configured/cached window. Without
+        metadata the model table remains an estimate, as in transcript compaction.
+        Falling back to
         "no budget" when nobody configured anything would leave the scaling inert on
         every default deployment — a constant cap is generous on a 200k cloud model
         and ruinous on the 8k local one, which is the whole reason this exists.
@@ -1088,14 +1111,14 @@ class AgentToolRuntime:
         if window <= 0:
             window = max(0, int(window_tokens or 0))
         from .llm.job_selection import selected_window
-        pinned = selected_window()
+        pinned = effective_window or selected_window()
         if pinned is not None:
             window = min(window, pinned) if window > 0 else pinned
         if window <= 0:
             return None
         return budget_for_context_window(window)
 
-    def _result_threshold(self, tool_name: str, budget: Budget | None = None) -> float:
+    def _result_threshold(self, tool_name: str, budget: Budget | None = None, *, bounded: bool = False) -> float:
         """How many bytes this particular tool may put in the context window."""
         overrides: Mapping[str, object] | None = None
         if self._result_thresholds is not None:
@@ -1123,9 +1146,9 @@ class AgentToolRuntime:
         )
         from .llm.job_selection import selected_window
         # file_read's pinned infinity prevents recursively spilling the file used
-        # to read a previous spill. The scoped transcript compactor and provider
-        # window check still bound the subsequent model request.
-        if selected_window() is not None and budget is not None and threshold != math.inf:
+        # to read a previous spill. Per-turn transcript checks still bound the next
+        # model request when configured/cached capacity is known.
+        if (bounded or selected_window() is not None) and budget is not None and threshold != math.inf:
             return min(threshold, budget.per_result_bytes)
         return threshold
 
@@ -1142,8 +1165,9 @@ class AgentToolRuntime:
         # `spent` carries the running turn's window alongside its running total: the
         # runtime is shared between concurrent runs, so the model's window cannot be
         # state on `self` — it has to travel with the turn that declared it.
-        budget = self._result_budget(int((spent or {}).get("window", 0)))
-        threshold = self._result_threshold(tool_name, budget)
+        effective = int((spent or {}).get("effective_window", 0))
+        budget = self._result_budget(int((spent or {}).get("window", 0)), effective)
+        threshold = self._result_threshold(tool_name, budget, bounded=effective > 0)
         # The per-turn budget is the part one cap cannot express: five results at 40%
         # of the limit each still bury a small window. Once the turn has spent its
         # allowance, what is left of it becomes this result's ceiling.

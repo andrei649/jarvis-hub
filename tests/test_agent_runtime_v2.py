@@ -1690,6 +1690,8 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     call = dict(seam_calls[0])
     meter = call.pop("usage_sink")
     assert callable(meter)
+    window = call.pop("effective_window")
+    assert window.valid and window.tokens is None
     # H671: the system prompt now carries the conversation's clock, whose second
     # line only exists once the rebuild day differs from the birth day — so the
     # exact text is date-dependent and pinning it verbatim would make this test

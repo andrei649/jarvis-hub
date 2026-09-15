@@ -1985,9 +1985,12 @@ class Orchestrator:
                     self._record_context_anchor(_agent_id, usage)
 
                 with request_scope:
+                    from .llm.effective_window import resolve_effective_window
+                    effective_window = resolve_effective_window(backend, model)
                     guarded_backend = bind_guardrails(self.security, backend)
                     response = await agent.generate_response(
                         backend=guarded_backend,
+                        effective_window=effective_window,
                         model=model,
                         prompt=prompt,
                         system=system_prompt,
