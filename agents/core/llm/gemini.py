@@ -29,13 +29,43 @@ from .tool_dialects import (
     normalize_finish_reason,
     remember_thought_signatures,
 )
-from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 logger = logging.getLogger("jarvis.llm.gemini")
+
+
+def _stream_terminal_usage(data: Any) -> TokenUsage | None:
+    """Accept only a supported terminal response's own complete measurement."""
+    if not isinstance(data, dict) or "error" in data:
+        return None
+    candidates = data.get("candidates")
+    feedback = data.get("promptFeedback")
+    block = feedback.get("blockReason") if isinstance(feedback, dict) else None
+    blocked = block in {"SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "IMAGE_SAFETY"} if isinstance(block, str) else False
+    if block is not None:
+        if not blocked or candidates not in (None, []):
+            return None
+    elif not (isinstance(candidates, list) and len(candidates) == 1
+              and isinstance(candidates[0], dict)
+              and isinstance(candidates[0].get("finishReason"), str)
+              and candidates[0]["finishReason"] in GEMINI_FINISH_REASONS):
+        return None
+    usage = data.get("usageMetadata")
+    if not isinstance(usage, dict):
+        return None
+    for key in ("promptTokenCount", "candidatesTokenCount"):
+        if type(usage.get(key)) is not int or usage[key] < 0:
+            return None
+    thoughts = usage.get("thoughtsTokenCount", 0)
+    if type(thoughts) is not int or thoughts < 0:
+        return None
+    if blocked and (usage["candidatesTokenCount"] or thoughts):
+        return None
+    return gemini_usage(data)
 
 
 class GeminiBackend(LLMBackend):
@@ -388,6 +418,10 @@ class GeminiBackend(LLMBackend):
         on_token: Callable[[str], None] | None,
     ) -> str:
         full = ""
+        pending_usage = None
+        invalid_usage = False
+        exhausted = False
+        response_id = None
         with self.request_scope(binding):
             payload = self._build_payload(prompt, system, max_tokens, temperature, model=model)
             async with self.client.stream(
@@ -404,6 +438,9 @@ class GeminiBackend(LLMBackend):
                     raise
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
+                        if line.strip() and (not line.startswith((":", "event:", "id:", "retry:"))
+                                             or (line.startswith("event:") and line[6:].strip() == "error")):
+                            invalid_usage = True
                         continue
                     chunk = line[6:].strip()
                     if chunk == "[DONE]":
@@ -411,12 +448,38 @@ class GeminiBackend(LLMBackend):
                     try:
                         data = json.loads(chunk)
                     except json.JSONDecodeError:
+                        invalid_usage = True
                         continue
+                    pending_usage = _stream_terminal_usage(data)
+                    if not isinstance(data, dict) or "error" in data:
+                        invalid_usage = True
+                    candidates = data.get("candidates") if isinstance(data, dict) else None
+                    if isinstance(candidates, list):
+                        if len(candidates) > 1:
+                            invalid_usage = True
+                        # Candidate identity can span separate singleton frames.
+                        # This request supports only the default candidate zero.
+                        for candidate in candidates:
+                            if isinstance(candidate, dict) and "index" in candidate:
+                                index = candidate["index"]
+                                if type(index) is not int or index != 0:
+                                    invalid_usage = True
+                    if isinstance(data, dict) and "responseId" in data:
+                        current_id = data["responseId"]
+                        if not isinstance(current_id, str) or not current_id or (response_id is not None and response_id != current_id):
+                            invalid_usage = True
+                        response_id = current_id
                     text = self._extract_text(data)
                     if text:
                         full += text
                         if on_token:
                             await _emit(on_token, text)
+                else:
+                    exhausted = True
+        # EOF and successful context-manager close are both required. A later frame
+        # replaces eligibility; an earlier snapshot is never a final-count fallback.
+        if exhausted and not invalid_usage and pending_usage is not None:
+            report_text_usage(pending_usage)
         return full
 
     async def generate_stream(
