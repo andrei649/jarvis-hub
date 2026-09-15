@@ -293,7 +293,7 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
-    if options and (options.get("script") or options.get("monitor_script")) and kind != "ask":
+    if options and (options.get("script") or (options.get("monitor_script") or options.get("monitor_url"))) and kind != "ask":
         return ["script options require an ask action"]
     if kind not in ACTION_TYPES:
         return [f"action.type must be one of {', '.join(ACTION_TYPES)}"]
@@ -335,12 +335,18 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     return errors
 
 
-def validate_options(options: Any, *, check_scripts: bool = True) -> dict:
+def validate_options(options: Any, *, check_scripts: bool = True, url_screen=None) -> dict:
     if not isinstance(options, dict):
         raise ValueError("options must be an object")
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    if 'monitor_url' in options:
+        if any(options.get(key) for key in ('script', 'monitor_script', 'no_agent')):
+            raise ValueError('URL monitor excludes other sources and no_agent')
+        if not callable(url_screen):
+            raise ValueError('URL monitor screening is unavailable')
+        url_screen(options['monitor_url'])
     if 'no_agent' in options and type(options['no_agent']) is not bool:
         raise ValueError('no_agent must be true or false')
     if options.get('no_agent') and not options.get('script'):
@@ -588,7 +594,7 @@ class JobStore:
         blueprint: str | None = None,
         options: dict | None = None,
     ) -> Job:
-        options = validate_options(options if options is not None else {})
+        options = validate_options(options if options is not None else {}, url_screen=getattr(self, 'url_screen', None))
         name = " ".join(str(name or "").split())
         if not name:
             raise ValueError("a job needs a name")
@@ -694,7 +700,7 @@ class JobStore:
 
         fields: dict[str, Any] = {}
         if options is not None:
-            fields["options"] = validate_options(options)
+            fields["options"] = validate_options(options, url_screen=getattr(self, "url_screen", None))
         if name is not None:
             cleaned = " ".join(str(name).split())
             if not cleaned:
@@ -856,6 +862,11 @@ class JobRunner:
     def bind_scripts(self, *, submit, get, find):
         self._script_runtime.bind(submit=submit, get=get, find=find)
 
+    def bind_url_monitor(self, adapter):
+        self._script_runtime.url_adapter = adapter
+        self.store.url_screen = adapter.screen
+        self.register_scripts()
+
     async def reconcile_scripts(self):
         return await self._script_runtime.reconcile()
 
@@ -908,7 +919,7 @@ class JobRunner:
             if job.runnable and self.register(job):
                 registered += 1
         self.register_flush()
-        if any((j.options.get('script') or j.options.get('monitor_script')) for j in self.store.list()) or self.store.script_attempts.rows():
+        if any((j.options.get('script') or (j.options.get('monitor_script') or j.options.get('monitor_url'))) for j in self.store.list()) or self.store.script_attempts.rows():
             self.register_scripts()
         return registered
 
@@ -979,7 +990,7 @@ class JobRunner:
 
     def create(self, **kwargs: Any) -> Job:
         job = self.store.create(**kwargs)
-        if job.options.get('script') or job.options.get('monitor_script'):
+        if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         self.register(job)
         return job
@@ -994,7 +1005,7 @@ class JobRunner:
         stale trigger armed for it would resume it by accident.
         """
         job = self.store.edit(job_id, **fields)
-        if job.options.get('script') or job.options.get('monitor_script'):
+        if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         if job.runnable:
             self.register(job)
@@ -1037,13 +1048,13 @@ class JobRunner:
                 summary="emergency stop engaged",
             )
         try:
-            validate_options(job.options, check_scripts=False)
+            validate_options(job.options, check_scripts=False, url_screen=getattr(self.store, "url_screen", None))
             errors = validate_action(job.action, job.options)
             if errors:
                 raise ValueError('; '.join(errors))
         except ValueError as exc:
             return self._failed(job, started, exc)
-        if job.options.get('script') or job.options.get('monitor_script'):
+        if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             return await self._script_runtime.fire(job, started)
         if not self.store.reserve_attempt(job_id):
             self.unregister(job_id)

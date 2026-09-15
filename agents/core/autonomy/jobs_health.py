@@ -96,7 +96,7 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url"],
         "script_contract": "Bounded self-contained Python, fresh approval each run; no shell or project cwd",
         "unsupported_options": ["workdir", "model", "provider", "enabled_toolsets", "skills"],
     }

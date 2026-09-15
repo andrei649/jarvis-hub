@@ -57,7 +57,7 @@ Completed suppression is visible in run history as `Suppressed: wake_gate` or `S
 
 ## Bounded script monitors
 
-Use `options.monitor_script` instead of `options.script` on an `ask` job to compare observations before calling the model. It names the same bounded Python file under the scripts root and still requires fresh approval for each firing. It cannot combine with `script` or `no_agent`. Monitor stdout is literal data: a JSON `wakeAgent` line is not interpreted as a wake gate in this mode. URL monitoring remains unsupported.
+Use `options.monitor_script` instead of `options.script` on an `ask` job to compare observations before calling the model. It names the same bounded Python file under the scripts root and still requires fresh approval for each firing. It cannot combine with `script` or `no_agent`. Monitor stdout is literal data: a JSON `wakeAgent` line is not interpreted as a wake gate in this mode. URL sources use the separately governed path described below.
 
 The first successful observation supplies baseline context, even when stdout is empty. Identical subsequent observations finish as `Suppressed: no_change`, without a model call or delivery. Changes supply a unified diff and current output inside the existing untrusted-data fence. The comparison digest and snapshot are committed before the model runs, so a failed model response cannot repeatedly alert on the same change.
 
@@ -66,3 +66,16 @@ The trusted host hashes every stdout byte before display truncation. Monitor eva
 The normal secret scrubber still applies before task results reach the jobs runtime. Comparison uses the trusted raw digest, while stored/displayed snapshots contain only scrubbed text. A `scrubbed` label identifies comparisons whose raw and displayed contents differ; changes in hidden secret values can therefore trigger a change with no visible text difference. Diffs are displayed up to 4,000 characters and current output up to 8,000, with explicit truncation indicators.
 
 Editing the job configuration invalidates its baseline generation. Already approved work keeps its approved meaning, but a stale completion cannot replace the new baseline or deliver the old configuration's answer. Editing the source file affects only subsequent approvals and starts a new source baseline. Baselines survive restarts; interrupted model/delivery work follows the existing explicit unknown-outcome behavior rather than automatic replay.
+
+
+## URL monitors with approval per request
+
+`options.monitor_url` is an alternative to `monitor_script` on an `ask` job. It cannot combine with `script`, `monitor_script`, or `no_agent`. Example options: `{"monitor_url":"https://example.com/status.txt","deliver":["ntfy"]}`. Use the same existing jobs create/edit interface. There is no new background fetch outside the task queue.
+
+Authoring requires the live coordinator, secret screening, enabled Action Kernel, and enforced signed task mediation. Missing enforcement or signing refuses this feature; a queued decision alone never grants network access. Each firing proposes one exact `plugin.egress` GET with a frozen URL, plugin identity, generation, attempt, and hop. Approve it through the existing task decision interface. Any redirect, including same-host, becomes another blocked approval; at most five redirects are supported. No cookies or authorization headers carry between hops.
+
+Only HTTP(S), credential-free ASCII URLs without fragments are accepted. User information, credential-shaped query parameters, known secret values (including escaped forms), and secret handles are rejected before job/task storage. Existing public-address DNS validation and IP pinning still apply, so local/private destinations are not supported. Do not put credentials in monitor URLs.
+
+Each hop has one 30-second overall deadline and a 256 KiB raw-body bound. The request asks for identity encoding; compressed responses are refused rather than decompressed without a bound. Final successful responses must be valid UTF-8. Failed/interrupted/invalid captures and redirects do not advance the baseline. Responses are scrubbed before task results or baseline snapshots are stored. Baseline/diff/model/delivery behavior otherwise follows the script monitor above, including inbound taint, quiet hours, e-stop, and generation checks.
+
+A claimed fetch that is interrupted is not automatically replayed. The existing worker records/reaps unknown running work; a pending job observes that outcome rather than submitting another request. This does not guarantee that a remote server never saw an interrupted GET. Tests use the real signed queue/worker/executor with injected DNS/HTTP and no live egress.

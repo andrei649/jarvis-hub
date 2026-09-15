@@ -132,6 +132,16 @@ noi; 24 de probe în browser și suita frontend de 1.247 teste trecute.
 Consumatorul din aplicația mobilă nativă și opțiunile de font rămân de implementat.
 [Contract și verificări](../frontend/docs/h135-appearance-sync.md).
 
+## Monitorizare URL — increment H453 la 15 septembrie
+
+Monitorizarea URL folosește acum coada semnată și aprobarea fiecărui GET, inclusiv
+aprobări noi pentru redirecționări. Captura finală este limitată la 256 KiB UTF-8
+necomprimat, mascată înainte de stocare și procesată de mecanismul de baseline/diff.
+35 de teste noi; 232 verificări țintite trecute și revizuire independentă fără
+constatări. H453 rămâne parțial: nu acordă execuție nesupravegheată și nu acoperă
+URL-uri private/cu credențiale/comprimate ori configurarea contextelor per job.
+[Contract și limite](automations-scripts.md#url-monitors-with-approval-per-request).
+
 ## Ordinea sprintului
 
 1. **Reevaluarea restului inventarului pe clustere**, începând cu cele mai vechi

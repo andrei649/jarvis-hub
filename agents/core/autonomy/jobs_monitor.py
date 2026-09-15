@@ -39,13 +39,13 @@ def current(store, row):
                 and generation(store._conn, row['job_id']) == row['data'].get('monitor_generation'))
 
 
-def _capture(stdout, metadata):
+def _capture(stdout, metadata, limit=MAX_OUTPUT_BYTES):
     if (not isinstance(metadata, dict) or type(metadata.get('version')) is not int or metadata['version'] != 1
             or metadata.get('complete') is not True or metadata.get('utf8_valid') is not True
             or metadata.get('snapshot_complete') is not True):
         raise ValueError('monitor requires complete successful UTF-8 stdout capture')
     count, digest = metadata.get('byte_count'), metadata.get('sha256')
-    if type(count) is not int or not 0 <= count <= MAX_OUTPUT_BYTES or len(stdout.encode('utf-8')) > MAX_OUTPUT_BYTES:
+    if type(count) is not int or not 0 <= count <= limit or len(stdout.encode('utf-8')) > limit:
         raise ValueError('monitor output exceeds the complete snapshot bound')
     if not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest):
         raise ValueError('monitor capture digest is invalid')
@@ -55,9 +55,13 @@ def _capture(stdout, metadata):
 
 def detect(store, row, stdout, metadata):
     """CAS the observation and baseline in one transaction, before any model await."""
-    digest, scrubbed = _capture(stdout, metadata)
+    limit = MAX_OUTPUT_BYTES
+    if row['data']['job']['options'].get('monitor_url'):
+        from .jobs_url import MAX_BYTES
+        limit = MAX_BYTES
+    digest, scrubbed = _capture(stdout, metadata, limit)
     data = dict(row['data'])
-    source = hashlib.sha256(json.dumps(data['payload']['args'], sort_keys=True).encode()).hexdigest()
+    source = hashlib.sha256(json.dumps(data.get('monitor_source', data['payload'].get('args')), sort_keys=True).encode()).hexdigest()
     with store._lock:
         conn = store._conn
         conn.execute('BEGIN IMMEDIATE')
