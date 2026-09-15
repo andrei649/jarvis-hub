@@ -11,14 +11,14 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 116 | 16.6% |
-| Parțial | 371 | 53.2% |
+| Parțial | 367 | 52.7% |
 | Lipsă | 99 | 14.2% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 4 | 0.6% |
+| De reverificat | 8 | 1.1% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 116/590 = **19.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 104/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 100/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -32,11 +32,11 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | web | 40 | 7 | 17 | 9 | 7 | 0 |
 | desktop | 54 | 6 | 33 | 8 | 6 | 1 |
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
-| config | 18 | 4 | 10 | 3 | 1 | 0 |
-| env | 28 | 2 | 19 | 2 | 5 | 0 |
+| config | 18 | 4 | 9 | 3 | 1 | 1 |
+| env | 28 | 2 | 17 | 2 | 5 | 2 |
 | tools — the agent-callable surface | 32 | 8 | 19 | 3 | 2 | 0 |
 | skills | 33 | 6 | 13 | 6 | 8 | 0 |
-| providers | 27 | 4 | 13 | 3 | 7 | 0 |
+| providers | 27 | 4 | 12 | 3 | 7 | 1 |
 | agent-core | 36 | 8 | 14 | 9 | 4 | 1 |
 | memory | 27 | 8 | 13 | 3 | 2 | 1 |
 | automation | 32 | 1 | 24 | 4 | 3 | 0 |
