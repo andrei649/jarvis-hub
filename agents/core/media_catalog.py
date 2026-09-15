@@ -23,6 +23,7 @@ import contextlib
 import json
 import math
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -217,6 +218,7 @@ class MediaCatalog:
         cloud: bool = False,
         tags: list[str] | None = None,
         meta: dict | None = None,
+        record_id: str | None = None,
     ) -> dict:
         """Catalog one generated media item. ``now`` is the caller's clock (kept
         injectable for tests). Raises ``ValueError`` for an unknown ``kind``."""
@@ -231,8 +233,10 @@ class MediaCatalog:
                 meta=meta,
             )
         )
+        if record_id is not None and (not isinstance(record_id, str) or not re.fullmatch(r"md-[a-f0-9]{12}", record_id)):
+            raise ValueError("invalid catalog identity")
         raw_item = {
-            "id": "md-" + uuid.uuid4().hex[:12],
+            "id": record_id or "md-" + uuid.uuid4().hex[:12],
             "kind": kind,
             "prompt": bounded_prompt,
             "path": bounded_path,
@@ -245,13 +249,19 @@ class MediaCatalog:
         if len(self._encoded_json(raw_item, label="item")) > _MAX_ITEM_BYTES:
             raise ValueError("item size limit exceeded")
         item = self._validated_record(raw_item)
-        items = self._read(strict=True)
-        items.append(item)
-        # bound the catalog: evict the oldest first.
-        if len(items) > self._max_keep:
-            items.sort(key=_created_at)
-            items = items[-self._max_keep :]
-        self._write_atomic(items)
+        from .vault import _file_lock
+        with _file_lock(self._path.with_suffix(self._path.suffix + '.lock')):
+            items = self._read(strict=True)
+            existing = next((row for row in items if row['id'] == item['id']), None)
+            if existing is not None:
+                if existing != item:
+                    raise ValueError('catalog identity collision')
+                return dict(existing)
+            items.append(item)
+            if len(items) > self._max_keep:
+                items.sort(key=_created_at)
+                items = items[-self._max_keep :]
+            self._write_atomic(items)
         return dict(item)
 
     def get(self, item_id: str) -> dict | None:
@@ -262,12 +272,14 @@ class MediaCatalog:
 
     def remove(self, item_id: str) -> bool:
         """Drop one item from the catalog. True if it existed."""
-        items = self._read(strict=True)
-        kept = [r for r in items if r.get("id") != item_id]
-        if len(kept) == len(items):
-            return False
-        self._write_atomic(kept)
-        return True
+        from .vault import _file_lock
+        with _file_lock(self._path.with_suffix(self._path.suffix + '.lock')):
+            items = self._read(strict=True)
+            kept = [r for r in items if r.get("id") != item_id]
+            if len(kept) == len(items):
+                return False
+            self._write_atomic(kept)
+            return True
 
     def all(self) -> list[dict]:
         """Every item, newest-created first (the default gallery order)."""

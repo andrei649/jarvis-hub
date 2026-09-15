@@ -337,6 +337,7 @@ class Orchestrator:
         self.ambient_runtime = None
         self.acquisition = None
         self.tool_rpc = None
+        self.cloud_images = None
         self.agent_tool_runtime = None
         self.writeback = None
         self.social = None

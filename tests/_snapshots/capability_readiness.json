@@ -62,6 +62,7 @@
   "plugin:channel_signal": "wired",
   "plugin:channel_teams": "wired",
   "plugin:channel_whatsapp": "wired",
+  "plugin:cloud-image": "wired",
   "plugin:cloud-llm": "wired",
   "plugin:crm-sync": "wired",
   "plugin:digest": "wired",

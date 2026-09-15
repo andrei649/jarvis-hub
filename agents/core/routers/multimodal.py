@@ -16,7 +16,7 @@ edge back into `agents.web`.
 """
 
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi import Path as PathParam
@@ -346,6 +346,8 @@ class MediaGenBody(BaseModel):
     kind: str = Field(..., max_length=20)
     prompt: str = Field(..., max_length=4000)
     cloud: bool = False
+    size: Literal["1024x1024", "1536x1024", "1024x1536"] | None = None
+    quality: Literal["low", "medium", "high"] | None = None
     seed: int | None = Field(None, strict=True, ge=0, le=2**63 - 1)
     width: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
     height: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
@@ -388,6 +390,22 @@ async def media_generate(body: MediaGenBody):
                       "(heavy_features off — set JARVIS_SYSTEM_PROFILE=balanced to re-enable)"},
             status_code=200,
         )
+    if body.cloud and body.kind == "image":
+        from agents.core.action_origin import current_action_origin
+        runtime = getattr(get_orch(), 'cloud_images', None)
+        if runtime is None:
+            return nocache_json({'ok': False, 'reason': 'cloud image runtime unavailable'}, status_code=503)
+        options = {k: v for k, v in body.model_dump(exclude_none=True).items()
+                   if k not in {'kind', 'cloud', 'prompt'}}
+        if options.get('backend') == 'openai':
+            options.pop('backend')
+        try:
+            task_id = runtime.submit(body.prompt, options, current_action_origin())
+        except Exception:
+            return nocache_json({'ok': False, 'reason': 'cloud image proposal refused'}, status_code=422)
+        return nocache_json({'ok': False, 'reason': 'approval_required', 'task_id': task_id}, status_code=202)
+    if not body.cloud and (body.size is not None or body.quality is not None):
+        return nocache_json({'ok': False, 'reason': 'cloud options require cloud image generation'}, status_code=422)
     if not body.cloud and body.kind == "image":
         from agents.core.routers._component import require_component
         _, server, error = require_component("tool_rpc", "tool runtime unavailable")
@@ -466,6 +484,12 @@ async def media_generation_task(task_id: int = PathParam(..., ge=1, le=2**63 - 1
     if error is not None:
         return error
     task = queue.get(task_id)
+    from agents.core.cloud_image_runtime import matches
+    if matches(task):
+        runtime = getattr(get_orch(), 'cloud_images', None)
+        if runtime is None:
+            return nocache_json({'error': 'cloud image runtime unavailable'}, status_code=503)
+        return nocache_json(runtime.project(task).model_dump())
     if (task is None or task.id != task_id
             or task.kind not in {"toolrpc.image_generate", "tool.rpc"}
             or not isinstance(task.payload, dict) or task.payload.get("tool") != "image_generate"

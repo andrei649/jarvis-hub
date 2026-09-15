@@ -37,11 +37,13 @@ Exports accept at most 200 selected IDs and 128 MiB of resolved input; the brows
 
 ## Cloud generation dependency
 
-`MediaGenManager._queue_cloud` in `agents/core/media_gen.py` evaluates the proposal and enqueues `media.{kind}` with `cloud=True`; it returns approval information before any generation or catalog write. The coordinator at this base has no cloud-image completion implementation for that legacy task. Its generic `_llm` fallback (`agents/core/autonomy_coordinator.py`) processes text through `orch.process`; it is not a cloud image backend, and an ordinary task result must not be treated as generated image bytes.
+`MediaGenManager._queue_cloud` in `agents/core/media_gen.py` evaluates the proposal and enqueues `media.{kind}` with `cloud=True`; it returns approval information before any generation or catalog write. The coordinator at the original audit base had no cloud-image completion implementation for that legacy task. Its generic `_llm` fallback (`agents/core/autonomy_coordinator.py`) processes text through `orch.process`; it is not a cloud image backend, and an ordinary task result must not be treated as generated image bytes.
 
 The real image path is `LocalImageRuntime.execute` in `agents/core/image_generation_runtime.py`: it constructs `MediaGenManager` with the ComfyUI backend and `default_catalog_if_enabled()`. The manager records successful local output through `_record_local_result`. The local approved ToolRPC image binding is distinct from the legacy cloud proposal.
 
-Therefore this audit does **not** certify cloud generation, a live cloud provider, or cloud completion writeback. When H515 adds that executor, its successful completion must persist the artifact and catalog record before reporting a produced asset. That conditional producer-integration obligation should remain with H515. No present gallery traversal defect was established by the absence of a future producer.
+The original audit did not certify that legacy proposal as cloud generation. The subsequent H515 increment adds a separate exact `cloud-image` plugin POST, signed human approval, strict prompt screening and validated PNG persistence in the canonical generated root. Its durable completion receipt and stable catalog identity permit local finalization without replaying a possibly billed request. With catalog recording enabled, success follows idempotent catalog insertion; catalog errors remain visible. Recording opt-out is preserved, and removal does not resurrect an already finalized row.
+
+Independent tests now cover actual guarded route → signed worker → mocked OpenAI response → canonical artifact → shared blob reader and selected ZIP export, asserting byte equality and no missing manifest row. This satisfies the conditional writeback obligation for the implemented producer. It does not certify live provider behavior, cloud HUD authoring or additional image providers; those remain H515 work.
 
 ## Fresh verification
 
@@ -54,4 +56,4 @@ All commands ran from the isolated audit worktree with unchanged production/test
 
 ## Reassessment conclusion
 
-The original H518 browse/search/export contract is supported by current source and focused verification. No additional native controls, history-restoration mechanism or unlimited export implementation is required by the frozen row. Recommend code-equivalent assessment, preserving retention/security/concurrency boundaries in its summary and the future cloud completion obligation with H515. The parent owns that status decision and evidence refresh.
+The original H518 browse/search/export contract is supported by current source and focused verification. No additional native controls, history-restoration mechanism or unlimited export implementation is required by the frozen row. Recommend code-equivalent assessment, preserving retention/security/concurrency boundaries in its summary and the bounded cloud completion evidence above. Broader cloud UI/provider work remains with H515.
