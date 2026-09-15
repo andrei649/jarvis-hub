@@ -30,6 +30,7 @@ from .tool_dialects import (
     remember_thought_signatures,
 )
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .usage_context import report_text_usage
 
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -191,7 +192,10 @@ class GeminiBackend(LLMBackend):
                 if binding.cache_name and exc.response.status_code in {400, 404}:
                     raise CachedContentRejected(exc.response.status_code) from None
                 raise
-            return self._extract_text(response.json())
+            data = response.json()
+            text = self._extract_text(data)
+            report_text_usage(gemini_usage(data))
+            return text
 
     async def _request_with_cache_retry(
         self,

@@ -2952,6 +2952,10 @@ class Orchestrator:
         # agent task records its own floor while it runs, not from the results.
         self._last_timeout_floor = {}
 
+        from .llm.usage_context import observer_scope
+
+        reported_usage = {}
+
         async def _run_agent(agent_id: str) -> tuple[str, str, float, str]:
             enriched_text = await self._build_agent_turn_text(
                 agent_id,
@@ -2972,11 +2976,17 @@ class Orchestrator:
             agent_context = dict(context or {})
             agent_context["session_id"] = self.session_id
             agent_context["wall_seconds"] = seconds
+
+            def meter(usage):
+                reported_usage[agent_id] = _sum_usage(reported_usage.get(agent_id), usage)
+                self._record_context_anchor(agent_id, usage)
+
             try:
-                resp = await asyncio.wait_for(
-                    self.agents[agent_id].process(enriched_text, agent_context),
-                    timeout=seconds,
-                )
+                with observer_scope(meter):
+                    resp = await asyncio.wait_for(
+                        self.agents[agent_id].process(enriched_text, agent_context),
+                        timeout=seconds,
+                    )
                 # The origin as this task saw it once the agent returned: the tool loop
                 # carries a recall taint into the context that awaits it, which is this
                 # task, not the turn's (Hermes absorption 5a).
@@ -3022,7 +3032,7 @@ class Orchestrator:
         results = {}
         self._last_latencies = {}
         # DRA-24: this path never binds a Gemini cache, so it leaves both cost maps
-        # empty and `_record_interactions` falls back to today's estimate — but they
+        # empty; absent provider usage, `_record_interactions` estimates — but they
         # must still be CLEARED, or a non-stream turn inherits the previous stream
         # turn's cached-token counts and claims reuse that never happened.
         self._last_cached_tokens = {}
@@ -3031,7 +3041,7 @@ class Orchestrator:
         # loop's several requests. Per turn like the maps above, and cleared for the
         # same reason: an empty map means nobody reported anything and the estimate
         # stands — never that the turn was free, and never last turn's numbers.
-        self._last_reported_usage = {}
+        self._last_reported_usage = reported_usage
         # Per-agent routes, alongside the per-agent latencies that already live here.
         # Before this, ONE route_name was computed from target_agents[0] and recorded for
         # every agent that answered — so a turn where stark answered locally and athena

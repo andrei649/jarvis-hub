@@ -59,3 +59,7 @@ slice starts by querying the remaining contracts, not by treating partial rows a
 ## 2026-09-15 cloud usage and complete prompt anchors (H673 partial)
 
 Gemini and explicit compatible structured turns now retain strict provider token totals without detail double-counting. Anthropic disjoint cache read/write categories now contribute to complete-prefix context anchors, including cache-only requests; billing unchanged. 56 added cases; 181 focused checks pass. Rebased only the two cloud commits onto URL delivery af033f6d; no inventory mutation. No live provider or billing proof; remaining heterogeneous-route, non-structured and cache-pricing limits stay explicit in assessment. See [module plan](../superpowers/plans/2026-09-15-cloud-usage.md).
+
+## 2026-09-15 complete text usage (H673 partial)
+
+Successful text responses and non-stream agent gathers now retain provider usage through closed request-local observers; ToolRuntime remains the sole structured-turn publisher. Thirty new cases and 274 focused checks pass, independently reviewed at 29a82ab3. Replayed only that source commit onto H139 f123446c. Actual stream terminal accounting and non-conversational usage remain open; no live-provider or billing proof. See [module plan](../superpowers/plans/2026-09-15-text-usage.md).

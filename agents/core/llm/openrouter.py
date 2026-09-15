@@ -16,6 +16,7 @@ from .base import LLMBackend, cloud_cap, strip_thinking
 from .egress import llm_async_client
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
+from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.openrouter")
 
@@ -66,7 +67,10 @@ class OpenRouterBackend(LLMBackend):
             resp.raise_for_status()
             data = resp.json()
             content = (data["choices"][0]["message"].get("content", "") or "")
-            return strip_thinking(content)
+            answer = strip_thinking(content)
+            if self.profile.backend_kind == "openai-compatible":
+                report_text_usage(compatible_usage(data))
+            return answer
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
             return "[OpenRouter error]"

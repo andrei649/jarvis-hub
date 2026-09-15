@@ -25,6 +25,7 @@ from .tool_dialects import (
     normalize_finish_reason,
 )
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .usage_context import report_text_usage
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -136,9 +137,9 @@ class ClaudeBackend(LLMBackend):
         data, error = await self._post_messages(payload)
         if data is None:
             return error
-        if data.get("content"):
-            return self._finalize_cloud(anthropic_text(data["content"]))
-        return ""
+        answer = self._finalize_cloud(anthropic_text(data["content"])) if data.get("content") else ""
+        report_text_usage(anthropic_usage(data))
+        return answer
 
     async def generate_tool_turn(
         self,
