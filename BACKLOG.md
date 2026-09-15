@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 tool-result durability repair (H298): concurrent same-tool streams and identical whole results now use independently created temporary files. Failed finalization closes and removes only its own writer. Seven failing regressions now pass within 180 focused checks; the broader row reassessment remains open. See [plan and verification](docs/superpowers/plans/2026-09-15-tool-spill-concurrency.md).
+
 - 2026-09-15 gallery contract reassessment (H518): frozen bounded browse/search/export requirements verified against unchanged source with88 backend and13 frontend checks, plus prior merged browser evidence. Marked equivalent; native controls, evicted-history recovery and unlimited exports were not required. Future approved cloud generation must write back under H515. See [scope and evidence](docs/hermes/h518-gallery-contract.md).
 
 - 2026-09-15 mobile build/dependencies: compatible lock updates remove all nine high audit findings;11 moderate UUID/xcode-chain reports remain recorded. The official RN polyfill replacement restores offline Android/iOS Hermes export with existing SDK versions. Native TypeScript and140 tests pass; native compilation/device validation remain open.

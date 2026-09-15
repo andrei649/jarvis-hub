@@ -366,3 +366,99 @@ def test_retention_sweeps_streamed_spills_too(tmp_path):
     assert store.read(kept.reference) is not None
     assert store.read(stale.reference) is None
     assert not (tmp_path / "spills" / stale.reference).exists()
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_overlapping_same_tool_streams_keep_independent_complete_results(tmp_path, order):
+    store = _store(tmp_path)
+    bodies = [b"a" * 60_000 + b"FIRST", b"b" * 60_000 + b"SECOND"]
+    writers = [store.open_stream(tool="execute-code-stdout") for _ in bodies]
+    for writer, body in zip(writers, bodies, strict=True):
+        writer.write(body)
+    receipts = {}
+    for index in order:
+        receipts[index] = writers[index].close()
+    for index, body in enumerate(bodies):
+        receipt = receipts[index]
+        assert receipt is not None
+        assert Path(receipt.path).read_bytes() == body
+        assert receipt.sha256 == hashlib.sha256(body).hexdigest()
+        assert receipt.original_bytes == len(body)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_abandoning_one_stream_does_not_remove_another_live_stream(tmp_path, failed):
+    store = _store(tmp_path)
+    abandoned = store.open_stream(tool="echo")
+    survivor = store.open_stream(tool="echo")
+    abandoned.write(b"abandoned")
+    survivor.write(b"surviving complete output")
+    if failed:
+        abandoned._handle.close()
+        abandoned.write(b"cannot write")
+        assert abandoned.close() is None
+    else:
+        abandoned.discard()
+    result = survivor.close()
+    assert result is not None
+    assert store.read(result.reference) == "surviving complete output"
+    assert [p.name for p in store.root.iterdir()] == [result.reference]
+
+
+def test_concurrent_identical_whole_results_both_receive_valid_receipts(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = _store(tmp_path)
+    barrier = Barrier(2)
+    replace = Path.replace
+
+    def together(source, target):
+        if source.parent == store.root:
+            barrier.wait(timeout=5)
+        return replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", together)
+    body = "complete result " * 5_000
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        pending = [workers.submit(store.spill, body, tool="echo") for _ in range(2)]
+        results = [future.result(timeout=10) for future in pending]
+    assert all(result is not None for result in results)
+    for result in results:
+        assert Path(result.path).read_text() == body
+        assert result.sha256 == hashlib.sha256(body.encode()).hexdigest()
+    assert results[0].reference == results[1].reference
+    assert [p.name for p in store.root.iterdir()] == [results[0].reference]
+
+
+def test_failed_whole_result_finalization_removes_its_temporary_file(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+
+    def fail(_fd):
+        raise OSError("simulated failed durability barrier")
+
+    monkeypatch.setattr(trs.os, "fsync", fail)
+    assert store.spill("not durably complete", tool="echo") is None
+    assert list(store.root.iterdir()) == []
+
+
+def test_stream_flush_failure_closes_the_handle_before_cleanup(tmp_path):
+    store = _store(tmp_path)
+    stream = store.open_stream(tool="echo")
+    stream.write(b"not durably complete")
+    handle = stream._handle
+
+    class FailedFlush:
+        def flush(self):
+            raise OSError("simulated flush failure")
+
+        def close(self):
+            handle.close()
+
+    stream._handle = FailedFlush()
+    try:
+        assert stream.close() is None
+        assert handle.closed, "failed finalization must release its file descriptor"
+        assert list(store.root.iterdir()) == []
+    finally:
+        handle.close()
