@@ -7,6 +7,7 @@ def inspect_jobs(runner) -> dict:
     now = datetime.fromtimestamp(runner._now(), UTC)
     jobs = runner.store.list()
     outcomes = runner.store.scheduler_results()
+    script_attempts = {r['job_id']: r for r in runner.store.script_attempts.rows()}
     channels = sorted((getattr(runner._orch, "channels", None) or {}).keys())
     problems = []
     rows = []
@@ -46,12 +47,23 @@ def inspect_jobs(runner) -> dict:
         rows.append(row)
         outcome = outcomes.get(f"job-{job.id}")
         row["last_outcome"] = outcome
-        if outcome and outcome["status"] != "ok":
+        if outcome and outcome["status"] not in {"ok", "pending"}:
             problem(job.id, "last_run_" + outcome["status"], "Last scheduled execution did not succeed")
         if job.last_status == "failed":
             problem(job.id, "last_run_failed", "Last execution failed")
         if job.last_delivery_status == "failed":
             problem(job.id, "last_delivery_failed", "Last delivery failed")
+        attempt = script_attempts.get(job.id)
+        if attempt:
+            row['script_state'] = attempt['state']
+            row['script_task_id'] = attempt['data'].get('task_id')
+        if job.options.get('no_agent') and not job.options.get('script'):
+            problem(job.id, 'script_required', 'no_agent requires a script')
+        if job.options.get('script'):
+            from .jobs_scripts import script_problem
+            issue = script_problem(job.options['script'])
+            if issue:
+                problem(job.id, 'script_unavailable', issue)
         if not job.runnable:
             continue
         entry = registered.get(f"job-{job.id}")
@@ -71,7 +83,7 @@ def inspect_jobs(runner) -> dict:
             outcome = outcomes.get(job_id)
             rows.append({"job_id": job_id, "active": True, "next_run_at": next_run(job_id, entry),
                          "last_outcome": outcome})
-            if outcome and outcome["status"] != "ok":
+            if outcome and outcome["status"] not in {"ok", "pending"}:
                 problem(job_id, "last_run_" + outcome["status"], "Last scheduled execution did not succeed")
 
     return {
@@ -84,6 +96,7 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent"],
+        "script_contract": "Bounded self-contained Python, fresh approval each run; no shell or project cwd",
         "unsupported_options": ["workdir", "model", "provider", "enabled_toolsets", "skills"],
     }

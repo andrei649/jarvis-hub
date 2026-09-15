@@ -891,7 +891,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "run":
         run = reply.get("run") or {}
         ctx.say(f"{run.get('status')}: {run.get('summary', '')}")
-        return EXIT_OK if run.get("status") == "ok" else EXIT_FAILED
+        return EXIT_OK if run.get("status") in {"ok", "pending"} else EXIT_FAILED
     state = "paused" if job.get("paused_reason") else "runnable"
     ctx.say(f"{ns.job_id} is {state}")
     return EXIT_OK

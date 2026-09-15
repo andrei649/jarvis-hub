@@ -218,7 +218,10 @@ async def jobs_run(job_id: str):
         return JSONResponse({"error": "no such job"}, status_code=404)
     run = await runner.fire(job_id, force=True)
     job = runner.store.get(job_id)
-    return nocache_json({"ok": run.status == "ok", "run": run.as_dict(), "job": job.as_dict() if job else None})
+    pending = run.status == "pending"
+    return nocache_json({"ok": run.status in {"ok", "pending"}, "pending": pending,
+                         "run": run.as_dict(), "job": job.as_dict() if job else None},
+                        status_code=202 if pending else 200)
 
 
 @router.delete("/api/jobs/{job_id}", dependencies=[Depends(admin_guard)])
