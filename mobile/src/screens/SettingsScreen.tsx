@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,13 +7,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { ApiError, fetchStatus, normalizeBaseUrl } from '../api/client';
+import { useAppearance } from '../context/AppearanceContext';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 type TestState =
   | { kind: 'idle' }
@@ -21,7 +21,9 @@ type TestState =
   | { kind: 'fail'; detail: string };
 
 export function SettingsScreen() {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, updateConfig } = useServer();
+  const { status: appearanceStatus } = useAppearance();
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
   const [token, setToken] = useState(config.token);
   const [adminToken, setAdminToken] = useState(config.adminToken);
@@ -126,6 +128,10 @@ export function SettingsScreen() {
         {test.kind === 'ok' && <Text style={[styles.result, { color: theme.ok }]}>{test.detail}</Text>}
         {test.kind === 'fail' && <Text style={[styles.result, { color: theme.danger }]}>{test.detail}</Text>}
 
+        <Text style={styles.help}>Appearance · {appearanceStatus}</Text>
+        <Text style={styles.help}>Change appearance in the browser; this app reads your saved choices.</Text>
+        {!!theme.fontFallback && <Text style={styles.help}>{theme.fontFallback}</Text>}
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Jarvis mobile · companion for the Jarvis hub</Text>
         </View>
@@ -134,7 +140,7 @@ export function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 16 },
   label: {

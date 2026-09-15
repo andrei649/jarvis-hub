@@ -1,11 +1,13 @@
+import { Text } from './ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { ApiError, fetchAgents, type AgentInfo } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 /** Compact dropdown for choosing the active agent. Pure JS (no native picker). */
 export function AgentPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [open, setOpen] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -81,7 +83,7 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

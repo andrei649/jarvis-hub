@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,8 +7,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -33,9 +32,10 @@ import {
 } from '../api/client';
 import { Markdown } from '../markdown/Markdown';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -54,7 +54,7 @@ function timeLabel(value?: unknown): string {
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function roleColor(role: string): string {
+function roleColor(role: string, theme: Theme): string {
   const key = role.toLowerCase();
   if (key === 'user') return theme.accent;
   if (key === 'assistant') return theme.ok;
@@ -63,6 +63,7 @@ function roleColor(role: string): string {
 }
 
 function SummaryCell({ label, value }: { label: string; value: string | number }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.summaryCell}>
       <Text style={styles.summaryValue}>{value}</Text>
@@ -82,6 +83,7 @@ function SegmentButton({
   active: boolean;
   onPress: () => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <Pressable style={[styles.segmentButton, active && styles.segmentActive]} onPress={onPress}>
       <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>
@@ -90,12 +92,13 @@ function SegmentButton({
 }
 
 function TurnCard({ turn }: { turn: MemoryTurn }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const stamp = timeLabel(turn.timestamp);
   const role = turn.role || 'turn';
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <Text style={[styles.role, { color: roleColor(role) }]}>{role}</Text>
+        <Text style={[styles.role, { color: roleColor(role, theme) }]}>{role}</Text>
         {turn.agent_id ? <Text style={styles.agent}>{turn.agent_id}</Text> : null}
         {stamp ? <Text style={styles.stamp}>{stamp}</Text> : null}
       </View>
@@ -107,6 +110,7 @@ function TurnCard({ turn }: { turn: MemoryTurn }) {
 }
 
 function NotesCard({ notes }: { notes: NotesResponse | null }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const content = notes?.content?.trim() ?? '';
   return (
     <View style={styles.card}>
@@ -137,6 +141,7 @@ function EntityCard({
   selected: boolean;
   onPress: () => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <Pressable style={[styles.entityCard, selected && styles.entitySelected]} onPress={onPress}>
       <View style={styles.cardTop}>
@@ -153,6 +158,7 @@ function EntityCard({
 }
 
 function RelationRow({ relation }: { relation: KnowledgeRelation }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.kgRow}>
       <Text style={styles.kgRowMain}>
@@ -164,6 +170,7 @@ function RelationRow({ relation }: { relation: KnowledgeRelation }) {
 }
 
 function FactRow({ fact }: { fact: KnowledgeFact }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const when = fact.valid_from === undefined ? '' : `from ${String(fact.valid_from)}`;
   return (
     <View style={styles.kgRow}>
@@ -200,6 +207,7 @@ function GraphView({
   onSearch: () => void;
   onSelectEntity: (entity: KnowledgeEntity) => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const selectedName = selected?.entity?.name ?? '';
   const relations = selected?.relations ?? [];
 
@@ -334,6 +342,7 @@ function artifactTime(ts?: number): string {
 }
 
 function ArtifactImage({ src, alt, baseUrl }: { src: string; alt: string; baseUrl: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const [consented, setConsented] = useState(false);
   const url = cleanUrl(src);
   if (isSameOriginPath(url)) {
@@ -352,6 +361,7 @@ function ArtifactImage({ src, alt, baseUrl }: { src: string; alt: string; baseUr
 }
 
 function ArtifactBody({ artifact, baseUrl }: { artifact: CanvasArtifact; baseUrl: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const p = artifact.payload || {};
   const title = typeof p.title === 'string' && p.title ? p.title : '';
   const titleNode = title ? <Text style={styles.artifactTitle}>{title}</Text> : null;
@@ -439,6 +449,7 @@ function ArtifactCard({
   onPin: () => void;
   onDelete: () => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const stamp = artifactTime(artifact.created_at);
   return (
     <View style={styles.card}>
@@ -462,6 +473,7 @@ function ArtifactCard({
 }
 
 export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [mode, setMode] = useState<ViewMode>('turns');
   const [memory, setMemory] = useState<MemoryResponse | null>(null);
@@ -742,7 +754,7 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
   summary: {

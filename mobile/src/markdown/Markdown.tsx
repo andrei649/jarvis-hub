@@ -1,10 +1,12 @@
+import { Text } from '../components/ThemedText';
 import React from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { theme } from '../theme';
+import { Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { useThemeStyles, type Theme } from '../theme';
 import { parseMarkdown, type Block, type Inline } from './parse';
 
 /** Render assistant Markdown to React Native nodes. */
 export function Markdown({ text, color }: { text: string; color?: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const blocks = React.useMemo(() => parseMarkdown(text), [text]);
   const base = color ?? theme.text;
   return (
@@ -17,6 +19,7 @@ export function Markdown({ text, color }: { text: string; color?: string }) {
 }
 
 function BlockView({ block, color }: { block: Block; color: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   switch (block.type) {
     case 'code':
       return (
@@ -81,6 +84,7 @@ function InlineRun({ nodes, color }: { nodes: Inline[]; color: string }) {
 }
 
 function InlineNode({ node, color }: { node: Inline; color: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   switch (node.type) {
     case 'text':
       return <Text style={{ color }}>{node.text}</Text>;
@@ -111,13 +115,13 @@ function InlineNode({ node, color }: { node: Inline; color: string }) {
 
 const HEADING_SIZES: Record<number, number> = { 1: 22, 2: 20, 3: 18, 4: 16, 5: 15, 6: 14 };
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   paragraph: { fontSize: 15, lineHeight: 21, marginVertical: 2 },
   heading: { fontWeight: '700', marginTop: 6, marginBottom: 2 },
   bold: { fontWeight: '700' },
   italic: { fontStyle: 'italic' },
   inlineCode: {
-    fontFamily: 'monospace',
+    fontFamily: theme.codeFont,
     fontSize: 14,
     color: theme.accent,
     backgroundColor: theme.surfaceAlt,
@@ -130,7 +134,7 @@ const styles = StyleSheet.create({
     marginVertical: 6,
   },
   codeBlockContent: { padding: 10 },
-  codeText: { fontFamily: 'monospace', fontSize: 13, lineHeight: 19, color: theme.text },
+  codeText: { fontFamily: theme.codeFont, fontSize: 13, lineHeight: 19, color: theme.text },
   list: { marginVertical: 2 },
   listItem: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: 1 },
   bullet: { width: 22, fontSize: 15, lineHeight: 21, fontWeight: '700' },

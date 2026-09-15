@@ -1,3 +1,4 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,7 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import {
@@ -16,11 +16,12 @@ import {
   type HouseRoom,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 const SECURITY_DOMAINS = new Set(['lock', 'alarm_control_panel', 'cover']);
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -33,6 +34,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function RoomCard({ room }: { room: HouseRoom }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{room.name}</Text>
@@ -42,6 +44,7 @@ function RoomCard({ room }: { room: HouseRoom }) {
 }
 
 function DeviceCard({ device }: { device: HouseDevice }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const security = SECURITY_DOMAINS.has(device.domain);
   return (
     <View style={styles.card}>
@@ -58,6 +61,7 @@ function DeviceCard({ device }: { device: HouseDevice }) {
 }
 
 function PresenceCard({ presence }: { presence: HousePresence }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.card}>
       <View style={styles.row}>
@@ -78,6 +82,7 @@ export function HouseScreen({
   onGoToSettings: () => void;
   onGoToApprovals: () => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [rooms, setRooms] = useState<HouseRoom[]>([]);
   const [devices, setDevices] = useState<HouseDevice[]>([]);
@@ -190,7 +195,7 @@ export function HouseScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 30 },
   hero: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },

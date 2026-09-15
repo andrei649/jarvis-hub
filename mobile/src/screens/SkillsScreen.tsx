@@ -1,10 +1,12 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, fetchSkills, type HubSkill } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -17,6 +19,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function SkillCard({ skill }: { skill: HubSkill }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const commandCount = skill.commands.length;
   const agents = skill.agents.length ? skill.agents.join(', ') : 'No assigned agents';
   return (
@@ -38,6 +41,7 @@ function SkillCard({ skill }: { skill: HubSkill }) {
 }
 
 export function SkillsScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [skills, setSkills] = useState<HubSkill[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +121,7 @@ export function SkillsScreen({ onGoToSettings }: { onGoToSettings: () => void })
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
   summary: {

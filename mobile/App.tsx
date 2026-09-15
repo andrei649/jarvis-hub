@@ -1,6 +1,8 @@
+import { Text } from './src/components/ThemedText';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
-import { Platform, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, SafeAreaView, StyleSheet, View } from 'react-native';
+import { AppearanceProvider } from './src/context/AppearanceContext';
 import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
 import { AmbientScreen } from './src/screens/AmbientScreen';
@@ -16,7 +18,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SkillsScreen } from './src/screens/SkillsScreen';
 import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
-import { theme } from './src/theme';
+import { useThemeStyles, type Theme } from './src/theme';
 
 type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'ambient' | 'capture' | 'house' | 'cameras' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
 
@@ -55,6 +57,7 @@ const TITLES: Record<Tab, string> = {
 };
 
 function AppShell() {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const [tab, setTab] = useState<Tab>('chat');
 
   return (
@@ -97,14 +100,14 @@ function AppShell() {
 
 export default function App() {
   return (
-    <ServerProvider>
+    <ServerProvider><AppearanceProvider>
       <StatusBar style="light" />
       <AppShell />
-    </ServerProvider>
+    </AppearanceProvider></ServerProvider>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: theme.bg,

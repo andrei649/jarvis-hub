@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "37589024f19ab82a6b8b794aca9c44b0538ec1c8",
-  "assessed_at": "2026-09-15T15:25:50.865414Z",
+  "base_sha": "4648d2a4c5618b1243917c4e31a930f63f077b1c",
+  "assessed_at": "2026-09-15T15:30:44.471025Z",
   "reviews": [
     {
       "id": "H001",
@@ -3896,9 +3896,9 @@
     {
       "id": "H135",
       "row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
-      "status": "partial",
-      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss. Five fixed local UI font choices now share that normalization, revision and offline journal contract. The HUD applies the body/display override at its root; code and explicitly monospace elements retain their independent font stack. Real root/prefix browser tests verify computed families, persistence in a fresh browser, look independence, offline replay and code font invariance.",
-      "remaining": "The separate native mobile application has no appearance API consumer and keeps its existing static theme. The finite local font choices do not claim the full Hermes curated font catalog or a webfont loader. Scope is the existing single-owner instance, not per-account/profile identity. Storage-unavailable clients retain choices only in memory; offline data cannot survive browser closure without storage. No native GUI/provider proof.",
+      "status": "equivalent",
+      "summary": "Browser HUD, ambient and responsive phone layouts synchronize fixed appearance preferences through a narrow user-guarded Settings DB document. Boot reads never write defaults; stale known values coerce to supported choices. Prefix-scoped immutable edit journals preserve offline changes across tabs, server revision CAS prevents stale writes without Web Locks, and acknowledgements remove exact edits even after unmount. Motion defaults to the OS System preference. Two independent real browser contexts recover saved choices after cache loss. Five fixed local UI font choices now share that normalization, revision and offline journal contract. The HUD applies the body/display override at its root; code and explicitly monospace elements retain their independent font stack. Real root/prefix browser tests verify computed families, persistence in a fresh browser, look independence, offline replay and code font invariance. The separate native application now reads the same owner Settings DB document at boot and foreground entry. Its connection-scoped finite cache, explicit-save hydration epochs and serialized current-record writes prevent stale credentials or appearance from returning. All19 native consumers react without resetting local component state; code fonts remain independent. The accepted cross-client preference contract is implemented; native authoring and a full curated font catalog are not required by this row. Scope remains one configured owner instance. Unsupported native fonts have explicit platform fallbacks; unavailable storage cannot preserve offline choices across process restarts. Native rendering is covered with real React source and host mocks, not device GUI proof.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/appearance.py",
@@ -3950,7 +3950,7 @@
         },
         {
           "path": "frontend/docs/h135-appearance-sync.md",
-          "sha256": "9d661be36645802d1271294301f9d897910e2417a9d02ab80c32602bb08ed0d5"
+          "sha256": "1e61479204fe2f0c0df5a7864284cd8f94eecc50c80ad82720328e12b30f7c13"
         },
         {
           "path": "frontend/src/styles.css",
@@ -3962,7 +3962,155 @@
         },
         {
           "path": "frontend/docs/h135-font-preferences.md",
-          "sha256": "269646c4456bcf829ce80d735de9d298e38c31e56b5011978f287d82235c1206"
+          "sha256": "94ee73bab389e1a6cc7bddb88533f4940063f6c53f7c76a9bf6dfc0f57b4e456"
+        },
+        {
+          "path": "frontend/native-tests/appearance.test.tsx",
+          "sha256": "e93497f05eea59ee4aa887dfeb6e1658690c75565ec2fa70fb76c1cfbf55b7b4"
+        },
+        {
+          "path": "frontend/native-tests/consumers.test.tsx",
+          "sha256": "fe6c236ae7b3a5fb30fb2e7349325fec3065fd3aef9c2d29fd31e34db8e852e8"
+        },
+        {
+          "path": "frontend/native-tests/support/audio.ts",
+          "sha256": "7095706cfa8b85da8ef619b2c3607537b1d264606ae557a088ebf64d28e0890c"
+        },
+        {
+          "path": "frontend/native-tests/support/expo.tsx",
+          "sha256": "3f4a4b028a6f6ad5bbfceccf661d2d47f34c327a9566cbfdeec79d06d4b6405e"
+        },
+        {
+          "path": "frontend/native-tests/support/files.ts",
+          "sha256": "798857d30b888d01f380059f1865ae7f3709899d7fa043ba2117b64addadf4c7"
+        },
+        {
+          "path": "frontend/native-tests/support/native.tsx",
+          "sha256": "58d358f58f9cdc888666911e7daff6aa2b1732819ed7ad25906c9796745b157a"
+        },
+        {
+          "path": "frontend/native-tests/support/storage.ts",
+          "sha256": "b5a014bde18479191a7970a45a7005bcdf5377a44c7e673ba0a78a4244126e6e"
+        },
+        {
+          "path": "frontend/native-tests/transport.test.tsx",
+          "sha256": "0177c3ff809ce5216610daeee0fe1e4b0a79f8fe963d30ca0b872a5d0a796fab"
+        },
+        {
+          "path": "frontend/vitest.config.ts",
+          "sha256": "5f422e89adff5bbd37a8b56451f05cc4cec9a3070afa2d8e6f307eb2fa32c154"
+        },
+        {
+          "path": "frontend/vitest.native.config.ts",
+          "sha256": "779c09aa4d8c9c1567cbe9ee4258bb203ffa10bbbde06c3ed5f26c88b3f2adcd"
+        },
+        {
+          "path": "mobile/App.tsx",
+          "sha256": "dd2da40e7739182b3f6612d81c0b49520291203c5e21660d1fda232129026c3a"
+        },
+        {
+          "path": "mobile/docs/h135-native-appearance.md",
+          "sha256": "a3cebf1e368ded240cf8cd41b57500c321b0e0327e2388bb3295d574c308a1f2"
+        },
+        {
+          "path": "mobile/src/api/appearance.ts",
+          "sha256": "4c3f16ce9eaf4937bf6267d8cfbc9cb693934e8a7c3bbf2c61d711fdbaf27659"
+        },
+        {
+          "path": "mobile/src/appearance.ts",
+          "sha256": "0f961fa1c2c4900ca31220eb78603a0f81fcc62ccadf8430ca7d3139d6c0ba53"
+        },
+        {
+          "path": "mobile/src/components/AgentPicker.tsx",
+          "sha256": "e73594f98520f454b13ebc2c401615a9e8c0900ccbc4a7300049268d1a6f39cd"
+        },
+        {
+          "path": "mobile/src/components/MessageBubble.tsx",
+          "sha256": "76047132996a3e5c6c679191fe31421c54301e6060c3537529db96b3851f2884"
+        },
+        {
+          "path": "mobile/src/components/SessionsModal.tsx",
+          "sha256": "dbb515e39f766c1b479cd7c904c572d5eb2130663a1beea962d98f62abcd28ae"
+        },
+        {
+          "path": "mobile/src/components/ThemedText.tsx",
+          "sha256": "2f180a03a94a04468e8388d807de20a18ab5629c89f33abdddbc763aa75fd5d1"
+        },
+        {
+          "path": "mobile/src/context/AppearanceContext.tsx",
+          "sha256": "4f488bdc698c0dbf484a8736475f871329103039cd9c3cde0f4b46f3658d5307"
+        },
+        {
+          "path": "mobile/src/context/ServerContext.tsx",
+          "sha256": "6d55e1867fc0dd302ed20350caeb0dee4c13de752b74c891ae41463dac19ba8e"
+        },
+        {
+          "path": "mobile/src/markdown/Markdown.tsx",
+          "sha256": "9c70656d01fccc09afadc829270b1b7773b1f446b0f0aba5ecf2479aa63fe432"
+        },
+        {
+          "path": "mobile/src/screens/AcquisitionScreen.tsx",
+          "sha256": "2a7ec49f84b8e6ce5413e62d4af85ebf0da1c440df70080ce9bff2238aa8cf51"
+        },
+        {
+          "path": "mobile/src/screens/AmbientScreen.tsx",
+          "sha256": "8d10e901b0adbf478e2148a1b83858f9caab2269aba6131d359326681cfef4ac"
+        },
+        {
+          "path": "mobile/src/screens/ApprovalsScreen.tsx",
+          "sha256": "e88182daa850368bcaebffa6654a72cbd461fecf90c8d75f14404a99b60d008c"
+        },
+        {
+          "path": "mobile/src/screens/CameraScreen.tsx",
+          "sha256": "ab1b4bc1ff169742d7913b5f855ea84b67ce3f5f4df0e8f727bb292796b12ea9"
+        },
+        {
+          "path": "mobile/src/screens/CaptureScreen.tsx",
+          "sha256": "933289e1888ef88f2f044e12f33f850c5b4659de077a88fcb52527ac90336c43"
+        },
+        {
+          "path": "mobile/src/screens/ChatScreen.tsx",
+          "sha256": "8a580ae547aff21c5fb7fa06cb1904ede01a93eb97370302fc7d8fe8aebc877c"
+        },
+        {
+          "path": "mobile/src/screens/CommsScreen.tsx",
+          "sha256": "9cdd632673782b4a23b710413de77ae11be89b6e8f448c8f626223d765fb94c8"
+        },
+        {
+          "path": "mobile/src/screens/HouseScreen.tsx",
+          "sha256": "a6bd606194b606c6bba13266dbc0c97b8fbc3bbff3bad6baabd92a73a0a339b1"
+        },
+        {
+          "path": "mobile/src/screens/MediaScreen.tsx",
+          "sha256": "9c36f381e158b800676b466bfc5447098b2c56ac9af2e7a15693c9dce7e20aed"
+        },
+        {
+          "path": "mobile/src/screens/MemoryScreen.tsx",
+          "sha256": "a284aa1795d6dbd1ba62b0edcb27325c19b84a816417a107093a65c6b0c33e95"
+        },
+        {
+          "path": "mobile/src/screens/SettingsScreen.tsx",
+          "sha256": "1019ce4258168a5280587b768027492c286a7e005b875f150e0747e074665ada"
+        },
+        {
+          "path": "mobile/src/screens/SkillsScreen.tsx",
+          "sha256": "27be5b12ed69be3ba8c28a7d97f7b2f11ac4884e0295ee4948e9f42f590975dd"
+        },
+        {
+          "path": "mobile/src/screens/StatusScreen.tsx",
+          "sha256": "6d8e75575b5d952bc2b801487f1e75bb4efc490ae71c881d1065631de967ca85"
+        },
+        {
+          "path": "mobile/src/screens/TasksScreen.tsx",
+          "sha256": "01dcbcf3a6b3bae8a124d66696d00bbf76f1b1fbbb14f25d8370d37fc700964b"
+        },
+        {
+          "path": "mobile/src/storage/settings.ts",
+          "sha256": "981cd96ef3141aa1f52c576214dccdec522f2490cab18909f4b8086dc5f1fd22"
+        },
+        {
+          "path": "mobile/src/theme.ts",
+          "sha256": "5f6cb9c5d6866ef0a9dd12c363c54982c9282663dee738b5e51308b528b902a6"
         }
       ]
     },
