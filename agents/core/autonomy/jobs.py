@@ -1043,8 +1043,11 @@ class JobRunner:
             self.unregister(job_id)
             return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
                                          status=STATUS_SKIPPED, summary="repeat limit exhausted")
+        from .jobs_gates import JobSuppressed
         try:
             summary, notepad = await self._execute(job)
+        except JobSuppressed as suppressed:
+            summary, notepad = f"Suppressed: {suppressed.reason}", suppressed.notepad
         except Exception as exc:
             return self._failed(job, started, exc)
         finished = utc_now()
@@ -1143,6 +1146,9 @@ class JobRunner:
         reply = str(reply or "").strip()
         if not reply:
             raise RuntimeError("the agent returned no answer (no model backend, or a degraded reply)")
+        from .jobs_gates import JobSuppressed, is_silent_response
+        if is_silent_response(reply):
+            raise JobSuppressed("model_silent", notepad=reply[:MAX_NOTEPAD])
         summary = reply[:MAX_TEXT]
         if action.get("deliver", True):
             delivered = await self._deliver(reply, None, job=job, urgent=action.get("urgent") is True)

@@ -153,7 +153,8 @@ class ScriptAttempts:
         from .jobs import MAX_FAILURES, MAX_RUNS_KEPT, MAX_TEXT, utc_now
         now = utc_now()
         status = 'failed' if error else 'ok'
-        summary = str(error or row['data'].get('output', ''))[:MAX_TEXT]
+        reason = row['data'].get('suppressed_reason')
+        summary = str(error or (f'Suppressed: {reason}' if reason else row['data'].get('output', '')))[:MAX_TEXT]
         with self.store._lock:
             conn = self.store._conn
             conn.execute('BEGIN IMMEDIATE')
@@ -267,6 +268,7 @@ class ScriptRuntime:
         from agents.core import estop
 
         from .jobs import MAX_TEXT, logger
+        from .jobs_gates import JobSuppressed
         if estop.check_paused('job-script-completion', logger) or not callable(self.get):
             return 0
         count = 0
@@ -314,8 +316,12 @@ class ScriptRuntime:
                     continue
                 row = self.row(row['id'])
                 try:
-                    output = str(result['result'].get('stdout', ''))[:MAX_TEXT]
-                    if frozen.options.get('no_agent') or not output.strip():
+                    from .jobs_gates import wake_agent_suppressed
+                    raw_output = str(result['result'].get('stdout', ''))
+                    output = raw_output[:MAX_TEXT]
+                    if wake_agent_suppressed(raw_output, truncated=bool(result['result'].get('truncated'))):
+                        final = {**data, 'output': '', 'suppressed_reason': 'wake_gate'}
+                    elif frozen.options.get('no_agent') or not output.strip():
                         final = {**data, 'output': output}
                     else:
                         from agents.core.action_origin import (
@@ -334,6 +340,9 @@ class ScriptRuntime:
                             reset_action_origin(origin_token)
                         final = {**data, 'output': summary, 'notepad': notes}
                     self.attempts.transition(row, 'ready', final)
+                except JobSuppressed as suppressed:
+                    self.attempts.transition(row, 'ready', {**data, 'output': '',
+                        'suppressed_reason': suppressed.reason, 'notepad': suppressed.notepad})
                 except Exception as exc:
                     self.finish(row, error=str(exc))
                     continue
