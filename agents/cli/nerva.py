@@ -25,6 +25,12 @@ EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_NO_HUB = 3
 EXIT_AUTH = 4
+#: The check could not run at all — a database that was not consulted, a probe that
+#: could not be made. Distinct from EXIT_FAILED on purpose: a script must never read
+#: "we could not look" as either "clean" or "findings". Nothing is claimed.
+EXIT_UNAVAILABLE = 5
+
+_OSV_DEFAULT = "https://api.osv.dev"
 
 _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
@@ -233,6 +239,32 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    security = verbs.add_parser(
+        "security", help="checks you can run on this box: known vulnerabilities in what is installed")
+    security_verbs = security.add_subparsers(dest="action", required=True, metavar="action")
+    security_audit = security_verbs.add_parser(
+        "audit",
+        help="known vulnerabilities in this interpreter's packages and in declared extension pins, "
+             "from OSV.dev — exit 0 clean · 1 findings at/above --fail-on · 5 database not "
+             "consulted (nothing is claimed)")
+    security_audit.add_argument(
+        "--fail-on", choices=("low", "moderate", "high", "critical"), default="low",
+        help="the lowest severity that fails the run (default: low, i.e. any finding). "
+             "An advisory with no stated severity always fails: unrated is not safe.")
+    security_audit.add_argument(
+        "--ignore-vuln", action="append", default=[], metavar="ID",
+        help="an advisory id or alias to list but not fail on (repeatable)")
+    security_audit.add_argument(
+        "--extension", action="append", default=[], metavar="MANIFEST",
+        help="an extension descriptor whose exact Python pins are audited too (repeatable)")
+    security_audit.add_argument(
+        "--offline", action="store_true",
+        help="enumerate only; consult no database and claim nothing (exit 5)")
+    security_audit.add_argument(
+        "--osv-url", default=_OSV_DEFAULT, metavar="URL",
+        help="an https OSV-compatible endpoint (default: api.osv.dev)")
+    security_audit.add_argument("--json", action="store_true")
 
     completion = verbs.add_parser("completion", help="print a shell completion script")
     completion.add_argument("shell", choices=("bash", "zsh", "fish"))
@@ -1217,6 +1249,50 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
+    """H022 — what is installed here, checked against a vulnerability database.
+
+    Three surfaces, named in the output so a reader knows what was and was not
+    looked at: the distributions in *this* interpreter, the exact Python pins any
+    extension descriptor on the command line declares, and MCP — which on Nerva is
+    an HTTP transport with no installed server packages, so it is reported as an
+    empty surface with that reason rather than silently omitted.
+
+    Two things this verb will not do. It will not compute a severity OSV does not
+    state (an unrated advisory fails every threshold), and it will not call a run
+    "clean" when the database could not be reached: that is EXIT_UNAVAILABLE, and
+    the report says nothing is claimed. Only package name+version pairs leave the
+    machine, and the verb says so before the first request.
+    """
+    from agents.core.security import dep_audit
+
+    components = dep_audit.enumerate_installed()
+    extension_components, errors = dep_audit.enumerate_extensions(ns.extension)
+    components = components + extension_components
+    if ns.offline:
+        report = dep_audit.offline_report(components, extension_errors=errors)
+    else:
+        try:
+            client = dep_audit.default_client(ns.osv_url)
+        except ValueError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_USAGE
+        pairs = len({(c.name, c.version) for c in components})
+        ctx.err.write(
+            f"sending {pairs} package name+version pairs to {dep_audit.host_of(ns.osv_url)}; "
+            "nothing else leaves this machine\n"
+        )
+        report = dep_audit.audit(
+            components, client, fail_on=ns.fail_on, ignore=ns.ignore_vuln,
+            extension_errors=errors, database=ns.osv_url,
+        )
+    if ns.json:
+        ctx.dump(report.to_dict())
+    else:
+        ctx.out.write(dep_audit.render(report) + "\n")
+    return {"clean": EXIT_OK, "findings": EXIT_FAILED}.get(report.status, EXIT_UNAVAILABLE)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
@@ -1233,6 +1309,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,
+    "security": cmd_security,
     "completion": cmd_completion,
 }
 
