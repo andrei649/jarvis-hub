@@ -8,6 +8,7 @@ import hashlib
 import json
 from dataclasses import replace
 
+from .reasoning_effort import ReasoningEffortRefused
 from .request_context import current_session
 
 # Exact model IDs, not speculative family prefixes. Gemini 2.5 uses budgets,
@@ -49,7 +50,9 @@ def compatible_parameters(profile, model, effort):
             json.dumps([profile.id, sid], separators=(',', ':')).encode()
         ).hexdigest()[:48]
     if 'reasoning-effort' in profile.capabilities:
-        level, _ = profile.clamp_reasoning_effort(model, effort)
+        level, reason = profile.clamp_reasoning_effort(model, effort)
+        if reason == "below-minimum":
+            raise ReasoningEffortRefused()
         if level is not None:
             if profile.id == 'openrouter':
                 params['reasoning'] = {'effort': level}

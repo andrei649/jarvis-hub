@@ -75,8 +75,9 @@ class ProviderProfile:
 
         ``None`` means undeclared: nobody has told this build what the model
         takes, so a transport must keep the defaults it already had. ``()`` means
-        declared empty — the model accepts no effort level and the field has to be
-        omitted. A non-empty tuple is a vocabulary to clamp into, weakest first.
+        declared empty — omit all reasoning parameters. A non-empty tuple lists
+        product reasoning levels, weakest first; adapters map them to their actual
+        wire schema (an effort field or a token budget).
 
         The two ``None``-ish answers are not interchangeable, which is why this
         cannot be an attribute: ``reasoning_efforts`` below is the vendor-level

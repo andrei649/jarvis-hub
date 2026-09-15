@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Iterator
 
 import httpx
 
+from .reasoning_effort import ReasoningEffortRefused
 from .auth_rotation import AuthLease, is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
@@ -129,7 +130,9 @@ class GeminiBackend(LLMBackend):
         return f"{GEMINI_API_BASE}/models/{model}:{action}{suffix}"
 
     def _fit_effort(self, payload, model):
-        level, _ = self.profile.clamp_reasoning_effort(model, self.reasoning_effort)
+        level, reason = self.profile.clamp_reasoning_effort(model, self.reasoning_effort)
+        if reason == "below-minimum":
+            raise ReasoningEffortRefused()
         if level is not None:
             config = payload["generationConfig"]
             if model in {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"}:
@@ -139,6 +142,8 @@ class GeminiBackend(LLMBackend):
                 floor = 128 if model == "gemini-2.5-pro" else 512
                 if budget >= floor:
                     config["thinkingConfig"] = {"thinkingBudget": budget}
+                else:
+                    raise ReasoningEffortRefused()
             elif level in {"minimal", "low", "medium", "high"}:
                 config["thinkingConfig"] = {"thinkingLevel": level}
         return payload
@@ -285,6 +290,8 @@ class GeminiBackend(LLMBackend):
                 )
                 self._report_success(binding)
                 return self._finalize_cloud(text)
+            except ReasoningEffortRefused:
+                raise
             except httpx.HTTPStatusError as exc:
                 log_provider_failure(
                     logger,
@@ -390,6 +397,8 @@ class GeminiBackend(LLMBackend):
                 turn = self._tool_turn_from_response(response.json())
                 self._report_success(binding)
                 return turn
+            except ReasoningEffortRefused:
+                raise
             except httpx.HTTPStatusError as exc:
                 log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
                 next_binding = self._rotate_after_failure(
@@ -520,6 +529,8 @@ class GeminiBackend(LLMBackend):
                 )
                 self._report_success(binding)
                 return self._finalize_cloud(text)
+            except ReasoningEffortRefused:
+                raise
             except httpx.HTTPStatusError as exc:
                 log_provider_failure(
                     logger,

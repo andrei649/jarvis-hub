@@ -76,15 +76,8 @@ def test_the_clamp_walks_down_the_ladder_never_up():
     assert clamp("minimal", supported) is None
 
 
-def test_a_request_below_the_wires_floor_lands_on_the_floor_not_on_its_default():
-    """Answering "nothing" here would hand the caller the wire's own default.
-
-    Anthropic's default effort is `high`; a caller who asked for `minimal` and
-    got silence would be billed for the opposite of the request. The weakest
-    rung is the closest honest answer and is never above that default.
-    """
-    effort, reason = resolve("minimal", ("low", "medium", "high"))
-    assert (effort, reason) == ("low", "floored")
+def test_a_request_below_the_wires_floor_requires_local_refusal():
+    assert resolve("minimal", ("low", "medium", "high")) == (None, "below-minimum")
 
 
 def test_a_wire_with_no_vocabulary_is_answered_with_silence():
@@ -198,14 +191,12 @@ def test_where_thinking_is_on_by_default_off_has_to_be_said_and_paired():
     assert applied.reason == "disabled"
 
 
-def test_where_thinking_cannot_be_turned_off_the_weakest_rung_is_the_answer():
+def test_where_thinking_cannot_be_turned_off_the_request_is_refused():
+    from agents.core.llm.reasoning_effort import ReasoningEffortRefused
     payload = {"model": "claude-fable-5-1", "max_tokens": 2048}
-
-    applied = apply_anthropic(payload, "claude-fable-5-1", "none")
-
-    assert payload["thinking"] == {"type": "adaptive"}
-    assert payload["output_config"] == {"effort": "low"}
-    assert applied.reason == "floored-instead-of-disabled"
+    with pytest.raises(ReasoningEffortRefused):
+        apply_anthropic(payload, "claude-fable-5-1", "none")
+    assert "thinking" not in payload and "output_config" not in payload
 
 
 def test_where_omitting_the_block_already_means_off_nothing_is_sent():
@@ -482,12 +473,12 @@ def test_the_settings_row_offers_the_ladder_and_nothing_else():
     assert row["opts"] == ["", *LADDER]
 
 
-def test_the_provider_profile_advertises_only_levels_the_wire_accepts():
+def test_provider_profile_advertises_product_levels_including_budget_mappings():
     from agents.core.llm.providers import get_profile
 
     advertised = tuple(get_profile("anthropic").status()["reasoning_efforts"])
     assert advertised == vendor_efforts("anthropic")
-    assert advertised == ("low", "medium", "high", "xhigh", "max")
+    assert advertised == ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
     # A local provider this build sends nothing to must advertise nothing.
     assert get_profile("ollama").status()["reasoning_efforts"] == []
 
