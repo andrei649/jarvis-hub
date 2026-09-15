@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 H515 residency foundation: strict controller acknowledgments prevent false load/unload accounting; active references no longer manufacture residency. Independent 91-case review verifies default-off and best-effort generation. H515 remains partial: provider identity, request leases, ComfyUI reconciliation and actual VRAM swapping are not delivered. See [scoped plan](docs/superpowers/plans/2026-09-15-residency-ack.md).
+
 - 2026-09-15 H515 cloud tool: explicit model-callable cloud generation reuses the existing single signed paid approval task; local editing stays default. Trusted actor/origin, strict options, agent-loop stop and cancellation/restart no-replay are verified with mocked transport. H515 remains partial for real VRAM swap orchestration and frozen action-kind mapping.
 
 - 2026-09-15 reasoning tri-state and no-escalation (H679): explicit empty declarations now omit all reasoning controls, including Anthropic thinking, while known below-minimum requests refuse before HTTP. Budget-only product levels never invent a wire effort field. Independent 162-case review and real-adapter mocked counterexamples support the frozen contract; the guarded full suite has 11,535 passes, 23 skips and one expected failure (11,559 collected). H364 stays partial for broader vendor coverage. See [contract and limits](docs/hermes/h679-reasoning-contract.md).

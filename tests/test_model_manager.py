@@ -16,6 +16,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.model_manager import (
     ModelManager,
+    ControllerAck,
     LMStudioControllerAdapter,
     OllamaControllerAdapter,
 )
@@ -34,13 +35,13 @@ class FakeController:
         self.loads.append(model_id)
         if self._raise_on_load:
             raise RuntimeError("boom-load")
-        return {"status": "ok"}
+        return ControllerAck("load", model_id)
 
     async def unload(self, model_id: str):
         self.unloads.append(model_id)
         if self._raise_on_unload:
             raise RuntimeError("boom-unload")
-        return {"status": "ok"}
+        return ControllerAck("unload", model_id)
 
 
 class FakeClock:
@@ -232,9 +233,10 @@ async def test_load_failure_is_swallowed():
     # Must not raise; ensure_resident is best-effort.
     await mgr.ensure_resident("a")
     assert ctrl.loads == ["a"]
+    assert mgr.resident_models == []
 
 
-async def test_unload_failure_is_swallowed_and_load_continues():
+async def test_unload_failure_is_swallowed_and_retains_prior_tracking():
     ctrl = FakeController(raise_on_unload=True)
     clock = FakeClock()
     mgr = _mgr(ctrl, total=10_000, reserve=2_000,
@@ -242,6 +244,9 @@ async def test_unload_failure_is_swallowed_and_load_continues():
     clock.tick(); await mgr.ensure_resident("a")
     clock.tick(); await mgr.ensure_resident("b")   # evict a → unload raises, swallowed
     assert ctrl.unloads == ["a"]
+    assert ctrl.loads == ["a"]
+    assert mgr.resident_models == ["a"]
+    assert mgr.used_mb() == 5_000
 
 
 # ── adapter wraps LMStudioController surface ──────────────────────
@@ -299,6 +304,13 @@ class FakeOllamaClient:
     an awaitable returning an object with raise_for_status()."""
 
     class _Resp:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return {"model": self.payload["model"], "done": True, "response": "",
+                    "done_reason": "unload" if self.payload["keep_alive"] == 0 else "load"}
+
         def raise_for_status(self):
             return None
 
@@ -310,7 +322,7 @@ class FakeOllamaClient:
         self.posts.append((url, json))
         if self._raise:
             raise RuntimeError("boom-post")
-        return self._Resp()
+        return self._Resp(json)
 
 
 async def test_ollama_adapter_unload_issues_keep_alive_zero():
@@ -476,3 +488,24 @@ async def test_synthesize_hook_noop_on_cloud_route_when_enabled():
     assert out == "synthesized reply"
     assert ctrl.loads == []
     assert mgr.resident_models == []
+
+
+async def test_synthesize_continues_after_controller_refusal_without_fake_residency():
+    class BlockedController:
+        async def load(self, model_id):
+            return {"status": "blocked"}
+
+    mgr = _mgr(BlockedController())
+
+    class CheckingBackend(_FakeBackend):
+        async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
+            assert not mgr.is_resident(model)
+            assert mgr._active_refs == {model: 1}
+            return await super().generate(model, prompt, system, max_tokens, temperature)
+
+    backend = CheckingBackend()
+    agent = _agent(_FakeRouter(backend, "local-deep", mgr))
+    assert await agent.synthesize({"jarvis": "", "stark": "fact A"}, intent=None) == "synthesized reply"
+    assert backend.calls == ["deep-local-model"]
+    assert mgr.resident_models == []
+    assert mgr._active_refs == {}

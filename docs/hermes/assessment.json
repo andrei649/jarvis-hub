@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "76f68944cbd5133c8454f267d8e4c6685bec5b9c",
-  "assessed_at": "2026-09-15T17:50:05.909462Z",
+  "base_sha": "3b6571ca7c2b44dfc433bf5fb710b171fabd4b70",
+  "assessed_at": "2026-09-15T17:57:42.605859Z",
   "reviews": [
     {
       "id": "H001",
@@ -2467,8 +2467,8 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow. The model-callable image_generate tool now accepts an explicit cloud selector with only the existing fixed OpenAI model/size/quality vocabulary. Server-owned gated intake preserves the trusted actor and turn origin and proposes one signed plugin.egress task; the agent loop stops for the same human approval. Local generation/edit remains the default. Cloud arguments cannot execute as a local tool.rpc task, and missing runtime or ambiguous enqueue does not trigger fallback or resubmission. Actual ToolRPC/approval/worker/mock-provider/PNG/catalog and cancellation/restart regressions pass.",
-      "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow. The model-callable image_generate tool now accepts an explicit cloud selector with only the existing fixed OpenAI model/size/quality vocabulary. Server-owned gated intake preserves the trusted actor and turn origin and proposes one signed plugin.egress task; the agent loop stops for the same human approval. Local generation/edit remains the default. Cloud arguments cannot execute as a local tool.rpc task, and missing runtime or ambiguous enqueue does not trigger fallback or resubmission. Actual ToolRPC/approval/worker/mock-provider/PNG/catalog and cancellation/restart regressions pass. The default-off local residency manager now requires exact controller acknowledgments before confirming loads or forgetting unloaded models. Refused unloads retain prior accounting and stop replacement; request references alone never imply residency. Strict LM Studio and Ollama adapter checks, cancellation/concurrency cases and actual Agent best-effort continuation pass offline and independent review.",
+      "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, atomic per-generation leases, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2581,6 +2581,18 @@
         {
           "path": "agents/core/orchestrator_bindings.py",
           "sha256": "20dfd6ec66ae27aef7cd54636e5d8c9c67768cf75c3a7084af677d82328d0a5b"
+        },
+        {
+          "path": "agents/core/llm/model_manager.py",
+          "sha256": "d1347cac96cd4c4c4251396778d9fdd618e1a7b03c4bd93be25fa6e4ad706734"
+        },
+        {
+          "path": "tests/test_model_manager_ack.py",
+          "sha256": "a8f09fb1722865923839b41692153bcd8d3c752e32f235a9f8c496ba8132dd74"
+        },
+        {
+          "path": "tests/test_model_manager.py",
+          "sha256": "ef9c4abf464546711b742d0c992dc5e17debd50a36fe77a1324d8679c952ef8e"
         }
       ]
     },
