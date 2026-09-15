@@ -608,6 +608,8 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # NOT unfinished work: putting them on the punch list would record a false statement and
 # send a future reader to build controls that already exist.
 COMPUTED_URL_CALLERS: dict[str, str] = {
+    # JobsPanel builds the accepted receipt polling URL from JOBS_PATH and both IDs.
+    "/api/jobs/{job_id}/requests/{request_id}": "frontend/src/panels/jobs.tsx",
     # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
     "/api/acquisition/{name}/revoke": "frontend/src/gap.tsx",
     "/api/acquisition/{name}/rollback": "frontend/src/gap.tsx",

@@ -30,6 +30,7 @@ the scheduler and the orchestrator injected as callables.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -529,6 +530,8 @@ class JobStore:
             self._conn.commit()
         from .jobs_scripts import ScriptAttempts
         self.script_attempts = ScriptAttempts(self)
+        from .jobs_dispatch import ManualDispatch
+        self.dispatch = ManualDispatch(self)
 
 
     def record_scheduler_result(self, job_id: str, status: str) -> None:
@@ -779,6 +782,7 @@ class JobStore:
             self._conn.execute(
                 """DELETE FROM job_runs WHERE job_id = ? AND id NOT IN (
                        SELECT id FROM job_script_attempts WHERE state NOT IN ('done','failed'))
+                       AND id NOT IN (SELECT run_id FROM job_requests WHERE status='waiting' AND run_id IS NOT NULL)
                        AND id NOT IN (
                        SELECT id FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?)""",
                 (str(job_id), str(job_id), MAX_RUNS_KEPT),
@@ -913,7 +917,25 @@ class JobRunner:
         with contextlib.suppress(Exception):
             sched.remove_job(f"job-{job_id}")
 
+    def request_run(self, job_id: str) -> dict:
+        receipt = self.store.dispatch.enqueue(job_id)
+        self.register_manual()
+        return receipt
+
+    async def drain_manual(self):
+        await self.store.dispatch.drain(self)
+
+    def register_manual(self):
+        sched = self._scheduler()
+        if sched is not None:
+            if any(getattr(job, 'id', None) == 'jobs-manual-dispatch' for job in sched.get_jobs()):
+                return
+            sched.add_job(self.drain_manual, 'interval', seconds=5,
+                          id='jobs-manual-dispatch', replace_existing=True,
+                          misfire_grace_time=300, max_instances=1)
+
     def register_all(self) -> int:
+        self.register_manual()
         registered = 0
         for job in self.store.list():
             if job.runnable and self.register(job):
@@ -973,6 +995,7 @@ class JobRunner:
         if self.scheduler_alive():
             raise ValueError("scheduler is running; manual tick would compete with it")
         await self.reconcile_scripts()
+        await self.drain_manual()
         timezone = self.scheduler_timezone()
         now = (now or datetime.now(UTC)).astimezone(timezone)
         slot = now.replace(second=0, microsecond=0)
@@ -1030,13 +1053,28 @@ class JobRunner:
     # firing -----------------------------------------------------------------
 
     async def fire(self, job_id: str, *, force: bool = False) -> JobRun:
-        """Run one job now. Never raises; every outcome is a recorded run."""
+        """The shared cross-process cron/manual execution gate."""
+        while True:
+            with self.store.dispatch.gate(job_id) as acquired:
+                if acquired:
+                    return await self._fire_once(job_id, force=force)
+            # Hash collisions may serialize unrelated jobs, but never discard cron
+            # firings. Cancellation remains interruptible without holding a lock.
+            await asyncio.sleep(0.05)
+
+    async def _fire_once(self, job_id: str, *, force: bool = False, expected_identity: str | None = None) -> JobRun:
+        """Execute only while the caller holds the shared job gate."""
         from agents.core import estop
 
         started = utc_now()
         job = self.store.get(job_id)
         if job is None:
             return JobRun(0, job_id, started, started, STATUS_SKIPPED, "job no longer exists")
+        if expected_identity is not None:
+            from .jobs_dispatch import identity
+            if identity(job) != expected_identity:
+                return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
+                                             status=STATUS_SKIPPED, summary="configuration changed after request claim")
         if not force and not job.runnable:
             return self.store.record_run(
                 job_id, started_at=started, finished_at=utc_now(), status=STATUS_SKIPPED,

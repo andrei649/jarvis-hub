@@ -114,6 +114,7 @@
   "GET /api/jobs/doctor": "admin",
   "GET /api/jobs/incidents": "admin",
   "GET /api/jobs/{job_id}": "admin",
+  "GET /api/jobs/{job_id}/requests/{request_id}": "admin",
   "GET /api/jobs/{job_id}/runs": "admin",
   "GET /api/kg/entities": "user",
   "GET /api/kg/entities/{name}": "user",

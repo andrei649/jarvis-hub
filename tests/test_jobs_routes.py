@@ -93,7 +93,12 @@ def test_jobs_lifecycle_over_http(hub):
     assert [j["id"] for j in listed["jobs"]] == [job["id"]] and listed["scheduler"]["alive"] is True
 
     ran = client.post(f"/api/jobs/{job['id']}/run", headers=ADMIN).json()
-    assert ran["ok"] is True and ran["run"]["status"] == "ok" and telegram.sent == [("water", 5)], ran
+    assert ran["ok"] is True and ran["request"]["status"] == "queued" and telegram.sent == [], ran
+    import asyncio
+    asyncio.run(orch.jobs.drain_manual())
+    status = client.get(f"/api/jobs/{job['id']}/requests/{ran['request']['id']}", headers=ADMIN)
+    assert status.json()['request']['run']['status'] == 'ok'
+    assert telegram.sent == [("water", 5)]
     runs = client.get(f"/api/jobs/{job['id']}/runs", headers=ADMIN).json()["runs"]
     assert [r["status"] for r in runs] == ["ok"]
     detail = client.get(f"/api/jobs/{job['id']}", headers=ADMIN).json()
@@ -227,4 +232,46 @@ def test_script_run_is_accepted_pending_not_reported_as_finished(hub, tmp_path, 
     assert made.status_code == 201
     result = client.post('/api/jobs/' + made.json()['job']['id'] + '/run', headers=ADMIN)
     assert result.status_code == 202
-    assert result.json()['pending'] is True and result.json()['run']['status'] == 'pending'
+    assert result.json()['pending'] is True and result.json()['request']['status'] == 'queued'
+
+
+def test_manual_receipt_endpoint_is_guarded_and_not_an_execution_path(hub):
+    client, orch, telegram = hub
+    job = orch.jobs.create(name='manual', schedule_text='0 9 * * *', action={'type':'remind','message':'hi'})
+    accepted = client.post(f'/api/jobs/{job.id}/run', headers=ADMIN)
+    assert accepted.status_code == 202 and telegram.sent == []
+    receipt = accepted.json()['request']
+    path = f'/api/jobs/{job.id}/requests/{receipt["id"]}'
+    assert client.get(path).status_code in (401,403)
+    assert client.get(path, headers=ADMIN).json()['request']['status'] == 'queued'
+    assert client.get('/api/jobs/other/requests/' + receipt['id'], headers=ADMIN).status_code == 404
+    assert client.get(f'/api/jobs/{job.id}/requests/missing', headers=ADMIN).status_code == 404
+    assert telegram.sent == []
+
+
+def test_jobs_list_omits_receipts_pruned_after_snapshot(hub, monkeypatch):
+    client, orch, telegram = hub
+    store = orch.jobs.store
+    job = orch.jobs.create(name="receipt retention", schedule_text="0 9 * * *",
+                           action={"type": "remind", "message": "hi"})
+    old = store.dispatch.enqueue(job.id)
+    run = store.record_run(job.id, started_at="t", finished_at="t", status="pending")
+    store.dispatch.state(old["id"], "waiting", run=run.as_dict())
+    snapshot = store.dispatch.outstanding()
+    other = JobStore(store._path)
+    try:
+        other.dispatch.state(old["id"], "completed", run=run.as_dict())
+        for _ in range(200):
+            receipt = other.dispatch.enqueue(job.id)
+            other.dispatch.state(receipt["id"], "cancelled", reason="retention fixture")
+        current = other.dispatch.enqueue(job.id)
+        snapshot += other.dispatch.outstanding()
+        assert store.dispatch.get(old["id"]) is None
+        monkeypatch.setattr(store.dispatch, "outstanding", lambda: snapshot)
+        response = client.get("/api/jobs", headers=ADMIN)
+        assert response.status_code == 200
+        assert [r["id"] for r in response.json()["requests"]] == [current["id"]]
+        assert store.get(job.id).attempts == 0
+        assert telegram.sent == []
+    finally:
+        other.close()

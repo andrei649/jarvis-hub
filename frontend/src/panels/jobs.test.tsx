@@ -188,3 +188,89 @@ it('contains create-dialog focus and restores the opening button on Escape',asyn
  fireEvent.keyDown(dialog,{key:'Escape'});
  expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
 });
+
+it('shows durable acceptance and polls the receipt until the recorded outcome', async () => {
+  const calls = mockFetch({
+    'GET /api/jobs/abc123abc123/requests/r1': { request: { id:'r1',job_id:JOB.id,status:'completed',run:{status:'skipped',summary:'emergency stop engaged'} } },
+    'POST /api/jobs/abc123abc123/run': { ok:true,pending:true,request:{id:'r1',job_id:JOB.id,status:'queued'} },
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs': { jobs:[JOB],scheduler:{alive:true} },
+  });
+  render(<JobsPanel/>);
+  await waitFor(() => expect(screen.getByTitle('run now')).toBeTruthy());
+  fireEvent.click(screen.getByTitle('run now'));
+  await waitFor(() => expect(screen.getByText(/skipped · emergency stop engaged/)).toBeTruthy());
+  expect(calls.some(c => c.url.includes('/requests/r1') && c.method === 'GET')).toBeTruthy();
+});
+
+it('restores a queued receipt on reload and stops polling after unmount', async () => {
+  const calls = mockFetch({
+    'GET /api/jobs/abc123abc123/requests/r1': { request: {id:'r1',job_id:JOB.id,status:'waiting'} },
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs': {jobs:[JOB],scheduler:{alive:false},requests:[{id:'r1',job_id:JOB.id,status:'queued'}]},
+  });
+  localStorage.setItem('hud.admin_token','secret');
+  const view = render(<JobsPanel/>);
+  await waitFor(() => expect(screen.getByText(/waiting · request r1/)).toBeTruthy());
+  expect(calls.find(c => c.url.includes('/requests/r1')).headers['X-Admin-Token']).toBe('secret');
+  view.unmount();
+  const count = calls.length;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(calls.length).toBe(count);
+});
+
+it('refresh discovers a newer external receipt without reviving an older one', async () => {
+  const first = {id:'r1',job_id:JOB.id,status:'queued',created_at:'2026-09-15T10:00:00Z'};
+  const second = {...first,id:'r2',created_at:'2026-09-15T11:00:00Z'};
+  const listing = {jobs:[JOB],scheduler:{alive:true},requests:[]};
+  const routes = {
+    'GET /api/jobs/abc123abc123/requests/r1': {request:{...first,status:'completed',run:{status:'ok',summary:'first finished'}}},
+    'GET /api/jobs/abc123abc123/requests/r2': {request:{...second,status:'waiting'}},
+    'POST /api/jobs/abc123abc123/run': {ok:true,pending:true,request:first},
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs': listing,
+  };
+  const calls = mockFetch(routes);
+  render(<JobsPanel/>);
+  fireEvent.click(await screen.findByTitle('run now'));
+  await screen.findByText(/first finished/);
+  routes['GET /api/jobs'] = {...listing,requests:[second]};
+  fireEvent.click(screen.getByRole('button',{name:'Reload',exact:true}));
+  await screen.findByText(/waiting · request r2/);
+  routes['GET /api/jobs'] = {...listing,requests:[first]};
+  fireEvent.click(screen.getByRole('button',{name:'Reload',exact:true}));
+  await waitFor(() => expect(calls.filter(c => c.url.endsWith('/api/jobs')).length).toBeGreaterThan(3));
+  expect(screen.getByText(/waiting · request r2/)).toBeTruthy();
+});
+
+it.each(['same-id','older-id'])('does not revive a completed receipt from a stale %s refresh', async kind => {
+  const current = {id:'current',job_id:JOB.id,status:'queued',created_at:'2026-09-15T11:00:00Z'};
+  const listing = {jobs:[JOB],scheduler:{alive:true},requests:[]};
+  const routes = {
+    'GET /api/jobs/abc123abc123/requests/current': {request:{...current,status:'completed',run:{status:'ok',summary:'already completed'}}},
+    'POST /api/jobs/abc123abc123/run': {ok:true,request:current},
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs': listing,
+  };
+  const calls = mockFetch(routes);
+  render(<JobsPanel/>);
+  fireEvent.click(await screen.findByTitle('run now'));
+  await screen.findByText(/already completed/);
+  routes['GET /api/jobs'] = {...listing,requests:[kind === 'same-id' ? current : {...current,id:'older',created_at:'2026-09-15T10:00:00Z'}]};
+  fireEvent.click(screen.getByRole('button',{name:'Reload',exact:true}));
+  await waitFor(() => expect(calls.filter(c => c.url.endsWith('/api/jobs')).length).toBeGreaterThan(2));
+  expect(screen.getByText(/already completed/)).toBeTruthy();
+  expect(calls.filter(c => c.url.includes('/requests/')).length).toBe(1);
+});
+
+it('restores an active receipt when an older server includes a pruned null entry', async () => {
+  const receipt = {id:'current',job_id:JOB.id,status:'waiting',created_at:'2026-09-15T11:00:00Z'};
+  mockFetch({
+    'GET /api/jobs': {jobs:[JOB],scheduler:{alive:true},requests:[null,receipt]},
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs/abc123abc123/requests/current': {request:receipt},
+  });
+  render(<JobsPanel/>);
+  await screen.findByText(/waiting · request current/);
+  expect(screen.getByTitle('run now')).toBeTruthy();
+});

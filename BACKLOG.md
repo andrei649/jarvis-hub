@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 manual automations dispatch (H146/H449 partial): persistent bounded receipts separate HTTP acceptance from execution. Shared scheduler/offline tick, atomic request coalescing, cross-process locks and crash reconciliation prevent replay. HUD/CLI restore active receipts; configuration and retention races have regression coverage. See [contract and limits](docs/automations-dispatch.md).
+
 - [x] **HEQ-0 — one status over the complete 697-row Hermes inventory.** Owner-requested
   consolidation: [HERMES_STATUS.md](HERMES_STATUS.md), linked from README and STATUS,
   with a complete generated row index and additive, source-bound assessments.

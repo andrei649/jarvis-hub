@@ -661,3 +661,13 @@ def test_jobs_run_pending_approval_is_an_accepted_request():
         'run': {'status': 'pending', 'summary': 'Awaiting this run approval'}}})
     code, out, _, _ = _run(['jobs', 'run', 'x'], hub)
     assert code == 0 and 'pending' in out
+
+
+def test_manual_dispatch_acceptance_and_receipt_lookup():
+    receipt = {'id':'r1', 'status':'queued', 'job_id':'j1', 'run':None}
+    hub = _FakeHub({'POST /api/jobs/j1/run': {'ok':True, 'pending':True, 'request':receipt},
+                    'GET /api/jobs/j1/requests/r1': {'request':receipt}})
+    code, out, _, _ = _run(['jobs','run','j1'], hub)
+    assert code == 0 and 'accepted' in out and 'r1' in out
+    code, out, _, _ = _run(['jobs','status','j1','--request','r1'], hub)
+    assert code == 0 and 'queued' in out

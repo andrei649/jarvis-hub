@@ -189,6 +189,8 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--json", action="store_true")
         if name == "pause":
             sub.add_argument("--reason", default="")
+        if name == "status":
+            sub.add_argument("--request", help="durable manual-run receipt id")
 
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
@@ -774,6 +776,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             reply = client.post("/api/jobs/tick", {})
         elif ns.action == "notepad" and ns.text is not None:
             reply = client.request("PUT", f"/api/jobs/{ns.job_id}/notepad", {"text":ns.text})
+        elif ns.action == "status" and ns.request:
+            reply = client.get(f"/api/jobs/{ns.job_id}/requests/{ns.request}")
         elif ns.action in ("status", "notepad"):
             reply = client.get(f"/api/jobs/{ns.job_id}")
         else:
@@ -889,6 +893,11 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     job = reply.get("job") or {}
     if ns.action == "run":
+        receipt = reply.get("request")
+        if isinstance(receipt, dict):
+            ctx.say(f"accepted · {receipt.get('status')} · request {receipt.get('id')}; "
+                    f"nerva jobs status {ns.job_id} --request {receipt.get('id')}")
+            return EXIT_OK
         run = reply.get("run") or {}
         ctx.say(f"{run.get('status')}: {run.get('summary', '')}")
         return EXIT_OK if run.get("status") in {"ok", "pending"} else EXIT_FAILED
