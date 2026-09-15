@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "05d2229ab0764bc0b0ea682ffcd492749b62c88d",
-  "assessed_at": "2026-09-15T17:11:30.595466Z",
+  "base_sha": "32a3c4c5498a6c8decef1f02cc88f726194ca31e",
+  "assessed_at": "2026-09-15T17:21:34.385283Z",
   "reviews": [
     {
       "id": "H001",
@@ -2451,7 +2451,7 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow.",
       "remaining": "The model-callable image_generate tool remains local-only; the real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need an explicit architecture decision within the protected-control-plane boundary; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation needs one cloud seam, not eight-provider fan-out. Ambiguous POST attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed.",
       "evidence": [
         {
@@ -2540,7 +2540,7 @@
         },
         {
           "path": "frontend/playwright.cloud-image.config.ts",
-          "sha256": "456da680e3a3b1ffbcb4bd36c045ddb0a566d347191dc1c3549fecf6835bf664"
+          "sha256": "052bb2e6f769a5bf7706744426bcb23d8071bacf5c0b20da67ffd6d78f6c5b40"
         },
         {
           "path": "docs/superpowers/plans/2026-09-15-cloud-image-hud.md",
@@ -4002,7 +4002,7 @@
       "id": "H129",
       "row_sha256": "3039b07bc8e85331b1baf5a2651a97bbc2bd6ea8f52a8c9cd5f1b6c2b7e42c50",
       "status": "partial",
-      "summary": "All 18 existing HUD modes and 113 console panels now have explicit stable URLs, browser history, titles, unknown-route handling and real lazy chunks with loading/error fallback. Existing rail, palette, hotkeys, desktop and World navigation share URL state. Selected panels receive focus; demo/floating context is preserved. Overlay return destinations are bound to individual history entries and independently verified across historical/nested visits and malformed state. Desktop and Pixel 7 browser smoke passed against a local stubbed backend.",
+      "summary": "All 18 existing HUD modes and 113 console panels now have explicit stable URLs, browser history, titles, unknown-route handling and real lazy chunks with loading/error fallback. Existing rail, palette, hotkeys, desktop and World navigation share URL state. Selected panels receive focus; demo/floating context is preserved. Overlay return destinations are bound to individual history entries and independently verified across historical/nested visits and malformed state. Desktop and Pixel 7 browser smoke passed against a local stubbed backend. Existing route/history/focus smoke remains green after grid sizing and cockpit composer wrapping. Three actual desktop-width regressions and three independent stacked-layout checks verify contained controls; cloud approval/gallery also passes at1280px.",
       "remaining": "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services.",
       "evidence": [
         {
@@ -4047,7 +4047,15 @@
         },
         {
           "path": "frontend/e2e/routing.spec.ts",
-          "sha256": "13a744349d07c2d4ad81228a68afad362f6974fd950b11b78a0ae0bc089d45e3"
+          "sha256": "0f0861e5c8c4bdeb44415e1b15b582164cd4f345d4de755a8bd5f2f1603dc27d"
+        },
+        {
+          "path": "frontend/src/styles.css",
+          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-hud-grid-width.md",
+          "sha256": "8d8cda622223cd333f700b72909f5a384d0079019750ff8ed2caf7d0660ca992"
         }
       ]
     },
@@ -4286,7 +4294,7 @@
         },
         {
           "path": "frontend/src/styles.css",
-          "sha256": "384f1600e61ebd1827adc938f59ae5ab671019b370b01319fcd85498f2071a24"
+          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
         },
         {
           "path": "frontend/e2e/appearance-fonts.spec.ts",
