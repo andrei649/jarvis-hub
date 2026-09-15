@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 reasoning tri-state and no-escalation (H679): explicit empty declarations now omit all reasoning controls, including Anthropic thinking, while known below-minimum requests refuse before HTTP. Budget-only product levels never invent a wire effort field. Independent 162-case review and real-adapter mocked counterexamples support the frozen contract; the guarded full suite has 11,535 passes, 23 skips and one expected failure (11,559 collected). H364 stays partial for broader vendor coverage. See [contract and limits](docs/hermes/h679-reasoning-contract.md).
+
 - 2026-09-15 desktop HUD width: zero-minimum grid tracks and cockpit composer wrapping keep controls and the context column inside1101/1280/1440px layouts. Independent review also verifies393/800/1000px stacked controls. The real approved cloud-image workflow now passes at1280px and Pixel7. No overflow-hiding workaround or routing/appearance preference change. See [regressions and evidence](docs/superpowers/plans/2026-09-15-hud-grid-width.md).
 
 - 2026-09-15 cloud Images HUD (H515 partial): local-default provider selection, strict cloud size/quality requests and exact paid proposal details now lead through a visible post-approval return link to the saved PNG and gallery/export. Independent review corrected disappearing task navigation; two real browser cases and all1,326 frontend tests pass. Model-callable cloud selection, VRAM coordination and explicit action-kind mapping remain open. See [workflow and evidence](docs/superpowers/plans/2026-09-15-cloud-image-hud.md).
