@@ -179,6 +179,7 @@ class Agent:
                                 usage_sink=None, session_id=None) -> str:
         from .conversation_clock import parse_started_at, with_clock
         from .llm.request_context import current_session, session_scope
+        from .llm.usage_context import current_observer, observer_scope, text_usage_scope
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager
@@ -186,10 +187,12 @@ class Agent:
             manager.create_session_record(sid, agent_id=self.id)
             born = parse_started_at(manager.session_started_at(sid))
             system = with_clock(system, born.astimezone() if born is not None else None)
-        with session_scope(sid):
+        sink = usage_sink if usage_sink is not None else current_observer()
+        with session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
             return await self._generate_response(
                 backend, model, prompt, system, max_tokens, temperature,
-                on_token=on_token, wall_seconds=wall_seconds, usage_sink=usage_sink,
+                on_token=on_token, wall_seconds=wall_seconds,
+                usage_sink=observer if sink is not None else None,
             )
 
     async def _generate_response(
@@ -206,11 +209,9 @@ class Agent:
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
-        ``usage_sink`` reaches only the tool loop, for the same reason ``wall_seconds``
-        does: it is the path that makes several provider requests for one answer, and
-        the only one that can report what each of them cost. The legacy path returns a
-        string from a backend that reports nothing, so the caller keeps its estimate
-        there — silence, not a claim that the turn was free.
+        ``usage_sink`` receives structured turns from the tool runtime or complete
+        text responses through a call-scoped provider publisher. Backend public
+        signatures remain unchanged; unavailable usage keeps the caller's estimate.
 
         ``wall_seconds`` is the turn's per-agent ceiling as the orchestrator chose it
         (the reasoning floor on a thinking route, the flat value otherwise). It reaches
@@ -243,28 +244,31 @@ class Agent:
                     await emitted
             return response
 
-        if on_token and hasattr(backend, "generate_stream"):
-            return await backend.generate_stream(
+        from .llm.usage_context import text_usage_scope
+
+        with text_usage_scope(usage_sink):
+            if on_token and hasattr(backend, "generate_stream"):
+                return await backend.generate_stream(
+                    model=model,
+                    prompt=prompt,
+                    system=system,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    on_token=on_token,
+                )
+
+            response = await backend.generate(
                 model=model,
                 prompt=prompt,
                 system=system,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                on_token=on_token,
             )
-
-        response = await backend.generate(
-            model=model,
-            prompt=prompt,
-            system=system,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        if on_token:
-            emitted = on_token(response)
-            if inspect.isawaitable(emitted):
-                await emitted
-        return response
+            if on_token:
+                emitted = on_token(response)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return response
 
     async def process(self, text: str, context: dict) -> str:
         system_prompt = self.soul.get("content", "")

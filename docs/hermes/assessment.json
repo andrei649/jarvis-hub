@@ -1546,7 +1546,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
         }
       ]
     },
@@ -1559,7 +1559,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+          "sha256": "9c06fb7b7b122f0c86af32f3c13c380479677207fc517e5fbb802fd9ce57e85a"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1579,15 +1579,15 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c85a65ec947c97a1b7b93ab5ea41b25efbc98e3e8f3e66b2a4531fac97abcd07"
+          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
+          "sha256": "0ac1de73b3648d308a81423546f07d42a622c555eaf08819631f4c484d163722"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -1595,7 +1595,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
+          "sha256": "cbef1e735c1d08fd1530b5a10801e0bafb5fe100ed97298970fd4ece452725fd"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -1619,7 +1619,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
+          "sha256": "6b702e5f50cb82b429aaa9a1b1313ea929ada3fe2fa9ef1c999da0c012ef3108"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1668,7 +1668,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+          "sha256": "9c06fb7b7b122f0c86af32f3c13c380479677207fc517e5fbb802fd9ce57e85a"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -1684,15 +1684,15 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c85a65ec947c97a1b7b93ab5ea41b25efbc98e3e8f3e66b2a4531fac97abcd07"
+          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
+          "sha256": "0ac1de73b3648d308a81423546f07d42a622c555eaf08819631f4c484d163722"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -1700,7 +1700,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
+          "sha256": "cbef1e735c1d08fd1530b5a10801e0bafb5fe100ed97298970fd4ece452725fd"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -1720,7 +1720,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
+          "sha256": "6b702e5f50cb82b429aaa9a1b1313ea929ada3fe2fa9ef1c999da0c012ef3108"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1781,7 +1781,7 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
         }
       ]
     },
@@ -3143,7 +3143,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+          "sha256": "9c06fb7b7b122f0c86af32f3c13c380479677207fc517e5fbb802fd9ce57e85a"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3159,11 +3159,11 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c85a65ec947c97a1b7b93ab5ea41b25efbc98e3e8f3e66b2a4531fac97abcd07"
+          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
+          "sha256": "0ac1de73b3648d308a81423546f07d42a622c555eaf08819631f4c484d163722"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3171,7 +3171,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
+          "sha256": "cbef1e735c1d08fd1530b5a10801e0bafb5fe100ed97298970fd4ece452725fd"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3187,7 +3187,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
+          "sha256": "6b702e5f50cb82b429aaa9a1b1313ea929ada3fe2fa9ef1c999da0c012ef3108"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3223,12 +3223,12 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged.",
-      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates and non-structured usage propagation remain incomplete. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once.",
+      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates and actual streaming-provider terminal usage accounting remain incomplete. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+          "sha256": "9c06fb7b7b122f0c86af32f3c13c380479677207fc517e5fbb802fd9ce57e85a"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3244,11 +3244,11 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c85a65ec947c97a1b7b93ab5ea41b25efbc98e3e8f3e66b2a4531fac97abcd07"
+          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
+          "sha256": "0ac1de73b3648d308a81423546f07d42a622c555eaf08819631f4c484d163722"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3256,7 +3256,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
+          "sha256": "cbef1e735c1d08fd1530b5a10801e0bafb5fe100ed97298970fd4ece452725fd"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3272,7 +3272,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
+          "sha256": "6b702e5f50cb82b429aaa9a1b1313ea929ada3fe2fa9ef1c999da0c012ef3108"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3325,6 +3325,22 @@
         {
           "path": "tests/test_complete_prompt_anchor.py",
           "sha256": "e94a164e7650a30e2837049efc3e2690fba75fe7e0a76a9682e5a3bf10c7194e"
+        },
+        {
+          "path": "agents/core/llm/usage_context.py",
+          "sha256": "fdea3bfce2435d0bc6517165a822bfa1ab62ce2a443db8a8f3dbf334a36577c4"
+        },
+        {
+          "path": "agents/core/llm/anthropic.py",
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
+        },
+        {
+          "path": "tests/test_text_usage_context.py",
+          "sha256": "06f4ff702d6ea978c28d77d07c776791c1abf4e1edc62eba6c43ad4a79005650"
+        },
+        {
+          "path": "tests/test_text_usage_propagation.py",
+          "sha256": "5f7d782da54bd04c487b6d1470079e5a5d7625b8122c348eb5c9cd62b311b87d"
         }
       ]
     },
@@ -3395,7 +3411,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "f1af946a2d3b269a55b099fe7d821ad962fab3c2876f6e587f77bff7d6198756"
+          "sha256": "9c06fb7b7b122f0c86af32f3c13c380479677207fc517e5fbb802fd9ce57e85a"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3411,15 +3427,15 @@
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "992e0c53bacfda32518b8b195129237c7ca54eda6835a16e1cc23ed2ef64de21"
+          "sha256": "99311189e129706096908adaace0c9cf12669fcfba569ac68606cea4f0358025"
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "c85a65ec947c97a1b7b93ab5ea41b25efbc98e3e8f3e66b2a4531fac97abcd07"
+          "sha256": "c41f205ca890f9a09d6ac72464a4cb12681d4f7e123a2ccd7c05eafc59998368"
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
+          "sha256": "0ac1de73b3648d308a81423546f07d42a622c555eaf08819631f4c484d163722"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3427,7 +3443,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
+          "sha256": "cbef1e735c1d08fd1530b5a10801e0bafb5fe100ed97298970fd4ece452725fd"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3447,7 +3463,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
+          "sha256": "6b702e5f50cb82b429aaa9a1b1313ea929ada3fe2fa9ef1c999da0c012ef3108"
         },
         {
           "path": "agents/core/settings_db.py",

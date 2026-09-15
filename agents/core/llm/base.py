@@ -16,6 +16,7 @@ from .egress import llm_async_client
 from .repetition_guard import is_repetition_dominated
 from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
+from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.base")
 
@@ -530,7 +531,9 @@ class LMStudioBackend(LLMBackend):
             choice = data["choices"][0]
             msg = choice.get("message", {})
             finish = choice.get("finish_reason")
-            return _finalize_lmstudio_message(msg, finish, model)
+            answer = _finalize_lmstudio_message(msg, finish, model)
+            report_text_usage(lmstudio_usage(data))
+            return answer
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
 
@@ -757,7 +760,9 @@ class OllamaBackend(LLMBackend):
                 # on a clean stop: Ollama's non-stream path never returned it.
                 reasoning = data.get("thinking") or data.get("reasoning_content") or ""
                 if strip_thinking(reasoning).strip():
+                    report_text_usage(ollama_usage(data))
                     return THINKING_EXHAUSTED_REPLY
+            report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
