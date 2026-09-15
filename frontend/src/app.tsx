@@ -1,3 +1,5 @@
+import {describeImages} from './vision-turn';
+import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
@@ -241,6 +243,8 @@ function App({ floating = false }: { floating?: boolean } = {}) {
 
   // submit → cognition flow (mock timeline; real SSE arrives in P2)
   const timers = useRef([]);
+  const turnBusy=useRef(false), turnEpoch=useRef(0);
+  const turnResolve=useRef<null|(()=>void)>(null);
   const abortRef = useRef(null);   // AbortController of the in-flight /chat/stream turn
 
   // offline fallback — the prototype's staged timeline so the cockpit still demos
@@ -279,18 +283,22 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     // Ignore a second submit (rapid double Enter/click, or voice firing while
     // text input is also mid-turn) instead of racing two streams into the
     // same abortRef/message index.
-    if (thinking) { resolve(''); return; }
+    if (thinking || turnBusy.current) { resolve(''); return; }
+    turnBusy.current=true;
+    const epoch=++turnEpoch.current;
     timers.current.forEach(clearTimeout); timers.current = [];
     setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     let streamed = '';
+    turnResolve.current=()=>resolve(streamed);
     let idx = -1;
     // Stop button: aborting the fetch rides the server's existing disconnect →
     // cancel path (web.py _chat_event_stream), which never persists a partial.
     const ctl = new AbortController();
     abortRef.current = ctl;
     postStream('/chat/stream', { message: text, agent: activeId }, (evt) => {
+      if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
         setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
         setMessages((m) => { idx = m.length; return [...m, { role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '' }]; });
@@ -304,9 +312,11 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
         setThinking(null);
         resolve(finalText);
         apiGet('/api/cognition').then((cog: any) => {
+          if(epoch!==turnEpoch.current)return;
           const tr = traceFromCognition(cog, text);
           setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
           // HONESTY: real plugin reads + locality from the cognition snapshot — never a
@@ -318,6 +328,8 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         }).catch(() => {});
       }
     }, { signal: ctl.signal }).catch((err) => {
+      if(epoch!==turnEpoch.current){resolve('');return;}
+      turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
       // text already streamed into the bubble stays, no error notice — and the
       // server's disconnect path guarantees no partial is persisted to memory.
@@ -331,10 +343,34 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     });
   }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking]);
 
-  // Stop generating: abort the in-flight stream; harmless no-op once the turn ended.
-  const stopTurn = useCallback(() => { abortRef.current?.abort(); }, []);
-
-  const submit = useCallback((text) => { runTurn(text); }, [runTurn]);
+  const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
+    if(turnBusy.current||thinking)return;
+    turnBusy.current=true;
+    const epoch=++turnEpoch.current,controller=new AbortController();abortRef.current=controller;
+    setCenterTab('conversation');
+    setMessages(messages=>[...messages,{role:'user',text,imageNames:[...draft.names],ts:fmtTimeShort(new Date())}]);
+    setThinking({label:'Vision analysis',route:null});
+    try {
+      const answer=await describeImages(text,draft,controller.signal);
+      if(epoch!==turnEpoch.current||controller.signal.aborted)return;
+      setMessages(messages=>[...messages,{role:'vision',...answer,ts:fmtTimeShort(new Date())}]);
+    } catch(error){
+      if(epoch!==turnEpoch.current||controller.signal.aborted)return;
+      setMessages(messages=>[...messages,{role:'agent',who:'system',text:`Vision analysis failed: ${(error as Error).message}`,ts:fmtTimeShort(new Date())}]);
+    } finally {
+      if(epoch===turnEpoch.current){turnBusy.current=false;abortRef.current=null;setThinking(null);}
+    }
+  },[thinking]);
+  const stopTurn=useCallback(()=>{
+    abortRef.current?.abort();abortRef.current=null;turnEpoch.current++;turnBusy.current=false;
+    turnResolve.current?.();turnResolve.current=null;
+    timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
+  },[]);
+  const submit=useCallback((text:string,vision?:VisionDraft)=>{
+    if(turnBusy.current||thinking)return false;
+    if(vision)void runVision(text,vision);else void runTurn(text);
+    return true;
+  },[runTurn,runVision,thinking]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
   voiceRef.current = voice;
@@ -347,6 +383,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     timers.current = [];
     abortRef.current?.abort();
     abortRef.current = null;
+    turnEpoch.current++;turnBusy.current=false;turnResolve.current?.();turnResolve.current=null;
     setAgents([]);
     baseAgents.current = [];
     setActiveId('jarvis');
@@ -383,7 +420,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
     setDemo(false);
   }, [clearDemoDerivedState, setDemo]);
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useEffect(() => () => {timers.current.forEach(clearTimeout);abortRef.current?.abort();turnEpoch.current++;turnBusy.current=false;turnResolve.current?.();}, []);
 
   // P1 — load live data and poll every 30s. A generation guard prevents a
   // slower, older poll from replacing a newer evidence snapshot.

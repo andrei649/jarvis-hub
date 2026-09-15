@@ -354,17 +354,23 @@ class VLMBackend(LLMBackend):
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
+    async def generate_vision_checked(self, model: str, prompt: str, images=None, system: str = "",
                               max_tokens: int = 1024, temperature: float = 0.2) -> str:
         messages = build_vision_messages(prompt, images, system, self.max_image_dim)
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
+        resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+        content = (data["choices"][0]["message"].get("content", "") or "")
+        return strip_thinking(content)
+
+    async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
+                              max_tokens: int = 1024, temperature: float = 0.2) -> str:
+        # Historical callers retain the sentinel contract; explicit composer turns
+        # use the checked method so failed inference cannot look like an answer.
         try:
-            resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
-            resp.raise_for_status()
-            data = resp.json()
-            content = (data["choices"][0]["message"].get("content", "") or "")
-            return strip_thinking(content)
+            return await self.generate_vision_checked(model, prompt, images, system, max_tokens, temperature)
         except Exception as e:
             logger.warning("VLM generate failed: %s", e)
             return "[VLM error]"
