@@ -160,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
+    jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
     jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
@@ -169,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
+    jobs_edit.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
     jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
     jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
@@ -793,6 +795,13 @@ def _job_cli_options(ns):
             value['workdir'] = ns.workdir
         else:
             value.pop('workdir', None)
+    if ns.toolsets is not None:
+        if ns.options is None:
+            raise ValueError('--toolsets requires complete --options')
+        if ns.toolsets == 'default':
+            value.pop('enabled_toolsets', None)
+        else:
+            value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
     return value
 
 
@@ -841,7 +850,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
-            if ns.options is not None or ns.workdir is not None:
+            if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
                 body["options"] = _job_cli_options(ns)
             if ns.media_id and ns.blueprint:
                 raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
@@ -878,7 +887,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("--media-id requires --action to explicitly reauthorize the reminder\n")
             return EXIT_USAGE
         body = {}
-        if ns.options is not None or ns.workdir is not None:
+        if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
             try:
                 body["options"] = _job_cli_options(ns)
             except ValueError as exc:

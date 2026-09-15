@@ -294,6 +294,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
+    if options and "enabled_toolsets" in options and kind != "ask":
+        return ["enabled_toolsets requires a model-bearing ask action"]
     if options and ("model" in options or "provider" in options) and kind != "ask":
         return ["model/provider pins require an ask action"]
     if options and (options.get("script") or (options.get("monitor_script") or options.get("monitor_url"))) and kind != "ask":
@@ -345,9 +347,14 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    if 'enabled_toolsets' in options:
+        from ..job_toolsets import validate
+        validate(options['enabled_toolsets'])
+        if options.get('no_agent') is True:
+            raise ValueError('enabled_toolsets requires a model-bearing ask action')
     if 'workdir' in options:
         if not options.get('script') or options.get('no_agent') is not True or options.get('monitor_script') or options.get('monitor_url'):
             raise ValueError('workdir requires script with no_agent true')
@@ -1024,7 +1031,14 @@ class JobRunner:
 
     # lifecycle --------------------------------------------------------------
 
+    def _toolset_names(self, options):
+        from ..job_toolsets import resolve
+        if options is not None and not isinstance(options, dict):
+            raise ValueError("options must be an object")
+        return resolve((options or {}).get('enabled_toolsets'), getattr(self._orch, 'tool_rpc', None))
+
     def create(self, **kwargs: Any) -> Job:
+        self._toolset_names(kwargs.get('options'))
         binding = self.media.prepare(kwargs.get("action") or {}, kwargs.get("options"))
         job = self.store.create(**kwargs)
         self.media.bind(job, binding)
@@ -1045,6 +1059,7 @@ class JobRunner:
         current = self.store.get(job_id)
         if current is None:
             raise KeyError(job_id)
+        self._toolset_names(fields["options"] if fields.get("options") is not None else current.options)
         binding = None
         if fields.get("action") is not None:
             options = fields["options"] if fields.get("options") is not None else current.options
@@ -1224,8 +1239,9 @@ class JobRunner:
         process = getattr(self._orch, "process", None)
         if not callable(process):
             raise RuntimeError("no model path is available for ask jobs")
+        from ..job_toolsets import toolset_scope
         from ..llm.job_selection import SelectionError, selection_scope
-        with selection_scope(job.options) as selection:
+        with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options) as selection:
             if selection is not None:
                 router = getattr(self._orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):
