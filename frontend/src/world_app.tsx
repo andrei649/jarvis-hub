@@ -34,6 +34,8 @@ function WorldAwareApp() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => { const handoff = () => setOpen(false); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
+
   const t = V2.I18N.en;
 
   return (

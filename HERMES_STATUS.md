@@ -11,8 +11,8 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 116 | 16.6% |
-| Parțial | 338 | 48.5% |
-| Lipsă | 99 | 14.2% |
+| Parțial | 339 | 48.6% |
+| Lipsă | 98 | 14.1% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 37 | 5.3% |
 
@@ -30,7 +30,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | gateway | 33 | 5 | 13 | 6 | 5 | 4 |
 | platforms | 39 | 5 | 20 | 5 | 8 | 1 |
 | web | 40 | 7 | 16 | 9 | 7 | 1 |
-| desktop | 54 | 6 | 32 | 8 | 6 | 2 |
+| desktop | 54 | 6 | 33 | 7 | 6 | 2 |
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
 | config | 18 | 4 | 9 | 3 | 1 | 1 |
 | env | 28 | 2 | 17 | 2 | 5 | 2 |

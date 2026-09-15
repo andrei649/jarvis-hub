@@ -1,0 +1,19 @@
+{
+  "identifier": "desktop",
+  "description": "Only local HUD windows can request fixed desktop window actions.",
+  "local": true,
+  "windows": [
+    "main",
+    "floating"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:8080/v2",
+      "http://127.0.0.1:8080/v2/*"
+    ]
+  },
+  "permissions": [
+    "allow-desktop-action",
+    "allow-desktop-capabilities"
+  ]
+}

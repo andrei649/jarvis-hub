@@ -1,4 +1,4 @@
-/* ============================================================
+/* =====================================================
    JARVIS HUB · HUD v2  —  stylesheet
    Two looks (Obsidian / Graphite) × 4 accents × density × motion
    driven by data-* on .hud-root
@@ -797,6 +797,28 @@ input { font-family: inherit; }
 .art-save.ok { color:var(--green); border-color:var(--green-dim); }
 .art-save.err { color:var(--amber); border-color:rgba(255,194,77,.4); }
 .art-save:disabled { cursor:wait; opacity:.7; }
+
+/* H178 native floating chat: keep the existing conversation, remove cockpit chrome. */
+.desktop-controls { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px; }
+.desktop-controls button { color:var(--ink-2); background:var(--surface); border:1px solid var(--panel-line); border-radius:5px; padding:7px; font:11px var(--font-mono); cursor:pointer; }
+.desktop-controls [role=alert] { color:var(--danger, #ff9c99); font-size:12px; }
+.desktop-floating { display:flex; flex-direction:column; height:100dvh; min-width:0; overflow:hidden; padding:0 0 12px; }
+.desktop-floating .floating-controls { flex:0 0 auto; }
+.desktop-floating .desktop-drag { flex:1; cursor:move; user-select:none; }
+.desktop-floating .chat-wrap { overflow:hidden; }
+.desktop-floating .chat-col { width:100%; border-radius:0; border:0; }
+.desktop-floating .chat-head { padding:10px; }
+.desktop-floating .chat-sub { display:none; }
+.desktop-floating .chat-col .convo { padding:12px; }
+.desktop-floating .chat-col .msg { max-width:94%; }
+.desktop-floating .chat-col .inputbar { padding:10px; }
+.desktop-floating .desktop-resize { position:fixed; right:0; bottom:0; z-index:10; padding:0 3px; cursor:se-resize; }
+.desktop-controls [role=status] { flex-basis:100%; font-size:11px; color:var(--ink-2); }
+.desktop-floating .inputbar .chan, .desktop-floating .inputbar .pre { display:none; }
+.desktop-floating .inputbar { gap:6px; }
+.desktop-floating .inputbar .field { min-width:0; padding:8px; }
+.desktop-floating .inputbar .field input { min-width:0; width:100%; }
+.desktop-floating .inputbar > button { flex-shrink:0; }
 
 /* Scheduled-job creation stays readable above the translucent HUD panels. */
 .job-create-dialog::backdrop { background: rgba(0, 0, 0, .72); }

@@ -21,6 +21,7 @@ import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
+import { DesktopControls, notifyDesktopConversation, useDesktopConversation } from './desktop';
 
 function ModeStub({ label }) {
   return (
@@ -48,7 +49,7 @@ function defaultMotion() {
   } catch { return 'lively'; }
 }
 
-function App() {
+function App({ floating = false }: { floating?: boolean } = {}) {
   // tweak axes — persisted client-side prefs (restored regression: v1 remembered
   // these). Accent + language are user-changeable via the command palette / top bar.
   const [look, setLook] = useState(() => loadPref('look', UI_PREFS.look));
@@ -68,12 +69,14 @@ function App() {
   const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
-  const [mode, setMode] = useState('cockpit');
+  const [mode, setMode] = useState(floating ? 'chat' : 'cockpit');
+  useEffect(() => { const handoff = () => setMode('chat'); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
   const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
   const [thinking, setThinking] = useState(null);
+  useDesktopConversation(setMessages, !!thinking, demo);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
   // bumped after every successful explicit save so the Artifacts tab refetches
@@ -181,6 +184,7 @@ function App() {
   // hotkeys: number keys jump modes, ⌘K palette, A ambient
   useEffect(() => {
     function onKey(e) {
+      if (floating) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
       if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
@@ -314,7 +318,7 @@ function App() {
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
       resolve('');
     });
-  }), [t, activeId, runMock, demo, thinking]);
+  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking]);
 
   // Stop generating: abort the in-flight stream; harmless no-op once the turn ended.
   const stopTurn = useCallback(() => { abortRef.current?.abort(); }, []);
@@ -407,6 +411,13 @@ function App() {
     'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
   };
 
+  if (floating) return <div {...rootAttrs} className="hud-root desktop-floating">
+    <DesktopControls floating />
+    {demo && <DemoBanner onExit={exitDemo} />}
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+    {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
+  </div>;
+
   return (
     <div {...rootAttrs}>
       <div className="tex-layer tex-glow"></div>
@@ -423,6 +434,7 @@ function App() {
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
           llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
           onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
+        <DesktopControls />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
         <div className="main" data-ia={ia}>

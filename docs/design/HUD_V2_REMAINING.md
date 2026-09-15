@@ -273,6 +273,15 @@ surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items
 coverage.*
 
 
+### H178 native floating chat — 2026-09-15
+
+Desktop-only: Tauri tray/main controls open a frameless chat using the existing HUD
+conversation and authentication; geometry recovery and handoff are implemented.
+Mobile retains its normal chat. macOS host validation covers the bounded window
+surface; Windows/Linux, compositor-exclusive overlays, transparency/frost, click-through,
+global shortcuts, move-to-pointer and underlying-window capture remain unverified or unimplemented.
+See `desktop/README.md`; full Hermes H178 remains partial.
+
 ### 2026-09-15 — scheduled automation depth (H146/H449)
 Jobs now wires all admin diagnostics/tick/notepad routes and adds a sixteen-card typed
 blueprint gallery, custom four-action builder, full action/options editing and visual schedules.

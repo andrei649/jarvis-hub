@@ -199,16 +199,16 @@
       "id": "H043",
       "row_sha256": "a5957c1abc0d8ebfc746bc8d1028ac6e9b2de971ef22488fdc9cfb491ce6d375",
       "status": "partial",
-      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
-      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "summary": "Host Tauri compilat și lansat pe macOS prin cargo run; meniul tray și fereastra flotantă sunt executabile.",
+      "remaining": "Lipsește comanda CLI unificată desktop/gui și opțiunile de build/bootstrap/signing din inventarul Hermes.",
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+          "sha256": "6e8316aa4cdb1e4e9586ede37db10ef1b25f35708e2541e4250559ce9f103403"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
-          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+          "sha256": "01a36721e943440370a660904819320325b98910922fdde634f6629f1bf8accc"
         }
       ]
     },
@@ -897,16 +897,16 @@
       "id": "H169",
       "row_sha256": "930463ce25ae60529373504e614ea254c7d5e10f78c65cc6bdc9db10e1a6a487",
       "status": "partial",
-      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
-      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "summary": "Host Tauri compilat pe macOS; Cargo.lock și iconul sunt incluse. Pachet .app temporar nesemnat folosit pentru verificare UI locală.",
+      "remaining": "Lipsesc instalatoare semnate/notarizate per OS și proba distribuției Windows/Linux; .app de validare nu este un release semnat.",
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+          "sha256": "6e8316aa4cdb1e4e9586ede37db10ef1b25f35708e2541e4250559ce9f103403"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
-          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+          "sha256": "01a36721e943440370a660904819320325b98910922fdde634f6629f1bf8accc"
         }
       ]
     },
@@ -914,16 +914,16 @@
       "id": "H170",
       "row_sha256": "88eb06b9159c13209294d88c1d2647dde275b70a5d32d0063878458c3e765b74",
       "status": "partial",
-      "summary": "Există sursa unui host Tauri și configurația ferestrei.",
-      "remaining": "Shellul are setup gol, iar livrarea desktop și resursele native complete nu sunt implementate.",
+      "summary": "Meniu tray executabil, ferestre main/floating, ascundere la close, geometrie flotantă persistentă și reset/handoff; verificare UI locală macOS.",
+      "remaining": "Geometria ferestrei principale, zoom dedicat, translucency/frost, unread badge, find-in-page și distribuția multiplatformă rămân deschise.",
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+          "sha256": "6e8316aa4cdb1e4e9586ede37db10ef1b25f35708e2541e4250559ce9f103403"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
-          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+          "sha256": "01a36721e943440370a660904819320325b98910922fdde634f6629f1bf8accc"
         }
       ]
     },
@@ -955,17 +955,37 @@
     {
       "id": "H178",
       "row_sha256": "06a781401ea40ab7592728fd485af700bb9b9375a89d874aab91f459871f49fd",
-      "status": "missing",
-      "summary": "Hostul Tauri are doar fereastra principală.",
-      "remaining": "Lipsește fereastra flotantă always-on-top, cu conversație și recuperare de geometrie.",
+      "status": "partial",
+      "summary": "Fereastră flotantă frameless/resizable cu cerere always-on-top unde compositorul o suportă; controale tray/main, hide/reset/handoff, geometrie fizică persistentă cu recuperare monitor/DPI. Refolosește ChatMode, autentificarea HUD și sesiunea server; refresh la focus/finalizarea unui turn fără suprascrierea streamului. Compilare și verificare UI macOS. Invalidările primite cât timp turnul local este ocupat sunt păstrate și reconciliate la idle; teste cu BroadcastChannel asincron real verifică două ferestre cu turnuri suprapuse.",
+      "remaining": "Hermes overlay complet rămâne neechivalat: fără transparency/frost, click-through, press-and-hold composer drag, game-overlay watcher, Hyprland promotion, global chord/move-to-pointer sau citirea ferestrei de dedesubt. Windows/Linux și deconectarea fizică a monitorului neverificate; Wayland declară placement/topmost nesuportate.",
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "68ac9cdbbd011cc6da534e9e28394bed187da9879f3cc1c7164db0c0d8641af8"
+          "sha256": "6e8316aa4cdb1e4e9586ede37db10ef1b25f35708e2541e4250559ce9f103403"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
-          "sha256": "8c5d8a39e1699d7d28a3276a31ed0055b6814aa4227e05144830c06285afd630"
+          "sha256": "01a36721e943440370a660904819320325b98910922fdde634f6629f1bf8accc"
+        },
+        {
+          "path": "desktop/src-tauri/src/geometry.rs",
+          "sha256": "9c6c14a650585f8af4a1d1f9c7068a845991f329e6c0c94e887544e55839fca2"
+        },
+        {
+          "path": "desktop/src-tauri/src/policy.rs",
+          "sha256": "801cbcd43c605023ca28c7fe8f8fbd0d4c03af93b83f3a7afe410e6cca402036"
+        },
+        {
+          "path": "frontend/src/desktop.tsx",
+          "sha256": "3f32362b2f8421321f86ebf3b9ae7137c7c97b64f4f5c57b0a498140ef48071e"
+        },
+        {
+          "path": "frontend/src/test/desktop.test.tsx",
+          "sha256": "faef698a507eec2f611da3ca56f84be0a368a1880a6f98f0fb3d75d735df82c3"
+        },
+        {
+          "path": "frontend/src/test/desktop-sync.test.tsx",
+          "sha256": "ccc115d730422b3486e2a280d0dbdd4b7bf98b6588f8f3ba8aabe996031f3846"
         }
       ]
     },

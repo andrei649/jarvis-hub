@@ -1,34 +1,58 @@
-# Jarvis Hub — Desktop shell (H11.1, Tauri v2)
+# Nerva desktop shell and floating chat (H178)
 
-A thin native desktop wrapper around the existing web HUD — **no new backend**.
-It opens a native window pointed at the local server (`http://127.0.0.1:8080`),
-adds a tray icon, and supports auto-start.
+The Tauri host loads the existing local HUD at `http://127.0.0.1:8080/v2/`.
+Start your Nerva backend first. The desktop app does not start a backend or a daemon.
 
-> **Source only.** This is built **host-side** with the Rust + Tauri toolchain;
-> it is intentionally not built in CI (no Rust runner). The Python backend and
-> its tests are unaffected.
+## Use
 
-## Prerequisites (host)
-- Rust (`rustup`) + the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
-- `cargo install tauri-cli --version '^2'`
-- An app icon at `src-tauri/icons/icon.png`
+Choose **Float chat** in the main HUD or tray menu. The floating window is frameless,
+resizable and requests always-on-top where supported. Drag **NERVA · CHAT** to move it,
+drag the bottom-right corner to resize, or choose **Reset layout** to recover it.
+**Hide chat** and the native close action hide the window; the tray brings it back.
+**Open in app** focuses the normal Chat view. Main-window close also hides to tray;
+choose **Quit Nerva** in the tray or the normal application Quit command to exit.
 
-## Run / build
-```bash
-# 1. start the Jarvis backend (serves the HUD on :8080)
-python -m uvicorn agents.web:app --host 127.0.0.1 --port 8080
+Both windows use the same origin, persistent webview data store, existing HUD token
+storage, `/memory` and `/chat/stream`. There is no second backend or session ID.
+On focus/handoff and after another window completes a turn, persisted history refreshes;
+a pending refresh cannot replace a streaming turn. Hidden windows keep a running turn.
+Unsent composer drafts remain in their original window; they are not transferred by handoff.
 
-# 2. dev run
-cd desktop && cargo tauri dev
+Layout (physical coordinates and size) is stored in `floating-geometry.json` inside
+Tauri's application config directory. Every show/reset clamps against current monitor
+work areas; corrupt files fall back to default dimensions, scaled for Retina/DPI.
+No conversation or token is written to this layout file.
 
-# 3. package a native installer (Win/macOS/Linux)
-cd desktop && cargo tauri build
+## Host build
+
+Install Rust and the platform prerequisites for Tauri v2. The checked-in Cargo.lock
+pins dependencies and the icon is reused from the existing mobile asset.
+
+```sh
+cd desktop/src-tauri
+cargo test --jobs 2
+cargo check --jobs 2
+cargo run --jobs 2
+# Optional installer packaging with the separately installed Tauri CLI:
+cargo tauri build
 ```
 
-## Layout
-- `src-tauri/tauri.conf.json` — window (loads the HUD URL), tray, bundle config
-- `src-tauri/src/main.rs` — app entry; tray + wake-word listener hook in `setup()`
-- `src-tauri/Cargo.toml` — Tauri v2 + autostart plugin
-- `src-tauri/build.rs` — Tauri build script
+Build the HUD after frontend edits with `npm --prefix frontend run build` from the
+repository root. Its tracked output is served by the backend. A development build
+uses Tauri's local devUrl classification; release uses the explicitly scoped HTTP
+origin capability. Both independently check the exact HUD URL and expected window.
+Only `desktop_action` (finite show/hide/reset/handoff/drag/resize) and
+`desktop_capabilities` are exposed; no generic filesystem, shell, navigation, capture
+or accessibility commands are granted. New windows and navigation outside `/v2` are refused.
 
-Alternative to running the HUD in a browser; complements the Expo mobile client (H18).
+## Support and remaining work
+
+Host compilation and native UI validation were performed on macOS; Windows/Linux
+packaging and physical monitor disconnect/reconnect remain unverified. One native
+capability object identifies Cocoa, Win32, X11 or Wayland. Wayland placement and
+topmost requests are explicitly unsupported; the compositor controls them. Other
+platforms request topmost but cannot promise priority over exclusive fullscreen apps.
+Transparency, native frost, click-through, game-overlay watching, global shortcuts,
+move-to-pointer and underlying-window context capture are not implemented. No new
+autostart or wake-word service is installed. H178 remains partial against the full
+Hermes overlay surface, and this feature is intentionally desktop-only.
