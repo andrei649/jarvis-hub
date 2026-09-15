@@ -167,8 +167,9 @@ export async function postStream(
   if (buf) flush(buf);
 }
 
-export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean }): Promise<T> {
+export async function apiPut<T = unknown>(path: string, body?: unknown, opts?: { admin?: boolean; conflictIsExpected?: boolean }): Promise<T> {
   const res = await request('PUT', path, body, opts);
+  if (res.status === 409 && opts?.conflictIsExpected) throw Object.assign(new Error('Revision changed'), {status:409});
   if (!res.ok) await failMutation('PUT', path, res);
   return res.json() as Promise<T>;
 }

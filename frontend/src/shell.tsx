@@ -248,7 +248,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
   const inputRef=useRef(null);
   useEffect(()=>{ if(open){ setQ(''); setSel(0); setTimeout(()=>inputRef.current&&inputRef.current.focus(),30);} },[open]);
   // ui = { look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }
-  // Client-only display prefs (persisted to localStorage by App); toggled here.
+  // Appearance choices are synchronized by App; this palette stays the control surface.
   const u = ui || {};
   const cmds = useMemo(()=>[
     { g:'Go to', items:[
@@ -283,6 +283,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
       { name:'Density · '+(u.density==='compact'?'Compact ✓':'Compact'), act:()=>u.setDensity&&u.setDensity('compact'), icon:'bolt' },
       { name:'Density · '+(u.density==='normal'||!u.density?'Normal ✓':'Normal'), act:()=>u.setDensity&&u.setDensity('normal'), icon:'bolt' },
       { name:'Density · '+(u.density==='comfy'?'Comfy ✓':'Comfy'), act:()=>u.setDensity&&u.setDensity('comfy'), icon:'bolt' },
+      { name:'Motion · '+(u.motion==='system'?'System ✓':'System'), act:()=>u.setMotion&&u.setMotion('system'), icon:'bolt' },
       { name:'Motion · '+(u.motion==='lively'||!u.motion?'Lively ✓':'Lively'), act:()=>u.setMotion&&u.setMotion('lively'), icon:'bolt' },
       { name:'Motion · '+(u.motion==='calm'?'Calm ✓':'Calm'), act:()=>u.setMotion&&u.setMotion('calm'), icon:'bolt' },
       { name:'Scanline · '+(u.scanline==='off'?'On':'Off'), act:()=>u.setScanline&&u.setScanline(u.scanline==='off'?'on':'off'), icon:'bolt' },

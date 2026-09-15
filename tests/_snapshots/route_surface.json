@@ -167,6 +167,7 @@
   "GET /api/payments/mandates",
   "GET /api/permissions",
   "GET /api/plugins/extensions",
+  "GET /api/preferences/appearance",
   "GET /api/presence/owner",
   "GET /api/quality",
   "GET /api/quality/scores",
@@ -493,6 +494,7 @@
   "PUT /api/ambient/monitors/{monitor_id}",
   "PUT /api/jobs/{job_id}/notepad",
   "PUT /api/notes",
+  "PUT /api/preferences/appearance",
   "PUT /api/workflows/{pipeline_id}",
   "PUT /plugins/{plugin_id}/toggle"
 ]

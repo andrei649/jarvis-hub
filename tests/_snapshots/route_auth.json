@@ -167,6 +167,7 @@
   "GET /api/payments/mandates": "admin",
   "GET /api/permissions": "user",
   "GET /api/plugins/extensions": "user",
+  "GET /api/preferences/appearance": "user",
   "GET /api/presence/owner": "user",
   "GET /api/quality": "open",
   "GET /api/quality/scores": "user",
@@ -497,6 +498,7 @@
   "PUT /api/ambient/monitors/{monitor_id}": "admin",
   "PUT /api/jobs/{job_id}/notepad": "admin",
   "PUT /api/notes": "user",
+  "PUT /api/preferences/appearance": "user",
   "PUT /api/workflows/{pipeline_id}": "admin",
   "PUT /plugins/{plugin_id}/toggle": "admin"
 }

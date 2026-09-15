@@ -167,6 +167,7 @@
   "GET /api/payments/mandates": "list_payment_mandates_api_payments_mandates_get",
   "GET /api/permissions": "permissions_snapshot_api_permissions_get",
   "GET /api/plugins/extensions": "inspect_extensions_api_plugins_extensions_get",
+  "GET /api/preferences/appearance": "appearance_get_api_preferences_appearance_get",
   "GET /api/presence/owner": "get_owner_presence_api_presence_owner_get",
   "GET /api/quality": "quality_status_api_quality_get",
   "GET /api/quality/scores": "quality_scores_api_quality_scores_get",
@@ -493,6 +494,7 @@
   "PUT /api/ambient/monitors/{monitor_id}": "ambient_monitor_update_api_ambient_monitors__monitor_id__put",
   "PUT /api/jobs/{job_id}/notepad": "jobs_notepad_api_jobs__job_id__notepad_put",
   "PUT /api/notes": "notes_set_api_notes_put",
+  "PUT /api/preferences/appearance": "appearance_put_api_preferences_appearance_put",
   "PUT /api/workflows/{pipeline_id}": "update_workflow_api_workflows__pipeline_id__put",
   "PUT /plugins/{plugin_id}/toggle": "toggle_plugin_plugins__plugin_id__toggle_put"
 }
