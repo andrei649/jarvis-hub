@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "61c657c2f4c629ebd0b022dc33bedf60522f1532",
-  "assessed_at": "2026-09-15T16:19:14.973055Z",
+  "base_sha": "37eeae7613b15e63e12ec2a836894bf80b7e6d1d",
+  "assessed_at": "2026-09-15T16:29:25.131004Z",
   "reviews": [
     {
       "id": "H001",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
+          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -945,7 +945,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1293,7 +1293,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "5efd03a1e6f1032125fe6bf979a5edc368883bd8ef9624405d3cbfc19c34b6ff"
+          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -1663,7 +1663,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1764,7 +1764,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2153,7 +2153,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
+          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2201,7 +2201,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -2367,8 +2367,8 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices.",
-      "remaining": "No real ComfyUI validation or cloud provider execution was performed. Upscale is bicubic resampling, not a learned super-resolution model; reference blending is pixel composition, not provider-specific multi-image semantic conditioning. Cloud generation remains unwired. A future approved cloud image executor must persist its artifact and catalog record before reporting a generated asset; the legacy media.kind queue and generic text-task completion are not cloud image execution.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed.",
+      "remaining": "Cloud HUD authoring and an exact cloud proposal presentation/return flow in Decision Inbox remain unfinished; the API runtime is the supported entry point. Additional cloud providers, cloud edits and learned super-resolution remain absent. Local reference blending is pixel composition and upscale is bicubic resampling. Ambiguous POST attempts never retry automatically. Catalog opt-out is respected. No real ComfyUI, billed cloud generation or native-device validation is claimed.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2404,7 +2404,31 @@
         },
         {
           "path": "docs/hermes/h518-gallery-contract.md",
-          "sha256": "0e3a324863ebd584e98ba13110d390cb6a98e1b0ffd9583a824eb7a6f114856a"
+          "sha256": "ec5a548d88f188ae140ae558bc93eccffeebb40b0b056dcda31f9dd0bb68ea65"
+        },
+        {
+          "path": "agents/core/cloud_image_runtime.py",
+          "sha256": "ec312616e60c46877aaec95cc7e0f9bfddb2614726c469a20598215a45cf425b"
+        },
+        {
+          "path": "agents/core/media_backends/openai_image.py",
+          "sha256": "6453274b972eb51fee8652d25a1e21521b4e35183b3a0cfeaa40fd684653c407"
+        },
+        {
+          "path": "agents/core/media_catalog.py",
+          "sha256": "5465f6c049f27b6695978645ce8c6c59e9d6e6eeda6a5debb3166111107c9db3"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+        },
+        {
+          "path": "tests/test_cloud_image.py",
+          "sha256": "191197b67e73d69a066252394eb5e1dc15e25c196480e02937ee849a5e233fc3"
+        },
+        {
+          "path": "docs/cloud-image-generation.md",
+          "sha256": "db449937a8347d03cc8ce4c0ea90c9319218279647806b1ddcfd96991e811a2a"
         }
       ]
     },
@@ -2412,7 +2436,7 @@
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
       "status": "equivalent",
-      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection. Shared attachment previews now abort on card unmount and reject late fetch/body continuations; owned object URLs are revoked even before a pending React state update commits. Reassessment against the frozen keep/superior row confirms the bounded retained-catalog browse/search/export contract. Retention and unavailable-byte handling match the original scope; deleted/evicted history restoration, native controls and unlimited ZIPs are not acceptance requirements. Timestamp/key traversal excludes newer appends without promising exact membership against backdated inserts. The current local generator catalogs produced assets; legacy cloud proposals do not execute a cloud image backend. Future approved cloud completion must persist catalog output as part of H515, not be inferred from generic text-task completion. No live-provider or universal producer-provenance proof is claimed.",
+      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection. Shared attachment previews now abort on card unmount and reject late fetch/body continuations; owned object URLs are revoked even before a pending React state update commits. Reassessment against the frozen keep/superior row confirms the bounded retained-catalog browse/search/export contract. Retention and unavailable-byte handling match the original scope; deleted/evicted history restoration, native controls and unlimited ZIPs are not acceptance requirements. Timestamp/key traversal excludes newer appends without promising exact membership against backdated inserts. The current local generator catalogs produced assets; legacy cloud proposals do not execute a cloud image backend. Future approved cloud completion must persist catalog output as part of H515, not be inferred from generic text-task completion. No live-provider or universal producer-provenance proof is claimed. The implemented cloud-image producer now writes canonical validated output and an idempotent opt-in catalog record before successful completion; independent signed-worker/mock-provider/blob/ZIP checks cover the previously conditional writeback obligation. The legacy generic text task is not treated as an image producer.",
       "remaining": "",
       "evidence": [
         {
@@ -2481,7 +2505,31 @@
         },
         {
           "path": "docs/hermes/h518-gallery-contract.md",
-          "sha256": "0e3a324863ebd584e98ba13110d390cb6a98e1b0ffd9583a824eb7a6f114856a"
+          "sha256": "ec5a548d88f188ae140ae558bc93eccffeebb40b0b056dcda31f9dd0bb68ea65"
+        },
+        {
+          "path": "agents/core/cloud_image_runtime.py",
+          "sha256": "ec312616e60c46877aaec95cc7e0f9bfddb2614726c469a20598215a45cf425b"
+        },
+        {
+          "path": "agents/core/media_backends/openai_image.py",
+          "sha256": "6453274b972eb51fee8652d25a1e21521b4e35183b3a0cfeaa40fd684653c407"
+        },
+        {
+          "path": "agents/core/media_catalog.py",
+          "sha256": "5465f6c049f27b6695978645ce8c6c59e9d6e6eeda6a5debb3166111107c9db3"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
+        },
+        {
+          "path": "tests/test_cloud_image.py",
+          "sha256": "191197b67e73d69a066252394eb5e1dc15e25c196480e02937ee849a5e233fc3"
+        },
+        {
+          "path": "docs/cloud-image-generation.md",
+          "sha256": "db449937a8347d03cc8ce4c0ea90c9319218279647806b1ddcfd96991e811a2a"
         }
       ]
     },
@@ -2854,7 +2902,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "5efd03a1e6f1032125fe6bf979a5edc368883bd8ef9624405d3cbfc19c34b6ff"
+          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2934,8 +2982,8 @@
       "id": "H598",
       "row_sha256": "0011c0e1c0c25d51aa1a5e78fa488aaf33410af4bd2964a4f43955ff621fb66c",
       "status": "partial",
-      "summary": "Local image generation and editing retain exact single-use approvals; the HUD now offers configured local ComfyUI backend/checkpoint choices, up to four blended opaque references, and explicit 2x bicubic upscale.",
-      "remaining": "Local ComfyUI only. Vendor model inventories, provider quality controls and per-platform delivery validation remain absent. Reference blending is pixel composition and upscale is bicubic; no real ComfyUI or cloud provider proof was performed.",
+      "summary": "Local image generation and editing retain exact single-use approvals; the HUD now offers configured local ComfyUI backend/checkpoint choices, up to four blended opaque references, and explicit 2x bicubic upscale. The API additionally accepts one governed OpenAI image generation with fixed model and finite size/quality options; the current HUD still authors local requests.",
+      "remaining": "Cloud HUD authoring, additional vendor model inventories and broader provider controls remain open. Reference blending is pixel composition and upscale is bicubic; no real ComfyUI or billed cloud provider proof was performed.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
@@ -2947,7 +2995,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "00c0faada4c2cac966bf2f95c16064fac311d572ae8acb3a69db0dde66313c1c"
+          "sha256": "0a45c9da4afa9bcfdda9c74103b40e83017b1715c8cfa595339b9019b5dbcb8b"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -3198,7 +3246,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "5efd03a1e6f1032125fe6bf979a5edc368883bd8ef9624405d3cbfc19c34b6ff"
+          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -3315,7 +3363,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3400,7 +3448,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3603,7 +3651,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "0d43680fe4500fc8320226375e29136160621bfa5cae0d83794757616ab01d03"
+          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3820,7 +3868,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "5efd03a1e6f1032125fe6bf979a5edc368883bd8ef9624405d3cbfc19c34b6ff"
+          "sha256": "e2c66b84f19647888e2fefead6f16b90d3ddb2ef1fbac29b5d57fe3015309b73"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -4223,7 +4271,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
+          "sha256": "08041b986c4a6dfaffcbab0f4e3a97c205a4ba9db2ac448c452d1246a94f59dc"
         },
         {
           "path": "tests/test_composer_vision.py",

@@ -10072,6 +10072,10 @@ export interface components {
              * @default false
              */
             cloud: boolean;
+            /** Size */
+            size?: ("1024x1024" | "1536x1024" | "1024x1536") | null;
+            /** Quality */
+            quality?: ("low" | "medium" | "high") | null;
             /** Seed */
             seed?: number | null;
             /** Width */

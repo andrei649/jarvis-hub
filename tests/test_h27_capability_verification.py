@@ -171,25 +171,25 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     cases = registry_reality_cases(orch)
     by_ref = {case.ref: case for case in cases}
 
-    # 76 since HA-5a added the webread page-reader manifest (an egress identity of
-    # WebSearchPlugin.fetch_page, wired like every other plugin manifest).
-    assert len(records) == len(cases) == len(by_ref) == 76
+    # The cloud-image adapter adds one manifest to the prior 76 boot records.
+    assert len(records) == len(cases) == len(by_ref) == 77
+    assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert {
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 40,
+        "plugin": 41,
         "component": 24,
         "skill": 12,
     }
-    assert len({case.capability_id for case in cases}) == 76
+    assert len({case.capability_id for case in cases}) == 77
     for record in records:
         assert record.verification in by_ref
         assert by_ref[record.verification].capability_id == record.id
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 76
+    assert len(combined) == len(CASES) + 77
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -197,7 +197,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 106
+    assert len(verification_pairs) == 107
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -214,8 +214,8 @@ async def test_wired_registry_cases_pass_hermetically_and_seam_fails_honestly(mo
     result = await run_reality(cases, promote=False)
     by_id = {item["capability_id"]: item for item in result["results"]}
 
-    assert result["total"] == 76
-    assert result["passed"] == 75
+    assert result["total"] == 77
+    assert result["passed"] == 76
     assert result["skipped"] == 0
     assert all(
         by_id[case.capability_id]["passed"]

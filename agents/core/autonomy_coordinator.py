@@ -964,6 +964,36 @@ class AutonomyCoordinator:
         executor.register('plugin.egress', adapter.execute)
         jobs.bind_url_monitor(adapter)
 
+    def _wire_cloud_image(self, executor):
+        """Compose exact egress domains before consuming one worker permit."""
+        from .cloud_image_runtime import CloudImageRuntime, matches
+        worker = getattr(self._orch, 'autonomy', None)
+        redact = getattr(getattr(self._orch, 'secret_broker', None), 'redact', None)
+        if worker is None or not callable(redact):
+            return
+        runtime = CloudImageRuntime(worker, kernel=getattr(worker, 'kernel_gate', None), redact=redact)
+        previous_guard, previous_execute = executor.execution_guard, executor.resolve('plugin.egress')
+
+        def guard(task):
+            if matches(task):
+                return runtime.guard(task)
+            if task.kind == 'plugin.egress' and (not isinstance(task.payload, dict)
+                    or task.payload.get('plugin') != 'job-url-monitor'):
+                return False
+            return callable(previous_guard) and previous_guard(task)
+
+        async def execute(task):
+            if matches(task):
+                return await runtime.execute(task)
+            if (isinstance(task.payload, dict) and task.payload.get('plugin') == 'job-url-monitor'
+                    and callable(previous_execute)):
+                return await previous_execute(task)
+            return {'status': 'refused', 'reason': 'unsupported egress operation'}
+
+        executor.execution_guard = guard
+        executor.register('plugin.egress', execute)
+        bind_external_orchestrator_attribute(self._orch, "cloud_images", runtime)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
 
@@ -1014,6 +1044,7 @@ class AutonomyCoordinator:
             execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
         )
         self._wire_url_monitor(executor)
+        self._wire_cloud_image(executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):

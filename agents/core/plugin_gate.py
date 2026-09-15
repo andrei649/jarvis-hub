@@ -75,6 +75,12 @@ BUILTIN_PLUGINS = {
         allowed_domains=["stooq.com", "stooq.pl"],
         agents_served=["all"],
     ),
+    "cloud-image": PluginManifest(
+        id="cloud-image", name="Approved OpenAI image generation", version="0.1.0",
+        description="One explicitly approved image POST; validated local artifact completion",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.openai.com"], agents_served=["jarvis"],
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",
