@@ -71,7 +71,7 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
                 </Pressable>
               )}
               ListEmptyComponent={
-                !loading && !error ? <Text style={styles.empty}>No agents available</Text> : null
+                !loading && !error ? <Text style={styles.empty}>No agents available</Text> : undefined
               }
             />
           </Pressable>
