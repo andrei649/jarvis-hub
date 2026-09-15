@@ -215,6 +215,33 @@ def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:
                       output_tokens=_local_count(raw, "completion_tokens"))
 
 
+def compatible_usage(data: Mapping[str, Any]) -> TokenUsage:
+    """Declared OpenAI-compatible totals, without adding nested breakdowns.
+
+    https://openrouter.ai/docs/cookbook/administration/usage-accounting
+    Cache discounts remain unmodeled: prompt_tokens already includes cache.
+    """
+    raw = data.get("usage") if isinstance(data, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return TokenUsage()
+    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
+                      output_tokens=_local_count(raw, "completion_tokens"))
+
+
+def gemini_usage(data: Mapping[str, Any]) -> TokenUsage:
+    """Gemini inclusive prompt total and disjoint candidates/thoughts output.
+
+    https://ai.google.dev/api/generate-content#UsageMetadata
+    Do not add cached, total, modality or tool-use prompt detail counts.
+    """
+    raw = data.get("usageMetadata") if isinstance(data, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return TokenUsage()
+    return TokenUsage(input_tokens=_local_count(raw, "promptTokenCount"),
+                      output_tokens=_local_count(raw, "candidatesTokenCount")
+                      + _local_count(raw, "thoughtsTokenCount"))
+
+
 def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
     """The provider's own token counts, or an empty usage when it said nothing.
 

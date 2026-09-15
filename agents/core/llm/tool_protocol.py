@@ -56,6 +56,10 @@ class TokenUsage:
     An estimate is fine for a budget check and wrong for a bill, and the cost table
     prices a `cached` rate that no Claude route could ever earn.
 
+    Input and cache fields are disjoint token counts. Their sum is complete
+    prompt occupancy. Adapters reporting inclusive prompt totals leave the cache
+    fields zero rather than counting cached subsets twice.
+
     ``cache_read`` is what the vendor billed at the discounted rate; ``cache_write``
     is the premium paid to *create* the entry, which is not a saving and must not be
     reported as one. All four default to zero, which reads as "the provider said

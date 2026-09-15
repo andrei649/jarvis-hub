@@ -1526,7 +1526,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1587,7 +1587,7 @@
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -1595,7 +1595,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -1611,15 +1611,15 @@
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/tool_protocol.py",
-          "sha256": "5841d5359786b58987159046456a9508b5855c1a94db55969699e72baee5bc31"
+          "sha256": "651713a5c5a6dee8e3c55e8760ad4870308b4fa0dd8bdbb309bc4838302db313"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "01825a9166191f40f03c8e3109423ad115c3d314233dec4053b68a8934ae06b8"
+          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1692,7 +1692,7 @@
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -1700,7 +1700,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -1720,7 +1720,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "01825a9166191f40f03c8e3109423ad115c3d314233dec4053b68a8934ae06b8"
+          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1761,7 +1761,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1811,7 +1811,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -1840,7 +1840,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3163,7 +3163,7 @@
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3171,7 +3171,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3187,7 +3187,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "01825a9166191f40f03c8e3109423ad115c3d314233dec4053b68a8934ae06b8"
+          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3223,8 +3223,8 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor.",
-      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates, non-structured usage propagation, and Gemini/OpenRouter structured usage remain incomplete. No live Ollama/Gemini/LM Studio proof.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged.",
+      "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates and non-structured usage propagation remain incomplete. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
@@ -3248,7 +3248,7 @@
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3256,7 +3256,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3272,7 +3272,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "01825a9166191f40f03c8e3109423ad115c3d314233dec4053b68a8934ae06b8"
+          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3308,11 +3308,23 @@
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "tests/test_local_token_usage.py",
           "sha256": "03b15917dabcbda809b21cfb63c6d5b05f312944e7a086720abeaccbbd94be4e"
+        },
+        {
+          "path": "agents/core/llm/tool_protocol.py",
+          "sha256": "651713a5c5a6dee8e3c55e8760ad4870308b4fa0dd8bdbb309bc4838302db313"
+        },
+        {
+          "path": "tests/test_cloud_token_usage.py",
+          "sha256": "454e88d112160de926f853e7a772cb17dd45406d12e340a75d7b8ceadbd80377"
+        },
+        {
+          "path": "tests/test_complete_prompt_anchor.py",
+          "sha256": "e94a164e7650a30e2837049efc3e2690fba75fe7e0a76a9682e5a3bf10c7194e"
         }
       ]
     },
@@ -3354,7 +3366,7 @@
       "evidence": [
         {
           "path": "agents/core/llm/tool_dialects.py",
-          "sha256": "212c20fc7525eaae8b53f441f64c517e6913e948438161a7e37c6add78f6fb20"
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -3407,7 +3419,7 @@
         },
         {
           "path": "agents/core/llm/gemini.py",
-          "sha256": "528bd86fdc62509ace90d5ae70003e1b1df58ade9f774345463706c88ac4b4ba"
+          "sha256": "7c2ec36f3ca13a514b8404102eb3f3ea3ae36cf18ec5713a80e25b06c91bfdfe"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -3415,7 +3427,7 @@
         },
         {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "ee168510b65443f62b91cfc9596890fcb14b4d22d0293c7d5f09ae2ae7d419a1"
+          "sha256": "84bacb9d4a8e2f1b9c5947c359203df2313862f2d9e6bb4cf2930a1d98d71d00"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -3435,7 +3447,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "01825a9166191f40f03c8e3109423ad115c3d314233dec4053b68a8934ae06b8"
+          "sha256": "b1de524737d2a80cb8480806c79e8f1252a4dc261d4d79b3dc3e62666418c4e3"
         },
         {
           "path": "agents/core/settings_db.py",

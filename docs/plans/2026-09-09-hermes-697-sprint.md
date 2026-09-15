@@ -55,3 +55,7 @@ process PATH for the context-query pipe tests. No production behavior was change
 Next action: publish the single sprint PR and inspect its reported automated checks.
 Final head, GitHub URL and hosted results are recorded in the PR; the next product
 slice starts by querying the remaining contracts, not by treating partial rows as done.
+
+## 2026-09-15 cloud usage and complete prompt anchors (H673 partial)
+
+Gemini and explicit compatible structured turns now retain strict provider token totals without detail double-counting. Anthropic disjoint cache read/write categories now contribute to complete-prefix context anchors, including cache-only requests; billing unchanged. 56 added cases; 181 focused checks pass. Rebased only the two cloud commits onto URL delivery af033f6d; no inventory mutation. No live provider or billing proof; remaining heterogeneous-route, non-structured and cache-pricing limits stay explicit in assessment. See [module plan](../superpowers/plans/2026-09-15-cloud-usage.md).
