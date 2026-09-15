@@ -41,3 +41,20 @@ def test_csp_allows_hud_inline_script_and_style():
     csp = client.get("/").headers.get("Content-Security-Policy", "")
     assert "script-src 'self' 'unsafe-inline'" in csp
     assert "style-src 'self' 'unsafe-inline'" in csp
+
+
+def test_hud_csp_allows_validated_media_object_urls_without_script_authority():
+    client = TestClient(web.app)
+    response = client.get('/v2/')
+    directives = {
+        parts[0]: set(parts[1:])
+        for value in response.headers['Content-Security-Policy'].split(';')
+        if (parts := value.split())
+    }
+    # BinaryCard fetches authenticated, validated bytes and renders object URLs.
+    assert directives['img-src'] == {"'self'", 'data:', 'https:', 'blob:'}
+    assert directives['media-src'] == {"'self'", 'blob:'}
+    assert directives['default-src'] == {"'self'"}
+    assert directives['script-src'] == {"'self'", "'unsafe-inline'"}
+    assert directives['connect-src'] == {"'self'", 'ws:', 'wss:'}
+    assert directives['object-src'] == {"'none'"}

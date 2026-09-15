@@ -40,3 +40,19 @@ describe('MediaGalleryPanel — the media catalog read surface is live', () => {
     expect(screen.getByText('SEED')).toBeTruthy();
   });
 });
+
+it('searches the unified gallery without truncating to eight rows', async () => {
+  mockFetch({enabled:true, stats:{total:10, by_kind:{image:10}}, items:Array.from({length:10},(_,i)=>({id:'md-'+i,kind:'image',prompt:'landscape '+i,available:false}))});
+  render(<MediaGalleryPanel />);
+  expect(await screen.findByText('landscape 9')).toBeTruthy();
+  const { fireEvent } = await import('@testing-library/react');
+  fireEvent.change(screen.getByLabelText('Search media'), {target:{value:'landscape 9'}});
+  expect(screen.queryByText('landscape 0')).toBeNull();
+  expect(screen.getByText('landscape 9')).toBeTruthy();
+});
+
+it('labels preliminary file metadata as requiring validation when loaded', async () => {
+  mockFetch({enabled:true, stats:{total:1, by_kind:{image:1}}, items:[{id:'md-aaaaaaaaaaaa',kind:'image',prompt:'preview',available:true,mime:'image/png',size:12,validation:'on_download'}]});
+  render(<MediaGalleryPanel />);
+  expect(await screen.findByText('Content is validated when loaded.')).toBeTruthy();
+});

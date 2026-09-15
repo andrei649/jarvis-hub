@@ -308,3 +308,5 @@ no live channel was enabled. Generated OpenAPI types now include all four added 
 2026-09-15 — H12.26: Artifacts now includes default-off binary upload, authenticated
 preview/download, pin/delete and honest errors. Supported magic-sniffed image,
 audio, video and PDF only; active formats and office documents remain refused.
+
+2026-09-15 — H515/H518: Images exposes configured local backend/checkpoint selection, up to four blended references and explicit 2× bicubic upscale. Media Gallery searches and downloads supported catalog/cache/attached files through authenticated object URLs and exports visible supported rows to ZIP. Runtime ComfyUI proof remains unperformed.

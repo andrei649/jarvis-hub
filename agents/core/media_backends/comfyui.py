@@ -93,8 +93,54 @@ class ComfyUIConfig:
         return hashlib.sha256(encoded).hexdigest()
 
 
+def backend_catalog(env=None):
+    """Configured local aliases only; never probes a service or discovers models."""
+    env = os.environ if env is None else env
+    default = ComfyUIConfig.from_env(env)
+    if default is None:
+        return {}
+    raw_models = env.get("JARVIS_COMFYUI_CHECKPOINTS", default.checkpoint)
+    models = list(dict.fromkeys([default.checkpoint, *raw_models.split(",")]))
+    records = {"comfyui": {"url": default.base_url, "checkpoints": models}}
+    try:
+        raw = env.get("JARVIS_LOCAL_IMAGE_BACKENDS", "{}")
+        if len(raw) > 8192:
+            raise ValueError
+        extra = json.loads(raw)
+        if not isinstance(extra, dict) or len(extra) > 8 or "comfyui" in extra:
+            raise ValueError
+        records.update(extra)
+        for name, record in records.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", name) or not isinstance(record, dict) or set(record) != {"url", "checkpoints"}:
+                raise ValueError
+            checkpoints = record["checkpoints"]
+            if not isinstance(checkpoints, list) or not 1 <= len(checkpoints) <= 32:
+                raise ValueError
+            for model in checkpoints:
+                # Reuse loopback/checkpoint validation, including traversal refusal.
+                ComfyUIConfig.from_env({"JARVIS_LOCAL_IMAGE_GENERATION": "1", "JARVIS_COMFYUI_URL": record["url"], "JARVIS_COMFYUI_CHECKPOINT": model})
+    except (ValueError, TypeError):
+        raise ImageGenerationError("invalid_backend_catalog") from None
+    return records
+
+
+def resolve_config(options=None):
+    options = options or {}
+    catalog = backend_catalog()
+    if not catalog:
+        return None
+    name = options.get("backend", "comfyui")
+    record = catalog.get(name)
+    if record is None:
+        raise ImageGenerationError("backend_not_configured")
+    model = options.get("model", record["checkpoints"][0])
+    if model not in record["checkpoints"]:
+        raise ImageGenerationError("model_not_configured")
+    return ComfyUIConfig.from_env({"JARVIS_LOCAL_IMAGE_GENERATION": "1", "JARVIS_COMFYUI_URL": record["url"], "JARVIS_COMFYUI_CHECKPOINT": model})
+
+
 ARTIFACT_ID = re.compile(r"[a-f0-9]{32}")
-OPTION_KEYS = ("seed", "width", "height", "steps", "reference", "strength")
+OPTION_KEYS = ("seed", "width", "height", "steps", "reference", "strength", "references", "upscale", "backend", "model")
 
 
 def validate_options(prompt, options):
@@ -109,7 +155,21 @@ def validate_options(prompt, options):
         raise ImageGenerationError("invalid_prompt")
     if not isinstance(options, dict) or set(options) - set(OPTION_KEYS):
         raise ImageGenerationError("invalid_options")
-    reference = options.get("reference")
+    if "backend" in options and (not isinstance(options["backend"], str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", options["backend"])):
+        raise ImageGenerationError("invalid_options")
+    if "model" in options and (not isinstance(options["model"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors", options["model"])):
+        raise ImageGenerationError("invalid_options")
+    if "upscale" in options and (type(options["upscale"]) is not int or options["upscale"] != 2):
+        raise ImageGenerationError("invalid_options")
+    references = options.get("references")
+    if "references" in options and (
+        "reference" in options or not isinstance(references, list)
+        or not 1 <= len(references) <= 4
+        or len({str(r) for r in references}) != len(references)
+        or any(not isinstance(r, str) or not ARTIFACT_ID.fullmatch(r) for r in references)
+    ):
+        raise ImageGenerationError("invalid_options")
+    reference = references[0] if references else options.get("reference")
     if reference is None:
         if "reference" in options or "strength" in options:
             raise ImageGenerationError("invalid_options")
@@ -161,7 +221,7 @@ def artifact_bytes(artifact_id, root):
     return data
 
 
-def _workflow(config, prompt, opts, reference_name=None):
+def _workflow(config, prompt, opts, reference_name=None, reference_size=None):
     """One graph in two fixed shapes. Node "9" is the only output in both, so the
     result extraction never has to ask which shape ran.
 
@@ -182,6 +242,9 @@ def _workflow(config, prompt, opts, reference_name=None):
         "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
         "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "nerva", "images": ["8", 0]}},
     }
+    if opts.get("upscale") == 2:
+        graph["30"] = {"class_type": "ImageScaleBy", "inputs": {"image": ["8", 0], "upscale_method": "bicubic", "scale_by": 2}}
+        graph["9"]["inputs"]["images"] = ["30", 0]
     if reference_name is None:
         graph["5"] = {"class_type": "EmptyLatentImage", "inputs": {
             "width": opts["width"], "height": opts["height"], "batch_size": 1}}
@@ -189,7 +252,16 @@ def _workflow(config, prompt, opts, reference_name=None):
     graph["3"]["inputs"]["latent_image"] = ["10", 0]
     graph["3"]["inputs"]["denoise"] = opts["strength"] / 100
     graph["10"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["11", 0], "vae": ["4", 2]}}
-    graph["11"] = {"class_type": "LoadImage", "inputs": {"image": reference_name, "upload": "image"}}
+    names = reference_name if isinstance(reference_name, list) else [reference_name]
+    graph["11"] = {"class_type": "LoadImage", "inputs": {"image": names[0], "upload": "image"}}
+    pixels = ["11", 0]
+    for index, name in enumerate(names[1:], 1):
+        load, scale, blend = str(11 + index * 3), str(12 + index * 3), str(13 + index * 3)
+        graph[load] = {"class_type": "LoadImage", "inputs": {"image": name, "upload": "image"}}
+        graph[scale] = {"class_type": "ImageScale", "inputs": {"image": [load, 0], "upscale_method": "bicubic", "width": reference_size[0], "height": reference_size[1], "crop": "disabled"}}
+        graph[blend] = {"class_type": "ImageBlend", "inputs": {"image1": pixels, "image2": [scale, 0], "blend_factor": 1 / (index + 1), "blend_mode": "normal"}}
+        pixels = [blend, 0]
+    graph["10"]["inputs"]["pixels"] = pixels
     return graph
 
 
@@ -221,7 +293,7 @@ def validate_png(data: bytes):
                 break
             width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", body)
             channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color, 0)
-            if not (0 < width <= 1024 and 0 < height <= 1024 and channels
+            if not (0 < width <= 2048 and 0 < height <= 2048 and channels
                     and depth == 8 and compression == filtering == interlace == 0):
                 break
             dimensions = (width, height)
@@ -326,7 +398,11 @@ class ComfyUIBackend:
         opts = validate_options(prompt, options)
         # Resolved before a socket is opened. An unusable reference must not cost a
         # submission whose outcome we would then be unable to observe.
-        reference = artifact_bytes(opts["reference"], self.config.output_root) if "reference" in opts else None
+        ids = opts.get("references", [opts["reference"]] if "reference" in opts else [])
+        references = [artifact_bytes(item_id, self.config.output_root) for item_id in ids]
+        reference_size = validate_png(references[0]) if references else None
+        if reference_size and (reference_size[0] > 1024 or reference_size[1] > 1024):
+            raise ImageGenerationError("reference_dimensions_exceeded")
         try:
             async with asyncio.timeout(self.config.timeout):
                 async with httpx.AsyncClient(
@@ -334,9 +410,9 @@ class ComfyUIBackend:
                     headers={"Accept-Encoding": "identity"},
                     timeout=httpx.Timeout(10.0, connect=3.0),
                 ) as client:
-                    reference_name = None if reference is None else await self._upload(client, reference)
+                    reference_name = [await self._upload(client, data) for data in references] or None
                     try:
-                        submitted = await self._request(client, "POST", "/prompt", json={"prompt": _workflow(self.config, prompt, opts, reference_name)})
+                        submitted = await self._request(client, "POST", "/prompt", json={"prompt": _workflow(self.config, prompt, opts, reference_name, reference_size)})
                     except httpx.HTTPError:
                         # A response timeout cannot tell us whether ComfyUI queued
                         # the job. Never retry POST, including after restart.

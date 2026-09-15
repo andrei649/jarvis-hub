@@ -5,11 +5,9 @@ import { ImagesPanel } from '../panels/images';
 import * as api from '../api/images';
 // `editValid` is the real predicate, not a stub: the panel's submit gate is the thing
 // under test, and a stubbed validator would let an invalid reference through it.
-vi.mock('../api/images', () => ({
+vi.mock('../api/images', async importOriginal => ({
+  ...(await importOriginal<typeof import('../api/images')>()),
   imageStatus: vi.fn(), proposeImage: vi.fn(), imageTask: vi.fn(), imageBlob: vi.fn(),
-  editValid: (value: any) => !!value && typeof value.reference === 'string'
-    && /^[a-f0-9]{32}$/.test(value.reference) && Number.isSafeInteger(value.strength)
-    && value.strength > 0 && value.strength <= 100,
 }));
 const artifact = { id: 'a'.repeat(32), bytes: 8, width: 512, height: 512 };
 beforeEach(() => {
@@ -150,4 +148,15 @@ describe('Images panel', () => {
     expect(api.imageTask).not.toHaveBeenCalled();
     expect(api.proposeImage).not.toHaveBeenCalled();
   });
+});
+
+it('offers configured backend/model selection and explicit 2x upscale', async () => {
+  vi.mocked(api.imageStatus).mockResolvedValue({configured:true, edit:true, backends:[{id:'comfyui',models:['a.safetensors','b.safetensors']}], max_references:4, upscale:[2]});
+  render(<ImagesPanel />);
+  fireEvent.change(await screen.findByLabelText('Image backend'), {target:{value:'comfyui'}});
+  fireEvent.change(screen.getByLabelText('Image model'), {target:{value:'b.safetensors'}});
+  fireEvent.click(screen.getByLabelText('2× bicubic upscale'));
+  fireEvent.change(screen.getByLabelText('Image prompt'), {target:{value:'mountains'}});
+  fireEvent.click(screen.getByRole('button',{name:'Propose image'}));
+  await waitFor(() => expect(api.proposeImage).toHaveBeenCalledWith('mountains', {backend:'comfyui',model:'b.safetensors',upscale:2}, expect.any(AbortSignal)));
 });

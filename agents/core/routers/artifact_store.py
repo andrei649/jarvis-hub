@@ -95,3 +95,51 @@ async def artifacts_pin(artifact_id: str, pinned: bool = True):
     if row is None:
         raise HTTPException(404, 'artifact_not_found')
     return row
+
+
+from pydantic import BaseModel, Field
+
+
+class MediaExportBody(BaseModel):
+    model_config = {'extra': 'forbid'}
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+@router.post('/api/media/export', response_class=Response)
+def media_export(body: MediaExportBody):
+    """In-memory portable bundle; no host path or arbitrary file-write surface."""
+    import hashlib
+    import io
+    import json
+    import zipfile
+
+    from ..media_library import catalog_snapshot
+    from ..paths import data_root
+
+    needs_catalog = any(item_id.startswith('md-') for item_id in body.ids)
+    if needs_catalog and not env_flag('JARVIS_MEDIA_CATALOG'):
+        raise HTTPException(409, 'Media catalog disabled')
+    records = catalog_snapshot(data_root())[0] if needs_catalog else None
+    buffer = io.BytesIO()
+    manifest, missing, total = [], [], 0
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_STORED) as archive:
+        for item_id in dict.fromkeys(body.ids):
+            if item_id.startswith('ba-'):
+                require_enabled()
+            elif not env_flag('JARVIS_MEDIA_CATALOG'):
+                raise HTTPException(409, 'Media catalog disabled')
+            try:
+                meta, data = resolve_blob(item_id, catalog_records=records)
+            except (ValueError, OSError):
+                missing.append(item_id[:80])
+                continue
+            total += len(data)
+            if total > 128 * 1024 * 1024:
+                raise HTTPException(413, 'bundle_too_large')
+            archive.writestr('media/' + item_id, data)
+            manifest.append({**meta, 'kind': meta['mime'].split('/')[0], 'sha256': hashlib.sha256(data).hexdigest()})
+        archive.writestr('manifest.json', json.dumps({'items': manifest, 'missing': missing}))
+    return Response(buffer.getvalue(), media_type='application/zip', headers={
+        'Content-Disposition': 'attachment; filename="nerva-media.zip"',
+        'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
+    })

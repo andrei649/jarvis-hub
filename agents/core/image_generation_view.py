@@ -36,7 +36,7 @@ def project_image_task(task) -> ImageTaskView:
                 and isinstance(artifact["artifact_id"], str)
                 and re.fullmatch(r"[a-f0-9]{32}", artifact["artifact_id"])):
             return result
-        for key, limit in (("bytes", 16 * 1024 * 1024), ("width", 1024), ("height", 1024)):
+        for key, limit in (("bytes", 16 * 1024 * 1024), ("width", 2048), ("height", 2048)):
             if type(artifact[key]) is not int or not 1 <= artifact[key] <= limit:
                 return result
         result.artifact = ImageArtifactView(id=artifact["artifact_id"], bytes=artifact["bytes"], width=artifact["width"], height=artifact["height"])

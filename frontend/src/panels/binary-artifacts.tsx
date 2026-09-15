@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getToken } from '../api/client';
 
-type BinaryItem = { id: string; mime: string; size: number; agent: string; pinned: boolean };
+type BinaryItem = { id: string; mime: string; size: number; agent: string; pinned: boolean; validation?: 'on_download' };
 const LIMIT = 16 * 1024 * 1024;
 async function request(path: string, init: RequestInit = {}) {
   const token = getToken();
@@ -10,7 +10,7 @@ async function request(path: string, init: RequestInit = {}) {
   if (!response.ok) throw new Error(`Attachment request failed (${response.status})`);
   return response;
 }
-function BinaryCard({ item, refresh }: { item: BinaryItem; refresh: () => void }) {
+export function BinaryCard({ item, refresh }: { item: BinaryItem; refresh: () => void }) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -35,13 +35,16 @@ function BinaryCard({ item, refresh }: { item: BinaryItem; refresh: () => void }
     finally { setBusy(false); }
   };
   return <article className="art-card">
-    <div>{item.mime} · {item.size} bytes</div><small>{item.agent} · {item.id}</small>
+    <div>{item.mime} · {item.size} bytes</div>
+    {item.validation === 'on_download' && <small>Content is validated when loaded.</small>}<small>{item.agent} · {item.id}</small>
     {url && item.mime.startsWith('image/') && <img src={url} alt="Attached image" className="art-img" />}
     {url && item.mime.startsWith('audio/') && <audio controls src={url} />}
     {url && item.mime.startsWith('video/') && <video controls src={url} />}
-    {url ? <a href={url} download={item.id}>Download attachment</a> : <button disabled={busy} onClick={load}>Load attachment</button>}
-    <button disabled={busy} onClick={() => mutate(true)}>{item.pinned ? 'Unpin attachment' : 'Pin attachment'}</button>
-    <button disabled={busy} onClick={() => mutate(false)}>Delete attachment</button>
+    <div className="art-actions" style={{ flexWrap: 'wrap' }}>
+      {url ? <a className="tool-btn" href={url} download={item.id}>Download attachment</a> : <button className="tool-btn" disabled={busy} onClick={load}>Load attachment</button>}
+    {item.id.startsWith('ba-') && <button className="tool-btn" disabled={busy} onClick={() => mutate(true)}>{item.pinned ? 'Unpin attachment' : 'Pin attachment'}</button>}
+    {item.id.startsWith('ba-') && <button className="tool-btn" disabled={busy} onClick={() => mutate(false)}>Delete attachment</button>}
+    </div>
     {error && <div role="alert">{error}</div>}
   </article>;
 }
@@ -78,4 +81,15 @@ export function BinaryArtifacts() {
     </> : <p>Binary attachments are disabled. Enable JARVIS_BINARY_ARTIFACTS on the hub.</p>}
     {error && <p role="alert">{error} <button onClick={refresh}>Retry attachments</button></p>}
   </section>;
+}
+
+export async function downloadMediaBundle(ids: string[]) {
+  const token = getToken();
+  const response = await fetch('/api/media/export', {method:'POST', credentials:'same-origin', redirect:'error', cache:'no-store', headers:{'Content-Type':'application/json', ...(token ? {'X-User-Token':token} : {})}, body:JSON.stringify({ids})});
+  if (!response.ok) throw new Error(`Export failed (${response.status})`);
+  const blob = await response.blob();
+  if (blob.size > 129 * 1024 * 1024 || blob.type !== 'application/zip') throw new Error('Invalid export response');
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url; link.download = 'nerva-media.zip'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

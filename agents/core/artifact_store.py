@@ -266,11 +266,14 @@ class BinaryArtifactStore:
         return {'items': items, 'missing': missing}
 
 
-def resolve_blob(item_id, root=None):
+def resolve_blob(item_id, root=None, *, catalog_records=None):
     """Shared delivery contract for attachments and existing generated PNGs."""
     root = Path(root) if root is not None else data_root()
     if isinstance(item_id, str) and ID.fullmatch(item_id):
         return BinaryArtifactStore(root).read(item_id)
+    if isinstance(item_id, str) and item_id.startswith('md-'):
+        from .media_library import read_catalog_blob
+        return read_catalog_blob(item_id, root, records=catalog_records)
     from .media_backends.comfyui import artifact_bytes
     data = artifact_bytes(item_id, root / 'media' / 'generated')
     return {'id': item_id, 'mime': 'image/png', 'size': len(data)}, data

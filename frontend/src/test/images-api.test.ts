@@ -133,3 +133,9 @@ describe('owner image transport', () => {
     expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact });
   });
 });
+
+it('binds configured backend, model, reference blend and upscale in one proposal', async () => {
+  vi.mocked(fetch).mockResolvedValue(reply({ reason: 'approval_required', task_id: 18 }, 202));
+  await proposeImage('blend', { references: [id, 'b'.repeat(32)], strength: 40, backend: 'studio', model: 'b.safetensors', upscale: 2 });
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body as string)).toEqual({kind:'image', cloud:false, prompt:'blend', references:[id,'b'.repeat(32)], strength:40, backend:'studio', model:'b.safetensors', upscale:2});
+});

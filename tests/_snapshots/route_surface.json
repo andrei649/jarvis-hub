@@ -373,6 +373,7 @@
   "POST /api/mcp/server/rpc",
   "POST /api/mcp/token",
   "POST /api/media/devices",
+  "POST /api/media/export",
   "POST /api/media/generate",
   "POST /api/media/present",
   "POST /api/media/restore/{device_id}",
