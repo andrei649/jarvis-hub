@@ -209,6 +209,13 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         capabilities=frozenset({"chat", "model-catalog", "cloud"}),
     ),
     ProviderProfile(
+        id="openai-responses", display_name="OpenAI Responses (API key, GPT-4.1)",
+        backend_kind="openai-responses", auth_type="bearer", auth_env="OPENAI_API_KEY",
+        default_base_url="https://api.openai.com/v1",
+        capabilities=frozenset({"chat", "streaming", "cloud", "prompt-cache-key"}),
+        reasoning_declarations={"gpt-4.1": (), "gpt-4.1-2025-04-14": ()},
+    ),
+    ProviderProfile(
         id="openai-compatible",
         display_name="Custom OpenAI-Compatible",
         backend_kind="openai-compatible",

@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 Responses transport (H363/H364/H673 partial): explicit API-key GPT-4.1 text/stream/function requests now use the public Responses endpoint, bounded stateless replay, cache retention and reported usage. Existing routing/approval and invocation-lifetime limits remain. Codex OAuth/subscription, Grok and reasoning-item replay are not claimed. See [plan/evidence](docs/superpowers/plans/2026-09-15-openai-responses.md).
+
 - 2026-09-15 H364 invocation reasoning: CLI chat --reasoning and optional HTTP/SSE reasoning apply canonical effort to one request without settings writes. Independent actual-provider mock tests verify defaults, scope revocation, retries and concurrent shared backends. H364 remains partial for named Grok and Codex/Responses paths. See [scoped plan](docs/superpowers/plans/2026-09-15-invocation-reasoning.md).
 
 - 2026-09-15 H671 compaction clock: durable same-session clock revisions advance only with accepted compaction. Failed commits stop dispatch, late managed child tasks cannot commit, and unmanaged requests preserve legacy behavior. Independent review covers midnight, restart, concurrent snapshots and creator metadata. H671 remains partial for cross-ID/root lineage; no rotation is invented. See [plan and evidence](docs/superpowers/plans/2026-09-15-compaction-clock.md).
