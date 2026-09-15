@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 cross-client appearance (H135): native now restores the same owner preference document on boot/foreground, isolates cache by connection and updates all19 consumers. Delayed hydration cannot undo an explicit connection clear. Together with merged browser/font persistence this fulfills the frozen row; platform font fallbacks and lack of device GUI evidence remain explicit. See [native contract](mobile/docs/h135-native-appearance.md).
+
 - 2026-09-15 manual automations dispatch (H146/H449 partial): persistent bounded receipts separate HTTP acceptance from execution. Shared scheduler/offline tick, atomic request coalescing, cross-process locks and crash reconciliation prevent replay. HUD/CLI restore active receipts; configuration and retention races have regression coverage. See [contract and limits](docs/automations-dispatch.md).
 
 - [x] **HEQ-0 — one status over the complete 697-row Hermes inventory.** Owner-requested

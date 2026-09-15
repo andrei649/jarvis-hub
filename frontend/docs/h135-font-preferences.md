@@ -29,8 +29,9 @@ a child CSS variable change cannot retroactively alter an inherited body font.
   scoped Ruff/diff, required schema generation if stale, local Graft freshness, then
   commit only module source/tests/guide. Parent regenerates shipped assets/global evidence.
 
-H135 remains partial until native mobile consumes appearance. This finite local
-font set is not a claim of Hermes' complete curated font catalog or webfont loader.
+The subsequent [native appearance consumer](../../mobile/docs/h135-native-appearance.md)
+completes the cross-client read-at-boot requirement. This finite local font set
+does not claim Hermes' complete curated font catalog or a webfont loader.
 Existing six appearance fields, CAS, offline journal, prefix cache and ambiguous
 legacy motion handling remain unchanged. Rollback is one feature revert; stored
 font metadata is inert for older clients.

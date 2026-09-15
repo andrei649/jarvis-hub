@@ -1,5 +1,6 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import {
   ApiError,
   commandCenterModelLabel,
@@ -31,9 +32,10 @@ import {
 } from '../api/client';
 import { speak, stopSpeaking } from '../audio/tts';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function Row({ label, value }: { label: string; value: string | number | undefined | null }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -43,6 +45,7 @@ function Row({ label, value }: { label: string; value: string | number | undefin
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -50,20 +53,6 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     </View>
   );
 }
-
-const STATE_COLOR: Record<string, string> = {
-  ready: theme.ok,
-  no_model: theme.warn,
-  offline: theme.danger,
-};
-
-const TICKER_COLOR: Record<string, string> = {
-  high: theme.danger,
-  critical: theme.danger,
-  mid: theme.warn,
-  elevated: theme.warn,
-  low: theme.ok,
-};
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -75,6 +64,21 @@ function scoreLabel(value: number | undefined): string {
 }
 
 export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
+  const STATE_COLOR: Record<string, string> = {
+    ready: theme.ok,
+    no_model: theme.warn,
+    offline: theme.danger,
+  };
+
+  const TICKER_COLOR: Record<string, string> = {
+    high: theme.danger,
+    critical: theme.danger,
+    mid: theme.warn,
+    elevated: theme.warn,
+    low: theme.ok,
+  };
+
   const { config, configured } = useServer();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -426,7 +430,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12 },
   card: {

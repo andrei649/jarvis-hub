@@ -1,8 +1,9 @@
+import { Text } from './ThemedText';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { ChatMessage, SaveState } from '../chat/types';
 import { Markdown } from '../markdown/Markdown';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 export type { ChatMessage };
 
@@ -26,6 +27,7 @@ export function MessageBubble({
   onSave?: () => void;
   saveState?: SaveState;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const isUser = message.role === 'user';
   const empty = message.pending && message.text.length === 0;
   const canSpeak = !isUser && !message.pending && message.text.length > 0 && !!onSpeak;
@@ -81,7 +83,7 @@ export function MessageBubble({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   row: { width: '100%', marginVertical: 4, flexDirection: 'row' },
   rowUser: { justifyContent: 'flex-end' },
   rowAssistant: { justifyContent: 'flex-start' },

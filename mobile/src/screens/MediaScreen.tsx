@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,8 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -27,7 +26,7 @@ import {
   type MediaUrgency,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 const CONTENT_TYPES: MediaContentType[] = ['url', 'local', 'catalog', 'query'];
 const MODES: MediaMode[] = ['play', 'show', 'announce'];
@@ -48,6 +47,7 @@ function Choice<T extends string>({
   value: T;
   onChange: (next: T) => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.choiceGroup} accessibilityLabel={label}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -69,6 +69,7 @@ function Choice<T extends string>({
 }
 
 function Outcome({ value }: { value: MediaActionOutcome | null }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   if (!value) return null;
   const message =
     value.kind === 'verified'
@@ -91,6 +92,7 @@ function Outcome({ value }: { value: MediaActionOutcome | null }) {
 }
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -103,6 +105,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function DeviceCard({ device, selected, onSelect }: { device: MediaDevice; selected: boolean; onSelect: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -123,6 +126,7 @@ function DeviceCard({ device, selected, onSelect }: { device: MediaDevice; selec
 }
 
 function SessionCard({ session, busy, onRestore }: { session: MediaSession; busy: boolean; onRestore: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.card}>
       <View style={styles.row}>
@@ -149,6 +153,7 @@ function SessionCard({ session, busy, onRestore }: { session: MediaSession; busy
 }
 
 export function MediaScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [devices, setDevices] = useState<MediaDevice[]>([]);
   const [sessions, setSessions] = useState<MediaSession[]>([]);
@@ -445,7 +450,7 @@ export function MediaScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 30 },
   hero: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },

@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -5,8 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { saveCanvasArtifact, streamChat, type HistoryTurn } from '../api/client';
@@ -18,7 +17,7 @@ import { SessionsModal } from '../components/SessionsModal';
 import { useServer } from '../context/ServerContext';
 import { clearHistory, loadHistory, saveHistory } from '../storage/chat';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 let idSeq = 0;
 const nextId = () => `m${Date.now()}_${idSeq++}`;
@@ -36,6 +35,7 @@ function toPlain(md: string): string {
 }
 
 export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -250,7 +250,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   toolbar: {
     flexDirection: 'row',

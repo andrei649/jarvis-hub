@@ -1,3 +1,4 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,7 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import {
@@ -16,9 +16,10 @@ import {
   type AcquisitionPackage,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -31,6 +32,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function PackageCard({ item }: { item: AcquisitionPackage }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.card}>
       <View style={styles.row}>
@@ -46,6 +48,7 @@ function PackageCard({ item }: { item: AcquisitionPackage }) {
 }
 
 function EventCard({ item }: { item: AcquisitionEvent }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const occurred = new Date(item.occurred_at * 1000).toLocaleString();
   return (
     <View style={styles.eventCard}>
@@ -59,6 +62,7 @@ function EventCard({ item }: { item: AcquisitionEvent }) {
 }
 
 export function AcquisitionScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState('disabled');
@@ -146,7 +150,7 @@ export function AcquisitionScreen({ onGoToSettings }: { onGoToSettings: () => vo
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 30 },
   hero: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },

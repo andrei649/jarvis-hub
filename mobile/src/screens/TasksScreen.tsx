@@ -1,14 +1,15 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, fetchTasks, type HubTask } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function taskState(task: HubTask): string {
   return String(task.state || task.status || 'done').toLowerCase();
 }
 
-function stateColor(state: string): string {
+function stateColor(state: string, theme: Theme): string {
   if (state === 'running' || state === 'active') return theme.accent;
   if (['blocked', 'held', 'pending', 'proposed', 'approved'].includes(state)) return theme.warn;
   if (['error', 'failed', 'denied'].includes(state)) return theme.danger;
@@ -35,6 +36,7 @@ function timeLabel(value?: unknown): string {
 }
 
 function CountPill({ label, value, color }: { label: string; value: number; color: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={[styles.pill, { borderColor: color }]}>
       <Text style={[styles.pillValue, { color }]}>{value}</Text>
@@ -44,6 +46,7 @@ function CountPill({ label, value, color }: { label: string; value: number; colo
 }
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -56,19 +59,20 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function TaskCard({ task }: { task: HubTask }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const state = taskState(task);
   const stamp = timeLabel(task.updated_at || task.created_at);
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
-        <View style={[styles.stateDot, { backgroundColor: stateColor(state) }]} />
+        <View style={[styles.stateDot, { backgroundColor: stateColor(state, theme) }]} />
         <View style={styles.cardTitleWrap}>
           <Text style={styles.cardTitle}>{taskTitle(task)}</Text>
           <Text style={styles.meta}>
             {taskOwner(task)} · {taskProject(task)}
           </Text>
         </View>
-        <Text style={[styles.stateText, { color: stateColor(state) }]}>{state}</Text>
+        <Text style={[styles.stateText, { color: stateColor(state, theme) }]}>{state}</Text>
       </View>
       {stamp ? <Text style={styles.timestamp}>{stamp}</Text> : null}
     </View>
@@ -76,6 +80,7 @@ function TaskCard({ task }: { task: HubTask }) {
 }
 
 export function TasksScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [tasks, setTasks] = useState<HubTask[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -149,7 +154,7 @@ export function TasksScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
   summary: {

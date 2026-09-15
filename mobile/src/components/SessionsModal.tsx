@@ -1,8 +1,9 @@
+import { Text } from './ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { ApiError, fetchSessions, resumeSession, type HistoryTurn, type SessionInfo } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 /** Lists the hub's recent sessions and resumes one into the chat thread. */
 export function SessionsModal({
@@ -14,6 +15,7 @@ export function SessionsModal({
   onClose: () => void;
   onResumed: (sessionId: string, turns: HistoryTurn[]) => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config } = useServer();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -107,7 +109,7 @@ function formatDate(iso?: string): string | null {
   return d.toLocaleString();
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: '#000a', justifyContent: 'center', padding: 24 },
   sheet: {
     backgroundColor: theme.surfaceAlt,

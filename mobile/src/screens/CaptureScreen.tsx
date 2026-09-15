@@ -1,3 +1,4 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,7 +7,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -30,7 +30,7 @@ import {
   surfaceCaveat,
 } from './capturePolicy';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 /* T-0.26 — the Capture inbox on the phone.
  *
@@ -50,6 +50,7 @@ import { theme } from '../theme';
  */
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -62,6 +63,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function RecordCard({ item, onForget }: { item: CaptureRecord; onForget: (id: string) => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const when = item.created_at === null ? 'no timestamp' : new Date(item.created_at * 1000).toLocaleString();
   return (
     <View style={styles.card}>
@@ -83,6 +85,7 @@ function RecordCard({ item, onForget }: { item: CaptureRecord; onForget: (id: st
 }
 
 export function CaptureScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [status, setStatus] = useState<CaptureStatus | null>(null);
   const [records, setRecords] = useState<CaptureRecord[]>([]);
@@ -256,7 +259,7 @@ export function CaptureScreen({ onGoToSettings }: { onGoToSettings: () => void }
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 30 },
   hero: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },

@@ -1,5 +1,6 @@
+import { Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import {
   ApiError,
   decideApproval,
@@ -9,12 +10,12 @@ import {
   type ApprovalsResponse,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 import { approvalPolicy } from './approvalPolicy';
 
 type Busy = { id: number; action: ApprovalAction } | null;
 
-function riskColor(task: ApprovalTask): string {
+function riskColor(task: ApprovalTask, theme: Theme): string {
   if (task.reversible === false || (task.risk_tier ?? 0) >= 3) return theme.danger;
   if ((task.risk_tier ?? 0) >= 2) return theme.warn;
   return theme.ok;
@@ -37,6 +38,7 @@ function payloadPreview(task: ApprovalTask): string | null {
 }
 
 function CountPill({ label, value, color }: { label: string; value: number; color: string }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={[styles.pill, { borderColor: color }]}>
       <Text style={[styles.pillValue, { color }]}>{value}</Text>
@@ -46,6 +48,7 @@ function CountPill({ label, value, color }: { label: string; value: number; colo
 }
 
 function EmptyState({ onGoToSettings, missingAdmin }: { onGoToSettings: () => void; missingAdmin?: boolean }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{missingAdmin ? 'Admin token needed' : 'No hub connected'}</Text>
@@ -70,8 +73,9 @@ function ApprovalCard({
   busy: Busy;
   onDecision: (task: ApprovalTask, action: ApprovalAction) => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const policy = approvalPolicy(task);
-  const color = riskColor(task);
+  const color = riskColor(task, theme);
   const preview = policy.showPayload ? payloadPreview(task) : null;
   const active = busy?.id === task.id;
 
@@ -122,6 +126,7 @@ function ApprovalCard({
 }
 
 export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [data, setData] = useState<ApprovalsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +211,7 @@ export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
   summary: {

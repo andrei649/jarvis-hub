@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,8 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -17,9 +16,10 @@ import {
   type CameraEvent,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -32,6 +32,7 @@ function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
 }
 
 function EventCard({ event }: { event: CameraEvent }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const confidence = Math.round(event.confidence * 100);
   const occurred = new Date(event.occurred_at * 1000).toLocaleString();
   return (
@@ -52,6 +53,7 @@ function EventCard({ event }: { event: CameraEvent }) {
 }
 
 export function CameraScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [events, setEvents] = useState<CameraEvent[]>([]);
   const [enabled, setEnabled] = useState(false);
@@ -167,7 +169,7 @@ export function CameraScreen({ onGoToSettings }: { onGoToSettings: () => void })
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 30 },
   hero: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, padding: 16, marginBottom: 12 },

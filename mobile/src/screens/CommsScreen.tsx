@@ -1,3 +1,4 @@
+import { TextInput, Text } from '../components/ThemedText';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -5,8 +6,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -18,7 +17,7 @@ import {
   type ChannelInboxThread,
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
-import { theme } from '../theme';
+import { useThemeStyles, type Theme } from '../theme';
 
 function timeLabel(ts?: number): string {
   if (!ts) return '';
@@ -44,6 +43,7 @@ function messageAuthor(message: ChannelInboxMessage): string {
 }
 
 function EmptyState({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>No hub connected</Text>
@@ -64,6 +64,7 @@ function ThreadRow({
   selected: boolean;
   onPress: () => void;
 }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   return (
     <Pressable style={[styles.threadRow, selected && styles.threadRowSelected]} onPress={onPress}>
       <View style={styles.threadTop}>
@@ -83,6 +84,7 @@ function ThreadRow({
 }
 
 function MessageRow({ message }: { message: ChannelInboxMessage }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const outbound = message.direction === 'out';
   return (
     <View style={[styles.messageRow, outbound && styles.messageRowOut]}>
@@ -98,6 +100,7 @@ function MessageRow({ message }: { message: ChannelInboxMessage }) {
 }
 
 export function CommsScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+  const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [threads, setThreads] = useState<ChannelInboxThread[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -275,7 +278,7 @@ export function CommsScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
   summary: {

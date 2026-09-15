@@ -2,7 +2,7 @@
 
 Goal: the owner's existing display choices survive browser cache loss and follow
 that owner to another browser. Base: 022218f74734cb6c3a50052f47075375adeff5b7.
-Generated: 2026-09-15. State: browser implementation verified; remaining native mobile/font scope below.
+Generated: 2026-09-15. State: browser implementation verified; subsequent font and native deliveries linked below.
 Spec: frozen H135, docs/research/2026-09-07-hermes-absorption-ledger.json.
 
 Architecture: one instance-wide appearance document in the existing Settings DB;
@@ -63,13 +63,15 @@ Rollback: revert this coherent feature and bundle; the inert appearance Settings
 row can remain without affecting older clients. Root integrator owns all global
 backlog/Hermes/status/count changes, publishing and merge.
 
-## Verified scope and remaining H135 work
+## Verified scope and subsequent H135 deliveries
 
 This increment covers the browser HUD, ambient presentation and responsive phone
-layout through the shared App appearance hook. It does not add a consumer to the
-separate native mobile/ application, which retains its existing theme system, and
-did not originally introduce font overrides. The subsequent [local font preference](h135-font-preferences.md) adds five fixed local choices through the same persistence contract. This remains browser progress on H135, not
-closure of the frozen cross-client feature. Existing native desktop origin and
+layout through the shared App appearance hook. This original increment did not
+include native consumers or font overrides. Subsequent [local font preferences](h135-font-preferences.md)
+and the [native appearance consumer](../../mobile/docs/h135-native-appearance.md)
+complete the accepted cross-client persistence contract. Native reads the same
+server document on boot and foreground entry, with a connection-scoped cache
+and documented platform font fallbacks. Existing native desktop origin and
 route authority remain unchanged; H130 browser prefix hosting boundaries apply.
 
 Final evidence: 13 new API tests; 105 affected backend tests passed. All 1,247
