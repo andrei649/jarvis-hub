@@ -56,6 +56,8 @@
 
 - 2026-09-15 gallery pagination (H518 partial): bounded cursor scans reach retained items beyond the newest 200, including empty-page search continuation. The HUD separates retained/scanned/loaded counts and exports explicit selections within the existing 200-file/128 MiB limits. 34 new backend cases, five frontend cases and two real-route browser checks; native mobile and evicted records remain open. [Contract](frontend/docs/h518-gallery-pagination.md).
 
+- 2026-09-15 attachment preview lifecycle: pending fetch/body work is aborted and late object URL allocation is suppressed when a card unmounts during gallery search or navigation. Two failing regressions reproduced the leak; four new tests, independent review and the 1,266-test frontend suite pass. Existing authentication, byte limits and artifact mutations are preserved. [Evidence](frontend/docs/h12-attachment-preview-lifecycle.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted
