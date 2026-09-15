@@ -50,6 +50,8 @@
 
 - 2026-09-15 H130: the same HUD bundle now serves under a trusted reverse-proxy prefix, including routing, streams, lazy assets, PWA and linked map/mission-control pages. Full frontend 1,229/1,229 and 18 browser checks pass; 146 affected backend tests pass. Prefix collisions, keyboard navigation and guarded POST behavior were independently reviewed. Browser/prefix-stripping contract only; native wrapper requires empty prefix. [Deployment guide](frontend/docs/h130-base-path.md).
 
+- 2026-09-15 composer images (H139 partial): choose/paste/drop now makes a transient, destination-bound vision turn with explicit model provenance. Invalid, animated and excessive rasters are rejected before dispatch. 27 new backend cases, 10 frontend cases, full 1,257 frontend suite and six browser checks pass. Persistence, native agent image context, native mobile and learn seeding remain open. [Contract](frontend/docs/h139-composer-images.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

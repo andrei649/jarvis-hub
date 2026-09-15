@@ -1,3 +1,4 @@
+import {ComposerImages,useComposerImages} from './composer-images';
 /* HUD v2 · COCKPIT — conversation + cognition trace + input */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
@@ -66,7 +67,13 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
       {messages.map((m,i)=> m.role==='user'
         ? (
           <div className="msg user" key={i}>
-            <div className="bubble">{m.text}</div>
+            <div className="bubble">{m.text}{m.imageNames&&<div style={{fontSize:11,opacity:.7}}>Images: {m.imageNames.join(', ')}</div>}</div>
+          </div>
+        ) : m.role==='vision' ? (
+          <div className="msg agent" key={i}>
+            <div className="mtag"><span className="who">VISION ANALYSIS</span><span className="ts">{m.ts}</span></div>
+            <div className="bubble">{renderRich(m.text)}</div>
+            <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
           </div>
         ) : (
           <div className="msg agent" key={i}>
@@ -209,7 +216,14 @@ function Seg({ cur, opts, on }) {
 function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
-  const submit=()=>{ if(!val.trim())return; onSubmit(val.trim()); setVal(''); };
+  const draft=useComposerImages();
+  const fileInput=useRef<HTMLInputElement>(null);
+  const submit=()=>{
+    if(draft.images.length){const vision=draft.submission();if(!vision)return;
+      if(onSubmit(val.trim()||'Describe these images.',vision)===false)return;
+      draft.clear();setVal('');return;}
+    if(!val.trim())return;if(onSubmit(val.trim())===false)return;setVal('');
+  };
   const showPill = voice && (voice.active || voice.error);
   const label = voice && voice.error ? voice.error
     : voice && voice.status==='listening' ? 'listening…'
@@ -221,7 +235,8 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
     </div>
   );
   return (
-    <div style={{position:'relative'}}>
+    <div style={{position:'relative'}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
+      <ComposerImages draft={draft}/>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
           {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} motion={motion} density="compact" showLabel={false} className="vorb-inline" />}
@@ -245,7 +260,9 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
           {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:10,fontFamily:'var(--font-mono)'}}>local STT not installed — pip install faster-whisper</div>}
         </div>
       )}
+      <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" style={{display:'none'}} onChange={event=>{draft.addFiles(Array.from(event.target.files||[]));event.target.value='';}}/>
       <div className="inputbar">
+        <button className="mic" aria-label="Choose images" title="Attach images" onClick={()=>fileInput.current?.click()}>▧</button>
         <span className="pre">▸</span>
         <span className="chan">{t.channel}</span>
         <div className="field">
@@ -256,7 +273,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
           {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{opacity:cfgOpen?1:.6,fontSize:13,lineHeight:1}}>⚙</button>}
         </div>
-        <button className="transmit" onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
+        <button className="transmit" disabled={draft.images.length>0&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
     </div>
   );

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "5e3da32e023ecc75ea373ce31e4eaece3d3f26db",
-  "assessed_at": "2026-09-15T13:34:08.976015Z",
+  "base_sha": "3b42871e66bd5f88019fbd14fca2935bce9aac33",
+  "assessed_at": "2026-09-15T13:48:43Z",
   "reviews": [
     {
       "id": "H001",
@@ -885,7 +885,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "9cc14c1adad39063c2a4328b0ec393f205aaee9432ec15222ff0875503e5a572"
+          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2097,7 +2097,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2109,7 +2109,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "9cc14c1adad39063c2a4328b0ec393f205aaee9432ec15222ff0875503e5a572"
+          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -3611,7 +3611,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3729,7 +3729,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "fdebb90e7b4ef2689822777f76095b65b5b89dd64ac6f32fed05c7d0c9f53adc"
+          "sha256": "87d30f6caaf43df9f3c11b36f9aa7c64ca081e96ecd88a57231f0def362d4f74"
         },
         {
           "path": "agents/core/routers/swarm.py",
@@ -3757,7 +3757,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -3830,7 +3830,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "fdebb90e7b4ef2689822777f76095b65b5b89dd64ac6f32fed05c7d0c9f53adc"
+          "sha256": "87d30f6caaf43df9f3c11b36f9aa7c64ca081e96ecd88a57231f0def362d4f74"
         },
         {
           "path": "frontend/src/appearance.ts",
@@ -3838,7 +3838,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "3f1116852b6e7d1aba16a3a4a418d0addbe07872671ba092565c407fcd1a24bc"
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -3867,6 +3867,67 @@
         {
           "path": "frontend/docs/h135-appearance-sync.md",
           "sha256": "1a3bf74561e73ab6fb19d059ed984658340ca7d701615f0b1157b095661b0be7"
+        }
+      ]
+    },
+    {
+      "id": "H139",
+      "row_sha256": "470c26545cfe165fd6e78168c4071f6d8c5392af462069ec03c9277071e079c0",
+      "status": "partial",
+      "summary": "Shared browser composer now accepts image selection, paste and drop, with transient previews, removal and eight pending-read reservations. Authenticated composer-specific vision routes validate static PNG/JPEG/GIF/WebP bytes and bounded raster decoding before provider dispatch. A random persisted destination revision and one configuration snapshot bind explicit remote consent; stale configuration refuses dispatch. Vision replies identify the actual configured model and remain separate from ordinary agent chat. Cancellation and late-response suppression preserve one active turn; ordinary text payloads remain unchanged. Independent source review, 27 new backend cases, 10 frontend cases and desktop/mobile-browser checks pass.",
+      "remaining": "No persisted chat image artifact, native agent multimodal context, native mobile composer or ?learn seed. Vision uses a separate configured VLM turn; no live provider proof. Static images only, at most eight 4 MiB images, 8192 pixels per edge and 16 MP each before downscaling. Destination status stores inert revision metadata in the existing owner Settings DB; this does not provide per-account preferences.",
+      "evidence": [
+        {
+          "path": "agents/core/routers/composer_vision.py",
+          "sha256": "c6825208c17f048ec8aa73a28c741abaf496c23d662700e05a63f4f7a76f8a43"
+        },
+        {
+          "path": "agents/core/llm/vlm.py",
+          "sha256": "8e15678d5f604f811425b47f7edf99394f9834b184a2faffee68595756eec352"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "87d30f6caaf43df9f3c11b36f9aa7c64ca081e96ecd88a57231f0def362d4f74"
+        },
+        {
+          "path": "frontend/src/composer-images.tsx",
+          "sha256": "020b9d1da510ee12fe627acb9da9d4e6562659ddb68e12b0b486236122b7e19d"
+        },
+        {
+          "path": "frontend/src/vision-turn.ts",
+          "sha256": "6cf8cb2150c93f1b25e826552caa29c856ae9e8d12693606a47ed5a29a619203"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "2ddcccb80e84ad0775a522e0b2b798d22a4e30c5a00fa104548bd17b40c42833"
+        },
+        {
+          "path": "frontend/src/cockpit.tsx",
+          "sha256": "8d845e8dd3e1d2b209b4f331c855bd23476cc04fc7712588fa902215a5cd8483"
+        },
+        {
+          "path": "frontend/src/api/schema.gen.ts",
+          "sha256": "cd619e525fe1e598ba07d70028c780d3a2133b14ba8babf7f800236787bc2859"
+        },
+        {
+          "path": "tests/test_composer_vision.py",
+          "sha256": "260c23da46afd181cceebfeda029d7fd90ec8247960c820c73eff6f0460567c4"
+        },
+        {
+          "path": "frontend/src/test/composer-images.test.tsx",
+          "sha256": "ff21fd871a1a849cd9196a01f2aae62b016777bdfdc471cc07bdd827721bd41e"
+        },
+        {
+          "path": "frontend/src/test/composer-vision-turn.test.tsx",
+          "sha256": "11ec55cb8180c4de9becc8049d62c8a47bf189b79b48400967e67b78454e27f7"
+        },
+        {
+          "path": "frontend/e2e/composer-images.spec.ts",
+          "sha256": "719fdb878a528d9fea73aae4c6987d8379ee780c162c38ed54d2edab2040062e"
+        },
+        {
+          "path": "frontend/docs/h139-composer-images.md",
+          "sha256": "abf416fd5b0db9e078f18baadb65b4ad42aac57bf6c3cd0a60044641fef9d085"
         }
       ]
     }
