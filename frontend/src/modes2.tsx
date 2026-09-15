@@ -1,3 +1,4 @@
+import { appUrl } from './base-path';
 import React, { useState as uS2, useEffect as uE2 } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
@@ -47,7 +48,7 @@ function AutonomyMode({ t }){
     try {
       const h: Record<string, string> = { 'Content-Type': 'application/json' };
       const tk = getToken(); if (tk) h['X-User-Token'] = tk;
-      const res = await fetch('/tts', { method: 'POST', headers: h, body: JSON.stringify({ text }) });
+      const res = await fetch(appUrl('/tts'), { method: 'POST', headers: h, body: JSON.stringify({ text }) });
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);

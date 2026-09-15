@@ -168,7 +168,7 @@ $("tokIn").addEventListener("change",()=>{
 /* ── polling ───────────────────────────────────────────────────────────── */
 async function poll(){
   try{
-    const r=await fetch("/api/swarm/summary",{headers:H(false)});
+    const r=await fetch(window.nervaAppUrl("/api/swarm/summary"),{headers:H(false)});
     if(!r.ok)throw new Error(String(r.status));
     state.sum=await r.json();
     state.fails=0;
@@ -179,7 +179,7 @@ async function poll(){
 async function pollAdmin(){
   if(state.adminOk===false)return;             // muted until the token changes
   try{
-    const r=await fetch("/autonomy/approvals",{headers:H(false)});
+    const r=await fetch(window.nervaAppUrl("/autonomy/approvals"),{headers:H(false)});
     if(r.status===401||r.status===403){state.adminOk=false;state.approvals=null;}
     else if(r.ok){state.adminOk=true;state.approvals=await r.json();}
   }catch(e){/* transient — keep last state */}
@@ -200,7 +200,7 @@ async function act(url,body,label){
   if(state.busy)return;
   state.busy=true;
   try{
-    const r=await fetch(url,{method:"POST",headers:H(true),body:body?JSON.stringify(body):"{}"});
+    const r=await fetch(window.nervaAppUrl(url),{method:"POST",headers:H(true),body:body?JSON.stringify(body):"{}"});
     if(r.ok){flash(label+" ✓");}
     else if(r.status===401||r.status===403){flash(label+" ✗ unauthorized — set admin token",true);}
     else{flash(label+" ✗ ("+r.status+")",true);}
@@ -352,7 +352,7 @@ function a2aBlock(){
 }
 async function a2aList(){
   try{
-    const r=await fetch("/api/a2a/inbox?status=pending",{headers:H(false)});
+    const r=await fetch(window.nervaAppUrl("/api/a2a/inbox?status=pending"),{headers:H(false)});
     if(!r.ok){
       flash("a2a inbox ✗ ("+r.status+(r.status===401||r.status===403?" — set admin token":"")+")",true);
       return;

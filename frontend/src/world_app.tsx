@@ -1,3 +1,4 @@
+import { logicalPath } from './base-path';
 import React, { useEffect, useCallback, lazy } from 'react';
 import App from './app';
 import { V2 } from './data';
@@ -33,7 +34,7 @@ function WorldAwareApp() {
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
       if (e.key.toLowerCase() === 'w') setOpen(true);
-      if (e.key === 'Escape' && window.location.pathname === '/v2/world') setOpen(false);
+      if (e.key === 'Escape' && logicalPath(window.location.pathname) === '/v2/world') setOpen(false);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

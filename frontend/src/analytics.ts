@@ -1,3 +1,4 @@
+import { appUrl } from './base-path';
 /* HUD v2 · first-party page-view beacon (H22).
  *
  * Privacy-first, in the lineage of the local analytics store (agents/core/
@@ -54,13 +55,13 @@ function send(body: Record<string, unknown>): boolean {
   try {
     if (typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([payload], { type: 'application/json' });
-      if (navigator.sendBeacon(ENDPOINT, blob)) return true;
+      if (navigator.sendBeacon(appUrl(ENDPOINT), blob)) return true;
       // sendBeacon returned false (queue full) — fall through to fetch.
     }
   } catch { /* fall through to fetch */ }
   try {
     if (typeof fetch === 'function') {
-      fetch(ENDPOINT, {
+      fetch(appUrl(ENDPOINT), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,

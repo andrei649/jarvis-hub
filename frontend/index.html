@@ -21,7 +21,7 @@
        without a service worker, so a refusal must never block boot. */
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw-v2.js', { scope: '/' }).catch(function () {});
+        navigator.serviceWorker.register((window.__NERVA_BASE_PATH__ || '') + '/sw-v2.js', { scope: (window.__NERVA_BASE_PATH__ || '') + '/' }).catch(function () {});
       });
     }
   </script>

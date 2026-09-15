@@ -34,7 +34,7 @@ import { test, expect } from '@playwright/test';
 // The one line the config's comment asked for. File-scoped: the block stays global.
 test.use({ serviceWorkers: 'allow' });
 
-const CACHE = 'nerva-hud-v2-1';   // must match sw-v2.js; a rename here is the point
+const CACHE = 'nerva-hud-v2:%2F:2';   // must match sw-v2.js; a rename here is the point
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -89,8 +89,8 @@ test('the worker installs, activates, and controls the HUD', async ({ page }) =>
   expect(state.active).toBe('activated');
   expect(state.controlled).toBe(true);
 
-  // The worker's activate handler deletes every cache key that is not the current
-  // one, so a stale build's cache cannot survive an upgrade. Assert the survivor.
+  // This fresh browser context has only this deployment's current cache.
+  // Prefix and unrelated-cache preservation are covered in base-path.spec.ts.
   const names = await page.evaluate(() => caches.keys());
   expect(names, `unexpected cache names: ${names.join(', ')}`).toEqual([CACHE]);
 });

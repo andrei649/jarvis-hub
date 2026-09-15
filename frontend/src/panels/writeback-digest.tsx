@@ -1,3 +1,4 @@
+import { internalLink } from '../base-path';
 /* WRITEBACK & DIGEST — two shipped, user-tier routes that no client ever called.
 
    Handlers read in full before writing a line of this:
@@ -386,7 +387,7 @@ export function WritebackDigestPanel() {
           {items.map((it: any, i: number) => (
             <Row key={(it && it.link) || (it && it.title) || i}>
               {it && it.link
-                ? <a href={String(it.link)} target="_blank" rel="noreferrer noopener" style={{ ...mono, color: 'var(--accent-light)' }}>{String(it.title || it.link)}</a>
+                ? <a href={internalLink(String(it.link))} target="_blank" rel="noreferrer noopener" style={{ ...mono, color: 'var(--accent-light)' }}>{String(it.title || it.link)}</a>
                 : <span style={{ ...mono, color: 'var(--accent-light)' }}>{String((it && it.title) || '—')}</span>}
               <Right>
                 {it && it.source && <Tag>{String(it.source)}</Tag>}

@@ -1,3 +1,4 @@
+import { appUrl, logicalPath } from './base-path';
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
    honest placeholder and get ported from the prototype in the next phase. */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy } from 'react';
@@ -92,7 +93,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const setMode = useCallback((next: string) => navigateHud('/v2/' + next), []);
   const consoleOpen = route.mode === 'console';
   const setConsoleOpen = useCallback((next: boolean | ((current: boolean) => boolean)) => {
-    const current = parseHudRoute(window.location.pathname).mode === 'console';
+    const current = parseHudRoute(logicalPath(window.location.pathname) ?? '').mode === 'console';
     const open = typeof next === 'function' ? next(current) : next;
     if (open) navigateHud('/v2/console');
     else closeHudOverlay();
@@ -240,7 +241,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   useEffect(() => {
     if (demo || typeof EventSource === 'undefined') return undefined;
     let es;
-    try { es = new EventSource('/api/cognition/stream'); } catch { return undefined; }
+    try { es = new EventSource(appUrl('/api/cognition/stream')); } catch { return undefined; }
     es.onmessage = (ev) => {
       try {
         const f = JSON.parse(ev.data);

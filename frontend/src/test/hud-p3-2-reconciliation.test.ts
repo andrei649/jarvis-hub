@@ -31,7 +31,7 @@ describe('O26-P3.2 HUD remaining-work reconciliation', () => {
   it('pins the source wiring that makes those doc closures true', () => {
     expect(cockpit).toContain("playTts(text, lang || 'en')");
     expect(cockpit).toContain('voice settings');
-    expect(app).toContain("new EventSource('/api/cognition/stream')");
+    expect(app).toContain("new EventSource(appUrl('/api/cognition/stream'))");
     expect(shell).toContain('strict_local');
     expect(shell).toContain("tr.mic === 'off'");
 

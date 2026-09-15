@@ -20,8 +20,10 @@
  * inverted — only the two provably-safe classes are cached, and everything
  * else, including every /api/ path, goes straight to the network.
  */
-const CACHE = 'nerva-hud-v2-1';
-const SHELL = '/';
+const SHELL = new URL(self.registration.scope).pathname;
+const BASE = SHELL.replace(/\/$/, '');
+const NAMESPACE = 'nerva-hud-v2:' + encodeURIComponent(SHELL) + ':';
+const CACHE = NAMESPACE + '2';
 
 self.addEventListener('install', (event) => {
   // Cache only the app shell — no asset list to go stale.
@@ -36,7 +38,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(NAMESPACE) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -44,7 +46,7 @@ self.addEventListener('activate', (event) => {
 function isImmutableAsset(url) {
   // Vite emits content-hashed files under /v2/assets — safe to serve from cache
   // forever, because a change produces a different filename.
-  return url.pathname.startsWith('/v2/assets/');
+  return url.pathname.startsWith(BASE + '/v2/assets/');
 }
 
 self.addEventListener('fetch', (event) => {
@@ -56,7 +58,7 @@ self.addEventListener('fetch', (event) => {
 
   if (isImmutableAsset(url)) {
     event.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      caches.open(CACHE).then((c) => c.match(req)).then((hit) => hit || fetch(req).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
@@ -67,14 +69,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (req.mode === 'navigate') {
+  if (req.mode === 'navigate' && (url.pathname === SHELL || url.pathname === BASE + '/v2' || url.pathname.startsWith(BASE + '/v2/'))) {
     // Network-first so a running server always wins; the cached shell is only
     // the offline fallback (the HUD then shows its own honest offline states).
     // Only a navigation to the shell's own path may refresh the cached shell:
     // writing every successful navigation under the SHELL key would let a visit
     // to /docs or /admin overwrite it, so the offline fallback would serve that
     // page's HTML instead of the HUD.
-    const refreshesShell = url.pathname === SHELL || url.pathname === '/v2' || url.pathname === '/v2/';
+    const refreshesShell = url.pathname === SHELL || url.pathname === BASE + '/v2' || url.pathname === BASE + '/v2/';
     event.respondWith(
       fetch(req).then((res) => {
         if (res && res.ok && refreshesShell) {
@@ -82,7 +84,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE).then((c) => c.put(SHELL, copy)).catch(() => {});
         }
         return res;
-      }).catch(() => caches.match(SHELL).then((hit) => hit || Response.error())),
+      }).catch(() => caches.open(CACHE).then((c) => c.match(SHELL)).then((hit) => hit || Response.error())),
     );
     return;
   }

@@ -1,3 +1,4 @@
+import { appUrl } from '../base-path';
 /* H5.16 · client decoder for the sentence-level streaming TTS endpoint (`POST /tts/stream`).
 
    The server frames one sentence per record, in order:
@@ -123,7 +124,7 @@ export async function streamTts(
   if (opts.cancelled?.()) return 'cancelled';
   let res: Response;
   try {
-    res = await fetch('/tts/stream', {
+    res = await fetch(appUrl('/tts/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
       body: JSON.stringify({ text, lang }),

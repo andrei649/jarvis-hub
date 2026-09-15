@@ -126,7 +126,7 @@ function drawTopology(){
     const badge = el("text", {class:"sub", id:"badge-"+n.id, x:n.pos[0]+n.size[0]/2, y:n.pos[1]+56,
                               "text-anchor":"middle"}, g);
     badge.textContent = "…";
-    if (n.href) g.addEventListener("click", ()=>{ window.open(n.href, "_blank", "noopener"); });
+    if (n.href) g.addEventListener("click", ()=>{ window.open(n.href.startsWith("/") && !n.href.startsWith("//") ? window.nervaAppUrl(n.href) : n.href, "_blank", "noopener"); });
   }
 }
 function headline(stats){
@@ -165,7 +165,7 @@ function paint(feed){
 async function tick(){
   const conn = document.getElementById("conn"), meta = document.getElementById("meta");
   try{
-    const r = await fetch("/api/system-map", {cache:"no-store"});
+    const r = await fetch(window.nervaAppUrl("/api/system-map"), {cache:"no-store"});
     if (!r.ok) throw new Error("HTTP "+r.status);
     const feed = await r.json();
     if (!topo){ topo = feed.topology; drawTopology(); }

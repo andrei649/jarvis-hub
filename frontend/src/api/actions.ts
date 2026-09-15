@@ -1,3 +1,4 @@
+import { appUrl } from '../base-path';
 /* HUD v2 · interactive-control bindings — the write side of the capability modes.
    Each helper hits a REAL endpoint verified against agents/web.py; the mode files
    call these so a button is either live (posts to the backend) or rendered DISABLED
@@ -169,7 +170,7 @@ export async function resumeEstop(): Promise<EstopResumeResult> {
 /* ── Voice · per-message TTS replay (cockpit.tsx) ────────────────
    POST /tts {text,lang} → audio blob; play it. */
 export async function playTts(text: string, lang = 'en'): Promise<void> {
-  const res = await fetch('/tts', {
+  const res = await fetch(appUrl('/tts'), {
     method: 'POST',
     headers: ttsHeaders(),
     body: JSON.stringify({ text, lang }),

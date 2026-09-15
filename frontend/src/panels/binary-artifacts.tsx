@@ -1,3 +1,4 @@
+import { appUrl } from '../base-path';
 import React, { useEffect, useState } from 'react';
 import { getToken } from '../api/client';
 
@@ -5,7 +6,7 @@ type BinaryItem = { id: string; mime: string; size: number; agent: string; pinne
 const LIMIT = 16 * 1024 * 1024;
 async function request(path: string, init: RequestInit = {}) {
   const token = getToken();
-  const response = await fetch(path, { ...init, headers: token ? { 'X-User-Token': token } : {},
+  const response = await fetch(appUrl(path), { ...init, headers: token ? { 'X-User-Token': token } : {},
     credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
   if (!response.ok) throw new Error(`Attachment request failed (${response.status})`);
   return response;
@@ -85,7 +86,7 @@ export function BinaryArtifacts() {
 
 export async function downloadMediaBundle(ids: string[]) {
   const token = getToken();
-  const response = await fetch('/api/media/export', {method:'POST', credentials:'same-origin', redirect:'error', cache:'no-store', headers:{'Content-Type':'application/json', ...(token ? {'X-User-Token':token} : {})}, body:JSON.stringify({ids})});
+  const response = await fetch(appUrl('/api/media/export'), {method:'POST', credentials:'same-origin', redirect:'error', cache:'no-store', headers:{'Content-Type':'application/json', ...(token ? {'X-User-Token':token} : {})}, body:JSON.stringify({ids})});
   if (!response.ok) throw new Error(`Export failed (${response.status})`);
   const blob = await response.blob();
   if (blob.size > 129 * 1024 * 1024 || blob.type !== 'application/zip') throw new Error('Invalid export response');

@@ -23,12 +23,13 @@ import json
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
+from agents.core.web_base_path import render_ui_html
 
 router = APIRouter(tags=["swarm"])
 
@@ -330,11 +331,11 @@ def build_swarm_summary(orch) -> dict:
 
 
 @router.get("/mission-control", dependencies=[Depends(user_guard)])
-async def mission_control_page():
+async def mission_control_page(request: Request):
     """The NERVA Mission Control page (swarm cockpit + HITL controls)."""
     if not _MC_HTML.is_file():
         return JSONResponse({"error": "mission_control.html not found"}, status_code=404)
-    return FileResponse(str(_MC_HTML), media_type="text/html")
+    return HTMLResponse(render_ui_html(_MC_HTML.read_text(encoding="utf-8"), request.app.root_path), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/swarm/summary", dependencies=[Depends(user_guard)])
