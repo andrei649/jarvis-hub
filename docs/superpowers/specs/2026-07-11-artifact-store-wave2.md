@@ -3,7 +3,7 @@
 > Design note for the **next** reviewed slice of the visual-artifact lane. Wave 1
 > (H12.18 frontend + H18.20 mobile) shipped the **governed text Canvas** — no binary
 > storage. This spec scopes the binary follow-up so it can be built as one reviewed,
-> security-gated PR. **Not implemented yet** — this is the plan, not code.
+> security-gated PR. **Implemented 2026-09-15** in the media delivery branch; this document records the original contract. SQLite metadata replaces the proposed cached JsonStore to serialize quotas across workers. PNG support uses the existing bounded static PNG validator. Native mobile remains a follow-up.
 
 ## Why this is a separate slice
 

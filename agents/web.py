@@ -1344,6 +1344,8 @@ app.include_router(_pairing_router)
 app.include_router(_quickbar_router)
 app.include_router(_commands_router)
 app.include_router(_canvas_router)
+from agents.core.routers.artifact_store import router as _artifact_store_router
+app.include_router(_artifact_store_router)
 app.include_router(_browser_router)
 app.include_router(_capture_router)
 app.include_router(_rooms_router)

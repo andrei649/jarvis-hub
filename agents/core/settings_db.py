@@ -317,6 +317,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # retention — data lifecycle (H23.10). A daily sweep prunes data older than the
     # TTL. OFF by default so nothing is ever surprise-deleted; a TTL of 0 means keep
     # forever even when enabled.
+    dict(category="retention", key="artifact_ttl_days", value=0, label="Delete unpinned binary attachments older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
     dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete conversation transcripts older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
@@ -469,6 +470,8 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "artifact_ttl_days" and (type(value) is not int or not 0 <= value <= 36500):
+        return f"{key}: expected an integer between 0 and 36500 days"
     if kind == "toggle":
         if not isinstance(value, bool):
             return f"{key}: expected a boolean (toggle)"

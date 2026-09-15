@@ -202,3 +202,7 @@ note *why* if you add one.
    Task cell empty (it's now visible in this ledger, not lost).
 
 Keeping this list honest is task **H18.10** — the always-open umbrella in ORIZONT 18.
+
+2026-09-15 — H12.26 binary attachments: desktop Artifacts supports opt-in upload,
+validated authenticated delivery, pin/delete. Native mobile attachment controls
+remain a parity gap; existing text Canvas is unchanged.

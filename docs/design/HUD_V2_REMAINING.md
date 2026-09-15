@@ -271,3 +271,7 @@ this extension-specific UI gap. Native mobile inspection also remains pending in
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
 coverage.*
+
+2026-09-15 — H12.26: Artifacts now includes default-off binary upload, authenticated
+preview/download, pin/delete and honest errors. Supported magic-sniffed image,
+audio, video and PDF only; active formats and office documents remain refused.
