@@ -25,14 +25,16 @@ Design constraints (H22.5):
     (`JARVIS_VRAM_RESERVE_MB`, per-model size hints). Refine the size hints after
     measuring on the real card.
 
-All public state mutation is guarded by an asyncio lock so concurrent
-`ensure_resident()` / `using()` calls can't race the resident set.
+Each public state mutation is guarded by an asyncio lock. The separate
+`ensure_resident()` and `using()` calls are not an atomic reservation. Confirmed
+entries represent controller acknowledgments, not measured hardware residency.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import Callable, Optional, Protocol
 
 logger = logging.getLogger("jarvis.llm.model_manager")
@@ -52,16 +54,25 @@ def _manager_enabled() -> bool:
     return env_flag("JARVIS_MODEL_MANAGER")
 
 
+@dataclass(frozen=True)
+class ControllerAck:
+    """Exact controller acknowledgment, not a hardware residency measurement."""
+
+    action: str
+    model_id: str
+
+
 class ModelController(Protocol):
     """Minimal load/unload surface the manager drives. Async, best-effort.
 
     Implementations must never need a real GPU to be *callable* — the default
     adapter delegates to LMStudioController, but tests inject a fake. Return
-    value is ignored by the manager; raising is tolerated (logged, swallowed).
+    value must be a matching ControllerAck; other results are unconfirmed.
+    Raising is tolerated (logged, swallowed); cancellation propagates.
     """
 
-    async def load(self, model_id: str) -> object: ...
-    async def unload(self, model_id: str) -> object: ...
+    async def load(self, model_id: str) -> ControllerAck | None: ...
+    async def unload(self, model_id: str) -> ControllerAck | None: ...
 
 
 class LMStudioControllerAdapter:
@@ -69,7 +80,7 @@ class LMStudioControllerAdapter:
 
     `load` → `controller.load_model(model_id)`; `unload` →
     `controller.unload_model(model_id)`. The controller already carries its own
-    kill-switch and never raises, so this is a thin shim. For an Ollama backend,
+    kill-switch. Only a successful exact-identity acknowledgment is accepted. For an Ollama backend,
     pass an adapter whose `unload` issues a `keep_alive: 0` request instead.
     """
 
@@ -78,10 +89,21 @@ class LMStudioControllerAdapter:
         self._agent = agent
 
     async def load(self, model_id: str):
-        return await self._controller.load_model(model_id, agent=self._agent)
+        return self._ack(await self._controller.load_model(model_id, agent=self._agent), "load", model_id)
 
     async def unload(self, model_id: str):
-        return await self._controller.unload_model(model_id, agent=self._agent)
+        return self._ack(await self._controller.unload_model(model_id, agent=self._agent), "unload", model_id)
+
+    @staticmethod
+    def _ack(result, action: str, model_id: str) -> ControllerAck | None:
+        # Partial-name resolution must not be mistaken for exact model identity.
+        if (isinstance(result, dict) and result.get("status") == "ok"
+                and result.get("kind") == "lmstudio_control"
+                and result.get("action") == f"{action}_model"
+                and result.get("model") == model_id
+                and type(result.get("exit_code")) is int and result["exit_code"] == 0):
+            return ControllerAck(action, model_id)
+        return None
 
 
 class OllamaControllerAdapter:
@@ -118,7 +140,7 @@ class OllamaControllerAdapter:
 
     async def _post(self, model_id: str, *, keep_alive: int):
         try:
-            return await self._client.post(
+            response = await self._client.post(
                 self._generate_path,
                 json={
                     "model": model_id,
@@ -127,6 +149,16 @@ class OllamaControllerAdapter:
                     "stream": False,
                 },
             )
+            response.raise_for_status()
+            body = response.json()
+            action = "unload" if keep_alive == 0 else "load"
+            if (isinstance(body, dict) and "error" not in body
+                    and body.get("model") == model_id and body.get("done") is True
+                    and body.get("response") == ""
+                    and (body.get("done_reason") == "unload" if action == "unload"
+                         else ("done_reason" not in body or body["done_reason"] == "load"))):
+                return ControllerAck(action, model_id)
+            return None
         except Exception:
             logger.warning(
                 "ollama_control: keep_alive=%d request for %s failed",
@@ -200,6 +232,7 @@ class ModelManager:
         self._enabled = _manager_enabled() if enabled is None else bool(enabled)
         self._clock = clock
         self._residents: dict[str, _Resident] = {}
+        self._active_refs: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
     # ── introspection ───────────────────────────────────────────────
@@ -261,7 +294,8 @@ class ModelManager:
                             self.vram_total_mb - self.vram_reserve_mb,
                         )
                         break
-                    await self._evict(victim)
+                    if not await self._evict(victim):
+                        return
 
                 await self._load(model_id, incoming, now)
         except Exception:
@@ -283,27 +317,26 @@ class ModelManager:
         if not self._enabled or not model_id:
             return
         async with self._lock:
+            self._active_refs[model_id] = self._active_refs.get(model_id, 0) + 1
             resident = self._residents.get(model_id)
-            if resident is None:
-                # Pin it even if we never explicitly loaded it (the backend may
-                # have JIT-loaded it): create a placeholder so it's protected and
-                # tracked for LRU once released.
-                resident = _Resident(model_id, self._size_of(model_id), self._clock())
-                self._residents[model_id] = resident
-            resident.refs += 1
-            resident.last_used = self._clock()
+            if resident is not None:
+                resident.refs = self._active_refs[model_id]
+                resident.last_used = self._clock()
 
     async def release(self, model_id: str) -> None:
-        """Decrement the in-flight ref-count for `model_id` (no-op when off)."""
+        """Release active protection without manufacturing confirmed residency."""
         if not self._enabled or not model_id:
             return
         async with self._lock:
+            refs = max(0, self._active_refs.get(model_id, 0) - 1)
+            if refs:
+                self._active_refs[model_id] = refs
+            else:
+                self._active_refs.pop(model_id, None)
             resident = self._residents.get(model_id)
-            if resident is None:
-                return
-            if resident.refs > 0:
-                resident.refs -= 1
-            resident.last_used = self._clock()
+            if resident is not None:
+                resident.refs = refs
+                resident.last_used = self._clock()
 
     # ── helpers ─────────────────────────────────────────────────────
     def _pick_lru_evictable(self) -> Optional[_Resident]:
@@ -313,21 +346,28 @@ class ModelManager:
             return None
         return min(candidates, key=lambda r: r.last_used)
 
-    async def _evict(self, resident: _Resident) -> None:
-        """Drop a resident from tracking and ask the controller to unload it."""
+    async def _evict(self, resident: _Resident) -> bool:
+        """Retain accounting unless the exact unload is acknowledged."""
+        if self._controller is None:
+            return False
+        ack = await self._controller.unload(resident.model_id)
+        if not isinstance(ack, ControllerAck) or ack != ControllerAck("unload", resident.model_id):
+            logger.warning("model_manager: unload unconfirmed for %s", resident.model_id)
+            return False
         self._residents.pop(resident.model_id, None)
-        logger.info("model_manager: evicting LRU model %s (%dMB)", resident.model_id, resident.size_mb)
-        if self._controller is not None:
-            await self._controller.unload(resident.model_id)
+        return True
 
     async def _load(self, model_id: str, size_mb: int, now: float) -> None:
-        """Ask the controller to load a model and start tracking it as resident."""
-        logger.info("model_manager: loading model %s (%dMB)", model_id, size_mb)
-        if self._controller is not None:
-            await self._controller.load(model_id)
-        # Track as resident even if the controller is a no-op stub, so the LRU
-        # bookkeeping stays consistent with what the manager believes is hot.
-        self._residents[model_id] = _Resident(model_id, size_mb, now)
+        """Publish confirmed tracking only after an exact load acknowledgment."""
+        if self._controller is None:
+            return
+        ack = await self._controller.load(model_id)
+        if not isinstance(ack, ControllerAck) or ack != ControllerAck("load", model_id):
+            logger.warning("model_manager: load unconfirmed for %s", model_id)
+            return
+        resident = _Resident(model_id, size_mb, now)
+        resident.refs = self._active_refs.get(model_id, 0)
+        self._residents[model_id] = resident
 
 
 class _ResidencyRef:
