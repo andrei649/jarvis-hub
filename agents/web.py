@@ -798,10 +798,10 @@ def _sys_info() -> dict:
         vm = psutil.virtual_memory()
         base["ram_used"] = round(vm.used / 1e9, 1)
         base["ram_total"] = round(vm.total / 1e9, 1)
-    # GPU — the real card name + VRAM via nvidia-smi; an honest "none" when there is no
-    # NVIDIA GPU (binary absent / non-zero exit), never a fabricated card. A present-but-
-    # erroring probe leaves the honest "unknown" default. The probe itself now lives in
-    # core/hardware.py (DRA-44) so there is ONE nvidia-smi call site; `force=True` keeps
+    # GPU — use the shared NVIDIA/Apple/AMD probe; optional used/load measurements
+    # may be unavailable even when total memory is known. Keep each field independent
+    # so an unavailable measurement cannot discard the other probed values.
+    # The probe lives in core/hardware.py (DRA-44); `force=True` keeps
     # this screen's used/load numbers live (and keeps the shutil.which monkeypatch in
     # tests/test_sys_info_honest.py order-independent). hardware.py reports MB; this
     # readiness screen has always reported GB.
@@ -810,9 +810,13 @@ def _sys_info() -> dict:
         gpu = hardware.detect_gpu(force=True)
         base["gpu"] = gpu.get("name") or "unknown"
         if gpu.get("measured"):
-            base["vram_used"] = int(gpu["vram_used_mb"]) // 1024
-            base["vram_total"] = int(gpu["vram_total_mb"]) // 1024
-            base["gpu_load"] = int(gpu["load_pct"])
+            for target, source, divisor in (
+                ("vram_used", "vram_used_mb", 1024),
+                ("vram_total", "vram_total_mb", 1024),
+                ("gpu_load", "load_pct", 1),
+            ):
+                with contextlib.suppress(TypeError, ValueError, OverflowError):
+                    base[target] = int(gpu.get(source)) // divisor
     return base
 
 
