@@ -28,6 +28,8 @@
 
 - 2026-09-15 host metrics: preserve each available GPU measurement when another probe returns a missing or invalid value. Fourteen metric regressions and the 100-test hardware/lifecycle/route suite pass; Linux CI collected 10,714 backend tests. This fixes host reporting and does not close Hermes parity rows.
 
+- 2026-09-15 query tools: backlog and ledger commands now handle buffered output when a downstream pipe closes, preserving exit codes and closing the temporary descriptor. Forty query-tool and Windows encoding checks pass; no Hermes parity row is closed by this robustness fix.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

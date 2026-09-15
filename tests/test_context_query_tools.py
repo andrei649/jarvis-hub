@@ -201,6 +201,46 @@ def test_a_closed_pipe_is_a_normal_end_not_a_crash(script: str, args: list[str])
     assert "Exception ignored" not in stderr
 
 
+@pytest.mark.parametrize("tool", [backlog_tool, ledger_tool])
+@pytest.mark.parametrize("failure_stage", [None, "write", "flush"])
+@pytest.mark.parametrize("exit_status", [0, 2])
+def test_query_flush_is_inside_broken_pipe_handling(
+    monkeypatch, tool, failure_stage, exit_status,
+):
+    flushes = []
+    redirects = []
+
+    class Output:
+        def flush(self):
+            flushes.append(True)
+            if failure_stage == "flush":
+                raise BrokenPipeError("reader closed after buffered output")
+
+        def fileno(self):
+            return 198
+
+    def command(argv):
+        assert argv == ["fixture"]
+        if failure_stage == "write":
+            raise BrokenPipeError("reader closed during output")
+        return exit_status
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tool, "_run", command)
+        patch.setattr(sys, "stdout", Output())
+        patch.setattr(os, "dup2", lambda source, target: redirects.append((source, target)))
+        result = tool.main(["fixture"])
+
+    assert result == (0 if failure_stage else exit_status)
+    assert len(flushes) == (0 if failure_stage == "write" else 1)
+    if failure_stage:
+        assert len(redirects) == 1 and redirects[0][1] == 198
+        with pytest.raises(OSError):
+            os.fstat(redirects[0][0])
+    else:
+        assert redirects == []
+
+
 @pytest.mark.parametrize("script,command", [("backlog.py", "sections"), ("ledger.py", "list")])
 @pytest.mark.parametrize("missing", [False, True])
 def test_redirected_queries_preserve_unicode_with_a_windows_legacy_encoding(tmp_path, script, command, missing):
