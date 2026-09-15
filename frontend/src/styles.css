@@ -623,6 +623,10 @@ input { font-family: inherit; }
   .rail .rl { display: none; }                    /* icon-only rail */
 }
 @media (max-width: 760px) {
+  /* Keep fixed route controls and overlays inside the touch viewport even when
+     a desktop panel has a wider intrinsic size. Body overflow alone does not
+     prevent mobile browsers from expanding the layout viewport around it. */
+  .hud-root { overflow: hidden; }
   .topbar { grid-template-columns: minmax(0,1fr) auto !important; }
   .clock { display: none; }
 }
@@ -824,3 +828,6 @@ input { font-family: inherit; }
 .job-create-dialog::backdrop { background: rgba(0, 0, 0, .72); }
 .job-create-dialog label { display: grid; gap: 6px; }
 .job-create-dialog label > input, .job-create-dialog label > select { width: 100%; box-sizing: border-box; }
+
+/* Bookmark links remain readable on the console's dark background. */
+.console-link { color: var(--accent-light); text-underline-offset: 3px; padding: 6px 0; }

@@ -6,11 +6,10 @@
    as disabled rather than blank, (c) that a module reporting available:false renders an
    explicit "unavailable" instead of a silent 0, and (d) that the panel is reachable from
    the Observe section. fetch is mocked (like pending-skills-panel.test.tsx). */
+import { CONSOLE_PANELS } from '../console-routes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { CognitionPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -101,9 +100,7 @@ describe('CognitionPanel — the H21 subsystem is readable from the Console', ()
   });
 
   it('is registered in the Observe section so the Console can reach it', () => {
-    const src = readFileSync(join(process.cwd(), 'src', 'gap.tsx'), 'utf8');
-    const observe = src.match(/\['Observe', \[([^\]]*)\]\]/);
-    expect(observe).toBeTruthy();
-    expect(observe[1]).toContain('CognitionPanel');
+    const observe = CONSOLE_PANELS.filter(panel => panel.group === 'Observe').map(panel => panel.component);
+    expect(observe).toContain('CognitionPanel');
   });
 });

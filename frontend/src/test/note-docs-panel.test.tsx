@@ -9,11 +9,10 @@
      which is the degenerate write-only surface the store's adoption had to avoid;
    · a refusal is rendered — apiPost/apiPatch/apiDelete throw on 4xx, so a control without
      an onErr reads as a silent success (the bug class already found twice in this repo). */
+import { CONSOLE_PANELS } from '../console-routes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { NoteDocsPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -165,10 +164,8 @@ describe('NoteDocsPanel — the block store is reachable', () => {
   });
 
   it('is registered in the Memory section, beside the free-text NOTES card', () => {
-    const src = readFileSync(join(process.cwd(), 'src', 'gap.tsx'), 'utf8');
-    const memory = src.match(/\['Memory', \[([^\]]*)\]\]/);
-    expect(memory).toBeTruthy();
-    expect(memory[1]).toContain('NoteDocsPanel');
-    expect(memory[1]).toContain('NotesPanel');   // the sibling it belongs beside
+    const memory = CONSOLE_PANELS.filter(panel => panel.group === 'Memory').map(panel => panel.component);
+    expect(memory).toContain('NoteDocsPanel');
+    expect(memory).toContain('NotesPanel');   // the sibling it belongs beside
   });
 });

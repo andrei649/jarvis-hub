@@ -2,7 +2,10 @@
    Console overlay (mirrors v1 tools.js). Each panel fetches its real endpoint and
    degrades to an offline/empty state — never blocks. Admin-guarded calls work on
    localhost; on a network they surface the 401 via the client's token prompt. */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { FIRST_RUN_DISMISS_KEY } from './onboarding-state';
+import { CONSOLE_PANELS } from './console-routes';
+import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
@@ -4688,13 +4691,7 @@ export function CommandCenterPanel() {
    the Command Center the LANDING surface on first run — shown whenever the install
    isn't usable yet (no reachable model, or the wizard incomplete) and not yet
    dismissed. Dismiss persists; a data error never blocks the cockpit. */
-export const FIRST_RUN_DISMISS_KEY = 'hud.firstrun.dismissed';
-
-export function shouldShowFirstRun(cc: any): boolean {
-  if (!cc || !cc.model || !cc.wizard) return false;
-  return cc.model.ready !== true || cc.wizard.complete !== true;
-}
-
+export { FIRST_RUN_DISMISS_KEY, shouldShowFirstRun } from './onboarding-state';
 export function FirstRunGate({ onClose }) {
   const dismiss = () => {
     try { localStorage.setItem(FIRST_RUN_DISMISS_KEY, '1'); } catch { /* ignore */ }
@@ -4716,17 +4713,121 @@ export function FirstRunGate({ onClose }) {
   );
 }
 
-const SECTIONS: Array<[string, Array<() => any>]> = [
-  ['Start', [CommandCenterPanel, TodayReceiptPanel, ModelSetupPanel]],
-  ['Home', [PresenceInboxPanel, AmbientWatchPanel, HousePanel, CameraPanel]],
-  ['Memory', [DataSpacesPanel, LocalDocsPanel, NotesPanel, NoteDocsPanel, VaultPanel, KgPanel, MemoryWritePanel, MemoryHygienePanel, MemoryConsolidatePanel, MemoryEvalPanel, CapturePanel, ReflectionPanel, ProvenancePanel]],
-  ['Trust', [SecuritySkillsMapPanel, PaymentsPanel, SignalGovernancePanel, TrustOpsPanel, KillSwitchPanel, KernelMetricsPanel, ReadinessPanel, LoopBreakerPanel, GovernancePanel, PosturePanel, AuditAnchorsPanel, SecuritySkillsPanel, NetworkMonitorPanel, CommsRatePanel, SafeCommsDraftPanel, SecretsPanel, CapabilitiesPanel, PairingPanel, InjectionScanPanel, PermissionsPanel]],
-  ['Interop', [OsintPanel, MarketplaceAdminPanel, SkillsImportPanel, WritebackDigestPanel, A2AInboxPanel, MeshPeersPanel, SatellitesPanel, OraclePanel, MarketplacePanel, SkillHistoryPanel, PacksPanel, SignalRoutingPanel, WatchlistPanel]],
-  ['Observe', [OnboardingPanel, CodeIntelPanel, CoachPanel, ReviewQualityPanel, AgentsArenaPanel, EvalPanel, ReviewPanel, ArenaPanel, QualityPanel, APMPanel, ModelInfoPanel, DesignManifestPanel, FeedbackPanel, SelfImprovementPanel, PendingSkillsPanel, CognitionPanel, SwarmPanel, SubAgentsPanel, SystemMapPanel]],
-  ['Build', [HostReadinessPanel, ImagesPanel, CreativePanel, DesktopAllowlistPanel, WorkflowTracesPanel, WorkflowsPanel, WorkflowBuilderPanel, SandboxPanel, TemplatesPanel, AcquisitionPanel, MediaDirectorPanel, MediaGalleryPanel, PublishReadinessPanel, OperatorPanel, ScreenReflexPanel]],
-  ['Autonomy & Agents', [CompanyRoomPanel, QuickbarPanel, AutonomyControlPanel, MissionCanvasPanel, DecisionInboxPanel, MissionsPanel, AgentAutonomyPanel, TodayPanel, SchedulePanel, JobsPanel, LearningPanel, SessionsPanel, HeartbeatPanel, TranscriptPanel, EscalationPanel]],
-  ['Admin', [LlmRoutingPanel, SupportVoicePanel, BackupPanel, OAuthPanel, SettingsPanel, PromptsPanel, RoomsPanel, LMStudioPanel, VlmDescribePanel, AuthProfilesPanel, SystemProfilePanel]],
-];
+const PANEL_COMPONENTS = {
+  CommandCenterPanel,
+  TodayReceiptPanel,
+  ModelSetupPanel,
+  PresenceInboxPanel,
+  AmbientWatchPanel,
+  HousePanel,
+  CameraPanel,
+  DataSpacesPanel,
+  LocalDocsPanel,
+  NotesPanel,
+  NoteDocsPanel,
+  VaultPanel,
+  KgPanel,
+  MemoryWritePanel,
+  MemoryHygienePanel,
+  MemoryConsolidatePanel,
+  MemoryEvalPanel,
+  CapturePanel,
+  ReflectionPanel,
+  ProvenancePanel,
+  SecuritySkillsMapPanel,
+  PaymentsPanel,
+  SignalGovernancePanel,
+  TrustOpsPanel,
+  KillSwitchPanel,
+  KernelMetricsPanel,
+  ReadinessPanel,
+  LoopBreakerPanel,
+  GovernancePanel,
+  PosturePanel,
+  AuditAnchorsPanel,
+  SecuritySkillsPanel,
+  NetworkMonitorPanel,
+  CommsRatePanel,
+  SafeCommsDraftPanel,
+  SecretsPanel,
+  CapabilitiesPanel,
+  PairingPanel,
+  InjectionScanPanel,
+  PermissionsPanel,
+  OsintPanel,
+  MarketplaceAdminPanel,
+  SkillsImportPanel,
+  WritebackDigestPanel,
+  A2AInboxPanel,
+  MeshPeersPanel,
+  SatellitesPanel,
+  OraclePanel,
+  MarketplacePanel,
+  SkillHistoryPanel,
+  PacksPanel,
+  SignalRoutingPanel,
+  WatchlistPanel,
+  OnboardingPanel,
+  CodeIntelPanel,
+  CoachPanel,
+  ReviewQualityPanel,
+  AgentsArenaPanel,
+  EvalPanel,
+  ReviewPanel,
+  ArenaPanel,
+  QualityPanel,
+  APMPanel,
+  ModelInfoPanel,
+  DesignManifestPanel,
+  FeedbackPanel,
+  SelfImprovementPanel,
+  PendingSkillsPanel,
+  CognitionPanel,
+  SwarmPanel,
+  SubAgentsPanel,
+  SystemMapPanel,
+  HostReadinessPanel,
+  ImagesPanel,
+  CreativePanel,
+  DesktopAllowlistPanel,
+  WorkflowTracesPanel,
+  WorkflowsPanel,
+  WorkflowBuilderPanel,
+  SandboxPanel,
+  TemplatesPanel,
+  AcquisitionPanel,
+  MediaDirectorPanel,
+  MediaGalleryPanel,
+  PublishReadinessPanel,
+  OperatorPanel,
+  ScreenReflexPanel,
+  CompanyRoomPanel,
+  QuickbarPanel,
+  AutonomyControlPanel,
+  MissionCanvasPanel,
+  DecisionInboxPanel,
+  MissionsPanel,
+  AgentAutonomyPanel,
+  TodayPanel,
+  SchedulePanel,
+  JobsPanel,
+  LearningPanel,
+  SessionsPanel,
+  HeartbeatPanel,
+  TranscriptPanel,
+  EscalationPanel,
+  LlmRoutingPanel,
+  SupportVoicePanel,
+  BackupPanel,
+  OAuthPanel,
+  SettingsPanel,
+  PromptsPanel,
+  RoomsPanel,
+  LMStudioPanel,
+  VlmDescribePanel,
+  AuthProfilesPanel,
+  SystemProfilePanel
+};
 
 /* Renders the failed-mutation sink from api/client.ts. This is the one place that makes
    a swallowed admin action visible: the HUD has 27 `.catch(() => {})` sites, so a fix at
@@ -4755,7 +4856,15 @@ export function ActionFailureBanner() {
   );
 }
 
-export function ConsoleOverlay({ onClose }) {
+export function ConsoleOverlay({ onClose, panelId = null }: { onClose: () => void; panelId?: string | null }) {
+  const selected = CONSOLE_PANELS.find(p => p.id === panelId);
+  const Panel = selected ? PANEL_COMPONENTS[selected.component] : null;
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (selected) heading.current?.focus(); }, [panelId]);
+  const follow = (path: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault(); navigateHud(path);
+  };
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
@@ -4766,18 +4875,30 @@ export function ConsoleOverlay({ onClose }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(1120px,95vw)', maxHeight: '90vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 12 }}>
           <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>CONSOLE</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>net-new capability surfaces (P4c) · live + mock-tolerant</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>Tools and settings</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>esc ✕</button>
         </div>
         <ActionFailureBanner />
-        {SECTIONS.map(([label, panels]) => (
-          <div key={label} style={{ marginBottom: 18 }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.18em', color: 'var(--ink-3)', margin: '0 0 8px' }}>{String(label).toUpperCase()}</div>
-            <div style={{ columns: '3 320px', columnGap: 'var(--gap)' }}>
-              {panels.map((P, i) => <P key={i} />)}
-            </div>
-          </div>
-        ))}
+        {selected && Panel ? (
+          <section key={selected.id} aria-labelledby="console-panel-title">
+            <a className="console-link" href={routeHref('/v2/console')} onClick={follow('/v2/console')}>All console panels</a>
+            <h2 id="console-panel-title" tabIndex={-1} ref={heading}>{selected.label}</h2>
+            <Panel />
+          </section>
+        ) : (
+          <nav aria-label="Console panels">
+            {[...new Set(CONSOLE_PANELS.map(p => p.group))].map(group => (
+              <section key={group} style={{ marginBottom: 18 }}>
+                <h2 style={{ ...mono, fontSize: 12 }}>{group}</h2>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  {CONSOLE_PANELS.filter(p => p.group === group).map(p => (
+                    <a className="console-link" key={p.id} href={routeHref('/v2/console/' + p.id)} onClick={follow('/v2/console/' + p.id)}>{p.label}</a>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </nav>
+        )}
       </div>
     </div>
   );

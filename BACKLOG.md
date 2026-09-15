@@ -36,6 +36,8 @@
 
 - 2026-09-15 H660: real Docker containment verified on Linux and from native macOS (7/7 each), plus two context/proxy/cleanup checks. Frozen local CLI/daemon selection and a private CLI config preserve isolation without forwarding host proxy credentials. SSH/Modal/TLS provisioning remains unsupported; see the dated Docker evidence record.
 
+- 2026-09-15 H129: 18 HUD modes and 113 console panels now have stable URLs, history, titles and lazy loading. Desktop/Pixel 7 navigation tests pass; independent review verified historical overlay return-state repairs. Multi-profile and plugin route integration remain open, so H129 is partial.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

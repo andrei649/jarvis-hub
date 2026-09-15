@@ -235,3 +235,5 @@ remain a parity gap; existing text Canvas is unchanged.
 2026-09-15 — H515/H518 desktop supports configured local backend/model selection, reference blending, 2× bicubic upscale, unified gallery and ZIP export. Native mobile generation/gallery parity remains open; no cloud or device validation claimed.
 
 2026-09-15 — H684: existing admin GET /api/jobs/doctor includes health and persistent execution/delivery outcomes. Responsive web Jobs renders the report. Native mobile has no dedicated health view; that parity gap remains. Diagnosis triggers no repair or delivery.
+
+H129 (2026-09-15): responsive HUD routes are bookmarkable at /v2/<mode> and /v2/console/<panel>. Pixel 7 Chromium navigation is verified with a stubbed backend. This does not add native mobile navigation or a cross-profile route registry.

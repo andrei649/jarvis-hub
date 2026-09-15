@@ -2,6 +2,7 @@
 /* Smoke tests for the TASK-2 depth panels: each new Console panel must hit its REAL
    endpoint (method + path + body verified against agents/web.py). fetch is mocked —
    these assert the wiring through the component, like wired-controls.test.tsx. */
+import { CONSOLE_PANELS } from '../console-routes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -22,7 +23,7 @@ function mockFetch(routes) {
 describe('Console Build registry', () => {
   it('imports governed panels and keeps the read-only SwarmPanel honest', async () => {
     expect(gapSource).toMatch(/import\s+\{\s*OperatorPanel\s*\}\s+from\s+['"]\.\/operator-panel['"]/);
-    expect(gapSource).toMatch(/\['Build', \[[^\]]*\bOperatorPanel\b/);
+    expect(CONSOLE_PANELS).toContainEqual({ id: 'operator', label: 'Operator', group: 'Build', component: 'OperatorPanel' });
     expect(gapSource).toMatch(/\bSwarmPanel\b/);
 
     const summary = {

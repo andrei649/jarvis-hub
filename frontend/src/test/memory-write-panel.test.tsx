@@ -8,11 +8,10 @@
    apiPost throws on 4xx (failMutation is typed `never`), so a control without an `onErr`
    silently reads as success; the KG writes are contract- and kernel-mediated and answer a
    real 403 "kernel denied: …", so that branch is exercised here rather than assumed. */
+import { CONSOLE_PANELS } from '../console-routes';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { KgPanel, MemoryWritePanel, MemoryEvalPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -201,13 +200,11 @@ describe('KgPanel — the graph is now writable, and a kernel denial is visible'
 
 describe('registration', () => {
   it('puts both new write panels in the Memory section, beside the read/forget halves', () => {
-    const src = readFileSync(join(process.cwd(), 'src', 'gap.tsx'), 'utf8');
-    const memory = src.match(/\['Memory', \[([^\]]*)\]\]/);
-    expect(memory).toBeTruthy();
-    expect(memory[1]).toContain('MemoryWritePanel');
-    expect(memory[1]).toContain('MemoryEvalPanel');
+    const memory = CONSOLE_PANELS.filter(panel => panel.group === 'Memory').map(panel => panel.component);
+    expect(memory).toContain('MemoryWritePanel');
+    expect(memory).toContain('MemoryEvalPanel');
     // the forget half was already there — this must not have displaced it
-    expect(memory[1]).toContain('MemoryHygienePanel');
-    expect(memory[1]).toContain('KgPanel');
+    expect(memory).toContain('MemoryHygienePanel');
+    expect(memory).toContain('KgPanel');
   });
 });
