@@ -60,7 +60,7 @@ MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 ACTION_TYPES = ("remind", "ask", "brief", "task")
 _ACTION_KEYS = {
-    "remind": {"type", "message", "channel", "urgent"},
+    "remind": {"type", "message", "channel", "urgent", "media_ids"},
     "ask": {"type", "prompt", "agent", "deliver", "urgent"},
     "brief": {"type", "kind", "urgent"},
     "task": {"type", "kind", "title", "payload", "risk_tier"},
@@ -301,6 +301,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if kind not in ACTION_TYPES:
         return [f"action.type must be one of {', '.join(ACTION_TYPES)}"]
     errors = [f"unknown action key {key!r}" for key in sorted(set(action) - _ACTION_KEYS[kind])]
+    from .jobs_media import validate_media
+    errors.extend(validate_media(action, options))
 
     def _text(key: str, *, required: bool) -> None:
         value = action.get(key)
@@ -866,6 +868,8 @@ class JobRunner:
         self._quiet = quiet
         from .jobs_scripts import ScriptRuntime
         self._script_runtime = ScriptRuntime(self)
+        from .jobs_media import ScheduledMedia
+        self.media = ScheduledMedia(self)
 
     def bind_scripts(self, *, submit, get, find):
         self._script_runtime.bind(submit=submit, get=get, find=find)
@@ -1016,7 +1020,9 @@ class JobRunner:
     # lifecycle --------------------------------------------------------------
 
     def create(self, **kwargs: Any) -> Job:
+        binding = self.media.prepare(kwargs.get("action") or {}, kwargs.get("options"))
         job = self.store.create(**kwargs)
+        self.media.bind(job, binding)
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         self.register(job)
@@ -1031,7 +1037,16 @@ class JobRunner:
         unregistered instead — editing a paused job must leave it paused, and leaving a
         stale trigger armed for it would resume it by accident.
         """
+        current = self.store.get(job_id)
+        if current is None:
+            raise KeyError(job_id)
+        binding = None
+        if fields.get("action") is not None:
+            options = fields["options"] if fields.get("options") is not None else current.options
+            binding = self.media.prepare(fields["action"], options)
         job = self.store.edit(job_id, **fields)
+        if fields.get("action") is not None:
+            self.media.bind(job, binding)
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         if job.runnable:
@@ -1052,7 +1067,10 @@ class JobRunner:
 
     def delete(self, job_id: str) -> bool:
         self.unregister(job_id)
-        return self.store.delete(job_id)
+        removed = self.store.delete(job_id)
+        if removed:
+            self.media.remove(job_id)
+        return removed
 
     # firing -----------------------------------------------------------------
 
@@ -1293,7 +1311,7 @@ class JobRunner:
 
         if self.quiet_hours() or estop.check_paused("jobs-held-flush", logger):
             return 0
-        delivered = 0
+        delivered = await self.media.flush_held()
         for item in self.store.held():
             try:
                 fragment = await self._send_tracked(item.text, item.channel, item.job_id)
@@ -1313,6 +1331,8 @@ class JobRunner:
                        urgent: bool = False) -> str:
         """Send *text* to the owner, or hold it through quiet hours; returns a summary
         fragment, raises when it cannot send."""
+        if job is not None and "media_ids" in job.action:
+            return await self.media.deliver(job, text)
         if job is not None and "deliver" in job.options:
             targets = job.options["deliver"]
             if not targets:

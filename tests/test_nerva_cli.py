@@ -679,3 +679,10 @@ def test_jobs_model_provider_authored_options():
                             '--options', '{"model":"org/model","provider":"lm-studio"}'], hub)
     assert code == EXIT_OK
     assert hub.calls[-1][2]['options'] == {'model':'org/model', 'provider':'lm-studio'}
+
+
+def test_jobs_media_flag_authors_reminder_ids():
+    hub = _FakeHub({'POST /api/jobs': {'ok': True, 'job': {'id':'mediajob','schedule_text':'daily','cron':'0 9 * * *','name':'report'}}})
+    code, out, err, hub = _run(['jobs','create','--name','report','--when','daily','--action','{"type":"remind","message":"report"}', '--media-id','ba-'+'a'*32],hub)
+    assert code == EXIT_OK, err
+    assert hub.calls[-1][2]['action']['media_ids'] == ['ba-'+'a'*32]

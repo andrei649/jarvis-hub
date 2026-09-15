@@ -220,6 +220,7 @@ export function JobsPanel() {
                 <button className="tool-btn" title="delete" onClick={() => remove(id)}>✕</button>
               </span>
             </Row>
+            {job.media_delivery && <Note c={['unknown','partial'].includes(job.media_delivery.status)?'var(--red)':undefined}>Media · {job.media_delivery.status} · {job.media_delivery.sent}/{job.media_delivery.total} acknowledged · {job.media_delivery.reason}{['unknown','partial'].includes(job.media_delivery.status) && ' Review the Telegram channel, explicitly re-save the reminder action to authorize future sends, then resume. Do not assume an unknown item was unsent.'}</Note>}
             {editing[id] && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '4px 0 6px' }}>
                 <input aria-label={`name for ${id}`} value={editing[id]!.name}

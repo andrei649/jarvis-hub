@@ -221,6 +221,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # missing keys to False, so this row changes nothing at runtime — it just makes
     # the existing gate visible and toggleable.
     dict(category="cognition", key="review_enabled",      value=False, label="Per-turn background review (H20 learning loop)", kind="toggle"),
+    # Owner-authored media reminders: one deadline for the complete delivery.
+    dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
@@ -479,6 +481,8 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
+        return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "artifact_ttl_days" and (type(value) is not int or not 0 <= value <= 36500):
         return f"{key}: expected an integer between 0 and 36500 days"
     if kind == "toggle":

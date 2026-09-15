@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 scheduled media delivery (H523): opaque retained IDs now reach the configured Telegram owner under a validated total deadline and durable replay protection, including held delivery. Combined with the shared authenticated reader, gallery and inbound cap, independent review supports the frozen H523 contract. Fresh148 contract checks, all1,315 frontend tests and the complete11,428-test backend suite pass (23 skipped and one expected failure). See [scope and evidence](docs/hermes/h523-media-serving-contract.md).
+
 - 2026-09-15 approved cloud images (H515 partial): a fixed OpenAI image adapter now validates signed human approval, screens known secrets, prevents ambiguous replay and persists real validated PNG artifacts with idempotent opt-in catalog writeback. The guarded route through worker to blob and ZIP export passes with mocked transport. Cloud HUD authoring and broader providers remain open; no paid calls were made. See [operator contract](docs/cloud-image-generation.md).
 
 - 2026-09-15 per-job model selection (H146/H449 partial): persisted CLI/HUD pins now constrain the actual ask-job model phase, preserve policy and ordinary chat configuration, and bound history/tool/completion context. Unavailable selections fail; auxiliary recall is omitted under pins. Independent review fixed recursive spill reads; 32 new backend cases and one HUD case, with all 1,314 frontend checks passing. Workdir/toolsets/skills and wider provider coverage remain open. See [contract](docs/superpowers/plans/2026-09-15-job-model-pins.md).
