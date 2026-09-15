@@ -7,6 +7,8 @@ failed probe degrades to an honest placeholder.
 
 import socket
 
+import pytest
+
 from agents import web
 
 # The fabricated constants the old _sys_info() returned when probes failed.
@@ -80,3 +82,53 @@ def test_gpu_is_honest_when_absent():
     assert info["gpu"] in ("none", "unknown") or info["vram_total"] > 0
     if info["gpu"] in ("none", "unknown"):
         assert info["vram_total"] == 0 and info["vram_used"] == 0 and info["gpu_load"] == 0
+
+
+@pytest.mark.parametrize(
+    ("used_mb", "total_mb", "load_pct", "expected"),
+    [
+        (None, 8192, None, (0, 8, 0)),
+        (None, 16384, 25, (0, 16, 25)),
+        (2048, None, 40, (2, 0, 40)),
+        (2048, 8192, None, (2, 8, 0)),
+        ("unavailable", 8192, 25, (0, 8, 25)),
+        (2048, float("inf"), 25, (2, 0, 25)),
+        (None, None, None, (0, 0, 0)),
+        (2048, 8192, 25, (2, 8, 25)),
+    ],
+)
+def test_gpu_metrics_preserve_each_available_measurement(
+    monkeypatch, used_mb, total_mb, load_pct, expected,
+):
+    from agents.core import hardware
+
+    calls = []
+
+    def probe(*, force):
+        calls.append(force)
+        return {
+            "name": "test GPU",
+            "measured": True,
+            "vram_used_mb": used_mb,
+            "vram_total_mb": total_mb,
+            "load_pct": load_pct,
+        }
+
+    monkeypatch.setattr(hardware, "detect_gpu", probe)
+    info = web._sys_info()
+
+    assert info["gpu"] == "test GPU"
+    assert (info["vram_used"], info["vram_total"], info["gpu_load"]) == expected
+    assert calls == [True]
+
+
+def test_unmeasured_gpu_retains_unknown_metric_defaults(monkeypatch):
+    from agents.core import hardware
+
+    monkeypatch.setattr(hardware, "detect_gpu", lambda **kwargs: {
+        "name": "unknown", "measured": False,
+        "vram_used_mb": 2048, "vram_total_mb": 8192, "load_pct": 25,
+    })
+
+    info = web._sys_info()
+    assert (info["vram_used"], info["vram_total"], info["gpu_load"]) == (0, 0, 0)
