@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "7f12bdf8fb2424957142b109b75261de758f7d7b",
+  "latest_ci_commit": "dc9d4d25a62e80f4e669bac3d59e72c34f71b4b2",
   "open_release_gates": [
     {
       "id": "A1",
@@ -209,7 +209,7 @@
     {
       "id": "A3",
       "name": "Dependabot re-triage — offline `npm audit` / `pip-audit`, measured 2026-09-02: frontend **0** · root `package-lock` (HUD-test tree) **5** (2 high) · worldview **3 high** · worldview/mcp **5** (2 high) · mobile **21–22** (10–11 high; device-gated Expo chain) · Python `requirements.lock` **clean**. *(Superseded figure: 19 open alerts / 4 high, 2026-07-07.)*",
-      "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees 0 vulns at the time with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). **Recounted 2026-09-02 (measured offline; GitHub's own alert count still to be read by the owner — Security tab, or `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`):** frontend still 0; worldview/mcp is back to 5 (2 high), worldview at 3 high and the root HUD-test tree at 5 (2 high) — all `fixAvailable`, taken by the 2026-09-02 dependency audit wave (CTO D7: `npm audit fix` + that tree's own tests/build; frontend and mobile untouched); Python clean via `pip-audit`. Owner tail: mobile Expo SDK upgrade on a device (21–22 findings, 10–11 high), read the real Dependabot count, dismiss stale alerts in UI"
+      "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees 0 vulns at the time with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). **Recounted 2026-09-02 (measured offline; GitHub's own alert count still to be read by the owner — Security tab, or `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`):** frontend still 0; worldview/mcp is back to 5 (2 high), worldview at 3 high and the root HUD-test tree at 5 (2 high) — all `fixAvailable`, taken by the 2026-09-02 dependency audit wave (CTO D7: `npm audit fix` + that tree's own tests/build; frontend and mobile untouched); Python clean via `pip-audit`. **Mobile re-audit 2026-09-15:** compatible transitive updates reduce the fresh audit from21 (9 high) to11 moderate/0 high/0 critical; SDK versions stay unchanged. Native TypeScript,140 tests and offline Android/iOS Hermes exports pass after the documented polyfill compatibility repair. See [dependency evidence](docs/mobile-lock-security-audit.md). Owner tail: native device verification and remaining UUID/xcode chain; read the real Dependabot count and dismiss stale alerts in UI"
     },
     {
       "id": "A4",
@@ -226,7 +226,7 @@
   "tests": {
     "backend": 11303,
     "frontend": 1313,
-    "mobile": 137
+    "mobile": 140
   },
   "version": "1.0.0"
 }

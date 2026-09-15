@@ -17,6 +17,7 @@
     "@babel/core": "^8.0.1",
     "@babel/preset-env": "^8.0.2",
     "@babel/preset-typescript": "^8.0.1",
+    "@react-native/js-polyfills": "0.87.1",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.2.18",
     "babel-jest": "^30.5.1",
