@@ -134,7 +134,7 @@ class ScriptAttempts:
                 job = self.store._row_to_job(live_job)
                 data = {'job': {'action': job.action, 'options': job.options, 'notepad': job.notepad,
                                 'name': job.name}, 'origin': f'job-script:{job.id}:{run_id}'}
-                if job.options.get('monitor_script'):
+                if (job.options.get('monitor_script') or job.options.get('monitor_url')):
                     from .jobs_monitor import generation
                     data['monitor_generation'] = generation(conn, job.id)
                 conn.execute('INSERT INTO job_script_attempts VALUES (?,?,?,?,?)',
@@ -150,7 +150,7 @@ class ScriptAttempts:
     def transition(self, row, state, data=None):
         value = row['data'] if data is None else data
         with self.store._lock:
-            if (state == 'delivering' and row['data']['job']['options'].get('monitor_script')
+            if (state == 'delivering' and (row['data']['job']['options'].get('monitor_script') or row['data']['job']['options'].get('monitor_url'))
                     and row['data'].get('suppressed_reason') != 'stale_configuration'):
                 from .jobs_monitor import generation
                 if generation(self.store._conn, row['job_id']) != row['data'].get('monitor_generation'):
@@ -204,7 +204,7 @@ class ScriptRuntime:
     def __init__(self, runner):
         self.runner = runner
         self.attempts = runner.store.script_attempts
-        self.submit = self.get = self.find = None
+        self.submit = self.get = self.find = self.url_adapter = None
         self._cursor = 0
 
     def finish(self, row, *, error=None):
@@ -257,6 +257,11 @@ class ScriptRuntime:
             if not callable(self.submit):
                 raise ValueError('governed script intake is unavailable')
             options = row['data']['job']['options']
+            if options.get('monitor_url'):
+                from .jobs_url import initial_payload
+                payload = initial_payload(row)
+                self.propose_url(row, payload, row['data']['origin'] + ':hop:0')
+                return self.run_result(job.id, run_id)
             prepared = snapshot_script(options.get('monitor_script') or options['script'])
             payload = {'tool': 'terminal_run', 'target': 'terminal_run',
                        'args': {'target': 'local-host', 'command': prepared['command'], 'timeout': 60}}
@@ -276,6 +281,30 @@ class ScriptRuntime:
             if 'payload' not in row['data']:
                 self.finish(row, error=str(exc))
         return self.run_result(job.id, run_id)
+
+    def propose_url(self, row, payload, origin):
+        from .jobs_url import screen_url
+        if self.url_adapter is None:
+            raise ScriptSubmissionRefused('URL monitor intake is unavailable')
+        screen_url(payload['url'], self.url_adapter.redact)
+        data = {**row['data'], 'payload': payload, 'origin': origin,
+                'root_origin': row['data'].get('root_origin', row['data']['origin']),
+                'monitor_source': row['data']['job']['options']['monitor_url']}
+        if not self.attempts.transition(row, 'submitting', data):
+            return
+        row = self.row(row['id'])
+        try:
+            task_id = self.url_adapter.submit(payload, origin)
+            if type(task_id) is not int or task_id <= 0:
+                raise ValueError('URL monitor intake returned no task')
+            self.attempts.transition(row, 'pending', {**data, 'task_id': task_id})
+        except ScriptSubmissionRefused:
+            self.finish(row, error='URL monitor proposal refused')
+        except Exception:
+            # A persisted enqueue may have lost its return value; recover by origin.
+            from .jobs import logger
+            logger.warning('URL monitor proposal outcome unknown; recovering attempt %s by origin',
+                           row['id'])
 
     async def reconcile(self):
         from agents.core import estop
@@ -318,11 +347,25 @@ class ScriptRuntime:
                 if task.status in ('proposed', 'approved', 'running', 'blocked', 'deferred'):
                     continue
                 result = task.result if isinstance(task.result, dict) else {}
-                if (task.status != 'done' or task.kind != 'toolrpc.terminal_run'
+                url_monitor = bool(frozen.options.get('monitor_url'))
+                if url_monitor:
+                    from .jobs_url import matches_result
+                    if not matches_result(task, data['payload']):
+                        self.finish(row, error='URL monitor task failed or identity changed')
+                        continue
+                    if result.get('status') == 'redirect':
+                        from .jobs_url import redirect_payload
+                        try:
+                            payload = redirect_payload(data['payload'], result['url'], self.url_adapter)
+                            self.propose_url(row, payload, data['root_origin'] + ':hop:' + str(payload['monitor']['hop']))
+                        except Exception:
+                            self.finish(row, error='URL monitor redirect refused')
+                        continue
+                if (not url_monitor and (task.status != 'done' or task.kind != 'toolrpc.terminal_run'
                         or not isinstance(task.payload, dict)
                         or task.payload.get('args') != data['payload']['args']
                         or result.get('status') != 'ok' or result.get('tool') != 'terminal_run'
-                        or not isinstance(result.get('result'), dict) or result['result'].get('ok') is not True):
+                        or not isinstance(result.get('result'), dict) or result['result'].get('ok') is not True)):
                     self.finish(row, error='Governed script execution failed, was rejected, or changed')
                     continue
                 if not self.attempts.transition(row, 'completing'):
@@ -332,7 +375,7 @@ class ScriptRuntime:
                     from .jobs_gates import wake_agent_suppressed
                     raw_output = str(result['result'].get('stdout', ''))
                     output = raw_output[:MAX_TEXT]
-                    monitor = bool(frozen.options.get('monitor_script'))
+                    monitor = bool(frozen.options.get('monitor_script') or frozen.options.get('monitor_url'))
                     if monitor:
                         from .jobs_monitor import detect
                         data = detect(self.runner.store, row, raw_output, result['result'].get('stdout_capture'))
@@ -372,7 +415,7 @@ class ScriptRuntime:
                 data = row['data']
             if row['state'] != 'ready':
                 continue
-            if frozen.options.get('monitor_script'):
+            if (frozen.options.get('monitor_script') or frozen.options.get('monitor_url')):
                 from .jobs_monitor import current
                 if not current(self.runner.store, row):
                     data = {**data, 'output': '', 'suppressed_reason': 'stale_configuration'}
@@ -404,12 +447,12 @@ class ScriptRuntime:
                 for target in targets:
                     if (self.runner.store.get(job.id) is None
                             or estop.check_paused('job-script-completion', logger)
-                            or (frozen.options.get('monitor_script') and not current(self.runner.store, row))):
+                            or ((frozen.options.get('monitor_script') or frozen.options.get('monitor_url')) and not current(self.runner.store, row))):
                         raise RuntimeError('Job deleted or emergency stop engaged during fan-out')
                     await asyncio.wait_for(self.runner._send_tracked(output, target, job.id), 30)
                     if (self.runner.store.get(job.id) is None
                             or estop.check_paused('job-script-completion', logger)
-                            or (frozen.options.get('monitor_script') and not current(self.runner.store, row))):
+                            or ((frozen.options.get('monitor_script') or frozen.options.get('monitor_url')) and not current(self.runner.store, row))):
                         raise RuntimeError('Job deleted or emergency stop engaged during delivery')
                 if self.finish(row):
                     count += 1

@@ -946,6 +946,24 @@ class AutonomyCoordinator:
             self._targets = TargetRegistry(default_targets(), audit=audit)
         return self._targets
 
+    def _wire_url_monitor(self, executor):
+        """An exact approved URL hop, never the generic plugin/LLM fallback."""
+        from .autonomy.jobs_url import URLMonitorExecutor, url_payload_current
+        worker = getattr(self._orch, 'autonomy', None)
+        jobs = getattr(self._orch, 'jobs', None)
+        redact = getattr(getattr(self._orch, 'secret_broker', None), 'redact', None)
+        async def unavailable(task):
+            return {'status': 'refused', 'reason': 'URL monitor unavailable'}
+        executor.register('plugin.egress', unavailable)
+        if (worker is None or not callable(getattr(jobs, 'bind_url_monitor', None))
+                or not callable(redact)):
+            return
+        adapter = URLMonitorExecutor(worker, kernel=getattr(worker, 'kernel_gate', None),
+            redact=redact, current=lambda payload: url_payload_current(jobs.store, payload))
+        executor.execution_guard = adapter.guard
+        executor.register('plugin.egress', adapter.execute)
+        jobs.bind_url_monitor(adapter)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
 
@@ -995,6 +1013,7 @@ class AutonomyCoordinator:
             budget_ledger=_budget_ledger,
             execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
         )
+        self._wire_url_monitor(executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
