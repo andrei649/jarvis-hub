@@ -1,3 +1,4 @@
+import { galleryItemKey, useMediaGallery } from './media-gallery';
 import { internalLink } from './base-path';
 /* HUD v2 · P4c — the net-new gap surfaces from the §5b/§5c audit, hosted in a
    Console overlay (mirrors v1 tools.js). Each panel fetches its real endpoint and
@@ -3229,37 +3230,59 @@ export function SkillHistoryPanel() {
    is recorded by default). */
 export function MediaGalleryPanel() {
   const [query, setQuery] = useState('');
+  const [kind, setKind] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
   const [exportError, setExportError] = useState('');
   const [exporting, setExporting] = useState(false);
-  const { d, e, loading, reload } = useApi('/api/media/catalog');
-  const enabled = !!(d && d.enabled);
-  const items = arr(d && d.items).filter(it => `${it.prompt || ''} ${it.mime || ''} ${it.id}`.toLowerCase().includes(query.toLowerCase()));
-  const byKind = (d && d.stats && d.stats.by_kind) || {};
+  const { data: d, items, scanned, error: e, loading, reload, more, revision } = useMediaGallery(query, kind);
+  useEffect(() => { setSelected([]); setExportError(''); }, [query, kind, revision]);
+  useEffect(() => { setSelected(previous => previous.filter(key => items.some(it => galleryItemKey(it) === key && it.available))); }, [items]);
+  const enabled = !!d?.enabled;
+  const byKind = d?.stats?.by_kind || {};
+  const available = items.filter(it => it.available);
+  const hasMore = !!d?.page?.next_cursor;
   return (
-    <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} items` : 'disabled') : null} onReload={reload}>
+    <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined}
+      sub={d ? (enabled ? `${d.page ? `${d.page.catalog_total} retained · ` : ''}${items.length} matches loaded · ${scanned} scanned` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
+      {!!d?.page?.invalid_count && <p>Some catalog records are invalid and could not be listed.</p>}
       {enabled && Object.keys(byKind).length > 0 && (
-        <Row>
-          <span style={mono}>kinds</span>
+        <Row><span style={mono}>latest page kinds</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {Object.entries(byKind).map(([k, n]) => <Tag key={k}>{String(n)} {k}</Tag>)}
           </span>
         </Row>
       )}
-      <label>Search media <input aria-label="Search media" style={inpS} value={query} onChange={e => setQuery(e.target.value)} /></label>
-      <button className="tool-btn" disabled={exporting || !items.some(it => it.available)} onClick={async () => {
-        setExporting(true); setExportError('');
-        try { await downloadMediaBundle(items.filter(it => it.available).map(it => it.id)); }
-        catch (e) { setExportError(String(e)); }
-        finally { setExporting(false); }
-      }}>Export visible media</button>
+      <label>Search media <input aria-label="Search media" maxLength={256} style={inpS} value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <label>Media kind <select aria-label="Media kind" value={kind} onChange={e => setKind(e.target.value)}>
+        <option value="">All kinds</option>{['image', 'thumbnail', 'video', 'audio', 'application'].map(value => <option key={value}>{value}</option>)}
+      </select></label>
+      {hasMore && !items.length && <p>No matches in the scanned range. Continue search to check older media.</p>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <button className="tool-btn" disabled={!available.length || available.length > 200} onClick={() => setSelected(available.map(galleryItemKey))}>Select loaded media</button>
+        <button className="tool-btn" disabled={!selected.length} onClick={() => setSelected([])}>Clear selection</button>
+        <button className="tool-btn" disabled={exporting || !selected.length} onClick={async () => {
+          const ids = available.filter(it => selected.includes(galleryItemKey(it))).map(it => it.id);
+          if (!ids.length || ids.length > 200) return;
+          setExporting(true); setExportError('');
+          try { await downloadMediaBundle(ids); }
+          catch (e) { setExportError(String(e)); }
+          finally { setExporting(false); }
+        }}>Export selected media ({selected.length})</button>
+      </div>
+      <small>Select up to 200 files per export (128 MiB total). Searches scan bounded ranges; refresh to include newer media.</small>
       {exportError && <p role="alert">{exportError}</p>}
-      {items.map((it, i) => <div key={it.id || i}>
-        <Row><span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
+      {items.map(it => <div key={galleryItemKey(it)}>
+        <Row><input type="checkbox" aria-label={`Select ${it.id}`} checked={selected.includes(galleryItemKey(it))}
+          disabled={!it.available || (selected.length >= 200 && !selected.includes(galleryItemKey(it)))}
+          onChange={e => setSelected(previous => e.target.checked ? [...previous, galleryItemKey(it)] : previous.filter(key => key !== galleryItemKey(it)))} />
+          <span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
           <span style={{ marginLeft: 'auto', fontSize: 10 }}>{it.prompt || it.id}</span></Row>
-        {it.available && it.mime ? <BinaryCard item={it} refresh={reload} /> : it.available === false && <small>File missing or unsupported for delivery.</small>}
+        {it.available && it.mime ? <BinaryCard item={{ ...it, mime: it.mime, size: it.size ?? 0, agent: it.agent ?? '', pinned: !!it.pinned }} refresh={reload} /> : it.available === false && <small>File missing or unsupported for delivery.</small>}
       </div>)}
+      {hasMore && <button className="tool-btn" disabled={loading} onClick={more}>{items.length ? 'Load more' : 'Continue search'}</button>}
+      {e && <button className="tool-btn" disabled={loading} onClick={hasMore ? more : reload}>Retry gallery</button>}
     </Card>
   );
 }
