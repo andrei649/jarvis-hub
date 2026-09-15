@@ -232,8 +232,6 @@ class AgentToolRuntime:
             )
             if not live:
                 return False
-            if agent_id is None or self._tool_profile is None:
-                return True
             offered, _decision = self._profiled(agent_id, self._server.tools())
             return bool(offered)
         except Exception:
@@ -241,17 +239,19 @@ class AgentToolRuntime:
             return False
 
     def _profiled(
-        self, agent_id: str, metadata: list[dict[str, Any]],
+        self, agent_id: str | None, metadata: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], Any]:
         """Apply the turn's tool profile; a resolver failure offers nothing."""
-        if self._tool_profile is None:
+        from .job_toolsets import allows
+        metadata = [tool for tool in metadata if allows(str(tool.get("name") or ""))]
+        if self._tool_profile is None or agent_id is None:
             return metadata, None
         try:
             offered, decision = self._tool_profile(agent_id, metadata)
         except Exception:
             logger.warning("tool profile resolution failed closed", exc_info=True)
             return [], None
-        return [dict(tool) for tool in offered], decision
+        return [dict(tool) for tool in offered if allows(str(tool.get("name") or ""))], decision
 
     async def run(
         self,

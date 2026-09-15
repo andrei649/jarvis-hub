@@ -266,6 +266,10 @@ class ToolRPCServer:
         if not isinstance(args, dict):
             return {"ok": False, "reason": "bad_args", "tool": name}
 
+        from .job_toolsets import allows
+        if not allows(name):
+            return {"ok": False, "reason": "job_toolset_not_allowed", "tool": name}
+
         spec = self._tools.get(name)
         if spec is None:
             # Not on the allowlist — the sandbox cannot reach it.
