@@ -68,6 +68,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const setDensity = useCallback((value: string) => appearance.setPreference('density', value), [appearance.setPreference]);
   const setScanline = useCallback((value: string) => appearance.setPreference('scanline', value), [appearance.setPreference]);
   const setDotgrid = useCallback((value: string) => appearance.setPreference('dotgrid', value), [appearance.setPreference]);
+  const setFont = useCallback((value: string) => appearance.setPreference('font', value), [appearance.setPreference]);
   const setMotion = useCallback((value: string) => appearance.setPreference('motion', value), [appearance.setPreference]);
   const setAccent = useCallback((value: string) => appearance.setPreference('accent', value), [appearance.setPreference]);
   const ia = 'rail' as 'rail' | 'tabs';
@@ -456,7 +457,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const rootAttrs = {
     className: 'hud-root',
     'data-look': look, 'data-accent': accent, 'data-density': density,
-    'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
+    'data-font': appearance.preferences.font, 'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
   };
 
   const appearanceNotice = appearance.error && <div role="status" style={{fontSize:11, color:'var(--amber)', padding:'4px 8px'}}>
@@ -560,7 +561,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
-        ui={{ look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
+        ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
       {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
     </div>

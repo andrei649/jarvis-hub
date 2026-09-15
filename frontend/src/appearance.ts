@@ -3,13 +3,14 @@ import { apiGet, apiPut } from './api/client';
 import { basePath } from './base-path';
 
 const OPTIONS = {
+  font: ['theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'],
   accent: ['cyan', 'amber', 'green', 'violet'], look: ['obsidian', 'graphite'],
   density: ['normal', 'compact', 'comfy'], motion: ['system', 'calm', 'lively'],
   scanline: ['on', 'off'], dotgrid: ['off', 'on'],
 } as const;
 export type AppearanceKey = keyof typeof OPTIONS;
 export type Appearance = Record<AppearanceKey, string>;
-const DEFAULTS: Appearance = {accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off'};
+const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off'};
 const KEYS = Object.keys(DEFAULTS) as AppearanceKey[];
 const ENDPOINT = '/api/preferences/appearance';
 type Patch = Partial<Appearance>;

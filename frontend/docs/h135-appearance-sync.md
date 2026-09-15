@@ -68,7 +68,7 @@ backlog/Hermes/status/count changes, publishing and merge.
 This increment covers the browser HUD, ambient presentation and responsive phone
 layout through the shared App appearance hook. It does not add a consumer to the
 separate native mobile/ application, which retains its existing theme system, and
-does not introduce font overrides. Therefore it is browser progress on H135, not
+did not originally introduce font overrides. The subsequent [local font preference](h135-font-preferences.md) adds five fixed local choices through the same persistence contract. This remains browser progress on H135, not
 closure of the frozen cross-client feature. Existing native desktop origin and
 route authority remain unchanged; H130 browser prefix hosting boundaries apply.
 
