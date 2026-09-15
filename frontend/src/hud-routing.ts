@@ -1,7 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { CONSOLE_PANELS } from './console-routes';
 
-export const HUD_MODES = ['cockpit', 'chat', 'projects', 'agents', 'trust', 'memory', 'autonomy', 'build', 'observe', 'interop', 'comms', 'admin', 'finance', 'health', 'knowledge', 'family', 'jobs', 'world'] as const;
+import { HUD_MODES } from './hud-modes';
+export { HUD_MODES } from './hud-modes';
 export type HudRoute = { mode: string; panel: string | null; path: string; title: string; valid: boolean };
 const CHANGE = 'nerva-route-change';
 

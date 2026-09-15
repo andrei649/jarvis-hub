@@ -43,7 +43,21 @@ uses Tauri's local devUrl classification; release uses the explicitly scoped HTT
 origin capability. Both independently check the exact HUD URL and expected window.
 Only `desktop_action` (finite show/hide/reset/handoff/drag/resize) and
 `desktop_capabilities` are exposed; no generic filesystem, shell, navigation, capture
-or accessibility commands are granted. New windows and navigation outside `/v2` are refused.
+or accessibility commands are granted. New windows are refused. The main window allows
+only registered HUD modes, console index and console panels; the floating window allows
+only `/v2`, `/v2/`, `/v2/chat` and `/v2/chat/`. Assets and unknown `/v2/*` paths are refused.
+
+The native allowlist is generated from the frontend route registries. After adding or
+removing a mode/panel, run from the repository root (Node 22.6+):
+
+```sh
+node --experimental-strip-types frontend/scripts/generate-desktop-routes.mjs
+node --experimental-strip-types frontend/scripts/generate-desktop-routes.mjs --check
+```
+
+Commit `desktop/src-tauri/hud-routes.json` with the route change. The frontend
+`desktop-route-sync` test checks the entire allowlist against current registry entries;
+Rust tests exercise the real `tauri::Url` guard for every path and both window labels.
 
 ## Support and remaining work
 

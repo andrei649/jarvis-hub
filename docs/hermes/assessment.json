@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "a5038f0971cb95d201c0402b871d25055f94f8f5",
-  "assessed_at": "2026-09-15T11:42:27Z",
+  "base_sha": "072b54a4e4ac24cd4583dd3ed2abf5e4414247bd",
+  "assessed_at": "2026-09-15T12:01:01.120273Z",
   "reviews": [
     {
       "id": "H001",
@@ -973,7 +973,7 @@
         },
         {
           "path": "desktop/src-tauri/src/policy.rs",
-          "sha256": "801cbcd43c605023ca28c7fe8f8fbd0d4c03af93b83f3a7afe410e6cca402036"
+          "sha256": "961e7e5092d5ffbc32a4391d1e592d3c5b755d99161e874ae171f97a75d84d5a"
         },
         {
           "path": "frontend/src/desktop.tsx",
@@ -3535,7 +3535,7 @@
       "evidence": [
         {
           "path": "frontend/src/hud-routing.ts",
-          "sha256": "ea980f0677fe7dcb127ec8c62b09c0f202ff98023c884ab6cb49b36a69a2744a"
+          "sha256": "e67f95cd0ed5171c8285aeddaa653563fae9676a2a732d4b30813639ee292644"
         },
         {
           "path": "frontend/src/console-routes.ts",

@@ -108,20 +108,76 @@ def test_no_committed_bundle_is_orphaned():
     pointing at a bundle nobody committed, caught from the opposite side.
     """
     assets = WEB_ROOT / "v2" / "assets"
-    referenced = {
-        r.split("/")[-1]
+    roots = [
+        _resolve(page, reference)
         for page in _pages()
-        for r in REFERENCE.findall(page.read_text(encoding="utf-8"))
-        if r.startswith("/v2/assets/")
-    }
-    # Fonts are referenced from inside the CSS bundle, not from any page.
-    orphans = [
-        f.name
-        for f in assets.iterdir()
-        if f.is_file() and f.name not in referenced and f.suffix in (".js", ".css")
+        for reference in REFERENCE.findall(page.read_text(encoding="utf-8"))
+        if reference.startswith("/v2/assets/")
     ]
+    reachable, missing = _bundle_graph(roots)
+    assert not missing, f"missing imported bundles: {sorted(map(str, missing))}"
+    orphans = [
+        f.name for f in assets.iterdir()
+        if f.is_file() and f.resolve() not in reachable and f.suffix in (".js", ".css")
+    ]
+    assert not orphans, f"stale build output with no reachable entry point: {orphans}"
 
-    assert not orphans, (
-        "stale build output in agents/web/v2/assets that no page references: "
-        f"{orphans} — commit the frontend build as one unit"
-    )
+
+# Literal module specifiers emitted by Vite: static imports/re-exports, bare
+# imports and dynamic imports. This deliberately does not evaluate JavaScript.
+MODULE_REFERENCE = re.compile(
+    r"(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)[\"'`]([^\"'`]+)[\"'`]"
+)
+CSS_REFERENCE = re.compile(r"@import\s+(?:url\(\s*)?[\"']([^\"']+)[\"']")
+VITE_DEPS = re.compile(r"__vite__mapDeps=.*?m\.f=\[(.*?)\]", re.S)
+QUOTED_REFERENCE = re.compile(r"[\"']([^\"']+)[\"']")
+
+
+def _bundle_graph(roots: list[Path]) -> tuple[set[Path], set[Path]]:
+    pending = list(roots)
+    seen: set[Path] = set()
+    missing: set[Path] = set()
+    while pending:
+        path = pending.pop().resolve()
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.is_file():
+            missing.add(path)
+            continue
+        source = path.read_text(encoding="utf-8")
+        references = MODULE_REFERENCE.findall(source) if path.suffix == ".js" else CSS_REFERENCE.findall(source)
+        targets = [_resolve(path, ref) for ref in references if ref.startswith((".", "/"))]
+        if path.suffix == ".js":
+            # Vite preload maps are relative to the build root, unlike imports.
+            for dependency_map in VITE_DEPS.findall(source):
+                targets.extend(path.parent.parent / ref for ref in QUOTED_REFERENCE.findall(dependency_map))
+        pending.extend(target for target in targets if target is not None and target.suffix in (".js", ".css"))
+    return seen, missing
+
+
+def test_bundle_graph_follows_nested_imports_and_cycles(tmp_path):
+    (tmp_path / "entry.js").write_text('import {x} from "./shared.js"; import("./lazy.js");')
+    (tmp_path / "shared.js").write_text('import "./entry.js";')
+    (tmp_path / "lazy.js").write_text('export {x} from "./shared.js"; import("./nested.js");')
+    (tmp_path / "nested.js").write_text('export const x = 1;')
+    (tmp_path / "orphan.js").write_text('export const unused = 1;')
+    reachable, missing = _bundle_graph([tmp_path / "entry.js"])
+    assert not missing
+    assert {p.name for p in reachable} == {"entry.js", "shared.js", "lazy.js", "nested.js"}
+    assert tmp_path / "orphan.js" not in reachable
+
+
+def test_bundle_graph_reports_missing_dynamic_chunk(tmp_path):
+    (tmp_path / "entry.js").write_text('import("./missing.js");')
+    _, missing = _bundle_graph([tmp_path / "entry.js"])
+    assert missing == {tmp_path / "missing.js"}
+
+
+def test_bundle_graph_follows_vite_preload_css(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "entry.js").write_text('const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/lazy.css"])))=>i.map(i=>d[i]);')
+    (assets / "lazy.css").write_text('@import "./nested.css";')
+    _, missing = _bundle_graph([assets / "entry.js"])
+    assert missing == {assets / "nested.css"}

@@ -259,6 +259,17 @@ def test_core_surfaces_each_cover_a_route():
     assert not missing, f"v2 surfaces with no mapped route (IA regression?): {missing}"
 
 
+def _assert_console_registration(source: str, group: str, component: str):
+    metadata = (REPO / "frontend/src/console-routes.ts").read_text(encoding="utf-8")
+    match = re.search(r"CONSOLE_PANELS\s*=\s*(\[.*?\])\s*as const", metadata, re.S)
+    assert match, "console panel metadata is missing"
+    panels = json.loads(re.sub(r",\s*\]$", "]", match.group(1)))
+    assert any(p["group"] == group and p["component"] == component for p in panels)
+    registry = re.search(r"const PANEL_COMPONENTS\s*=\s*\{(.*?)\}", source, re.S)
+    assert registry and re.search(rf"\b{re.escape(component)}\b", registry.group(1))
+    assert "PANEL_COMPONENTS[selected.component]" in source
+
+
 def test_media_director_routes_have_a_live_build_surface():
     media_routes = {
         "/api/media/devices",
@@ -271,7 +282,7 @@ def test_media_director_routes_have_a_live_build_surface():
     assert {_classify(path) for path in media_routes} == {"build"}
 
     source = GAP.read_text(encoding="utf-8")
-    assert re.search(r"\['Build', \[[^\]]*\bMediaDirectorPanel\b", source)
+    _assert_console_registration(source, "Build", "MediaDirectorPanel")
     start = source.index("export function MediaDirectorPanel")
     end = source.index("/* 0.37", start)
     panel = source[start:end]
@@ -318,7 +329,7 @@ def test_camera_routes_have_a_metadata_only_home_surface():
     assert {_classify(path) for path in camera_routes} == {"home"}
 
     source = GAP.read_text(encoding="utf-8")
-    assert re.search(r"\['Home', \[[^\]]*\bCameraPanel\b", source)
+    _assert_console_registration(source, "Home", "CameraPanel")
     start = source.index("export function CameraPanel")
     end = source.index("/* 0.37", start)
     panel = source[start:end]
@@ -340,7 +351,7 @@ def test_acquisition_routes_have_a_live_hash_only_build_surface():
     assert {_classify(path) for path in acquisition_routes} == {"build"}
 
     source = GAP.read_text(encoding="utf-8")
-    assert re.search(r"\['Build', \[[^\]]*\bAcquisitionPanel\b", source)
+    _assert_console_registration(source, "Build", "AcquisitionPanel")
     start = source.index("export function AcquisitionPanel")
     end = source.index("/* 0.37", start)
     panel = source[start:end]
@@ -370,7 +381,7 @@ def test_operator_routes_have_a_governed_build_caller():
     assert re.search(
         r"import\s+\{\s*OperatorPanel\s*\}\s+from\s+['\"]\./operator-panel['\"]", gap_source
     )
-    assert re.search(r"\['Build', \[[^\]]*\bOperatorPanel\b", gap_source)
+    _assert_console_registration(gap_source, "Build", "OperatorPanel")
 
     operator_source = OPERATOR.read_text(encoding="utf-8")
     for route in operator_routes:
