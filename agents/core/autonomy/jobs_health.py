@@ -44,13 +44,6 @@ def inspect_jobs(runner) -> dict:
     for job in jobs:
         row = {"job_id": job.id, "active": bool(job.runnable), "next_run_at": None}
         rows.append(row)
-        if not job.runnable:
-            continue
-        entry = registered.get(f"job-{job.id}")
-        if entry is None:
-            problem(job.id, "not_registered", "Active job is not registered with the scheduler")
-        else:
-            row["next_run_at"] = next_run(job.id, entry)
         outcome = outcomes.get(f"job-{job.id}")
         row["last_outcome"] = outcome
         if outcome and outcome["status"] != "ok":
@@ -59,6 +52,13 @@ def inspect_jobs(runner) -> dict:
             problem(job.id, "last_run_failed", "Last execution failed")
         if job.last_delivery_status == "failed":
             problem(job.id, "last_delivery_failed", "Last delivery failed")
+        if not job.runnable:
+            continue
+        entry = registered.get(f"job-{job.id}")
+        if entry is None:
+            problem(job.id, "not_registered", "Active job is not registered with the scheduler")
+        else:
+            row["next_run_at"] = next_run(job.id, entry)
         kind = job.action.get("type")
         if kind == "task" or (kind == "ask" and not job.action.get("deliver", True)):
             continue

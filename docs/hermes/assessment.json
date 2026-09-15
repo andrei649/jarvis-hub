@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "279ba4ce5216cb73f0cb63924672af634a8f4396",
-  "assessed_at": "2026-09-15T10:59:35Z",
+  "base_sha": "e589c4be706a1bf8c78936c63119524e70aebcb0",
+  "assessed_at": "2026-09-15T11:23:08Z",
   "reviews": [
     {
       "id": "H001",
@@ -3486,11 +3486,11 @@
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
-          "sha256": "0fff50ab53ffc4a69393fd5fe4737d3dc5666a90b44adb8057b969f4510e3463"
+          "sha256": "7a1566a45019a63625e5ed864e022814b27180944cde756cf5a339033619d2fd"
         },
         {
           "path": "agents/core/scheduler_health.py",
-          "sha256": "31fd70da2fd2eb0a50f441e2a881c73f027288f1d99556990af1d6d78d13672f"
+          "sha256": "81eb62dd42fb49d1b69944e7edecb16a865901f2c37b62cc9a8011d03ae94ce5"
         },
         {
           "path": "agents/core/scheduler_service.py",
@@ -3506,11 +3506,11 @@
         },
         {
           "path": "tests/test_jobs_doctor.py",
-          "sha256": "1bd30d7cb4d1a8acc1bb7d381e8e19c0805a59fb66483b2043e28810c7b41ca9"
+          "sha256": "9793d7361fb73879ea98f925bd1e3dcf8e9abadd368ca5fab50c41a639bbc41b"
         },
         {
           "path": "tests/test_scheduler_health.py",
-          "sha256": "c54227fc7920a4f414ce165d3a9e018e43f97a7491b6782d55c1c82e48235dfe"
+          "sha256": "1ca64cf22cfabc30821945780a0a82bdfdc1e4296b6d3102d0d5e82155369841"
         },
         {
           "path": "tests/test_nerva_cli.py",

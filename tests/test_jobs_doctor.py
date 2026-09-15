@@ -115,6 +115,37 @@ def test_exhausted_repeat_does_not_require_registration(setup):
     assert runner.doctor()["ok"] is True
 
 
+@pytest.mark.asyncio
+async def test_automatic_pause_does_not_hide_execution_failures(setup):
+    store, scheduler, _orch, runner, job = setup
+    store.update(job.id, action={"type": "ask", "prompt": "private", "deliver": False})
+    for _ in range(3):
+        assert (await runner.fire(job.id)).status == "failed"
+    assert store.get(job.id).paused_reason
+    scheduler.jobs = []
+    writes = store._conn.total_changes
+    report = runner.doctor()
+    assert report["ok"] is False
+    assert "last_run_failed" in codes(report)
+    assert "not_registered" not in codes(report)
+    assert "private" not in json.dumps(report)
+    assert store._conn.total_changes == writes
+
+
+@pytest.mark.parametrize("fields", [{"enabled": False}, {"options": {"repeat": 1}}])
+def test_inactive_jobs_retain_delivery_and_scheduler_failures(setup, fields):
+    store, scheduler, _orch, runner, job = setup
+    store.update(job.id, last_delivery_status="failed", **fields)
+    if "options" in fields:
+        assert store.reserve_attempt(job.id)
+    store.record_scheduler_result(f"job-{job.id}", "missed")
+    scheduler.jobs = []
+    report = runner.doctor()
+    assert report["ok"] is False
+    assert {"last_delivery_failed", "last_run_missed"} <= codes(report)
+    assert "not_registered" not in codes(report)
+
+
 def test_delivery_target_from_action_is_checked_without_reading_credentials(setup):
     store, _scheduler, orch, runner, job = setup
     store.update(job.id, action={"type": "remind", "message": "private", "channel": "ntfy"},

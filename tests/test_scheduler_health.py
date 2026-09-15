@@ -13,7 +13,7 @@ from apscheduler.events import (
     JobSubmissionEvent,
 )
 
-from agents.core.autonomy.jobs import JobStore
+from agents.core.autonomy.jobs import JobRun, JobStore
 from agents.core.scheduler_health import install_scheduler_health
 
 
@@ -80,6 +80,17 @@ def test_success_clears_failure_but_intentional_skip_does_not(health):
         assert store.scheduler_results()["native-backup"]["status"] == "failed"
     scheduler.emit(event(result={"ok": True}))
     assert store.scheduler_results()["native-backup"]["status"] == "ok"
+
+
+@pytest.mark.parametrize("status,expected", [("skipped", "missed"), ("failed", "failed"), ("ok", "ok")])
+def test_owner_job_run_status_preserves_actual_outcome(health, status, expected):
+    store, scheduler = health
+    scheduler.emit(event(EVENT_JOB_MISSED))
+    scheduler.emit(event(result=JobRun(1, "owner-job", "", "", status,
+                                       "private result", "private error")))
+    result = store.scheduler_results()["native-backup"]
+    assert result["status"] == expected
+    assert "private" not in str(result)
 
 
 def test_successful_company_sweep_with_skipped_children_clears_failure(health):

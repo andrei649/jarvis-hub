@@ -140,3 +140,5 @@ sincronizarea documentelor. Fiecare implementare viitoare actualizează statusul
 în același PR dacă schimbă un rând evaluat. BACKLOG rămâne sursa de prioritate.
 
 2026-09-15 — H684 ([PR #1104](https://github.com/andrei649/jarvis-hub/pull/1104)): read-only owner/native diagnostics, bounded persistent outcomes and non-zero health exit codes. Real APScheduler, migration and failure/skip tests pass; diagnostic coverage is 97% including branches. Existing evidence hashes are refreshed only where they matched the inspected base; older stale evidence remains stale. H684 is partial: script/no_agent/workdir diagnostics and production-host proof remain open.
+
+Independent review corrections for H684: actual owner JobRun results now preserve skipped/missed and failed outcomes; auto-paused, disabled and repeat-exhausted jobs retain diagnostic execution/delivery failures without requiring registrations. Six added regressions reproduced the failures before the localized repairs.

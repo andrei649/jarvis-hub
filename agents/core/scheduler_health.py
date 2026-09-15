@@ -10,10 +10,14 @@ from apscheduler.events import (
     EVENT_JOB_MISSED,
 )
 
+from .autonomy.jobs import JobRun
+
 logger = logging.getLogger(__name__)
 
 
 def _returned_status(value) -> str:
+    if isinstance(value, JobRun):
+        return value.status
     if not isinstance(value, dict):
         return "ok"
     explicit = value.get("_scheduler_status")
