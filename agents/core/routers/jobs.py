@@ -67,7 +67,10 @@ async def jobs_list():
     runner = _runner()
     if runner is None:
         return _unavailable()
-    return nocache_json({"jobs": [job.as_dict() for job in runner.store.list()], "scheduler": runner.snapshot()})
+    requests = [receipt for row in runner.store.dispatch.outstanding()
+                if (receipt := runner.store.dispatch.get(row["id"])) is not None]
+    return nocache_json({"jobs": [job.as_dict() for job in runner.store.list()], "scheduler": runner.snapshot(),
+                         "requests": requests})
 
 
 @router.get("/api/jobs/blueprints", dependencies=[Depends(admin_guard)])
@@ -216,12 +219,24 @@ async def jobs_run(job_id: str):
         return _unavailable()
     if runner.store.get(job_id) is None:
         return JSONResponse({"error": "no such job"}, status_code=404)
-    run = await runner.fire(job_id, force=True)
-    job = runner.store.get(job_id)
-    pending = run.status == "pending"
-    return nocache_json({"ok": run.status in {"ok", "pending"}, "pending": pending,
-                         "run": run.as_dict(), "job": job.as_dict() if job else None},
-                        status_code=202 if pending else 200)
+    try:
+        receipt = runner.request_run(job_id)
+    except KeyError:
+        return JSONResponse({"error": "no such job"}, status_code=404)
+    except ValueError as exc:
+        return _refused(str(exc))
+    return nocache_json({"ok": True, "pending": True, "request": receipt}, status_code=202)
+
+
+@router.get("/api/jobs/{job_id}/requests/{request_id}", dependencies=[Depends(admin_guard)])
+async def jobs_request(job_id: str, request_id: str):
+    runner = _runner()
+    if runner is None:
+        return _unavailable()
+    receipt = runner.store.dispatch.get(request_id)
+    if receipt is None or receipt["job_id"] != job_id:
+        return JSONResponse({"error": "no such request"}, status_code=404)
+    return nocache_json({"request": receipt})
 
 
 @router.delete("/api/jobs/{job_id}", dependencies=[Depends(admin_guard)])

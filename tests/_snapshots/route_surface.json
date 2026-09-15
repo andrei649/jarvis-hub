@@ -114,6 +114,7 @@
   "GET /api/jobs/doctor",
   "GET /api/jobs/incidents",
   "GET /api/jobs/{job_id}",
+  "GET /api/jobs/{job_id}/requests/{request_id}",
   "GET /api/jobs/{job_id}/runs",
   "GET /api/kg/entities",
   "GET /api/kg/entities/{name}",

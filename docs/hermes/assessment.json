@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "fbf30f6489dbfd48eb2f575a1f89ea6cfca5192d",
-  "assessed_at": "2026-09-15T14:47:33Z",
+  "base_sha": "37589024f19ab82a6b8b794aca9c44b0538ec1c8",
+  "assessed_at": "2026-09-15T15:25:50.865414Z",
   "reviews": [
     {
       "id": "H001",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
+          "sha256": "7d3f0fe5a99861d9304981fa01e758aab13e45019d62a26bc5ce514b4a5ac428"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "34a97ae2767fcd97808fe295ec9acb77c835eea9f25c449accf93f28cc5ab449"
+          "sha256": "779b881ad5fa0b140acd3a8a65d61f49d1f76b7876915eca7dd47271f05351c6"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -836,12 +836,12 @@
       "id": "H146",
       "row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
       "status": "partial",
-      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul.",
+      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution.",
       "remaining": "Lipsesc contextul izolat per job pentru workdir, pin-uri model/provider, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0490c1e0e372ed80d42342f54896f8f016ec56149235564aa1fe1850e2654696"
+          "sha256": "021d3974ef1c296b1b6095b864c5bff605ce94c75ef47b212d4ad6aa2f8314d8"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -849,15 +849,15 @@
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "7b75d6638eb29d0f8054ddb0c84a954a713859cb6bffaa7b64df373e9f4ddfec"
+          "sha256": "e86aab825c54380425448876865763564cdd53f8fe06ce4204d02c3babeb46af"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
+          "sha256": "7d3f0fe5a99861d9304981fa01e758aab13e45019d62a26bc5ce514b4a5ac428"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "9b65e103c919d7281b745ce5022cb3a8544e95b78087c15ba2eafbfbbf6fe33a"
+          "sha256": "fedc2b58c11180384346c74d0cbfeb81aa5ab9320159b837ffced44ebd5219fa"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -869,15 +869,15 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "8bd57f988222c96bd7aa592f2e0c5db446f5d75119def0f7392c7e2551572c8f"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "34a97ae2767fcd97808fe295ec9acb77c835eea9f25c449accf93f28cc5ab449"
+          "sha256": "779b881ad5fa0b140acd3a8a65d61f49d1f76b7876915eca7dd47271f05351c6"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
-          "sha256": "9c58e73a80b5c85f660a49abe89d3eafb59b0c4b9aadf5e338c5473a7cdf7033"
+          "sha256": "ca46ea251db1ad4b3ab31f7c273254e5101477e085979d40569278b28343b40f"
         },
         {
           "path": "frontend/src/panels/job-create-dialog.tsx",
@@ -897,7 +897,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
+          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -914,6 +914,18 @@
         {
           "path": "docs/automations-scripts.md",
           "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_dispatch.py",
+          "sha256": "2ffb5b4d38b1e9d4630c4e76733207f96c358a9bfc773d80aad904b6285d52a8"
+        },
+        {
+          "path": "tests/test_job_dispatch.py",
+          "sha256": "dfa06020e4a95bd4bfcacc7428c97a8d0f0a3f01eef2a43a8239b8912f6b62c4"
+        },
+        {
+          "path": "docs/automations-dispatch.md",
+          "sha256": "587adacb9aab40dbc3926c2c21cf2a43af03e46c087ddae8b89e26f4ec05e896"
         }
       ]
     },
@@ -2048,12 +2060,12 @@
       "id": "H449",
       "row_sha256": "5fd839c96d6e105a4c8ebea64d497efd9a5086a6a3086923e007e385db609d43",
       "status": "partial",
-      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul.",
+      "summary": "JobStore/HUD/CLI au creare și editare pentru cele patru acțiuni, constructor vizual de program, 16 blueprint-uri cu formulare tipizate, repeat limitat atomic și livrare per job către canale deja configurate sau doar istoric. Există doctor, incidents (pauze după eșecuri), notepad editabil, status/remove și tick idempotent în fusul scheduler-ului, refuzat când scheduler-ul rulează. Gate-urile task/quiet hours/buget/e-stop sunt păstrate; flush-ul mesajelor amânate verifică acum e-stop. Accesul Automations din bara principală deschide un spațiu dedicat; dialogul nativ de creare gestionează focusul, Tab, Escape și revenirea la buton. Tipurile OpenAPI includ cele patru rute noi. Review: update scrie doar câmpurile cerute și nu poate reseta rezervările atomice; istoricul păstrează textul efectiv pentru brief/remind fără livrare. Scripturile Python locale au acum snapshot de sursă legat de aprobarea fiecărei execuții, rezultate pending persistente și livrare directă no_agent sau context izolat ca date neîncrezătoare. API/CLI disting acceptarea de finalizare; conținutul gol nu apelează modelul. Manual run now persists a bounded receipt and returns HTTP 202; scheduler/offline tick executes through the shared job firing path. Atomic coalescing and portable cross-process locks prevent duplicate execution. Configuration snapshots, pending-script reconciliation, crash-unknown state without replay, and concurrent retention are tested. HUD and CLI restore accepted request status and distinguish queued, waiting and completed execution.",
       "remaining": "Lipsesc contextul izolat per job pentru workdir, pin-uri model/provider, enabled_toolsets și skills, agregarea între profile și noul grant schedule.create cerut de original (rădăcină protejată în afara scopului). Opțiunile fără runtime sunt refuzate, nu salvate inert. Nu există probă live pentru scheduler/canale sau autorare nativă mobilă; monitoarele depind de sursele configurate, nu instalează integrări.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0490c1e0e372ed80d42342f54896f8f016ec56149235564aa1fe1850e2654696"
+          "sha256": "021d3974ef1c296b1b6095b864c5bff605ce94c75ef47b212d4ad6aa2f8314d8"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -2061,15 +2073,15 @@
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "7b75d6638eb29d0f8054ddb0c84a954a713859cb6bffaa7b64df373e9f4ddfec"
+          "sha256": "e86aab825c54380425448876865763564cdd53f8fe06ce4204d02c3babeb46af"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
+          "sha256": "7d3f0fe5a99861d9304981fa01e758aab13e45019d62a26bc5ce514b4a5ac428"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "9b65e103c919d7281b745ce5022cb3a8544e95b78087c15ba2eafbfbbf6fe33a"
+          "sha256": "fedc2b58c11180384346c74d0cbfeb81aa5ab9320159b837ffced44ebd5219fa"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -2081,15 +2093,15 @@
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "8bd57f988222c96bd7aa592f2e0c5db446f5d75119def0f7392c7e2551572c8f"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "34a97ae2767fcd97808fe295ec9acb77c835eea9f25c449accf93f28cc5ab449"
+          "sha256": "779b881ad5fa0b140acd3a8a65d61f49d1f76b7876915eca7dd47271f05351c6"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
-          "sha256": "9c58e73a80b5c85f660a49abe89d3eafb59b0c4b9aadf5e338c5473a7cdf7033"
+          "sha256": "ca46ea251db1ad4b3ab31f7c273254e5101477e085979d40569278b28343b40f"
         },
         {
           "path": "frontend/src/panels/job-create-dialog.tsx",
@@ -2109,7 +2121,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
+          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2126,6 +2138,18 @@
         {
           "path": "docs/automations-scripts.md",
           "sha256": "3bcd33643156afb18eaa1b926b06cf0201547272dfecc78588417df20595263a"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_dispatch.py",
+          "sha256": "2ffb5b4d38b1e9d4630c4e76733207f96c358a9bfc773d80aad904b6285d52a8"
+        },
+        {
+          "path": "tests/test_job_dispatch.py",
+          "sha256": "dfa06020e4a95bd4bfcacc7428c97a8d0f0a3f01eef2a43a8239b8912f6b62c4"
+        },
+        {
+          "path": "docs/automations-dispatch.md",
+          "sha256": "587adacb9aab40dbc3926c2c21cf2a43af03e46c087ddae8b89e26f4ec05e896"
         }
       ]
     },
@@ -3606,7 +3630,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0490c1e0e372ed80d42342f54896f8f016ec56149235564aa1fe1850e2654696"
+          "sha256": "021d3974ef1c296b1b6095b864c5bff605ce94c75ef47b212d4ad6aa2f8314d8"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -3626,7 +3650,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "2d93c061ee0888d5233b18163a678987cf73e07922e504c4d5fbf023f2137a12"
+          "sha256": "7d3f0fe5a99861d9304981fa01e758aab13e45019d62a26bc5ce514b4a5ac428"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -3638,7 +3662,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "34a97ae2767fcd97808fe295ec9acb77c835eea9f25c449accf93f28cc5ab449"
+          "sha256": "779b881ad5fa0b140acd3a8a65d61f49d1f76b7876915eca7dd47271f05351c6"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -3716,7 +3740,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0490c1e0e372ed80d42342f54896f8f016ec56149235564aa1fe1850e2654696"
+          "sha256": "021d3974ef1c296b1b6095b864c5bff605ce94c75ef47b212d4ad6aa2f8314d8"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -3979,7 +4003,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "265f99b1edb1248949b97f84b5900d3abce2e29d04c4cf72db5e9f7a60b8c3e6"
+          "sha256": "1a32118c5c28b66553fcf0b411268abcf0f513c8432afc5b3d80d5762efc3b6b"
         },
         {
           "path": "tests/test_composer_vision.py",

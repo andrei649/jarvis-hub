@@ -114,6 +114,7 @@
   "GET /api/jobs/doctor": "jobs_doctor_api_jobs_doctor_get",
   "GET /api/jobs/incidents": "jobs_incidents_api_jobs_incidents_get",
   "GET /api/jobs/{job_id}": "jobs_get_api_jobs__job_id__get",
+  "GET /api/jobs/{job_id}/requests/{request_id}": "jobs_request_api_jobs__job_id__requests__request_id__get",
   "GET /api/jobs/{job_id}/runs": "jobs_runs_api_jobs__job_id__runs_get",
   "GET /api/kg/entities": "kg_entities_api_kg_entities_get",
   "GET /api/kg/entities/{name}": "kg_entity_api_kg_entities__name__get",

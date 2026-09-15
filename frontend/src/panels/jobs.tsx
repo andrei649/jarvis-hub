@@ -19,7 +19,7 @@
 
    NOTE: never spell a route path in this comment unless the panel calls it —
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { OptionsEditor, ScheduleBuilder, JobOptions } from './job-builder';
 import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
@@ -28,6 +28,11 @@ import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, 
 const JOBS_PATH = '/api/jobs';
 const BLUEPRINTS_PATH = '/api/jobs/blueprints';
 
+type RunReceipt = {id:string; job_id:string; status:string; created_at?:string; reason?:string; run?:{status:string; summary:string}|null};
+const pendingReceipt = (r:RunReceipt) => ['queued','running','waiting'].includes(r.status);
+const receiptText = (r:RunReceipt) => r.status === 'completed' && r.run
+  ? `${r.run.status} · ${r.run.summary}`
+  : `${r.status === 'queued' ? 'accepted · queued' : r.status} · ${r.reason || `request ${r.id}`}`;
 const EM = '—';
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
@@ -66,6 +71,48 @@ export function JobsPanel() {
   const [agent, setAgent] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const [runNote, setRunNote] = useState<Record<string, string>>({});
+  const [receipts,setReceipts] = useState<Record<string,RunReceipt>>({});
+  useEffect(() => {
+    const restored = arr(d, 'requests') as RunReceipt[];
+    if (restored.length) setReceipts(old => {
+      const next = {...old};
+      for (const receipt of restored) {
+        if (!receipt) continue;
+        const prior = next[receipt.job_id];
+        if (!prior || (prior.id !== receipt.id && !pendingReceipt(prior) && pendingReceipt(receipt)
+          && Date.parse(receipt.created_at || '') > Date.parse(prior.created_at || ''))) {
+          next[receipt.job_id] = receipt;
+        }
+      }
+      return next;
+    });
+  }, [d]);
+  const pollKey = JSON.stringify(Object.values(receipts).map(r => [r.id,pendingReceipt(r)]));
+  useEffect(() => {
+    let closed = false;
+    let polling = false;
+    const active = Object.values(receipts).filter(pendingReceipt);
+    const poll = async () => {
+      if (closed || polling) return;
+      polling = true;
+      for (const receipt of active) {
+        try {
+          const reply = await apiGet(`${JOBS_PATH}/${encodeURIComponent(receipt.job_id)}/requests/${encodeURIComponent(receipt.id)}`, {admin:true}) as {request:RunReceipt};
+          if (!closed && reply.request) setReceipts(old => old[receipt.job_id]?.id === receipt.id
+            ? {...old,[receipt.job_id]:reply.request} : old);
+        } catch (error) {
+          if (!closed) setRunNote(old => ({...old,[receipt.job_id]:`status unavailable · ${refusalReason(error)}`}));
+        }
+      }
+      polling = false;
+    };
+    if (active.length) void poll();
+    const timer = active.length ? window.setInterval(() => void poll(), 2500) : undefined;
+    return () => {closed = true; if (timer !== undefined) window.clearInterval(timer);};
+  }, [pollKey]);
+  useEffect(() => {
+    setRunNote(old => ({...old,...Object.fromEntries(Object.values(receipts).map(r => [r.job_id,receiptText(r)]))}));
+  }, [receipts]);
   const [runs, setRuns] = useState<Record<string, any[] | null>>({});
   const [editing, setEditing] = useState<Record<string, { name: string; when: string; action: string; options: JobOptions } | null>>({});
 
@@ -91,8 +138,9 @@ export function JobsPanel() {
     actA(`${JOBS_PATH}/${encodeURIComponent(id)}/${op}`, {},
       (r: any) => {
         if (op === 'run') {
+          if (r?.request) setReceipts(old => ({...old,[id]:r.request}));
           const run = r?.run || {};
-          setRunNote((m) => ({ ...m, [id]: `${run.status || '?'} · ${run.summary || ''}` }));
+          if (!r?.request) setRunNote((m) => ({ ...m, [id]: `${run.status || '?'} · ${run.summary || ''}` }));
         }
         reload();
       },
