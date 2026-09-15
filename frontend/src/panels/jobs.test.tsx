@@ -274,3 +274,18 @@ it('restores an active receipt when an older server includes a pruned null entry
   await screen.findByText(/waiting · request current/);
   expect(screen.getByTitle('run now')).toBeTruthy();
 });
+
+it('authors model and provider pins in a custom ask job', async()=>{
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{alive:true}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel />);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'Pinned'}});
+  fireEvent.change(screen.getByLabelText('job action'),{target:{value:'ask'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'Check changes'}});
+  expect(screen.getByText(/omit embedding-based long-term recall/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('job model'),{target:{value:'org/model'}});
+  fireEvent.change(screen.getByLabelText('job provider'),{target:{value:'lm-studio'}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.some(c=>c.method==='POST')).toBe(true));
+  expect(calls.find(c=>c.method==='POST').body.options).toEqual({model:'org/model',provider:'lm-studio'});
+});

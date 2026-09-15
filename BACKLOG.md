@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 per-job model selection (H146/H449 partial): persisted CLI/HUD pins now constrain the actual ask-job model phase, preserve policy and ordinary chat configuration, and bound history/tool/completion context. Unavailable selections fail; auxiliary recall is omitted under pins. Independent review fixed recursive spill reads; 32 new backend cases and one HUD case, with all 1,314 frontend checks passing. Workdir/toolsets/skills and wider provider coverage remain open. See [contract](docs/superpowers/plans/2026-09-15-job-model-pins.md).
+
 - 2026-09-15 tool-result durability repair (H298): concurrent same-tool streams and identical whole results now use independently created temporary files. Failed finalization closes and removes only its own writer. Seven failing regressions now pass within 180 focused checks; the broader row reassessment remains open. See [plan and verification](docs/superpowers/plans/2026-09-15-tool-spill-concurrency.md).
 
 - 2026-09-15 gallery contract reassessment (H518): frozen bounded browse/search/export requirements verified against unchanged source with88 backend and13 frontend checks, plus prior merged browser evidence. Marked equivalent; native controls, evicted-history recovery and unlimited exports were not required. Future approved cloud generation must write back under H515. See [scope and evidence](docs/hermes/h518-gallery-contract.md).

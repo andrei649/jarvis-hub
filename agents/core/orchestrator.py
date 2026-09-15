@@ -2277,6 +2277,9 @@ class Orchestrator:
         if not self.get_setting("memory.recall_enabled", False):
             return ""
         try:
+            from .llm.job_selection import current_selection, SelectionError
+            if current_selection() is not None:
+                raise SelectionError("job model pins exclude auxiliary recall embedding")
             k = self.get_setting("memory.recall_top_k", 5)
             hits = await self.memory.recall(text, top_k=k)
             hits = self._living_memory_rerank_hits(hits)
@@ -2715,6 +2718,9 @@ class Orchestrator:
             return None
 
         async def _summarize(prompt: str) -> str:
+            from .llm.job_selection import current_selection, SelectionError
+            if current_selection() is not None:
+                raise SelectionError("job model pins exclude auxiliary compression calls")
             from .llm.model_config import DEFAULT_LOCAL_MODEL
             backend = router.local_backend      # strict-local; raises if none
             model = router.active_model or DEFAULT_LOCAL_MODEL
@@ -2734,6 +2740,11 @@ class Orchestrator:
         Falling back to "" takes the conservative 32k default, which costs a
         summarisation nobody needed rather than a truncation nobody saw.
         """
+        from .llm.job_selection import current_selection, selected_window
+        selection = current_selection()
+        if selection is not None:
+            selected_window()  # Fail explicitly if called before job preflight.
+            return selection.lifetime.resolved[1]
         router = getattr(self, "llm_router", None)
         for attr in ("active_model", "current_model", "model"):
             value = getattr(router, attr, None)
@@ -2865,7 +2876,11 @@ class Orchestrator:
         from .llm.base import OllamaBackend
         router = getattr(self, "llm_router", None)
         local_backend = getattr(router, "_backend", None)
-        if isinstance(local_backend, OllamaBackend):
+        from .llm.job_selection import selected_window
+        pinned_window = selected_window(model)
+        if pinned_window is not None:
+            policy = replace(policy, per_model={model: pinned_window})
+        elif isinstance(local_backend, OllamaBackend):
             ceiling = await local_backend.resolve_context_window(model)
             if ceiling:
                 policy = replace(policy, per_model={model: min(policy.window(model), ceiling)})
@@ -2880,7 +2895,7 @@ class Orchestrator:
             policy=policy,
             session_id=str(self.session_id or ""),
             prior=prior,
-            anchor=self._usage_anchor(len(turns)),
+            anchor=None if pinned_window is not None else self._usage_anchor(len(turns)),
         )
         if summarizer is not None and result["compressed"]:
             # Iterative merge state (bounded: one entry per live session key).

@@ -294,6 +294,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
+    if options and ("model" in options or "provider" in options) and kind != "ask":
+        return ["model/provider pins require an ask action"]
     if options and (options.get("script") or (options.get("monitor_script") or options.get("monitor_url"))) and kind != "ask":
         return ["script options require an ask action"]
     if kind not in ACTION_TYPES:
@@ -339,7 +341,9 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
 def validate_options(options: Any, *, check_scripts: bool = True, url_screen=None) -> dict:
     if not isinstance(options, dict):
         raise ValueError("options must be an object")
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url"}
+    from ..llm.job_selection import validate_pins
+    validate_pins(options)
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'monitor_url' in options:
@@ -1197,7 +1201,14 @@ class JobRunner:
         process = getattr(self._orch, "process", None)
         if not callable(process):
             raise RuntimeError("no model path is available for ask jobs")
-        reply = await process(prompt, agent=str(action.get("agent") or "jarvis"), channel="job")
+        from ..llm.job_selection import SelectionError, selection_scope
+        with selection_scope(job.options) as selection:
+            if selection is not None:
+                router = getattr(self._orch, "llm_router", None)
+                if not callable(getattr(router, "select_backend", None)):
+                    raise SelectionError("job pins require the governed model router")
+                router.select_backend(str(action.get("agent") or "jarvis"), prompt)
+            reply = await process(prompt, agent=str(action.get("agent") or "jarvis"), channel="job")
         reply = str(reply or "").strip()
         if not reply:
             raise RuntimeError("the agent returned no answer (no model backend, or a degraded reply)")

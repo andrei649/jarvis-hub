@@ -424,7 +424,8 @@ class AgentToolRuntime:
         # is. One cap cannot express the first: five results at 40% of the limit each
         # still bury a small context. The second rides along because the runtime is
         # shared between concurrent runs and the model is known only here.
-        spent: dict[str, int] = {"bytes": 0, "window": max(0, int(window_for(model) or 0))}
+        from .llm.job_selection import selected_window
+        spent: dict[str, int] = {"bytes": 0, "window": selected_window(model) or max(0, int(window_for(model) or 0))}
         while budget.consume():
             if len(messages) > 2 and not await self._compact_context(
                 messages,
@@ -549,6 +550,12 @@ class AgentToolRuntime:
         except Exception:
             logger.warning("tool loop context budget setting failed closed to auto")
             configured = 0
+        from .llm.job_selection import selected_window
+        pinned = selected_window(model)
+        if pinned is not None:
+            reserve = max_tokens if type(max_tokens) is int and max_tokens > 0 else pinned // 4
+            available = max(1, int(pinned * _CONTEXT_WINDOW_FRACTION) - reserve)
+            return min(configured, available) if configured > 0 else available
         if configured > 0:
             return max(_MIN_CONTEXT_BUDGET, configured)
         reserve = max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else 0
@@ -1080,6 +1087,10 @@ class AgentToolRuntime:
                 window = 0
         if window <= 0:
             window = max(0, int(window_tokens or 0))
+        from .llm.job_selection import selected_window
+        pinned = selected_window()
+        if pinned is not None:
+            window = min(window, pinned) if window > 0 else pinned
         if window <= 0:
             return None
         return budget_for_context_window(window)
@@ -1106,10 +1117,17 @@ class AgentToolRuntime:
             except Exception:
                 logger.warning("declared tool result limit unreadable", exc_info=True)
                 declared = None
-        return threshold_for(
+        threshold = threshold_for(
             tool_name, overrides=overrides, declared=declared,
             default=max(8, int(default)),
         )
+        from .llm.job_selection import selected_window
+        # file_read's pinned infinity prevents recursively spilling the file used
+        # to read a previous spill. The scoped transcript compactor and provider
+        # window check still bound the subsequent model request.
+        if selected_window() is not None and budget is not None and threshold != math.inf:
+            return min(threshold, budget.per_result_bytes)
+        return threshold
 
     def _prepare_result(
         self, raw_result: Any, tool_name: str, spent: dict[str, int] | None = None,
