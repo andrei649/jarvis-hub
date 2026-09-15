@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-15 xAI Responses (H363/H364/H673 partial): exact Grok4.5/4.6 reasoning now drives text/stream and invocation-owned encrypted function replay through the existing guarded router. Identity, expiry, overflow and malformed native items refuse safely; no provider state is persisted as conversation context. Invocation model/provider authoring and broader verified declarations remain open. No live billing/cache claim. See [scope and evidence](docs/superpowers/plans/2026-09-15-xai-responses.md).
+
 - 2026-09-15 H671 durable continuation: an explicit owner-created child retains root birth and accepted rebuild date through two generations and restart. Corrupt or reused history refuses before model or observed-turn writes. Production IANA/DST rendering and independent source/integration tests support the full frozen clock contract; no automatic rotation or live-model claim. See [contract and verification](docs/superpowers/plans/2026-09-15-session-continuation.md).
 
 - 2026-09-15 Responses transport (H363/H364/H673 partial): explicit API-key GPT-4.1 text/stream/function requests now use the public Responses endpoint, bounded stateless replay, cache retention and reported usage. Existing routing/approval and invocation-lifetime limits remain. Codex OAuth/subscription, Grok and reasoning-item replay are not claimed. See [plan/evidence](docs/superpowers/plans/2026-09-15-openai-responses.md).

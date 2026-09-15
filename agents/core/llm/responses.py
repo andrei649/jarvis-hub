@@ -30,6 +30,14 @@ TIMEOUT = 120
 
 class ResponsesBackend(LLMBackend):
     supports_tools = True
+    endpoint = ENDPOINT
+    error = ERROR
+
+    def _accept_completion(self):
+        """Provider-specific lifetime check after transport close."""
+
+    def _parse_response(self, value, model):
+        return parse_response(value)
 
     def __init__(self, api_key, *, retention="in_memory", transport=None):
         if not isinstance(retention, str) or retention not in {"in_memory", "24h"}:
@@ -86,7 +94,7 @@ class ResponsesBackend(LLMBackend):
         async with asyncio.timeout(TIMEOUT):
             ensure_reasoning_active()
             async with self.client.stream(
-                "POST", ENDPOINT, headers=self._headers(), content=encoded(payload)
+                "POST", self.endpoint, headers=self._headers(), content=encoded(payload)
             ) as response:
                 response.raise_for_status()
                 if response.headers.get("content-encoding", "identity") != "identity":
@@ -96,7 +104,7 @@ class ResponsesBackend(LLMBackend):
                     if len(data) + len(chunk) > MAX_BYTES:
                         raise ResponsesRefused()
                     data.extend(chunk)
-                return parse_response(json.loads(data))
+                return self._parse_response(json.loads(data), payload["model"])
 
     async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
         payload = self._payload(
@@ -110,7 +118,7 @@ class ResponsesBackend(LLMBackend):
             if turn.tool_calls:
                 raise ResponsesRefused()
         except Exception:
-            return ERROR
+            return self.error
         report_text_usage(turn.usage)
         return self._finalize_cloud(turn.content)
 
@@ -119,7 +127,7 @@ class ResponsesBackend(LLMBackend):
         try:
             return await self._request(payload)
         except Exception:
-            return ToolTurn(content=ERROR)
+            return ToolTurn(content=self.error)
 
     async def generate_stream(
         self, model, prompt, system="", max_tokens=1024, temperature=0.7, on_token=None
@@ -138,7 +146,7 @@ class ResponsesBackend(LLMBackend):
             async with asyncio.timeout(TIMEOUT):
                 ensure_reasoning_active()
                 async with self.client.stream(
-                    "POST", ENDPOINT, headers=self._headers(), content=encoded(payload)
+                    "POST", self.endpoint, headers=self._headers(), content=encoded(payload)
                 ) as response:
                     response.raise_for_status()
                     if response.headers.get("content-encoding", "identity") != "identity":
@@ -183,7 +191,7 @@ class ResponsesBackend(LLMBackend):
                                 if on_token:
                                     await _emit(on_token, delta)
                             elif kind == "response.completed":
-                                turn = parse_response(event.get("response"))
+                                turn = self._parse_response(event.get("response"), model)
                                 if turn.tool_calls or turn.content != full:
                                     raise ResponsesRefused()
                                 terminal = turn
@@ -191,10 +199,11 @@ class ResponsesBackend(LLMBackend):
                                 raise ResponsesRefused()
                         if len(buffer) > MAX_EVENT:
                             raise ResponsesRefused()
+            self._accept_completion()
         except Exception:
-            return ERROR
+            return self.error
         if terminal is None or buffer.strip():
-            return ERROR
+            return self.error
         # Accept only a bounded, fully closed stream; contradictory trailers and
         # close failures cannot publish usage for a rejected attempt.
         report_text_usage(terminal.usage)
