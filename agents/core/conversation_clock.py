@@ -27,6 +27,7 @@ cached prefix is already being invalidated and the rebuild costs nothing extra.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, tzinfo
 
 _START_LABEL = "Conversation started:"
@@ -104,7 +105,13 @@ def clock_block(
         return ""
     start = _local(started_at, zone)
     lines = [f"{_START_LABEL} {_long_date(start)} ({_zone_name(start)})"]
-    moment = _local(now or datetime.now(UTC), zone)
+    current = now or datetime.now(UTC)
+    if zone is None and not getattr(start.tzinfo, "key", None) and start.tzinfo == start.astimezone().tzinfo:
+        # astimezone() stores an instant's fixed offset, not DST rules. When
+        # birth came from this host, resolve today's local offset independently.
+        moment = current.astimezone()
+    else:
+        moment = _local(current, zone or start.tzinfo)
     if moment.date() != start.date():
         # Only on a day boundary. A same-day session keeps the byte-identical
         # prefix the cache is built on (H363); adding an always-present "today"
@@ -130,6 +137,12 @@ def with_clock(
     if not block:
         return system_prompt
     body = system_prompt or ""
+    # Replace only our trailing structured block, not a phrase in the soul.
+    body = re.sub(
+        r"(?:\n\n|^)Conversation started: [A-Za-z]+, [A-Za-z]+ \d{2}, \d{4} \([^\n]+\)"
+        r"(?:\nToday's date \(as of the last context rebuild\): [^\n]+)?$",
+        "", body,
+    )
     return f"{body}\n\n{block}" if body else block
 
 

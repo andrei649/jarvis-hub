@@ -495,6 +495,7 @@ async def test_recall_taint_survives_the_orchestrators_agent_gather():
         return ""
 
     orch = Orchestrator.__new__(Orchestrator)
+    orch._session_id_default = "taint-session"
     orch.agents = {"jarvis": _Agent()}
     orch._history_for_prompt = _history
     orch._format_plugin_data = lambda _d: ""

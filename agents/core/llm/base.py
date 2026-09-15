@@ -670,10 +670,37 @@ class OllamaBackend(LLMBackend):
     # translation lives in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, base_url: str = "http://localhost:11434"):
+    def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0):
+        self.num_ctx = max(0, int(num_ctx or 0))
+        self._context_windows: dict[str, int] = {}
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
         self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0))
+
+    def context_window(self, model: str) -> int | None:
+        return self.num_ctx or self._context_windows.get(model)
+
+    async def resolve_context_window(self, model: str) -> int | None:
+        """Resolve num_ctx, never the model's architectural maximum."""
+        if self.context_window(model):
+            return self.context_window(model)
+        try:
+            response = await self.client.post("/api/show", json={"model": model})
+            response.raise_for_status()
+            parameters = response.json().get("parameters", "")
+            for line in str(parameters).splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[0] == "num_ctx":
+                    size = int(parts[1])
+                    if size > 0:
+                        self._context_windows[model] = size
+        except (ValueError, TypeError, AttributeError, httpx.HTTPError):
+            pass
+        return self.context_window(model)
+
+    def _context_options(self, model: str) -> dict:
+        size = self.context_window(model)
+        return {"num_ctx": size} if size else {}
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -705,6 +732,7 @@ class OllamaBackend(LLMBackend):
             "system": system,
             "stream": False,
             "options": {
+                **self._context_options(model),
                 # Auto (max_tokens <= 0) -> -1: generate until the loaded model's
                 # context is full (Ollama's "infinite"), matching the single dial.
                 "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,
@@ -746,6 +774,7 @@ class OllamaBackend(LLMBackend):
             "messages": ollama_messages(messages),
             "stream": False,
             "options": {
+                **self._context_options(model),
                 "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,
                 "temperature": temperature,
             },
@@ -787,6 +816,7 @@ class OllamaBackend(LLMBackend):
             "system": system,
             "stream": True,
             "options": {
+                **self._context_options(model),
                 # Auto (max_tokens <= 0) -> -1: generate until the loaded model's
                 # context is full (Ollama's "infinite"), matching the single dial.
                 "num_predict": max_tokens if not is_auto_max_tokens(max_tokens) else -1,

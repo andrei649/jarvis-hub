@@ -171,6 +171,8 @@ def _ollama(*responses: Any) -> tuple[OllamaBackend, list[dict[str, Any]]]:
         return httpx.Response(200, json=response, request=request)
 
     backend = OllamaBackend.__new__(OllamaBackend)
+    backend.num_ctx = 0
+    backend._context_windows = {}
     backend.base_url = "http://ollama.test"
     backend.client = httpx.AsyncClient(
         base_url=backend.base_url, transport=httpx.MockTransport(handler)

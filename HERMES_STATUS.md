@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**116 / 697 = 16.6% echivalente complet în evaluarea documentată.**
+**115 / 697 = 16.5% echivalente complet în evaluarea documentată.**
 
-Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **7** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 116 | 16.6% |
-| Parțial | 339 | 48.6% |
+| Echivalent | 115 | 16.5% |
+| Parțial | 333 | 47.8% |
 | Lipsă | 98 | 14.1% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 37 | 5.3% |
+| De reverificat | 44 | 6.3% |
 
-**Ținta acceptată în produs:** 590 rânduri; progres 116/590 = **19.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
+**Ținta acceptată în produs:** 590 rânduri; progres 115/590 = **19.5%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 71/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 64/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -27,7 +27,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
 | cli | 56 | 15 | 16 | 3 | 10 | 12 |
-| gateway | 33 | 5 | 13 | 6 | 5 | 4 |
+| gateway | 33 | 5 | 11 | 6 | 5 | 6 |
 | platforms | 39 | 5 | 20 | 5 | 8 | 1 |
 | web | 40 | 7 | 16 | 9 | 7 | 1 |
 | desktop | 54 | 6 | 33 | 7 | 6 | 2 |
@@ -37,7 +37,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | tools — the agent-callable surface | 32 | 8 | 19 | 3 | 2 | 0 |
 | skills | 33 | 6 | 13 | 6 | 8 | 0 |
 | providers | 27 | 4 | 12 | 3 | 7 | 1 |
-| agent-core | 36 | 8 | 14 | 9 | 4 | 1 |
+| agent-core | 36 | 7 | 11 | 9 | 4 | 5 |
 | memory | 27 | 8 | 13 | 3 | 2 | 1 |
 | automation | 32 | 1 | 18 | 4 | 3 | 6 |
 | security | 34 | 7 | 17 | 4 | 5 | 1 |
@@ -45,7 +45,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
 | docs-features | 48 | 8 | 24 | 5 | 9 | 2 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
-| delta | 42 | 1 | 28 | 6 | 5 | 2 |
+| delta | 42 | 1 | 27 | 6 | 5 | 3 |
 
 ## Actualizare
 

@@ -187,3 +187,23 @@ def test_the_system_prompt_carries_the_clock_after_the_soul():
     out = with_clock("SOUL BODY", orch._session_birth())
     assert out.startswith("SOUL BODY")
     assert "Conversation started:" in out
+
+
+def test_default_now_uses_the_start_zone_at_midnight(monkeypatch):
+    import agents.core.conversation_clock as clock
+    class Fixed(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 10, 21, 5, tzinfo=UTC)
+    monkeypatch.setattr(clock, 'datetime', Fixed)
+    start = datetime(2026, 9, 11, 0, 1, tzinfo=BUCHAREST)
+    assert "Today's date" not in clock.clock_block(start)
+
+
+def test_reused_prompt_refreshes_one_clock_and_literal_phrase_is_not_a_marker():
+    first = with_clock('SOUL mentions Conversation started: as an example', BORN, BORN)
+    next_day = BORN + timedelta(days=1)
+    rebuilt = with_clock(first, BORN, next_day)
+    assert rebuilt.count('\n\nConversation started:') == 1
+    assert 'September 09' in rebuilt
+    assert rebuilt.startswith('SOUL mentions Conversation started: as an example')

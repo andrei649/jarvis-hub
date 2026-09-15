@@ -1698,8 +1698,10 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     # first and unaltered, and the clock follows it.
     system = call.pop("system")
     assert system.startswith("agent system")
-    assert "Conversation started:" in system
+    # This stub has no durable session record; unknown birth is omitted.
+    assert system == "agent system"
     assert call == {
+        "session_id": "seam-session",
         "backend": backend,
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",

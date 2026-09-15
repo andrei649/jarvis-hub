@@ -1811,7 +1811,7 @@ class Orchestrator:
         self._context_anchor: dict = {}
         # H671 — {session_id: birth datetime}. A forever-session must keep the day
         # it actually began, so this is seeded once per id and never refreshed.
-        self._session_born: dict = {}
+        # Birth is read from the checkpoint session record, never reset per turn.
         # How many history turns the last prompt was built from, so the anchor
         # knows where measurement stops and estimation resumes.
         self._ctx_turns_at_build = 0
@@ -1994,6 +1994,7 @@ class Orchestrator:
                         on_token=on_token,
                         wall_seconds=wall_seconds,
                         usage_sink=_meter,
+                        session_id=self.session_id,
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -2853,10 +2854,25 @@ class Orchestrator:
         # than by a fixed token budget that is wrong for every model but one.
         # Below the soft threshold it returns the turns untouched, so this is the
         # same answer the token-budget path gave for every short session.
+        model = self._compaction_model()
+        policy = self._compaction_policy()
+        from dataclasses import replace
+        from .llm.base import OllamaBackend
+        router = getattr(self, "llm_router", None)
+        local_backend = getattr(router, "_backend", None)
+        if isinstance(local_backend, OllamaBackend):
+            ceiling = await local_backend.resolve_context_window(model)
+            if ceiling:
+                policy = replace(policy, per_model={model: min(policy.window(model), ceiling)})
+        if model.startswith("gemini-"):
+            from .llm.base import cloud_cap
+            policy = replace(policy, output_reserve=cloud_cap(
+                self.get_setting("llm.max_tokens", 0)
+            ))
         result = await compressor.compact(
             turns,
-            model=self._compaction_model(),
-            policy=self._compaction_policy(),
+            model=model,
+            policy=policy,
             session_id=str(self.session_id or ""),
             prior=prior,
             anchor=self._usage_anchor(len(turns)),
@@ -2949,6 +2965,7 @@ class Orchestrator:
             # A per-agent copy: the tool loop reads its wall clock from here, and the
             # shared turn context must not carry one agent's budget into another's.
             agent_context = dict(context or {})
+            agent_context["session_id"] = self.session_id
             agent_context["wall_seconds"] = seconds
             try:
                 resp = await asyncio.wait_for(
@@ -3326,10 +3343,22 @@ class Orchestrator:
         sid = str(self.session_id or "")
         if not sid:
             return None
-        born = self._session_born.get(sid)
-        if born is None:
+        cache = getattr(self, "_session_born", None)
+        if cache is None:
+            cache = self._session_born = {}
+        if sid in cache:
+            return cache[sid]
+        from .conversation_clock import parse_started_at
+        manager = getattr(self, "checkpoints", None)
+        if manager is not None and hasattr(manager, "session_started_at"):
+            manager.create_session_record(sid)
+            born = parse_started_at(manager.session_started_at(sid))
+            if born is not None:
+                born = born.astimezone()
+        else:
             born = datetime.now(UTC).astimezone()
-            self._session_born[sid] = born
+        if born is not None:
+            cache[sid] = born
         return born
 
     async def new_session(self) -> str:

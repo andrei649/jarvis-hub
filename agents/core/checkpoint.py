@@ -236,6 +236,16 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"Failed to create session record: {e}")
 
+    def session_started_at(self, session_id: str) -> str | None:
+        """Read the durable birth date; old/missing rows remain unknown."""
+        if not self._conn:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT started_at FROM sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        return row[0] if row else None
+
     def update_session(self, session_id: str, turn_count: int = None, summary: str = None):
         if not self._conn:
             return

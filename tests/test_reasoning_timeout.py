@@ -86,6 +86,8 @@ def _orch(
         return ""
 
     orch = Orchestrator.__new__(Orchestrator)
+    # Parallel agent calls propagate the resolved session from the orchestrator.
+    orch._session_id_default = "s"
     orch.agents = dict(agents or {})
     orch._history_for_prompt = _history
     orch._format_plugin_data = lambda _d: ""

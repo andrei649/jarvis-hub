@@ -174,7 +174,25 @@ class Agent:
 
         return TOOL_EVENTS.record
 
-    async def generate_response(
+    async def generate_response(self, backend, model, prompt, system, max_tokens,
+                                temperature, on_token=None, wall_seconds=None,
+                                usage_sink=None, session_id=None) -> str:
+        from .conversation_clock import parse_started_at, with_clock
+        from .llm.request_context import current_session, session_scope
+
+        sid = session_id or current_session()
+        manager = self._checkpoint_manager
+        if sid and manager is not None and hasattr(manager, "session_started_at"):
+            manager.create_session_record(sid, agent_id=self.id)
+            born = parse_started_at(manager.session_started_at(sid))
+            system = with_clock(system, born.astimezone() if born is not None else None)
+        with session_scope(sid):
+            return await self._generate_response(
+                backend, model, prompt, system, max_tokens, temperature,
+                on_token=on_token, wall_seconds=wall_seconds, usage_sink=usage_sink,
+            )
+
+    async def _generate_response(
         self,
         backend,
         model,
@@ -296,6 +314,7 @@ class Agent:
                     temperature=temperature,
                     # The orchestrator's per-agent ceiling rides in on the context
                     # (Hermes absorption 5c); absent, the tool loop keeps its default.
+                    session_id=context.get("session_id"),
                     wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
                 )
             latency = time.monotonic() - start

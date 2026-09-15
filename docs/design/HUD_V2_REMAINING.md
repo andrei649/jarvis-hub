@@ -273,6 +273,9 @@ surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items
 coverage.*
 
 
+<!-- models-context-2026-09-15 -->
+Model/session context: backend clock and request shaping apply across channels. Existing /admin metadata exposes compatible provider/model, explicit cache/effort capability toggles, per-model vocabularies and Ollama num_ctx. Dedicated mobile/HUD model controls remain a UI gap; no new routes or mobile controls are claimed.
+
 ### H178 native floating chat — 2026-09-15
 
 Desktop-only: Tauri tray/main controls open a frameless chat using the existing HUD

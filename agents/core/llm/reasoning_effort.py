@@ -510,6 +510,13 @@ def declare_reasoning_efforts(
     Levels that are not on the ladder are dropped rather than trusted — a
     vocabulary is only useful if ``clamp`` can rank every rung in it.
     """
+    ordered = normalize_efforts(efforts)
+    _VOCAB_CACHE[_vocab_key(provider_id, model)] = ordered
+    return ordered
+
+
+def normalize_efforts(efforts: object) -> tuple[str, ...]:
+    """Normalize a vocabulary without publishing it to the process registry."""
     if isinstance(efforts, str):
         candidates: list[object] = _split_levels(efforts)
     elif isinstance(efforts, (list, tuple, set, frozenset)):
@@ -521,7 +528,6 @@ def declare_reasoning_efforts(
         if level is not None and level != "none"
     )
     ordered = tuple(rung for rung in LADDER if rung in levels)
-    _VOCAB_CACHE[_vocab_key(provider_id, model)] = ordered
     return ordered
 
 
@@ -596,6 +602,11 @@ def clamp_reasoning_effort(
     request and less on the expensive one, silently.
     """
     vocabulary = supported_reasoning_efforts(provider_id, model, overrides=overrides)
+    return clamp_vocabulary(vocabulary, level)
+
+
+def clamp_vocabulary(vocabulary: tuple[str, ...] | None, level: object) -> tuple[str | None, str]:
+    """Canonical tri-state clamp shared by registry and owned snapshots."""
     if vocabulary is None:
         return None, "undeclared"
     if not vocabulary:

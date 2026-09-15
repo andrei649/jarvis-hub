@@ -28,7 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from ..env_config import env_flag
+from ..env_config import env_flag, env_str
 from . import model_config
 from .base import LLMBackend, OllamaBackend
 from .router import LLMRouter
@@ -292,7 +292,7 @@ class HybridRouter(LLMRouter):
         # Re-detection (admin "reconnect") rebuilds the cloud/Ollama backends;
         # close the prior instances first so their pooled httpx.AsyncClient
         # sockets are not leaked until process exit (mirrors aclose()).
-        for _attr in ("_gemini_backend", "_claude_backend", "_ollama_backend"):
+        for _attr in ("_gemini_backend", "_claude_backend", "_ollama_backend", "_compatible_backend"):
             _prev = getattr(self, _attr, None)
             if _prev is not None:
                 await self._close_backend(_prev)
@@ -312,6 +312,8 @@ class HybridRouter(LLMRouter):
         self._gemini_model = self._admin_setting("gemini_model", DEFAULT_GEMINI_FLASH_MODEL)
         await super().detect()
         self._local_available = self._backend is not None
+        if isinstance(self._backend, OllamaBackend):
+            self._backend.num_ctx = max(0, int(self._admin_setting("ollama_num_ctx", 0) or 0))
         # Use the real model loaded in the live backend; fall back to the /admin
         # default, then the hard-coded default. ("live with the real LLM loaded".)
         self._local_model = self._detected_model or self._admin_setting(
@@ -332,8 +334,35 @@ class HybridRouter(LLMRouter):
             from .gemini import GeminiBackend
 
             self._gemini_backend = GeminiBackend(
-                api_key=self.gemini_api_key, model=self._gemini_model, auth_pool=self._gemini_pool
+                api_key=self.gemini_api_key, model=self._gemini_model, auth_pool=self._gemini_pool,
+                reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                effort_declarations=self._admin_setting("gemini_effort_declarations", ""),
             )
+
+        # Explicit cloud adapter choice; this never changes agent/local policy.
+        self._compatible_backend = None
+        self._compatible_model = self._admin_setting("compatible_model", "")
+        provider_id = self._admin_setting("compatible_provider", "")
+        if provider_id in {"openrouter", "openai-compatible"} and self._compatible_model:
+            from dataclasses import replace
+
+            from .openrouter import OpenRouterBackend
+            from .providers import DEFAULT_REGISTRY
+            profile = DEFAULT_REGISTRY.get(provider_id)
+            key = env_str(profile.auth_env, "")
+            if key:
+                caps = set(profile.capabilities)
+                if self._admin_setting("compatible_reasoning_enabled", False):
+                    caps.add("reasoning-effort")
+                if self._admin_setting("compatible_prompt_cache_key", False):
+                    caps.add("prompt-cache-key")
+                profile = replace(profile, capabilities=frozenset(caps))
+                self._compatible_backend = OpenRouterBackend(
+                    api_key=key, base_url=env_str(profile.base_url_env) or profile.default_base_url,
+                    profile=profile, reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                    effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
+                )
+                self._cloud_available = True
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
@@ -360,7 +389,9 @@ class HybridRouter(LLMRouter):
                 "ANTHROPIC_API_KEY not set — Claude tiering disabled, heavy agents will fall back"
             )
 
-        self._ollama_backend = OllamaBackend(base_url=self.ollama_url)
+        self._ollama_backend = OllamaBackend(
+            base_url=self.ollama_url, num_ctx=self._admin_setting("ollama_num_ctx", 0)
+        )
         self._ollama_available = await self._check(f"{self.ollama_url}/api/tags")
         if self._ollama_available:
             logger.info(f"Ollama available for Howard ({HOWARD_OLLAMA_MODEL})")
@@ -431,6 +462,9 @@ class HybridRouter(LLMRouter):
         """Select backend + model + route, then enforce the agent's approved-model
         allowlist (H23.2). Returns: (backend, model_name, route_name)."""
         backend, model, route = self._select_backend_inner(agent_id, prompt)
+        compatible = getattr(self, "_compatible_backend", None)
+        if compatible is not None and route.startswith("cloud"):
+            backend, model, route = compatible, self._compatible_model, "cloud-compatible"
         self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 
@@ -644,7 +678,7 @@ class HybridRouter(LLMRouter):
             raise RuntimeError(
                 "No LLM backend available. Start LM Studio/Ollama or configure GEMINI_API_KEY."
             )
-        return self._claude_backend or self._backend or self._gemini_backend
+        return self._claude_backend or self._backend or getattr(self, "_compatible_backend", None) or self._gemini_backend
 
     @property
     def name(self) -> str:
@@ -655,7 +689,9 @@ class HybridRouter(LLMRouter):
             parts.append("ollama-howard")
         if self._claude_available:
             parts.append("claude")
-        if self._cloud_available:
+        if getattr(self, "_compatible_backend", None) is not None:
+            parts.append("cloud-compatible")
+        elif self._cloud_available:
             parts.append("gemini")
         return "+".join(parts) if parts else "none"
 
@@ -678,7 +714,7 @@ class HybridRouter(LLMRouter):
         swallows per-backend errors so shutdown never raises.
         """
         await super().aclose()
-        for attr in ("_gemini_backend", "_claude_backend", "_ollama_backend"):
+        for attr in ("_gemini_backend", "_claude_backend", "_ollama_backend", "_compatible_backend"):
             backend = getattr(self, attr, None)
             if backend is not None:
                 await self._close_backend(backend)

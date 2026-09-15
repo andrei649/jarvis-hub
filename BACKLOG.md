@@ -22,6 +22,10 @@
   merged delivery PRs and the remaining K0/S2/desktop investigation are collected in
   [the sprint record](docs/HERMES_SPRINT.md). This is tracking delivery, not full parity.
 
+- 2026-09-15 models review repairs: DST-aware current local date; immutable adapter-owned effort declarations that clear on reconnect; actual history reduction at the effective 85% compaction limit for customized threshold pairs. Independent failing regressions reproduced before fixes.
+
+- 2026-09-15 models/conversations: checkpoint-backed birth and request-local session identity; explicit compatible provider cache/effort capabilities; Gemini level/budget normalization; configured/probed Ollama context ceiling and 85% threshold. H363/H364/H671/H673/H679 remain partial with bounded provider, lineage and heterogeneous-route gaps in the Hermes assessment. Offline tests only; no billing or live-provider claim.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

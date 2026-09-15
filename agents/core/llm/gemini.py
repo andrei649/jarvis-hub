@@ -41,7 +41,13 @@ class GeminiBackend(LLMBackend):
     # in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", auth_pool=None):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", auth_pool=None, reasoning_effort="", effort_declarations=None):
+        from .providers import DEFAULT_REGISTRY
+        from .provider_request import GEMINI_LEVELS, profile_with_declarations
+        self.profile = profile_with_declarations(
+            DEFAULT_REGISTRY.get("gemini"), effort_declarations, defaults=GEMINI_LEVELS,
+        )
+        self.reasoning_effort = reasoning_effort
         self.api_key = api_key
         self.model = model
         self.auth_pool = auth_pool
@@ -90,12 +96,28 @@ class GeminiBackend(LLMBackend):
         suffix = "?alt=sse" if streaming else ""
         return f"{GEMINI_API_BASE}/models/{model}:{action}{suffix}"
 
+    def _fit_effort(self, payload, model):
+        level, _ = self.profile.clamp_reasoning_effort(model, self.reasoning_effort)
+        if level is not None:
+            config = payload["generationConfig"]
+            if model in {"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"}:
+                # Product effort targets inside Google's documented budget ranges.
+                budget = min({"low": 1024, "medium": 4096, "high": 8192}.get(level, 1024),
+                             config["maxOutputTokens"] - 1)
+                floor = 128 if model == "gemini-2.5-pro" else 512
+                if budget >= floor:
+                    config["thinkingConfig"] = {"thinkingBudget": budget}
+            elif level in {"minimal", "low", "medium", "high"}:
+                config["thinkingConfig"] = {"thinkingLevel": level}
+        return payload
+
     def _build_payload(
         self,
         prompt: str,
         system: str = "",
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        model: str | None = None,
     ) -> dict:
         contents = [{"role": "user", "parts": [{"text": prompt}]}]
         payload = {
@@ -110,7 +132,7 @@ class GeminiBackend(LLMBackend):
             payload["cachedContent"] = binding.cache_name
         elif system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
-        return payload
+        return self._fit_effort(payload, model or self.model)
 
     def _extract_text(self, data: dict) -> str:
         candidates = data.get("candidates", [])
@@ -156,7 +178,7 @@ class GeminiBackend(LLMBackend):
         temperature: float,
     ) -> str:
         with self.request_scope(binding):
-            payload = self._build_payload(prompt, system, max_tokens, temperature)
+            payload = self._build_payload(prompt, system, max_tokens, temperature, model=model)
             response = await self.client.post(
                 self._build_url(model),
                 headers={"x-goog-api-key": binding.lease.api_key},
@@ -260,6 +282,7 @@ class GeminiBackend(LLMBackend):
         tools: list[ToolSpec],
         max_tokens: int,
         temperature: float,
+        model: str | None = None,
     ) -> dict[str, Any]:
         system, contents = gemini_contents(messages, thought_signatures=self._thought_signatures)
         payload: dict[str, Any] = {
@@ -275,7 +298,7 @@ class GeminiBackend(LLMBackend):
         if declarations:
             payload["tools"] = [{"functionDeclarations": declarations}]
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "AUTO"}}
-        return payload
+        return self._fit_effort(payload, model or self.model)
 
     def _tool_turn_from_response(self, data: Any) -> ToolTurn:
         candidates = data.get("candidates") if isinstance(data, dict) else None
@@ -316,7 +339,7 @@ class GeminiBackend(LLMBackend):
         except Exception as exc:
             log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
             return ToolTurn(content=GEMINI_DEGRADED_REPLY)
-        payload = self._build_tool_payload(messages, tools, max_tokens, temperature)
+        payload = self._build_tool_payload(messages, tools, max_tokens, temperature, model=actual_model)
 
         attempts = max(1, self.auth_pool.size if self.auth_pool is not None else 1)
         for attempt in range(attempts):
@@ -359,7 +382,7 @@ class GeminiBackend(LLMBackend):
     ) -> str:
         full = ""
         with self.request_scope(binding):
-            payload = self._build_payload(prompt, system, max_tokens, temperature)
+            payload = self._build_payload(prompt, system, max_tokens, temperature, model=model)
             async with self.client.stream(
                 "POST",
                 self._build_url(model, streaming=True),
