@@ -87,18 +87,55 @@ def _installed(*pairs):
 
 
 def test_installed_enumeration_normalizes_names_and_dedupes():
-    comps = enumerate_installed([_dist("Foo_Bar", "1.0"), _dist("foo-bar", "1.0"), _dist("Baz", "2.1")])
+    comps, errors = enumerate_installed([_dist("Foo_Bar", "1.0"), _dist("foo-bar", "1.0"), _dist("Baz", "2.1")])
     assert [(c.name, c.version) for c in comps] == [("baz", "2.1"), ("foo-bar", "1.0")]
     assert {c.surface for c in comps} == {"installed"}
+    assert errors == []
 
 
 def test_installed_enumeration_skips_nameless_or_versionless_distributions():
-    comps = enumerate_installed([
+    comps, errors = enumerate_installed([
         SimpleNamespace(metadata={}, version="1.0"),
         SimpleNamespace(metadata={"Name": "ok"}, version=None),
         _dist("keep", "3.0"),
     ])
     assert [(c.name, c.version) for c in comps] == [("keep", "3.0")]
+    assert errors == []
+
+
+def test_installed_enumeration_skips_undecodable_metadata_and_names_it(tmp_path):
+    """One corrupt METADATA file must neither crash the audit nor vanish from it."""
+    from importlib import metadata as _metadata
+
+    good = tmp_path / "good-2.0.dist-info"
+    good.mkdir()
+    (good / "METADATA").write_text("Metadata-Version: 2.1\nName: good\nVersion: 2.0\n", encoding="utf-8")
+    bad = tmp_path / "bad-1.0.dist-info"
+    bad.mkdir()
+    (bad / "METADATA").write_bytes(b"Metadata-Version: 2.1\nName: bad\nVersion: 1.0\nSummary: \xff\xfe\n")
+
+    comps, errors = enumerate_installed(_metadata.distributions(path=[str(tmp_path)]))
+    assert [(c.name, c.version) for c in comps] == [("good", "2.0")]
+    assert errors == [{"surface": "installed", "location": "bad-1.0.dist-info",
+                       "reason": "metadata_unreadable: UnicodeDecodeError"}]
+
+
+def test_a_distribution_location_is_reduced_to_a_safe_token():
+    from agents.core.security.dep_audit import _dist_location
+
+    assert _dist_location(SimpleNamespace(_path="/site/pkg-1.0.dist-info")) == "pkg-1.0.dist-info"
+    assert _dist_location(SimpleNamespace(_path="/site/evil\x1b[31m.dist-info")) == "unknown"
+    assert _dist_location(SimpleNamespace()) == "unknown"
+
+
+def test_a_skipped_distribution_is_rendered_and_serialised_but_does_not_flip_the_verdict():
+    error = {"surface": "installed", "location": "bad-1.0.dist-info",
+             "reason": "metadata_unreadable: UnicodeDecodeError"}
+    report = audit(_installed(("pkg", "1.0")), FakeOSV(), errors=[error])
+    assert report.status == "clean"
+    text = render(report)
+    assert "installed distribution bad-1.0.dist-info: metadata_unreadable: UnicodeDecodeError — skipped, not audited" in text
+    assert report.to_dict()["errors"] == [error]
 
 
 def _manifest(tmp_path, name, python):
@@ -133,10 +170,15 @@ def test_an_invalid_manifest_is_reported_not_fatal(tmp_path):
     assert all(str(tmp_path) not in json.dumps(e) for e in errors)
 
 
-def test_mcp_surface_is_declared_empty_with_its_reason():
+def test_mcp_surface_is_listed_as_not_audited_with_its_reason():
+    """Nerva's MCP is stdio-first (agents/core/mcp/client.py); the surface exists and is
+    *not audited* here — the reason must say so, not claim there is nothing to audit."""
     surface = mcp_surface()
-    assert surface["count"] == 0
-    assert "HTTP" in surface["reason"]
+    assert surface["count"] == 0 and surface["audited"] is False
+    assert "stdio" in surface["reason"] and "not audited" in surface["reason"]
+    assert "HTTP transport" not in surface["reason"]
+    header = render(audit([], FakeOSV())).splitlines()[0]
+    assert "MCP: not audited" in header
 
 
 # ── severity ──────────────────────────────────────────────────────────────────
@@ -158,6 +200,30 @@ def test_fixed_in_reads_the_matching_package_range_only():
     assert fixed_in(v, "Requests") == "2.32.4"            # PyPI names are case-insensitive
     assert fixed_in(v, "other") is None
     assert fixed_in(_vuln("B", "requests"), "requests") is None
+
+
+def _two_branch_vuln():
+    """OSV's shape for an issue fixed on two maintained branches."""
+    return {"id": "GHSA-2b", "aliases": [], "summary": "two branches", "affected": [{
+        "package": {"name": "pkg", "ecosystem": "PyPI"},
+        "ranges": [{"type": "ECOSYSTEM", "events": [
+            {"introduced": "0"}, {"fixed": "2.31.1"},
+            {"introduced": "3.0.0"}, {"fixed": "3.0.2"},
+        ]}],
+    }], "database_specific": {"severity": "HIGH"}}
+
+
+def test_fixed_in_names_the_fix_for_the_installed_branch_not_a_downgrade():
+    v = _two_branch_vuln()
+    assert fixed_in(v, "pkg", "3.0.0") == "3.0.2"        # not "fixed in 2.31.1" on a 3.x box
+    assert fixed_in(v, "pkg", "3.0.1") == "3.0.2"
+    assert fixed_in(v, "pkg", "2.0") == "2.31.1"
+    assert fixed_in(v, "pkg", "2.31.1") == "2.31.1"      # already fixed: no range contains it → first listed
+    assert fixed_in(v, "pkg", "not-a-version") == "2.31.1"
+    assert fixed_in(v, "pkg") == "2.31.1"
+    report = audit(_installed(("pkg", "3.0.0")), FakeOSV(hits={("pkg", "3.0.0"): ["GHSA-2b"]}, vulns={"GHSA-2b": v}))
+    assert report.findings[0].fixed_in == "3.0.2"
+    assert "fixed in 3.0.2" in render(report)
 
 
 # ── the audit ─────────────────────────────────────────────────────────────────
@@ -253,7 +319,7 @@ def test_report_round_trips_to_json_and_names_every_surface():
     comps = _installed(("pkg", "1.0"))
     osv = FakeOSV(hits={("pkg", "1.0"): ["GHSA-x"]},
                   vulns={"GHSA-x": _vuln("GHSA-x", "pkg", severity="HIGH", fixed="1.1", aliases=("CVE-1",))})
-    report = audit(comps, osv, fail_on="low", extension_errors=[{"reason": "manifest_unreadable"}])
+    report = audit(comps, osv, fail_on="low", errors=[{"reason": "manifest_unreadable"}])
     payload = json.loads(json.dumps(report.to_dict()))
     assert payload["status"] == "findings" and payload["fail_on"] == "low"
     assert set(payload["surfaces"]) == {"installed", "extension", "mcp"}
@@ -273,6 +339,25 @@ def test_render_lists_findings_with_severity_first_and_fix_when_known():
     line = next(line for line in text.splitlines() if "GHSA-x" in line)
     assert line.startswith("HIGH") and "pkg 1.0" in line and "CVE-1" in line and "fixed in 1.1" in line
     assert "1 finding" in text and "osv.dev" in text.lower()
+
+
+def test_render_strips_control_characters_from_advisory_text():
+    """An advisory body is network data; ESC/CR/LF in it must not reach the terminal raw."""
+    forged = "ok\x1b[2J\x1b[31mCLEAN — 0 findings\nLOW      fake 1.0  GHSA-fake  no fix listed"
+    v = _vuln("GHSA-x\x1b[31m", "pkg", severity="HIGH", fixed="1.1\r\n", aliases=("CVE-1\x07",), summary=forged)
+    osv = FakeOSV(hits={("pkg", "1.0"): ["GHSA-x\x1b[31m"]}, vulns={"GHSA-x\x1b[31m": v})
+    text = render(audit(_installed(("pkg", "1.0")), osv, fail_on="low"))
+    assert "\x1b" not in text and "\r" not in text and "\x07" not in text
+    assert not any(line.startswith("LOW      fake") for line in text.splitlines())
+    assert sum("GHSA-x" in line for line in text.splitlines()) == 1
+    assert "1 finding(s) at or above low" in text
+    long_summary = "x" * 400
+    v2 = _vuln("GHSA-y", "pkg", severity="LOW", summary=long_summary)
+    text2 = render(audit(_installed(("pkg", "1.0")), FakeOSV(hits={("pkg", "1.0"): ["GHSA-y"]}, vulns={"GHSA-y": v2})))
+    line = next(line for line in text2.splitlines() if "GHSA-y" in line)
+    assert len(line) < 400 and line.endswith("…")
+    payload = audit(_installed(("pkg", "1.0")), FakeOSV(hits={("pkg", "1.0"): ["GHSA-y"]}, vulns={"GHSA-y": v2})).to_dict()
+    assert payload["findings"][0]["summary"] == long_summary   # JSON keeps the whole text
 
 
 def test_offline_report_claims_nothing():
@@ -327,6 +412,16 @@ def test_merge_keeps_the_best_stated_severity_and_every_id():
     assert f.aliases == ("CVE-1", "GHSA-a")
 
 
+def test_merge_keeps_one_spelling_per_alias():
+    osv = FakeOSV(hits={("pkg", "1.0"): ["GHSA-a", "GHSA-b"]},
+                  vulns={"GHSA-a": _vuln("GHSA-a", "pkg", severity="HIGH", aliases=("CVE-1",)),
+                         "GHSA-b": _vuln("GHSA-b", "pkg", severity="LOW", aliases=("cve-1",))})
+    report = audit(_installed(("pkg", "1.0")), osv)
+    assert len(report.findings) == 1
+    assert report.findings[0].id == "GHSA-a"
+    assert report.findings[0].aliases == ("CVE-1", "GHSA-b")
+
+
 def test_merge_does_not_join_unrelated_advisories():
     comps = _installed(("pkg", "1.0"))
     vulns = {"GHSA-a": _vuln("GHSA-a", "pkg", severity="LOW", aliases=("CVE-1",)),
@@ -358,3 +453,53 @@ def test_an_unfetchable_advisory_with_no_rated_sibling_still_fails():
     osv = FakeOSV(hits={("pkg", "1.0"): ["GHSA-lonely"]}, vulns={}, fail_detail=("GHSA-lonely",))
     report = audit(comps, osv, fail_on="critical")
     assert report.findings[0].severity == "unknown" and report.status == "findings"
+
+
+# ── the HTTP client: pagination ───────────────────────────────────────────────
+
+
+class _PagedOSV(dep_audit.OSVHttpClient):
+    """The real client with its transport replaced by scripted querybatch pages."""
+
+    def __init__(self, pages):
+        super().__init__("https://osv.example")
+        self.pages = list(pages)
+        self.requests: list[dict] = []
+
+    async def _request(self, method, path, **kwargs):
+        assert (method, path) == ("POST", "/v1/querybatch")
+        self.requests.append(kwargs["json"])
+        return self.pages.pop(0)
+
+
+def _q(name, version, **extra):
+    return {"package": {"name": name, "ecosystem": "PyPI"}, "version": version, **extra}
+
+
+def test_query_batch_follows_next_page_token_for_the_paginated_query_only():
+    client = _PagedOSV([
+        {"results": [{"vulns": [{"id": "A-1"}], "next_page_token": "t1"}, {"vulns": [{"id": "B-1"}]}]},
+        {"results": [{"vulns": [{"id": "A-2"}], "next_page_token": "t2"}]},
+        {"results": [{"vulns": [{"id": "A-3"}]}]},
+    ])
+    ids = client.query_batch([_q("a", "1.0"), _q("b", "1.0")])
+    assert ids == [["A-1", "A-2", "A-3"], ["B-1"]]
+    assert client.requests[0] == {"queries": [_q("a", "1.0"), _q("b", "1.0")]}
+    assert client.requests[1] == {"queries": [_q("a", "1.0", page_token="t1")]}
+    assert client.requests[2] == {"queries": [_q("a", "1.0", page_token="t2")]}
+
+
+def test_query_batch_still_open_after_the_page_cap_is_unavailable_not_an_answer():
+    pages = [{"results": [{"vulns": [{"id": f"A-{n}"}], "next_page_token": f"t{n}"}]}
+             for n in range(dep_audit.OSVHttpClient.MAX_PAGES + 1)]
+    client = _PagedOSV(pages)
+    with pytest.raises(OSVUnavailable, match="paginated"):
+        client.query_batch([_q("a", "1.0")])
+    assert len(client.requests) == dep_audit.OSVHttpClient.MAX_PAGES
+
+
+def test_query_batch_rejects_a_page_whose_result_count_does_not_match():
+    client = _PagedOSV([{"results": [{"vulns": []}]}])
+    with pytest.raises(OSVUnavailable, match="malformed"):
+        client.query_batch([_q("a", "1.0"), _q("b", "1.0")])
+

@@ -745,7 +745,7 @@ def audited_box(monkeypatch):
     fake = _FakeOSV(hits={("pkg", "1.0"): ["GHSA-x"]},
                     vulns={"GHSA-x": _advisory("GHSA-x", "pkg", "HIGH", fixed="1.1", aliases=("CVE-2026-1",))})
     monkeypatch.setattr(dep_audit, "enumerate_installed",
-                        lambda distributions=None: [dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")])
+                        lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], []))
     monkeypatch.setattr(dep_audit, "default_client", lambda url: fake)
     return fake
 
@@ -809,3 +809,33 @@ def test_security_audit_reports_a_bad_descriptor_and_still_audits(audited_box, t
     assert code == EXIT_FAILED
     assert payload["errors"] == [{"index": 0, "reason": "manifest_unreadable"}]
     assert str(tmp_path) not in out                       # descriptor paths are not echoed
+
+
+def test_security_audit_names_a_skipped_distribution_without_changing_the_verdict(monkeypatch, audited_box):
+    """A distribution whose metadata cannot be read is reported as skipped, not dropped."""
+    from agents.core.security import dep_audit
+
+    error = {"surface": "installed", "location": "bad-1.0.dist-info",
+             "reason": "metadata_unreadable: UnicodeDecodeError"}
+    monkeypatch.setattr(dep_audit, "enumerate_installed",
+                        lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], [error]))
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"])
+    assert code == EXIT_OK
+    assert "installed distribution bad-1.0.dist-info: metadata_unreadable: UnicodeDecodeError — skipped, not audited" in out
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical", "--json"])
+    assert json.loads(out)["errors"] == [error]
+
+
+def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monkeypatch, audited_box):
+    """A crash inside the audit must not surface as Python's exit 1, which a script reads as findings."""
+    from agents.cli.nerva import EXIT_UNAVAILABLE
+    from agents.core.security import dep_audit
+
+    def boom(distributions=None):
+        raise RuntimeError("site-packages vanished")
+
+    monkeypatch.setattr(dep_audit, "enumerate_installed", boom)
+    code, out, err, _hub = _run(["security", "audit"])
+    assert code == EXIT_UNAVAILABLE
+    assert out == "" and "did not complete (RuntimeError)" in err and "nothing is claimed" in err
+    assert "site-packages vanished" not in err                 # the message is not reflected

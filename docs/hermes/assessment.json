@@ -3,7 +3,7 @@
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
   "base_sha": "f24d5f72cccbb556d5811563059f86620d2ab1e9",
-  "assessed_at": "2026-09-15T21:32:41Z",
+  "assessed_at": "2026-09-15T21:49:18Z",
   "reviews": [
     {
       "id": "H001",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "d87a931d0f69771c64a6335b9601e314c075416dc5f0fbceaeeb9446943dac93"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -177,24 +177,24 @@
       "id": "H022",
       "row_sha256": "bbfcf3200f7827679ac4dafb3ec718c402867c9a7af270e624a7042432648797",
       "status": "partial",
-      "summary": "`nerva security audit` inventariază distribuțiile interpretorului curent și pinurile Python exacte ale descriptorilor de extensie numiți, întreabă OSV.dev prin clientul de egress guvernat (querybatch în loturi de 1000 + un detaliu per advisory; pleacă doar perechi nume+versiune, anunțate pe stderr), unește oglinzile GHSA/PYSEC ale aceluiași CVE într-o singură constatare cu cea mai mare severitate declarată și iese 0/1/5. Un advisory fără severitate declarată pică orice prag; o bază de date de neatins înseamnă exit 5 și nicio afirmație. MCP e raportat ca suprafață goală cu motivul ei (transport HTTP, fără pachete instalate). Probat live: 48 distribuții curate; un pin `requests 2.19.0` dă 5 constatări după unirea a 5 oglinzi PYSEC.",
-      "remaining": "Descriptorii de extensie trebuie numiți pe linia de comandă; catalogul pachetelor achiziționate e pe partea hub-ului și nu e citit offline, deci a doua suprafață Hermes e acoperită doar la cerere. Vectorii CVSS nu sunt scorați: un advisory doar cu vector rămâne `unknown` și pică orice prag dacă nu se unește cu un frate GHSA evaluat. Nu există setare de proxy pentru operator (H281); clientul onorează doar ancorele TLS. Scara de ieșire e cea Nerva (0/1/2/5), nu 0/1/2 din Hermes, iar pragul implicit `--fail-on low` nu a fost confruntat cu cel Hermes. Fără probă pe o mașină fără proxy transparent.",
+      "summary": "`nerva security audit` inventariază distribuțiile interpretorului curent și pinurile Python exacte ale descriptorilor de extensie numiți, întreabă OSV.dev prin `PluginHTTPClient` (rezoluție DNS pinată, ancorele TLS ale owner-ului, breaker; querybatch în loturi de 1000 cu paginare urmărită + un detaliu per advisory; pleacă doar perechi nume+versiune, anunțate pe stderr), unește oglinzile GHSA/PYSEC ale aceluiași CVE într-o singură constatare cu cea mai mare severitate declarată, numește fix-ul din intervalul care conține versiunea instalată și iese 0/1/5. Un advisory fără severitate declarată pică orice prag; o bază de date de neatins, un lot rămas paginat după 20 de pagini sau un audit care nu se încheie înseamnă exit 5 și nicio afirmație. O distribuție cu metadate nedecodabile e sărită și numită; textul advisory-urilor e curățat de caractere de control înainte de terminal. MCP (comenzi stdio configurate de owner) e listat ca neauditat, cu motivul. Probat live: 48 distribuții curate; un pin `requests 2.19.0` dă 5 constatări după unirea a 5 oglinzi PYSEC. Recenzie adversarială independentă: nouă defecte, toate remediate în același PR.",
+      "remaining": "Suprafața MCP nu e auditată: comenzile stdio (`npx …`, `uvx …`) din configurația persistată nu sunt rezolvate la pachete și versiuni. Descriptorii de extensie trebuie numiți pe linia de comandă; catalogul pachetelor achiziționate e pe partea hub-ului și nu e citit offline. Nu există `nerva security` implicit (cli-d.security-default) și nici `--skip-venv/--skip-plugins/--skip-mcp`. Vectorii CVSS nu sunt scorați: un advisory doar cu vector rămâne `unknown` și pică orice prag dacă nu se unește cu un frate GHSA evaluat. Pragul implicit `--fail-on low` e deliberat mai strict decât `critical` din Hermes. Nu există setare de proxy pentru operator (H281). Din procesul CLI nu există mediere kernel și registrul de egress nu persistă. Scara de ieșire e cea Nerva (0/1/2/5), nu 0/1/2 din Hermes. Fără probă pe o mașină fără proxy transparent.",
       "evidence": [
         {
           "path": "agents/core/security/dep_audit.py",
-          "sha256": "f2fda67a93fcafaa24c9ccede29f578b914d148e6622f83e1e4cd4a42ae8d872"
+          "sha256": "d47391911335063bd039bd77061ad41849921a5c298ad90568cbab29f444ed4e"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_dep_audit.py",
-          "sha256": "ff1cd7aaf3a39ae86f6d0fdb36edd5db289acb478f6f8e6ef6c64298b0b1544e"
+          "sha256": "9f614b5bb1d619977082d25f3d7700775711887cd9b2ce3e8c036fad3a316697"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "d87a931d0f69771c64a6335b9601e314c075416dc5f0fbceaeeb9446943dac93"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         }
       ]
     },
@@ -1314,7 +1314,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -1334,7 +1334,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "d87a931d0f69771c64a6335b9601e314c075416dc5f0fbceaeeb9446943dac93"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -2397,7 +2397,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "agents/web.py",
@@ -2766,7 +2766,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2786,7 +2786,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "d87a931d0f69771c64a6335b9601e314c075416dc5f0fbceaeeb9446943dac93"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -4365,7 +4365,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -4812,7 +4812,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3e24b76a2b9cc80d4afd6e27e3ab59dddec1216017b814806b69c9b729fe263"
+          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -4824,7 +4824,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "d87a931d0f69771c64a6335b9601e314c075416dc5f0fbceaeeb9446943dac93"
+          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",

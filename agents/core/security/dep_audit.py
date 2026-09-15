@@ -1,7 +1,8 @@
 """dep_audit.py — H022: audit installed dependencies for known vulnerabilities.
 
 The SBOM (``scripts/gen_sbom.py``) has been generated for months and checked against
-nothing — ``rg -il 'osv|vulnerab'`` over ``agents/`` and ``scripts/`` was empty. CI runs
+nothing — no code under ``agents/`` or ``scripts/`` consulted a vulnerability database
+(the only ``osv|vulnerab`` matches were prose in ``agents/ultron/SOUL.md``). CI runs
 ``pip-audit`` over the *lockfile*, which is the right gate for a release and the wrong
 question for an owner: they want to know whether the interpreter that is actually
 running Nerva, on this box, carries something with a public advisory. This module
@@ -11,8 +12,10 @@ answers that, from three surfaces it names explicitly:
 * ``extension`` — the exact Python pins an extension descriptor declares
   (``requires.python`` in ``agents/core/extensions/manifest.py``), for descriptors the
   caller names — the acquired-package catalog needs the running hub and is not read here;
-* ``mcp`` — on Nerva an HTTP transport with no installed server packages. Reported as an
-  empty surface *with that reason*, never omitted, so a reader is not left wondering.
+* ``mcp`` — on Nerva, owner-configured stdio commands (Streamable HTTP only behind an
+  owner flag; ``agents/core/mcp/client.py``). Nerva installs no server packages and this
+  module does not resolve a command line to a package version, so the surface is listed
+  as *not audited*, with that reason, never omitted.
 
 Two decisions are load-bearing and each has a test:
 
@@ -26,19 +29,28 @@ Two decisions are load-bearing and each has a test:
 
 Egress goes through :class:`agents.core.http_client.PluginHTTPClient` — pinned
 resolution, the owner's TLS anchors, a circuit breaker — and only package name+version
-pairs are sent. The client is injected, so every test here runs offline.
+pairs are sent. From the CLI process that is the whole of the governance: the kernel's
+egress hook is installed by the orchestrator, not here, and the in-process egress ledger
+dies with the process. The client is injected, so every test here runs offline.
+
+Text that arrives from the database (ids, aliases, summaries, fix versions) is stripped
+of control characters before it reaches a terminal, so an advisory body cannot forge a
+finding row or repaint the screen. ``--json`` escapes on its own.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from importlib import metadata as _metadata
+from pathlib import PurePath
 from typing import Any, Protocol
 from urllib.parse import quote, urlsplit
 
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 DEFAULT_OSV_URL = "https://api.osv.dev"
 #: OSV rejects batches above this; https://google.github.io/osv.dev/post-v1-querybatch/
@@ -47,8 +59,28 @@ SEVERITIES: tuple[str, ...] = ("critical", "high", "moderate", "low", "unknown")
 _RANK = {level: index for index, level in enumerate(SEVERITIES)}
 _LEVELS = {"critical": "critical", "high": "high", "moderate": "moderate",
            "medium": "moderate", "low": "low"}
-MCP_REASON = ("Nerva reaches MCP servers over an HTTP transport and installs no npx/uvx "
-              "server packages, so there is nothing to audit on this surface.")
+MCP_REASON = ("MCP servers on Nerva are owner-configured stdio commands (Streamable HTTP only "
+              "behind an owner flag); Nerva installs no server packages and this audit does not "
+              "resolve a command line to a package version, so the surface is not audited.")
+MCP_HEADER = "MCP: not audited (owner-configured commands)"
+#: Longest advisory summary a terminal line carries; ``--json`` keeps the whole text.
+SUMMARY_WIDTH = 160
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_TOKEN = re.compile(r"[^A-Za-z0-9._+-]")
+
+
+def _clean(text: Any, width: int | None = None) -> str:
+    """Terminal-safe text: control characters (ESC, CR, LF, …) become spaces; optionally cut."""
+    out = _CONTROL.sub(" ", "" if text is None else str(text))
+    if width is not None and len(out) > width:
+        out = out[: max(width - 1, 0)] + "…"
+    return out
+
+
+def _safe_token(text: Any, fallback: str = "unknown") -> str:
+    """A filesystem-derived name reduced to ``[A-Za-z0-9._+-]``; anything else is *fallback*."""
+    token = "" if text is None else str(text)
+    return token if token and not _TOKEN.search(token) and len(token) <= 120 else fallback
 
 
 class OSVUnavailable(RuntimeError):
@@ -69,18 +101,37 @@ class Component:
         return {"surface": self.surface, "name": self.name, "version": self.version, "origin": self.origin}
 
 
-def enumerate_installed(distributions: Iterable[Any] | None = None) -> list[Component]:
-    """Every distribution this interpreter can see, canonicalised and de-duplicated."""
+def _dist_location(dist: Any) -> str:
+    """The ``*.dist-info`` directory name, reduced to a safe token — enough to find it, nothing more."""
+    path = getattr(dist, "_path", None)
+    return _safe_token(PurePath(str(path)).name if path is not None else None)
+
+
+def enumerate_installed(
+    distributions: Iterable[Any] | None = None,
+) -> tuple[list[Component], list[dict[str, Any]]]:
+    """Every distribution this interpreter can see, canonicalised and de-duplicated.
+
+    A distribution whose metadata cannot be read (a ``METADATA`` file that is not UTF-8,
+    for instance) is skipped *and named in the errors*: one broken package must neither
+    take the audit down nor drop out of it silently.
+    """
     seen: dict[tuple[str, str], Component] = {}
+    errors: list[dict[str, Any]] = []
     for dist in (distributions if distributions is not None else _metadata.distributions()):
-        meta = getattr(dist, "metadata", None)
-        raw_name = meta.get("Name") if meta is not None and hasattr(meta, "get") else None
-        version = getattr(dist, "version", None)
+        try:
+            meta = getattr(dist, "metadata", None)
+            raw_name = meta.get("Name") if meta is not None and hasattr(meta, "get") else None
+            version = getattr(dist, "version", None)
+        except Exception as exc:  # corrupt or undecodable metadata: skip it, say so
+            errors.append({"surface": "installed", "location": _dist_location(dist),
+                           "reason": f"metadata_unreadable: {type(exc).__name__}"})
+            continue
         if not isinstance(raw_name, str) or not raw_name.strip() or not isinstance(version, str) or not version:
             continue
         name = canonicalize_name(raw_name)
         seen.setdefault((name, version), Component("installed", name, version, "importlib.metadata"))
-    return [seen[key] for key in sorted(seen)]
+    return [seen[key] for key in sorted(seen)], errors
 
 
 def enumerate_extensions(paths: Sequence[Any]) -> tuple[list[Component], list[dict[str, Any]]]:
@@ -109,7 +160,7 @@ def enumerate_extensions(paths: Sequence[Any]) -> tuple[list[Component], list[di
 
 
 def mcp_surface() -> dict[str, Any]:
-    return {"count": 0, "reason": MCP_REASON}
+    return {"count": 0, "audited": False, "reason": MCP_REASON}
 
 
 # ── advisories ─────────────────────────────────────────────────────────────────
@@ -142,19 +193,49 @@ def normalize_severity(vuln: dict[str, Any], package: str) -> tuple[str, str]:
     return "unknown", "none"
 
 
-def fixed_in(vuln: dict[str, Any], package: str) -> str | None:
-    """The first ``fixed`` version OSV lists for *package*, or None when no fix is listed."""
+def _version(text: Any) -> Version | None:
+    try:
+        return Version(text) if isinstance(text, str) and text else None
+    except InvalidVersion:
+        return None
+
+
+def fixed_in(vuln: dict[str, Any], package: str, version: str | None = None) -> str | None:
+    """The fix that applies to *version* of *package*, or None when no fix is listed.
+
+    OSV lists one ``[introduced, fixed)`` pair per maintained branch. The pair whose
+    range contains the installed version names the upgrade that actually applies;
+    the first listed fix is only a fallback (when no version is given, or none of
+    the ranges can be compared) — otherwise a box on 3.0.0 would be told to "fix"
+    by moving to 2.31.1.
+    """
+    pairs: list[tuple[str | None, str]] = []
     for affected in vuln.get("affected") or []:
         if not _package_matches(affected, package):
             continue
         for range_ in affected.get("ranges") or []:
             if not isinstance(range_, dict) or range_.get("type") not in ("ECOSYSTEM", "SEMVER"):
                 continue
+            introduced: str | None = None
             for event in range_.get("events") or []:
-                fixed = event.get("fixed") if isinstance(event, dict) else None
+                if not isinstance(event, dict):
+                    continue
+                if isinstance(event.get("introduced"), str):
+                    introduced = event["introduced"]
+                fixed = event.get("fixed")
                 if isinstance(fixed, str) and fixed:
-                    return fixed
-    return None
+                    pairs.append((introduced, fixed))
+                    introduced = None
+    if not pairs:
+        return None
+    installed = _version(version)
+    if installed is not None:
+        for introduced, fixed in pairs:
+            low = Version("0") if introduced in (None, "0") else _version(introduced)
+            high = _version(fixed)
+            if low is not None and high is not None and low <= installed < high:
+                return fixed
+    return pairs[0][1]
 
 
 def _fails(threshold: str, level: str) -> bool:
@@ -193,7 +274,7 @@ def _raw_finding(component: Component, vuln_id: str, vuln: dict[str, Any] | None
     aliases = tuple(a for a in (vuln.get("aliases") or []) if isinstance(a, str) and a != vuln_id)
     summary = vuln.get("summary") if isinstance(vuln.get("summary"), str) else ""
     return Finding(component.surface, component.name, component.version, component.origin,
-                   vuln_id, aliases, level, source, fixed_in(vuln, component.name), summary)
+                   vuln_id, aliases, level, source, fixed_in(vuln, component.name, component.version), summary)
 
 
 #: Which id speaks for a merged group when severities tie. GHSA entries carry the stated
@@ -238,7 +319,11 @@ def _merge_aliased(findings: list[Finding]) -> list[Finding]:
     for members in groups.values():
         members.sort(key=lambda f: (_RANK[f.severity], _ID_PREFERENCE.get(f.id.split("-", 1)[0], 9), f.id))
         head = members[0]
-        names = sorted({n for f in members for n in (f.id, *f.aliases)} - {head.id})
+        spellings: dict[str, str] = {}
+        for f in members:
+            for n in (f.id, *f.aliases):
+                spellings.setdefault(n.lower(), n)
+        names = sorted(n for key, n in spellings.items() if key != head.id.lower())
         fixed = next((f.fixed_in for f in members if f.fixed_in), None)
         summary = next((f.summary for f in members if f.summary), "")
         merged.append(Finding(head.surface, head.name, head.version, head.origin, head.id, tuple(names),
@@ -295,14 +380,19 @@ def audit(
     fail_on: str = "low",
     ignore: Iterable[str] = (),
     batch_size: int = BATCH_LIMIT,
-    extension_errors: Iterable[dict[str, Any]] | None = None,
+    errors: Iterable[dict[str, Any]] | None = None,
     database: str = DEFAULT_OSV_URL,
 ) -> Report:
-    """Ask the database about every distinct name+version pair and rank what comes back."""
+    """Ask the database about every distinct name+version pair and rank what comes back.
+
+    *errors* are the enumeration rows that could not be read (an installed distribution
+    with undecodable metadata, an unreadable descriptor); they ride along in the report
+    so a "clean" verdict is never read as covering something that was skipped.
+    """
     if fail_on not in _RANK or fail_on == "unknown":
         raise ValueError(f"fail_on must be one of {SEVERITIES[:-1]}, not {fail_on!r}")
     report = Report(fail_on=fail_on, components=list(components),
-                    errors=list(extension_errors or []), database=database)
+                    errors=list(errors or []), database=database)
     keys = sorted({(c.name, c.version) for c in report.components})
     queries = [{"package": {"name": name, "ecosystem": "PyPI"}, "version": version} for name, version in keys]
     report.queried = len(queries)
@@ -343,9 +433,9 @@ def audit(
 
 
 def offline_report(components: Iterable[Component],
-                   extension_errors: Iterable[dict[str, Any]] | None = None) -> Report:
+                   errors: Iterable[dict[str, Any]] | None = None) -> Report:
     """Enumeration only. No database, no claim."""
-    return Report(fail_on="low", components=list(components), errors=list(extension_errors or []),
+    return Report(fail_on="low", components=list(components), errors=list(errors or []),
                   queried=0, status="offline")
 
 
@@ -353,29 +443,40 @@ def offline_report(components: Iterable[Component],
 
 
 def _finding_line(finding: Finding, *, prefix: str = "") -> str:
-    aliases = f" ({', '.join(finding.aliases)})" if finding.aliases else ""
-    fix = f"fixed in {finding.fixed_in}" if finding.fixed_in else "no fix listed"
-    summary = f"  — {finding.summary}" if finding.summary else ""
-    return f"{prefix}{finding.severity.upper():<9}{finding.name} {finding.version}  {finding.id}{aliases}  {fix}{summary}"
+    """One terminal line per finding. Every field that came from the database is cleaned:
+    a summary carrying ESC or a newline would otherwise be able to repaint the screen or
+    forge a second finding row."""
+    aliases = f" ({', '.join(_clean(a) for a in finding.aliases)})" if finding.aliases else ""
+    fix = f"fixed in {_clean(finding.fixed_in)}" if finding.fixed_in else "no fix listed"
+    summary = f"  — {_clean(finding.summary, SUMMARY_WIDTH)}" if finding.summary else ""
+    return (f"{prefix}{_clean(finding.severity).upper():<9}{_clean(finding.name)} {_clean(finding.version)}  "
+            f"{_clean(finding.id)}{aliases}  {fix}{summary}")
+
+
+def _error_line(error: dict[str, Any]) -> str:
+    reason = _clean(error.get("reason", "unreadable"), 120)
+    if error.get("surface") == "installed":
+        return f"installed distribution {_safe_token(error.get('location'))}: {reason} — skipped, not audited"
+    return f"descriptor {_clean(error.get('index', '?'))}: {reason}"
 
 
 def render(report: Report) -> str:
     surfaces = report.surfaces()
     total = len(report.components)
+    database = _clean(report.database, 200)
     lines = [
         f"nerva security audit — {surfaces['installed']['count']} installed · "
-        f"{surfaces['extension']['count']} extension pin(s) · MCP: 0 (HTTP transport, no installed server packages)",
+        f"{surfaces['extension']['count']} extension pin(s) · {MCP_HEADER}",
     ]
-    for error in report.errors:
-        lines.append(f"descriptor {error.get('index', '?')}: {error.get('reason', 'unreadable')}")
+    lines.extend(_error_line(error) for error in report.errors)
     if report.status == "offline":
         lines.append(f"no vulnerability database consulted (--offline): nothing is claimed about these {total} components.")
         return "\n".join(lines)
     if report.status == "unavailable":
-        lines.append(f"could not consult {report.database}: {report.unavailable}. "
+        lines.append(f"could not consult {database}: {_clean(report.unavailable, 240)}. "
                      f"Nothing is claimed about these {total} components.")
         return "\n".join(lines)
-    lines.append(f"consulted {report.database} ({report.queried} name+version pairs) · fail-on: {report.fail_on}")
+    lines.append(f"consulted {database} ({report.queried} name+version pairs) · fail-on: {report.fail_on}")
     for finding in report.findings:
         lines.append(_finding_line(finding))
     for finding in report.ignored:
@@ -417,16 +518,40 @@ class OSVHttpClient:
         self.base_url = _https_only(base_url).rstrip("/")
         self.plugin_name = plugin_name
 
+    #: Follow-up pages per batch before the answer is declared incomplete rather than trusted.
+    MAX_PAGES = 20
+
     def query_batch(self, queries: list[dict[str, Any]]) -> list[list[str]]:
-        body = _run(self._request("POST", "/v1/querybatch", json={"queries": list(queries)}))
-        results = body.get("results") if isinstance(body, dict) else None
-        if not isinstance(results, list) or len(results) != len(queries):
-            raise OSVUnavailable("malformed batch response: result count does not match the queries")
-        return [
-            [v["id"] for v in ((r.get("vulns") or []) if isinstance(r, dict) else [])
-             if isinstance(v, dict) and isinstance(v.get("id"), str)]
-            for r in results
-        ]
+        """Ids per query, following ``next_page_token`` until every query is exhausted.
+
+        OSV paginates when one query exceeds 1,000 advisories or a batch 3,000 in total.
+        A page left unread would be reported as consulted — and possibly clean — so the
+        pages are followed, and a batch still open after :attr:`MAX_PAGES` is
+        ``unavailable``, not an answer.
+        """
+        pending = [dict(query) for query in queries]
+        ids: list[list[str]] = [[] for _ in queries]
+        open_ = list(range(len(queries)))
+        for _page in range(self.MAX_PAGES):
+            body = _run(self._request("POST", "/v1/querybatch",
+                                      json={"queries": [pending[i] for i in open_]}))
+            results = body.get("results") if isinstance(body, dict) else None
+            if not isinstance(results, list) or len(results) != len(open_):
+                raise OSVUnavailable("malformed batch response: result count does not match the queries")
+            still_open: list[int] = []
+            for index, result in zip(open_, results, strict=True):
+                if not isinstance(result, dict):
+                    continue
+                ids[index].extend(v["id"] for v in (result.get("vulns") or [])
+                                  if isinstance(v, dict) and isinstance(v.get("id"), str))
+                token = result.get("next_page_token")
+                if isinstance(token, str) and token:
+                    pending[index] = {**pending[index], "page_token": token}
+                    still_open.append(index)
+            if not still_open:
+                return ids
+            open_ = still_open
+        raise OSVUnavailable(f"batch results still paginated after {self.MAX_PAGES} pages; not consulted in full")
 
     def vulnerability(self, vuln_id: str) -> dict[str, Any]:
         body = _run(self._request("GET", f"/v1/vulns/{quote(vuln_id, safe='')}"))

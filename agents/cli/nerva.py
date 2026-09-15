@@ -247,11 +247,19 @@ def build_parser() -> argparse.ArgumentParser:
         "audit",
         help="known vulnerabilities in this interpreter's packages and in declared extension pins, "
              "from OSV.dev — exit 0 clean · 1 findings at/above --fail-on · 5 database not "
-             "consulted (nothing is claimed)")
+             "consulted (nothing is claimed)",
+        description="Checks what is installed in THIS interpreter, plus the exact Python pins of any "
+                    "--extension descriptor, against OSV.dev. It does NOT scan: MCP servers (owner-"
+                    "configured stdio commands are listed as not audited), extensions the hub has "
+                    "acquired but you did not name, system packages, or anything outside this "
+                    "interpreter. Only package name+version pairs leave the machine. Exit 0 clean · "
+                    "1 findings at/above --fail-on · 5 the database was not consulted or the audit "
+                    "did not complete (nothing is claimed).")
     security_audit.add_argument(
         "--fail-on", choices=("low", "moderate", "high", "critical"), default="low",
-        help="the lowest severity that fails the run (default: low, i.e. any finding). "
-             "An advisory with no stated severity always fails: unrated is not safe.")
+        help="the lowest severity that fails the run (default: low, i.e. any finding — stricter "
+             "than Hermes's critical, on purpose). An advisory with no stated severity always "
+             "fails: unrated is not safe.")
     security_audit.add_argument(
         "--ignore-vuln", action="append", default=[], metavar="ID",
         help="an advisory id or alias to list but not fail on (repeatable)")
@@ -1254,38 +1262,44 @@ def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
 
     Three surfaces, named in the output so a reader knows what was and was not
     looked at: the distributions in *this* interpreter, the exact Python pins any
-    extension descriptor on the command line declares, and MCP — which on Nerva is
-    an HTTP transport with no installed server packages, so it is reported as an
-    empty surface with that reason rather than silently omitted.
+    extension descriptor on the command line declares, and MCP — on Nerva a set of
+    owner-configured stdio commands this verb does not resolve to package versions,
+    so it is listed as *not audited* with that reason rather than silently omitted.
 
     Two things this verb will not do. It will not compute a severity OSV does not
     state (an unrated advisory fails every threshold), and it will not call a run
     "clean" when the database could not be reached: that is EXIT_UNAVAILABLE, and
-    the report says nothing is claimed. Only package name+version pairs leave the
-    machine, and the verb says so before the first request.
+    the report says nothing is claimed. The same exit covers the audit itself
+    failing before it has an answer — a traceback's exit 1 would read as "findings".
+    Only package name+version pairs leave the machine, and the verb says so before
+    the first request.
     """
     from agents.core.security import dep_audit
 
-    components = dep_audit.enumerate_installed()
-    extension_components, errors = dep_audit.enumerate_extensions(ns.extension)
-    components = components + extension_components
-    if ns.offline:
-        report = dep_audit.offline_report(components, extension_errors=errors)
-    else:
-        try:
-            client = dep_audit.default_client(ns.osv_url)
-        except ValueError as exc:
-            ctx.err.write(f"{exc}\n")
-            return EXIT_USAGE
-        pairs = len({(c.name, c.version) for c in components})
-        ctx.err.write(
-            f"sending {pairs} package name+version pairs to {dep_audit.host_of(ns.osv_url)}; "
-            "nothing else leaves this machine\n"
-        )
-        report = dep_audit.audit(
-            components, client, fail_on=ns.fail_on, ignore=ns.ignore_vuln,
-            extension_errors=errors, database=ns.osv_url,
-        )
+    try:
+        client = None if ns.offline else dep_audit.default_client(ns.osv_url)
+    except ValueError as exc:
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    try:
+        components, errors = dep_audit.enumerate_installed()
+        extension_components, extension_errors = dep_audit.enumerate_extensions(ns.extension)
+        components, errors = components + extension_components, errors + extension_errors
+        if client is None:
+            report = dep_audit.offline_report(components, errors=errors)
+        else:
+            pairs = len({(c.name, c.version) for c in components})
+            ctx.err.write(
+                f"sending {pairs} package name+version pairs to {dep_audit.host_of(ns.osv_url)}; "
+                "nothing else leaves this machine\n"
+            )
+            report = dep_audit.audit(
+                components, client, fail_on=ns.fail_on, ignore=ns.ignore_vuln,
+                errors=errors, database=ns.osv_url,
+            )
+    except Exception as exc:  # not an answer: neither "clean" nor "findings"
+        ctx.err.write(f"security audit did not complete ({type(exc).__name__}): nothing is claimed\n")
+        return EXIT_UNAVAILABLE
     if ns.json:
         ctx.dump(report.to_dict())
     else:
