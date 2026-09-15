@@ -1154,6 +1154,7 @@ class Orchestrator:
                 logger.info("WorldView KG sync: %s", summary)
         except Exception as e:
             logger.warning(f"WorldView KG sync failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def register_channel(self, channel: ChannelAdapter):
         self.channel_manager.register(channel)

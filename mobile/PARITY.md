@@ -233,3 +233,5 @@ validated authenticated delivery, pin/delete. Native mobile attachment controls
 remain a parity gap; existing text Canvas is unchanged.
 
 2026-09-15 — H515/H518 desktop supports configured local backend/model selection, reference blending, 2× bicubic upscale, unified gallery and ZIP export. Native mobile generation/gallery parity remains open; no cloud or device validation claimed.
+
+2026-09-15 — H684: existing admin GET /api/jobs/doctor includes health and persistent execution/delivery outcomes. Responsive web Jobs renders the report. Native mobile has no dedicated health view; that parity gap remains. Diagnosis triggers no repair or delivery.

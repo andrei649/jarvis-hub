@@ -30,6 +30,8 @@
 
 - 2026-09-15 query tools: backlog and ledger commands now handle buffered output when a downstream pipe closes, preserving exit codes and closing the temporary descriptor. Forty query-tool and Windows encoding checks pass; no Hermes parity row is closed by this robustness fix.
 
+- 2026-09-15 H684: owner/native scheduler health now reports stalls and persistent execution/delivery failures through read-only diagnostics and non-zero CLI exits. Real APScheduler, migration and 438 focused tests pass; new diagnostic modules have 97% branch-inclusive coverage. Script/no_agent/workdir options and production-host proof remain open; H684 is partial.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
   intentionally excluded. Reassess inherited judgments, finish the full accepted

@@ -181,6 +181,12 @@ class HeartbeatScheduler:
         if self.scheduler is None:
             self.scheduler = AsyncIOScheduler()
 
+        jobs = getattr(orchestrator, "jobs", None)
+        if jobs is not None:
+            from .scheduler_health import install_scheduler_health
+
+            install_scheduler_health(self.scheduler, jobs.store)
+
         for agent_id, config in self._heartbeat_configs.items():
             cadence = config.get("cadence", "")
             if cadence.startswith("interval:"):
@@ -240,13 +246,14 @@ class HeartbeatScheduler:
         """Execute a single agent's heartbeat."""
         from agents.core import estop
         if estop.check_paused(f"heartbeat:{agent_id}", logger):
-            return
+            return {"_scheduler_status": "skipped"}
         try:
             result = await orchestrator.run_heartbeat(agent_id)
             if result:
                 logger.info(f"Heartbeat {agent_id}: {result[:100]}")
         except Exception as e:
             logger.error(f"Heartbeat failed for {agent_id}: {e}")
+            return {"_scheduler_status": "failed"}
 
     def stop(self):
         if self.scheduler:

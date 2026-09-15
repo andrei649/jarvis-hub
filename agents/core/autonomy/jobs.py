@@ -111,6 +111,7 @@ class Job:
 
     options: dict = field(default_factory=dict)
     attempts: int = 0
+    last_delivery_status: str | None = None
 
     @property
     def runnable(self) -> bool:
@@ -136,6 +137,7 @@ class Job:
             "runnable": self.runnable,
             "options": dict(self.options),
             "attempts": self.attempts,
+            "last_delivery_status": self.last_delivery_status,
         }
 
 
@@ -448,7 +450,7 @@ def instantiate_blueprint(blueprint_id: str, params: Mapping[str, Any] | None = 
 _JOB_COLUMNS = (
     "id", "name", "schedule_text", "cron", "action", "enabled", "blueprint", "created_at",
     "updated_at", "last_run_at", "last_status", "last_summary", "consecutive_failures",
-    "notepad", "paused_reason", "options", "attempts",
+    "notepad", "paused_reason", "options", "attempts", "last_delivery_status",
 )
 
 
@@ -483,6 +485,8 @@ class JobStore:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN options TEXT NOT NULL DEFAULT '{}'")
             if "attempts" not in columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+            if "last_delivery_status" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN last_delivery_status TEXT")
             self._conn.execute("CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs(job_id, id)")
             self._conn.execute(
                 """CREATE TABLE IF NOT EXISTS job_held (
@@ -491,7 +495,34 @@ class JobStore:
                 )"""
             )
             self._conn.execute("CREATE TABLE IF NOT EXISTS job_ticks (job_id TEXT PRIMARY KEY, slot TEXT NOT NULL)")
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS scheduler_results "
+                "(job_id TEXT PRIMARY KEY, status TEXT NOT NULL, recorded_at TEXT NOT NULL)"
+            )
             self._conn.commit()
+
+    def record_scheduler_result(self, job_id: str, status: str) -> None:
+        """Keep only bounded, structured native execution outcomes, never payloads."""
+        if not isinstance(job_id, str) or not job_id or len(job_id) > 200:
+            raise ValueError("invalid scheduler job id")
+        if status not in {"ok", "failed", "missed", "max_instances"}:
+            raise ValueError("invalid scheduler result status")
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO scheduler_results VALUES (?, ?, ?) "
+                "ON CONFLICT(job_id) DO UPDATE SET status=excluded.status, recorded_at=excluded.recorded_at",
+                (job_id, status, datetime.now(UTC).isoformat()),
+            )
+            self._conn.execute(
+                "DELETE FROM scheduler_results WHERE job_id IN "
+                "(SELECT job_id FROM scheduler_results ORDER BY recorded_at DESC, job_id LIMIT -1 OFFSET 256)"
+            )
+            self._conn.commit()
+
+    def scheduler_results(self) -> dict[str, dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT job_id, status, recorded_at FROM scheduler_results").fetchall()
+        return {row["job_id"]: {"status": row["status"], "recorded_at": row["recorded_at"]} for row in rows}
 
     def close(self) -> None:
         with self._lock:
@@ -521,6 +552,7 @@ class JobStore:
             paused_reason=row["paused_reason"],
             options=validate_options(json.loads(row["options"])),
             attempts=int(row["attempts"]),
+            last_delivery_status=row["last_delivery_status"],
         )
 
     def create(
@@ -875,15 +907,9 @@ class JobRunner:
         }
 
     def doctor(self) -> dict:
-        channels = sorted((getattr(self._orch, "channels", None) or {}).keys())
-        problems = []
-        for job in self.store.list():
-            for target in job.options.get("deliver", []):
-                if target not in channels:
-                    problems.append({"job_id":job.id,"reason":f"channel {target!r} is not connected"})
-        return {"scheduler":self.snapshot(), "channels":channels, "problems":problems,
-                "supported_options":["repeat","deliver"],
-                "unsupported_options":["workdir","model","provider","enabled_toolsets","skills"]}
+        from .jobs_health import inspect_jobs
+
+        return inspect_jobs(self)
 
     async def tick(self, now: datetime | None = None) -> list[JobRun]:
         """Fallback ticker; never competes with the running APScheduler. No catch-up burst."""
@@ -1145,7 +1171,7 @@ class JobRunner:
         delivered = 0
         for item in self.store.held():
             try:
-                fragment = await self._send(item.text, item.channel)
+                fragment = await self._send_tracked(item.text, item.channel, item.job_id)
             except Exception as exc:
                 logger.warning("held job message could not be delivered: %s", exc)
                 break
@@ -1169,18 +1195,33 @@ class JobRunner:
             channels = getattr(self._orch, "channels", None) or {}
             missing = [target for target in targets if target not in channels]
             if missing:
+                with contextlib.suppress(KeyError):
+                    self.store.update(job.id, last_delivery_status=STATUS_FAILED)
                 raise RuntimeError(f"delivery channels are not connected: {', '.join(missing)}")
             scoped = replace(job, options={k: v for k, v in job.options.items() if k != "deliver"})
             return "; ".join([await self._deliver(text, target, job=scoped, urgent=urgent) for target in targets])
         if job is not None and self.quiet_hours():
             if urgent and self._spend_interrupt(job):
-                fragment = await self._send(text, channel)
+                fragment = await self._send_tracked(text, channel, job.id if job else None)
                 return f"{fragment} (urgent, during quiet hours)"
             self.store.hold(job.id, text, channel)
             if urgent:
                 return "held until quiet hours end (interrupt budget spent)"
             return "held until quiet hours end"
-        return await self._send(text, channel)
+        return await self._send_tracked(text, channel, job.id if job else None)
+
+    async def _send_tracked(self, text: str, channel: str | None, job_id: str | None) -> str:
+        try:
+            result = await self._send(text, channel)
+        except Exception:
+            if job_id is not None:
+                with contextlib.suppress(KeyError):
+                    self.store.update(job_id, last_delivery_status=STATUS_FAILED)
+            raise
+        if job_id is not None:
+            with contextlib.suppress(KeyError):
+                self.store.update(job_id, last_delivery_status=STATUS_OK)
+        return result
 
     async def _send(self, text: str, channel: str | None) -> str:
         import os

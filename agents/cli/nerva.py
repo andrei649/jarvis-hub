@@ -779,6 +779,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             reply = client.get(f"/api/jobs/{ns.action}")
         ctx.dump(reply)
+        if ns.action == "doctor":
+            healthy = isinstance(reply, dict) and reply.get("ok") is True and reply.get("problems") == []
+            return EXIT_OK if healthy else EXIT_FAILED
         return EXIT_OK
     if ns.action == "list":
         reply = client.get("/api/jobs") or {}
