@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "6d77f4c6cd63e8b16481e8ee824e45761242ec58",
-  "assessed_at": "2026-09-15T16:39:50.403362Z",
+  "base_sha": "be7a08160ddb447d2c571669c8f687a25ee0d5b3",
+  "assessed_at": "2026-09-15T16:48:52.873215Z",
   "reviews": [
     {
       "id": "H001",
@@ -937,15 +937,15 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1263,9 +1263,9 @@
     {
       "id": "H298",
       "row_sha256": "d516cf7e38eda13e728191a930ad08eecc1fdf248dd718e220a19b1713ded66f",
-      "status": "partial",
-      "summary": "Threshold precedence, never-respill file_read, bounded previews with recoverable paths and hashes, and finalized-file retention are wired into the real tool loop. Independent review and 180 focused checks verify exclusive temporary writers, complete bytes and receipts across overlapping streams and identical whole-result writes, plus cleanup after failed finalization. Reassessment found two remaining accepted-contract defects; this repair does not claim complete effective-window or shape-only capture behavior. Scheduled model pins now clamp tool budgets to their resolved request window while preserving file_read infinity; in-memory compaction or an explicit stop bounds the following provider request. The two ordinary-runtime/capture defects remain open.",
-      "remaining": "Ordinary tool loops use the model-family context estimate instead of the actual configured/loaded Ollama window: a 4,096-token backend can receive a 7,521-token request after a 30 KB result. Separately, code_tools._stream_fields can discard complete stdout when shape truncation adds a notice longer than the omitted content (a 2,001-character line reproduces it). Preserve the full stream whenever shape capping truncated, and resolve ordinary tool-loop budgets from effective backend capacity. Interrupted captures and arbitrary filesystem loss are not complete-output guarantees; retention keeps a newest-file exception and does not establish crash-orphan collection.",
+      "status": "equivalent",
+      "summary": "The complete frozen tool-result contract is wired into actual tool turns: pinned file_read infinity, owner override, MCP family, tool declaration and default threshold precedence; per-result/per-turn scaling; bounded previews with full-file paths, sizes and hashes; finalized-file retention; and centralized byte/line/line-length limits. Exclusive per-writer temporary files preserve concurrent stream/whole-result receipts. A shape-truncated stream now retains complete bytes even when its annotation makes the preview longer; upstream byte truncation and small-output discard still work. Ordinary Agent and Orchestrator tool paths snapshot configured/cached backend capacity before guardrails and forward immutable per-turn metadata without unwrapping or bypassing generation. Known capacity and resolved job bounds constrain completion reserve, initial/later transcripts, schemas, structured tool arguments and finite result thresholds; file_read never re-spills. Invalid metadata refuses the tool turn. Unknown capacity, including adapters without loaded metadata, retains the documented model-family estimate; token accounting remains heuristic. Independent reviews passed151 effective-window and53 code-tool tests, with307/165 focused author sets. Retention has a newest-file exception; interrupted captures, orphan cleanup and arbitrary storage failure are not permanent complete-output guarantees. This is code equivalence, not live provider/Windows containment proof.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/tool_result_store.py",
@@ -1277,7 +1277,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "tests/test_tool_loop_result_spill.py",
@@ -1293,11 +1293,11 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
+          "sha256": "0aac39c7a049f6cd31cada57e6e3a289e1fa7ad322a145d6b2eca089fa16b90a"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
+          "sha256": "9ad457a5d66c951e14b59b6766f1b60daf1187da7c44952aeb572729f4db1c87"
         },
         {
           "path": "agents/core/session_kernels.py",
@@ -1318,6 +1318,34 @@
         {
           "path": "agents/core/tool_rpc_runtime.py",
           "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
+        },
+        {
+          "path": "agents/core/llm/effective_window.py",
+          "sha256": "af3e77635e98852f41439dac2168eb92cc710f5a6ae906cc9ac24ce6149d9ee0"
+        },
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
+        },
+        {
+          "path": "tests/test_effective_tool_window.py",
+          "sha256": "9e5b956afc2221034cc9e4bd41a40bfa9169bb0185b5b27a83602185205c0e15"
+        },
+        {
+          "path": "tests/test_agent_runtime_v2.py",
+          "sha256": "a48af9a04094a0986a50145ba59c6fe98deb5ed0a30a63dab559477ca722e092"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-effective-tool-window.md",
+          "sha256": "23be8e4072c511c1ea9a7ffcbea1869c20d85a8d15c5df2d092144bc4d3cae87"
+        },
+        {
+          "path": "docs/superpowers/plans/2026-09-15-shape-capture.md",
+          "sha256": "fec2ebdbee661cd87e92828aa599dcc83d478dd9d69bfd935454d98774b2e23d"
         }
       ]
     },
@@ -1330,7 +1358,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -1355,7 +1383,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -1619,11 +1647,11 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -1679,7 +1707,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1687,7 +1715,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "45ac28069df580e17d38e8be803affb98264c9e7a5ffe434f46fcf7c1bc632af"
+          "sha256": "a48af9a04094a0986a50145ba59c6fe98deb5ed0a30a63dab559477ca722e092"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -1728,7 +1756,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -1780,7 +1808,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -1929,7 +1957,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -2209,15 +2237,15 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "0a0e211cbd238fc77008afa1942b381e1d5bc7a136604b1c874d1a3cf26bed6e"
+          "sha256": "f26f303a08be1368bcee3b921cf2276d7b4e7358edc8d10fba390b25e0653622"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -2994,7 +3022,7 @@
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
       "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and complete redirected Python stdout/stderr stream spills on both one-shot and session paths. Bounded previews retain file references, byte counts and hashes without buffering the full stream. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes.",
-      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch. H298 reassessment also reproduced a shape-only stdout truncation case where the complete capture is discarded because the annotated preview is longer than the original; that capture-finalization defect remains open.",
+      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -3030,7 +3058,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
+          "sha256": "0aac39c7a049f6cd31cada57e6e3a289e1fa7ad322a145d6b2eca089fa16b90a"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -3038,7 +3066,7 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
+          "sha256": "9ad457a5d66c951e14b59b6766f1b60daf1187da7c44952aeb572729f4db1c87"
         },
         {
           "path": "agents/core/session_kernels.py",
@@ -3358,11 +3386,11 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "ecc75ada1ceed2cbdbe3dcfbbf435c30203f2a30de49161dc56d8e1109b2f43f"
+          "sha256": "0aac39c7a049f6cd31cada57e6e3a289e1fa7ad322a145d6b2eca089fa16b90a"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "c4e60ea7abb06c0e5102abe6691dd6467494067bb43402d7508a81379d1c9e77"
+          "sha256": "9ad457a5d66c951e14b59b6766f1b60daf1187da7c44952aeb572729f4db1c87"
         },
         {
           "path": "agents/core/session_kernels.py",
@@ -3423,7 +3451,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3467,7 +3495,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3503,12 +3531,12 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate. Ordinary tool turns now also use immutable configured/cached backend capacity forwarded before guardrails; known limits include completion, initial/later transcript, schemas and structured tool-call arguments. Unknown capacity remains estimated rather than discovered.",
       "remaining": "Shared history still selects the router active/default compaction model rather than each eventual specialist route, so heterogeneous multi-agent/per-agent output limits are not fully represented. A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates remain incomplete. Gemini usage-only final frames, absent terminal-local counts, unknown terminal semantics and ambiguous multi-candidate streams deliberately remain unreported. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3552,7 +3580,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3703,7 +3731,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a5c8a79034c5017a199812c4ffda7dba86f7f7ef69dd151e5e808fd935df711d"
+          "sha256": "6941d90220409e2c199cb61b3baaa2776541a48b9a15d0e355d29b91084ff244"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -3755,7 +3783,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "bb56f7019423773c87f90770ffb151cb2962728c8723674ff08153fcf9154ed5"
+          "sha256": "b8dca61a07dc4c74858cc477af93877454b4607819dc2fa167f335bfac1f608c"
         },
         {
           "path": "agents/core/settings_db.py",

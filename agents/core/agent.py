@@ -176,7 +176,7 @@ class Agent:
 
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
-                                usage_sink=None, session_id=None) -> str:
+                                usage_sink=None, session_id=None, effective_window=None) -> str:
         from .conversation_clock import parse_started_at, with_clock
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
@@ -193,6 +193,7 @@ class Agent:
                 backend, model, prompt, system, max_tokens, temperature,
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
+                effective_window=effective_window,
             )
 
     async def _generate_response(
@@ -206,6 +207,7 @@ class Agent:
         on_token=None,
         wall_seconds: float | None = None,
         usage_sink=None,
+        effective_window=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -232,6 +234,8 @@ class Agent:
             budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
             if usage_sink is not None:
                 budget["usage_sink"] = usage_sink
+            if effective_window is not None:
+                budget["effective_window"] = effective_window
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,
@@ -295,6 +299,8 @@ class Agent:
                 model = routed_model
         else:
             backend, _ = res
+        from .llm.effective_window import resolve_effective_window
+        effective_window = resolve_effective_window(backend, model)
         backend = bind_guardrails(self.guardrails, backend)
 
         if self._checkpoint_manager:
@@ -323,6 +329,7 @@ class Agent:
                     temperature=temperature,
                     # The orchestrator's per-agent ceiling rides in on the context
                     # (Hermes absorption 5c); absent, the tool loop keeps its default.
+                    effective_window=effective_window,
                     session_id=context.get("session_id"),
                     wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
                 )

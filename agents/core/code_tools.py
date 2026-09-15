@@ -190,16 +190,15 @@ _SPILL_NOTICE = (
 def _stream_fields(label: str, capped: TruncatedText, spill) -> dict:
     """The keys that tell the model where the rest of a stream went, or nothing.
 
-    A spill is kept only when the child actually produced more than the model is
-    being shown. That comparison is made against the *bytes*, not against
-    ``capped.truncated``: the sandbox's own reader may have dropped the middle
-    before this layer ever saw the stream, in which case this layer cut nothing and
-    would report ``truncated=False`` while bytes were missing all the same.
+    Keep a spill whenever this layer removed content, even if its omission notice
+    makes the preview longer. Also compare captured bytes: the sandbox's reader
+    may have dropped the middle before this layer saw it, leaving
+    ``capped.truncated=False`` despite missing content.
     """
     if spill is None:
         return {}
     shown = len(capped.text.encode("utf-8"))
-    if spill.written_bytes <= shown:
+    if not capped.truncated and spill.written_bytes <= shown:
         spill.discard()
         return {}
     landed = spill.close()
