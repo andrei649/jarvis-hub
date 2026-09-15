@@ -153,11 +153,14 @@ def _run(argv: list[str] | None) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Run one query. ``| head`` closing the pipe early is a normal end, not a crash."""
     try:
-        return _run(argv)
+        result = _run(argv)
+        sys.stdout.flush()
+        return result
     except BrokenPipeError:
         # Silence Python's "Exception ignored" epilogue by pointing stdout at
         # devnull before interpreter shutdown flushes it.
-        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            os.dup2(sink.fileno(), sys.stdout.fileno())
         return 0
 
 
