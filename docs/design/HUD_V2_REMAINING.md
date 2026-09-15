@@ -10,8 +10,9 @@ H660 (2026-09-15): session kernels now use detached Docker internally. Existing
 sandbox status/reset controls remain the operator surface; backend status labels
 identify `docker-detached`. Complete Python cell streams use existing tool-result
 file references. Failed teardown stays visible as unconfirmed; reset can be retried
-without claiming the worker is gone. SSH/Modal provisioning and actual
-Docker-lane evidence remain open; local protocol tests are not isolation proof.
+without claiming the worker is gone. Real Linux and native macOS Docker tests now
+pass, including reset/cancellation and context/proxy isolation; SSH/Modal/TLS
+provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containment.json.
 
 ## 0. Do this first
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has

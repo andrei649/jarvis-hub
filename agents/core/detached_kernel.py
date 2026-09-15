@@ -10,9 +10,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import re
 import secrets
+import shutil
+import tempfile
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from .session_kernels import (
     CHILD_RPC_ROOT,
@@ -145,11 +149,68 @@ class DetachedDockerBackend(PipeKernelBackend):
             raise ValueError('session image must be pinned by digest')
         super().__init__(docker_kernel_argv(image), name='docker-detached',
                          child_root=CHILD_RPC_ROOT, available=available)
+        # These configure the trusted host CLI, never the container worker.
+        executable = shutil.which('docker')
+        self._docker_executable = os.path.realpath(executable) if executable else None
+        self._docker_selection = {key: os.environ[key] for key in (
+            'HOME', 'DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST',
+            'DOCKER_API_VERSION') if key in os.environ}
+        self._docker_selection.setdefault('HOME', os.path.expanduser('~'))
+        self._connection_lock = asyncio.Lock()
+        self._connection_failed = False
+        self._cli_prefix = None
+        self._cli_config = None
+        self._cli_env = None
+
+    async def _connect_cli(self):
+        """Freeze one local daemon before launch; teardown never reselects it."""
+        async with self._connection_lock:
+            if self._cli_prefix is not None:
+                return
+            if self._connection_failed:
+                raise KernelRefused(KERNEL_UNAVAILABLE)
+            try:
+                if not self._docker_executable:
+                    raise KernelRefused(KERNEL_UNAVAILABLE)
+                context = self._docker_selection.get('DOCKER_CONTEXT')
+                endpoint = self._docker_selection.get('DOCKER_HOST')
+                if context or not endpoint:
+                    argv = [self._docker_executable, 'context', 'inspect',
+                            '--format', '{{json .Endpoints.docker.Host}}']
+                    if context:
+                        argv += ['--', context]
+                    endpoint = json.loads(await self._run_cli(
+                        argv, env=self._docker_selection))
+                if not isinstance(endpoint, str) or any(ord(c) < 32 for c in endpoint):
+                    raise ValueError('invalid Docker endpoint')
+                parsed = urlsplit(endpoint)
+                if (parsed.scheme != 'unix' or parsed.netloc or not parsed.path.startswith('/')
+                        or parsed.query or parsed.fragment):
+                    raise ValueError('local Unix Docker endpoint required')
+                # Operator config can inject proxy credentials into docker run.
+                # Hold this empty private config for the whole backend lifetime,
+                # including quarantined-container teardown retries.
+                self._cli_config = tempfile.TemporaryDirectory(prefix='nerva-docker-cli-')
+                self._cli_env = {'HOME': self._cli_config.name, 'PATH': os.defpath}
+                if 'DOCKER_API_VERSION' in self._docker_selection:
+                    self._cli_env['DOCKER_API_VERSION'] = self._docker_selection['DOCKER_API_VERSION']
+                self._cli_prefix = (self._docker_executable, '--config', self._cli_config.name,
+                                    '--host', endpoint)
+            except asyncio.CancelledError:
+                self._connection_failed = True
+                raise
+            except Exception:
+                self._connection_failed = True
+                raise KernelRefused(KERNEL_UNAVAILABLE) from None
 
     async def _command(self, argv, *, data=None):
+        await self._connect_cli()
+        return await self._run_cli([*self._cli_prefix, *argv[1:]], env=self._cli_env, data=data)
+
+    async def _run_cli(self, argv, *, env, data=None):
         proc = await asyncio.create_subprocess_exec(
             *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, env=self._child_env())
+            stderr=asyncio.subprocess.DEVNULL, env=env)
         async def exchange():
             if data:
                 proc.stdin.write(data)
@@ -202,6 +263,12 @@ class DetachedDockerBackend(PipeKernelBackend):
             handle.monitor = asyncio.create_task(self._watch(handle))
             return handle
         except BaseException as failure:
+            if self._connection_failed and self._cli_prefix is None:
+                # Discovery never issued docker run, so there is nothing to
+                # quarantine or remove. Cancellation retains its normal meaning.
+                if isinstance(failure, asyncio.CancelledError):
+                    raise
+                raise KernelRefused(KERNEL_UNAVAILABLE) from None
             try:
                 await self.stop(handle)
             except Exception:

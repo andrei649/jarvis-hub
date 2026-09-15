@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-15",
+  "reviewed_source_commit": "a1975fd7d9778148ee1d75f5da50ce0a9243a8d1",
+  "runtime": {
+    "host": "macOS 26.6.2 ARM64",
+    "host_python": "3.12.14",
+    "docker_cli": "29.8.0",
+    "docker_daemon": "29.1.3",
+    "guest": "Ubuntu 24.04 ARM64",
+    "lima": "2.2.0"
+  },
+  "integrity": {
+    "lima_archive_sha256": "bbdef91774885a0d05f7b048c4eb89ae2bcf3a0c252ae7ca7934e63df76d93c3",
+    "homebrew_docker_bottle_sha256": "998293c4bd31551c89a433e216ae890e4e93c9835b5ac6a822455655367bef89",
+    "container_image": "python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+    "test_sandbox_isolation_sha256": "b18019099b882d49fcd69089561090479b44e3613b5505361ac8bf6d494df81f"
+  },
+  "results": {
+    "linux_containment": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 4.51
+    },
+    "native_mac_containment": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 5.58
+    },
+    "native_context_proxy_and_cleanup": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 5.17
+    },
+    "focused_detached_sessions": {
+      "passed": 67,
+      "failed": 0
+    }
+  },
+  "guards": [
+    "original pytest.ini 30-second thread timeout",
+    "original localhost socket guard",
+    "RUN_SANDBOX_ISOLATION=1",
+    "isolated canonical JARVIS_HOME",
+    "JARVIS_TESTING=1",
+    "PYTHON_DOTENV_DISABLED=1",
+    "digest-pinned real Docker image",
+    "no host-execution fallback"
+  ],
+  "observed": [
+    "state across two cells",
+    "network disabled",
+    "read-only root and workspace",
+    "reset reports lost state",
+    "cancellation removes old container before reuse",
+    "current and explicit Docker context selection",
+    "explicit context precedes DOCKER_HOST",
+    "proxy credentials absent from container Config.Env",
+    "daemon identity survives changed PATH/config/context/host"
+  ],
+  "cleanup": {
+    "containers_remaining": 0,
+    "vm": "stopped"
+  },
+  "limits": [
+    "local Unix Docker endpoints only",
+    "no SSH/Modal/TLS provisioning",
+    "no assertion about arbitrary native-fd output capture",
+    "not production deployment evidence"
+  ]
+}
