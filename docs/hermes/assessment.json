@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "4648d2a4c5618b1243917c4e31a930f63f077b1c",
-  "assessed_at": "2026-09-15T15:30:44.471025Z",
+  "base_sha": "4440baeb81eac435374ca49c4373a9b382746242",
+  "assessed_at": "2026-09-15T15:39:59.099731Z",
   "reviews": [
     {
       "id": "H001",
@@ -2304,7 +2304,7 @@
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
       "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices.",
-      "remaining": "No real ComfyUI validation or cloud provider execution was performed. Upscale is bicubic resampling, not a learned super-resolution model; reference blending is pixel composition, not provider-specific multi-image semantic conditioning. Cloud generation remains unwired.",
+      "remaining": "No real ComfyUI validation or cloud provider execution was performed. Upscale is bicubic resampling, not a learned super-resolution model; reference blending is pixel composition, not provider-specific multi-image semantic conditioning. Cloud generation remains unwired. A future approved cloud image executor must persist its artifact and catalog record before reporting a generated asset; the legacy media.kind queue and generic text-task completion are not cloud image execution.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2337,15 +2337,19 @@
         {
           "path": "tests/test_media_library.py",
           "sha256": "f575fe76204f7b38b48f1f2f6ea642c6b49e3475bdd818e49ab5966dee8edcb1"
+        },
+        {
+          "path": "docs/hermes/h518-gallery-contract.md",
+          "sha256": "0e3a324863ebd584e98ba13110d390cb6a98e1b0ffd9583a824eb7a6f114856a"
         }
       ]
     },
     {
       "id": "H518",
       "row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
-      "status": "partial",
-      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection. Shared attachment previews now abort on card unmount and reject late fetch/body continuations; owned object URLs are revoked even before a pending React state update commits.",
-      "remaining": "Traversal covers currently retained metadata only (generated store bounded to 10,000 records/10 MB; attachments use their configured retention). Legacy files outside producer-owned roots, missing/unsupported/oversized files remain unavailable. The upper timestamp/key watermark excludes newer appends but does not freeze membership against later backdated or equal-time inserts. Native mobile gallery controls and restoration of evicted records remain absent; this is not proof of cloud-generation writeback or live providers.",
+      "status": "equivalent",
+      "summary": "The unified gallery now scans retained generated and attachment metadata through bounded keyset pages. Search and kind filters apply during each scan, including MIME matches; zero-match pages retain continuation to older records. Cursor fields, ordering and filter/source binding are checked before catalog or header I/O. Each request inspects at most 200 candidate headers and retains the existing authenticated path/byte validation. The HUD resets and cancels stale searches, reports retained versus loaded/scanned counts separately, and exports an explicit selection of at most 200 files/128 MiB. Independent review and desktop/responsive-browser tests cover older-only matches, empty-page continuation, deletion boundaries, source flags, malformed cursors and exact export selection. Shared attachment previews now abort on card unmount and reject late fetch/body continuations; owned object URLs are revoked even before a pending React state update commits. Reassessment against the frozen keep/superior row confirms the bounded retained-catalog browse/search/export contract. Retention and unavailable-byte handling match the original scope; deleted/evicted history restoration, native controls and unlimited ZIPs are not acceptance requirements. Timestamp/key traversal excludes newer appends without promising exact membership against backdated inserts. The current local generator catalogs produced assets; legacy cloud proposals do not execute a cloud image backend. Future approved cloud completion must persist catalog output as part of H515, not be inferred from generic text-task completion. No live-provider or universal producer-provenance proof is claimed.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -2410,6 +2414,10 @@
         {
           "path": "frontend/docs/h12-attachment-preview-lifecycle.md",
           "sha256": "3748af2b763b033965e7fa81380f7c7607c8d8c22ad681cd10bc220f91a3b427"
+        },
+        {
+          "path": "docs/hermes/h518-gallery-contract.md",
+          "sha256": "0e3a324863ebd584e98ba13110d390cb6a98e1b0ffd9583a824eb7a6f114856a"
         }
       ]
     },
