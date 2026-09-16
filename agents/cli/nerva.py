@@ -1069,10 +1069,11 @@ def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
     script that forgot the body gets a usage error instead of a hang. ``(None, reason)``
     is a usage error; the reason names what to fix and never reflects the file's bytes.
     """
-    if ns.message is not None and ns.file:
+    given = ns.message if isinstance(ns.message, str) and ns.message.strip() else None
+    if given is not None and ns.file:
         return None, "give the message as an argument or with --file, not both"
-    if ns.message is not None:
-        return ns.message, ""
+    if given is not None:
+        return given, ""
     if ns.file == "-":
         return _read_body(ctx.inp, "stdin")
     if ns.file:
@@ -1115,9 +1116,13 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("--list takes no body or subject; a MESSAGE argument filters by channel\n")
             return EXIT_USAGE
         only = (ns.message or "").strip().lower()
-        if only and not re.fullmatch(r"[a-z0-9_-]{1,32}", only):
-            ctx.err.write("--list takes a channel id to filter by, nothing else\n")
-            return EXIT_USAGE
+        if only:
+            from agents.core.channels.outbound import DIRECT_SEND_CHANNELS
+
+            if only not in DIRECT_SEND_CHANNELS:
+                ctx.err.write(f"--list filters by a direct-send channel: "
+                              f"{', '.join(DIRECT_SEND_CHANNELS)}; not '{only[:32]}'\n")
+                return EXIT_USAGE
         client = ctx.client()
         # A hub that does not serve destinations (older, or the route disabled) must not
         # cost the owner the inbox listing too: --list reports what it can reach.

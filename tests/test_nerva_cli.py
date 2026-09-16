@@ -752,10 +752,23 @@ def test_send_list_filters_by_channel_and_names_the_configured_ones_when_none_ma
     code, out, _err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(routes))
     assert code == 0 and "--channel ntfy" in out and "--channel telegram" not in out
     assert "t2" in out and "t1" not in out
-    code, _out, err, _hub = _run(["send", "--list", "signal"], hub=_FakeHub(routes))
-    assert code == EXIT_FAILED and "no targets found for channel 'signal'" in err and "ntfy, telegram" in err
+    # A name that can never be a direct-send channel is decided offline: usage, no request.
+    code, _out, err, hub = _run(["send", "--list", "signal"], hub=_FakeHub(routes))
+    assert code == EXIT_USAGE and "telegram, web, voice, ntfy" in err and hub.calls == []
+    # A hub that does not list a real channel (older hub) is exit 1 and names what it lists.
+    older = {**routes, "GET /api/channels/targets": {"targets": [{"channel": "telegram", "ready": True, "reason": ""}]}}
+    code, _out, err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(older))
+    assert code == EXIT_FAILED and "no targets found for channel 'ntfy'" in err and "Configured: telegram" in err
     code, _out, err, hub = _run(["send", "--list", "-s", "x"], hub=_FakeHub(routes))
     assert code == EXIT_USAGE and hub.calls == []
+
+
+def test_send_treats_a_blank_argument_as_no_message():
+    """Hermes' precedence: a blank positional falls through to --file and stdin, never to the hub."""
+    code, _out, err, hub = _run(["send", "--channel", "ntfy", "  "])
+    assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
+    code, _out, _err, hub = _run(["send", "--channel", "ntfy", ""], hub=_FakeHub(_SENT), stdin="from the pipe")
+    assert code == 0 and _posted(hub)[0][2]["text"] == "from the pipe"
 
 
 def test_send_list_shows_configured_destinations_as_well_as_threads():
