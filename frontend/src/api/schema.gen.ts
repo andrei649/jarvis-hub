@@ -9616,6 +9616,11 @@ export interface components {
             /** Text */
             text: string;
             /**
+             * Subject
+             * @default
+             */
+            subject: string;
+            /**
              * Source
              * @default api
              */

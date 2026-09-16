@@ -216,6 +216,8 @@ async def channels_send_rate_limit():
 class ChannelSendBody(BaseModel):
     channel: str = Field(..., max_length=32)
     text: str = Field(..., max_length=4_000)
+    #: One line; ntfy's native title, elsewhere the first line of the message (H480 `-s`).
+    subject: str = Field("", max_length=200)
     source: str = Field("api", max_length=64)
 
 
@@ -246,7 +248,7 @@ async def channels_send(body: ChannelSendBody):
     orch = get_orch()
     if orch is None:
         return JSONResponse({"error": "no orchestrator on this hub"}, status_code=503)
-    result = await send_to_target(orch, body.channel, body.text, source=body.source)
+    result = await send_to_target(orch, body.channel, body.text, subject=body.subject, source=body.source)
     if not result.get("ok"):
         return JSONResponse({"error": result.get("reason", "send refused"), **result}, status_code=422)
     return nocache_json(result)
