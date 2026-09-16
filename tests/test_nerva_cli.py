@@ -860,6 +860,24 @@ def test_send_list_filters_by_channel_and_names_the_configured_ones_when_none_ma
     assert code == EXIT_FAILED and "no targets found for channel 'telegram'" in err
 
 
+def test_send_list_says_so_in_one_human_line_when_nothing_is_ready():
+    """Spark S-003: the empty state under a list where no channel is ready."""
+    def routes(ready):
+        return {
+            "GET /api/channels/targets": {"targets": [
+                {"channel": "telegram", "ready": ready, "reason": "" if ready else "no owner chat is configured"},
+                {"channel": "ntfy", "ready": False, "reason": "ntfy is not connected on this hub"}]},
+            "GET /api/channels/inbox/status": {"enabled": True},
+            "GET /api/channels/inbox?limit=200": {"threads": []},
+        }
+    code, out, _err, _hub = _run(["send", "--list"], hub=_FakeHub(routes(False)))
+    assert code == 0 and "none ready yet" in out and "connect one above" in out
+    code, out, _err, _hub = _run(["send", "--list"], hub=_FakeHub(routes(True)))
+    assert code == 0 and "none ready yet" not in out
+    code, out, _err, _hub = _run(["send", "--list", "--json"], hub=_FakeHub(routes(False)))
+    assert code == 0 and "none ready yet" not in out          # machine output stays machine output
+
+
 def test_send_treats_a_blank_argument_as_no_message():
     """Hermes' precedence: a blank positional falls through to --file and stdin, never to the hub."""
     code, _out, err, hub = _run(["send", "--channel", "ntfy", "  "])

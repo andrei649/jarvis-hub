@@ -1174,6 +1174,10 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             for row in rows_t:
                 mark = "ready " if row.get("ready") else "not ok"
                 ctx.say(f"--channel {_plain(row.get('channel', '?'), 32):<9} {mark}  {_plain(row.get('reason', ''))}")
+            if rows_t and not any(row.get("ready") for row in rows_t):
+                # Spark S-003: the first empty state a stranger meets on the way to their
+                # first automation deserves one honest, human line. Delete freely.
+                ctx.say("(none ready yet — Nerva has things to say and nowhere to say them; connect one above)")
         status = client.get("/api/channels/inbox/status")
         if not isinstance(status, dict) or status.get("enabled") is not True:
             ctx.err.write("channel inbox unavailable\n")
