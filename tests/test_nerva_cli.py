@@ -85,11 +85,13 @@ def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop",
+        "prompt-size", "desktop", "security",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
     assert tree["extensions"] == ["activate", "consent", "doctor", "list"]
+    # H022: the audit is the only security act so far; it reads and reports, never mutates.
+    assert tree["security"] == ["audit"]
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]
@@ -703,3 +705,137 @@ def test_jobs_workdir_does_not_replace_options_implicitly():
     code, _, err, hub = _run(['jobs','edit','j1','--workdir','/workspace/report'],hub)
     assert code == EXIT_USAGE and 'complete --options' in err
     assert hub.calls == []
+
+
+# ── security audit (H022) ─────────────────────────────────────────────────────
+
+
+class _FakeOSV:
+    """Enough of an OSV client for the verb: hits per (name, version), advisory bodies by id."""
+
+    def __init__(self, hits=None, vulns=None, *, fail_batch=None):
+        self.hits, self.vulns, self.fail_batch = hits or {}, vulns or {}, fail_batch
+        self.calls = 0
+
+    def query_batch(self, queries):
+        from agents.core.security.dep_audit import OSVUnavailable
+
+        self.calls += 1
+        if self.fail_batch:
+            raise OSVUnavailable(self.fail_batch)
+        return [list(self.hits.get((q["package"]["name"], q["version"]), [])) for q in queries]
+
+    def vulnerability(self, vuln_id):
+        return self.vulns[vuln_id]
+
+
+def _advisory(vid, package, severity, *, fixed=None, aliases=()):
+    return {"id": vid, "aliases": list(aliases), "summary": "leaks credentials",
+            "database_specific": {"severity": severity},
+            "affected": [{"package": {"name": package, "ecosystem": "PyPI"},
+                          "ranges": [{"type": "ECOSYSTEM",
+                                      "events": [{"introduced": "0"}] + ([{"fixed": fixed}] if fixed else [])}]}]}
+
+
+@pytest.fixture
+def audited_box(monkeypatch):
+    """One installed package with one HIGH advisory; the network is a fake."""
+    from agents.core.security import dep_audit
+
+    fake = _FakeOSV(hits={("pkg", "1.0"): ["GHSA-x"]},
+                    vulns={"GHSA-x": _advisory("GHSA-x", "pkg", "HIGH", fixed="1.1", aliases=("CVE-2026-1",))})
+    monkeypatch.setattr(dep_audit, "enumerate_installed",
+                        lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], []))
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: fake)
+    return fake
+
+
+def test_security_audit_finds_the_advisory_and_says_what_left_the_machine(audited_box):
+    from agents.cli.nerva import EXIT_UNAVAILABLE  # noqa: F401 - the ladder must expose it
+
+    code, out, err, _hub = _run(["security", "audit"])
+    assert code == EXIT_FAILED
+    assert "HIGH" in out and "pkg 1.0" in out and "GHSA-x" in out and "CVE-2026-1" in out and "fixed in 1.1" in out
+    assert "sending 1 package name+version pairs to api.osv.dev" in err and "nothing else leaves this machine" in err
+    assert audited_box.calls == 1
+
+
+def test_security_audit_threshold_and_ignore_change_the_verdict_not_the_listing(audited_box):
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"])
+    assert code == EXIT_OK and "GHSA-x" in out          # listed, below the bar
+    code, out, _err, _hub = _run(["security", "audit", "--ignore-vuln", "cve-2026-1"])
+    assert code == EXIT_OK and "ignored" in out and "GHSA-x" in out
+
+
+def test_security_audit_json_is_the_machine_report(audited_box):
+    code, out, _err, _hub = _run(["security", "audit", "--json"])
+    payload = json.loads(out)
+    assert code == EXIT_FAILED and payload["status"] == "findings"
+    assert payload["surfaces"]["mcp"]["count"] == 0 and "HTTP" in payload["surfaces"]["mcp"]["reason"]
+    assert payload["findings"][0]["id"] == "GHSA-x" and payload["findings"][0]["severity"] == "high"
+
+
+def test_security_audit_offline_consults_nothing_and_is_exit_5(monkeypatch):
+    from agents.cli.nerva import EXIT_UNAVAILABLE
+    from agents.core.security import dep_audit
+
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: (_ for _ in ()).throw(AssertionError("no network in --offline")))
+    code, out, err, _hub = _run(["security", "audit", "--offline"])
+    assert code == EXIT_UNAVAILABLE
+    assert "nothing is claimed" in out.lower() and "sending" not in err
+
+
+def test_security_audit_unreachable_database_is_exit_5_never_clean(monkeypatch):
+    from agents.cli.nerva import EXIT_UNAVAILABLE
+    from agents.core.security import dep_audit
+
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: _FakeOSV(fail_batch="connection refused"))
+    code, out, _err, _hub = _run(["security", "audit"])
+    assert code == EXIT_UNAVAILABLE
+    assert "could not consult" in out and "connection refused" in out and "nothing is claimed" in out.lower()
+    assert "clean" not in out.lower()
+
+
+def test_security_audit_refuses_a_non_https_database():
+    code, _out, err, _hub = _run(["security", "audit", "--osv-url", "http://api.osv.dev"])
+    assert code == EXIT_USAGE and "https" in err
+
+
+def test_security_audit_reports_a_bad_descriptor_and_still_audits(audited_box, tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{", encoding="utf-8")
+    code, out, _err, _hub = _run(["security", "audit", "--json", "--extension", str(bad)])
+    payload = json.loads(out)
+    assert code == EXIT_FAILED
+    assert payload["errors"] == [{"index": 0, "reason": "manifest_unreadable"}]
+    assert str(tmp_path) not in out                       # descriptor paths are not echoed
+
+
+def test_security_audit_names_a_skipped_distribution_without_changing_the_verdict(monkeypatch, audited_box):
+    """A distribution whose metadata cannot be read is reported as skipped, not dropped."""
+    from agents.core.security import dep_audit
+
+    error = {"surface": "installed", "location": "bad-1.0.dist-info",
+             "reason": "metadata_unreadable: UnicodeDecodeError"}
+    monkeypatch.setattr(dep_audit, "enumerate_installed",
+                        lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], [error]))
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"])
+    assert code == EXIT_OK
+    assert "installed distribution bad-1.0.dist-info: metadata_unreadable: UnicodeDecodeError — skipped, not audited" in out
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical", "--json"])
+    assert json.loads(out)["errors"] == [error]
+
+
+def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monkeypatch, audited_box):
+    """A crash inside the audit must not surface as Python's exit 1, which a script reads as findings."""
+    from agents.cli.nerva import EXIT_UNAVAILABLE
+    from agents.core.security import dep_audit
+
+    def boom(distributions=None):
+        raise RuntimeError("site-packages vanished")
+
+    monkeypatch.setattr(dep_audit, "enumerate_installed", boom)
+    code, out, err, _hub = _run(["security", "audit"])
+    assert code == EXIT_UNAVAILABLE
+    assert out == "" and "did not complete (RuntimeError)" in err and "nothing is claimed" in err
+    assert "site-packages vanished" not in err                 # the message is not reflected
