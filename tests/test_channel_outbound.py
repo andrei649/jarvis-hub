@@ -227,12 +227,34 @@ async def test_other_channels_get_the_subject_as_the_first_line_in_hermes_shape(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("subject", ["two\nlines", "x" * (outbound.MAX_SUBJECT_CHARS + 1)])
-async def test_a_subject_that_is_not_one_bounded_line_is_refused(subject):
+@pytest.mark.parametrize("subject", ["two\nlines", "a\rb", "a\x0bb", "a\u2028b", "a\x1b[31mred", "a\x85b",
+                                     "x" * (outbound.MAX_SUBJECT_CHARS + 1)])
+async def test_a_subject_that_is_not_one_printable_line_is_refused(subject):
+    """`isprintable` is the rule: every control character and every Unicode line or
+    paragraph separator is refused, not just LF and CR."""
     adapter = _Adapter()
     orch = make_orch(channels={"telegram": adapter})
     result = await outbound.send_to_target(orch, "telegram", "hi", subject=subject)
-    assert result["ok"] is False and "one line" in result["reason"] and adapter.sent == []
+    assert result["ok"] is False and "printable line" in result["reason"] and adapter.sent == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subject", ["Déploiement terminé ✓", "日本語のタイトル", "x" * (outbound.NTFY_TITLE_CHARS + 1)])
+async def test_ntfy_refuses_a_title_its_adapter_would_silently_mangle(subject):
+    """NtfyChannel._clean_title strips non-ASCII, cuts at 120 and falls back to "Nerva";
+    the seam refuses with the reason instead of delivering a title nobody asked for."""
+    adapter = _Adapter()
+    orch = make_orch(channels={"ntfy": adapter})
+    result = await outbound.send_to_target(orch, "ntfy", "hi", subject=subject)
+    assert result["ok"] is False and "ntfy" in result["reason"] and "ASCII" in result["reason"]
+    assert adapter.sent == []
+    assert outbound.subject_problem("telegram", subject[: outbound.MAX_SUBJECT_CHARS]) == ""
+
+
+def test_carried_length_is_the_seams_own_rule():
+    assert outbound.carried_length("telegram", "x" * 10, "[CI]") == 16     # "[CI]\n\n" + body
+    assert outbound.carried_length("ntfy", "x" * 10, "[CI]") == 10         # the title is a header
+    assert outbound.carried_length("", "x" * 10, "") == 10
 
 
 @pytest.mark.asyncio

@@ -227,10 +227,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="message a configured channel, or reply to an inbox thread (scripts, cron, CI)",
         description="Send one message with no model call. The body is the MESSAGE argument, else "
                     "--file PATH (- reads stdin), else whatever is piped on stdin; a terminal is "
-                    "never read. Bodies are text of up to 4,000 characters, subject included; "
-                    "native attachments (MEDIA:) are not carried yet. Exit 0 sent · 1 not "
-                    "delivered (the hub refused, or the transport failed) · 2 usage · 3 no hub · "
-                    "4 not authorised.",
+                    "never read, with or without -f -. Bodies are text of up to 4,000 characters as "
+                    "delivered (the subject counts where it becomes the first line); native "
+                    "attachments (MEDIA:) are not carried yet. Exit 0 sent · 1 not delivered (the "
+                    "hub refused, or the transport failed) · 2 usage · 3 no hub · 4 not authorised.",
         epilog="examples:\n"
                "  nerva send --channel telegram \"deploy finished\"\n"
                "  echo \"RAM 92%\" | nerva send --channel ntfy\n"
@@ -248,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("-f", "--file", metavar="PATH",
                       help="read the body from PATH, or from stdin when PATH is -")
     send.add_argument("-s", "--subject", metavar="LINE",
-                      help="one subject line: ntfy's title, elsewhere the first line of the message")
+                      help="one printable subject line (≤200): ntfy's title (printable ASCII, ≤120), "
+                           "elsewhere the first line of the message")
     send.add_argument("-q", "--quiet", action="store_true", help="print nothing on success")
     send.add_argument("--json", action="store_true")
 
@@ -1058,8 +1059,22 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
 
 #: What one send carries, subject included — the outbound seam's own bound.
 SEND_MAX_CHARS = 4_000
-SEND_MAX_SUBJECT_CHARS = 200
 _NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or pipe it on stdin"
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _plain(text: Any, width: int = 200) -> str:
+    """A string from the hub or the shell, safe to put on a terminal: no control characters."""
+    out = _CONTROL_CHARS.sub(" ", "" if text is None else str(text))
+    return out if len(out) <= width else out[: width - 1] + "…"
+
+
+def _is_tty(stream: Any) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    try:
+        return bool(callable(isatty) and isatty())
+    except (OSError, ValueError):
+        return False
 
 
 def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
@@ -1075,23 +1090,29 @@ def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
     if given is not None:
         return given, ""
     if ns.file == "-":
+        if ctx.inp is None or not hasattr(ctx.inp, "read"):
+            return None, "stdin is closed; pipe the body or use --file PATH"
+        if _is_tty(ctx.inp):
+            return None, "stdin is a terminal, and nerva send never reads one; pipe the body or use --file PATH"
         return _read_body(ctx.inp, "stdin")
     if ns.file:
         try:
-            with open(ns.file, encoding="utf-8") as handle:
-                return _read_body(handle, ns.file)
+            with open(ns.file, encoding="utf-8-sig") as handle:
+                return _read_body(handle, _plain(ns.file, 120))
         except OSError as exc:
-            return None, f"cannot read {ns.file}: {exc.strerror or type(exc).__name__}"
-    isatty = getattr(ctx.inp, "isatty", None)
-    if callable(isatty) and not isatty():
+            return None, f"cannot read {_plain(ns.file, 120)}: {exc.strerror or type(exc).__name__}"
+    if ctx.inp is not None and hasattr(ctx.inp, "read") and not _is_tty(ctx.inp):
         return _read_body(ctx.inp, "stdin")
     return None, _NO_BODY
 
 
 def _read_body(stream: Any, label: str) -> tuple[str | None, str]:
+    """At most the bound plus one character is read: a runaway file is refused, not loaded."""
     try:
-        text = stream.read()
+        text = stream.read(SEND_MAX_CHARS + 1)
     except UnicodeDecodeError:
+        if label == "stdin":
+            return None, "stdin is not UTF-8 text; nerva send carries text bodies only"
         return None, (f"{label} is not a text file. --file reads the message body (logs, reports, "
                       "markdown); native attachments are not carried by nerva send yet")
     except OSError as exc:
@@ -1101,7 +1122,15 @@ def _read_body(stream: Any, label: str) -> tuple[str | None, str]:
             text = text.decode("utf-8")
         except UnicodeDecodeError:
             return None, f"{label} is not UTF-8 text"
-    return (text if isinstance(text, str) and text.strip() else None), ("" if isinstance(text, str) and text.strip() else _NO_BODY)
+    if not isinstance(text, str):
+        return None, _NO_BODY
+    text = text.lstrip("\ufeff")
+    if not text.strip():
+        return None, _NO_BODY
+    if len(text) > SEND_MAX_CHARS:
+        return None, (f"{label} is longer than {SEND_MAX_CHARS:,} characters, which is what nerva send "
+                      "carries — trim it, or send the tail")
+    return text, ""
 
 
 def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1132,17 +1161,19 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             targets = None
         rows_t = targets.get("targets") if isinstance(targets, dict) else None
         if only and isinstance(rows_t, list):
-            known = sorted(str(r.get("channel", "")) for r in rows_t if isinstance(r, dict))
+            known = sorted(_plain(r.get("channel", ""), 32) for r in rows_t if isinstance(r, dict))
             rows_t = [r for r in rows_t if isinstance(r, dict) and r.get("channel") == only]
             if not rows_t:
                 ctx.err.write(f"no targets found for channel '{only}'. Configured: "
                               f"{', '.join(known) or '(none)'}\n")
                 return EXIT_FAILED
+        elif only:
+            ctx.err.write("this hub does not list send targets; only inbox threads are filtered\n")
         if isinstance(rows_t, list) and not ns.json:
             ctx.say("configured destinations (no inbox thread needed):")
             for row in rows_t:
                 mark = "ready " if row.get("ready") else "not ok"
-                ctx.say(f"--channel {str(row.get('channel', '?')):<9} {mark}  {row.get('reason', '')}")
+                ctx.say(f"--channel {_plain(row.get('channel', '?'), 32):<9} {mark}  {_plain(row.get('reason', ''))}")
         status = client.get("/api/channels/inbox/status")
         if not isinstance(status, dict) or status.get("enabled") is not True:
             ctx.err.write("channel inbox unavailable\n")
@@ -1153,6 +1184,9 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             raise HubError(0, "malformed inbox target list")
         if only:
             rows = [row for row in rows if row.get("channel") == only]
+            if not rows and rows_t is None:
+                ctx.err.write(f"no targets found for channel '{only}' on this hub\n")
+                return EXIT_FAILED
         if ns.json:
             ctx.dump({"targets": rows_t, "threads": rows})
         elif not rows:
@@ -1160,7 +1194,8 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say("recent inbox targets (up to 200):")
             for row in rows:
-                ctx.say(f"{row.get('thread_id', '?')}  {row.get('channel', '?')}  {row.get('from', '')}")
+                ctx.say(f"{_plain(row.get('thread_id', '?'))}  {_plain(row.get('channel', '?'), 32)}  "
+                        f"{_plain(row.get('from', ''))}")
         return EXIT_OK
 
     # The target id is checked before anything is read, so a bad id costs no stdin.
@@ -1171,18 +1206,21 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
     if not ns.channel and not re.fullmatch(r"[A-Za-z0-9_:-]{1,200}", ns.to or ""):
         ctx.err.write("--to requires an exact thread id from `nerva send --list`\n")
         return EXIT_USAGE
+    from agents.core.channels.outbound import carried_length, subject_problem
+
     subject = (ns.subject or "").strip()
-    if len(subject) > SEND_MAX_SUBJECT_CHARS or "\n" in subject or "\r" in subject:
-        ctx.err.write(f"--subject is one line of at most {SEND_MAX_SUBJECT_CHARS} characters\n")
+    problem = subject_problem(ns.channel or "", subject)
+    if problem:
+        ctx.err.write(f"--subject: {problem}\n")
         return EXIT_USAGE
     body, reason = _send_body(ns, ctx)
     if body is None:
         ctx.err.write(f"{reason}\n")
         return EXIT_USAGE
-    carried = len(body) + (len(subject) + 2 if subject else 0)
+    carried = carried_length(ns.channel or "", body, subject)
     if carried > SEND_MAX_CHARS:
-        ctx.err.write(f"the message is {carried:,} characters with its subject; nerva send carries "
-                      f"up to {SEND_MAX_CHARS:,} — trim it, or send the tail\n")
+        ctx.err.write(f"the message is {carried:,} characters as delivered (subject included); nerva send "
+                      f"carries up to {SEND_MAX_CHARS:,} — trim it, or send the tail\n")
         return EXIT_USAGE
 
     if ns.channel:
@@ -1201,7 +1239,7 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.say(f"sent to {ns.channel}{note}")
         elif not sent:
             reason = reply.get("error") or reply.get("reason") if isinstance(reply, dict) else None
-            ctx.err.write(f"not sent: {reason or 'the hub refused the message'}\n")
+            ctx.err.write(f"not sent: {_plain(reason) or 'the hub refused the message'}\n")
         return EXIT_OK if sent else EXIT_FAILED
 
     # A thread reply has no title anywhere, so the subject is Hermes' first line.
@@ -1224,7 +1262,7 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"queued task {task_id} for {ns.to} — delivery follows the hub's approval policy")
     elif not queued:
         reason = reply.get("reason") if isinstance(reply, dict) else None
-        ctx.err.write(f"reply was not queued: {reason or 'no durable task returned'}\n")
+        ctx.err.write(f"reply was not queued: {_plain(reason) or 'no durable task returned'}\n")
     return EXIT_OK if queued else EXIT_FAILED
 
 
