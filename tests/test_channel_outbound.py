@@ -206,6 +206,46 @@ async def test_the_configured_send_rate_limit_applies_to_this_path_too(monkeypat
     assert len(adapter.sent) == 1
 
 
+# ── a subject (H480 `-s`) ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_ntfy_gets_the_subject_as_its_native_title_and_the_body_untouched():
+    adapter = _Adapter()
+    orch = make_orch(channels={"ntfy": adapter})
+    result = await outbound.send_to_target(orch, "ntfy", "build green", subject="[CI]")
+    assert result["ok"] is True
+    assert adapter.sent == [("build green", {"title": "[CI]"})]
+
+
+@pytest.mark.asyncio
+async def test_other_channels_get_the_subject_as_the_first_line_in_hermes_shape():
+    adapter = _Adapter()
+    orch = make_orch(channels={"telegram": adapter})
+    result = await outbound.send_to_target(orch, "telegram", "build green", subject="[CI]")
+    assert result["ok"] is True
+    assert adapter.sent == [("[CI]\n\nbuild green", {"chat_id": 7788})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subject", ["two\nlines", "x" * (outbound.MAX_SUBJECT_CHARS + 1)])
+async def test_a_subject_that_is_not_one_bounded_line_is_refused(subject):
+    adapter = _Adapter()
+    orch = make_orch(channels={"telegram": adapter})
+    result = await outbound.send_to_target(orch, "telegram", "hi", subject=subject)
+    assert result["ok"] is False and "one line" in result["reason"] and adapter.sent == []
+
+
+@pytest.mark.asyncio
+async def test_the_length_bound_applies_to_what_is_delivered_subject_included():
+    adapter = _Adapter()
+    orch = make_orch(channels={"telegram": adapter})
+    body = "x" * (outbound.MAX_TEXT_CHARS - 3)
+    assert (await outbound.send_to_target(orch, "telegram", body))["ok"] is True
+    result = await outbound.send_to_target(orch, "telegram", body, subject="[CI]")
+    assert result["ok"] is False and "longer than" in result["reason"]
+    assert len(adapter.sent) == 1
+
+
 # ── the HTTP surface ─────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -251,6 +291,18 @@ def test_send_route_delivers_and_reports_that_it_was_audited(hub):
     assert body.json() == {"ok": True, "channel": "telegram", "audited": True}
     assert adapter.sent[0][0] == "the roof is leaking"
     assert sink.records[0][0] == "channel.send"
+
+
+def test_send_route_carries_a_subject(hub):
+    client, _orch, adapter, _sink = hub
+    body = client.post("/api/channels/send",
+                       json={"channel": "telegram", "text": "build green", "subject": "[CI]"},
+                       headers=ADMIN)
+    assert body.status_code == 200 and body.json()["ok"] is True
+    assert adapter.sent[0][0] == "[CI]\n\nbuild green"
+    r = client.post("/api/channels/send",
+                    json={"channel": "telegram", "text": "x", "subject": "y" * 201}, headers=ADMIN)
+    assert r.status_code == 422
 
 
 def test_send_route_refuses_with_the_reason_in_the_routers_shape(hub):

@@ -23,6 +23,11 @@ here.
 **Email is deliberately absent**, exactly as it is absent from ``ChannelManager.send``:
 keeping SMTP out of the generic send API is what stops untrusted inbound mail from
 gaining an outbound side effect. Adding it here would reopen that by the back door.
+
+**A subject is one line, carried the way each transport can.** ntfy has a native title
+and gets it as one; every other channel gets Hermes' shape — the subject, a blank line,
+the message — so a script's ``-s "[CI]"`` reads the same wherever it lands. The outer
+length bound applies to what is actually delivered, subject included.
 """
 
 from __future__ import annotations
@@ -41,6 +46,9 @@ DIRECT_SEND_CHANNELS = ("telegram", "web", "voice", "ntfy")
 #: usually smaller and the adapter chunks to it; this is only the outer bound that
 #: keeps a script from handing the transport an unbounded string.
 MAX_TEXT_CHARS = 4_000
+
+#: A subject is a line, not a paragraph.
+MAX_SUBJECT_CHARS = 200
 
 OWNER_CHAT_SETTING = "autonomy.owner_chat_id"
 OWNER_CHAT_ENV = "AUTONOMY_OWNER_CHAT_ID"
@@ -122,24 +130,38 @@ def _audit(orch: Any, fields: dict[str, Any]) -> bool:
         return False
 
 
-async def send_to_target(orch: Any, channel: str, text: str, *, source: str = "api") -> dict:
+def _with_subject(name: str, body: str, subject: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """``(body, send kwargs)`` with *subject* carried the way *name* can carry it."""
+    if not subject:
+        return body, kwargs
+    if name == "ntfy":
+        return body, {**kwargs, "title": subject}
+    return f"{subject}\n\n{body}", kwargs
+
+
+async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "",
+                         source: str = "api") -> dict:
     """Send *text* to a configured destination. Never raises; every outcome is a dict.
 
     ``{"ok": True, "channel": …, "audited": bool}`` or
     ``{"ok": False, "reason": …}``. ``audited`` is reported rather than assumed: an
     unaudited send is a real (small) governance gap and the caller should be able to see
-    it, not discover it later from an empty log.
+    it, not discover it later from an empty log. *subject* is optional and one line.
     """
     body = str(text or "").strip()
     if not body:
         return {"ok": False, "reason": "the message is empty"}
-    if len(body) > MAX_TEXT_CHARS:
-        return {"ok": False, "reason": f"the message is longer than {MAX_TEXT_CHARS} characters"}
+    title = str(subject or "").strip()
+    if len(title) > MAX_SUBJECT_CHARS or "\n" in title or "\r" in title:
+        return {"ok": False, "reason": f"the subject must be one line of at most {MAX_SUBJECT_CHARS} characters"}
 
     name = str(channel or "").strip().lower()
     kwargs, reason = resolve_destination(orch, name)
     if kwargs is None:
         return {"ok": False, "reason": reason}
+    body, kwargs = _with_subject(name, body, title, kwargs)
+    if len(body) > MAX_TEXT_CHARS:
+        return {"ok": False, "reason": f"the message is longer than {MAX_TEXT_CHARS} characters"}
 
     from agents.core.channels.send_rate_limit import allow_send
     if not allow_send(name):
@@ -169,6 +191,6 @@ async def send_to_target(orch: Any, channel: str, text: str, *, source: str = "a
 
 
 __all__ = [
-    "DIRECT_SEND_CHANNELS", "MAX_TEXT_CHARS", "OWNER_CHAT_SETTING",
+    "DIRECT_SEND_CHANNELS", "MAX_SUBJECT_CHARS", "MAX_TEXT_CHARS", "OWNER_CHAT_SETTING",
     "configured_targets", "resolve_destination", "send_to_target",
 ]

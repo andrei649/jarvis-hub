@@ -3,7 +3,7 @@
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
   "base_sha": "f24d5f72cccbb556d5811563059f86620d2ab1e9",
-  "assessed_at": "2026-09-15T21:49:18Z",
+  "assessed_at": "2026-09-16T02:11:43Z",
   "reviews": [
     {
       "id": "H001",
@@ -39,11 +39,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -131,28 +131,28 @@
       "id": "H018",
       "row_sha256": "19f831ae4d1a512e44f9f594b12cfb23bb9d76a3c9b131b6f8f99060d6a6b6c2",
       "status": "partial",
-      "summary": "`nerva send --channel <id> <mesaj>` livreaza fara thread primit anterior, iar `nerva send --list` enumera destinatiile configurate cu motivul cand una nu e gata. Trece prin POST /api/channels/send (admin), respecta rate-limit-ul de trimitere si se inregistreaza in IntentLog ca `channel.send`.",
+      "summary": "`nerva send --channel <id> <mesaj>` livreaza fara thread primit anterior, iar `nerva send --list` enumera destinatiile configurate cu motivul cand una nu e gata. Trece prin POST /api/channels/send (admin), respecta rate-limit-ul de trimitere si se inregistreaza in IntentLog ca `channel.send`. Din 2026-09-16 (H480) corpul poate veni din fișier sau stdin, cu un subiect `-s` purtat ca titlu ntfy sau ca prima linie a mesajului; scara de ieșire 0/1/2/3/4 e declarată în `--help`.",
       "remaining": "Randul cere orice platforma configurata. Nerva expune doar canalele direct-send (telegram, web, voice, ntfy). Slack si Discord sunt reply-only prin brokerul channel.reply si nu pot fi adresate de `send`; email-ul e exclus deliberat, ca mailul inbound neincrezut sa nu capete efect SMTP.",
       "evidence": [
         {
           "path": "agents/core/channels/outbound.py",
-          "sha256": "4091694b36f3b095201bb2b77939141e15d7bb2f43c70432c1d9022745e1dea2"
+          "sha256": "53e9c3e8616ad4bdfc9c6bc9cdb6d412bdb2798ad872b2ca25d8226af1105f73"
         },
         {
           "path": "agents/core/routers/integrations.py",
-          "sha256": "019b69f7d10d848e4f584bc8e7470a5b545f4a09ab0aa19c101110ef51decbe8"
+          "sha256": "b70c2c302a5b0d4344c8c3ae67c595da83cec92fb4401ef065879cb6ed38cb70"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_channel_outbound.py",
-          "sha256": "815f452f05a3db138d12ded5fb205e02b767907d170e3a0697316ea551fb2a78"
+          "sha256": "b04471f71d5235cc246f0b9947ce48d0e12f6b52c2035184d82e99f5543a86ee"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         }
       ]
     },
@@ -186,7 +186,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_dep_audit.py",
@@ -194,7 +194,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         }
       ]
     },
@@ -1314,7 +1314,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -1334,7 +1334,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -2397,7 +2397,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "agents/web.py",
@@ -2766,7 +2766,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2786,7 +2786,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -3115,28 +3115,28 @@
       "id": "H480",
       "row_sha256": "0def80cdcc721c3c0d8900dd3a9b0aaba8f7f35c37fe38a7a00fb02656c295a7",
       "status": "partial",
-      "summary": "Trimiterea catre o destinatie configurata exista end-to-end din shell, cu descoperirea tintelor, rate-limit si inregistrare in jurnalul de audit.",
-      "remaining": "Randul cere mult mai mult decat un mesaj pe argument: corp din fisier sau stdin (-f PATH sau -), subiect (-s), atasamente MEDIA:<path>, coduri de iesire 0/1/2 distincte si - cerinta structurala - functionare fara gateway pornit pentru platformele cu bot-token. Implementarea noastra merge prin API-ul HTTP, deci cere hub-ul pornit. Ramane si duplicarea rezolvarii destinatiei: JobRunner._send are propria copie, neunificata inca cu channels/outbound.py.",
+      "summary": "`nerva send` trimite un mesaj către o destinație configurată fără apel de model, cu corpul rezolvat ca la Hermes: argumentul MESSAGE, altfel `-f PATH` (`-` citește stdin), altfel ce e legat pe stdin — un terminal nu e citit niciodată. `-s LINE` e un subiect pe o singură linie, purtat de ntfy ca titlu nativ și de celelalte canale ca prima linie (subiect, linie goală, mesaj — forma Hermes); `-q` nu tipărește nimic la succes; `--list CANAL` filtrează țintele și numește canalele configurate când nimic nu se potrivește. Scara de ieșire e declarată în `--help`: 0 trimis · 1 nelivrat (hub-ul a refuzat sau transportul a eșuat) · 2 utilizare · 3 fără hub · 4 neautorizat. Un fișier binar la `-f` e refuzat cu îndrumarea pentru atașamente, fără să-i reflecte octeții; limita de 4.000 de caractere include subiectul și e verificată înainte de orice cerere. `POST /api/channels/send` primește `subject` opțional (o linie, ≤200), iar seam-ul outbound aplică limita la ce se livrează efectiv. Rate-limit-ul și înregistrarea în IntentLog rămân pe drum. Fiecare comportament nou are un test care pică la neutralizarea lui.",
+      "remaining": "Atașamentele `MEDIA:<path>` nu sunt purtate: o rută care citește căi locale și le trimite pe un canal e egress de fișiere și trebuie să ajungă în spatele Action Kernel-ului, cu un director-sursă delimitat, înainte să existe. Cerința structurală „fără gateway pornit” rămâne o divergență documentată: `nerva send` trece prin hub ca să existe IntentLog și rate-limit. Corpurile peste 4.000 de caractere sunt refuzate, nu fragmentate (Hermes fragmentează per platformă). Slack și Discord rămân reply-only (restul H018); email-ul e exclus deliberat. `JobRunner._send` își păstrează propria rezolvare a destinației (lot-ul jobs). Fără probă live pe un canal real din această sesiune: verificarea a fost prin hub fals și prin ChannelManager-ul real cu adaptoare false.",
       "evidence": [
         {
           "path": "agents/core/channels/outbound.py",
-          "sha256": "4091694b36f3b095201bb2b77939141e15d7bb2f43c70432c1d9022745e1dea2"
+          "sha256": "53e9c3e8616ad4bdfc9c6bc9cdb6d412bdb2798ad872b2ca25d8226af1105f73"
         },
         {
           "path": "agents/core/routers/integrations.py",
-          "sha256": "019b69f7d10d848e4f584bc8e7470a5b545f4a09ab0aa19c101110ef51decbe8"
+          "sha256": "b70c2c302a5b0d4344c8c3ae67c595da83cec92fb4401ef065879cb6ed38cb70"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_channel_outbound.py",
-          "sha256": "815f452f05a3db138d12ded5fb205e02b767907d170e3a0697316ea551fb2a78"
+          "sha256": "b04471f71d5235cc246f0b9947ce48d0e12f6b52c2035184d82e99f5543a86ee"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         }
       ]
     },
@@ -4365,7 +4365,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -4812,7 +4812,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "e3de361e8bb35bfbcf5c48b0cfac0690fc9847c51a967b12023da2556199a8c9"
+          "sha256": "a6e2d97dbe5bc671f61ef446b19a81526b7919b9ce5e35a8f0b72332166289de"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -4824,7 +4824,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "df33ebfc33d51986d126d9e047ba446a7dc9da4a1261eedadf5657e118ab401d"
+          "sha256": "78d5ba17deedc6532ce25d1ac7a94c088a64d07735b121eb82db12cad3330eff"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
