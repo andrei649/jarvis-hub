@@ -34,7 +34,11 @@ def test_model_tiers_endpoint(client):
     data = resp.json()
     assert "tiers" in data
     assert "total_cost_usd" in data
-    assert set(data["tiers"].keys()) == {"local", "fast", "standard", "heavy"}
+    # "unknown" joined the four in 2026-09: a model the cost meter could not price is
+    # not a tier, and folding it into "standard" claimed a mid-priced cloud turn nobody
+    # measured. The equality is kept deliberately — a fifth bucket appearing by accident
+    # should still fail here.
+    assert set(data["tiers"].keys()) == {"local", "fast", "standard", "heavy", "unknown"}
 
 def test_cost_endpoint_still_works(client):
     resp = client.get("/api/analytics/cost")

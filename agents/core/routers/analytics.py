@@ -99,11 +99,17 @@ async def get_analytics_cost():
 @router.get("/api/analytics/model-tiers")
 async def get_model_tiers():
     """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary
-    summary = get_summary()
+    from agents.core import cost_tracker
+
+    summary = cost_tracker.get_summary()
 
     def classify_tier(model: str) -> str:
-        m = model.lower()
+        m = (model or "").lower()
+        if not m or m == cost_tracker.UNPRICED_MODEL:
+            # The router could not name what ran. It is not a tier — putting it in
+            # "standard" would claim a mid-priced cloud turn we never measured, which
+            # is the same confident-wrong answer the meter itself stopped giving.
+            return "unknown"
         if "local" in m or m == "default":
             return "local"
         if "haiku" in m or "mini" in m or "flash" in m:
@@ -112,19 +118,32 @@ async def get_model_tiers():
             return "heavy"
         return "standard"
 
-    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": []}
+    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": [],
+                              "unknown": []}
     for agent_name, data in summary.get("agents", {}).items():
-        tier = classify_tier(data.get("model", "default"))
+        # An agent whose figure the meter could not complete belongs in `unknown`
+        # whatever its last model id says. Classifying on the STRING alone only ever
+        # caught the literal sentinel, so an agent that ran `grok-4.6` — a real model
+        # nobody here has priced — landed under `standard` with a $0.00 cost, which is
+        # the confident-wrong answer this endpoint's own comment says it stopped giving.
+        # The flag is the thing that knows; the id only looks like it does.
+        unpriced = int(data.get("unpriced_calls", 0))
+        tier = "unknown" if unpriced else classify_tier(data.get("model", "default"))
         tiers[tier].append({
             "agent": agent_name,
             "model": data.get("model", "unknown"),
             "calls": data.get("calls", 0),
             "cost_usd": data.get("cost_usd", 0),
+            # Carried per row so a surface printing a dollar amount can say how many of
+            # this agent's runs it does not cover, rather than implying it covers all.
+            "unpriced_calls": unpriced,
+            "priced": unpriced == 0,
         })
 
     return {
         "tiers": tiers,
         "total_cost_usd": summary.get("total_cost_usd", 0),
+        "unpriced_calls": summary.get("unpriced_calls", 0),
         "tier_counts": {k: len(v) for k, v in tiers.items()},
     }
 
