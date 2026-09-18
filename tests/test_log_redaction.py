@@ -6,6 +6,7 @@ agents/core/log.py:setup_logging().
 """
 
 import copy
+import importlib
 import io
 import logging
 import os
@@ -286,8 +287,22 @@ def _drop_redaction_filters() -> None:
     for lg in loggers:
         for handler in list(getattr(lg, "handlers", ()) or ()):
             for installed in list(getattr(handler, "filters", ()) or ()):
-                if isinstance(installed, SecretRedactionFilter):
+                if _is_redactor(installed):
                     handler.removeFilter(installed)
+
+
+def _is_redactor(obj) -> bool:
+    """By class NAME, not `isinstance` — see `tests/conftest.py`.
+
+    This repo imports both as `agents.core.*` and as `core.*`, so one source file
+    becomes two module objects with two distinct classes. An `isinstance` check
+    written against one path reports a handler clean while the other path's filter
+    sits on it, which is exactly how a redactor survived the first attempt at this
+    cleanup.
+    """
+    cls = type(obj)
+    return (cls.__name__ == "SecretRedactionFilter"
+            and cls.__module__.endswith("security.log_redaction"))
 
 
 # The fixture object under its own name: inside a test that takes `restore_logging`
@@ -791,8 +806,73 @@ def _count_redaction_filters() -> int:
     loggers += [obj for obj in logging.Logger.manager.loggerDict.values()
                 if isinstance(obj, logging.Logger)]
     return sum(
-        isinstance(f, SecretRedactionFilter)
+        _is_redactor(f)
         for lg in loggers
         for handler in (getattr(lg, "handlers", ()) or ())
         for f in (getattr(handler, "filters", ()) or ())
+    )
+
+
+# ---------------------------------------------------------------------------
+# The harness pin. These two are a PAIR and run in file order: the first leaves a
+# process-wide install behind exactly as a `setup_logging()` call does, and the
+# second asserts it was gone before it started. What they pin lives in
+# `tests/conftest.py::_isolate_log_redaction`, not here — deliberately, because
+# the leak is not this file's alone. `test_h2311_operability.py`,
+# `test_errors.py` and `test_admin_knobs_wiring.py` each reproduce it too, so a
+# per-file teardown is whack-a-mole: the next file to call `setup_logging()`
+# brings it straight back.
+# ---------------------------------------------------------------------------
+
+
+def test_a_process_wide_install_is_left_behind_for_the_next_test():
+    """First half of the pair. Installs, asserts the install is real, cleans nothing."""
+    lr.install_log_redaction_everywhere()
+    assert _count_redaction_filters(), (
+        "premise failed: the process-wide install attached no filter at all, so "
+        "the test below would pass without proving anything"
+    )
+
+
+def test_the_next_test_does_not_inherit_the_redactor():
+    """Second half. Runs after the one above and must start clean.
+
+    If this goes red, every test that follows a `setup_logging()` call in the same
+    xdist worker is reading log records the secret scanner has rewritten — which
+    is how `test_soul_injection_guard.py` came to assert against
+    `truncated: [REDACTED:high_entropy_secret].md`.
+    """
+    assert _count_redaction_filters() == 0, (
+        "a redactor installed by the previous test survived into this one; "
+        "tests/conftest.py::_isolate_log_redaction is not stripping it"
+    )
+
+
+def test_a_redactor_installed_through_the_other_import_path_is_left_behind():
+    """Third of the group, and the one that would have caught the first miss.
+
+    `agents/` is on `sys.path`, so `core.security.log_redaction` and
+    `agents.core.security.log_redaction` are two module objects over one file with
+    two distinct `SecretRedactionFilter` classes. The first version of this cleanup
+    used `isinstance` against one of them and reported a process clean while the
+    root `StreamHandler` carried the other — which is why
+    `test_soul_injection_guard.py` stayed red after the "fix".
+    """
+    other = importlib.import_module("core.security.log_redaction")
+    assert other is not lr, (
+        "premise: the two import paths no longer produce distinct modules, so this "
+        "test proves nothing — delete it or re-point it at whatever replaced them"
+    )
+    other.install_log_redaction_everywhere()
+    assert _count_redaction_filters(), (
+        "premise failed: nothing was installed through the alternate path"
+    )
+
+
+def test_the_next_test_does_not_inherit_the_other_paths_redactor():
+    """Fourth. Same contract as the second, against the alternate class."""
+    assert _count_redaction_filters() == 0, (
+        "a redactor installed through the `core.*` import path survived into this "
+        "test; tests/conftest.py::_isolate_log_redaction is matching by isinstance "
+        "somewhere instead of by class name"
     )
