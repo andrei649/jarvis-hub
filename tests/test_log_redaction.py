@@ -262,6 +262,32 @@ def restore_logging():
         else:
             os.environ[var] = value
     log.setup_logging(logging.INFO)
+    _drop_redaction_filters()
+
+
+def _drop_redaction_filters() -> None:
+    """Take the process-wide redactor back off on the way out.
+
+    `setup_logging()` installs a `SecretRedactionFilter` on EVERY handler of EVERY
+    logger in the process — that is the point of `install_log_redaction_everywhere`
+    — and nothing here removed it, so a pytest worker that ran this file carried a
+    live redactor into every test that followed it.
+
+    It is not inert. The scanner's `high_entropy_secret` pattern matches an
+    ordinary pytest tmp path, so under `-n auto --dist loadfile`
+    `tests/test_soul_injection_guard.py::test_a_truncated_soul_logs_a_warning_naming_the_path`
+    received its own warning as `truncated: [REDACTED:high_entropy_secret].md` and
+    went red — a real cross-file interaction, found by running the two files
+    together, not a flake.
+    """
+    loggers = [logging.getLogger()]
+    loggers += [obj for obj in logging.Logger.manager.loggerDict.values()
+                if isinstance(obj, logging.Logger)]
+    for lg in loggers:
+        for handler in list(getattr(lg, "handlers", ()) or ()):
+            for installed in list(getattr(handler, "filters", ()) or ()):
+                if isinstance(installed, SecretRedactionFilter):
+                    handler.removeFilter(installed)
 
 
 # The fixture object under its own name: inside a test that takes `restore_logging`
@@ -732,4 +758,41 @@ def test_a_failed_registry_walk_is_announced_not_absorbed(monkeypatch):
 
     assert any("NOT redacted" in m for m in captured), (
         "the registry walk failed and the install reported full coverage anyway"
+    )
+
+
+def test_the_fixture_leaves_no_redactor_behind(restore_logging, tmp_path, monkeypatch):
+    """The isolation pin. `setup_logging()` installs the filter process-wide, and a
+    test file that leaves it installed rewrites log records for every later test on
+    the same worker — which is exactly how this was found, with a tmp path arriving
+    as `[REDACTED:high_entropy_secret]` in an unrelated file's assertion.
+
+    The fixture body is driven directly so its teardown is observable.
+    """
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(tmp_path / "x.log"))
+    fixture_fn = getattr(restore_logging_fixture, "__wrapped__", restore_logging_fixture)
+    gen = fixture_fn()
+    next(gen)                                  # setup
+    import agents.core.log as log
+    log.setup_logging(logging.INFO)            # installs the redactor everywhere
+    installed_before = _count_redaction_filters()
+    assert installed_before, "premise: setup_logging really does install the filter"
+
+    with pytest.raises(StopIteration):
+        next(gen)                              # teardown
+
+    assert _count_redaction_filters() == 0, (
+        "the redactor survived teardown and will rewrite records in later tests"
+    )
+
+
+def _count_redaction_filters() -> int:
+    loggers = [logging.getLogger()]
+    loggers += [obj for obj in logging.Logger.manager.loggerDict.values()
+                if isinstance(obj, logging.Logger)]
+    return sum(
+        isinstance(f, SecretRedactionFilter)
+        for lg in loggers
+        for handler in (getattr(lg, "handlers", ()) or ())
+        for f in (getattr(handler, "filters", ()) or ())
     )
