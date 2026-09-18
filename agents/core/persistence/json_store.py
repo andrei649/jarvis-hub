@@ -17,6 +17,7 @@ file never crashes startup.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -42,13 +43,37 @@ def atomic_write_json(
     No fsync: this matches ``JsonStore._save`` and closes the truncation window
     the audit (Q6) describes. Full durability (fsync of tmp + parent dir) would
     change behaviour for every migrated store and belongs in its own change.
+
+    The file lands **owner-only (0600)**. These stores hold personal state and, in
+    the sender-pairing store's case, pairing credentials; ``write_text`` creates
+    with ``0o666 & ~umask`` — 0644 on a default umask — so without this every
+    JSON store was world-readable.
+
+    The tmp is **created** 0600 rather than chmod'd afterwards. A first cut wrote
+    the payload with ``write_text`` and chmod'd the tmp before the ``replace``,
+    reasoning that ``replace`` moves the tmp's inode over the target so the mode
+    must be right first. That ordering is the better of the two but it does not
+    close the window it claims to: ``write_text`` creates the tmp at
+    ``0o666 & ~umask`` and the whole payload is written before the ``chmod`` runs,
+    so the secret sits in a world-readable file for the length of the write.
+    ``os.open`` with an explicit mode is what actually closes it — the descriptor
+    never exists in any other mode. (H497)
     """
     path = Path(path)
     payload = json.dumps(data, ensure_ascii=ensure_ascii, indent=indent)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     try:
-        tmp.write_text(payload, encoding="utf-8")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+        except BaseException:
+            os.close(fd)   # only reachable if fdopen itself failed to take the fd
+            raise
+        # A tmp left over from an older release (or an interrupted run) keeps its
+        # own mode through O_CREAT, so the mode is asserted rather than assumed.
+        os.chmod(tmp, 0o600)
         tmp.replace(path)  # atomic
     except Exception:
         tmp.unlink(missing_ok=True)

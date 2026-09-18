@@ -34,6 +34,28 @@ mirror of the H16.2 A2A peer allowlist:
   pending list is bounded, and wrong pairing-code guesses are throttled *globally*
   — sender ids on a webhook or an HTTP request are attacker-chosen, so a
   per-sender bucket alone never binds on a code brute-force. (Hermes absorption 5b)
+* **Neither credential is written down.** The pairing code and every outstanding
+  deeplink token are kept as a *salted digest only* — the code under its own salt,
+  each link keyed by an opaque id with the token's digest inside the entry.
+  Verifying is a hash-then-``compare_digest``, so it stays constant-time and the
+  deeplink failure reasons stay indistinguishable.
+
+  **What that is worth, credential by credential.** A deeplink token is 192 bits
+  from ``token_urlsafe(24)``: its digest is not recoverable, full stop. The
+  pairing code is whatever the owner typed, and a digest of a low-entropy secret
+  is a *work factor*, never a wall — the first cut of this module claimed the
+  store "holds nothing that can pair anybody", and a four-digit code was
+  recovered from it by exhausting 10,000 candidates in 0.006 s, then used to
+  pair. The code is therefore stretched (PBKDF2-HMAC-SHA256, see
+  ``_CODE_ROUNDS``), which multiplies that cost by the round count rather than
+  removing it: a four-digit code becomes minutes instead of milliseconds, and an
+  eight-character code from a mixed alphabet becomes infeasible. Nothing here
+  enforces a floor on what the owner types, and generating the code for them —
+  the row's own prescription, eight characters from a 32-character unambiguous
+  alphabet — is not implemented. A file
+  written by an earlier release still carries them in the clear; it is accepted
+  once on open and rewritten hashed, keeping each link's channel and expiry so an
+  upgrade never locks the owner out or resurrects a spent link. (H497)
 
 File-backed (JSON under ``memory_logs/sender_pairing.json``), pure-Python,
 offline-testable.
@@ -41,7 +63,10 @@ offline-testable.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import secrets
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -75,6 +100,146 @@ _MAX_DEEPLINKS = 20         # bound outstanding links; minting a new one is chea
 # 32 bytes of urlsafe randomness. Telegram's `start` payload allows 64 chars, and
 # guessing this is not a threat model anyone needs to worry about.
 _DEEPLINK_BYTES = 24
+
+# At-rest hashing for both credentials (H497). 128 bits of per-credential salt, so
+# two installs with the same pairing code do not share a digest and a precomputed
+# table buys nothing.
+#
+# The two credentials are hashed DIFFERENTLY, and the reason is the threat, not the
+# convenience. A deeplink token is plain SHA-256 on purpose: ``redeem_deeplink``
+# hashes the candidate once per OUTSTANDING LINK, so a deliberately slow hash there
+# hands any stranger who can send `/start junk` a CPU lever — and at 192 bits of
+# entropy there is nothing for stretching to buy.
+#
+# The pairing code is stretched, because none of that applies to it. It is verified
+# once per attempt in ``_code_matches``, not once per link; it is whatever the owner
+# typed; and the first cut of this module defended leaving it unstretched by
+# pointing at the store-wide guess budget, which is an ONLINE control held in
+# memory. That budget has no bearing on an attacker who has READ THE FILE, which is
+# exactly the threat at-rest hashing answers — and against that attacker a 4-digit
+# code fell in 0.006 s. Stretching does not make a weak code strong; it charges the
+# attacker the round count for every candidate, which is the only thing a KDF can
+# honestly promise.
+_SALT_BYTES = 16
+#: PBKDF2-HMAC-SHA256 rounds for the pairing code. ~90 ms per attempt here, which a
+#: human typing a code never notices and which the store-wide guess budget bounds
+#: anyway. Stored WITH each digest rather than read from here at verify time, so
+#: raising it later cannot lock an owner out of a code hashed under the old count.
+_CODE_ROUNDS = 240_000
+#: Written into a stretched record so an unstretched one is recognisable and can be
+#: upgraded in place the next time the owner successfully pairs.
+_CODE_KDF = "pbkdf2-sha256"
+# Opaque handle for a deeplink entry. It replaces the raw token as the dict key and
+# is deliberately meaningless: it is not derived from the token, so the file reveals
+# nothing about it, not even a digest that could be matched across stores.
+_LINK_ID_BYTES = 8
+
+
+def _new_salt() -> str:
+    return secrets.token_hex(_SALT_BYTES)
+
+
+def _digest(salt: str, value: str) -> str:
+    """The stored form of a credential: hex SHA-256 over ``salt + value``.
+
+    Encoded with ``surrogatepass`` so this function is *total*. A lone surrogate
+    is not valid UTF-8 but ``json.loads`` produces one happily (from a ``\\ud800``
+    escape), so such a string arrives from two directions: a hand-edited or
+    corrupted store file, which the migration below hashes on open, and the body
+    of ``POST /api/channels/pairing/request``, which is the one pairing route a
+    stranger is meant to reach. A plain ``.encode()`` raises ``UnicodeEncodeError``
+    on both — turning a bad file into a boot failure (breaking ``JsonStore``'s
+    "a bad file never crashes startup" contract) and turning a four-byte request
+    body into a 500. ``surrogatepass`` is WTF-8 and stays injective, so hashing
+    those strings instead of raising collides nothing. (H497)
+    """
+    return hashlib.sha256(f"{salt}{value}".encode(errors="surrogatepass")).hexdigest()
+
+
+def _stretch(salt: str, value: str, rounds: int) -> str:
+    """PBKDF2-HMAC-SHA256 over ``salt + value``.
+
+    Same ``surrogatepass`` encoding as :func:`_digest`, and for the same reason:
+    this runs on a body a stranger controls, so it has to be total.
+    """
+    return hashlib.pbkdf2_hmac(
+        "sha256", value.encode(errors="surrogatepass"),
+        salt.encode(errors="surrogatepass"), rounds,
+    ).hex()
+
+
+def _hash_code(value: str, *, salt: Optional[str] = None, rounds: int = _CODE_ROUNDS) -> dict:
+    """The stored form of the PAIRING CODE: a stretched, self-describing record.
+
+    ``kdf`` and ``rounds`` ride along with the digest instead of being read from
+    the module at verify time, so raising ``_CODE_ROUNDS`` later cannot lock an
+    owner out of a code hashed under the old count.
+    """
+    chosen = _new_salt() if salt is None else salt
+    return {"salt": chosen, "hash": _stretch(chosen, value, rounds),
+            "kdf": _CODE_KDF, "rounds": int(rounds)}
+
+
+def _code_record_matches(entry: object, candidate: str) -> bool:
+    """True when *candidate* matches a code record, stretched or not.
+
+    An unstretched record is a store written by the first cut of this slice. It
+    still verifies — the digest cannot be re-derived without the plaintext — and
+    :meth:`SenderPairing._code_matches` upgrades it in place on the next
+    successful pair, which is the one moment the plaintext is in hand.
+    """
+    if not isinstance(entry, Mapping) or not candidate:
+        return False
+    salt, stored = entry.get("salt"), entry.get("hash")
+    if not isinstance(salt, str) or not isinstance(stored, str) or not salt or not stored:
+        return False
+    if entry.get("kdf") == _CODE_KDF:
+        rounds = entry.get("rounds")
+        if not isinstance(rounds, int) or rounds < 1:
+            return False      # a record we cannot reproduce is not a match
+        return hmac.compare_digest(stored, _stretch(salt, candidate, rounds))
+    if entry.get("kdf"):
+        return False          # a KDF this build does not implement: fail closed
+    return hmac.compare_digest(stored, _digest(salt, candidate))
+
+
+def _code_needs_upgrade(entry: object) -> bool:
+    """True for a record hashed before the code was stretched, or under fewer rounds."""
+    if not isinstance(entry, Mapping):
+        return False
+    if entry.get("kdf") != _CODE_KDF:
+        return True
+    rounds = entry.get("rounds")
+    return not isinstance(rounds, int) or rounds < _CODE_ROUNDS
+
+
+def _hash_secret(value: str, *, salt: Optional[str] = None) -> dict:
+    """``{"salt", "hash"}`` for *value* — the only shape that ever reaches disk."""
+    chosen = _new_salt() if salt is None else salt
+    return {"salt": chosen, "hash": _digest(chosen, value)}
+
+
+def _secret_matches(entry: object, candidate: str) -> bool:
+    """True when *candidate* hashes to the digest in *entry*, in constant time.
+
+    The candidate is hashed first and only the two fixed-length hex digests are
+    compared, so neither the length nor any prefix of the stored credential leaks
+    through the comparison — the property the raw-string compare had, kept.
+    """
+    if not isinstance(entry, Mapping) or not candidate:
+        return False
+    salt, stored = entry.get("salt"), entry.get("hash")
+    if not isinstance(salt, str) or not isinstance(stored, str) or not salt or not stored:
+        return False
+    return hmac.compare_digest(stored, _digest(salt, candidate))
+
+
+def _fresh_link_id(existing: Mapping) -> str:
+    """An opaque, unused key for a deeplink entry."""
+    while True:
+        link_id = secrets.token_hex(_LINK_ID_BYTES)
+        if link_id not in existing:
+            return link_id
 
 
 #: The inbound pairing gate. Default-on: unset means "hold strangers".
@@ -171,40 +336,151 @@ class SenderPairing(JsonStore):
 
     def __init__(self, path: "str | Path | None" = DEFAULT_PATH) -> None:
         super().__init__(path)
+        # A store written before H497 carries the code and the deeplink tokens in
+        # the clear. ``_deserialize`` has already hashed them in memory; push that
+        # back so the plaintext stops existing on disk on the first open, rather
+        # than whenever the next write happens to come.
+        if self._migrated and self._rewrite_hashed():
+            self._migrated = False
+
+    def _rewrite_hashed(self) -> bool:
+        """Persist the migrated (hashed) state. False when the write failed.
+
+        Best-effort on purpose: nothing about this one-time upgrade may stop the
+        process from booting, and the in-memory state is already hashed either way
+        — the gate behaves identically, the plaintext simply survives on disk until
+        a later save succeeds. Every failure is swallowed, not just ``OSError``: a
+        read-only or full data directory raises that, but the same store can also
+        hold a value that ``json.dumps``/UTF-8 refuses (a sender name with a lone
+        surrogate, say), and a file that merely *cannot be rewritten* must read the
+        same as one that can — ``JsonStore``'s "a bad file never crashes startup"
+        contract, kept through the migration too.
+        """
+        try:
+            with self._lock:
+                self._save()
+        except Exception:
+            return False
+        return True
 
     def _serialize(self):
         return {
-            "senders": self._senders, "code": self._code, "attempts": self._attempts,
-            "deeplinks": self._deeplinks,
+            "senders": self._senders, "code": self._code_hash,
+            "attempts": self._attempts, "deeplinks": self._deeplinks,
         }
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
         self._senders = raw.get("senders", {})
-        self._code = raw.get("code") or None
         self._attempts = raw.get("attempts", {})
-        self._deeplinks = raw.get("deeplinks", {})
+        # Set before the two loaders: either may flip it when it finds plaintext.
+        self._migrated = False
+        self._code_hash = self._load_code(raw.get("code"))
+        self._deeplinks = self._load_deeplinks(raw.get("deeplinks"))
         # Wrong-code guesses store-wide, in memory only: a restart clears it, and a
         # restart is not something a guesser can cause. Persisting would add a write
         # per guess — exactly the load a flood is trying to create.
         self._code_guesses: list[float] = []
 
+    def _load_code(self, stored: object) -> Optional[dict]:
+        """The code's digest from disk, migrating a pre-H497 plaintext code.
+
+        The KDF fields are carried through rather than rebuilt. Reconstructing the
+        record as ``{"salt", "hash"}`` alone drops ``kdf``/``rounds``, and a
+        stretched digest then reads as an unstretched one on the next boot — the
+        owner's code stops verifying at all, which is worse than the weakness the
+        stretching was added for.
+        """
+        if isinstance(stored, Mapping):
+            salt, digest = stored.get("salt"), stored.get("hash")
+            if isinstance(salt, str) and isinstance(digest, str) and salt and digest:
+                record = {"salt": salt, "hash": digest}
+                kdf, rounds = stored.get("kdf"), stored.get("rounds")
+                if isinstance(kdf, str) and kdf:
+                    record["kdf"] = kdf
+                if isinstance(rounds, int):
+                    record["rounds"] = rounds
+                return record
+            return None  # a half-written digest can never match; treat it as no code
+        if isinstance(stored, str) and stored.strip():
+            # Pre-H497 file. Accept it once — an upgrade must not silently retire a
+            # code the owner has already handed out — and mark the store for rewrite.
+            self._migrated = True
+            return _hash_code(stored.strip())
+        return None
+
+    def _load_deeplinks(self, stored: object) -> dict:
+        """Outstanding links from disk, migrating pre-H497 raw-token keys.
+
+        A pre-H497 entry *is* keyed by its token, so the token is recoverable here
+        and only here: it is rehashed under a fresh opaque id and the entry keeps
+        its channel, ``created_at`` and ``expires_at``. An outstanding link
+        therefore still redeems after the upgrade, and still dies at its original
+        moment rather than getting a fresh TTL.
+
+        "Legacy" is decided by the *absence of both* digest fields, not by the
+        digest being unusable. Since H497 a dict key is an opaque id rather than a
+        token, so "no digest means the key is the token" is only sound for an entry
+        that predates the change entirely. An entry carrying one of the two fields
+        is a post-H497 entry with a broken digest: it is dropped, exactly as
+        ``_load_code`` drops a half-written code digest. Re-migrating it would hash
+        its id and hand the id — which is printed in the file — the power to pair,
+        putting a usable credential back in the clear.
+        """
+        if not isinstance(stored, Mapping):
+            return {}
+        links: dict = {}
+        for key, raw_entry in stored.items():
+            if not isinstance(raw_entry, Mapping):
+                continue
+            entry = dict(raw_entry)
+            salt, digest = entry.get("salt"), entry.get("hash")
+            if isinstance(salt, str) and isinstance(digest, str) and salt and digest:
+                links[str(key)] = entry
+                continue
+            if "salt" in entry or "hash" in entry:
+                continue  # a digest that can never match is no link (see above)
+            entry.update(_hash_secret(str(key)))
+            links[_fresh_link_id(links)] = entry
+            self._migrated = True
+        return links
+
     # ── pairing code (optional self-service) ──────────────────────────────────
 
     def set_code(self, code: Optional[str]) -> None:
-        """Set/rotate the pairing code; ``None``/empty clears it (no self-pair)."""
-        self._code = (code or "").strip() or None
+        """Set/rotate the pairing code; ``None``/empty clears it (no self-pair).
+
+        Only a salted digest is kept, in memory and on disk (H497). The code the
+        owner typed is never written down, so whoever reads the store file cannot
+        pair with what they find — and clearing the code clears the digest too.
+        """
+        cleaned = (code or "").strip() or None
+        self._code_hash = _hash_code(cleaned) if cleaned else None
         with self._lock:
             self._save()
 
     def has_code(self) -> bool:
-        return bool(self._code)
+        return self._code_hash is not None
 
     def _code_matches(self, code: Optional[str]) -> bool:
-        if not self._code or not code:
+        """Verify the pairing code, upgrading an unstretched record as it goes.
+
+        A successful match is the only moment the plaintext is in hand, so it is
+        the only moment a record hashed by the first cut of this slice — or under
+        a lower round count — can be rewritten. A failed match leaves the record
+        exactly as it was: nothing about the stored form may depend on what a
+        stranger guessed.
+        """
+        if not self._code_hash or not code:
             return False
-        import hmac as _hmac
-        return _hmac.compare_digest(self._code, str(code).strip())
+        candidate = str(code).strip()
+        if not _code_record_matches(self._code_hash, candidate):
+            return False
+        if _code_needs_upgrade(self._code_hash):
+            self._code_hash = _hash_code(candidate)
+            with self._lock:
+                self._save()
+        return True
 
     # ── state queries ─────────────────────────────────────────────────────────
 
@@ -287,7 +563,7 @@ class SenderPairing(JsonStore):
         # a guesser rotate ids and try the code five times per fresh id forever. Once
         # the budget is spent, code checks stop for the window and the sender is held
         # like anyone else — the owner can still approve them by hand.
-        if code and self._code and self._code_guess_budget_spent():
+        if code and self._code_hash and self._code_guess_budget_spent():
             with self._lock:
                 self._save()
             return {"status": "rate_limited", "allowed": False}
@@ -401,23 +677,26 @@ class SenderPairing(JsonStore):
 
         Returns ``{"token", "channel", "expires_at", "ttl"}``. The token is the
         credential: it is returned exactly once, to an admin-guarded caller, and
-        the store keeps only what it needs to redeem it.
+        the store keeps only what it needs to redeem it — which since H497 is a
+        salted digest under an opaque id, never the token itself.
         """
-        import secrets as _secrets
-
         moment = time.time() if now is None else float(now)
-        token = _secrets.token_urlsafe(_DEEPLINK_BYTES)
+        token = secrets.token_urlsafe(_DEEPLINK_BYTES)
         with self._lock:
             self._expire_deeplinks(moment)
             if len(self._deeplinks) >= _MAX_DEEPLINKS:
                 # Drop the oldest rather than refusing: minting is the owner's
                 # deliberate act, and a full table is a stale table.
-                oldest = min(self._deeplinks, key=lambda k: self._deeplinks[k]["created_at"])
+                oldest = min(
+                    self._deeplinks,
+                    key=lambda k: float(self._deeplinks[k].get("created_at", 0.0)),
+                )
                 self._deeplinks.pop(oldest, None)
-            self._deeplinks[token] = {
+            self._deeplinks[_fresh_link_id(self._deeplinks)] = {
                 "channel": str(channel or "telegram"),
                 "created_at": moment,
                 "expires_at": moment + max(1.0, float(ttl)),
+                **_hash_secret(token),
             }
             self._save()
         return {
@@ -433,14 +712,13 @@ class SenderPairing(JsonStore):
     ) -> dict:
         """Spend a deeplink token and approve this sender. One use, ever.
 
-        The token is compared in constant time against each outstanding entry and
-        removed the moment it matches — before the sender is approved — so two
-        redemptions racing each other resolve to exactly one winner. A token for a
-        different channel is refused rather than honoured: a link minted for
-        Telegram must not pair a Discord account.
+        The token is hashed and compared in constant time against each outstanding
+        entry's digest (H497) and the entry is removed the moment it matches —
+        before the sender is approved — so two redemptions racing each other
+        resolve to exactly one winner. A token for a different channel is refused
+        rather than honoured: a link minted for Telegram must not pair a Discord
+        account.
         """
-        import hmac as _hmac
-
         candidate = str(token or "").strip()
         moment = time.time() if now is None else float(now)
         if not candidate:
@@ -448,9 +726,9 @@ class SenderPairing(JsonStore):
         with self._lock:
             self._expire_deeplinks(moment)
             matched = None
-            for stored in list(self._deeplinks):
-                if _hmac.compare_digest(stored, candidate):
-                    matched = stored
+            for link_id, stored in list(self._deeplinks.items()):
+                if _secret_matches(stored, candidate):
+                    matched = link_id
                     break
             if matched is None:
                 # Wrong, already spent, or expired all look the same from outside,
