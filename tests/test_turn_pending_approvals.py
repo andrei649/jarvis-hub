@@ -257,3 +257,50 @@ def test_a_stream_that_queued_then_failed_still_names_what_it_queued(monkeypatch
     assert end["pending_approvals"] == [56], (
         "the streamed failure branch dropped the id of a row still on the queue"
     )
+
+
+# ── no turn bound: the recorder must get out of the way ──────────────────────
+#
+# Every test above runs with a collector bound. The gated enqueue sites are also
+# reached with *none* — and that is the path where a mistake is invisible, so it
+# is pinned at three levels: the function, the RPC surface, and the HTTP route
+# whose docstring promises the behaviour.
+
+def test_recording_outside_a_turn_is_a_no_op():
+    assert current_turn_approvals() == [], "a collector leaked in from another test"
+    record_pending_approval(7)
+    assert current_turn_approvals() == []
+
+
+@pytest.mark.asyncio
+async def test_a_gated_call_with_no_turn_bound_still_answers_approval_required():
+    """`ToolRPCServer.handle` is reached without a turn by the MCP server surface,
+    the mesh and multimodal routers, `capability_actions`, both reality harnesses
+    and the background autonomy ticks. The recorder runs *after* the row is
+    queued, so raising there would strand a real queue row and hand the caller an
+    exception instead of the id."""
+    queue = _FakeQueue()
+    server = _gated_server(queue.enqueue)
+
+    result = await server.handle({"tool": "send_mail", "args": {"to": "ana"}})
+
+    assert result == {"ok": False, "reason": "approval_required",
+                      "tool": "send_mail", "task_id": 1}
+    assert queue.calls, "the row must still be queued — reporting is the only thing skipped"
+
+
+def test_the_governed_rpc_route_still_answers_a_gated_call(monkeypatch):
+    """`POST /api/toolrpc/call` says in its own docstring that a gated tool
+    returns `approval_required` + a task id. It runs no turn, so this is the
+    user-visible shape of the bug: a 500 in place of a 422 carrying the id."""
+    queue = _FakeQueue()
+    mock = MagicMock()
+    mock.tool_rpc = _gated_server(queue.enqueue)
+    monkeypatch.setattr(web, "orch", mock)
+
+    r = TestClient(web.app).post("/api/toolrpc/call",
+                                 json={"tool": "send_mail", "args": {"to": "ana"}})
+
+    assert r.status_code == 422
+    assert r.json() == {"ok": False, "reason": "approval_required",
+                        "tool": "send_mail", "task_id": 1}
