@@ -61,6 +61,29 @@ def _file_logging_config():
     return path, max_mb * 1024 * 1024, backups
 
 
+def _install_redaction() -> None:
+    """H495: put the secret redactor on every handler this process owns.
+
+    Not just the root handlers: ``callHandlers`` starts at the *emitting*
+    logger, so any logger with its own handlers writes through them first, and
+    one with ``propagate = False`` (uvicorn installs ``uvicorn`` and
+    ``uvicorn.access`` that way, via ``dictConfig``) never reaches root at all.
+
+    Imported lazily and guarded: logging must come up even if the security
+    package cannot be imported (early boot, a partial checkout). Losing
+    redaction is bad, but a process that cannot log at all is worse — and the
+    failure is announced rather than silent.
+    """
+    try:
+        from .security.log_redaction import install_log_redaction_everywhere
+        install_log_redaction_everywhere()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Log secret-redaction filter unavailable; logs are NOT redacted",
+            exc_info=True,
+        )
+
+
 def setup_logging(level: Optional[int] = None) -> None:
     # When no level is passed, honor /admin → system.log_level (was always INFO).
     if level is None:
@@ -75,6 +98,7 @@ def setup_logging(level: Optional[int] = None) -> None:
         datefmt=_LOG_DATE_FORMAT,
         force=True,
     )
+    _install_redaction()
     cfg = _file_logging_config()
     if cfg is not None:
         path, max_bytes, backups = cfg
@@ -88,6 +112,10 @@ def setup_logging(level: Optional[int] = None) -> None:
             root = logging.getLogger()
             root.addHandler(handler)
             root.setLevel(level)
+            # Cover the handler we just attached (the call above ran before it
+            # existed). The install is idempotent, so the stderr handler is not
+            # double-filtered.
+            _install_redaction()
         except OSError as exc:
             # A bad path / unwritable dir must not take the process down — we still
             # have stderr logging from basicConfig.
