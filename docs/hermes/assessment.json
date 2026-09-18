@@ -1504,7 +1504,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
+          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -1990,7 +1990,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
+          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -2585,7 +2585,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
         },
         {
           "path": "tests/test_invocation_reasoning.py",
@@ -3094,7 +3094,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
+          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -4810,7 +4810,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
+          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
         },
         {
           "path": "agents/cli/nerva.py",
