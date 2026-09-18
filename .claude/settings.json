@@ -1,4 +1,10 @@
 {
+  "permissions": {
+   "allow": [
+     "Bash(python scripts/selfdev_policy.py:*)",
+     "Bash(python3 scripts/selfdev_policy.py:*)"
+   ]
+ },
   "extraKnownMarketplaces": {
     "superpowers-dev": {
       "source": "./.claude/plugins/superpowers"
