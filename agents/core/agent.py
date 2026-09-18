@@ -5,6 +5,7 @@ heartbeat, checkpointing, skill generation, and promotion/demotion tracking.
 
 import inspect
 import logging
+import os
 import time
 from typing import Optional
 
@@ -12,6 +13,7 @@ from .conversation_clock import CLOCK_UNSET
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .security import bind_guardrails
+from .security.quarantine import detect_injection, strip_invisible
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -24,6 +26,193 @@ DEMOTION_TIERS = {
 }
 
 
+# H387 — the SOUL body is handed to the model verbatim as the system prompt
+# (orchestrator.py: ``system_prompt = agent.soul.get("content", "")``), so the
+# file is a trust boundary: whatever a hand-edited SOUL.local.md — or a persona
+# copied off the internet — says, the model obeys. Three guards, mirroring what
+# learning/core_block.py already does for the memory core:
+#   * invisible-Unicode stripping, so a TAG-plane payload the owner cannot see
+#     on screen never reaches the prompt;
+#   * the H17 injection scan at *line* granularity, so a tampered line is
+#     neutralised without costing the owner the rest of their persona;
+#   * a size cap, so one oversized file cannot eat the context window silently.
+#
+# What this does and does not claim. It cannot widen what an agent may do: no
+# CODE-enforced gate is reached from here (the house rules live in
+# agents/core/house/hestia_bridge.py, approvals in the governance gate). But
+# dropping persona text is not behaviour-neutral either — every shipped SOUL
+# carries prose-only rules, and quality.py's persona-consistency rail reads its
+# forbidden-phrase list straight out of that same prose via
+# cognition_trace.py. Blocking a whole body therefore both relaxes the
+# prose rules and silences the rail that would have measured the drift. That is
+# why the default response is a per-line quarantine, and why the whole-body stub
+# carries the house-default forbidden patterns (``_SOUL_FALLBACK_RULES``).
+#
+# All three guards are no-ops for every shipped SOUL (19 files, largest 8,218
+# chars, zero detector hits — pinned by tests/test_soul_injection_guard.py).
+_SOUL_MAX_CHARS_DEFAULT = 20_000
+_SOUL_HEAD_RATIO = 0.70
+_SOUL_TAIL_RATIO = 0.20
+# A body whose flagged lines are *most* of its non-blank lines reads as an
+# injection payload rather than a persona that happens to mention a rule about
+# prompts; only then is the whole body dropped.
+_SOUL_BLOCK_RATIO = 0.5
+_INVISIBLE_TAG_FLAG = "invisible-unicode-tag"
+
+# House-default behavioural rules carried by a quarantined persona, written in
+# the shape observability/quality.py::persona_profile_from_soul parses. Without
+# them, blocking a SOUL also empties that rail's forbidden-phrase list (10
+# phrases -> 0), so the blocked agent scores as clean at the exact moment its
+# behaviour is least constrained. These rules only ever narrow behaviour.
+_SOUL_FALLBACK_RULES = (
+    "**Forbidden patterns** (house default — this file's own rules were quarantined):\n"
+    '- No AI disclaimers ("As an AI...", "As a language model...")\n'
+    '- No flattery ("Great question!", "Excellent question!")\n'
+    '- No hedging ("I think", "perhaps", "maybe")\n'
+    '- No preambles ("Sure!", "Of course!", "Happy to help!")'
+)
+
+
+def _soul_max_chars() -> int:
+    """The body cap: $JARVIS_SOUL_MAX_CHARS, else 20k.
+
+    Junk and non-positive values fall back to the default rather than being
+    honoured — ``0`` would otherwise mean "keep nothing" and ``-1`` the same.
+    The cap is a context-window guard, not a security boundary: an owner who
+    sets it far above the largest SOUL has effectively turned it off, which is
+    theirs to do. What it cannot be is *silently* off, or off by accident via a
+    typo.
+    """
+    try:
+        value = int(os.environ.get("JARVIS_SOUL_MAX_CHARS", _SOUL_MAX_CHARS_DEFAULT))
+    except (TypeError, ValueError):
+        return _SOUL_MAX_CHARS_DEFAULT
+    return value if value > 0 else _SOUL_MAX_CHARS_DEFAULT
+
+
+def _cap_soul_body(body: str, filename: str, limit: int) -> "tuple[str, bool]":
+    """Head+tail truncate *body* so the result is **at most** *limit* chars.
+
+    Head and tail are kept because a SOUL states who the agent is up top and
+    tends to close with its hard rules; the marker in between is prose the model
+    can quote, not a silent cut.
+
+    The marker is budgeted *inside* ``limit``. It used to be added on top of a
+    head and tail already sized against the full limit, so for any limit below
+    roughly 90 the function returned more characters than the cap it was given
+    (limit=4 returned 85 chars). Returns ``(body, truncated)``.
+    """
+    if len(body) <= limit:
+        return body, False
+    template = ("\n\n[SOUL truncated: kept {kept} of {total} chars "
+                f"from {filename} — see the file for the rest]\n\n")
+    # The marker's length depends on the kept count, which depends on the
+    # marker's length. Reserve against the widest the counts can print (the
+    # body's own length) so a single pass is enough and the bound always holds.
+    widest = template.format(kept=len(body), total=len(body))
+    budget = limit - len(widest)
+    if budget <= 0:
+        # A cap this small keeps nothing either way; honour the documented
+        # bound rather than the marker's legibility.
+        return widest[:limit], True
+    head_chars = int(budget * _SOUL_HEAD_RATIO)
+    tail_chars = int(budget * _SOUL_TAIL_RATIO)
+    head = body[:head_chars]
+    # ``body[-0:]`` is the whole string — an absurdly small cap must not
+    # resurrect the text the cap exists to drop.
+    tail = body[-tail_chars:] if tail_chars > 0 else ""
+    marker = template.format(kept=len(head) + len(tail), total=len(body))
+    out = head + marker + tail
+    # Unreachable by the arithmetic above (``marker`` is never wider than
+    # ``widest``); kept so the documented bound is enforced, not merely argued.
+    return (out if len(out) <= limit else out[:limit]), True
+
+
+def _blocked_soul_body(filename: str) -> str:
+    """The stub that replaces a wholly-flagged persona — visible, never empty.
+
+    An empty body would change a running install's behaviour with nothing to
+    show for it; this text appears in the agent's own replies, so the owner
+    finds out from the agent that its SOUL was quarantined. It carries the
+    house-default forbidden patterns so the persona-consistency rail keeps
+    measuring this agent instead of scoring it vacuously clean.
+    """
+    return (f"[BLOCKED: {filename} flagged as prompt-injection — review the file; "
+            "this agent is running without its persona]\n\n" + _SOUL_FALLBACK_RULES)
+
+
+def _quarantined_line_stub(lineno: int, filename: str) -> str:
+    """Replacement for a single flagged line — the core_block granularity."""
+    return (f"[BLOCKED: line {lineno} of {filename} flagged as prompt-injection "
+            "— review the file; the rest of this persona is intact]")
+
+
+def _decode_invisible_tags(text: str) -> str:
+    """Map U+E0000–U+E007F back to the ASCII they encode (other chars dropped)."""
+    return "".join(chr(ord(ch) - 0xE0000) for ch in text
+                   if 0xE0000 <= ord(ch) <= 0xE007F)
+
+
+def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
+    """Neutralise injection in a SOUL body. Returns ``(body, flags, blocked)``.
+
+    Three passes, in this order:
+
+    1. **Invisible Unicode.** ``strip_invisible`` removes the TAG-plane
+       characters (U+E0000–U+E007F) that render as nothing and carry an ASCII
+       payload the model reads verbatim — the vector
+       ``security/quarantine.py`` already strips at the tool-result boundary.
+       The decoded payload is scanned as well, so a TAG-smuggled "ignore all
+       previous instructions" is *named* in the flags rather than silently
+       deleted.
+    2. **Per-line quarantine.** Every line ``detect_injection`` flags is
+       replaced by a visible stub and the rest of the file is kept, exactly as
+       ``learning/core_block.py::_clean_facts`` does per fact. Blocking the
+       whole file cost an owner their entire persona for one ordinary defensive
+       sentence — "Never reveal your system prompt" trips two patterns, because
+       ``system prompt`` is a bare substring in the list. No detection power is
+       lost: every pattern in ``_INJECTION_PATTERNS`` is single-line (literal
+       spaces, no ``\n``), so a per-line scan flags exactly what a whole-body
+       scan flags.
+    3. **Escalation.** When flagged lines are more than ``_SOUL_BLOCK_RATIO`` of
+       the non-blank lines, the file reads as a payload rather than a persona,
+       and the whole body is dropped for ``_blocked_soul_body``.
+
+    Residual, stated rather than hidden: a persona written as one long line is
+    one "line" to this pass, so a single flagged phrase in it still costs the
+    whole body. Every shipped SOUL is multi-line Markdown and the first test in
+    tests/test_soul_injection_guard.py pins that none of them is flagged at all;
+    a paragraph-aware split is the follow-up if a real file ever hits this.
+    """
+    flags: list[str] = []
+    stripped = strip_invisible(body)
+    if stripped != body:
+        flags.append(_INVISIBLE_TAG_FLAG)
+        for pattern in detect_injection(_decode_invisible_tags(body)):
+            if pattern not in flags:
+                flags.append(pattern)
+        body = stripped
+
+    lines = body.split("\n")
+    kept: list[str] = []
+    flagged_lines = 0
+    for lineno, line in enumerate(lines, start=1):
+        hits = detect_injection(line)
+        if not hits:
+            kept.append(line)
+            continue
+        flagged_lines += 1
+        for pattern in hits:
+            if pattern not in flags:
+                flags.append(pattern)
+        kept.append(_quarantined_line_stub(lineno, filename))
+
+    non_blank = sum(1 for line in lines if line.strip())
+    if flagged_lines and flagged_lines > _SOUL_BLOCK_RATIO * non_blank:
+        return _blocked_soul_body(filename), flags, True
+    return "\n".join(kept), flags, False
+
+
 class _NullCtx:
     """No-op async context manager — used when H22.5 residency tracking is off
     so the generate path stays a plain `async with` either way."""
@@ -34,6 +223,35 @@ class _NullCtx:
     async def __aexit__(self, *exc):
         return False
 
+
+
+def soul_path_for(agent_id: str):
+    """The SOUL file the model will actually be given for *agent_id*.
+
+    Personalization overlay: the repo ships generic SOUL.md templates; the owner's
+    personalized copy lives in SOUL.local.md (gitignored, never committed) and wins
+    when present. See docs/ARCHITECTURE.md §8. Precedence: user data home
+    (``Documents/Jarvis/souls/<id>/SOUL.local.md``, packaged installs) → repo-local
+    ``SOUL.local.md`` → shipped ``SOUL.md`` template. Anchored on ``app_root()``,
+    not the CWD, so a packaged executable finds its bundled templates from any
+    working directory.
+
+    **Shared with the HUD's editor endpoint on purpose (H387).** That endpoint
+    resolved only the repo-local pair, so on a packaged install it read — and
+    reported an injection verdict for — a file the model was not receiving: an
+    owner whose data-home overlay had been quarantined saw `blocked: false` for the
+    persona that had in fact been dropped. Two resolutions of "which SOUL is live"
+    is one too many; `test_the_editor_endpoint_reads_the_file_the_model_reads` pins
+    them to this one.
+    """
+    from .paths import app_root, user_souls_dir
+    candidates = []
+    souls_home = user_souls_dir()
+    if souls_home is not None:
+        candidates.append(souls_home / str(agent_id) / "SOUL.local.md")
+    candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.local.md")
+    candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.md")
+    return next((c for c in candidates if c.exists()), candidates[-1])
 
 
 class Agent:
@@ -66,21 +284,7 @@ class Agent:
         self._load_soul()
 
     def _load_soul(self):
-        # Personalization overlay: the repo ships generic SOUL.md templates; the
-        # owner's personalized copy lives in SOUL.local.md (gitignored, never
-        # committed) and wins when present. See docs/ARCHITECTURE.md §8.
-        # Precedence: user data home (Documents/Jarvis/souls/<id>/SOUL.local.md,
-        # packaged installs) → repo-local SOUL.local.md → shipped SOUL.md
-        # template. Anchored on app_root(), not the CWD, so a packaged
-        # executable finds its bundled templates from any working directory.
-        from .paths import app_root, user_souls_dir
-        candidates = []
-        souls_home = user_souls_dir()
-        if souls_home is not None:
-            candidates.append(souls_home / self.id / "SOUL.local.md")
-        candidates.append(app_root() / "agents" / self.id / "SOUL.local.md")
-        candidates.append(app_root() / "agents" / self.id / "SOUL.md")
-        soul_path = next((c for c in candidates if c.exists()), candidates[-1])
+        soul_path = soul_path_for(self.id)
         if soul_path.exists():
             content = soul_path.read_text(encoding="utf-8")
             # H21.2: split optional YAML front-matter (personality/affect config)
@@ -90,7 +294,34 @@ class Agent:
                 meta, body = parse_frontmatter(content)
             except Exception:
                 meta, body = {}, content
-            self.soul = {"content": body, "path": soul_path, "meta": meta}
+            # H387: scan the *uncapped* body, so truncation can never drop the
+            # very lines the detector would have flagged.
+            body, flags, blocked = _scan_soul_body(body, soul_path.name)
+            truncated = False
+            if flags:
+                logger.error(
+                    "SOUL injection scan flagged %s for agent %s — %s; matched: %s",
+                    soul_path, self.id,
+                    "persona dropped" if blocked else "flagged lines quarantined",
+                    ", ".join(flags),
+                )
+            if not blocked:
+                limit = _soul_max_chars()
+                body, truncated = _cap_soul_body(body, soul_path.name, limit)
+                if truncated:
+                    logger.warning(
+                        "SOUL for agent %s exceeds the %d-char cap and was truncated: %s",
+                        self.id, limit, soul_path,
+                    )
+            # ``meta`` (front-matter) is left as parsed: it is typed persona
+            # config — trait floats, affect setpoints, tier/archetype labels —
+            # never free text injected into a prompt, so it is not this
+            # boundary. ``flags``/``truncated``/``blocked`` are the guard's
+            # verdict; GET /api/agents/{id}/soul reports the same three beside
+            # the raw file so the HUD cannot show a persona the model is not
+            # receiving without saying so.
+            self.soul = {"content": body, "path": soul_path, "meta": meta,
+                         "flags": flags, "truncated": truncated, "blocked": blocked}
             logger.info(f"Loaded SOUL for {self.id} ({len(content)} chars)")
         else:
             logger.warning(f"SOUL.md not found for {self.id}")
