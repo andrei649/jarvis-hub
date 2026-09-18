@@ -3516,7 +3516,7 @@
       "evidence": [
         {
           "path": "agents/core/environments/terminal_contract.py",
-          "sha256": "a73deb626d2199031521992f6d9bc524936a3a121028dc01160f56454795dafc"
+          "sha256": "7f9248431d09b6902645cadf4d4882769466c8d163d837e8639d20dbdb312fa5"
         },
         {
           "path": "tests/test_local_transport.py",
