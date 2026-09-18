@@ -121,17 +121,29 @@ async def get_model_tiers():
     tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": [],
                               "unknown": []}
     for agent_name, data in summary.get("agents", {}).items():
-        tier = classify_tier(data.get("model", "default"))
+        # An agent whose figure the meter could not complete belongs in `unknown`
+        # whatever its last model id says. Classifying on the STRING alone only ever
+        # caught the literal sentinel, so an agent that ran `grok-4.6` — a real model
+        # nobody here has priced — landed under `standard` with a $0.00 cost, which is
+        # the confident-wrong answer this endpoint's own comment says it stopped giving.
+        # The flag is the thing that knows; the id only looks like it does.
+        unpriced = int(data.get("unpriced_calls", 0))
+        tier = "unknown" if unpriced else classify_tier(data.get("model", "default"))
         tiers[tier].append({
             "agent": agent_name,
             "model": data.get("model", "unknown"),
             "calls": data.get("calls", 0),
             "cost_usd": data.get("cost_usd", 0),
+            # Carried per row so a surface printing a dollar amount can say how many of
+            # this agent's runs it does not cover, rather than implying it covers all.
+            "unpriced_calls": unpriced,
+            "priced": unpriced == 0,
         })
 
     return {
         "tiers": tiers,
         "total_cost_usd": summary.get("total_cost_usd", 0),
+        "unpriced_calls": summary.get("unpriced_calls", 0),
         "tier_counts": {k: len(v) for k, v in tiers.items()},
     }
 
