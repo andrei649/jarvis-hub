@@ -615,3 +615,69 @@ def test_restore_logging_preserves_an_ambient_log_file(restore_logging, monkeypa
     assert os.environ.get("JARVIS_LOG_FILE") == ambient, (
         "restore_logging deleted an ambient JARVIS_LOG_FILE instead of restoring it"
     )
+
+
+# ── a handler that refuses the filter is a hole, and says so ─────────────────
+
+class _RefusingHandler(logging.Handler):
+    """A handler whose ``addFilter`` raises — a third-party handler with a
+    locked-down or re-implemented filter API. Rare, but the failure mode matters:
+    it goes on writing records the scanner never sees."""
+
+    def addFilter(self, fltr):
+        raise RuntimeError("this handler does not take filters")
+
+    def emit(self, record):
+        pass
+
+
+def test_a_handler_that_refuses_the_filter_does_not_stop_the_others():
+    logger = logging.getLogger("jarvis.test.redact.refuse.some")
+    good = logging.StreamHandler(io.StringIO())
+    logger.handlers = [_RefusingHandler(), good]
+    logger.propagate = False
+
+    covered = install_log_redaction(logger)
+
+    assert covered == 1, "the refusing handler aborted the loop"
+    assert any(isinstance(x, SecretRedactionFilter) for x in good.filters)
+
+
+def test_an_uncovered_handler_is_counted_not_swallowed():
+    """The count is the whole point: `install_*` returns how many handlers it
+    covered, which reads identically whether the rest were already covered or
+    refused outright. Only this figure separates the two."""
+    logger = logging.getLogger("jarvis.test.redact.refuse.count")
+    logger.handlers = [_RefusingHandler(), _RefusingHandler()]
+    logger.propagate = False
+
+    assert install_log_redaction(logger) == 0
+    assert lr.uncovered_handler_count() == 2
+
+
+def test_a_clean_install_reports_no_uncovered_handlers(monkeypatch):
+    """The figure describes the *last* install, so a clean one must clear it.
+    A count that only ever rises would keep reporting a hole that was closed."""
+    monkeypatch.setattr(lr, "_UNCOVERED_HANDLERS", 3)
+    logger = logging.getLogger("jarvis.test.redact.refuse.clean")
+    logger.handlers = [logging.StreamHandler(io.StringIO())]
+    logger.propagate = False
+
+    install_log_redaction(logger)
+
+    assert lr.uncovered_handler_count() == 0, "a stale count survived a clean install"
+
+
+def test_an_uncovered_handler_is_announced(caplog):
+    """Counted is not enough — nobody polls the accessor. The operator has to be
+    told, on the logging surface they already read."""
+    logger = logging.getLogger("jarvis.test.redact.refuse.warn")
+    logger.handlers = [_RefusingHandler()]
+    logger.propagate = False
+
+    with caplog.at_level(logging.WARNING, logger="agents.core.security.log_redaction"):
+        install_log_redaction(logger)
+
+    assert any("NOT redacted" in r.getMessage() for r in caplog.records), (
+        "a handler writing unredacted records was skipped without a word"
+    )

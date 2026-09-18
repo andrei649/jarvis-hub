@@ -69,6 +69,8 @@ def record_pending_approval(task_id) -> None:
     autonomy ticks, and those belong to no caller.
     """
     sink = _turn_approvals.get()
+    if sink is None:
+        return
     try:
         queued = int(task_id)
     except (TypeError, ValueError):

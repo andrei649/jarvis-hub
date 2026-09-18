@@ -117,6 +117,7 @@ __all__ = [
     "SecretRedactionFilter",
     "install_log_redaction",
     "install_log_redaction_everywhere",
+    "uncovered_handler_count",
     "REDACTION_UNAVAILABLE",
     "LOG_FORMAT_ERROR",
 ]
@@ -345,14 +346,55 @@ class SecretRedactionFilter(logging.Filter):
                 record.exc_info = None
                 record.exc_text = None
                 record.stack_info = None
-            except Exception:
+            except Exception:  # nosec B110 — a logging.Filter that raises takes
+                # down the caller's log call, and the scanner has already failed
+                # by the time we get here: there is nothing left to try and
+                # nothing safe to emit. Deliberately the only silent swallow in
+                # this module; the install-time one below is counted and warned.
                 pass
         return True
 
 
-def _cover(logger: logging.Logger, factory: Callable[[], SecretRedactionFilter]) -> int:
-    """Attach the shared filter to every handler *logger* owns. Returns the count."""
-    added = 0
+#: Handlers the last install could not attach the filter to. Each one still
+#: writes records the scanner never sees, so this is a coverage figure an
+#: operator can read back — a security control that degrades quietly is worse
+#: than one that fails loudly.
+_UNCOVERED_HANDLERS = 0
+
+
+def uncovered_handler_count() -> int:
+    """Handlers the most recent install call failed to cover (0 when clean)."""
+    return _UNCOVERED_HANDLERS
+
+
+def _report_refused(refused: int) -> None:
+    """Record and announce handlers that refused the filter.
+
+    Announced through ``logging`` on purpose: the handler that refused is the
+    one place the message might not reach, and every other handler in the
+    process will carry it.
+    """
+    global _UNCOVERED_HANDLERS
+    _UNCOVERED_HANDLERS = refused
+    if refused:
+        logging.getLogger(__name__).warning(
+            "Log secret-redaction filter could not be attached to %d handler(s); "
+            "records written through them are NOT redacted",
+            refused,
+        )
+
+
+def _cover(
+    logger: logging.Logger, factory: Callable[[], SecretRedactionFilter]
+) -> tuple[int, int]:
+    """Attach the shared filter to every handler *logger* owns.
+
+    Returns ``(covered, refused)``. One uncooperative handler must not stop the
+    others being covered — but a handler this fails on goes on writing records
+    the scanner never saw, which is a hole in a security control. It is counted
+    and reported by the installer rather than skipped in silence.
+    """
+    added = refused = 0
     for handler in list(getattr(logger, "handlers", ()) or ()):
         try:
             existing = getattr(handler, "filters", ()) or ()
@@ -361,9 +403,8 @@ def _cover(logger: logging.Logger, factory: Callable[[], SecretRedactionFilter])
             handler.addFilter(factory())
             added += 1
         except Exception:
-            # One uncooperative handler must not stop the others being covered.
-            continue
-    return added
+            refused += 1
+    return added, refused
 
 
 def _shared_factory() -> Callable[[], SecretRedactionFilter]:
@@ -402,7 +443,9 @@ def install_log_redaction(root: logging.Logger | None = None) -> int:
     if not _ENABLED:
         return 0
     target = logging.getLogger() if root is None else root
-    return _cover(target, _shared_factory())
+    added, refused = _cover(target, _shared_factory())
+    _report_refused(refused)
+    return added
 
 
 def install_log_redaction_everywhere() -> int:
@@ -425,7 +468,10 @@ def install_log_redaction_everywhere() -> int:
     if not _ENABLED:
         return 0
     factory = _shared_factory()
-    added = _cover(logging.getLogger(), factory)
+    added, refused = _cover(logging.getLogger(), factory)
     for logger in _managed_loggers():
-        added += _cover(logger, factory)
+        covered, missed = _cover(logger, factory)
+        added += covered
+        refused += missed
+    _report_refused(refused)
     return added
