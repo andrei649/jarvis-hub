@@ -379,11 +379,15 @@ def _shell_c_payloads(command: str | Sequence[str]) -> tuple[str, ...]:
             # parsing, so the operand is the token after it.
             cursor = index + 1
             while cursor < len(segment):
-                token = lowered[cursor]
-                if token == "--":
+                # Named `word`, not `token`: bandit's B105 reads `token == "--"` as a
+                # hardcoded password comparison purely from the variable name, and a
+                # `# nosec` for a shell word would be a suppression where a rename
+                # costs nothing.
+                word = lowered[cursor]
+                if word == "--":
                     cursor += 1
                     break
-                if len(token) > 1 and token.startswith("-"):
+                if len(word) > 1 and word.startswith("-"):
                     cursor += 1
                     continue
                 break
