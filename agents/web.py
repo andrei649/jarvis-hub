@@ -43,6 +43,7 @@ from agents.core.orchestrator import (
 )
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 from agents.core.security.guardrails import SecurityBlockError
+from agents.core.turn_approvals import open_turn_approvals, reset_turn_approvals
 # Pure response/format helpers live in core.web_helpers (CLN-3 shared kernel) so
 # the extracted routers can import them without reaching back into this module.
 # Re-exported here under their original private names for backward compatibility.
@@ -938,6 +939,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    # The turn's reply is prose ("…this action requires approval"), which names
+    # nothing the client can show, poll or link to. These are the queue ids the
+    # turn pushed onto the approval queue — a report, not a grant: every one of
+    # them is still `proposed` and still needs the owner's decision.
+    pending_approvals: list[int] = []
 
 
 # ── mount static files ────────────────────────────────────────────
@@ -1054,6 +1060,10 @@ def _web_principal(request: Request):
 async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
+    # Declared before the try so the failure branch can report it too: a turn that
+    # queued an action and *then* raised still left those rows on the queue, and
+    # answering "Internal error." with an empty list would hide them.
+    queued_approvals: list[int] = []
     try:
         if req.session_id is not None:
             from agents.core.session_continuation import ContinuationRefused, prepare_session
@@ -1070,6 +1080,10 @@ async def chat(req: ChatRequest, request: Request):
                 message = prefix + message
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(_web_principal(request))
+        # Opened here, not inside the turn: the turn resets its own binds before
+        # returning, so this is the only place that still holds the list once the
+        # reply is in hand. The turn appends to THIS list (see turn_approvals).
+        sink, approvals_token = open_turn_approvals()
         try:
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id) as acquired:
@@ -1080,13 +1094,15 @@ async def chat(req: ChatRequest, request: Request):
                     reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
                                                     **({"session_id": req.session_id} if req.session_id is not None else {}))
         finally:
+            queued_approvals[:] = sink
+            reset_turn_approvals(approvals_token)
             reset_turn_principal(principal_token)
-        return ChatResponse(reply=reply)
+        return ChatResponse(reply=reply, pending_approvals=queued_approvals)
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply="Internal error.")
+        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals)
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None):
@@ -1100,20 +1116,32 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     after the loop and was skipped on disconnect, leaving the LLM turn running
     orphaned (burning the backend, never releasing resources)."""
     queue: asyncio.Queue = asyncio.Queue()
+    # Parity with /chat: the ids this turn pushed onto the approval queue, so a
+    # streamed "…requires approval" names something the HUD can act on. Filled by
+    # the runner just before it announces the end, because the sink lives in the
+    # runner task's context and the consumer below is what has to report it.
+    queued_approvals: list[int] = []
 
     async def on_token(token: str):
         await queue.put(("token", token))
 
     async def runner():
         # The principal is bound inside the task: a ContextVar set on the endpoint would
-        # not reliably reach a generator Starlette drives later.
+        # not reliably reach a generator Starlette drives later. The approval collector
+        # is bound here for the same reason.
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(principal) if principal is not None else None
+        sink, approvals_token = open_turn_approvals()
+
+        async def end(text: str) -> None:
+            queued_approvals[:] = sink
+            await queue.put(("end", text))
+
         try:
             with reasoning_scope(reasoning):
                 async with _turn_lease(orch, session_id) as acquired:
                     if not acquired:
-                        await queue.put(("end", TURN_BUSY_REPLY))
+                        await end(TURN_BUSY_REPLY)
                         return
                     if session_id is not None:
                         from agents.core.session_continuation import prepare_session
@@ -1122,16 +1150,19 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                         message, channel="web", on_token=on_token, agent_override=agent_override,
                         **({"session_id": session_id} if session_id is not None else {}),
                     )
-            await queue.put(("end", full))
+            await end(full)
         except asyncio.CancelledError:
             raise  # client disconnected → propagate so the turn actually stops
         except Exception:
             logger.exception("chat stream runner error")
             # Constant marker — the SSE end event reaches the client verbatim,
             # so exception text here would leak internals the same way the
-            # non-stream path used to.
+            # non-stream path used to. The ids go out even here: whatever the turn
+            # queued before it raised is still sitting on the approval queue.
+            queued_approvals[:] = sink
             await queue.put(("error", ""))
         finally:
+            reset_turn_approvals(approvals_token)
             if principal_token is not None:
                 reset_turn_principal(principal_token)
 
@@ -1143,10 +1174,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals})}\n\n"
                 break
             elif kind == "error":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.'})}\n\n"
+                # Same shape on the error end event — a client that always reads the
+                # field should never have to special-case the failure branch, and a
+                # turn that queued something before failing still has to name it.
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
