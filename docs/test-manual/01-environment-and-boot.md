@@ -428,7 +428,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | ENV-119 | Missing optional dependency | `pip uninstall -y numpy` then boot | Warning `numpy not installed — vector store will be slower`; server still starts | MINOR | ⚠️ |
 | ENV-120 | PyYAML conflict | On a box with a system PyYAML, `pip install -r requirements-beta.txt`; if it errors, retry with `--ignore-installed PyYAML` | The documented workaround (`COWORK_QA_RUNBOOK` §2) works. Note whether the plain command fails at all on this box | MAJOR | ❌ |
 | ENV-121 | Python 3.10/3.11 | On a 3.10 or 3.11 interpreter: `./install.sh`, then `python -m pytest -q` | Document precisely what happens. `COMPATIBILITY.md` declares a **hard floor of 3.12**, yet no installer enforces it (see Open gaps) — expect either a numpy resolution to `>=2.0,<2.5` and a partially working install, or import errors | MAJOR (the installer should refuse) | ❌ |
-| ENV-122 | Port already in use | Start a second instance on 8080 | uvicorn fails with an address-in-use error and exits; the **first** instance keeps serving. `START.bat`'s browser poller must not open a tab that shows the wrong instance | MAJOR | ❌ |
+| ENV-122 | Port already in use | With the hub running, start a second instance on the same port (`JARVIS_PORT=<same> python serve.py`) | The second instance refuses **before** uvicorn binds, printing to **stderr** `` Port unavailable: something is already listening on 127.0.0.1:8080 — if that is Nerva, `nerva status` will say so; otherwise set JARVIS_PORT to another port and start again. `` and exiting **12** (`serve.probe_bind` / `EXIT_PORT_IN_USE`) — not uvicorn's bare `[Errno 98] address already in use` + exit 3, which it also uses for a lifespan crash. The **first** instance keeps serving. `START.bat`'s browser poller must not open a tab that shows the wrong instance. The probe is a *diagnostic, not a lock*: if something takes the port between the probe and uvicorn's bind, the old raw error is still the fallback | MAJOR if the raw uvicorn error appears instead, or the exit code is not 12 | ✅`tests/test_h2311_operability.py` |
 | ENV-123 | Services down, honestly reported | Stop Qdrant/Neo4j/n8n, boot, read the Console heartbeat log + `GET /api/health/components` | Real "not responding on 127.0.0.1:6333 / :7474 / :5678" lines with real timestamps; the components view lists them as failed. **This is the grounded surface R2 grades Steve against** — capture it before asking Steve anything | BLOCKER if services are reported Online while down | ⚠️ |
 | ENV-124 | No tokens at all | Boot with `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` unset; hit `/api/admin/settings` from **localhost**, then from another LAN host | Localhost: 200 (dev posture, so a fresh box can mint its first token). LAN: `403 {"detail":"admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access"}` | BLOCKER if the LAN request succeeds | ✅`tests/test_admin_guard_hf7.py`, `tests/test_user_guard_hf1.py` |
 | ENV-150 | The three starter outcomes never overclaim 👁 | On a box with no Google connector and no configured docs folder: `GET /api/onboarding/command-center` and the HUD's `WHAT NERVA CAN DO FOR YOU` block | All three rows (`plan_my_day`, `private_documents`, `research_web`) read `status:"needs_setup"` → amber **`NEEDS SETUP`** tag, each with a concrete `setup` string. `live` requires the **capability registry's runtime honesty verdict** (`honesty.status == "live"` and `degraded == false`), so a merely-registered plugin manifest can never light this up (`routers/onboarding.py:279-290`). The privacy tag must match the route actually used: `stays local` only for `local`/`local-deep`/`local-fallback`, else `stored locally · cloud model may receive context` | **BLOCKER** if any row shows `READY NOW` without its connector, or claims `stays local` while routed to cloud | ⚠️`frontend/src/test/command-center-panel.test.tsx` |
@@ -514,7 +514,7 @@ poller of the second instance must not open a tab pointed at the first).
 | 01.7 Posture & watcher | 15 (ENV-077..085, ENV-146..149) | admin token, ⏱ 35 s | 9 (`test_o26_p2_product_posture.py`, `test_admin_settings_mutations.py`, `test_o26_f2_settings_seed.py`, `test_cdx12_hardened_profile.py`, `test_settings_integrity.py`, `test_settings_secret_encryption.py`) | The 30 s watcher tick itself is timing-dependent, manual only. ENV-146 is the declared-vs-runtime cross-check |
 | 01.8 Build integrity | 12 (ENV-086..097) | Node 22, ⏱ long suite, persistent 3.12 shell | 5 + 2 CI lanes (`test_status_sync.py`, `test_release_gate.py`, `test_route_parity_guard.py`; CI `hud-v2-build`, `frontend`) | The counts themselves are the test |
 | 01.9 Data lifecycle | 15 (ENV-098..112) | admin token, scratch `JARVIS_HOME`, ⏱ for upgrade | 9 (`test_backup.py`, `test_data_export.py`, `test_data_purge*.py`, `test_db_migrations.py`, `test_export_route_h23_9.py`) | `UPDATE.bat` itself: ❌ |
-| 01.10 Degraded boots & first run | 16 (ENV-113..124, ENV-150..152) | 🤖 (absence of), 👁, 🌐, ♿ | 6 partial | ENV-120/121/122 (PyYAML, Python 3.10, port in use) and ENV-152 (♿) all ❌ |
+| 01.10 Degraded boots & first run | 16 (ENV-113..124, ENV-150..152) | 🤖 (absence of), 👁, 🌐, ♿ | 6 partial + 1 asserted | ENV-122 (port in use) is now asserted offline by `tests/test_h2311_operability.py` (H042). ENV-120/121 (PyYAML, Python 3.10) and ENV-152 (♿) remain ❌ |
 | 01.Y Adversarial | 24 (ENV-125..142, ENV-153..158) | 🌐 second LAN device, ⏱ | 13 (`test_admin_guard_hf7.py`, `test_user_guard_hf1.py`, `test_rate_limit_hf2.py`, `test_token_lifecycle.py`, `test_backup.py`, `test_db_migrations.py`, `test_onboarding_wizard.py`) | HUD race/refresh (ENV-138/139), read-only root (ENV-156) and split-brain (ENV-157) ❌ |
 | **Total** | **158 cases** | 🖥 34 · 🤖 21 · 👁 18 · 🌐 8 · 🔑 5 · ⏱ 12 · ♿ 1 | ~72 with some offline coverage · ~86 real-world only | Broader accessibility coverage belongs to the HUD sections; only the first-run gate is graded here |
 
@@ -606,10 +606,33 @@ poller of the second instance must not open a tab pointed at the first).
     body-size cap was found on the admin-settings path in `agents/web.py` (the chat path is bounded by
     `ChatRequest.message` `max_length=4096` plus a non-blank validator). A tester must measure and report
     whether 10 MB is rejected, buffered, or fatal.
-17. **Could not verify — "port already in use" ergonomics.** `serve.py` has friendly handling for missing
-    dependencies (16-27) and for bind posture (`boot_guards`), but nothing for `EADDRINUSE`; the owner
-    gets a raw uvicorn traceback. ENV-122 records it as a message-quality finding rather than asserting
-    an expected string.
+17. **Closed — "port already in use" ergonomics (H042).** `serve.py` now runs `probe_bind(host, port)`
+    in `main()`, after the posture guards and before the bind. A taken port names the cause and the next
+    command on stderr and exits **12** (`EXIT_PORT_IN_USE`); `EACCES` on a privileged port exits **13**
+    (`EXIT_PORT_DENIED`). Both are distinct from uvicorn's `STARTUP_FAILURE` (3), which it uses for
+    *every* startup failure — that collision was the actual defect. ENV-122 now **asserts** the string
+    and the exit code instead of recording them (`tests/test_h2311_operability.py`, the
+    `test_probe_bind_*` block). Both exit codes are asserted **by execution**, not by reading the branch:
+    the 13 path runs in a child dropped to an unprivileged uid with `setpriv`, because the test box is
+    root and a sub-1024 bind simply succeeds there. Three things the probe deliberately does **not** do.
+    (a) It does not reserve the port — a diagnostic, not a lock, so losing the probe-to-bind race falls
+    back to the old raw error. (b) It does not bind more strictly than uvicorn does: on POSIX it sets
+    `SO_REUSEADDR` because `uvicorn.Server.startup` binds via `loop.create_server`, where asyncio sets it
+    too; omitting it would make the probe refuse a port merely holding a TIME_WAIT connection from the
+    instance the owner just stopped — a boot uvicorn would have completed. (The Windows half of that flag
+    choice is read off asyncio's `reuse_address = os.name == "posix"` line and has never been run here;
+    the test skips off POSIX and the docstring says so.) (c) It never turns an unexpected failure into a
+    refusal: the whole probe — **the socket constructor included** — sits inside the guarded region, so
+    any `OSError` outside the two named arms is swallowed and uvicorn stays the authority. That arm is
+    load-bearing rather than theoretical: `JARVIS_HOST=::1` on a box with no IPv6 stack raises
+    `EAFNOSUPPORT` from `socket.socket()` itself, and a first cut that built the socket *above* the `try`
+    turned uvicorn's one-line `could not bind on any address out of [('::1', 8080, 0, 0)]` + exit 3 into
+    an 8-frame traceback + exit 1 — the diagnostic making the boot worse than no diagnostic.
+    **Known limit, in the safe direction:** the probe picks one address family from the host string,
+    while uvicorn binds every address `getaddrinfo` returns, so a dual-stack name like `localhost` is
+    probed on v4 only and can miss a conflict held on the v6 address. It misses *silently* — uvicorn then
+    reports it exactly as it does today. **Still open:** there is no `stop` verb and no pidfile, so
+    "is it running / stop it" remains `nerva status` plus Ctrl-C.
 18. **Could not verify on this machine (all deferred to the owner's box):** anything requiring
     Windows (`INSTALL.bat`, `START.bat`, `UPDATE.bat`, `install.ps1`, `smoke.ps1`,
     `deploy/windows/install-service.ps1`), an NVIDIA GPU (`_sys_info`'s `nvidia-smi` branch), real LM
