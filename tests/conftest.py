@@ -182,33 +182,36 @@ def _isolate_action_origin():
 
 @pytest.fixture(autouse=True)
 def _isolate_log_redaction():
-    """Keep one test's process-wide log redactor out of the next one.
+    """Start every test with no process-wide log redactor installed.
 
     `core.log.setup_logging()` calls `install_log_redaction_everywhere()`, which
     attaches a `SecretRedactionFilter` to every handler of every logger in the
-    process — root included — and nothing takes it back off. A pytest worker runs
-    many files in one process, so one `setup_logging()` call anywhere leaves every
-    later test in that worker reading rewritten log records.
-
-    That is neither hypothetical nor cosmetic. The scanner's `high_entropy_secret`
-    pattern is `[A-Za-z0-9+/_-]{32,}` and `/` is inside the class, so an ordinary
-    filesystem path matches it. Under `-n auto --dist loadfile`,
+    process, and nothing takes it back off. A pytest worker runs many files in one
+    process, so one call anywhere leaves every later test reading rewritten
+    records — and the scanner's `high_entropy_secret` pattern is
+    `[A-Za-z0-9+/_-]{32,}` with `/` inside the class, so an ordinary filesystem
+    path matches it. That is how
     `test_soul_injection_guard.py::test_a_truncated_soul_logs_a_warning_naming_the_path`
-    received its own warning as `truncated: [REDACTED:high_entropy_secret].md` and
-    went red. Three files reproduce it on demand — `test_h2311_operability.py`,
-    `test_errors.py` and `test_admin_knobs_wiring.py` — which is why the fix is
-    here and not in them: the next file to call `setup_logging()` would bring it
-    straight back.
+    came to receive its own warning as
+    `truncated: [REDACTED:high_entropy_secret].md`.
 
-    Same reasoning as the two fixtures above: snapshot and restore around every
-    test rather than let the install cross a file boundary. Only filters this test
-    added are removed, compared by identity against strong references — one that
-    was already attached when the test started is left exactly where it was.
+    **The installer is production code, not the tests.** `agents/run.py` calls
+    `setup_logging()` at MODULE level, so importing it installs the redactor during
+    COLLECTION, before any fixture has run; eight test files import it. The FastAPI
+    lifespan in `agents/web.py` calls it too, so any test that drives the app
+    through its lifespan installs it again. Five test files call it directly on top
+    of that. There is no list of leaking files to fix, and there never will be.
+
+    So this strips BEFORE the test, not merely after: a snapshot-and-restore
+    fixture — which is what the two above do, and what this was first written as —
+    treats anything installed at collection time as pre-existing and preserves it
+    forever. Stripping after as well is what keeps the process tidy for whatever
+    runs outside a test's own scope.
 
     The match is by class NAME, not `isinstance`. This repo is importable both as
-    `agents.core.*` and as `core.*` (conftest puts `agents/` on `sys.path`), so one
-    source file becomes two module objects with two distinct classes, and a filter
-    installed through one path fails `isinstance` against the other. That is not a
+    `agents.core.*` and as `core.*` (`agents/` is on `sys.path`), so one source
+    file becomes two module objects with two distinct classes, and a filter
+    installed through one path fails `isinstance` against the other. That is not
     hypothetical: the root `StreamHandler` was carrying a
     `core.security.log_redaction.SecretRedactionFilter` while an `isinstance` check
     written against `agents.core.security.log_redaction` reported the process
@@ -223,25 +226,21 @@ def _isolate_log_redaction():
             and cls.__module__.endswith("security.log_redaction")
         )
 
-    def installed():
+    def strip() -> None:
         loggers = [logging.getLogger()]
         loggers += [
             obj
             for obj in list(logging.Logger.manager.loggerDict.values())
             if isinstance(obj, logging.Logger)
         ]
-        return [
-            (handler, filt)
-            for lg in loggers
-            for handler in list(getattr(lg, "handlers", ()) or ())
-            for filt in list(getattr(handler, "filters", ()) or ())
-            if is_redactor(filt)
-        ]
+        for lg in loggers:
+            for handler in list(getattr(lg, "handlers", ()) or ()):
+                for filt in list(getattr(handler, "filters", ()) or ()):
+                    if is_redactor(filt):
+                        handler.removeFilter(filt)
 
-    before = installed()
+    strip()
     try:
         yield
     finally:
-        for handler, filt in installed():
-            if not any(h is handler and f is filt for h, f in before):
-                handler.removeFilter(filt)
+        strip()
