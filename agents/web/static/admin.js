@@ -1147,11 +1147,18 @@ function CostPage() {
     return h('div', { style: { padding: 20, fontSize: 12, color: 'var(--text-dim)' } }, 'No usage recorded yet.');
   }
 
+  // Must list every bucket /api/analytics/model-tiers can return. The page renders
+  // nothing but these rows, so a bucket missing here is an agent that vanishes from the
+  // only UI this endpoint has — and `unknown` (a turn whose model the router could not
+  // name) is the one an owner most needs to see, because its spend is the spend no
+  // figure on this page covers. `test_model_tiers_buckets_are_all_rendered_by_the_admin_page`
+  // pins the two lists together.
   const tierDefs = [
     { key: 'local',    label: 'Local',    color: '#4ade80' },
     { key: 'fast',     label: 'Fast',     color: '#60a5fa' },
     { key: 'standard', label: 'Standard', color: '#a78bfa' },
     { key: 'heavy',    label: 'Heavy',    color: '#f87171' },
+    { key: 'unknown',  label: 'Unpriced', color: '#f59e0b' },
   ];
 
   return h('div', null,
