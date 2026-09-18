@@ -2,7 +2,7 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "bc48dbc72a31c3764cf04b416c6bbc9e1bc84bf4",
+  "base_sha": "86cc203a32fda6a8d7d5b303a998465794494bdb",
   "assessed_at": "2026-09-18T07:31:30Z",
   "reviews": [
     {
@@ -1696,6 +1696,59 @@
       ]
     },
     {
+      "id": "H270",
+      "row_sha256": "4dd0333449b8b2a88a0076d65ff72ef9ef28f309cfbf9368bed8f9550d6946ef",
+      "status": "partial",
+      "summary": "H270 stays PARTIAL; the triage's \"already equivalent\" does not survive contact with the code. Hermes' contract has two halves and Nerva has only one of them. Outbound (what a child inherits) is genuinely stronger than Hermes and is tested: scrub_child_env (agents/core/environments/__init__.py:172-210) is default-deny with SAFE_ENV_PREFIXES (:17-33) plus the three-name JARVIS_CHILD_ALLOWED_ENV (:47-51), covered by tests/test_environment_primitives.py:62,90; STDIO_ENV_ALLOWLIST/stdio_env_baseline (agents/core/mcp/client.py:101-142) drops a credential-shaped name even when allowlisted (:138), covered by tests/test_mcp_transports.py:349. Inbound (what a surface may persist) does not exist as a policy at all: no ENV_VAR_NAME/WRITE_DENYLIST equivalent anywhere, and none of Hermes' hijack names (LD_PRELOAD, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND, …) appears in agents/, tests/ or frontend/src/ outside the research docs. Confirmed there is no env writer to gate today: no os.environ assignment in agents/ except the reality harness's JARVIS_STRICT_EGRESS toggle (agents/core/observability/reality_harness.py:685,714); no set_key/dotenv write; agents/core/paths.py:130-134 only copies .env.example verbatim; GET /api/admin/env (agents/core/routers/admin.py:167-179) is read-only and mask-redacted with no PUT; the HUD states it in its own copy (frontend/src/panels/workflows-advanced.tsx:48 \"There is NO route to change either\"). Nerva's actual config writer is settings_db.put_category (agents/core/settings_db.py:531-563), which UPSERTs only DEFAULTS-declared keys and skips the rest (:546-560), behind validate_category (:509-529) and the 422 at agents/core/routers/admin.py:110-116 — the right shape, but over settings keys, not env names. Three things are nevertheless still owed, so this is not equivalence. (1) The row's own deliverable — a declared-names allowlist at the write boundary, depends_on \"the key registry\" — is unbuilt, and the rationale defers rather than excludes it (\"the moment the config writer lands, this must land with it\"). (2) The MCP env boundary is unrefused and untested: MCPServerConfig (agents/core/routers/mcp.py:94-105) sets no model_config, so pydantic's default extra=\"ignore\" SILENTLY DROPS an `env` body key rather than refusing it (verified by probe), and no test pins that to_config (agents/core/mcp/client.py:616-630) and load_from_config (:632-668) never round-trip `env`, while the field it would fill is live: MCPServer.env (:245,:275) → _merged_env (:382-395) → create_subprocess_exec(env=…) (:310). (3) The triage's claim that only the legacy _merged_env path skips the filter is wrong — stdio_env_baseline applies per-server overrides unfiltered in the STRICT path too (:141-142, docstring \"Explicit per-server overrides always win\"; docs/FLAGS.md:521), and the allowlist itself is behind JARVIS_MCP_STDIO_ENV_BASELINE, off by default, with tests/test_mcp_transports.py:395-399 pinning the default as a full parent-env inherit carrying OPENAI_API_KEY. Also checked and cleared, which the triage never examined: scripts/nerva_import.py IS a setup-flow writer that persists foreign env-var names verbatim (docstring :19, parse_json_tokens :287-292, SecretStore write :701), but _SECRET_NAME_RE (:70) admits only credential-shaped names so no hijack name can pass, and SecretStore names never reach a process env. Tests run: 74 passed across the six relevant files; none exercises an env-var write boundary.",
+      "remaining": "Nerva has no write-side policy for environment-variable names — the row's deliverable (a declared-names allowlist, depends_on \"the key registry\") does not exist, and the row defers it rather than excluding it. Three concrete items are owed, two of them shippable today against real surfaces:\n\n1. THE REGISTRY (the row's core item, blocked on its stated dependency). No ENV_VAR_NAME allowlist/denylist exists anywhere (grep for ENV_VAR_NAME/ENV_WRITE/WRITE_DENYLIST/writable_env across agents/, scripts/, frontend/src/ is empty), no `config.write` capability kind exists in agents/core/capability_actions.py, and none of Hermes' hijack names (LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, PYTHONPATH/HOME/STARTUP, NODE_OPTIONS/NODE_PATH, PATH, SHELL, BROWSER, EDITOR, VISUAL, PAGER, GIT_SSH_COMMAND) or posture flags is named in code or tests. When any env/config writer lands, a declared-names allowlist must land in the SAME PR, refusing an undeclared name before authorization — the shape of agents/core/capability_actions.py:143-146 refusing missing_inputs before the authorizer at :156.\n\n2. THE MCP `env` BOUNDARY IS UNREFUSED AND UNTESTED (shippable now). agents/core/routers/mcp.py:94-105 sets no `model_config`, so pydantic's default extra=\"ignore\" makes `POST /api/admin/mcp {\"env\": {\"LD_PRELOAD\": \"/tmp/evil.so\"}}` return 200 and silently drop the key instead of refusing it. The field it would populate is live — MCPServer.env (agents/core/mcp/client.py:245, :275) → _merged_env (:382-395) → create_subprocess_exec(env=…) (:310). Owed: `extra=\"forbid\"` (or an explicit named refusal) on MCPServerConfig, plus tests asserting the route refuses an `env` body and that to_config (:616-630) / load_from_config (:632-668) never round-trip `env`.\n\n3. PER-SERVER `env` BYPASSES THE ALLOWLIST IN BOTH BRANCHES, AND THE ALLOWLIST IS OFF BY DEFAULT. stdio_env_baseline applies overrides unfiltered after the allowlist loop (agents/core/mcp/client.py:141-142; docstring: \"Explicit per-server overrides always win\"), and the legacy branch does `merged.update(self.env)` with no filter (:394) — so the strict path is not a safe landing zone for an operator-supplied `env` either. Compounding it, JARVIS_MCP_STDIO_ENV_BASELINE is off by default (:119-120; docs/FLAGS.md:521) and tests/test_mcp_transports.py:395-399 pins the default as a full parent-env inherit carrying OPENAI_API_KEY. Owed: run per-server overrides through the same name policy (or make the bypass an explicitly reviewed, audited exception), and decide whether the baseline should become the default. Severity, checked directly rather than inferred: the bypass is LATENT today. `MCPServerConfig` has no `env` field at all, `to_config` (:616-630) does not export `env` and `load_from_config` (:632-668) does not read it, and the only production caller that passes an override is Nerva's own WorldView writer with an in-repo secret (agents/core/mcp/worldview_write.py:200-206). No untrusted input reaches the override loop, so this is a boundary to close before `env` becomes operator-settable, not a live hole.",
+      "evidence": [
+        {
+          "path": "agents/core/environments/__init__.py",
+          "sha256": "0e57dffb343c38bec5c0e73a26da23627158cad9e8d81510219037cf998f7c60"
+        },
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "db2f278b57d1175be30fd1d4936a73d9796800ed195965e2c1ca526eb77049b0"
+        },
+        {
+          "path": "agents/core/routers/admin.py",
+          "sha256": "ebd8ef474a1d8a63839a039424042f587bf5ced4b3d9d5a97d7514b94c4737d8"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+        },
+        {
+          "path": "scripts/nerva_import.py",
+          "sha256": "1136eef63f4ea74134a199cd44b008f05dd5e54208ffa98b596494b593fb925c"
+        },
+        {
+          "path": "frontend/src/panels/workflows-advanced.tsx",
+          "sha256": "d42f1b7e2c756239fc61df6e0f6155462b81fa7ed5714330ecf13003ba783400"
+        },
+        {
+          "path": "tests/test_environment_primitives.py",
+          "sha256": "23d32132c27e00f000225e4abf3333e5df5a063b4b7cc89739abd7b78162fb8e"
+        },
+        {
+          "path": "tests/test_mcp_transports.py",
+          "sha256": "80784fd8dc5e5e71347fd36a9a15a09579a9eababa5dde3e9e0d1cfd10bb7264"
+        },
+        {
+          "path": "tests/test_mcp_admin.py",
+          "sha256": "f9875287333ce3fc0fb88aec4720f0c5f86fb09f34c53b314aa321962fe599f8"
+        },
+        {
+          "path": "tests/test_settings_integrity.py",
+          "sha256": "1f8cf9f21d82a868eb0e1ca4d5cb72a4354c6b0e3123945bc8eba97a0dfba36d"
+        }
+      ]
+    },
+    {
       "id": "H284",
       "row_sha256": "dce00abe746b0aea3412ce4a1d9286856ba4c4aa6330ffe5672c5e2710ea80aa",
       "status": "partial",
@@ -1766,6 +1819,91 @@
         {
           "path": "tests/test_session_kernels.py",
           "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
+        }
+      ]
+    },
+    {
+      "id": "H288",
+      "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
+      "status": "partial",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva — but the row is not equivalent, because the cron half of Hermes' contract has unmet clauses that last night's triage never looked at.\n\nShipped and verified. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:297, default 3600), resynced every coordinator tick (agents/core/autonomy_coordinator.py:265-269) and enforced by `TaskQueue.reap_stuck_running` (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), called first in `tick` (worker.py:889-891). The crash-grace window is the same mechanism, and it satisfies the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped` — it never re-queues, so an already-authorized action is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane carries the same property independently: a manual request found `running` with its cross-process gate free is recorded `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has a 64-stripe cross-process file gate every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105), an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121), APScheduler `max_instances=1`, a workdir allowlist (agents/core/autonomy/jobs_workdir.py), estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904) and a validated media deadline `jobs.media_send_timeout_seconds` (settings_db.py:226/485, jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243), and `resolve_task_mediation_mode()` defaults to \"off\" with `JARVIS_TASK_MEDIATION` unset — orchestrator.py:553-556 calls it \"shipped dark\". In the default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927), and `transition` (queue.py:1459-1497) validates only the status edge, with no compare-and-swap on `mediation_execution_id`. The triage's \"a second claimant cannot win\" is true only with mediation enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses; the triage addressed none of them. (a) There is no per-run wall clock on the plain cron path: `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` anywhere, while the script path already has exactly that pattern at jobs_scripts.py:405 (120 s) and :455 (30 s). The model call is bounded inside the orchestrator, but the channel send is awaited bare, so a hung adapter holds the gate stripe and the `max_instances=1` slot indefinitely. (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0 = unbounded (executor.py:39-42, autonomy_coordinator.py:1039-1042), so out of the box the only bound on a hung in-process task is the 3600 s reaper — the triage flagged this itself and then filed it as \"not this row\"; HERMES_CRON_TIMEOUT is the first line of this row's contract. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), against the task queue's 30 s of both (queue.py:212-214), so jobs.db writers fall back to SQLite's 5 s default on a WAL shared by the gateway drain loop and cron firings — the _SESSION_DB_TIMEOUT clause, unmet. The delivery-destination knobs are excluded by the row's own rationale and are not counted against it (and are in fact covered anyway by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board remains a product decision, not a slice.\n\n472 tests pass across the scheduled/queued surface with zero failures.",
+      "remaining": "Three cron-lane clauses of Hermes' contract are unmet; the Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT — no per-run wall clock on the plain cron path. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1107-1163, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level; in particular `_send_tracked`/`_send` (jobs.py:1379-1412) awaits the channel adapter bare, so a hung Telegram/Discord send holds the job's gate stripe (jobs_dispatch.py:33-48) and its APScheduler `max_instances=1` slot with nothing to break it. The script path already does this correctly — `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455 — so the fix is to apply the same bound (ideally a `jobs.run_timeout_seconds` setting alongside the existing `jobs.media_send_timeout_seconds`) to the cron path, recording the overrun as a normal failed run through `_failed` so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0 = unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1039-1042), so out of the box a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Give it a non-zero shipped default (or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`), with a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT — the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:508-511), unlike the task queue's `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID) are excluded by the row's own rationale; the residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/queue.py",
+          "sha256": "266d5f2caed8ad3791620cca4aa0d0a4ab3c88138bb41fdc13c84ffcdb75e15f"
+        },
+        {
+          "path": "agents/core/autonomy/worker.py",
+          "sha256": "1cb33e4ec8782d4d08d38f2f9abbbc8e51ef72ff8b2df2c51e03028f2dac5d91"
+        },
+        {
+          "path": "agents/core/autonomy/executor.py",
+          "sha256": "8fc5a5e35df5b24a555372009f0ece0c754789a519362f0c1afdb0d928f0f6c3"
+        },
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_dispatch.py",
+          "sha256": "2ffb5b4d38b1e9d4630c4e76733207f96c358a9bfc773d80aad904b6285d52a8"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_scripts.py",
+          "sha256": "4792aa60580ba856fb34a688ed05285e0e29686952e3e295dcded9610f7d269d"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_media.py",
+          "sha256": "550941d36d074d566a4aeae0d952a02496b349998ab4bd83bab9cf099a714366"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_workdir.py",
+          "sha256": "2200276dd3988ecbebcde3807c66231b454b7c81ff02689fea79a39f1c7b6d57"
+        },
+        {
+          "path": "agents/core/autonomy/mediation_head_store.py",
+          "sha256": "f7443780620f46622aff5336a14404f5278c2fa361dc21c949e10fe772b89088"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+        },
+        {
+          "path": "agents/core/scheduler_service.py",
+          "sha256": "bc70e0ece72e34de7b1f26d24ec4a45e5151126f7c6e72e7fa5a05fa3ac37d94"
+        },
+        {
+          "path": "agents/core/heartbeat.py",
+          "sha256": "ce816c7bb5da87a62242e436ed531d9c191ff7558e2bf282932934c617bf6352"
+        },
+        {
+          "path": "tests/test_q6_autonomy_killswitch_scope_reaper.py",
+          "sha256": "a55004c4e1f9c72cc66fef86d78e34232a62f124b41fcaabfe79ae01e31bd194"
+        },
+        {
+          "path": "tests/test_job_dispatch.py",
+          "sha256": "9433c50b2e9ae4875894ed2fad6af7f037fd9fbf34173ec7a285a7c22adaf1bb"
+        },
+        {
+          "path": "tests/test_jobs_media.py",
+          "sha256": "e33ed1447b625079c85973ace93fb5035efad6708ed976e806fe9f3621ea158d"
+        },
+        {
+          "path": "tests/test_executor_budget.py",
+          "sha256": "38802be323efe41eee3e7d24bdcc1a8cadb27aa5fd8c72514194e042ce77ef30"
+        },
+        {
+          "path": "tests/test_autonomy_worker.py",
+          "sha256": "a93e036c9b11e256a95f2e3a1df9492aec43094bb6d7fa1937e0456fe21a19d5"
+        },
+        {
+          "path": "docs/test-manual/07-autonomy-governance.md",
+          "sha256": "cab3d974a20fc53abdc6d854515b49243a631c3010356b0f54ed95545c0eefc8"
         }
       ]
     },
@@ -3137,6 +3275,160 @@
       ]
     },
     {
+      "id": "H456",
+      "row_sha256": "d1c6513baf1d4189c5db66a1b381789cdcf2d75fbbea1fcfca7811eede3fbf08",
+      "status": "partial",
+      "summary": "H456 reviewed against live code on 2026-09-18; the 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale but the row stays partial. The enabled_toolsets half of the contract has shipped and is well built: agents/core/job_toolsets.py holds an immutable CATALOG (:7-11 basic/files/terminal), strict `validate()` refusing unknown, non-list or duplicate ids (:14-21), `resolve()` refusing a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37), and a `toolset_scope()` (:63-79) whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults — intersect-never-union, enforced. It is enforced at three boundaries, not one: the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208), the runtime filter before and after the profile (agents/core/agent_runtime.py:245-253), and RPC intake ahead of preflight and handler (agents/core/tool_rpc.py:269-271, reason `job_toolset_not_allowed`). Store boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create/edit both re-resolve (:1041, :1062). Fire time: jobs.py:1242-1244 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:175,185,893-899) and the HUD (frontend/src/panels/job-builder.tsx:35-49); PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328). Hermes' two removal rules are met structurally: I enumerated every register_tool on the production server (agents/core/autonomy_coordinator.py:428-728 plus :741-825 installing file_*, session_search, web_search/web_extract, search_memory and execute_code) and none creates a job, no `schedule.create` kernel capability exists, and none is a messaging/clarify tool that needs a live human. Verified green: 27 cases in tests/test_job_toolsets.py, 28 in tests/test_job_model_pins.py, 306 in the wider related batch (0 failures), and 21 HUD cases in frontend/src/panels/job-toolsets.test.tsx + jobs.test.tsx. What keeps the row open is the contract's second half: a job cannot pin reasoning effort. Selection carries only model/provider (agents/core/llm/job_selection.py:21-25), validate_options rejects any unknown option (jobs.py:350) so the pin cannot be stored, and _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,379,398-399 — while the closed-lifetime transport machinery already exists and is entered only by the live chat path (agents/core/llm/request_context.py:44-79; agents/web.py:1074,1113). Secondary: the bound is expressible over only 8 of the ~17 tools the server actually registers, so a job needing web_search, execute_code or search_memory must run unbounded on the default net — a residual docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
+      "remaining": "(1) Per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented: `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), `validate_pins` (:35-43) never sees an effort, `validate_options` rejects any option outside the known ten (agents/core/autonomy/jobs.py:350) so the pin cannot reach the store, and `JobRunner._ask` (jobs.py:1242-1244) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`; a job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :379, :398-399. The transport half already exists and is clamped (agents/core/llm/request_context.py:44-79; anthropic.py:81-86 with per-model overrides; gemini.py:134; xai.py:73; provider_request.py:46 and :54) but is entered only by the live chat path (agents/web.py:1074, :1113). Work owed: accept `reasoning` in validate_pins/validate_options against LADDER, enter `reasoning_scope(...)` in `_ask` beside the other two scopes, expose it on the CLI/HUD/doctor like the model and provider pins, and test it in tests/test_job_model_pins.py. (2) The bound is only expressible over 8 of the ~17 tools the production server registers: CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run, while web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich and image_generate (registered at agents/core/autonomy_coordinator.py:428-728 and :741-825) belong to no group — a job that needs any of them must leave `enabled_toolsets` unset and run at the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\", and doctor reports the upper bound, not effective offers). (3) Minor: Hermes' middle precedence tier — a per-platform `cron` tools config defaulting every scheduled job — has no equivalent; only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
+      "evidence": [
+        {
+          "path": "agents/core/job_toolsets.py",
+          "sha256": "826315734d99705f6ac43ffd15c2a2e2fac84341c342e217a82d91f825d5f8fd"
+        },
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "8455370b31011a700d286f4a9b2fa3b3a8dc41f1bd4089bf4e0becde7284a3eb"
+        },
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_health.py",
+          "sha256": "60581514856ea9e627e5b9aa8559cd8018ab4a73fa42407bede2388616310b95"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+        },
+        {
+          "path": "agents/core/llm/job_selection.py",
+          "sha256": "0e2254accbd6590c443520d616e15725c168f7dbcd8ae6eac17a310cf0532375"
+        },
+        {
+          "path": "agents/core/llm/request_context.py",
+          "sha256": "0c1cd9dd0f1070e8b9609e32de5cd8b6f91a84cd6e3d5f54433cc9dae542aebf"
+        },
+        {
+          "path": "agents/core/llm/hybrid_router.py",
+          "sha256": "248854594c6dd90e4f27506f1f59244452f86a2afa7cb55c48743dfe526d3d3b"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
+        },
+        {
+          "path": "frontend/src/panels/job-builder.tsx",
+          "sha256": "1520b423cfdceac128c6bf2da422afbec625ad3f7c975c7acb868045a8f320a0"
+        },
+        {
+          "path": "tests/test_job_toolsets.py",
+          "sha256": "5d8c4a1fdd0605e653f26f5edf5b29ab5101873df9f77cbb7bef24e585dbf0fc"
+        },
+        {
+          "path": "tests/test_job_model_pins.py",
+          "sha256": "2673eb33a968a03059140ec6e98358d772ee22e9291215ce0f1f533b8faba7fe"
+        },
+        {
+          "path": "frontend/src/panels/job-toolsets.test.tsx",
+          "sha256": "721d0da1fc3e58ef1cd632fec46836f61cdc6a75dcacaacbea02585d44f53cc1"
+        }
+      ]
+    },
+    {
+      "id": "H477",
+      "row_sha256": "cc258d1932b68b0d1aa43dc26cddc3a07796ab758cdc5feec0a1d3cac36d089d",
+      "status": "partial",
+      "summary": "H477 re-reviewed against live code on 2026-09-18; the inherited 2026-09-07 \"missing\" verdict is wrong and last night's \"already equivalent\" triage is also wrong. Nerva does have a real capability-discovery surface, under /api/* not /v1/*: GET /api/capabilities (agents/core/routers/analytics.py:224, user_guard) returns capability_registry.snapshot() (agents/core/observability/capability_registry.py:472), whose build_records() (:444) merges seven sources — _missing_records (:188), _plugin_records (:126), _action_records (:230, every ACTION_CAPABILITY_MANIFESTS kind joined to kernel/registry.ACTION_REGISTRY), _acquired_records (:394), _tool_records (:282), _component_records (:328), _skill_records (:359) — each record carrying inputs/risk/requires/supports/verification/rollback plus a missing→seam→wired→verified→ga readiness state Hermes has no analogue for; GET /api/metrics/capabilities (analytics.py:208) is the open legacy twin. Skills enumerate at GET /skills (routers/skills.py:29) and /skills/imported (:333); tools at GET /api/toolrpc/tools (routers/mesh.py:170, from ToolRPCServer.tools(), tool_rpc.py:229 — a surface the triage missed); health at GET /healthz (routers/ops.py:42) + GET /readyz (:137) + GET /api/health/components (routers/status.py:65) + /status (:74) + /api/status (:103). Tests pin it: 80 passed across tests/test_capability_registry.py, test_capability_readiness_matrix.py, test_h27_capability_verification.py, test_route_auth_matrix.py, test_h2311_operability.py, test_hud_v2_parity.py, test_endpoints.py. But it is not equivalent. Within the row's own narrowed scope (\"copy the discovery half only\"), /v1/toolsets has no counterpart — /api/capabilities lists individual tools, never toolset groups; the only group catalogue is job_toolsets.CATALOG (basic/files/terminal) exposed inside admin-guarded GET /api/jobs/doctor (autonomy/jobs_health.py:116) and scoped to jobs — and /api/capabilities answers \"what can the agent do\" while Hermes' /v1/capabilities also answers \"what does this API support\" (features/endpoints/auth/session-header/idempotency/browser-control contract), a block Nerva has nowhere; /openapi.json is served open and covers the endpoint list only incidentally. Outside that scope, four rolled-up children were never checked by the triage and three are absent: no browser-control registration at all (rg over agents/ for browser_control|controller_id|extension_control returns nothing; browser_transport.py is SSRF resolver pinning for in-process Chromium, not an external controller), no platform-event normalization (no reaction|message_edited anywhere; POST /api/channels/{id}/inbound is message ingress), and no per-request model/provider override (ChatRequest, agents/web.py:911, is extra=\"forbid\" and takes only agent/reasoning/session_id — the reasoning third of the clause is satisfied via reasoning_scope at web.py:1074, model_routes precedence is not). POST /v1/chat/completions and POST /v1/responses are out of scope by the row's own rationale and governance note, not gaps: Nerva's governed chat is POST /chat (web.py:1053) through the kernel/session/approval path, which is what the row requires of any façade. Side note for whoever builds this: GET /v1 is already the legacy HUD HTML (web.py:1015), so a future /v1/* API namespace must be reconciled with it.",
+      "remaining": "Discovery half (the row's own scope), still owed: (1) a `/v1/toolsets` equivalent — `GET /api/capabilities` and `GET /api/toolrpc/tools` enumerate individual tools only; the toolset groups in `agents/core/job_toolsets.py` CATALOG (basic/files/terminal, with `available`) are reachable only inside admin-guarded `GET /api/jobs/doctor` (`agents/core/autonomy/jobs_health.py:116`) and are jobs-scoped, not the agent's platform toolsets with `enabled`/`configured`/expanded `tools`; (2) the API-surface half of `/v1/capabilities` — `snapshot()` (`agents/core/observability/capability_registry.py:472`) returns no `features`/`endpoints`/`auth`/`session-header`/idempotency/protocol-version block, so an external UI cannot feature-detect the server; `/openapi.json` partly covers the endpoint list but is not declared a stable client contract anywhere in docs/.\n\nRolled-up children with no Nerva surface at all: `.api-browser-control` — no `POST /v1/browser-control/register`, no single-use TTL ticket, no controller websocket, no server-side controller capability allowlist (`rg 'browser_control|controller_id|extension_control'` over agents/ returns nothing; `agents/core/browser_transport.py` is SSRF resolver pinning for in-process Chromium); `.api-platform-events` — no normalization of platform-native reactions/edits (`rg 'reaction|message_edited|platform_event'` over agents/ returns nothing; `POST /api/channels/{channel_id}/inbound` is message ingress).\n\nPartially satisfied children: `.api-model-routing` — `ChatRequest` (`agents/web.py:911`) is `extra=\"forbid\"` and accepts only `agent`/`reasoning`/`session_id`, so per-request `model`/`provider` and `model_routes` alias precedence (including the 400-on-provider-conflict rule) do not exist; only the `reasoning` override is governed and live (`agents/web.py:1074`). `.api-models` — no `/api/model/options` provider-aware picker payload with refresh/cache-bust semantics; `/api/models/local` and `/api/models/info` (`agents/core/routers/models_llm.py:103,121`) are admin-guarded. `.api-artifacts` — `agents/core/routers/artifact_store.py` is bounded, quota'd and guarded, but performs no server-side SHA-256 digest validation and binds no artifact to the scope that created it.\n\nOut of scope by the row's own rationale, not gaps: `POST /v1/chat/completions` (explicitly refused) and `POST /v1/responses` (same chat-façade family; any façade must re-enter the governed `POST /chat` path at `agents/web.py:1053`).\n\nNamespace note for the build: `GET /v1` is already the legacy HUD HTML (`agents/web.py:1015`), so a `/v1/*` API prefix has to be reconciled with it or the discovery surface stays on `/api/*`.",
+      "evidence": [
+        {
+          "path": "agents/core/routers/analytics.py",
+          "sha256": "b9edf035733c84ff2fd986f852e9b71bcd931a8724396ddaa2f848d3cda9cb1a"
+        },
+        {
+          "path": "agents/core/observability/capability_registry.py",
+          "sha256": "9fe6414ad036c7827f8878d16b57a3f721ba025177720649223cf31b4c1ab335"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "a4eb4a7223c78c75c5731ff1d049d63311638773c728f534e93cddce54b94485"
+        },
+        {
+          "path": "agents/core/routers/status.py",
+          "sha256": "339dbebb8764b93996ffc6cb01e9bb9ded40570b20a81e11071b57e46fdcf676"
+        },
+        {
+          "path": "agents/core/routers/ops.py",
+          "sha256": "c2090c33755afef710b0c6589819a7292b50790695db0698f4599e48b84b7cb3"
+        },
+        {
+          "path": "agents/core/routers/mesh.py",
+          "sha256": "73104be3da86a33d9b2245e79dac0f8f957989dc532cc2eeaf4aeb1a2fd2204d"
+        },
+        {
+          "path": "agents/core/routers/plugins.py",
+          "sha256": "4f35f45b13d091fb7dd082418de38495c84cc451bbcef65e9a68538369ca85dc"
+        },
+        {
+          "path": "agents/core/routers/artifact_store.py",
+          "sha256": "6bb62c57267b5b8a9a9b05db55b3d91d06f7b03c8c2bb58ddef1b639f8a2fa38"
+        },
+        {
+          "path": "agents/core/job_toolsets.py",
+          "sha256": "826315734d99705f6ac43ffd15c2a2e2fac84341c342e217a82d91f825d5f8fd"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_health.py",
+          "sha256": "60581514856ea9e627e5b9aa8559cd8018ab4a73fa42407bede2388616310b95"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
+        },
+        {
+          "path": "tests/test_capability_registry.py",
+          "sha256": "7a07d3aae4d8a83d4fd5fb5fa01f5439a3fa9b23df708c77251e3f9f750ea1bd"
+        },
+        {
+          "path": "tests/test_h27_capability_verification.py",
+          "sha256": "2d9d9909b549746431378ed31b29edb54d9c2d1ac24138422fe5af1e5fd39745"
+        },
+        {
+          "path": "tests/test_capability_readiness_matrix.py",
+          "sha256": "f6a23d0a4495e07eda83f7f577d5e243232013c0404f81b23f6e67d2dd670f4b"
+        },
+        {
+          "path": "tests/test_route_auth_matrix.py",
+          "sha256": "39107c1bc06f838f66111178061573f997ba26d8ef633b53fc7e6093fb7165b8"
+        },
+        {
+          "path": "tests/test_h2311_operability.py",
+          "sha256": "a57deb5f5453cd594b43bbdfd26b7f5e2bc0788b0a86b64fb6378115294a7f12"
+        },
+        {
+          "path": "tests/test_hud_v2_parity.py",
+          "sha256": "f541529cd115b70758b185e49a1075fd366e9088b38595c6cb9e97755982b1dd"
+        },
+        {
+          "path": "tests/test_endpoints.py",
+          "sha256": "5564515652d3d9aab160bb1bb50064b93f7aacf700411ab8cc76496294922096"
+        },
+        {
+          "path": "tests/_snapshots/route_auth.json",
+          "sha256": "5b2bed6714529bec4ab4179b9cf3e91d6dd3668699e280a01511f7cd771357cd"
+        }
+      ]
+    },
+    {
       "id": "H480",
       "row_sha256": "0def80cdcc721c3c0d8900dd3a9b0aaba8f7f35c37fe38a7a00fb02656c295a7",
       "status": "partial",
@@ -3183,6 +3475,55 @@
         {
           "path": "tests/test_nerva_cli.py",
           "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+        }
+      ]
+    },
+    {
+      "id": "H510",
+      "row_sha256": "b682b69073e507299c2500f25504c310595cdc77a6c6d1556c245e16ddac094e",
+      "status": "partial",
+      "summary": "Reviewed against live code; the inherited 2026-09-07 \"partial\" verdict stands, but for a different and much smaller reason than the audit recorded. The audit's \"no Host-header validation anywhere\" is now stale: agents/core/host_policy.py is a 204-line module whose docstring (:4-22) names DNS rebinding explicitly, with normalize_host() at :54, parse_allowed_hosts() at :104 refusing a `*` entry at :119-120 and a leading-dot suffix wildcard at :121-122, host_accepted() at :157-181 matching loopback names, any IP literal, JARVIS_HOST, the ASGI scope's arrival address and JARVIS_ALLOWED_HOSTS, and assert_parseable_allowed_hosts() at :184 refusing boot on an unparseable list. It is wired at agents/web.py:19 (import) and :674-694 (`_host_guard`, returning {\"error\": \"host not allowed\", \"code\": 400}), registered so it runs before the rate limiter and inside the security-header and golden-signal layers (:648-651, confirmed by dumping app.user_middleware). The boot guard is genuinely reached on the real serve path: agents/core/boot_guards.py:313 and :341, called from the lifespan at agents/web.py:369-370 and :412-413. Refusal logging is rate-shaped (:657-659, :690) and logs only a coarse peer trust class (:662-671), never the attacker-chosen header value. I drove the live app: `Host: evil.test` gets 400 on /status, /dashboard and /api/agents where the real host gets 200. The row's other two asks hold — bounded-CIDR trusted-proxy validation at agents/core/proxy_trust.py:78 and :125 (note :178 only WARNS on a wide entry, it does not refuse), and validated CORS with reported rejections at agents/core/cors_policy.py, with no CORS middleware installed at all by default. The WebSocket clause is excluded by the row itself and I re-verified the exclusion still holds: no WS server route exists anywhere in agents/ (the only hits are an outbound Home Assistant client and a parameter-name filter), and agents/web.py:536 is the only ASGI app. 73/73 tests pass across the five relevant suites. What keeps this off \"equivalent\" is the residual the code names about itself at agents/web.py:654-656: _PROBE_PATHS is exempt from the guard (:678-679), so `Host: evil.test` returns 200 on /healthz and /metrics and reaches the route on /readyz. I confirmed live that a rebound page therefore still reads the full 1126-byte Prometheus body (route templates, request counters, latency buckets) and the /readyz body naming the configured LLM backend and the agent/channel counts — cross-origin, because rebinding makes the browser treat them as same-origin. That is low severity and a deliberate operability trade, not an oversight, but it is a real deviation from Hermes' clause as written (which has no carve-out) and it is shippable work, so the row is partial rather than equivalent.",
+      "remaining": "The Host guard exempts _PROBE_PATHS (agents/web.py:625, applied at :678-679), so /healthz, /readyz and /metrics answer a rebound name: live-verified, `Host: evil.test` returns 200 on /healthz and /metrics and reaches the route on /readyz, while every real API route returns 400. Because DNS rebinding makes the browser treat those responses as same-origin, an attacker page still reads the full Prometheus body (route templates, request counters, latency buckets) and the /readyz body naming the configured LLM backend and the agent/channel counts. The code names this residual itself at agents/web.py:654-656 (\"a rebound page can therefore still read the golden-signal counters\"). Close it by narrowing the exemption rather than removing it — the operability reason for it is sound. Suggested shape: keep /healthz and /readyz exempt but strip /readyz's detail to a bare ready/not-ready when the Host is not accepted, and require an accepted Host for /metrics unless the request is unambiguously non-browser (no Origin and no Sec-Fetch-Site, or an explicit JARVIS_METRICS_ALLOW_ANY_HOST opt-in for a monitor that scrapes by an unlisted name). Needs a test alongside test_healthz_from_any_host_is_exempt asserting that a refused Host cannot read the counter body.",
+      "evidence": [
+        {
+          "path": "agents/core/host_policy.py",
+          "sha256": "e1f53be0d27c5e44981fa9926bad9251db7418ab2bf478e9606b576d260b0675"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
+        },
+        {
+          "path": "agents/core/proxy_trust.py",
+          "sha256": "90f30c6ba8e6d3f17953b947948e0bc5f468db0a5665cb528c914414f53d3840"
+        },
+        {
+          "path": "agents/core/cors_policy.py",
+          "sha256": "e92923b9bc37905b389f268c6a335674775f19cc629bebd51a682c81a292a736"
+        },
+        {
+          "path": "agents/core/boot_guards.py",
+          "sha256": "4a141499307074d823be71d6d686b9674852ca2950f0635ab971d093ed06166f"
+        },
+        {
+          "path": "tests/test_host_header_guard.py",
+          "sha256": "13e69f11c6d8b1e193a73c0a6d5a25f2c933b4c7f1a06a7bb92cc783f31eb492"
+        },
+        {
+          "path": "tests/test_trusted_proxies.py",
+          "sha256": "6023b3422a36135369f66e9739568aeaea60490f2843d26dbc87dae86b77d3e0"
+        },
+        {
+          "path": "tests/test_cors_policy.py",
+          "sha256": "92df6fda4a8ed307db36bc63747a0aa77ba06e8e4fedbb545dfef75bb22ed28c"
+        },
+        {
+          "path": "tests/test_rate_limit_hf2.py",
+          "sha256": "07f92350f3cfdc8cd14ee586a63d3b0ed79478b9d77404932a3ccabeb942d350"
+        },
+        {
+          "path": "tests/test_o26_f6_boot_guards.py",
+          "sha256": "61eed16a2fc3cea9b450df57d2602fe62023074648a2aea5df15b19504397f67"
         }
       ]
     },
@@ -3664,6 +4005,43 @@
         {
           "path": "agents/core/mcp/client.py",
           "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "tests/test_mcp_tool_filters.py",
+          "sha256": "26f3a2f2617b6866791c6b34c4e0ca5b4a0c9cc9dfa69bf52bf48f0c9b6a4657"
+        }
+      ]
+    },
+    {
+      "id": "H557",
+      "row_sha256": "4c23281b93f84035e368929c2600ffba11eb991e0ebafafcca9a4b3b38cdbfe2",
+      "status": "partial",
+      "summary": "H557 is PARTIAL, not missing and not equivalent. The 2026-09-07 verdict is stale on one half and still correct on the other; the overnight triage's \"already equivalent\" is wrong.\n\nSHIPPED (the row's rationale half). The name-collision correctness bug is fixed and tested: agents/core/mcp/client.py:566-594 `MCPManager._resolve` accepts a bare tool name only when exactly one server offers it and otherwise returns `{\"error\": \"ambiguous_tool\", \"servers\": [...]}`; `server/tool` or an explicit `server=` pins the server; `find_tool` (client.py:597) and `call_tool` (client.py:606) both route through it; `MCPTool.qualified_name` (client.py:230-233) is the `server/tool` form. tests/test_mcp_hardening.py:41-73 proves first-wins is gone (3 tests, passing). This is a genuine different-spelling equivalent of Hermes' disambiguation property, so `missing` under-reports the row.\n\nNOT SHIPPED (the row's headline half). There is no `_normalize_mcp_input_schema` equivalent. agents/core/mcp/client.py:402-417 `_list_tools` still stores `t.get(\"inputSchema\", {})` verbatim (client.py:410) into `MCPTool.input_schema` (client.py:220) with zero repair — the 2026-09-07 evidence sentence is still literally true. Nerva repairs at the dialect boundary instead, and only for ONE of four providers: agents/core/llm/tool_dialects.py:369-437 `gemini_schema` covers Hermes' `required`-pruning (:423-427) and missing-`type` coercion (:419, :427), and :441-452 avoids the empty-OBJECT 400. The Anthropic path (tool_dialects.py:147-151) and both OpenAI paths (tool_protocol.py:19-27 `as_openai`, responses.py:72-81) pass `input_schema` through byte-for-byte. Two of Hermes' five repairs are absent on every path: I ran the code and confirmed `gemini_schema({\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null})` → `{\"default\": null, \"anyOf\": [{\"type\":\"string\"}, {}]}` (the Pydantic null branch is not collapsed, it degenerates to an empty schema), and `{\"definitions\":{\"Node\":…},\"properties\":{\"node\":{\"$ref\":\"#/definitions/Node\"}}}` → `{\"properties\":{\"node\":{}}}` (draft-07 `definitions`/`$ref` are not promoted to `$defs`, the referenced shape is silently deleted). No name sanitization exists anywhere: `grep -rn \"mcp__\" agents/` is empty, and `qualified_name`'s `/` is not a legal provider function-name character.\n\nON REACHABILITY. The triage is right that this is currently unreachable from a model: `MCPManager.get_tools()` (client.py:560-564) has zero callers in the whole repo, `MCPTool.input_schema` is read nowhere outside its constructor, and agents/core/routers/mcp.py:71-79 and :193-194 expose only name/description/read_only to the HUD, never the schema. But the triage's grep was scoped wrong and missed a real production consumer of the dispatch path: agents/core/mcp/worldview_write.py:141 calls `self.mcp.call_tool(tool, mcp_args)` by bare name (it lives inside agents/core/mcp/, which their grep excluded). So `_resolve` is not dead code, and its bare-name path is live today.\n\nUnreachability is a reason the remaining work is small and belongs inside the bridge PR — it is not a reason to record the row as done. Six of Hermes' nine clauses are unsatisfied or satisfied on only one of four provider paths, and no test anywhere exercises repair of a third-party `inputSchema`. Recording `equivalent` would put a false claim on a public status page; `partial` with a named remainder is the honest row.",
+      "remaining": "No provider-agnostic repair of a third-party MCP server's JSON Schema exists. (1) `agents/core/mcp/client.py:402-417` `_list_tools` still stores `inputSchema` verbatim (`:410`); add a `_normalize_mcp_input_schema` applied at registration. (2) Two of Hermes' five repairs are absent on every path, verified by running the code: draft-07 `definitions`/`#/definitions/...` are never promoted to `$defs`/`#/$defs/...` (and `gemini_schema` silently reduces a `$ref` property to `{}`, deleting the shape), and a Pydantic nullable union `anyOf:[{...},{\"type\":\"null\"}], default:null` is never collapsed to its non-null branch (`gemini_schema` yields `anyOf:[{\"type\":\"string\"},{}]` with `default:null` retained — the exact shape Anthropic 400s on). (3) The three repairs that do exist (`required` pruned to declared names, missing `type` coerced, empty-OBJECT avoided) live only in `agents/core/llm/tool_dialects.py:369-452` and therefore apply to Gemini alone; `anthropic_tools` (tool_dialects.py:147-151), `ToolSpec.as_openai` (tool_protocol.py:19-27) and the Responses payload (responses.py:72-81) pass `input_schema` through unrepaired. (4) No name sanitization or provider-legal prefixing: `MCPTool.qualified_name` (client.py:230-233) is `server/tool`, whose `/` is outside the `[A-Za-z0-9_-]` function-name charset both Anthropic and OpenAI enforce, and nothing replaces characters outside `[A-Za-z0-9_]`; `grep -rn \"mcp__\" agents/` returns nothing. (5) The row's security property — a third-party tool shadowing a built-in governed tool name — is unaddressed: `_resolve` disambiguates only among MCP servers, never against the agent tool registry. (6) No test covers any of this; `grep -rln \"gemini_schema\" tests/` returns only tests/test_cloud_tool_turns.py, and nothing tests `MCPTool.input_schema`. All of the above is currently unreachable by a model because no MCP-client -> tool-registry bridge exists (`MCPManager.get_tools()` has zero callers repo-wide), so the normalizer plus its tests should land inside whichever PR first offers MCP client tools to the model, not as a standalone pure function.",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
+        },
+        {
+          "path": "agents/core/llm/tool_protocol.py",
+          "sha256": "95ac4be1beb26f8165b9f38e8bf1eb607790246ded8932cad88e7390154e599b"
+        },
+        {
+          "path": "agents/core/llm/responses.py",
+          "sha256": "2ead092995191ca22abba17c3c3b6cda73f842dbca782ef76c5e0dbe44d7996a"
+        },
+        {
+          "path": "tests/test_mcp_hardening.py",
+          "sha256": "809511b4614ee4ca32a43fc0018006c8382f59d9bbb125342c010e059189351d"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_mcp_tool_filters.py",
