@@ -5,11 +5,11 @@ heartbeat, checkpointing, skill generation, and promotion/demotion tracking.
 
 import inspect
 import logging
-import os
 import time
 from typing import Optional
 
 from .conversation_clock import CLOCK_UNSET
+from .env_config import env_int
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .security import bind_guardrails
@@ -82,12 +82,15 @@ def _soul_max_chars() -> int:
     sets it far above the largest SOUL has effectively turned it off, which is
     theirs to do. What it cannot be is *silently* off, or off by accident via a
     typo.
+
+    Read through ``env_config.env_int`` rather than the environment directly: the
+    AUD-14 ratchet (`tests/test_o26_p2_env_config.py`) counts raw reads across the
+    tree and refuses a new one, and it is right to — `env_int` is where "junk falls
+    back to the default" is defined once. ``minimum=1`` is exactly the non-positive
+    rule above, and `env_int` falls back rather than clamping, which is the same
+    choice for the same reason: a nonsense value means the intent is unknown.
     """
-    try:
-        value = int(os.environ.get("JARVIS_SOUL_MAX_CHARS", _SOUL_MAX_CHARS_DEFAULT))
-    except (TypeError, ValueError):
-        return _SOUL_MAX_CHARS_DEFAULT
-    return value if value > 0 else _SOUL_MAX_CHARS_DEFAULT
+    return env_int("JARVIS_SOUL_MAX_CHARS", _SOUL_MAX_CHARS_DEFAULT, minimum=1)
 
 
 def _cap_soul_body(body: str, filename: str, limit: int) -> "tuple[str, bool]":
