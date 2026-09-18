@@ -1100,17 +1100,87 @@ _NOT_AN_ANSWER: dict[str, str] = {
     # agents.core.llm.base.LOCAL_SELECTION_UNAVAILABLE_REPLY
     "\u26a0\ufe0f No local language model is available. Start LM Studio or Ollama and try again.":
         "no local model is available",
+    # agents.core.llm.base.THINKING_EXHAUSTED_REPLY
     # agents/web.py — the chat route's own two failure replies
     "Internal error.": "the hub failed while handling the turn",
     "Jarvis not initialized.": "the hub has no orchestrator",
+    # agents.core.agent_runtime — the tool loop's own stops. Each one means the turn
+    # gave up part-way; a script that read them as answers would pipe "I stopped the
+    # tool loop because the same tool kept failing." into whatever consumes the reply
+    # and record the run as a success.
+    "I stopped the tool loop because it reached the safety deadline.":
+        "the tool loop stopped: it reached the safety deadline",
+    "I stopped the tool loop because its context exceeded the safety budget.":
+        "the tool loop stopped: its context exceeded the safety budget",
+    "I stopped the tool loop because the model context window metadata could not be validated.":
+        "the tool loop stopped: the context window could not be validated",
+    "I stopped the tool loop because it kept repeating the same tool call.":
+        "the tool loop stopped: it kept repeating the same call",
+    "I stopped the tool loop because the same tool kept failing.":
+        "the tool loop stopped: the same tool kept failing",
 }
+
+#: One stop reason is built with an f-string — agent_runtime's "I stopped the tool loop
+#: after N model turns because …" — so no table of exact strings can hold the family.
+#: The shared opening is the rule, which also covers stops added after this was written.
+_NOT_AN_ANSWER_PREFIXES: dict[str, str] = {
+    "I stopped the tool loop": "the tool loop stopped before the turn finished",
+}
+
+
+def _not_an_answer(answer: str) -> str | None:
+    """The machine reason this reply is not an answer, or ``None`` if it is one.
+
+    Matched by CONTAINMENT, not equality. The hub does not hand `/chat` the agent's
+    reply verbatim: `Orchestrator._synthesize` wraps a single specialist's answer as
+    ``"[athena]: …"`` whenever `jarvis` is not among the responders — which is the
+    ordinary routed path, not an edge case. An equality test read that wrapper as a
+    completed turn and exited 0 with a queued approval printed as the answer, which is
+    exactly the Hermes behaviour this verb exists to invert.
+
+    Containment survives the wrapper. It does NOT survive the other synthesis branch,
+    where `jarvis.synthesize` re-writes the text through a model — nothing in a reply
+    string can survive that, which is why the hub reporting `pending_approvals` is the
+    real fix and why this row stays partial until that lands. The trade is deliberate:
+    a model that quotes one of these sentences verbatim makes the verb exit non-zero
+    with a stated reason, which is the safe direction to be wrong in.
+    """
+    text = " ".join(str(answer or "").split())
+    for sentinel, reason in _NOT_AN_ANSWER.items():
+        if " ".join(sentinel.split()) in text:
+            return reason
+    for prefix, reason in _NOT_AN_ANSWER_PREFIXES.items():
+        if prefix in text:
+            return reason
+    return None
+
+
+def _pending_ids(raw: Any) -> tuple[list[Any], bool]:
+    """``(ids, reported_but_unreadable)`` from a hub's ``pending_approvals``.
+
+    A ``str`` is iterable, so ``list("71")`` is ``['7', '1']`` — two approval ids that
+    do not exist, handed to the operator as things to go and decide. Anything that is
+    not a list or a tuple is reported as present-but-unreadable rather than exploded:
+    a wrong id is worse than no id, because the operator can act on it.
+    """
+    if not raw:
+        return [], False
+    if isinstance(raw, (list, tuple)):
+        return list(raw), False
+    return [], True
 
 #: An escape sequence is stripped whole, terminator included. Dropping only the ESC byte
 #: would leave `[2J` behind: inert on a terminal, but noise in the string a script parses.
 #: CSI and OSC cover what a model or an echoed tool result actually emits — colour, cursor
 #: moves, window titles; anything else falls through to _ANSWER_CONTROL below.
 _ANSWER_ESCAPE = re.compile(
-    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC … BEL or ST
+    # OSC/DCS/APC/PM: payload bounded, and a newline ends it. Unbounded, one stray
+    # `ESC ]` swallowed every character up to the next BEL — across newlines, deleting
+    # real answer text; and when no terminator ever arrived the match failed outright
+    # and the payload (`0;rm -rf /`) was emitted as visible text, which is the thing
+    # the comment above says must not happen. Bounded, both cases lose at most one
+    # line of a reply that already contained a terminal escape.
+    r"\x1b[\]PX^_][^\x1b\x07\n]{0,256}(?:\x07|\x1b\\|(?=\n)|$)"
     r"|\x1b\[[0-?]*[ -/]*[@-~]"             # CSI … final byte
     r"|\x1b[@-Z\\-_]"                       # two-character escapes
 )
@@ -1125,6 +1195,23 @@ _ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 def _answer_text(reply: Any) -> str:
     text = str(reply if reply is not None else "")
     return _ANSWER_CONTROL.sub("", _ANSWER_ESCAPE.sub("", text))
+
+
+def _write_answer(ctx: Context, text: str) -> None:
+    """Put the answer on stdout without letting encoding turn a 0 into a crash.
+
+    stdout's encoding belongs to the caller — a pipe under ``LC_ALL=C`` is ascii — and
+    a model may answer in any script. A raw write can therefore raise UnicodeEncodeError
+    *after* the turn succeeded, which a caller reads as "the turn did not complete" for
+    a turn that did, and which skips the receipt that was promised on every path.
+    """
+    try:
+        ctx.out.write(text + "\n")
+        return
+    except UnicodeEncodeError:
+        pass
+    encoding = getattr(ctx.out, "encoding", None) or "utf-8"
+    ctx.out.write(text.encode(encoding, "backslashreplace").decode(encoding, "replace") + "\n")
 
 
 def _utc_now() -> str:
@@ -1172,18 +1259,33 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
     """
     import tempfile
 
+    temporary = ""
     try:
         target = Path(path)
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False,
                                          dir=str(target.parent or "."),
                                          prefix=".nerva-usage-", suffix=".json") as handle:
+            temporary = handle.name
+            # `ensure_ascii=False` keeps the file readable, but a lone surrogate from
+            # the hub then raises UnicodeEncodeError — a ValueError, not an OSError, so
+            # it used to escape this handler and crash the verb *after* the answer was
+            # already on stdout. Losing the receipt must not change the run's outcome.
             json.dump(report, handle, indent=2, ensure_ascii=False, default=str)
             handle.write("\n")
-            temporary = handle.name
         os.replace(temporary, target)
-    except OSError as exc:
-        ctx.err.write(f"could not write the usage file to {_plain(path, 120)}: "
-                      f"{exc.strerror or type(exc).__name__}\n")
+        temporary = ""
+    except (OSError, ValueError, TypeError) as exc:
+        reason = getattr(exc, "strerror", None) or type(exc).__name__
+        ctx.err.write(f"could not write the usage file to {_plain(path, 120)}: {reason}\n")
+    finally:
+        # NamedTemporaryFile(delete=False) outlives a failed dump or a failed replace;
+        # without this, a cron entry with a mistyped path drops one hidden report file
+        # per run into the target's directory, forever.
+        if temporary:
+            import contextlib
+
+            with contextlib.suppress(OSError):
+                os.unlink(temporary)
 
 
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1197,14 +1299,26 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """
     oneshot = bool(getattr(ns, "oneshot", False))
     usage_file = getattr(ns, "usage_file", None)
+    if usage_file is not None and not str(usage_file).strip():
+        # `--usage-file "$SPEND_FILE"` with SPEND_FILE unset. Treating it as "no receipt
+        # requested" makes the flag vanish in silence; an unwritable path is warned
+        # about, and so is this.
+        ctx.err.write("--usage-file was given an empty path; no report will be written\n")
+        usage_file = None
     started = _utc_now()
 
     def finish(code: int, *, status: str, reason: str | None = None,
-               pending: list[Any] | None = None) -> int:
+               pending: list[Any] | None = None, completed: bool | None = None) -> int:
         if usage_file:
             finished = _utc_now()
             _write_usage(usage_file, _usage_report(
-                status=status, completed=(code == EXIT_OK), exit_code=code,
+                status=status,
+                # `completed` is explicit where the exit code and the outcome disagree:
+                # without `-z` the verb always exits 0 to keep every existing caller
+                # working, but a turn that queued an approval did not complete, and the
+                # receipt is machine-readable state, not a terminal courtesy.
+                completed=(code == EXIT_OK) if completed is None else completed,
+                exit_code=code,
                 started_at=started, finished_at=finished,
                 duration_ms=_elapsed_ms(started, finished),
                 session_id=getattr(ns, "session", None) or None,
@@ -1239,6 +1353,13 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         body["session_id"] = ns.session
     try:
         reply = ctx.client().post("/chat", body)
+    except KeyboardInterrupt:
+        # The receipt is promised on every path, and an interrupt is the path a cron
+        # wrapper most needs one for — it is what a timeout kill looks like from in
+        # here. main() still prints the one line and returns 130; this only makes sure
+        # the run leaves a record behind saying so.
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        raise
     except HubUnavailable:
         finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
         raise
@@ -1248,36 +1369,50 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                status=status, reason=str(exc))
         raise
 
-    answer = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+    raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+    # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
+    # the printer read the cleaned one, so a reply made only of control characters was
+    # "not empty" to the guard and an empty line to stdout — exit 0 over nothing — and
+    # a sentinel padded with control bytes slipped the table entirely.
+    answer = _answer_text(raw)
     # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
     # name the ids; an older one does not, and then the refusal is reported without them.
-    pending = list((reply or {}).get("pending_approvals") or []) if isinstance(reply, dict) else []
-    refusal = _NOT_AN_ANSWER.get(str(answer).strip())
+    pending, pending_unreadable = _pending_ids(
+        (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
+    refusal = _not_an_answer(answer)
+    queued = bool(pending or pending_unreadable or (refusal and "approval" in refusal))
+    incomplete = bool(refusal or queued or not answer.strip())
 
     if not oneshot:
         # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
         # that need the verdict use -z; changing this would break every existing caller.
+        # The receipt is new surface, so it is allowed to say what the exit code cannot.
         if ns.json:
             ctx.dump(reply)
-            return finish(EXIT_OK, status="completed", pending=pending)
-        ctx.say(str(answer))
-        return finish(EXIT_OK, status="completed", pending=pending)
+        else:
+            ctx.say(str(raw))
+        status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
+        return finish(EXIT_OK, status=status, reason=refusal, pending=pending,
+                      completed=not incomplete)
 
-    if refusal or pending or not str(answer).strip():
+    if incomplete:
         reason = refusal or ("the turn queued an action for approval and was not executed"
-                             if pending else "the hub returned an empty answer")
+                             if queued else "the hub returned an empty answer")
         if pending:
             ids = ", ".join(_plain(i, 40) for i in pending)
             reason = f"{reason} (approval {ids})"
             ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
-        elif refusal and "approval" in refusal:
+        elif pending_unreadable:
+            ctx.err.write(f"{reason}; this hub reported the approval in a shape this "
+                          "version cannot read — run `nerva approvals` to find it\n")
+        elif queued:
             ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
         else:
             ctx.err.write(f"{reason}\n")
-        status = "queued_for_approval" if (pending or (refusal and "approval" in refusal)) else "refused"
+        status = "queued_for_approval" if queued else "refused"
         return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
 
-    ctx.out.write(_answer_text(answer) + "\n")
+    _write_answer(ctx, answer)
     return finish(EXIT_OK, status="completed", pending=pending)
 
 
@@ -1331,6 +1466,13 @@ def _send_body(ns: argparse.Namespace, ctx: Context, *, verb: str = "nerva send"
     if ns.file:
         try:
             with open(ns.file, encoding="utf-8-sig") as handle:
+                if _is_tty(handle):
+                    # `-f -` is guarded above, but an explicit terminal path is the same
+                    # hang by another spelling: `-f /dev/tty` (or /dev/stdin from an
+                    # interactive shell) blocked forever, which is exactly what the "a
+                    # terminal is never read" rule exists to prevent.
+                    return None, (f"{_plain(ns.file, 120)} is a terminal, and {verb} never "
+                                  "reads one; pipe the body or point --file at a file")
                 return _read_body(handle, _plain(ns.file, 120), verb=verb, bound=bound)
         except OSError as exc:
             return None, f"cannot read {_plain(ns.file, 120)}: {exc.strerror or type(exc).__name__}"
@@ -1344,6 +1486,12 @@ def _read_body(stream: Any, label: str, *, verb: str = "nerva send",
     """At most the bound plus one character is read: a runaway file is refused, not loaded."""
     try:
         text = stream.read(bound + 1)
+        if isinstance(text, bytes):
+            # The bound counts CHARACTERS; `read` on a binary stream counts bytes. A
+            # body of 2,000 two-byte characters was being cut mid-character and then
+            # reported as "not UTF-8 text" — a wrong diagnosis of a valid body. One
+            # UTF-8 character is at most four bytes, so this is enough to decide.
+            text += stream.read(3 * (bound + 1))
     except UnicodeDecodeError:
         if label == "stdin":
             return None, f"stdin is not UTF-8 text; {verb} carries text bodies only"
@@ -1352,10 +1500,19 @@ def _read_body(stream: Any, label: str, *, verb: str = "nerva send",
     except OSError as exc:
         return None, f"cannot read {label}: {exc.strerror or type(exc).__name__}"
     if isinstance(text, bytes):
-        try:
-            text = text.decode("utf-8")
-        except UnicodeDecodeError:
+        decoded = None
+        for cut in range(4):
+            # Only the tail can be a truncated character: drop up to three bytes before
+            # calling the body invalid, so an over-long body is refused for its LENGTH
+            # rather than misreported as binary.
+            try:
+                decoded = text[: len(text) - cut].decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                continue
+        if decoded is None:
             return None, f"{label} is not UTF-8 text"
+        text = decoded
     if not isinstance(text, str):
         return None, _NO_BODY
     text = text.lstrip("\ufeff")
