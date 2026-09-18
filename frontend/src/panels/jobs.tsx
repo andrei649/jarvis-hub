@@ -55,6 +55,7 @@ const STATUS_COLOR: Record<string, string> = {
 export function JobsPanel() {
   const { d, e, loading, reload } = useApi(JOBS_PATH, true, true);
   const bp = useApi(BLUEPRINTS_PATH, true, true);
+  const toolCatalog = useApi('/api/jobs/doctor', true, true);
   const jobs: any[] = arr(d, 'jobs');
   const scheduler: any = (d && (d as any).scheduler) || null;
   const blueprints: any[] = arr(bp.d, 'blueprints');
@@ -220,6 +221,8 @@ export function JobsPanel() {
                 <button className="tool-btn" title="delete" onClick={() => remove(id)}>✕</button>
               </span>
             </Row>
+            {job.options?.workdir && <div>Script workdir: {job.options.workdir} · approval required per run</div>}
+            {job.media_delivery && <Note c={['unknown','partial'].includes(job.media_delivery.status)?'var(--red)':undefined}>Media · {job.media_delivery.status} · {job.media_delivery.sent}/{job.media_delivery.total} acknowledged · {job.media_delivery.reason}{['unknown','partial'].includes(job.media_delivery.status) && ' Review the Telegram channel, explicitly re-save the reminder action to authorize future sends, then resume. Do not assume an unknown item was unsent.'}</Note>}
             {editing[id] && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '4px 0 6px' }}>
                 <input aria-label={`name for ${id}`} value={editing[id]!.name}
@@ -232,7 +235,7 @@ export function JobsPanel() {
                 <label>Action JSON<textarea aria-label={`action for ${id}`} value={editing[id]!.action} style={{...inpS,width:'100%'}} onChange={ev=>setEditing(m=>({...m,[id]:{...m[id]!,action:ev.target.value}}))}/></label>
                 <label>Notes<textarea aria-label={`notepad for ${id}`} maxLength={4096} style={{...inpS,width:'100%'}} value={notes[id] || ''} onChange={e=>setNotes(m=>({...m,[id]:e.target.value}))}/></label>
                 <button className="tool-btn" onClick={()=>apiPut(`/api/jobs/${encodeURIComponent(id)}/notepad`,{text:notes[id] || ''},{admin:true}).then(()=>{setRunNote(m=>({...m,[id]:'notes saved'}));reload();}).catch(e=>setRunNote(m=>({...m,[id]:refusalReason(e)})))}>save notes</button>
-                <OptionsEditor value={editing[id]!.options} onChange={options=>setEditing(m=>({...m,[id]:{...m[id]!,options}}))}/>
+                <OptionsEditor toolsets={arr(toolCatalog.d, 'toolsets')} value={editing[id]!.options} onChange={options=>setEditing(m=>({...m,[id]:{...m[id]!,options}}))}/>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>
                   <button className="tool-btn" onClick={() => setEditing((m) => ({ ...m, [id]: null }))}>cancel</button>
@@ -277,7 +280,7 @@ export function JobsPanel() {
             {params.includes('agent') && <input aria-label="agent" value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder={`agent (default: ${chosen.action?.agent || 'jarvis'})`} style={{ ...inpS, width: '100%' }} />}
             {(chosen.fields || []).filter((f:any)=>!['schedule_text','message','prompt','agent'].includes(f.key)).map((f:any)=><label key={f.key}>{f.label}<input aria-label={f.key} type={f.type === 'number' ? 'number' : 'text'} min={f.minimum} required={f.required} style={inpS} value={typed[f.key] ?? f.default ?? ''} onChange={ev=>setTyped(p=>({...p,[f.key]:f.type==='number'?Number(ev.target.value):ev.target.value}))}/></label>)}
             <ScheduleBuilder onChange={setWhen}/>
-            <OptionsEditor value={options} onChange={setOptions}/>
+            <OptionsEditor toolsets={arr(toolCatalog.d, 'toolsets')} value={options} onChange={setOptions}/>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="tool-btn" onClick={arm}>arm</button>
               <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
@@ -285,7 +288,7 @@ export function JobsPanel() {
           </div>
         )}
         <button className="tool-btn" onClick={()=>{setNote(null);setCustom(true);}}>custom job</button>
-        {custom && <JobCreateDialog onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(`armed · ${r?.job?.schedule_text}`);setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
+        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(`armed · ${r?.job?.schedule_text}`);setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
         {note && !custom && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
       </div>
     </Card>

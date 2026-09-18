@@ -88,11 +88,14 @@ class ToolTurn:
     tool_calls: tuple[ToolCall, ...] = ()
     finish_reason: str | None = None
     usage: TokenUsage = TokenUsage()
+    provider_replay: Any = field(default=None, repr=False, compare=False)
 
     def as_assistant_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {"role": "assistant", "content": self.content}
         if self.tool_calls:
             message["tool_calls"] = [call.as_openai() for call in self.tool_calls]
+        if self.provider_replay is not None:
+            message["_provider_replay"] = self.provider_replay
         return message
 
 

@@ -238,6 +238,47 @@ class TelegramChannel(ChannelAdapter):
                 return False
         return True
 
+    async def send_scheduled_text(self, text: str, *, chat_id: int) -> bool:
+        """One bounded plain-text request, without fallback, retries or exception logging."""
+        if not isinstance(text, str) or not 0 < len(text) <= 2000 or type(chat_id) is not int or not chat_id:
+            return False
+        response = await self.client.post(self.api_base + '/sendMessage',
+                                          json={'chat_id': chat_id, 'text': text})
+        return self._scheduled_ack(response)
+
+    @staticmethod
+    def _scheduled_ack(response) -> bool:
+        if not response.is_success:
+            return False
+        try:
+            body = response.json()
+        except ValueError:
+            return False
+        if not isinstance(body, dict):
+            return False
+        result = body.get('result')
+        return (body.get('ok') is True and isinstance(result, dict)
+                and type(result.get('message_id')) is int and result['message_id'] > 0)
+
+    async def send_media(self, data: bytes, *, mime: str, filename: str, chat_id: int) -> bool:
+        """Send captured bounded bytes to an already-bound owner. Never retries."""
+        import re
+        from ..artifact_store import MAX_UPLOAD, sniff
+
+        if (not isinstance(data, bytes) or not 0 < len(data) <= MAX_UPLOAD
+                or type(chat_id) is not int or not chat_id
+                or not isinstance(filename, str)
+                or not re.fullmatch(r'(?:ba-[a-f0-9]{32}|md-[a-f0-9]{12}|[a-f0-9]{32})', filename)):
+            return False
+        try:
+            if sniff(data) != mime:
+                return False
+        except ValueError:
+            return False
+        response = await self.client.post(self.api_base + '/sendDocument',
+            data={'chat_id': str(chat_id)}, files={'document': (filename, data, mime)})
+        return self._scheduled_ack(response)
+
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
             return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None

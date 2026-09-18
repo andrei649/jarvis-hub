@@ -207,3 +207,55 @@ def test_reused_prompt_refreshes_one_clock_and_literal_phrase_is_not_a_marker():
     assert rebuilt.count('\n\nConversation started:') == 1
     assert 'September 09' in rebuilt
     assert rebuilt.startswith('SOUL mentions Conversation started: as an example')
+
+
+def test_production_snapshot_resolves_explicit_iana_zone_across_dst(monkeypatch):
+    from agents.core.conversation_clock import ClockSnapshot, render_snapshot
+
+    monkeypatch.setenv("TZ", "Europe/Bucharest")
+    snapshot = ClockSnapshot("root", datetime(2026, 1, 1, 22, 30, tzinfo=UTC),
+                             datetime(2026, 7, 1, 21, 30, tzinfo=UTC), 1)
+    rendered = render_snapshot("Identity", snapshot)
+    assert "Friday, January 02, 2026 (Europe/Bucharest, EET, UTC+02:00)" in rendered
+    assert "Thursday, July 02, 2026 — trust this over the start date" in rendered
+    assert render_snapshot("Identity", snapshot) == rendered
+
+
+def test_production_snapshot_discovers_iana_when_tz_unset(monkeypatch):
+    import tzlocal
+
+    from agents.core.conversation_clock import ClockSnapshot, render_snapshot
+
+    monkeypatch.delenv("TZ", raising=False)
+    monkeypatch.setattr(tzlocal, "get_localzone_name", lambda: "Europe/Bucharest")
+    birth = datetime(2026, 9, 1, 21, 30, tzinfo=UTC)
+    snapshot = ClockSnapshot("root", birth, birth, 0)
+    rendered = render_snapshot("Identity", snapshot)
+    assert "Wednesday, September 02, 2026 (Europe/Bucharest, EEST, UTC+03:00)" in rendered
+    assert "Today's date" not in rendered
+
+
+def test_production_snapshot_invalid_explicit_zone_keeps_offset_fallback(monkeypatch):
+    import tzlocal
+
+    from agents.core.conversation_clock import ClockSnapshot, render_snapshot
+
+    monkeypatch.setenv("TZ", "not/a-real-zone")
+    monkeypatch.setattr(tzlocal, "get_localzone_name", lambda: "Europe/Bucharest")
+    birth = datetime(2026, 9, 1, tzinfo=UTC)
+    snapshot = ClockSnapshot("root", birth, birth, 0)
+    assert render_snapshot("Identity", snapshot) == with_clock("Identity", birth.astimezone(), birth)
+
+
+def test_production_snapshot_unavailable_discovery_keeps_offset_fallback(monkeypatch):
+    import tzlocal
+
+    from agents.core.conversation_clock import ClockSnapshot, render_snapshot
+
+    monkeypatch.delenv("TZ", raising=False)
+    def unavailable():
+        raise RuntimeError("host zone unavailable")
+    monkeypatch.setattr(tzlocal, "get_localzone_name", unavailable)
+    birth = datetime(2026, 9, 1, tzinfo=UTC)
+    snapshot = ClockSnapshot("root", birth, birth, 0)
+    assert render_snapshot("Identity", snapshot) == with_clock("Identity", birth.astimezone(), birth)

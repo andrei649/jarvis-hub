@@ -488,6 +488,7 @@
   "POST /memory/clear",
   "POST /sandbox/execute",
   "POST /sandbox/kernels/reset",
+  "POST /sessions/continue",
   "POST /sessions/resume",
   "POST /skills/import",
   "POST /tts",

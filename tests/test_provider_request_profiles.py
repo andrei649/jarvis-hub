@@ -67,8 +67,8 @@ async def test_gemini_25_budget_does_not_exceed_output_ceiling():
     backend = GeminiBackend('test', model='gemini-2.5-pro', reasoning_effort='high')
     payload = backend._build_payload('hi', max_tokens=1000)
     assert payload['generationConfig']['thinkingConfig'] == {'thinkingBudget': 999}
-    payload = backend._build_payload('hi', max_tokens=100)
-    assert 'thinkingConfig' not in payload['generationConfig']
+    with pytest.raises(ValueError, match='reasoning effort'):
+        backend._build_payload('hi', max_tokens=100)
     await backend.close()
 
 

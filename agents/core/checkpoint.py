@@ -73,6 +73,17 @@ class CheckpointManager:
                 metadata TEXT DEFAULT '{}'
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS session_clock (
+                session_id TEXT PRIMARY KEY,
+                birth_at TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 0,
+                rebuilt_at TEXT NOT NULL,
+                compaction_sha256 TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        from .session_continuation import initialize
+        initialize(self._conn)
         # list_sessions() orders by started_at and the table grows one row per
         # session; index started_at so the ordered scan stays cheap as history
         # accumulates.
@@ -245,6 +256,68 @@ class CheckpointManager:
                 "SELECT started_at FROM sessions WHERE id=?", (session_id,)
             ).fetchone()
         return row[0] if row else None
+
+    def clock_snapshot(self, session_id: str):
+        """Read/seed an immutable clock from an existing durable session birth."""
+        from .conversation_clock import ClockSnapshot, parse_started_at
+        if not self._conn:
+            return None
+        try:
+            with self._lock, self._conn:
+                from .session_continuation import identity
+                current = identity(self._conn, session_id)
+                if current is None:
+                    return None
+                birth, instance = current
+                self._conn.execute(
+                    "INSERT INTO session_clock(session_id, birth_at, rebuilt_at, instance_id) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(session_id) DO UPDATE SET birth_at=excluded.birth_at, "
+                    "rebuilt_at=excluded.rebuilt_at, revision=0, compaction_sha256='', instance_id=excluded.instance_id "
+                    "WHERE session_clock.birth_at != excluded.birth_at OR session_clock.instance_id != excluded.instance_id",
+                    (session_id, birth.isoformat(), birth.isoformat(), instance),
+                )
+                revision, rebuilt = self._conn.execute(
+                    "SELECT revision, rebuilt_at FROM session_clock WHERE session_id=?", (session_id,),
+                ).fetchone()
+                rebuilt = parse_started_at(rebuilt)
+                if rebuilt is None or type(revision) is not int or revision < 0:
+                    return None
+                return ClockSnapshot(session_id, birth, rebuilt, revision, instance)
+        except Exception:
+            logger.warning("session clock unavailable", exc_info=True)
+            return None
+
+    def commit_clock(self, snapshot, compaction: str, *, now=None):
+        """CAS accepted compaction identity and clock together; no async publication gap."""
+        import hashlib
+
+        from .conversation_clock import ClockSnapshot
+        if not self._conn or not isinstance(snapshot, ClockSnapshot):
+            return None
+        moment = now or datetime.now(timezone.utc)
+        # A wall-clock correction must not move an accepted rebuild backwards.
+        if moment.astimezone() < snapshot.rebuilt_at.astimezone():
+            moment = snapshot.rebuilt_at
+        try:
+            with self._lock, self._conn:
+                from .session_continuation import identity
+                current = identity(self._conn, snapshot.session_id)
+                if current != (snapshot.started_at, snapshot.instance_id):
+                    return None
+                cursor = self._conn.execute(
+                    "UPDATE session_clock SET revision=revision+1, rebuilt_at=?, compaction_sha256=? "
+                    "WHERE session_id=? AND revision=? AND rebuilt_at=? "
+                    "AND instance_id=? AND EXISTS (SELECT 1 FROM sessions WHERE id=? AND instance_id=?)",
+                    (moment.isoformat(), hashlib.sha256(compaction.encode()).hexdigest(),
+                     snapshot.session_id, snapshot.revision, snapshot.rebuilt_at.isoformat(),
+                     snapshot.instance_id, snapshot.session_id, snapshot.instance_id),
+                )
+                if cursor.rowcount != 1:
+                    return None
+                return ClockSnapshot(snapshot.session_id, snapshot.started_at, moment, snapshot.revision + 1, snapshot.instance_id)
+        except Exception:
+            logger.warning("compaction clock commit refused", exc_info=True)
+            return None
 
     def update_session(self, session_id: str, turn_count: int = None, summary: str = None):
         if not self._conn:

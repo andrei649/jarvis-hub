@@ -62,15 +62,53 @@ class MemoryManager:
             sid = await self.conversation.new_session(session_id)
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:
                 self._checkpoint_mgr.create_session_record(sid)
+                self._bind_history_instance(sid)
             return sid
 
     async def resume_session(self, session_id: str) -> bool:
         async with self._lock:
+            manager = getattr(self, "_checkpoint_mgr", None)
+            if manager is not None and manager._conn is not None:
+                from types import SimpleNamespace
+
+                from ..session_continuation import ContinuationStore, _load_locked
+                if ContinuationStore(manager).seed(session_id) is not None:
+                    async with self.conversation._lock:
+                        _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
+                        self.conversation.current_session_id = session_id
+                        return True
             return await self.conversation.resume_session(session_id)
+
+    def _bind_history_instance(self, sid):
+        manager = getattr(self, '_checkpoint_mgr', None)
+        if manager is None or manager._conn is None:
+            return
+        from ..session_continuation import ContinuationRefused, history_identity
+        try:
+            with manager._lock:
+                instance, legacy = history_identity(manager._conn, sid)
+        except ContinuationRefused:
+            return  # Existing ordinary session semantics remain; explicit continuation refuses.
+        known = self.conversation.instances.get(sid)
+        if known == instance or (known is None and (legacy or not self.conversation.sessions.get(sid))):
+            self.conversation.instances[sid] = instance
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        channel: str = None):
         async with self._lock:
+            manager = getattr(self, "_checkpoint_mgr", None)
+            if manager is not None and manager._conn is not None:
+                with manager._lock:
+                    continued = manager._conn.execute(
+                        "SELECT 1 FROM session_continuations WHERE session_id=?", (session_id,)
+                    ).fetchone()
+                if continued is not None:
+                    from types import SimpleNamespace
+
+                    from ..session_continuation import _load_locked
+                    async with self.conversation._lock:
+                        _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
+            self._bind_history_instance(session_id)
             await self.conversation.add_turn(session_id, role, content, agent_id)
 
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:

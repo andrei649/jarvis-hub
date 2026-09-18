@@ -29,7 +29,7 @@ from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.gemini_cache import ContextCache
 from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
-from .conversation_clock import with_clock
+from .conversation_clock import CONTEXT_REFUSED_REPLY, CompactionClockRefused, capture_clock, prompt_clock
 from .llm.tokenizer import estimate_tokens
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
@@ -446,6 +446,7 @@ class Orchestrator:
         self.mcp = MCPManager()
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()
+        self.memory.set_checkpoint_manager(self.checkpoints)
         self.learning = LearningLoop()
         rules = config.get_promotion_rules() if hasattr(config, "get_promotion_rules") else None
         if rules:
@@ -1524,6 +1525,8 @@ class Orchestrator:
             return ""
         try:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
         except RuntimeError:
             # No LLM backend up — degrade quietly (callers swallow errors anyway).
             log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
@@ -1540,9 +1543,15 @@ class Orchestrator:
 
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
+        from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
+        except ContinuationRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
@@ -1558,6 +1567,9 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
@@ -1703,17 +1715,32 @@ class Orchestrator:
 
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
+        from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+
         origin_token = bind_turn_action_origin(channel)
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+        except CompactionClockRefused:
+            return CONTEXT_REFUSED_REPLY
+        except ContinuationRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
+        from .route_compaction import planning_scope
+        with planning_scope(self._lease_key(session_id), enabled=bool(self.get_setting("memory.context_compression", False))):
+            return await self._handle_input_stream_prepared(text, channel, on_token, agent_override, session_id)
+
+    async def _handle_input_stream_prepared(self, text: str, channel: str = "voice", on_token: Callable = None,
+                                   agent_override: str = None, session_id: str = None) -> str:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
 
@@ -1781,13 +1808,18 @@ class Orchestrator:
             target = self._route_candidates(intent) if intent.target_agents else ["jarvis"]
 
         context_window = self.get_setting("memory.context_window", 6)
-        history, history_parts = await self._history_for_prompt_parts(
+        managed = self.get_setting("memory.context_compression", False)
+        history, history_parts = ("", ()) if managed else await self._history_for_prompt_parts(
             context_window,
             current_user_text=text,
         )
         plugin_block = self._format_plugin_data(plugin_data)
         recall_block = await self._recall_block(text)
         runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data)
+        plan = await self._shared_route_plan([aid for aid in target if aid in self.agents], text,
+            intent.context, plugin_block, recall_block, runtime_block, stream=True) if managed else None
+        if plan is not None:
+            history, history_parts = plan.history, self._split_prompt_history(plan.history)
         synthesized = ""
         # Pre-bind so the post-loop persist/audit never hit UnboundLocalError when
         # `target` is empty (e.g. _route_candidates returns nothing).
@@ -1830,9 +1862,7 @@ class Orchestrator:
                 # date schedules "tomorrow" against the wrong day. Same-day
                 # sessions render byte-identically bar the start line, so the
                 # cached prefix (H363) survives.
-                system_prompt = with_clock(
-                    agent.soul.get("content", ""), self._session_birth(),
-                )
+                system_prompt = agent.soul.get("content", "")
                 turn_text = await self._build_agent_turn_text(
                     agent_id,
                     text,
@@ -1848,17 +1878,26 @@ class Orchestrator:
                 if checkpoint:
                     prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
 
+                prepared = plan.routes[agent_id] if plan is not None else None
+                if prepared is not None:
+                    prompt = prepared.prompt
+
                 # Tokens served from a Gemini context cache this turn (0 unless a
                 # cache binding is actually acquired below).
                 cached_tok = 0
                 try:
-                    backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    if prepared is not None:
+                        prepared.check(self.llm_router, agent_id, prepared.prompt, self.session_id)
+                        backend, router_model, route_name = prepared.backend, prepared.model, prepared.route
+                    else:
+                        backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
-                    eff_max_tokens, temperature = self._agent_gen_params(agent, route_name)
+                    eff_max_tokens, temperature = ((prepared.max_tokens, prepared.temperature) if prepared is not None
+                                                   else self._agent_gen_params(agent, route_name))
                     cap_label = "auto" if eff_max_tokens <= 0 else eff_max_tokens
                     # Hermes absorption 5c: the same per-agent ceiling the parallel path
                     # applies, so the tool loop's deadline follows the reasoning floor
@@ -1982,12 +2021,22 @@ class Orchestrator:
                     self._last_reported_usage[_agent_id] = _sum_usage(
                         self._last_reported_usage.get(_agent_id), usage,
                     )
-                    self._record_context_anchor(_agent_id, usage)
+                    if plan is not None:
+                        from .route_compaction import remember_usage
+                        remember_usage(self._managed_route_anchors, self.session_id, _agent_id,
+                            plan.routes[_agent_id], list(plan.anchor_rows), plan.instance, usage)
+                    else:
+                        self._record_context_anchor(_agent_id, usage)
 
                 with request_scope:
+                    from .llm.effective_window import resolve_effective_window
+                    if prepared is not None:
+                        prepared.check(self.llm_router, agent_id, prepared.prompt, self.session_id)
+                    effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
                     guarded_backend = bind_guardrails(self.security, backend)
                     response = await agent.generate_response(
                         backend=guarded_backend,
+                        effective_window=effective_window,
                         model=model,
                         prompt=prompt,
                         system=system_prompt,
@@ -1997,6 +2046,7 @@ class Orchestrator:
                         wall_seconds=wall_seconds,
                         usage_sink=_meter,
                         session_id=self.session_id,
+                        clock_snapshot=prompt_clock.get(),
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -2033,9 +2083,13 @@ class Orchestrator:
             primary_floor = self._last_timeout_floor.get(agent_id)
             primary_cached = self._last_cached_tokens.get(agent_id, 0)
             primary_prompt = self._last_prompt_tokens.get(agent_id, 0)
-            secondary_responses = await self._call_agents_parallel(
-                secondaries, text, intent.context, plugin_data
-            )
+            if plan is not None:
+                secondary_responses = await self._call_agents_parallel_prepared(
+                    secondaries, text, intent.context, plugin_data, prepared_plan=plan)
+            else:
+                secondary_responses = await self._call_agents_parallel(
+                    secondaries, text, intent.context, plugin_data
+                )
             # _call_agents_parallel rebuilds all four per-agent maps — re-insert the
             # primary so _record_interactions scores it with its real route and the
             # real size of the request it streamed. Secondaries stay on the fallback
@@ -2827,7 +2881,7 @@ class Orchestrator:
             return None
         return UsageAnchor(prompt_tokens=best[0], covers=best[1])
 
-    async def _history_for_prompt(self, last_n: int) -> str:
+    async def _history_for_prompt(self, last_n: int, *, shared_budget=None, shared_anchor=None, staged=False, raw=False) -> str:
         """Conversation history for a prompt, optionally token-budget compressed.
 
         Default (``memory.context_compression`` off): byte-identical to
@@ -2845,12 +2899,24 @@ class Orchestrator:
         like ``get_context`` (``[speaker]: content`` lines) so prompt assembly
         downstream is unchanged.
         """
-        if not self.get_setting("memory.context_compression", False):
-            return await self.memory.get_context(self.session_id, last_n=last_n)
-        turns = await self.memory.get_history(self.session_id, last_n)
+        import json
+
+        sid = str(self.session_id or "")
+        from .session_continuation import prepare_continuation_turn
+
+        await prepare_continuation_turn(self, sid)
+        manager = getattr(self, "checkpoints", None)
+        snapshot = capture_clock(manager, sid)
+        prompt_clock.set(snapshot)
+        if raw or not self.get_setting("memory.context_compression", False):
+            return await self.memory.get_context(sid, last_n=last_n)
+        turns = await self.memory.get_history(sid, last_n)
         # H673 — where measurement stops and estimation resumes on the next turn.
         self._ctx_turns_at_build = len(turns)
         if not turns:
+            if staged:
+                from .route_compaction import HistoryStage
+                return HistoryStage("", lambda: None)
             return ""
         from .context_compressor import ContextCompressor
         summarizer = None
@@ -2865,51 +2931,135 @@ class Orchestrator:
         cache = getattr(self, "_ctx_summary_cache", None)
         if cache is None:
             cache = self._ctx_summary_cache = {}
-        prior = cache.get(self.session_id) if summarizer is not None else None
+        prior = cache.get(sid) if summarizer is not None else None
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
         # than by a fixed token budget that is wrong for every model but one.
         # Below the soft threshold it returns the turns untouched, so this is the
         # same answer the token-budget path gave for every short session.
-        model = self._compaction_model()
-        policy = self._compaction_policy()
-        from dataclasses import replace
-        from .llm.base import OllamaBackend
-        router = getattr(self, "llm_router", None)
-        local_backend = getattr(router, "_backend", None)
-        from .llm.job_selection import selected_window
-        pinned_window = selected_window(model)
-        if pinned_window is not None:
-            policy = replace(policy, per_model={model: pinned_window})
-        elif isinstance(local_backend, OllamaBackend):
-            ceiling = await local_backend.resolve_context_window(model)
-            if ceiling:
-                policy = replace(policy, per_model={model: min(policy.window(model), ceiling)})
-        if model.startswith("gemini-"):
-            from .llm.base import cloud_cap
-            policy = replace(policy, output_reserve=cloud_cap(
-                self.get_setting("llm.max_tokens", 0)
-            ))
+        if shared_budget is not None:
+            from dataclasses import replace
+            from .route_compaction import RouteRefused
+            if type(shared_budget) is not int or shared_budget <= 0:
+                raise RouteRefused()
+            model = "shared-routes"
+            policy = replace(self._compaction_policy(), per_model={model: shared_budget}, output_reserve=0)
+            pinned_window = shared_budget  # Old unproven cross-route anchors are not exact.
+        else:
+            model = self._compaction_model()
+            policy = self._compaction_policy()
+            from dataclasses import replace
+            from .llm.base import OllamaBackend
+            router = getattr(self, "llm_router", None)
+            local_backend = getattr(router, "_backend", None)
+            from .llm.job_selection import selected_window
+            pinned_window = selected_window(model)
+            if pinned_window is not None:
+                policy = replace(policy, per_model={model: pinned_window})
+            elif isinstance(local_backend, OllamaBackend):
+                ceiling = await local_backend.resolve_context_window(model)
+                if ceiling:
+                    policy = replace(policy, per_model={model: min(policy.window(model), ceiling)})
+            if model.startswith("gemini-"):
+                from .llm.base import cloud_cap
+                policy = replace(policy, output_reserve=cloud_cap(
+                    self.get_setting("llm.max_tokens", 0)
+                ))
         result = await compressor.compact(
             turns,
             model=model,
             policy=policy,
-            session_id=str(self.session_id or ""),
+            session_id=sid,
             prior=prior,
-            anchor=None if pinned_window is not None else self._usage_anchor(len(turns)),
+            anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
-        if summarizer is not None and result["compressed"]:
-            # Iterative merge state (bounded: one entry per live session key).
-            cache[self.session_id] = {"summary": result["summary"],
-                                      "covered": result["covered"]}
+        def publish():
+            if result["compressed"] and snapshot is not None:
+                # This synchronous CAS and publication have no cancellation point between
+                # them. A stale/failed commit cannot publish an unaccepted summary.
+                committed = manager.commit_clock(snapshot, json.dumps(result, sort_keys=True, default=str))
+                if committed is None:
+                    raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
+                prompt_clock.set(committed)
+            if summarizer is not None and result["compressed"]:
+                # Iterative merge state (bounded: one entry per live session key).
+                cache[sid] = {"summary": result["summary"],
+                                          "covered": result["covered"]}
         def _fmt(ts):
             return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
                     for t in ts]
 
         if result["compressed"] and result["summary"]:
-            return "\n".join(_fmt(result.get("kept_first", []))
+            rendered = "\n".join(_fmt(result.get("kept_first", []))
                              + [result["summary"]] + _fmt(result["kept"]))
-        return "\n".join(_fmt(result["kept"]))
+        else:
+            rendered = "\n".join(_fmt(result["kept"]))
+        if staged:
+            from .route_compaction import HistoryStage
+            return HistoryStage(rendered, publish)
+        publish()
+        return rendered
+
+    async def _shared_route_plan(self, agent_ids, text, context, plugin_block, recall_block, runtime_block, *, stream=False):
+        from .conversation_clock import render_snapshot
+        from .route_compaction import HistoryStage, plan_shared, trusted_anchor
+        from collections import OrderedDict
+        from dataclasses import replace
+        import json
+
+        last_n = self.get_setting("memory.context_window", 6)
+        def prior(value):
+            if not stream:
+                return value
+            entry = f"[user]: {text}"
+            if value == entry:
+                return ""
+            return value[:-len(entry)-1] if value.endswith("\n" + entry) else value
+
+        history = prior(await self._history_for_prompt(last_n, raw=True))
+        rows = await self.memory.get_history(self.session_id, last_n)
+        snapshot = prompt_clock.get()
+        instance = snapshot.instance_id if snapshot is not None else ""
+        if not hasattr(self, "_managed_route_anchors"):
+            self._managed_route_anchors = OrderedDict()
+        async def build(value):
+            prompts = {}
+            for aid in agent_ids:
+                agent = self.agents[aid]
+                enriched = await self._build_agent_turn_text(aid, text, history=value,
+                    plugin_block=plugin_block, recall_block=recall_block, runtime_block=runtime_block)
+                prompt = (self._build_agent_prompt(agent, enriched, context) if stream
+                          else agent.build_prompt(enriched, dict(context or {})))
+                if stream:
+                    checkpoint = self.checkpoints.load(aid, self.session_id)
+                    if checkpoint:
+                        prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
+                system = render_snapshot(agent.soul.get("content", ""), prompt_clock.get())
+                overhead = max(0, estimate_tokens(prompt) - estimate_tokens(value)) + estimate_tokens(system) + 64
+                # The accepted rebuild may add the second clock line after planning.
+                runtime = getattr(agent, "tool_runtime", None)
+                if runtime is not None:
+                    # A conservative superset: profile filtering can only remove tools.
+                    overhead += estimate_tokens(json.dumps(runtime._server.tools()))
+                prompts[aid] = (prompt, overhead, enriched, runtime is not None)
+            return prompts
+
+        async def stage(budget, routes):
+            anchor = trusted_anchor(self._managed_route_anchors, self.session_id, routes, rows, instance)
+            result = await self._history_for_prompt(last_n, shared_budget=budget, shared_anchor=anchor, staged=True)
+            def accept():
+                from .route_compaction import RouteRefused
+                # No await separates this source check from the accepted-clock CAS.
+                retained = self.memory.conversation.sessions.get(self.session_id, [])
+                current = [turn.to_dict() for turn in (retained[-last_n:] if last_n else retained)]
+                if current != rows:
+                    raise RouteRefused()
+                result.publish()
+            return HistoryStage(prior(result.text), accept)
+
+        planned = await plan_shared(history, self.llm_router, build, stage,
+            lambda aid, route: self._agent_gen_params(self.agents[aid], route), self.session_id)
+        return replace(planned, anchor_rows=tuple(rows), instance=instance)
 
     @staticmethod
     def _split_prompt_history(history_text: str) -> tuple[str, ...]:
@@ -2956,13 +3106,28 @@ class Orchestrator:
     async def _call_agents_parallel(
         self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None
     ) -> dict[str, str]:
+        from .route_compaction import planning_scope
+        with planning_scope(self.session_id, enabled=bool(self.get_setting("memory.context_compression", False))):
+            return await self._call_agents_parallel_prepared(agent_ids, text, context, plugin_data)
+
+    async def _call_agents_parallel_prepared(
+        self, agent_ids: list[str], text: str, context: dict, plugin_data: dict = None, *, prepared_plan=None
+    ) -> dict[str, str]:
         # CDX-3: honor memory.context_window like the main per-agent path (:850);
         # was a hard-coded 6, so changing the setting silently left this tail behind.
-        history = await self._history_for_prompt(
+        managed = self.get_setting("memory.context_compression", False)
+        history = "" if managed else await self._history_for_prompt(
             self.get_setting("memory.context_window", 6))
         plugin_block = self._format_plugin_data(plugin_data or {})
-        recall_block = await self._recall_block(text)
+        recall_block = "" if prepared_plan is not None else await self._recall_block(text)
         runtime_block = self._runtime_state_block() + self._language_block() + self._data_grounding_block(plugin_data or {})
+        valid_ids = [aid for aid in agent_ids if aid in self.agents]
+        plan = prepared_plan
+        if plan is None and managed and valid_ids:
+            plan = await self._shared_route_plan(valid_ids, text, context, plugin_block, recall_block, runtime_block)
+        if plan is not None:
+            history = plan.history
+        clock_snapshot = prompt_clock.get()
         # Hermes absorption 5c: the per-agent timeout floor map is per turn, like the
         # route / latency maps below — but it is reset BEFORE the gather, because each
         # agent task records its own floor while it runs, not from the results.
@@ -2973,34 +3138,46 @@ class Orchestrator:
         reported_usage = {}
 
         async def _run_agent(agent_id: str) -> tuple[str, str, float, str]:
-            enriched_text = await self._build_agent_turn_text(
-                agent_id,
-                text,
-                history=history,
-                plugin_block=plugin_block,
-                recall_block=recall_block,
-                runtime_block=runtime_block,
-            )
-            # CDX-6 made the ceiling tunable; Hermes absorption 5c decides it per agent
-            # from the route and the model, so a thinking model on the deep slot gets
-            # the reasoning floor while a flat route keeps the flat value.
-            route_name, model = self._timeout_inputs_for(agent_id, enriched_text, context)
+            prepared = plan.routes[agent_id] if plan is not None else None
+            if prepared is not None:
+                enriched_text = plan.prompts[agent_id][2]
+                route_name, model = prepared.route, prepared.model
+            else:
+                enriched_text = await self._build_agent_turn_text(
+                    agent_id,
+                    text,
+                    history=history,
+                    plugin_block=plugin_block,
+                    recall_block=recall_block,
+                    runtime_block=runtime_block,
+                )
+                # CDX-6 made the ceiling tunable; Hermes absorption 5c decides it per agent
+                # from the route and the model, so a thinking model on the deep slot gets
+                # the reasoning floor while a flat route keeps the flat value.
+                route_name, model = self._timeout_inputs_for(agent_id, enriched_text, context)
             seconds, floor = self._agent_call_timeout(route_name=route_name, model=model)
             self._last_timeout_floor[agent_id] = {"floor": floor, "seconds": seconds}
             # A per-agent copy: the tool loop reads its wall clock from here, and the
             # shared turn context must not carry one agent's budget into another's.
             agent_context = dict(context or {})
             agent_context["session_id"] = self.session_id
+            agent_context["_clock_snapshot"] = clock_snapshot
             agent_context["wall_seconds"] = seconds
 
             def meter(usage):
                 reported_usage[agent_id] = _sum_usage(reported_usage.get(agent_id), usage)
-                self._record_context_anchor(agent_id, usage)
+                if plan is not None:
+                    from .route_compaction import remember_usage
+                    remember_usage(self._managed_route_anchors, self.session_id, agent_id,
+                        plan.routes[agent_id], list(plan.anchor_rows), plan.instance, usage)
+                else:
+                    self._record_context_anchor(agent_id, usage)
 
             try:
                 with observer_scope(meter):
                     resp = await asyncio.wait_for(
-                        self.agents[agent_id].process(enriched_text, agent_context),
+                        self.agents[agent_id].process(enriched_text, agent_context,
+                        **({"prepared": prepared} if prepared is not None else {})),
                         timeout=seconds,
                     )
                 # The origin as this task saw it once the agent returned: the tool loop
@@ -3072,7 +3249,7 @@ class Orchestrator:
         for agent_id, resp, latency, _origin in results_list:
             results[agent_id] = resp
             self._last_latencies[agent_id] = latency
-            route = self._route_for_agent(agent_id, text)
+            route = plan.routes[agent_id].route if plan is not None else self._route_for_agent(agent_id, text)
             if route:
                 self._last_routes[agent_id] = route
         return results
@@ -3364,9 +3541,9 @@ class Orchestrator:
     def _session_birth(self):
         """When the CURRENT session began — seeded once, never refreshed (H671).
 
-        Read through the session id rather than recomputed, so compaction, a
-        checkpoint restore or a rotation keeps the day the conversation actually
-        started. Recomputing it at rebuild time would quietly reset a
+        Read through the same session id rather than recomputing it, so checkpoint
+        restore keeps the physical session birth. Prompt continuation lineage is
+        resolved separately by capture_clock. Recomputing birth at rebuild time would quietly reset a
         forever-session's birthday to today, which is the fault this guards.
         """
         from datetime import datetime

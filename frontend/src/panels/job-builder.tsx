@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { inpS } from '../panel-kit';
 
-export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string };
+export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string; script?: string; no_agent?: boolean; workdir?: string; enabled_toolsets?: string[] | null };
+export type JobToolset = {id:string;tools:string[];available:boolean};
 
 export function ScheduleBuilder({ onChange }: { onChange: (value: string) => void }) {
   const [mode, setMode] = useState('daily');
@@ -29,10 +30,25 @@ export function ScheduleBuilder({ onChange }: { onChange: (value: string) => voi
   </fieldset>;
 }
 
-export function OptionsEditor({value,onChange}: {value:JobOptions;onChange:(v:JobOptions)=>void}) {
+export function OptionsEditor({value,onChange,toolsets=[]}: {value:JobOptions;onChange:(v:JobOptions)=>void;toolsets?:JobToolset[]}) {
+  const [selecting,setSelecting] = useState(false);
+  const toolMode = value.enabled_toolsets == null ? 'default' : value.enabled_toolsets.length || selecting ? 'selected' : 'none';
+  const choices = [...toolsets, ...(value.enabled_toolsets ?? []).filter(id=>!toolsets.some(row=>row.id===id)).map(id=>({id,tools:[],available:false}))];
   const mode = value.deliver === undefined ? 'default' : value.deliver.length === 0 ? 'history' : 'channels';
   return <fieldset style={{border:'1px solid var(--panel-line)',display:'grid',gap:6}}>
     <legend>Advanced</legend>
+    <label>Python script (ask jobs)<input aria-label="job script" style={inpS} value={value.script ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.script=e.target.value;else {delete next.script;delete next.no_agent;delete next.workdir;}onChange(next);}}/></label>
+    <label><input type="checkbox" aria-label="skip model" checked={value.no_agent === true} onChange={e=>{const next={...value,no_agent:e.target.checked};if(!e.target.checked)delete next.workdir;onChange(next);}}/> Skip model; deliver script output</label>
+    {value.script && value.no_agent === true && <label>Workdir (optional)<input aria-label="job workdir" maxLength={1024} style={inpS} value={value.workdir ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.workdir=e.target.value;else delete next.workdir;onChange(next);}}/><small>Existing absolute directory inside configured terminal roots. Each run still needs approval. Applies only to the script subprocess; grants no model workspace access.</small></label>}
+
+    <label>Toolsets (model-bearing ask only)<select aria-label="job toolsets mode" style={inpS} value={toolMode} onChange={e=>{
+      const next={...value}; setSelecting(e.target.value==='selected');
+      if(e.target.value==='default') delete next.enabled_toolsets; else next.enabled_toolsets=[];
+      onChange(next);
+    }}><option value="default">Existing defaults</option><option value="none">No tools</option><option value="selected">Selected installed groups</option></select></label>
+    {toolMode==='selected' && <div>{choices.length===0 && <small>No installed catalog loaded. Use doctor to inspect availability.</small>}{choices.map(row=><label key={row.id} style={{display:'block'}}><input type="checkbox" aria-label={`toolset ${row.id}`} checked={value.enabled_toolsets?.includes(row.id) ?? false} disabled={!row.available && !value.enabled_toolsets?.includes(row.id)} onChange={e=>onChange({...value,enabled_toolsets:e.target.checked?[...(value.enabled_toolsets??[]),row.id]:(value.enabled_toolsets??[]).filter(id=>id!==row.id)})}/>{row.id}{!row.available?' (unavailable)':''}{row.tools.length?` · ${row.tools.join(', ')}`:''}</label>)}</div>}
+    <small>Selected groups only restrict tools; posture, configured backends and approvals still apply. Empty selection means no tools. The dedicated code-runner, delegation and dynamic plugin tool groups are not included. Clear this option for non-model actions.</small>
+
     <label>Model pin (ask jobs)<input aria-label="job model" style={inpS} maxLength={256} value={value.model ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.model=e.target.value;else delete next.model;onChange(next);}}/></label>
     <label>Provider pin (ask jobs)<select aria-label="job provider" style={inpS} value={value.provider ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.provider=e.target.value;else delete next.provider;onChange(next);}}>
       <option value="">Existing routing</option>{['lm-studio','ollama','gemini','anthropic','openrouter','openai-compatible'].map(p=><option key={p} value={p}>{p}</option>)}
@@ -47,15 +63,21 @@ export function OptionsEditor({value,onChange}: {value:JobOptions;onChange:(v:Jo
   </fieldset>;
 }
 
-export function JobBuilder({onSave}: {onSave:(body:Record<string,unknown>)=>void}) {
+export function JobBuilder({onSave,toolsets=[]}: {onSave:(body:Record<string,unknown>)=>void;toolsets?:JobToolset[]}) {
   const [name,setName]=useState(''); const [when,setWhen]=useState('0 9 * * *');
   const [kind,setKind]=useState('remind'); const [text,setText]=useState('');
   const [agent,setAgent]=useState('jarvis'); const [brief,setBrief]=useState('morning');
   const [taskKind,setTaskKind]=useState(''); const [payload,setPayload]=useState('{}');
   const [tier,setTier]=useState(3); const [options,setOptions]=useState<JobOptions>({});
   const [error,setError]=useState('');
+  const [mediaIds,setMediaIds]=useState('');
   const save=()=>{try {
     const action=kind==='remind'?{type:kind,message:text}:kind==='ask'?{type:kind,prompt:text,agent,deliver:true}:kind==='brief'?{type:kind,kind:brief}:{type:kind,kind:taskKind,title:text,payload:JSON.parse(payload),risk_tier:tier};
+    if(kind==='remind' && mediaIds.trim()) {
+      const ids=mediaIds.split(/[\s,]+/).filter(Boolean);
+      if(ids.length>8 || new Set(ids).size!==ids.length || ids.some(id=>!/^(ba-[a-f0-9]{32}|md-[a-f0-9]{12}|[a-f0-9]{32})$/.test(id))) throw new Error('Use 1–8 unique opaque media IDs');
+      Object.assign(action,{media_ids:ids});
+    }
     if(!name.trim()) throw new Error('A job needs a name');
     setError(''); onSave({name:name.trim(),schedule_text:when,action,options});
   } catch(e) {setError(String(e));}};
@@ -65,10 +87,11 @@ export function JobBuilder({onSave}: {onSave:(body:Record<string,unknown>)=>void
     <label>Schedule<input aria-label="job schedule" style={inpS} value={when} onChange={e=>setWhen(e.target.value)}/></label>
     <label>Action<select aria-label="job action" style={inpS} value={kind} onChange={e=>setKind(e.target.value)}>{['remind','ask','brief','task'].map(k=><option key={k}>{k}</option>)}</select></label>
     {kind!=='brief' && <label>{kind==='ask'?'Prompt':kind==='task'?'Task title':'Message'}<textarea aria-label="job message" style={{...inpS,width:'100%'}} value={text} onChange={e=>setText(e.target.value)}/></label>}
+    {kind==='remind' && <label>Media IDs (optional)<textarea aria-label="scheduled media IDs" style={inpS} value={mediaIds} onChange={e=>setMediaIds(e.target.value)}/><small>Up to 8 retained artifact IDs from the gallery, separated by commas. Saving binds these files to the current Telegram owner and bot. 16 MiB per file, 32 MiB total. No paths or URLs.</small></label>}
     {kind==='ask' && <label>Agent<input aria-label="job agent" style={inpS} value={agent} onChange={e=>setAgent(e.target.value)}/></label>}
     {kind==='brief' && <select aria-label="brief kind" style={inpS} value={brief} onChange={e=>setBrief(e.target.value)}><option>morning</option><option>evening</option></select>}
     {kind==='task' && <><label>Registered task kind<input aria-label="task kind" style={inpS} value={taskKind} onChange={e=>setTaskKind(e.target.value)}/></label><label>Payload JSON<textarea aria-label="task payload" style={inpS} value={payload} onChange={e=>setPayload(e.target.value)}/></label><label>Requested risk tier<select aria-label="task tier" style={inpS} value={tier} onChange={e=>setTier(Number(e.target.value))}>{[0,1,2,3].map(n=><option key={n}>{n}</option>)}</select></label><small>Enqueued for the autonomy policy; a requested tier grants no authority.</small></>}
-    <OptionsEditor value={options} onChange={setOptions}/>
+    <OptionsEditor toolsets={toolsets} value={options} onChange={setOptions}/>
     {error && <div role="alert">{error}</div>}
     <button className="tool-btn" onClick={save}>create job</button>
   </div>;

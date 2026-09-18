@@ -53,6 +53,13 @@ def _runner():
     return getattr(orch, "jobs", None) if orch is not None else None
 
 
+def _job_view(runner, job):
+    result = job.as_dict()
+    if 'media_ids' in job.action:
+        result['media_delivery'] = runner.media.public(job.id)
+    return result
+
+
 def _refused(reason: str) -> JSONResponse:
     """422 in the routers' agreed shape (`error`), plus the list form the first callers read."""
     return JSONResponse({"error": reason, "errors": [reason]}, status_code=422)
@@ -69,7 +76,7 @@ async def jobs_list():
         return _unavailable()
     requests = [receipt for row in runner.store.dispatch.outstanding()
                 if (receipt := runner.store.dispatch.get(row["id"])) is not None]
-    return nocache_json({"jobs": [job.as_dict() for job in runner.store.list()], "scheduler": runner.snapshot(),
+    return nocache_json({"jobs": [_job_view(runner, job) for job in runner.store.list()], "scheduler": runner.snapshot(),
                          "requests": requests})
 
 
@@ -99,7 +106,7 @@ async def jobs_create(body: JobCreateBody):
         job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint, options=body.options)
     except ValueError as exc:
         return _refused(str(exc))
-    return nocache_json({"ok": True, "job": job.as_dict()}, status_code=201)
+    return nocache_json({"ok": True, "job": _job_view(runner, job)}, status_code=201)
 
 
 @router.get("/api/jobs/doctor", dependencies=[Depends(admin_guard)])
@@ -153,7 +160,7 @@ async def jobs_get(job_id: str):
     job = runner.store.get(job_id)
     if job is None:
         return JSONResponse({"error": "no such job"}, status_code=404)
-    return nocache_json({"job": job.as_dict(), "runs": [run.as_dict() for run in runner.store.runs(job_id)]})
+    return nocache_json({"job": _job_view(runner, job), "runs": [run.as_dict() for run in runner.store.runs(job_id)]})
 
 
 @router.patch("/api/jobs/{job_id}", dependencies=[Depends(admin_guard)])
@@ -175,7 +182,7 @@ async def jobs_edit(job_id: str, body: JobEditBody):
         return JSONResponse({"error": "no such job"}, status_code=404)
     except ValueError as exc:
         return _refused(str(exc))
-    return nocache_json({"ok": True, "job": job.as_dict()})
+    return nocache_json({"ok": True, "job": _job_view(runner, job)})
 
 
 @router.get("/api/jobs/{job_id}/runs", dependencies=[Depends(admin_guard)])
@@ -197,7 +204,7 @@ async def jobs_pause(job_id: str, body: JobPauseBody | None = None):
         job = runner.pause(job_id, (body.reason if body and body.reason else "paused by the owner"))
     except KeyError:
         return JSONResponse({"error": "no such job"}, status_code=404)
-    return nocache_json({"ok": True, "job": job.as_dict()})
+    return nocache_json({"ok": True, "job": _job_view(runner, job)})
 
 
 @router.post("/api/jobs/{job_id}/resume", dependencies=[Depends(admin_guard)])
@@ -209,7 +216,7 @@ async def jobs_resume(job_id: str):
         job = runner.resume(job_id)
     except KeyError:
         return JSONResponse({"error": "no such job"}, status_code=404)
-    return nocache_json({"ok": True, "job": job.as_dict()})
+    return nocache_json({"ok": True, "job": _job_view(runner, job)})
 
 
 @router.post("/api/jobs/{job_id}/run", dependencies=[Depends(admin_guard)])

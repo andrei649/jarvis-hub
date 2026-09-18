@@ -25,6 +25,12 @@ EXIT_FAILED = 1
 EXIT_USAGE = 2
 EXIT_NO_HUB = 3
 EXIT_AUTH = 4
+#: The check could not run at all — a database that was not consulted, a probe that
+#: could not be made. Distinct from EXIT_FAILED on purpose: a script must never read
+#: "we could not look" as either "clean" or "findings". Nothing is claimed.
+EXIT_UNAVAILABLE = 5
+
+_OSV_DEFAULT = "https://api.osv.dev"
 
 _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
@@ -36,6 +42,7 @@ class Context:
     environ: Mapping[str, str]
     out: Any = field(default_factory=lambda: sys.stdout)
     err: Any = field(default_factory=lambda: sys.stderr)
+    inp: Any = field(default_factory=lambda: sys.stdin)
     client_factory: Callable[[Mapping[str, str]], HubClient] = HubClient.from_env
     _client: HubClient | None = None
 
@@ -160,6 +167,9 @@ def build_parser() -> argparse.ArgumentParser:
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_create.add_argument("--json", action="store_true")
+    jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
+    jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -167,6 +177,9 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     jobs_edit.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
     jobs_edit.add_argument("--json", action="store_true")
+    jobs_edit.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
+    jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
+    jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
     for verb in ("doctor", "incidents", "tick"):
         sub = jobs_verbs.add_parser(verb)
@@ -194,19 +207,50 @@ def build_parser() -> argparse.ArgumentParser:
 
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
+    session_verbs = sessions.add_subparsers(dest="session_action")
+    continuation = session_verbs.add_parser("continue", help="create a new session carrying retained context; does not switch default")
+    continuation.add_argument("source_session_id")
+    continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
+    continuation.add_argument("--json", action="store_true")
 
     chat = verbs.add_parser("chat", help="one scripted turn: send a message, print the reply")
     chat.add_argument("message")
     chat.add_argument("--agent", help="address one agent instead of the router")
+    # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
+    chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+                      help="reasoning effort for this invocation only")
+    chat.add_argument("--session", help="explicit existing conversation session")
     chat.add_argument("--json", action="store_true")
 
-    send = verbs.add_parser("send", help="message a configured channel, or reply to an inbox thread")
+    send = verbs.add_parser(
+        "send",
+        help="message a configured channel, or reply to an inbox thread (scripts, cron, CI)",
+        description="Send one message with no model call. The body is the MESSAGE argument, else "
+                    "--file PATH (- reads stdin), else whatever is piped on stdin; a terminal is "
+                    "never read, with or without -f -. Bodies are text of up to 4,000 characters as "
+                    "delivered (the subject counts where it becomes the first line); native "
+                    "attachments (MEDIA:) are not carried yet. Exit 0 sent · 1 not delivered (the "
+                    "hub refused, or the transport failed) · 2 usage · 3 no hub · 4 not authorised.",
+        epilog="examples:\n"
+               "  nerva send --channel telegram \"deploy finished\"\n"
+               "  echo \"RAM 92%\" | nerva send --channel ntfy\n"
+               "  nerva send --channel ntfy -s \"[CI]\" -f build.log\n"
+               "  nerva send --list ntfy",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     target = send.add_mutually_exclusive_group(required=True)
-    target.add_argument("--list", action="store_true", help="list configured channels and inbox targets")
+    target.add_argument("--list", action="store_true",
+                        help="list configured channels and inbox targets; MESSAGE, if given, filters by channel")
     target.add_argument("--to", metavar="THREAD_ID", help="exact thread id from --list (a governed reply)")
     target.add_argument("--channel", metavar="CHANNEL",
                         help="a configured destination from --list (telegram, ntfy, …) — no thread needed")
-    send.add_argument("message", nargs="?", help="reply text (up to 4,000 characters)")
+    send.add_argument("message", nargs="?",
+                      help="the message (up to 4,000 characters); omit it to read --file or stdin")
+    send.add_argument("-f", "--file", metavar="PATH",
+                      help="read the body from PATH, or from stdin when PATH is -")
+    send.add_argument("-s", "--subject", metavar="LINE",
+                      help="one printable subject line (≤200): ntfy's title (printable ASCII, ≤120), "
+                           "elsewhere the first line of the message")
+    send.add_argument("-q", "--quiet", action="store_true", help="print nothing on success")
     send.add_argument("--json", action="store_true")
 
     desktop = verbs.add_parser(
@@ -218,6 +262,40 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    security = verbs.add_parser(
+        "security", help="checks you can run on this box: known vulnerabilities in what is installed")
+    security_verbs = security.add_subparsers(dest="action", required=True, metavar="action")
+    security_audit = security_verbs.add_parser(
+        "audit",
+        help="known vulnerabilities in this interpreter's packages and in declared extension pins, "
+             "from OSV.dev — exit 0 clean · 1 findings at/above --fail-on · 5 database not "
+             "consulted (nothing is claimed)",
+        description="Checks what is installed in THIS interpreter, plus the exact Python pins of any "
+                    "--extension descriptor, against OSV.dev. It does NOT scan: MCP servers (owner-"
+                    "configured stdio commands are listed as not audited), extensions the hub has "
+                    "acquired but you did not name, system packages, or anything outside this "
+                    "interpreter. Only package name+version pairs leave the machine. Exit 0 clean · "
+                    "1 findings at/above --fail-on · 5 the database was not consulted or the audit "
+                    "did not complete (nothing is claimed).")
+    security_audit.add_argument(
+        "--fail-on", choices=("low", "moderate", "high", "critical"), default="low",
+        help="the lowest severity that fails the run (default: low, i.e. any finding — stricter "
+             "than Hermes's critical, on purpose). An advisory with no stated severity always "
+             "fails: unrated is not safe.")
+    security_audit.add_argument(
+        "--ignore-vuln", action="append", default=[], metavar="ID",
+        help="an advisory id or alias to list but not fail on (repeatable)")
+    security_audit.add_argument(
+        "--extension", action="append", default=[], metavar="MANIFEST",
+        help="an extension descriptor whose exact Python pins are audited too (repeatable)")
+    security_audit.add_argument(
+        "--offline", action="store_true",
+        help="enumerate only; consult no database and claim nothing (exit 5)")
+    security_audit.add_argument(
+        "--osv-url", default=_OSV_DEFAULT, metavar="URL",
+        help="an https OSV-compatible endpoint (default: api.osv.dev)")
+    security_audit.add_argument("--json", action="store_true")
 
     completion = verbs.add_parser("completion", help="print a shell completion script")
     completion.add_argument("shell", choices=("bash", "zsh", "fish"))
@@ -769,6 +847,27 @@ def _params(pairs: list[str]) -> dict[str, str]:
     return out
 
 
+def _job_cli_options(ns):
+    value = json.loads(ns.options) if ns.options is not None else {}
+    if not isinstance(value, dict):
+        raise ValueError('--options must be an object')
+    if ns.workdir is not None:
+        if ns.options is None:
+            raise ValueError('--workdir requires complete --options')
+        if ns.workdir:
+            value['workdir'] = ns.workdir
+        else:
+            value.pop('workdir', None)
+    if ns.toolsets is not None:
+        if ns.options is None:
+            raise ValueError('--toolsets requires complete --options')
+        if ns.toolsets == 'default':
+            value.pop('enabled_toolsets', None)
+        else:
+            value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
+    return value
+
+
 def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
     if ns.action in ("doctor", "incidents", "tick", "status", "notepad"):
@@ -814,8 +913,10 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
-            if ns.options is not None:
-                body["options"] = json.loads(ns.options)
+            if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+                body["options"] = _job_cli_options(ns)
+            if ns.media_id and ns.blueprint:
+                raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
             if ns.blueprint:
                 body["blueprint"] = ns.blueprint
                 params = _params(ns.param)
@@ -826,6 +927,10 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
                     ctx.err.write("without --blueprint, --name, --when and --action are all required\n")
                     return EXIT_USAGE
                 body["action"] = json.loads(ns.action_json)
+                if ns.media_id:
+                    if not isinstance(body["action"], dict) or body["action"].get("type") != "remind":
+                        raise ValueError("--media-id requires a reminder action")
+                    body["action"]["media_ids"] = ns.media_id
             if ns.name:
                 body["name"] = ns.name
             if ns.when:
@@ -841,10 +946,13 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "edit":
+        if ns.media_id and not ns.action_json:
+            ctx.err.write("--media-id requires --action to explicitly reauthorize the reminder\n")
+            return EXIT_USAGE
         body = {}
-        if ns.options is not None:
+        if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
             try:
-                body["options"] = json.loads(ns.options)
+                body["options"] = _job_cli_options(ns)
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
@@ -855,6 +963,10 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         if ns.action_json:
             try:
                 body["action"] = json.loads(ns.action_json)
+                if ns.media_id:
+                    if not isinstance(body["action"], dict) or body["action"].get("type") != "remind":
+                        raise ValueError("--media-id requires a reminder action")
+                    body["action"]["media_ids"] = ns.media_id
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
@@ -907,6 +1019,13 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "session_action", None) == "continue":
+        reply = ctx.client().post("/sessions/continue", {"source_session_id": ns.source_session_id, "request_id": ns.request_id})
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"Created {reply['session_id']}; continue with nerva chat --session {reply['session_id']} MESSAGE")
+        return EXIT_OK
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
@@ -926,6 +1045,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     body: dict[str, Any] = {"message": ns.message}
     if ns.agent:
         body["agent"] = ns.agent
+    if getattr(ns, "reasoning", None) is not None:
+        body["reasoning"] = ns.reasoning
+    if getattr(ns, "session", None):
+        body["session_id"] = ns.session
     reply = ctx.client().post("/chat", body)
     if ns.json:
         ctx.dump(reply)
@@ -934,12 +1057,101 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+#: What one send carries, subject included — the outbound seam's own bound.
+SEND_MAX_CHARS = 4_000
+_NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or pipe it on stdin"
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _plain(text: Any, width: int = 200) -> str:
+    """A string from the hub or the shell, safe to put on a terminal: no control characters."""
+    out = _CONTROL_CHARS.sub(" ", "" if text is None else str(text))
+    return out if len(out) <= width else out[: width - 1] + "…"
+
+
+def _is_tty(stream: Any) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    try:
+        return bool(callable(isatty) and isatty())
+    except (OSError, ValueError):
+        return False
+
+
+def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
+    """``(body, "")`` from the MESSAGE argument, else ``--file`` (``-`` is stdin), else piped stdin.
+
+    Hermes' precedence, with its one safety rule kept: a terminal is never read, so a
+    script that forgot the body gets a usage error instead of a hang. ``(None, reason)``
+    is a usage error; the reason names what to fix and never reflects the file's bytes.
+    """
+    given = ns.message if isinstance(ns.message, str) and ns.message.strip() else None
+    if given is not None and ns.file:
+        return None, "give the message as an argument or with --file, not both"
+    if given is not None:
+        return given, ""
+    if ns.file == "-":
+        if ctx.inp is None or not hasattr(ctx.inp, "read"):
+            return None, "stdin is closed; pipe the body or use --file PATH"
+        if _is_tty(ctx.inp):
+            return None, "stdin is a terminal, and nerva send never reads one; pipe the body or use --file PATH"
+        return _read_body(ctx.inp, "stdin")
+    if ns.file:
+        try:
+            with open(ns.file, encoding="utf-8-sig") as handle:
+                return _read_body(handle, _plain(ns.file, 120))
+        except OSError as exc:
+            return None, f"cannot read {_plain(ns.file, 120)}: {exc.strerror or type(exc).__name__}"
+    if ctx.inp is not None and hasattr(ctx.inp, "read") and not _is_tty(ctx.inp):
+        return _read_body(ctx.inp, "stdin")
+    return None, _NO_BODY
+
+
+def _read_body(stream: Any, label: str) -> tuple[str | None, str]:
+    """At most the bound plus one character is read: a runaway file is refused, not loaded."""
+    try:
+        text = stream.read(SEND_MAX_CHARS + 1)
+    except UnicodeDecodeError:
+        if label == "stdin":
+            return None, "stdin is not UTF-8 text; nerva send carries text bodies only"
+        return None, (f"{label} is not a text file. --file reads the message body (logs, reports, "
+                      "markdown); native attachments are not carried by nerva send yet")
+    except OSError as exc:
+        return None, f"cannot read {label}: {exc.strerror or type(exc).__name__}"
+    if isinstance(text, bytes):
+        try:
+            text = text.decode("utf-8")
+        except UnicodeDecodeError:
+            return None, f"{label} is not UTF-8 text"
+    if not isinstance(text, str):
+        return None, _NO_BODY
+    text = text.lstrip("\ufeff")
+    if not text.strip():
+        return None, _NO_BODY
+    if len(text) > SEND_MAX_CHARS:
+        return None, (f"{label} is longer than {SEND_MAX_CHARS:,} characters, which is what nerva send "
+                      "carries — trim it, or send the tail")
+    return text, ""
+
+
 def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
-    """Use the HUD's reply broker; queue acceptance is never delivery confirmation."""
+    """One message, no model call. Queue acceptance is never delivery confirmation.
+
+    H480: the body comes from the argument, a file or stdin; a subject rides as ntfy's
+    title or as the first line elsewhere; exit codes are 0 sent · 1 not delivered ·
+    2 usage, plus Nerva's own 3 (no hub) and 4 (not authorised).
+    """
     if ns.list:
-        if ns.message is not None:
-            ctx.err.write("--list does not take a message\n")
+        if ns.file or ns.subject:
+            ctx.err.write("--list takes no body or subject; a MESSAGE argument filters by channel\n")
             return EXIT_USAGE
+        only = (ns.message or "").strip().lower()
+        if only:
+            from agents.core.channels.outbound import DIRECT_SEND_CHANNELS
+
+            if only not in DIRECT_SEND_CHANNELS:
+                ctx.err.write(f"--list filters by a direct-send channel: "
+                              f"{', '.join(DIRECT_SEND_CHANNELS)}; not '{only[:32]}'\n")
+                return EXIT_USAGE
         client = ctx.client()
         # A hub that does not serve destinations (older, or the route disabled) must not
         # cost the owner the inbox listing too: --list reports what it can reach.
@@ -948,11 +1160,24 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         except HubError:
             targets = None
         rows_t = targets.get("targets") if isinstance(targets, dict) else None
+        if only and isinstance(rows_t, list):
+            known = sorted(_plain(r.get("channel", ""), 32) for r in rows_t if isinstance(r, dict))
+            rows_t = [r for r in rows_t if isinstance(r, dict) and r.get("channel") == only]
+            if not rows_t:
+                ctx.err.write(f"no targets found for channel '{only}'. Configured: "
+                              f"{', '.join(known) or '(none)'}\n")
+                return EXIT_FAILED
+        elif only:
+            ctx.err.write("this hub does not list send targets; only inbox threads are filtered\n")
         if isinstance(rows_t, list) and not ns.json:
             ctx.say("configured destinations (no inbox thread needed):")
             for row in rows_t:
                 mark = "ready " if row.get("ready") else "not ok"
-                ctx.say(f"--channel {str(row.get('channel', '?')):<9} {mark}  {row.get('reason', '')}")
+                ctx.say(f"--channel {_plain(row.get('channel', '?'), 32):<9} {mark}  {_plain(row.get('reason', ''))}")
+            if rows_t and not any(row.get("ready") for row in rows_t):
+                # Spark S-003: the first empty state a stranger meets on the way to their
+                # first automation deserves one honest, human line. Delete freely.
+                ctx.say("(none ready yet — Nerva has things to say and nowhere to say them; connect one above)")
         status = client.get("/api/channels/inbox/status")
         if not isinstance(status, dict) or status.get("enabled") is not True:
             ctx.err.write("channel inbox unavailable\n")
@@ -961,6 +1186,11 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         rows = reply.get("threads") if isinstance(reply, dict) else None
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
             raise HubError(0, "malformed inbox target list")
+        if only:
+            rows = [row for row in rows if row.get("channel") == only]
+            if not rows and rows_t is None:
+                ctx.err.write(f"no targets found for channel '{only}' on this hub\n")
+                return EXIT_FAILED
         if ns.json:
             ctx.dump({"targets": rows_t, "threads": rows})
         elif not rows:
@@ -968,41 +1198,56 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say("recent inbox targets (up to 200):")
             for row in rows:
-                ctx.say(f"{row.get('thread_id', '?')}  {row.get('channel', '?')}  {row.get('from', '')}")
+                ctx.say(f"{_plain(row.get('thread_id', '?'))}  {_plain(row.get('channel', '?'), 32)}  "
+                        f"{_plain(row.get('from', ''))}")
         return EXIT_OK
+
+    # The target id is checked before anything is read, so a bad id costs no stdin.
+    if ns.channel and not re.fullmatch(r"[a-z0-9_-]{1,32}", ns.channel):
+        ctx.err.write("--channel takes a channel id from `nerva send --list`\n")
+        return EXIT_USAGE
+    # An id is a single path segment, never a URL, a display name or a guessed recipient.
+    if not ns.channel and not re.fullmatch(r"[A-Za-z0-9_:-]{1,200}", ns.to or ""):
+        ctx.err.write("--to requires an exact thread id from `nerva send --list`\n")
+        return EXIT_USAGE
+    from agents.core.channels.outbound import carried_length, subject_problem
+
+    subject = (ns.subject or "").strip()
+    problem = subject_problem(ns.channel or "", subject)
+    if problem:
+        ctx.err.write(f"--subject: {problem}\n")
+        return EXIT_USAGE
+    body, reason = _send_body(ns, ctx)
+    if body is None:
+        ctx.err.write(f"{reason}\n")
+        return EXIT_USAGE
+    carried = carried_length(ns.channel or "", body, subject)
+    if carried > SEND_MAX_CHARS:
+        ctx.err.write(f"the message is {carried:,} characters as delivered (subject included); nerva send "
+                      f"carries up to {SEND_MAX_CHARS:,} — trim it, or send the tail\n")
+        return EXIT_USAGE
 
     if ns.channel:
         # A configured destination, not a thread: reversible tier, recorded in the
         # IntentLog by the route. `audited:false` is surfaced, never hidden — an
         # unrecorded send is a real (small) governance gap the owner should see.
-        if not re.fullmatch(r"[a-z0-9_-]{1,32}", ns.channel):
-            ctx.err.write("--channel takes a channel id from `nerva send --list`\n")
-            return EXIT_USAGE
-        if not ns.message or not ns.message.strip() or len(ns.message) > 4_000:
-            ctx.err.write("message must contain 1-4,000 characters; nothing was sent\n")
-            return EXIT_USAGE
-        reply = ctx.client().post(
-            "/api/channels/send",
-            {"channel": ns.channel, "text": ns.message, "source": "nerva.cli.send"},
-        )
+        payload = {"channel": ns.channel, "text": body, "source": "nerva.cli.send"}
+        if subject:
+            payload["subject"] = subject
+        reply = ctx.client().post("/api/channels/send", payload)
         sent = isinstance(reply, dict) and reply.get("ok") is True
         if ns.json:
             ctx.dump(reply)
-        elif sent:
+        elif sent and not ns.quiet:
             note = "" if reply.get("audited") else "  (WARNING: not recorded in the audit log)"
             ctx.say(f"sent to {ns.channel}{note}")
-        else:
+        elif not sent:
             reason = reply.get("error") or reply.get("reason") if isinstance(reply, dict) else None
-            ctx.err.write(f"not sent: {reason or 'the hub refused the message'}\n")
+            ctx.err.write(f"not sent: {_plain(reason) or 'the hub refused the message'}\n")
         return EXIT_OK if sent else EXIT_FAILED
 
-    # An id is a single path segment, never a URL, a display name or a guessed recipient.
-    if not re.fullmatch(r"[A-Za-z0-9_:-]{1,200}", ns.to or ""):
-        ctx.err.write("--to requires an exact thread id from `nerva send --list`\n")
-        return EXIT_USAGE
-    if not ns.message or not ns.message.strip() or len(ns.message) > 4_000:
-        ctx.err.write("message must contain 1–4,000 characters; nothing was queued\n")
-        return EXIT_USAGE
+    # A thread reply has no title anywhere, so the subject is Hermes' first line.
+    text = f"{subject}\n\n{body.lstrip()}" if subject else body
     client = ctx.client()
     path = f"/api/channels/inbox/{ns.to}"
     found = client.get(path)
@@ -1011,17 +1256,17 @@ def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
             or not isinstance(thread.get("reply"), dict) or not thread["reply"]):
         ctx.err.write("target has no resolved inbox recipient; nothing was queued\n")
         return EXIT_FAILED
-    reply = client.post(f"{path}/reply", {"text": ns.message, "source": "nerva.cli.send"})
+    reply = client.post(f"{path}/reply", {"text": text, "source": "nerva.cli.send"})
     task_id = reply.get("task_id") if isinstance(reply, dict) else None
     queued = (isinstance(reply, dict) and reply.get("ok") is True
               and reply.get("queued") is True and type(task_id) is int and task_id > 0)
     if ns.json:
         ctx.dump(reply)
-    elif queued:
+    elif queued and not ns.quiet:
         ctx.say(f"queued task {task_id} for {ns.to} — delivery follows the hub's approval policy")
-    else:
+    elif not queued:
         reason = reply.get("reason") if isinstance(reply, dict) else None
-        ctx.err.write(f"reply was not queued: {reason or 'no durable task returned'}\n")
+        ctx.err.write(f"reply was not queued: {_plain(reason) or 'no durable task returned'}\n")
     return EXIT_OK if queued else EXIT_FAILED
 
 
@@ -1157,6 +1402,56 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
+    """H022 — what is installed here, checked against a vulnerability database.
+
+    Three surfaces, named in the output so a reader knows what was and was not
+    looked at: the distributions in *this* interpreter, the exact Python pins any
+    extension descriptor on the command line declares, and MCP — on Nerva a set of
+    owner-configured stdio commands this verb does not resolve to package versions,
+    so it is listed as *not audited* with that reason rather than silently omitted.
+
+    Two things this verb will not do. It will not compute a severity OSV does not
+    state (an unrated advisory fails every threshold), and it will not call a run
+    "clean" when the database could not be reached: that is EXIT_UNAVAILABLE, and
+    the report says nothing is claimed. The same exit covers the audit itself
+    failing before it has an answer — a traceback's exit 1 would read as "findings".
+    Only package name+version pairs leave the machine, and the verb says so before
+    the first request.
+    """
+    from agents.core.security import dep_audit
+
+    try:
+        client = None if ns.offline else dep_audit.default_client(ns.osv_url)
+    except ValueError as exc:
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    try:
+        components, errors = dep_audit.enumerate_installed()
+        extension_components, extension_errors = dep_audit.enumerate_extensions(ns.extension)
+        components, errors = components + extension_components, errors + extension_errors
+        if client is None:
+            report = dep_audit.offline_report(components, errors=errors)
+        else:
+            pairs = len({(c.name, c.version) for c in components})
+            ctx.err.write(
+                f"sending {pairs} package name+version pairs to {dep_audit.host_of(ns.osv_url)}; "
+                "nothing else leaves this machine\n"
+            )
+            report = dep_audit.audit(
+                components, client, fail_on=ns.fail_on, ignore=ns.ignore_vuln,
+                errors=errors, database=ns.osv_url,
+            )
+    except Exception as exc:  # not an answer: neither "clean" nor "findings"
+        ctx.err.write(f"security audit did not complete ({type(exc).__name__}): nothing is claimed\n")
+        return EXIT_UNAVAILABLE
+    if ns.json:
+        ctx.dump(report.to_dict())
+    else:
+        ctx.out.write(dep_audit.render(report) + "\n")
+    return {"clean": EXIT_OK, "findings": EXIT_FAILED}.get(report.status, EXIT_UNAVAILABLE)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
@@ -1173,6 +1468,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,
+    "security": cmd_security,
     "completion": cmd_completion,
 }
 

@@ -28,6 +28,9 @@ cached prefix is already being invalidated and the rebuild costs nothing extra.
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
 
 _START_LABEL = "Conversation started:"
@@ -164,3 +167,108 @@ def parse_started_at(value: object) -> datetime | None:
 
 
 __all__ = ["clock_block", "parse_started_at", "with_clock"]
+
+
+# Request-owned values: a tool runtime child task inherits a frozen snapshot, not
+# a mutable manager-wide clock. No session ancestry is implied.
+
+
+@dataclass(frozen=True)
+class ClockSnapshot:
+    session_id: str
+    started_at: datetime
+    rebuilt_at: datetime
+    revision: int
+    instance_id: str = ""
+
+
+CONTEXT_REFUSED_REPLY = "I stopped this turn because its context compaction could not be safely committed. Please retry."
+
+
+class CompactionClockRefused(RuntimeError):
+    """An unaccepted compaction must not become an oversized model request."""
+
+
+@dataclass
+class ClockLifetime:
+    active: bool = True
+    parent: ClockLifetime | None = None
+
+    def is_active(self):
+        return self.active and (self.parent is None or self.parent.is_active())
+
+
+@dataclass(frozen=True)
+class ClockFrame:
+    manager: object
+    snapshot: ClockSnapshot | None
+    lifetime: ClockLifetime
+
+    @property
+    def active(self):
+        return self.lifetime.is_active()
+
+
+CLOCK_UNSET = object()
+prompt_clock: ContextVar[ClockSnapshot | None] = ContextVar('prompt_clock', default=None)
+_active_clock: ContextVar[ClockFrame | None] = ContextVar('active_compaction_clock', default=None)
+
+
+def capture_clock(manager, session_id: str, *, agent_id: str | None = None) -> ClockSnapshot | None:
+    if not session_id or manager is None or not hasattr(manager, 'clock_snapshot'):
+        return None
+    try:
+        manager.create_session_record(session_id, agent_id=agent_id)
+        return manager.clock_snapshot(session_id)
+    except Exception:
+        return None
+
+
+@contextmanager
+def clock_scope(manager, snapshot):
+    parent = _active_clock.get()
+    if parent is not None and not parent.active:
+        raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
+    if parent is None and snapshot is None:
+        # No durable clock authority exists to revoke. Preserve legacy background
+        # generation, but never use this branch to shed a managed ancestor.
+        yield
+        return
+    frame = ClockFrame(manager, snapshot, ClockLifetime(parent=parent.lifetime if parent else None))
+    token = _active_clock.set(frame)
+    try:
+        yield
+    finally:
+        frame.lifetime.active = False
+        _active_clock.reset(token)
+
+
+def active_clock():
+    return _active_clock.get()
+
+
+def _owner_zone() -> tzinfo | None:
+    """Resolve an actual IANA key; never infer one from a local abbreviation.
+
+    Explicit TZ wins. Invalid configuration or unavailable host discovery keeps
+    the existing offset-only fallback rather than naming an unrelated zone.
+    tzlocal is already the scheduler's cross-platform host discovery dependency.
+    """
+    from zoneinfo import ZoneInfo
+
+    from .env_config import env_str
+
+    try:
+        name = env_str("TZ")
+        if not name:
+            from tzlocal import get_localzone_name
+            name = get_localzone_name()
+        return ZoneInfo(name)
+    except Exception:
+        return None
+
+
+def render_snapshot(system: str, snapshot: ClockSnapshot | None) -> str:
+    if snapshot is None:
+        return system
+    return with_clock(system, snapshot.started_at.astimezone(), snapshot.rebuilt_at, zone=_owner_zone())

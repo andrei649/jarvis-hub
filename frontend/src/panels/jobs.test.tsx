@@ -289,3 +289,42 @@ it('authors model and provider pins in a custom ask job', async()=>{
   await waitFor(()=>expect(calls.some(c=>c.method==='POST')).toBe(true));
   expect(calls.find(c=>c.method==='POST').body.options).toEqual({model:'org/model',provider:'lm-studio'});
 });
+
+it('authors explicit media reminders and shows unknown delivery progress', async () => {
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[{...JOB,media_delivery:{status:'unknown',sent:1,total:3,reason:'deadline expired'}}],scheduler:{}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  await screen.findByText(/media.*unknown.*1\/3/i);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('scheduled media IDs'),{target:{value:'ba-'+ 'a'.repeat(32)}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.action.media_ids).toEqual(['ba-'+ 'a'.repeat(32)]));
+});
+
+it('authors a script-only workdir with real script options', async()=>{
+  const calls=mockFetch({'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job action'),{target:{value:'ask'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'report'}});
+  fireEvent.change(screen.getByLabelText('job script'),{target:{value:'watch.py'}});
+  fireEvent.click(screen.getByLabelText('skip model'));
+  fireEvent.change(screen.getByLabelText('job workdir'),{target:{value:'/workspace/report'}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.options).toEqual({script:'watch.py',no_agent:true,workdir:'/workspace/report'}));
+});
+
+it('loads installed toolsets and posts the chosen restriction through the real client',async()=>{
+  const calls=mockFetch({'GET /api/jobs/doctor':{toolsets:[{id:'basic',tools:['echo','time'],available:true}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{alive:true}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'Restricted'}});
+  fireEvent.change(screen.getByLabelText('job action'),{target:{value:'ask'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'Check'}});
+  fireEvent.change(screen.getByLabelText('job toolsets mode'),{target:{value:'selected'}});
+  fireEvent.click(await screen.findByLabelText('toolset basic'));
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.options).toEqual({enabled_toolsets:['basic']}));
+});

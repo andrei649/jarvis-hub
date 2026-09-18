@@ -75,8 +75,9 @@ class ProviderProfile:
 
         ``None`` means undeclared: nobody has told this build what the model
         takes, so a transport must keep the defaults it already had. ``()`` means
-        declared empty — the model accepts no effort level and the field has to be
-        omitted. A non-empty tuple is a vocabulary to clamp into, weakest first.
+        declared empty — omit all reasoning parameters. A non-empty tuple lists
+        product reasoning levels, weakest first; adapters map them to their actual
+        wire schema (an effort field or a token budget).
 
         The two ``None``-ish answers are not interchangeable, which is why this
         cannot be an attribute: ``reasoning_efforts`` below is the vendor-level
@@ -206,6 +207,21 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="https://openrouter.ai/api/v1",
         base_url_env="OPENROUTER_BASE_URL",
         capabilities=frozenset({"chat", "model-catalog", "cloud"}),
+    ),
+    ProviderProfile(
+        id="xai", display_name="xAI Grok (Responses)", backend_kind="xai-responses",
+        auth_type="bearer", auth_env="XAI_API_KEY", default_base_url="https://api.x.ai/v1",
+        fallback_models=("grok-4.6", "grok-4.5"),
+        capabilities=frozenset({"chat", "streaming", "cloud", "reasoning-effort"}),
+        reasoning_declarations={"grok-4.6": ("low", "medium", "high", "xhigh"),
+                                "grok-4.5": ("low", "medium", "high")},
+    ),
+    ProviderProfile(
+        id="openai-responses", display_name="OpenAI Responses (API key, GPT-4.1)",
+        backend_kind="openai-responses", auth_type="bearer", auth_env="OPENAI_API_KEY",
+        default_base_url="https://api.openai.com/v1",
+        capabilities=frozenset({"chat", "streaming", "cloud", "prompt-cache-key"}),
+        reasoning_declarations={"gpt-4.1": (), "gpt-4.1-2025-04-14": ()},
     ),
     ProviderProfile(
         id="openai-compatible",

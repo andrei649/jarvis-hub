@@ -37,10 +37,9 @@ def test_an_undeclared_model_answers_none_not_empty():
     assert answer != ()
 
 
-def test_a_known_family_without_an_effort_vocabulary_answers_empty():
-    """Sonnet 4.5 takes a thinking budget but errors on any effort level, so the
-    honest answer is a declared empty tuple — 'omit the field', not 'unknown'."""
-    assert supported_reasoning_efforts("anthropic", "claude-sonnet-4-5") == ()
+def test_a_budget_only_family_advertises_its_product_reasoning_rungs():
+    assert supported_reasoning_efforts("anthropic", "claude-sonnet-4-5") == (
+        "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 
 def test_a_declared_family_answers_its_vocabulary_weakest_first():
@@ -143,9 +142,9 @@ def test_an_exactly_supported_level_is_reported_as_exact():
     assert clamp_reasoning_effort("gemini", "m", "high") == ("high", "exact")
 
 
-def test_a_level_weaker_than_the_whole_vocabulary_floors():
+def test_a_level_weaker_than_the_whole_vocabulary_requires_refusal():
     declare_reasoning_efforts("gemini", "m", ["high", "max"])
-    assert clamp_reasoning_effort("gemini", "m", "minimal") == ("high", "floored")
+    assert clamp_reasoning_effort("gemini", "m", "minimal") == (None, "below-minimum")
 
 
 # ── the hook on the provider profile ─────────────────────────────────────────
@@ -153,7 +152,7 @@ def test_a_level_weaker_than_the_whole_vocabulary_floors():
 def test_the_profile_answers_the_tri_state_for_its_own_id():
     anthropic = get_profile("anthropic")
     assert anthropic.supported_reasoning_efforts("claude-opus-5")[-1] == "max"
-    assert anthropic.supported_reasoning_efforts("claude-sonnet-4-5") == ()
+    assert anthropic.supported_reasoning_efforts("claude-sonnet-4-5")[0] == "minimal"
     assert get_profile("gemini").supported_reasoning_efforts("gemini-2.5-pro") is None
 
 
@@ -204,14 +203,13 @@ def test_declaring_a_model_empty_silences_the_effort_field_on_the_wire():
     assert plan.effort is None
 
 
-def test_an_adaptive_family_with_no_vocabulary_is_not_called_a_budget():
-    """It builds a thinking block and no effort field; calling that reason
-    'budget' claimed a token budget that was never constructed."""
+def test_explicit_empty_suppresses_adaptive_controls_too():
+    """Explicit empty is authoritative over the built-in adaptive wire mode."""
     declare_reasoning_efforts("anthropic", "claude-opus-5", [])
     payload = _payload()
     plan = apply_anthropic(payload, "claude-opus-5", "max")
-    assert payload["thinking"] == {"type": "adaptive"}
-    assert plan.reason == "thinking-only"
+    assert "thinking" not in payload
+    assert plan.reason == "unsupported"
 
 
 def test_forgetting_a_declaration_restores_the_built_in_table_on_the_wire():

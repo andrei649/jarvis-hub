@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, asLive, taS } from '../panel-kit';
-import { imageStatus, proposeImage, imageTask, imageBlob, editValid, type ImageCapability, type ImageTask } from '../api/images';
+import { appUrl } from '../base-path';
+import { imageStatus, proposeCloudImage, type CloudImageOptions, proposeImage, imageTask, imageBlob, editValid, type ImageCapability, type ImageTask } from '../api/images';
 
 const stateText: Record<ImageTask['state'], string> = {
   awaiting_approval: 'Awaiting approval in the Decision Inbox.', queued: 'Approved and queued.',
-  generating: 'Generating on the local service.', ready: 'Generation completed; loading the saved image.',
+  generating: 'Generating the approved image.', ready: 'Generation completed; loading the saved image.',
   rejected: 'Proposal rejected.', deferred: 'Proposal deferred.', refused: 'Execution refused.',
   uncertain: 'Result uncertain. Check the task before making another proposal; generation may have started.',
 };
@@ -12,11 +13,25 @@ const errorText = (error: any) => error?.code === 'auth'
   ? 'Owner authentication required. Set the current owner credentials, then check again.'
   : 'Image status or saved bytes unavailable. Check again when the connection is restored.';
 
+function rememberTask(id:number|null) {
+  const url = new URL(window.location.href);
+  if (id === null) url.searchParams.delete('image_task');
+  else url.searchParams.set('image_task',String(id));
+  window.history.replaceState(window.history.state,'',url.pathname+url.search+url.hash);
+}
+function requestedTask() {
+  const raw = new URLSearchParams(window.location.search).get('image_task') || '';
+  const id = Number(raw);
+  return /^[1-9][0-9]*$/.test(raw) && Number.isSafeInteger(id) ? id : null;
+}
 export function ImagesPanel() {
   const [configuration, setConfiguration] = useState<ImageCapability | null>(null);
   const [configError, setConfigError] = useState('');
   const [configVersion, setConfigVersion] = useState(0);
   const [prompt, setPrompt] = useState('');
+  const [provider,setProvider] = useState<'local'|'cloud'>('local');
+  const [size,setSize] = useState<CloudImageOptions['size']>('1024x1024');
+  const [quality,setQuality] = useState<CloudImageOptions['quality']>('low');
   const [mode, setMode] = useState<'create' | 'edit'>('create');
   const [reference, setReference] = useState('');
   const [strength, setStrength] = useState(60);
@@ -25,10 +40,10 @@ export function ImagesPanel() {
   const [model, setModel] = useState('');
   const [upscale, setUpscale] = useState(false);
   const [existingId, setExistingId] = useState('');
-  const [submitted, setSubmitted] = useState<string | null>(null);
-  const [taskId, setTaskId] = useState<number | null>(null);
+  const [submitted, setSubmitted] = useState<string | null>(()=>requestedTask() ? "" : null);
+  const [taskId, setTaskId] = useState<number | null>(requestedTask);
   const [task, setTask] = useState<ImageTask | null>(null);
-  const [watching, setWatching] = useState(false);
+  const [watching, setWatching] = useState(()=>requestedTask() !== null);
   const [readVersion, setReadVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -77,7 +92,8 @@ export function ImagesPanel() {
   const selection = { ...(backend ? {backend} : {}), ...(model ? {model} : {}), ...(upscale ? {upscale:2} : {}) };
   const edit = mode === 'edit' ? { ...(extras.length ? {references:[reference.trim(), ...extras]} : {reference:reference.trim()}), strength, ...selection }
     : Object.keys(selection).length ? selection : null;
-  const submittable = !!configuration?.configured && !!prompt.trim() && (edit === null || editValid(edit));
+  const configured = provider === "cloud" ? configuration?.cloud?.configured : configuration?.configured;
+  const submittable = !!configured && !!prompt.trim() && (provider === "cloud" || edit === null || editValid(edit));
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -86,32 +102,40 @@ export function ImagesPanel() {
     const current = epoch.current;
     setSubmitted(prompt); setBusy(true); setMessage('Submitting one proposal…');
     try {
-      const id = await proposeImage(prompt, edit, controller.signal);
+      const id = provider === "cloud" ? await proposeCloudImage(prompt, {size,quality}, controller.signal) : await proposeImage(prompt, edit, controller.signal);
       if (epoch.current !== current) return;
-      setTaskId(id); setWatching(true);
+      rememberTask(id); setTaskId(id); setWatching(true);
       window.dispatchEvent(new Event('nerva:image-proposed'));
     } catch (error) {
       if (epoch.current !== current) return;
       setMessage(error?.code === 'auth' ? errorText(error)
-        : error?.code === 'refused' ? 'Proposal refused. Review the local generation setup before making a new proposal.'
+        : error?.code === 'refused' ? 'Proposal refused. Review the selected generation setup before making a new proposal.'
           : 'Proposal response lost or unclear. Check the Decision Inbox before making another proposal; it may already exist.');
     } finally { if (epoch.current === current) { submitting.current = null; setBusy(false); } }
   };
   const reset = () => {
     epoch.current++; submitting.current?.abort(); submitting.current = null;
-    setSubmitted(null); setBusy(false); setTaskId(null); setTask(null);
+    rememberTask(null); setSubmitted(null); setBusy(false); setTaskId(null); setTask(null);
     setWatching(false); setImageUrl(null); setMessage('');
   };
   const check = () => { setWatching(true); setReadVersion(value => value + 1); };
-  return <Card title="IMAGES" sub="Local generation · owner instance" live={asLive(configuration)}>
+  return <Card title="IMAGES" sub="Image generation · owner instance" live={asLive(configuration)}>
     <p style={{ fontSize: 12 }}>Propose an image, approve its exact prompt in the Decision Inbox, then view the saved PNG here.</p>
     <div role="status" style={{ fontSize: 12 }}>
-      {configError || (configuration ? configuration.configured ? 'Configured · connection untested.'
-        : 'Local image generation is disabled or incomplete.' : 'Checking configuration…')}
+      {configError || (configuration ? configured ? 'Configured · connection untested.'
+        : provider === 'cloud' ? 'Cloud image generation is disabled or incomplete.' : 'Local image generation is disabled or incomplete.' : 'Checking configuration…')}
     </div>
     <button className="tool-btn" onClick={() => setConfigVersion(value => value + 1)}>Check configuration</button>
     {submitted === null ? <><form onSubmit={submit}>
-      {configuration?.edit && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 12 }}>
+      <label>Image provider <select aria-label="Image provider" value={provider} onChange={e=>setProvider(e.target.value as 'local'|'cloud')}>
+        <option value="local">Local ComfyUI</option>{configuration?.cloud && <option value="cloud">OpenAI cloud</option>}
+      </select></label>
+      {provider === 'cloud' && <div>
+        <p>OpenAI · gpt-image-1.5 · potentially paid after approval. One new PNG; no edits or upscale.</p>
+        <label>Cloud image size <select aria-label="Cloud image size" value={size} onChange={e=>setSize(e.target.value as CloudImageOptions['size'])}>{['1024x1024','1536x1024','1024x1536'].map(v=><option key={v}>{v}</option>)}</select></label>
+        <label>Cloud image quality <select aria-label="Cloud image quality" value={quality} onChange={e=>setQuality(e.target.value as CloudImageOptions['quality'])}>{['low','medium','high'].map(v=><option key={v}>{v}</option>)}</select></label>
+      </div>}
+      {provider === "local" && configuration?.edit && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 12 }}>
         <label style={{ marginRight: 12 }}>
           <input type="radio" name="image-mode" checked={mode === 'create'} onChange={() => setMode('create')} /> New image
         </label>
@@ -119,7 +143,7 @@ export function ImagesPanel() {
           <input type="radio" name="image-mode" checked={mode === 'edit'} onChange={() => setMode('edit')} /> Edit an image
         </label>
       </div>}
-      {!!configuration?.backends?.length && <div>
+      {provider === "local" && !!configuration?.backends?.length && <div>
         <label>Image backend <select aria-label="Image backend" value={backend} onChange={e => {setBackend(e.target.value); setModel('');}}>
           <option value="">Hub default</option>{configuration.backends.map(b => <option key={b.id} value={b.id}>{b.id} · local ComfyUI</option>)}
         </select></label>
@@ -127,12 +151,12 @@ export function ImagesPanel() {
           <option value="">Backend default</option>{configuration.backends.find(b => b.id === (backend || 'comfyui'))?.models.map(m => <option key={m} value={m}>{m}</option>)}
         </select></label>
       </div>}
-      {configuration?.upscale?.includes(2) && <label><input aria-label="2× bicubic upscale" type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} />2× bicubic upscale</label>}
+      {provider === "local" && configuration?.upscale?.includes(2) && <label><input aria-label="2× bicubic upscale" type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} />2× bicubic upscale</label>}
       <label style={{ display: 'block', marginTop: 10 }}>Image prompt
         <textarea aria-label="Image prompt" value={prompt} maxLength={4000} required style={{ ...taS, minHeight: 100 }}
           onChange={event => setPrompt(event.target.value)} />
       </label>
-      {mode === 'edit' ? <>
+      {provider === 'local' && mode === 'edit' ? <>
         <label style={{ display: 'block', fontSize: 12 }}>Reference artifact ID
           <input aria-label="Reference artifact ID" value={reference} required pattern="[a-f0-9]{32}"
             onChange={event => setReference(event.target.value.trim())} style={{ width: '100%' }} />
@@ -146,14 +170,14 @@ export function ImagesPanel() {
             onChange={event => setStrength(Number(event.target.value))} style={{ width: '100%' }} />
         </label>
         <div style={{ fontSize: 11, margin: '5px 0' }}>Keeps the reference's own size · 20 steps · random seed · local service only</div>
-      </> : <div style={{ fontSize: 11, margin: '5px 0' }}>512 × 512 · 20 steps · random seed · local service only</div>}
-      <button className="tool-btn" type="submit" disabled={!submittable}>{mode === 'edit' ? 'Propose edit' : 'Propose image'}</button>
+      </> : provider === 'local' ? <div style={{ fontSize: 11, margin: '5px 0' }}>512 × 512 · 20 steps · random seed · local service only</div> : null}
+      <button className="tool-btn" type="submit" disabled={!submittable}>{provider === 'local' && mode === 'edit' ? 'Propose edit' : 'Propose image'}</button>
     </form>
       <form style={{ marginTop: 12 }} onSubmit={event => {
         event.preventDefault();
         const id = Number(existingId);
         if (!/^\d+$/.test(existingId) || !Number.isSafeInteger(id) || id < 1) return;
-        setSubmitted(''); setTaskId(id); setWatching(true);
+        rememberTask(id); setSubmitted(''); setTaskId(id); setWatching(true);
       }}>
         <label style={{ fontSize: 12 }}>Existing image task ID
           <input aria-label="Existing image task ID" value={existingId} inputMode="numeric" pattern="[0-9]+" required
@@ -164,7 +188,7 @@ export function ImagesPanel() {
       {submitted && <p style={{ fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{submitted}</p>}
       {taskId && <p style={{ fontSize: 12 }}>Task {taskId}</p>}
       <div role="status" aria-live="polite" style={{ fontSize: 12, margin: '8px 0' }}>{message}</div>
-      <a href="#decision-inbox" style={{ color: 'var(--accent-light)' }}>Open Decision Inbox</a>
+      <a href={appUrl("/v2/console/decision-inbox")} style={{ color: 'var(--accent-light)' }}>Open Decision Inbox</a>
       {taskId && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
         <button className="tool-btn" onClick={check}>Check status</button>
         {watching && !imageUrl && <button className="tool-btn" onClick={() => {
@@ -178,11 +202,12 @@ export function ImagesPanel() {
           <a href={imageUrl} download={'nerva-image-' + task.artifact.id + '.png'} style={{ color: 'var(--accent-light)' }}>Download PNG</a>
           <span style={{ overflowWrap: 'anywhere' }}> · {task.artifact.id}</span>
         </figcaption>
-        {configuration?.edit && <button className="tool-btn" onClick={() => {
+        {provider === "local" && configuration?.edit && <button className="tool-btn" onClick={() => {
           const id = task.artifact!.id;
           reset(); setMode('edit'); setReference(id);
         }}>Edit this image</button>}
       </figure>}
+      <p><a href={appUrl("/v2/console/media-gallery")}>Open Media Gallery</a> · Catalog recording must be enabled for generated images to appear there.</p>
       <p style={{ fontSize: 11 }}>A new proposal is a separate request. It does not cancel an earlier task.</p>
       <button className="tool-btn" disabled={busy} onClick={reset}>New proposal</button>
     </>}

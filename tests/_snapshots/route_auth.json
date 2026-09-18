@@ -492,6 +492,7 @@
   "POST /memory/clear": "user",
   "POST /sandbox/execute": "user",
   "POST /sandbox/kernels/reset": "user",
+  "POST /sessions/continue": "admin",
   "POST /sessions/resume": "user",
   "POST /skills/import": "user",
   "POST /tts": "user",

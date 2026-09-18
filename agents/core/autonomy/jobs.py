@@ -60,7 +60,7 @@ MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 ACTION_TYPES = ("remind", "ask", "brief", "task")
 _ACTION_KEYS = {
-    "remind": {"type", "message", "channel", "urgent"},
+    "remind": {"type", "message", "channel", "urgent", "media_ids"},
     "ask": {"type", "prompt", "agent", "deliver", "urgent"},
     "brief": {"type", "kind", "urgent"},
     "task": {"type", "kind", "title", "payload", "risk_tier"},
@@ -294,6 +294,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
+    if options and "enabled_toolsets" in options and kind != "ask":
+        return ["enabled_toolsets requires a model-bearing ask action"]
     if options and ("model" in options or "provider" in options) and kind != "ask":
         return ["model/provider pins require an ask action"]
     if options and (options.get("script") or (options.get("monitor_script") or options.get("monitor_url"))) and kind != "ask":
@@ -301,6 +303,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if kind not in ACTION_TYPES:
         return [f"action.type must be one of {', '.join(ACTION_TYPES)}"]
     errors = [f"unknown action key {key!r}" for key in sorted(set(action) - _ACTION_KEYS[kind])]
+    from .jobs_media import validate_media
+    errors.extend(validate_media(action, options))
 
     def _text(key: str, *, required: bool) -> None:
         value = action.get(key)
@@ -343,9 +347,19 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
+    if 'enabled_toolsets' in options:
+        from ..job_toolsets import validate
+        validate(options['enabled_toolsets'])
+        if options.get('no_agent') is True:
+            raise ValueError('enabled_toolsets requires a model-bearing ask action')
+    if 'workdir' in options:
+        if not options.get('script') or options.get('no_agent') is not True or options.get('monitor_script') or options.get('monitor_url'):
+            raise ValueError('workdir requires script with no_agent true')
+        from .jobs_workdir import validate_workdir
+        options = {**options, 'workdir': validate_workdir(options['workdir'])}
     if 'monitor_url' in options:
         if any(options.get(key) for key in ('script', 'monitor_script', 'no_agent')):
             raise ValueError('URL monitor excludes other sources and no_agent')
@@ -866,6 +880,8 @@ class JobRunner:
         self._quiet = quiet
         from .jobs_scripts import ScriptRuntime
         self._script_runtime = ScriptRuntime(self)
+        from .jobs_media import ScheduledMedia
+        self.media = ScheduledMedia(self)
 
     def bind_scripts(self, *, submit, get, find):
         self._script_runtime.bind(submit=submit, get=get, find=find)
@@ -1015,8 +1031,17 @@ class JobRunner:
 
     # lifecycle --------------------------------------------------------------
 
+    def _toolset_names(self, options):
+        from ..job_toolsets import resolve
+        if options is not None and not isinstance(options, dict):
+            raise ValueError("options must be an object")
+        return resolve((options or {}).get('enabled_toolsets'), getattr(self._orch, 'tool_rpc', None))
+
     def create(self, **kwargs: Any) -> Job:
+        self._toolset_names(kwargs.get('options'))
+        binding = self.media.prepare(kwargs.get("action") or {}, kwargs.get("options"))
         job = self.store.create(**kwargs)
+        self.media.bind(job, binding)
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         self.register(job)
@@ -1031,7 +1056,17 @@ class JobRunner:
         unregistered instead — editing a paused job must leave it paused, and leaving a
         stale trigger armed for it would resume it by accident.
         """
+        current = self.store.get(job_id)
+        if current is None:
+            raise KeyError(job_id)
+        self._toolset_names(fields["options"] if fields.get("options") is not None else current.options)
+        binding = None
+        if fields.get("action") is not None:
+            options = fields["options"] if fields.get("options") is not None else current.options
+            binding = self.media.prepare(fields["action"], options)
         job = self.store.edit(job_id, **fields)
+        if fields.get("action") is not None:
+            self.media.bind(job, binding)
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         if job.runnable:
@@ -1052,7 +1087,10 @@ class JobRunner:
 
     def delete(self, job_id: str) -> bool:
         self.unregister(job_id)
-        return self.store.delete(job_id)
+        removed = self.store.delete(job_id)
+        if removed:
+            self.media.remove(job_id)
+        return removed
 
     # firing -----------------------------------------------------------------
 
@@ -1201,8 +1239,9 @@ class JobRunner:
         process = getattr(self._orch, "process", None)
         if not callable(process):
             raise RuntimeError("no model path is available for ask jobs")
+        from ..job_toolsets import toolset_scope
         from ..llm.job_selection import SelectionError, selection_scope
-        with selection_scope(job.options) as selection:
+        with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options) as selection:
             if selection is not None:
                 router = getattr(self._orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):
@@ -1293,7 +1332,7 @@ class JobRunner:
 
         if self.quiet_hours() or estop.check_paused("jobs-held-flush", logger):
             return 0
-        delivered = 0
+        delivered = await self.media.flush_held()
         for item in self.store.held():
             try:
                 fragment = await self._send_tracked(item.text, item.channel, item.job_id)
@@ -1313,6 +1352,8 @@ class JobRunner:
                        urgent: bool = False) -> str:
         """Send *text* to the owner, or hold it through quiet hours; returns a summary
         fragment, raises when it cannot send."""
+        if job is not None and "media_ids" in job.action:
+            return await self.media.deliver(job, text)
         if job is not None and "deliver" in job.options:
             targets = job.options["deliver"]
             if not targets:

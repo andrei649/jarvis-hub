@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Optional
 
+from .conversation_clock import CLOCK_UNSET
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .security import bind_guardrails
@@ -32,6 +33,7 @@ class _NullCtx:
 
     async def __aexit__(self, *exc):
         return False
+
 
 
 class Agent:
@@ -176,23 +178,25 @@ class Agent:
 
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
-                                usage_sink=None, session_id=None) -> str:
-        from .conversation_clock import parse_started_at, with_clock
+                                usage_sink=None, session_id=None, effective_window=None,
+                                clock_snapshot=CLOCK_UNSET) -> str:
+        from .conversation_clock import capture_clock, clock_scope, render_snapshot
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager
-        if sid and manager is not None and hasattr(manager, "session_started_at"):
-            manager.create_session_record(sid, agent_id=self.id)
-            born = parse_started_at(manager.session_started_at(sid))
-            system = with_clock(system, born.astimezone() if born is not None else None)
+        snapshot = capture_clock(manager, sid, agent_id=self.id) if clock_snapshot is CLOCK_UNSET else clock_snapshot
+        if snapshot is not None and snapshot.session_id != sid:
+            snapshot = None
+        system = render_snapshot(system, snapshot)
         sink = usage_sink if usage_sink is not None else current_observer()
-        with session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
+        with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
             return await self._generate_response(
                 backend, model, prompt, system, max_tokens, temperature,
                 on_token=on_token, wall_seconds=wall_seconds,
                 usage_sink=observer if sink is not None else None,
+                effective_window=effective_window,
             )
 
     async def _generate_response(
@@ -206,6 +210,7 @@ class Agent:
         on_token=None,
         wall_seconds: float | None = None,
         usage_sink=None,
+        effective_window=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -232,6 +237,8 @@ class Agent:
             budget = {} if wall_seconds is None else {"wall_seconds": wall_seconds}
             if usage_sink is not None:
                 budget["usage_sink"] = usage_sink
+            if effective_window is not None:
+                budget["effective_window"] = effective_window
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,
@@ -275,17 +282,30 @@ class Agent:
                     await emitted
             return response
 
-    async def process(self, text: str, context: dict) -> str:
+    async def process(self, text: str, context: dict, *, prepared=None) -> str:
         system_prompt = self.soul.get("content", "")
         model = self.default_model()
 
         if not self.llm_router:
             return f"[{self.name} no LLM backend]"
 
-        prompt = self.build_prompt(text, context)
+        if prepared is not None and getattr(prepared, "input_text", None) is not None:
+            from .route_compaction import RouteRefused
+            if text != prepared.input_text:
+                raise RouteRefused()
+            prompt = prepared.prompt
+        else:
+            prompt = self.build_prompt(text, context)
 
         try:
-            res = self.llm_router.select_backend(self.id, prompt)
+            if prepared is not None:
+                from .route_compaction import PreparedRoute, RouteRefused
+                if not isinstance(prepared, PreparedRoute):
+                    raise RouteRefused()
+                prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
+                res = (prepared.backend, prepared.model, prepared.route)
+            else:
+                res = self.llm_router.select_backend(self.id, prompt)
         except LocalBackendUnavailableError:
             return LOCAL_SELECTION_UNAVAILABLE_REPLY
         route_name = ""
@@ -295,6 +315,8 @@ class Agent:
                 model = routed_model
         else:
             backend, _ = res
+        from .llm.effective_window import resolve_effective_window
+        effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
         backend = bind_guardrails(self.guardrails, backend)
 
         if self._checkpoint_manager:
@@ -310,10 +332,13 @@ class Agent:
         await self._ensure_resident(route_name, model)
         residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
-        max_tokens, temperature = self._gen_params(route_name)
+        max_tokens, temperature = ((prepared.max_tokens, prepared.temperature) if prepared is not None
+                                   else self._gen_params(route_name))
         start = time.monotonic()
         try:
             async with residency:
+                if prepared is not None:
+                    prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
                 response = await self.generate_response(
                     backend=backend,
                     model=model,
@@ -323,7 +348,9 @@ class Agent:
                     temperature=temperature,
                     # The orchestrator's per-agent ceiling rides in on the context
                     # (Hermes absorption 5c); absent, the tool loop keeps its default.
+                    effective_window=effective_window,
                     session_id=context.get("session_id"),
+                    clock_snapshot=context.get("_clock_snapshot", CLOCK_UNSET),
                     wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
                 )
             latency = time.monotonic() - start
