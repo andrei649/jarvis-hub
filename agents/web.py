@@ -12,7 +12,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from agents.core.env_config import env_flag, env_int, env_json_object, env_list, env_str
 from agents.core.cors_policy import normalize_cors_origins
@@ -322,13 +322,13 @@ gateway: Gateway = None
 
 
 @asynccontextmanager
-async def _turn_lease(orchestrator):
+async def _turn_lease(orchestrator, session_id=None):
     """The session's turn lease (Hermes absorption 0.5) — a no-op for a stand-in without one."""
     lease = getattr(orchestrator, "turn_lease", None)
     if lease is None:
         yield True
         return
-    async with lease() as acquired:
+    async with (lease(session_id) if session_id is not None else lease()) as acquired:
         yield acquired
 
 
@@ -909,15 +909,21 @@ def _enrich_agents() -> list[dict]:
 
 
 class ChatRequest(BaseModel):
-    # `extra="forbid"` so an unknown key is a 422, not a silent no-op. /chat has ONE
-    # global session; a client sending `session_id` (as the 2026-07-27 QA run did) was
-    # having it dropped without a word and believed its turns were scoped when they were
-    # all appending to the same transcript. Failing loudly is the honest behaviour, and
-    # it is how a caller discovers that per-session chat does not exist yet.
+    # Unknown fields still fail; explicit sessions are validated and hydrated.
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(..., min_length=1, max_length=4096)
     agent: str = "jarvis"
+    reasoning: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None = None
+    session_id: str | None = None
+
+    @field_validator("session_id")
+    @classmethod
+    def _valid_session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if value is not None and not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
 
     @field_validator("message")
     @classmethod
@@ -1049,19 +1055,30 @@ async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
     try:
+        if req.session_id is not None:
+            from agents.core.session_continuation import ContinuationRefused, prepare_session
+            try:
+                await prepare_session(orch, req.session_id)
+            except ContinuationRefused as exc:
+                return JSONResponse({"error": exc.reason}, status_code=exc.status)
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
         if notes is not None:
-            prefix = notes.context_for(getattr(orch, "session_id", "web"))
+            prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
+        from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(_web_principal(request))
         try:
-            async with _turn_lease(orch) as acquired:
-                if not acquired:
-                    return ChatResponse(reply=TURN_BUSY_REPLY)
-                reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None)
+            with reasoning_scope(req.reasoning):
+                async with _turn_lease(orch, req.session_id) as acquired:
+                    if not acquired:
+                        return ChatResponse(reply=TURN_BUSY_REPLY)
+                    if req.session_id is not None:
+                        await prepare_session(orch, req.session_id)
+                    reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
+                                                    **({"session_id": req.session_id} if req.session_id is not None else {}))
         finally:
             reset_turn_principal(principal_token)
         return ChatResponse(reply=reply)
@@ -1072,7 +1089,7 @@ async def chat(req: ChatRequest, request: Request):
         return ChatResponse(reply="Internal error.")
 
 
-async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None):
+async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1090,15 +1107,21 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     async def runner():
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later.
+        from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(principal) if principal is not None else None
         try:
-            async with _turn_lease(orch) as acquired:
-                if not acquired:
-                    await queue.put(("end", TURN_BUSY_REPLY))
-                    return
-                full = await orch.handle_input_stream(
-                    message, channel="web", on_token=on_token, agent_override=agent_override,
-                )
+            with reasoning_scope(reasoning):
+                async with _turn_lease(orch, session_id) as acquired:
+                    if not acquired:
+                        await queue.put(("end", TURN_BUSY_REPLY))
+                        return
+                    if session_id is not None:
+                        from agents.core.session_continuation import prepare_session
+                        await prepare_session(orch, session_id)
+                    full = await orch.handle_input_stream(
+                        message, channel="web", on_token=on_token, agent_override=agent_override,
+                        **({"session_id": session_id} if session_id is not None else {}),
+                    )
             await queue.put(("end", full))
         except asyncio.CancelledError:
             raise  # client disconnected → propagate so the turn actually stops
@@ -1144,6 +1167,12 @@ async def chat_stream(req: ChatRequest, request: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
 
+    if req.session_id is not None:
+        from agents.core.session_continuation import ContinuationRefused, prepare_session
+        try:
+            await prepare_session(orch, req.session_id)
+        except ContinuationRefused as exc:
+            return JSONResponse({"error": exc.reason}, status_code=exc.status)
     agent_override = req.agent if req.agent != "jarvis" else None
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
@@ -1151,11 +1180,11 @@ async def chat_stream(req: ChatRequest, request: Request):
     message = req.message
     notes = getattr(orch, "notes", None)
     if notes is not None:
-        prefix = notes.context_for(getattr(orch, "session_id", "web"))
+        prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
         if prefix:
             message = prefix + message
     return StreamingResponse(
-        _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request)),
+        _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

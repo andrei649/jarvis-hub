@@ -196,13 +196,14 @@ def resolve_tools(
 ) -> tuple[list[Mapping[str, Any]], list[str]]:
     """Split *tools* (ToolRPC metadata rows) into the ones this posture offers and the
     names it withholds. The agent's own patterns can only narrow the posture."""
+    from .job_toolsets import allows
     guest_names = guest_tool_names(settings)
     patterns = _clean_patterns(agent_patterns)
     offered: list[Mapping[str, Any]] = []
     withheld: list[str] = []
     for tool in tools:
         name = str(tool.get("name") or "")
-        allowed = _posture_allows(posture, tool, settings, guest_names)
+        allowed = allows(name) and _posture_allows(posture, tool, settings, guest_names)
         if allowed and patterns is not None:
             allowed = any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
         if allowed:

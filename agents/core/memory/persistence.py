@@ -35,7 +35,7 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 logger = logging.getLogger("jarvis.persistence")
 
 
-def save_memory(session_id: str, turns: list[dict]):
+def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None = None):
     # AUD-5: never let an id that isn't an inert identifier reach the path — a
     # second line of defense behind the router validation, so any internal caller
     # is protected too.
@@ -48,27 +48,32 @@ def save_memory(session_id: str, turns: list[dict]):
         # tmp+replace, not open(path, "w"): the truncate-then-stream form left a
         # half-written snapshot on disk whenever the dump raised (or the process
         # died) mid-turn, and load_memory() reads that as an empty conversation.
-        atomic_write_json(path, {"session_id": session_id, "turns": turns})
+        atomic_write_json(path, {"session_id": session_id, "turns": turns,
+                                 **({"instance_id": instance_id} if instance_id else {})})
         logger.info(f"Memory saved: {path} ({len(turns)} turns)")
     except Exception as e:
         logger.warning(f"Failed to save memory: {e}")
 
 
-def load_memory(session_id: str) -> list[dict]:
+def load_memory_snapshot(session_id: str) -> dict:
     if not is_valid_session_id(session_id):
         logger.warning("refusing to load memory for invalid session_id")
-        return []
+        return {}
     path = _memory_dir() / f"{session_id}.json"
     if not path.exists():
-        return []
+        return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         logger.info(f"Memory loaded: {path} ({len(data.get('turns', []))} turns)")
-        return data.get("turns", [])
+        return data if isinstance(data, dict) else {}
     except Exception as e:
         logger.warning(f"Failed to load memory: {e}")
-        return []
+        return {}
+
+
+def load_memory(session_id: str) -> list[dict]:
+    return load_memory_snapshot(session_id).get("turns", [])
 
 
 def list_sessions() -> list[str]:

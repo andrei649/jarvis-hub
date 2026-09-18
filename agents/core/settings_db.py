@@ -135,7 +135,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="reasoning_effort", value="",                    label="Cloud reasoning effort (empty = ask for nothing; clamped to what each model accepts)", kind="select", opts=["", *REASONING_EFFORT_LADDER]),
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
-    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible"]),
+    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "openai-responses", "xai"]),
+    dict(category="llm", key="responses_cache_retention", value="in_memory", label="OpenAI Responses GPT-4.1 cache retention", kind="select", opts=["in_memory", "24h"]),
     dict(category="llm", key="compatible_model", value="", label="Compatible provider model ID", kind="text"),
     dict(category="llm", key="compatible_prompt_cache_key", value=False, label="Compatible endpoint explicitly supports prompt_cache_key", kind="toggle"),
     dict(category="llm", key="compatible_reasoning_enabled", value=False, label="Compatible endpoint explicitly supports reasoning effort", kind="toggle"),
@@ -221,6 +222,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # missing keys to False, so this row changes nothing at runtime — it just makes
     # the existing gate visible and toggleable.
     dict(category="cognition", key="review_enabled",      value=False, label="Per-turn background review (H20 learning loop)", kind="toggle"),
+    # Owner-authored media reminders: one deadline for the complete delivery.
+    dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
@@ -479,6 +482,8 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
+        return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "artifact_ttl_days" and (type(value) is not int or not 0 <= value <= 36500):
         return f"{key}: expected an integer between 0 and 36500 days"
     if kind == "toggle":

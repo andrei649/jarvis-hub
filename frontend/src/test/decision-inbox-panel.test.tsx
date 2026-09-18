@@ -159,3 +159,28 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     expect(screen.queryByText(/Changes require a fresh proposal/)).toBeNull();
   });
 });
+
+it('shows exact paid cloud proposal and immutable task return link',async()=>{
+  window.__NERVA_BASE_PATH__='/nerva';
+  try {
+    mockFetch({tasks:[{id:17,kind:'plugin.egress',title:'Paid image',payload:{plugin:'cloud-image',method:'POST',url:'https://api.openai.com/v1/images/generations',image:{body:{model:'gpt-image-1.5',prompt:'exact cloud prompt',size:'1536x1024',quality:'high'}}}}]});
+    render(<DecisionInboxPanel/>);await screen.findByText('exact cloud prompt');
+    expect(screen.getByText(/OpenAI.*gpt-image-1.5.*1536x1024.*high/)).toBeTruthy();
+    expect(screen.queryByTitle('edit')).toBeNull();expect(screen.queryByTitle('dry-run preview')).toBeNull();
+    expect(screen.getByRole('link',{name:'Watch image task'}).getAttribute('href')).toBe('/nerva/v2/console/images?image_task=17');
+    expect(screen.getByTitle('accept')).toBeTruthy();expect(screen.getByTitle('reject')).toBeTruthy();expect(screen.getByTitle('defer')).toBeTruthy();
+  } finally {window.__NERVA_BASE_PATH__='';}
+});
+
+it('keeps a visible image return link after accepted task leaves inbox',async()=>{
+  const task={id:17,kind:'plugin.egress',title:'Paid image',payload:{plugin:'cloud-image',method:'POST',url:'https://api.openai.com/v1/images/generations',image:{body:{prompt:'return me',model:'gpt-image-1.5',size:'1024x1024',quality:'low'}}}};
+  let decided=false;
+  global.fetch=vi.fn().mockImplementation(async(url,options)=>{
+    if(options?.method==='POST') decided=true;
+    return {ok:true,status:200,json:async()=>({tasks:decided?[]:[task]})};
+  });
+  render(<DecisionInboxPanel/>);await screen.findByText('return me');
+  fireEvent.click(screen.getByTitle('accept'));
+  await waitFor(()=>expect(screen.queryByText('return me')).toBeNull());
+  expect(screen.getByRole('link',{name:'Watch decided image task'}).getAttribute('href')).toBe('/v2/console/images?image_task=17');
+});

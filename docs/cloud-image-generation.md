@@ -1,6 +1,6 @@
 # Approved cloud image generation
 
-This API increment supports one OpenAI `gpt-image-1.5` image per fresh approval. The existing Images HUD still requests local generation; cloud authoring in that UI and additional providers remain outside this increment.
+Images supports one OpenAI `gpt-image-1.5` image per fresh approval. Local ComfyUI remains the default. Select OpenAI cloud to choose a finite size and quality, submit the exact prompt, and open the Decision Inbox to approve, reject or defer. The inbox shows the paid operation and immutable prompt/options; changes require a new proposal. Its Watch image task link returns to the saved task without submitting again. Additional providers remain outside this increment.
 
 Configure the existing `OPENAI_API_KEY` through the normal server environment, enable the action kernel with enforced signed task mediation, and use a profile with heavy features enabled. Missing configuration fails closed. This implementation does not provision credentials or make an automatic test request.
 
@@ -16,4 +16,4 @@ With `JARVIS_MEDIA_CATALOG=1`, completion adds one stable cloud catalog record, 
 
 A crash, cancellation, timeout or uncertain provider response after dispatch is not automatically replayed: the durable attempt marker preserves uncertainty. Queue completion alone is not proof of a usable image. A new generation requires a new explicit request and approval; do not delete attempt records to retry an ambiguous submission. Error responses omit provider exception text and response bodies.
 
-Verification used an injected HTTP transport and isolated test storage, including actual guarded routes, signed worker approval, generated-artifact retrieval and ZIP export. No live or billed provider call was made. H515 remains partial: broader image controls/providers and cloud HUD authoring are not delivered here.
+Verification used an injected HTTP transport and isolated test storage, including actual guarded routes, signed worker approval, generated-artifact retrieval and ZIP export. No live or billed provider call was made. H515 remains partial: broader image controls and providers are not delivered here. The cloud HUD uses the same guarded API and artifact reader; watching stops observation only. Gallery recording remains opt-in.

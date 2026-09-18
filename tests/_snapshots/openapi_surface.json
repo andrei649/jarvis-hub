@@ -488,6 +488,7 @@
   "POST /memory/clear": "clear_memory_memory_clear_post",
   "POST /sandbox/execute": "sandbox_execute_sandbox_execute_post",
   "POST /sandbox/kernels/reset": "sandbox_kernel_reset_sandbox_kernels_reset_post",
+  "POST /sessions/continue": "continue_session_sessions_continue_post",
   "POST /sessions/resume": "resume_session_sessions_resume_post",
   "POST /skills/import": "skills_import_skills_import_post",
   "POST /tts": "tts_endpoint_tts_post",

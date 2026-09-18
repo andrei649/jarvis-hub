@@ -92,8 +92,8 @@ def clamp(level: str, supported: tuple[str, ...] | list[str]) -> str | None:
 
     This is the nearest-**weaker** rule: a wire that tops out at ``high`` answers
     a request for ``max`` with ``high``, never the other way round. Returns None
-    when the wire supports nothing weak enough (the caller decides whether to
-    floor or to send nothing — see ``resolve``).
+    when the wire supports nothing weak enough (``resolve`` distinguishes this
+    refusal from an unsupported vocabulary).
     """
     ceiling = rank(level)
     best: str | None = None
@@ -106,22 +106,25 @@ def clamp(level: str, supported: tuple[str, ...] | list[str]) -> str | None:
     return best
 
 
-def resolve(level: str, supported: tuple[str, ...] | list[str]) -> tuple[str | None, str]:
-    """Clamp *level* into *supported*, flooring rather than falling silent.
+class ReasoningEffortRefused(ValueError):
+    """The requested ceiling cannot be expressed safely; never retry as default."""
 
-    Returns ``(effort, reason)``. The floor case matters: a wire whose weakest
-    rung is ``low`` cannot honor ``minimal``, and answering with *nothing* would
-    hand the request the wire's own default — ``high`` on the current Anthropic
-    models, i.e. the opposite of what was asked. Flooring to the weakest rung is
-    the closest honest answer and is never stronger than that default.
+    def __init__(self):
+        super().__init__("Requested reasoning effort cannot be honored by this model; choose a supported level or model.")
+
+
+def resolve(level: str, supported: tuple[str, ...] | list[str]) -> tuple[str | None, str]:
+    """Nearest weaker rung, with an explicit refusal reason below the minimum.
+
+    Transports must refuse below-minimum requests, never omit the parameter and
+    silently restore a potentially stronger provider default.
     """
     if not supported:
         return None, "unsupported"
     exact = clamp(level, supported)
     if exact is not None:
         return exact, "exact" if exact == level else "clamped"
-    floor = min(supported, key=lambda candidate: _RANK.get(candidate, len(LADDER)))
-    return floor, "floored"
+    return None, "below-minimum"
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +147,15 @@ class WireCapability:
     disable_max: str | None = None
     # False when temperature/top_p/top_k return a 400 on this family.
     accepts_sampling: bool = True
+    # Product rungs for a budget-only wire; never an output_config.effort schema.
+    # None uses the existing built-in budget map; () explicitly suppresses controls.
+    budget_efforts: tuple[str, ...] | None = None
+
+    @property
+    def reasoning_levels(self) -> tuple[str, ...]:
+        if self.thinking == "budget":
+            return tuple(_BUDGETS) if self.budget_efforts is None else self.budget_efforts
+        return self.efforts
 
     def strongest(self) -> str | None:
         if not self.efforts:
@@ -206,7 +218,8 @@ _CAP_FOUR_FIVE = WireCapability(
     thinking="none",
     accepts_sampling=True,
 )
-# Everything older that thinks: no effort vocabulary, a manual token budget.
+# Older thinking families: no effort wire field; existing product rungs map
+# to a manual token budget through reasoning_levels, never output_config.effort.
 _CAP_BUDGET = WireCapability(efforts=(), thinking="budget", accepts_sampling=True)
 
 _ANTHROPIC_TABLE: tuple[tuple[str, WireCapability], ...] = (
@@ -314,6 +327,8 @@ def anthropic_capability(
         return base
     for pattern in sorted(overrides, key=len, reverse=True):
         if pattern and (key.startswith(pattern) or pattern in key):
+            if base.thinking == "budget":
+                return replace(base, budget_efforts=tuple(overrides[pattern]))
             return replace(base, efforts=tuple(overrides[pattern]))
     return base
 
@@ -343,7 +358,7 @@ def plan(
     """Turn a request for *requested* into the parameters this wire accepts.
 
     The three interesting outcomes: nothing asked (only the removals the wire
-    demands survive), "none" asked (say it where it has to be said, floor where
+    demands survive), "none" asked (disable where supported, refuse where
     it cannot), and a level asked (clamped, with the matching thinking block).
     """
     drop = not capability.accepts_sampling
@@ -358,6 +373,8 @@ def plan(
                 # Disabling is only accepted alongside a low enough effort, so the
                 # two have to be decided together or the pair is a 400.
                 effort, why = resolve(capability.disable_max, capability.efforts)
+                if effort is None:
+                    raise ReasoningEffortRefused()
                 return EffortPlan(
                     effort=effort,
                     thinking={"type": "disabled"},
@@ -366,26 +383,20 @@ def plan(
                     reason="disabled",
                     notes=(why,),
                 )
-            # Thinking cannot be turned off here; the weakest rung is as close as
-            # this wire gets to "don't think".
-            effort, why = resolve("minimal", capability.efforts)
-            return EffortPlan(
-                effort=effort,
-                thinking={"type": "adaptive"},
-                drop_sampling=drop,
-                requested=requested,
-                reason="floored-instead-of-disabled",
-                notes=(why,),
-            )
+            # A mandatory thinking mode cannot honor an explicit off request.
+            raise ReasoningEffortRefused()
         # Everywhere else, omitting the thinking block already means off.
         return EffortPlan(drop_sampling=drop, requested=requested, reason="omitted")
 
-    effort, why = resolve(requested, capability.efforts)
+    level, why = resolve(requested, capability.reasoning_levels)
+    effort = None if capability.thinking == "budget" else level
+    if why == "below-minimum":
+        raise ReasoningEffortRefused()
     thinking: dict | None = None
     if capability.thinking == "adaptive":
         thinking = {"type": "adaptive"}
     elif capability.thinking == "budget":
-        budget = _budget_for(requested, max_tokens)
+        budget = _budget_for(level, max_tokens)
         if budget is not None:
             thinking = {"type": "enabled", "budget_tokens": budget}
             # A manual thinking budget and a custom temperature do not travel
@@ -443,8 +454,23 @@ def apply_anthropic(
     # operator correction) therefore reaches the wire without a release, and a
     # model nobody has declared stays exactly as silent as it was.
     vocabulary = supported_reasoning_efforts("anthropic", model, overrides=overrides)
-    if vocabulary is not None and vocabulary != capability.efforts:
-        capability = replace(capability, efforts=vocabulary)
+    if vocabulary == ():
+        # Explicitly unsupported means NO reasoning parameters, not merely no
+        # effort field. Preserve independent output formatting and model wire rules.
+        payload.pop("thinking", None)
+        output = payload.get("output_config")
+        if isinstance(output, dict):
+            output.pop("effort", None)
+            if not output:
+                payload.pop("output_config", None)
+        if not capability.accepts_sampling:
+            for key in _SAMPLING_KEYS:
+                payload.pop(key, None)
+        return EffortPlan(drop_sampling=not capability.accepts_sampling,
+                          requested=normalize(requested), reason="unsupported")
+    if vocabulary is not None and vocabulary != capability.reasoning_levels:
+        capability = (replace(capability, budget_efforts=vocabulary)
+                      if capability.thinking == "budget" else replace(capability, efforts=vocabulary))
     decided = plan(
         capability,
         normalize(requested),
@@ -473,8 +499,8 @@ def apply_anthropic(
 #                 so the transport keeps whatever defaults it already had. This
 #                 is also the answer while a live catalog is still cold — the
 #                 hot path never blocks on I/O to find out.
-#   ()            declared empty. This model accepts no effort level at all, so
-#                 the effort field is omitted (and stripped if a caller set it).
+#   ()            declared empty. Omit all reasoning parameters (including
+#                 previously supplied reasoning controls on a known wire).
 #   ("low", ...)  declared vocabulary, weakest first. Clamp into it.
 #
 # Collapsing the first two is the bug this row exists to prevent: "we do not
@@ -482,9 +508,9 @@ def apply_anthropic(
 # one of them is safe to guess. Nerva shipped exactly that collapse — every
 # non-Anthropic profile carried an empty tuple meaning "undeclared".
 #
-# The registry governs the *effort vocabulary* only. Whether a model takes a
-# thinking block, and in which shape, stays with ``WireCapability``: a family can
-# reject every effort level and still accept a manual thinking budget.
+# The registry governs product reasoning levels; WireCapability owns their wire
+# representation. A budget-only family advertises its mapped product rungs while
+# keeping its effort-field vocabulary empty. Explicit registry () overrides both.
 
 _VOCAB_CACHE: dict[tuple[str, str], tuple[str, ...]] = {}
 
@@ -562,7 +588,7 @@ def _builtin_vocab(
     if capability is UNSUPPORTED:
         # A model id this build has never seen. Undeclared, not "rejects".
         return None
-    return capability.efforts
+    return capability.reasoning_levels
 
 
 def supported_reasoning_efforts(
@@ -573,13 +599,19 @@ def supported_reasoning_efforts(
 ) -> tuple[str, ...] | None:
     """The tri-state answer for one model. Never blocks; never guesses.
 
-    A declaration always wins over the built-in table: that is how a family whose
-    contract moves under us gets corrected without a release.
+    Catalog declarations override built-ins/nonempty constructor vocabularies.
+    An explicit empty constructor declaration is a no-controls boundary and wins
+    over a nonempty catalog entry; a cached empty likewise suppresses controls.
     """
+    configured = _builtin_vocab(str(provider_id or "").strip().lower(), model, overrides)
+    # A constructor's explicit no-controls declaration cannot be widened by a
+    # process catalog entry. Nonempty catalog corrections otherwise retain priority.
+    if configured == ():
+        return ()
     declared = _VOCAB_CACHE.get(_vocab_key(provider_id, model))
     if declared is not None:
         return declared
-    return _builtin_vocab(str(provider_id or "").strip().lower(), model, overrides)
+    return configured
 
 
 def clamp_reasoning_effort(
@@ -592,7 +624,7 @@ def clamp_reasoning_effort(
     """``(effort_to_send, reason)`` for one model — the canonical clamp, once.
 
     ``reason`` is one of ``undeclared``, ``unsupported``, ``unreadable``,
-    ``exact``, ``clamped`` or ``floored``. The two None-effort reasons are kept
+    ``exact``, ``clamped`` or ``below-minimum`` (which requires local refusal). The two None-effort reasons are kept
     apart on purpose: ``undeclared`` means the transport should leave its own
     defaults alone, ``unsupported`` means the field must be omitted.
 
@@ -612,8 +644,8 @@ def clamp_vocabulary(vocabulary: tuple[str, ...] | None, level: object) -> tuple
     if not vocabulary:
         return None, "unsupported"
     wanted = normalize(level)
-    if wanted is None or wanted == "none":
-        return None, "unreadable" if wanted is None else "unsupported"
+    if wanted is None:
+        return None, "unreadable"
     return resolve(wanted, vocabulary)
 
 def vendor_efforts(vendor: str) -> tuple[str, ...]:
@@ -627,12 +659,13 @@ def vendor_efforts(vendor: str) -> tuple[str, ...]:
         return ()
     union: set[str] = set()
     for _pattern, capability in _ANTHROPIC_TABLE:
-        union.update(capability.efforts)
+        union.update(capability.reasoning_levels)
     return tuple(level for level in LADDER if level in union)
 
 
 __all__ = [
     "LADDER",
+    "ReasoningEffortRefused",
     "EffortPlan",
     "UNSUPPORTED",
     "WireCapability",

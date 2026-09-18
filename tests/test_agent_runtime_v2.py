@@ -1690,6 +1690,8 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
     call = dict(seam_calls[0])
     meter = call.pop("usage_sink")
     assert callable(meter)
+    window = call.pop("effective_window")
+    assert window.valid and window.tokens is None
     # H671: the system prompt now carries the conversation's clock, whose second
     # line only exists once the rebuild day differs from the birth day — so the
     # exact text is date-dependent and pinning it verbatim would make this test
@@ -1705,6 +1707,7 @@ async def test_streamed_orchestrator_uses_agent_generation_seam_and_persists_onc
         "backend": backend,
         "model": "selected-model",
         "prompt": "User said: prepared turn\nRespond as Jarvis.",
+        "clock_snapshot": None,
         "wall_seconds": 120.0,
         "max_tokens": 777,
         "temperature": 0.15,
@@ -1870,7 +1873,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._secrets is secret_broker
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
-    from agents.core.image_generation_runtime import INPUT_SCHEMA
+    from agents.core.image_tool_dispatcher import INPUT_SCHEMA
     assert orch.tool_rpc.tools() == [
         {
             "name": "desktop_plan",
@@ -1937,7 +1940,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
         {
             "name": "image_generate",
             "gated": True,
-            "description": "Propose one local image using the owner's configured ComfyUI checkpoint; approval required.",
+            "description": "Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
             "input_schema": INPUT_SCHEMA,
             "capability_id": "tool:image_generate",
         },

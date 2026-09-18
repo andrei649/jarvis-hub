@@ -343,6 +343,23 @@ class HybridRouter(LLMRouter):
         self._compatible_backend = None
         self._compatible_model = self._admin_setting("compatible_model", "")
         provider_id = self._admin_setting("compatible_provider", "")
+        if provider_id == "xai" and self._compatible_model:
+            from .xai import XAIBackend
+            key = env_str("XAI_API_KEY", "")
+            if key:
+                self._compatible_backend = XAIBackend(
+                    key, reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                    effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
+                )
+                self._cloud_available = True
+        if provider_id == "openai-responses" and self._compatible_model:
+            from .responses import ResponsesBackend
+            key = env_str("OPENAI_API_KEY", "")
+            if key:
+                self._compatible_backend = ResponsesBackend(
+                    key, retention=self._admin_setting("responses_cache_retention", "in_memory"),
+                )
+                self._cloud_available = True
         if provider_id in {"openrouter", "openai-compatible"} and self._compatible_model:
             from dataclasses import replace
 

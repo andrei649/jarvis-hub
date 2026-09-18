@@ -38,3 +38,36 @@ test('bookmarks, reload, history, focus and lazy chunks on the served HUD', asyn
   expect(errors).toEqual([]);
   expect(writes).toEqual([]);
 });
+
+for (const width of [1101, 1280, 1440]) {
+  test(`HUD grid fits ${width}px without clipping its context column`, async ({page, baseURL}, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'Explicit desktop grid widths');
+    await page.setViewportSize({width, height:900});
+    await page.route('**/*', route => {
+      const url = new URL(route.request().url());
+      return url.origin === new URL(baseURL!).origin && url.pathname.startsWith('/v2/')
+        ? route.continue() : route.fulfill({json:{}});
+    });
+    for (const path of ['/v2/cockpit', '/v2/console/media-gallery']) {
+      await page.goto(path);
+      await expect(page.locator('.workzone.cockpit')).toBeVisible();
+      if (path.includes('/console/')) await expect(page).toHaveTitle(/Media Gallery.*Console/);
+      else {
+        const bar = page.locator('.workzone.cockpit .inputbar');
+        const bounds = await bar.boundingBox();
+        for (const control of await bar.locator('button,input').all()) {
+          const box = await control.boundingBox();
+          expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+        }
+        expect((await bar.locator('input').boundingBox())!.width).toBeGreaterThanOrEqual(100);
+        await page.screenshot({path:testInfo.outputPath('cockpit-width.png')});
+      }
+      await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      const geometry = await page.locator('.workzone.cockpit .scrollcol').boundingBox();
+      expect(geometry).not.toBeNull();
+      expect(geometry!.x + geometry!.width).toBeLessThanOrEqual(width);
+      expect(geometry!.width).toBeGreaterThan(300);
+    }
+    await page.screenshot({path:testInfo.outputPath('grid-width.png')});
+  });
+}

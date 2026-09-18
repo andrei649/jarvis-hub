@@ -7,7 +7,7 @@ from typing import Optional
 
 from agents.core.paths import data_root
 
-from .persistence import list_sessions, load_memory, save_memory
+from .persistence import list_sessions, load_memory_snapshot, save_memory
 
 logger = logging.getLogger("jarvis.memory.conversation")
 
@@ -56,6 +56,7 @@ class Turn:
 class ConversationMemory:
     def __init__(self, max_turns: int = 100, persist: bool = True):
         self.sessions: dict[str, list[Turn]] = {}
+        self.instances: dict[str, str] = {}
         self.max_turns = max_turns
         self.persist = persist
         self.current_session_id: Optional[str] = None
@@ -69,11 +70,15 @@ class ConversationMemory:
         sessions = list_sessions()
         if sessions:
             sid = sessions[0]
-            turns_data = load_memory(sid)
+            snapshot = load_memory_snapshot(sid)
+            turns_data = snapshot.get("turns", [])
+            if snapshot.get("instance_id"):
+                self.instances[sid] = snapshot["instance_id"]
             if turns_data:
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0))
+                    turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[sid].append(turn)
                 self.current_session_id = sid
                 logger.info(f"Restored session {sid} ({len(turns_data)} turns)")
@@ -95,13 +100,17 @@ class ConversationMemory:
         """
         async with self._lock:
             if session_id not in self.sessions:
-                turns_data = load_memory(session_id)
+                snapshot = load_memory_snapshot(session_id)
+                turns_data = snapshot.get("turns", [])
+                if snapshot.get("instance_id"):
+                    self.instances[session_id] = snapshot["instance_id"]
                 if not turns_data:
                     return False
-                self.sessions[session_id] = [
-                    Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0))
-                    for t in turns_data
-                ]
+                self.sessions[session_id] = []
+                for t in turns_data:
+                    turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0))
+                    turn.timestamp = t.get("timestamp") or turn.timestamp
+                    self.sessions[session_id].append(turn)
                 logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
             self.current_session_id = session_id
             return True
@@ -123,15 +132,18 @@ class ConversationMemory:
                 # the actual writes in a worker thread so streaming is never blocked.
                 turn_dict = turn.to_dict()
                 turns_data = [t.to_dict() for t in self.sessions[session_id]]
-                await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data)
+                await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data, self.instances.get(session_id))
 
-    def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict]):
+    def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict], instance_id: str | None = None):
         """Blocking persistence, run off the event loop (see add_turn). Per-turn
         durability is unchanged: the snapshot is still written every turn — only the
         thread it runs on differs."""
         self._append_log_dict(session_id, turn_dict)
         try:
-            save_memory(session_id, turns_data)
+            if instance_id:
+                save_memory(session_id, turns_data, instance_id=instance_id)
+            else:
+                save_memory(session_id, turns_data)
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
@@ -139,7 +151,11 @@ class ConversationMemory:
         """Full JSON save of the session (kept for direct/synchronous callers)."""
         try:
             turns_data = [t.to_dict() for t in self.sessions.get(session_id, [])]
-            save_memory(session_id, turns_data)
+            instance_id = self.instances.get(session_id)
+            if instance_id:
+                save_memory(session_id, turns_data, instance_id=instance_id)
+            else:
+                save_memory(session_id, turns_data)
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
@@ -164,8 +180,10 @@ class ConversationMemory:
         async with self._lock:
             if session_id:
                 self.sessions.pop(session_id, None)
+                self.instances.pop(session_id, None)
             else:
                 self.sessions.clear()
+                self.instances.clear()
 
     def _append_log(self, session_id: str, turn: Turn):
         self._append_log_dict(session_id, turn.to_dict())

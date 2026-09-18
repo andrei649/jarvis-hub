@@ -7,11 +7,14 @@ import * as api from '../api/images';
 // under test, and a stubbed validator would let an invalid reference through it.
 vi.mock('../api/images', async importOriginal => ({
   ...(await importOriginal<typeof import('../api/images')>()),
-  imageStatus: vi.fn(), proposeImage: vi.fn(), imageTask: vi.fn(), imageBlob: vi.fn(),
+  imageStatus: vi.fn(), proposeCloudImage: vi.fn(), proposeImage: vi.fn(), imageTask: vi.fn(), imageBlob: vi.fn(),
 }));
 const artifact = { id: 'a'.repeat(32), bytes: 8, width: 512, height: 512 };
 beforeEach(() => {
   vi.resetAllMocks();
+  history.replaceState(null,"","/");
+  window.__NERVA_BASE_PATH__ = "";
+  vi.mocked(api.proposeCloudImage).mockResolvedValue(17);
   vi.mocked(api.imageStatus).mockResolvedValue({ configured: true, edit: true });
   vi.mocked(api.proposeImage).mockResolvedValue(17);
   vi.mocked(api.imageTask).mockResolvedValue({ task_id: 17, state: 'awaiting_approval', artifact: null });
@@ -26,14 +29,18 @@ async function propose() {
 }
 describe('Images panel', () => {
   it('separates exact prompt proposal from existing inbox approval', async () => {
+    history.replaceState({preserved:'state'},'', '/v2/console/images?other=kept#anchor');
     render(<ImagesPanel />); await propose();
     await screen.findByText(/Awaiting approval/);
     // Third argument, and a null second one: a plain proposal carries no edit tuple.
     expect(api.proposeImage).toHaveBeenCalledWith('A rain-soaked tree', null, expect.any(AbortSignal));
-    expect(screen.getByRole('link', { name: 'Open Decision Inbox' }).getAttribute('href')).toBe('#decision-inbox');
+    expect(screen.getByRole('link', { name: 'Open Decision Inbox' }).getAttribute('href')).toBe('/v2/console/decision-inbox');
     expect(screen.queryByRole('button', { name: /approve/i })).toBeNull();
     expect(screen.getByText('A rain-soaked tree')).toBeTruthy();
     expect(api.imageBlob).not.toHaveBeenCalled();
+    expect(new URLSearchParams(location.search).get('image_task')).toBe('17');
+    expect(new URLSearchParams(location.search).get('other')).toBe('kept');
+    expect(location.hash).toBe('#anchor');expect(history.state).toEqual({preserved:'state'});
   });
   it('does not offer generation when configuration is disabled', async () => {
     vi.mocked(api.imageStatus).mockResolvedValue({ configured: false, edit: true });
@@ -74,6 +81,7 @@ describe('Images panel', () => {
     render(<ImagesPanel />); await propose();
     await waitFor(() => expect(api.imageTask).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole('button', { name: 'New proposal' }));
+    expect(new URLSearchParams(location.search).get('image_task')).toBeNull();
     await act(async () => resolve({ task_id: 17, state: 'ready', artifact }));
     expect(api.imageBlob).not.toHaveBeenCalled();
     expect(screen.queryByRole('img')).toBeNull();
@@ -159,4 +167,27 @@ it('offers configured backend/model selection and explicit 2x upscale', async ()
   fireEvent.change(screen.getByLabelText('Image prompt'), {target:{value:'mountains'}});
   fireEvent.click(screen.getByRole('button',{name:'Propose image'}));
   await waitFor(() => expect(api.proposeImage).toHaveBeenCalledWith('mountains', {backend:'comfyui',model:'b.safetensors',upscale:2}, expect.any(AbortSignal)));
+});
+
+it('cloud mode creates an immutable proposal without local edit controls',async()=>{
+  vi.mocked(api.imageStatus).mockResolvedValue({configured:true,edit:true,upscale:[2],cloud:{configured:true,provider:'openai',model:'gpt-image-1.5'}});
+  render(<ImagesPanel/>); await screen.findByLabelText('Image provider');
+  fireEvent.click(screen.getByLabelText('Edit an image'));
+  fireEvent.click(screen.getByLabelText('2× bicubic upscale'));
+  fireEvent.change(screen.getByLabelText('Image provider'),{target:{value:'cloud'}});
+  expect(screen.queryByLabelText('Reference artifact ID')).toBeNull();
+  expect(screen.queryByLabelText('2× bicubic upscale')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Image prompt'),{target:{value:'cloud prompt'}});
+  fireEvent.change(screen.getByLabelText('Cloud image size'),{target:{value:'1536x1024'}});
+  fireEvent.click(screen.getByRole('button',{name:'Propose image'}));
+  await waitFor(()=>expect(api.proposeCloudImage).toHaveBeenCalledWith('cloud prompt',{size:'1536x1024',quality:'low'},expect.any(AbortSignal)));
+  expect(api.proposeImage).not.toHaveBeenCalled();
+});
+it('task return query watches existing cloud task without submitting',async()=>{
+  window.__NERVA_BASE_PATH__='/nerva';
+  history.replaceState(null,'','/nerva/v2/console/images?image_task=17');
+  render(<ImagesPanel/>);
+  await waitFor(()=>expect(api.imageTask).toHaveBeenCalledWith(17,expect.any(AbortSignal)));
+  expect(api.proposeImage).not.toHaveBeenCalled();expect(api.proposeCloudImage).not.toHaveBeenCalled();
+  expect(screen.getByRole('link',{name:'Open Decision Inbox'}).getAttribute('href')).toBe('/nerva/v2/console/decision-inbox');
 });

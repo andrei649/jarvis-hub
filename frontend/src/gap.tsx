@@ -2964,10 +2964,17 @@ export function DecisionInboxPanel() {
   const pending = arr(d, 'tasks');
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
+  const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
-  const decide = (id, action, payload?) => actA('/autonomy/tasks/' + id + '/decision',
-    payload !== undefined ? { action, payload } : { action }, () => { setEditing(null); reload(); });
+  const decide = (id, action, payload?) => {
+    const image = pending.some(t=>t.id===id && isImageProposal(t));
+    return actA('/autonomy/tasks/' + id + '/decision',
+      payload !== undefined ? { action, payload } : { action }, () => {
+        if(image && Number.isSafeInteger(id) && id>0) setImageReturn(id);
+        setEditing(null); reload();
+      });
+  };
   const startEdit = (t) => { setEditing(t.id); setDraft(JSON.stringify(t.payload || {}, null, 2)); };
   const saveEdit = (id) => { let p; try { p = JSON.parse(draft); } catch { return; } decide(id, 'edit', p); };
   // dry-run preview (H12.5) — "see what it'll do before you approve" (the open preview endpoint)
@@ -2980,14 +2987,18 @@ export function DecisionInboxPanel() {
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
-  const isImageProposal = (task) => task.payload?.tool === 'image_generate'
+  const isCloudImageProposal = (task) => task.kind === 'plugin.egress'
+    && task.payload?.plugin === 'cloud-image' && task.payload?.method === 'POST'
+    && task.payload?.url === 'https://api.openai.com/v1/images/generations';
+  const isImageProposal = (task) => isCloudImageProposal(task) || (task.payload?.tool === 'image_generate'
     && (task.kind === 'toolrpc.image_generate'
-      || (task.kind === 'tool.rpc' && task.payload?.target === 'image_generate'));
+      || (task.kind === 'tool.rpc' && task.payload?.target === 'image_generate')));
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
       onReload={() => { reload(); interrupts.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
+      {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
       {pending.slice(0, 10).map((t, i) => (
         <div key={t.id ?? i}>
           <Row>
@@ -3002,10 +3013,11 @@ export function DecisionInboxPanel() {
             </span>
           </Row>
           {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
-            <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof t.payload?.args?.prompt === 'string' ? t.payload.args.prompt.slice(0, 4000) : 'Image prompt unavailable.'}</p>
-            <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
-              {' · '}{Number.isInteger(t.payload?.args?.steps) ? t.payload.args.steps : 20} steps</p>
+            <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof (isCloudImageProposal(t) ? t.payload?.image?.body?.prompt : t.payload?.args?.prompt) === 'string' ? (isCloudImageProposal(t) ? t.payload.image.body.prompt : t.payload.args.prompt).slice(0,4000) : 'Image prompt unavailable.'}</p>
+            {isCloudImageProposal(t) ? <p>OpenAI · {String(t.payload?.image?.body?.model || 'unavailable')} · {String(t.payload?.image?.body?.size || 'unavailable')} · {String(t.payload?.image?.body?.quality || 'unavailable')} · potentially paid after approval.</p> : <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
+              {' · '}{Number.isInteger(t.payload?.args?.steps) ? t.payload.args.steps : 20} steps</p>}
             <p>Changes require a fresh proposal in Images. Reject this proposal before replacing it.</p>
+            {Number.isSafeInteger(t.id) && t.id > 0 && <a href={internalLink("/v2/console/images?image_task=" + t.id)}>Watch image task</a>}
           </div>}
           {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
             <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>

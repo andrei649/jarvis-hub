@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 
 def inspect_jobs(runner) -> dict:
+    from ..job_toolsets import catalog, resolve
+    server = getattr(runner._orch, "tool_rpc", None)
     now = datetime.fromtimestamp(runner._now(), UTC)
     jobs = runner.store.list()
     outcomes = runner.store.scheduler_results()
@@ -45,6 +47,12 @@ def inspect_jobs(runner) -> dict:
     for job in jobs:
         row = {"job_id": job.id, "active": bool(job.runnable), "next_run_at": None}
         rows.append(row)
+        try:
+            names = resolve(job.options.get('enabled_toolsets'), server)
+            row['toolset_upper_bound'] = sorted(names) if names is not None else None
+        except ValueError as exc:
+            row['toolset_upper_bound'] = []
+            problem(job.id, 'toolsets_unavailable', str(exc))
         outcome = outcomes.get(f"job-{job.id}")
         row["last_outcome"] = outcome
         if outcome and outcome["status"] not in {"ok", "pending"}:
@@ -64,6 +72,12 @@ def inspect_jobs(runner) -> dict:
             issue = script_problem(job.options.get('monitor_script') or job.options['script'])
             if issue:
                 problem(job.id, 'script_unavailable', issue)
+        if 'workdir' in job.options:
+            from .jobs_workdir import validate_workdir
+            try:
+                validate_workdir(job.options['workdir'])
+            except ValueError as exc:
+                problem(job.id, 'workdir_unavailable', str(exc))
         if not job.runnable:
             continue
         entry = registered.get(f"job-{job.id}")
@@ -96,8 +110,10 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"],
         "model_pin_contract": "Configured providers only; cloud must match policy route. Changed local models require loaded context metadata; other changes require known windows. Current defaults retain existing window estimates; completion caps at 25%. Recent conversation and agent context remain; compression is deterministic and embedding recall is omitted.",
-        "script_contract": "Bounded self-contained Python, fresh approval each run; no shell or project cwd",
-        "unsupported_options": ["workdir", "enabled_toolsets", "skills"],
+        "script_contract": "Bounded Python, fresh approval each run; no shell. Optional approved workdir only with script and no_agent true; no model workspace context",
+        "toolsets": catalog(server),
+        "toolset_contract": "Model-bearing ask only. Missing/null uses defaults; [] no tools. Selected installed groups are an upper bound, intersected with posture and approvals. No execute_code, delegation or dynamic plugin groups.",
+        "unsupported_options": ["model_workdir", "skills"],
     }
