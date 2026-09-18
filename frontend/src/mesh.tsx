@@ -80,6 +80,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     nodes: [], edges: [], particles: [], rings: [], stars: [], hover: null, tasks: [], models: [], agents: [],
     demo: false, calm: false, cinema: false,
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
+    nodeMap: new Map(),
   });
   const [tip, setTip] = useState<any>(null);
   const taskList = useMemo(() => runningTasks(Array.isArray(tasks) ? tasks : []), [tasks]);
@@ -110,7 +111,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     if (s === 'busy') return '#ffce7a';
     return agentColor(n.agent);
   }
-  const node = (id) => S.current.nodes.find((n) => n.id === id);
+  // O(1) hash lookup via nodeMap instead of O(N) array search on every animation frame (60FPS loop)
+  const node = (id) => S.current.nodeMap.get(id);
 
   function build() {
     const st = S.current, W = st.w, H = st.h, cx = W / 2, cy = H / 2; st.cx = cx; st.cy = cy;
@@ -138,6 +140,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       edges.push({ a: a.id, b: 'jarvis', kind: 'ac' });
     });
     st.nodes = nodes; st.edges = edges;
+    st.nodeMap = new Map(nodes.map((n) => [n.id, n]));
     st.stars = Array.from({ length: 46 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + 0.2, a: Math.random() * 0.4 + 0.1 }));
   }
 
