@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f24d5f72cccbb556d5811563059f86620d2ab1e9",
-  "assessed_at": "2026-09-16T02:34:12Z",
+  "base_sha": "f9c7473a214b4a4dd3bbfe29161d1d8158563c2f",
+  "assessed_at": "2026-09-18T07:31:30Z",
   "reviews": [
     {
       "id": "H001",
@@ -31,6 +31,27 @@
       ]
     },
     {
+      "id": "H002",
+      "row_sha256": "aafd61ae951b5eba83ab73becbd13cddc64a3ebfe219cc9c9f5ac551927c8eed",
+      "status": "partial",
+      "summary": "`nerva chat -z \"prompt\"` runs one turn non-interactively and puts only the final assistant text on stdout — whole escape sequences and C0/C1 control bytes stripped, newlines and tabs kept — with every other word on stderr. The prompt resolves the way `nerva send`'s body does (argument, else `-f PATH` where `-` is stdin, else piped stdin) and a terminal is never read, by either spelling: `-f /dev/tty` is refused rather than blocking forever. A prompt over the hub's own 4,096-character `ChatRequest` bound is a usage error before the request, not an HTTP 422 a script reads as a failed turn. The ladder is stated in `--help`: 0 answered · 1 the turn did not complete · 2 usage · 3 no hub · 4 not authorised · 130 interrupted; Ctrl-C returns 130 with one stderr line instead of an uncaught traceback that could spill a partial answer. **The governance clause is implemented against Hermes, not after it:** no flag auto-approves, a turn that queues an action stays queued, and the verb exits 1 naming what to decide with `nerva approvals`; a test asserts the one-shot path issues no decision call at all. **An independent adversarial review (five lenses, no shared context) broke the first version of that clause in one line and the fix is the substance of this row:** the verdict was an exact-string match on the reply, but the hub does not hand `/chat` the agent's reply verbatim — `Orchestrator._synthesize` wraps a single specialist's answer as `[athena]: …` whenever `jarvis` is not among the responders, which is the ordinary routed path — so `-z` exited 0 with a queued approval printed as the answer. Matching is now by containment over the sanitised text, and the table gained the five tool-loop stops it was missing plus a prefix rule for the one the hub builds with an f-string; the drift test imports all ten constants and asserts each is matched both verbatim and wrapped. Sanitising now happens before the verdict, so a reply of pure control bytes is an incomplete turn rather than exit 0 and a blank line. `--usage-file PATH` writes `nerva.chat.usage.v1` atomically on every path including the interrupt, cleans up its temp file when a write fails, survives a field it cannot encode (a warning, never a crash after the answer is already out), says so when given an empty path, and refuses to call a turn completed while naming an approval it left queued. A hub that reports `pending_approvals` in a shape this version cannot read is told so rather than having a string exploded into one fabricated id per character. 51 tests; 23 mutations of the shipped behaviour each turn at least one of them red, including a second atomicity test that fails under a plain truncating write where the original one passed.",
+      "remaining": "Two halves of the row are open, and the first is a governance limit worth stating plainly. (1) THE VERDICT STILL RESTS ON THE REPLY TEXT. `ChatResponse` on this base carries `reply` and nothing else, so `pending_approvals` is always empty against the shipped hub and containment matching is the only detector there is. Containment survives the deterministic `[agent]: …` wrapper; it cannot survive the other synthesis branch, where `jarvis.synthesize` re-writes the text through a model — no string in a reply can. The real fix is the hub reporting what the turn queued, which is the sibling slice stacked on this one (`ChatResponse.pending_approvals` + the SSE end event); until that is on main, `nerva chat -z` can still be defeated by an LLM-rewritten refusal, and the CLI's stderr says \"this hub did not report the id\" rather than naming it. (2) THE SPEND HALF IS A SCHEMA OF NULLS. The hub cannot attribute one turn's cost: `AgentConfig.model` defaults to `google/gemma-4-31b-a4b`, none of the 18 agents in `agents/_system/agents.yaml` declares a model, so `cost_tracker` meters every turn at the default price row and reports $0.00, and an id it does not know is priced from the `default` row with no `priced` flag. `estimated_cost_usd`, the token counts, `api_calls`, `model` and `provider` are therefore `null` with `cost_basis: \"unavailable\"` rather than measured zeros; a test pins that they never become numbers. Also open: `POST /chat` returns no trace, invocation or session id, so `session_id` is echoed only when the caller supplied one; `-z` does not silence hub-side logging; there is no `--output-format` beyond the existing `--json`; a piped body is read whole up to the bound rather than streamed; and `os.replace` onto a symlinked `--usage-file` path replaces the link with a regular file instead of writing through it.",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
+        },
+        {
+          "path": "tests/test_nerva_oneshot.py",
+          "sha256": "eaa926320c75588f68c28cce889f83d8be450b4da1682da640cf4cfe370ae692"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
+        }
+      ]
+    },
+    {
       "id": "H004",
       "row_sha256": "81b6bfbfc65b2f2f591c6d659d1189946a76f76c5d1a47ff6aa88bbb8887cf8a",
       "status": "equivalent",
@@ -39,7 +60,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -144,7 +165,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -190,7 +211,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_dep_audit.py",
@@ -1318,7 +1339,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -2401,7 +2422,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "agents/web.py",
@@ -2770,7 +2791,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -3132,7 +3153,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -4373,7 +4394,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -4820,7 +4841,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "1f035315b35543399c375db4cc50cdc73e2e5ece690a1f4f882ff649e9de97ac"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_jobs_doctor.py",
