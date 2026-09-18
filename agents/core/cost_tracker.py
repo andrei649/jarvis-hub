@@ -97,6 +97,33 @@ MODEL_PRICES = {
     "phi":             {"input": 0.00,  "output": 0.00, "cached": 0.0},
 }
 
+# The zero rows above are reachable by EXACT id only. They used to take part in the
+# family-substring scan, and an id is not evidence of where a model ran: OpenRouter sells
+# `deepseek/deepseek-chat`, `mistralai/mistral-large-latest`, `meta-llama/llama-3.3-70b-
+# instruct` and `qwen/qwen3-max` for real money, all four contain a "local" family name,
+# and all four metered at a *measured* $0.00 with `priced: True` — this module's headline
+# bug, alive for a whole provider class and made worse by the flag asserting the figure
+# was complete. They are reachable through `llm.compatible_provider` +
+# `llm.compatible_model`, which is free text (`settings_db.py:138/140`).
+_ZERO_FAMILIES = frozenset({"local", "gemma", "qwen", "deepseek", "llama", "mistral", "phi"})
+_PAID_FAMILIES = tuple(k for k in MODEL_PRICES if k != "default" and k not in _ZERO_FAMILIES)
+
+# Route names that mean cloud, exactly as `RunHistory.locality` classifies them
+# (`run_history.py`): anything starting "cloud", plus the two legacy scalars. Everything
+# else that is non-blank is a local route — `local`, `local-deep`, `local-fallback`,
+# `ollama-howard`. A BLANK route is "unknowable", never local; that is the same signal
+# `_route_for_agent` reports and the reason it must not price at zero.
+# `test_route_locality_agrees_with_run_history` pins the two readings together.
+_CLOUD_ROUTE_NAMES = frozenset({"claude", "gemini"})
+
+
+def route_bills_nothing(route: str) -> bool:
+    """True when the route says the turn ran on this box, so a measured $0.00 is right."""
+    name = str(route or "").strip().lower()
+    if not name:
+        return False
+    return not (name.startswith("cloud") or name in _CLOUD_ROUTE_NAMES)
+
 _lock = threading.RLock()
 _usage: dict[str, dict] = defaultdict(
     # `unpriced_calls` counts the calls whose model this table could not price. It is a
@@ -104,8 +131,13 @@ _usage: dict[str, dict] = defaultdict(
     # agent's `cost_usd` has to be readable as "the priced part of this, and N calls it
     # does not cover". An older rollup on disk simply has no key here and starts at 0 —
     # `_load_unlocked` only restores keys the entry already declares.
+    # `models` is the per-(agent, model) tally. `model` alone is the LAST model the agent
+    # ran, which is all the APM rollup used to have — so an agent that mixed models had
+    # its whole lifetime bucketed under whichever id came last, and `unpriced_calls`
+    # landed on a row naming a model that IS priced. The one thing the counter exists to
+    # localise was the one thing it could not.
     lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default",
-             "cost_usd": 0.0, "unpriced_calls": 0}
+             "cost_usd": 0.0, "unpriced_calls": 0, "models": {}}
 )
 # Spend per UTC day, so a daily cap has something to read and last month is answerable.
 _daily: dict[str, float] = defaultdict(float)
@@ -191,13 +223,25 @@ def _exact_prices() -> dict:
     return MODELS
 
 
-def _price_for(model: str) -> dict | None:
+def _price_for(model: str, route: str = "") -> dict | None:
     """Price row for a model id, most specific source first — or ``None`` if unpriced.
 
     1. an exact row in this module's family table (covers "default", "local");
     2. an exact row in the per-model table — **version-aware**, and the reason a
        generation-specific price is never flattened by its family;
-    3. the **longest** matching family substring.
+    3. the **longest** matching PAID family substring.
+
+    Step 0, ahead of all of them: a route that says the turn ran on this box prices at a
+    measured $0.00 whatever the id was. That is the only reading that is evidence rather
+    than a guess — the zero rows no longer take part in step 3, because
+    `deepseek/deepseek-chat`, `mistralai/mistral-large-latest`,
+    `meta-llama/llama-3.3-70b-instruct` and `qwen/qwen3-max` are all billed OpenRouter
+    models that contain a "local" family name, and all four used to meter at a measured
+    $0.00 with `priced: True`. A caller that names a zero row exactly still gets it.
+
+    Steps 1 and 2 try the id as given and then with the vendor segment stripped, because
+    a routed cloud id arrives as "vendor/model" often enough that matching only the full
+    string sent every one of them to the coarse family row.
 
     Steps 2 and 3 both matter. A single coarse family row cannot price two live
     generations at once: Sonnet 5 is $2/$10 while Sonnet 4.5/4.6 remain $3/$15, so
@@ -218,21 +262,37 @@ def _price_for(model: str) -> dict | None:
     request for a placeholder rate, not a failed lookup. An empty/missing model id is a
     failed lookup, not a request, so it resolves to `UNPRICED_MODEL`.
     """
+    if route_bills_nothing(route):
+        # The route is the only thing that actually knows whether money moved, and it
+        # outranks every id-shaped guess below: `deepseek/deepseek-chat` is a paid
+        # OpenRouter model and `deepseek-r1:7b` is an Ollama tag, and no amount of
+        # reading the string tells them apart.
+        return MODEL_PRICES["local"]
     key = (model or UNPRICED_MODEL).lower()
-    exact = MODEL_PRICES.get(key)
-    if exact is not None:
-        return exact
-    per_model = _exact_prices().get(key)
-    if per_model is not None:
-        return per_model
-    matches = [k for k in MODEL_PRICES if k != "default" and k in key]
+    # A routed cloud id usually arrives vendor-prefixed — "anthropic/claude-sonnet-4-5",
+    # "openai/gpt-4o-2024-05-13" — and an exact row keyed on the bare id was never found,
+    # so the coarse family row won and under-billed Sonnet 4.5 by a third: exactly what
+    # the docstring below says cannot happen, on the hub's own default Claude model.
+    # `context_compressor` strips the segment before matching for the same reason.
+    candidates = [key]
+    if "/" in key:
+        candidates.append(key.rsplit("/", 1)[-1])
+    per_model_table = _exact_prices()
+    for candidate in candidates:
+        exact = MODEL_PRICES.get(candidate)
+        if exact is not None:
+            return exact
+        per_model = per_model_table.get(candidate)
+        if per_model is not None:
+            return per_model
+    matches = [k for k in _PAID_FAMILIES if k in key]
     if not matches:
         return None
     return MODEL_PRICES[max(matches, key=len)]
 
 
 def record(agent_name: str, input_tokens: int, output_tokens: int,
-           model: str = UNPRICED_MODEL):
+           model: str = UNPRICED_MODEL, route: str = ""):
     """Record token usage for an agent, pricing each call at its own model.
 
     Cost is accumulated per call so mixed local+cloud usage is priced correctly.
@@ -243,7 +303,8 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
     `model` must be the model that ACTUALLY ran, not the agent's configured one and not
     a route name: a route name ("cloud", "cloud-flash") matches no family row, and
     pricing one through this table used to land on `default` — $3/$15 for a Flash call
-    that really costs $0.75/$3.75. A caller that cannot name the model passes
+    that really costs $0.30/$2.50 on the Flash row this router binds — so the placeholder
+    was over 4x the input rate and 6x the output one, not the "~4x" first written. A caller that cannot name the model passes
     ``UNPRICED_MODEL``, which is also this argument's default: saying nothing is not a
     request for the placeholder rate the way naming "default" is, and it used to bill
     $3/$15 all the same. Either way the tokens are still counted; only the dollars are
@@ -256,15 +317,29 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
         entry["output_tokens"] += output_tokens
         entry["calls"] += 1
         entry["model"] = model
-        price = _price_for(model)
+        price = _price_for(model, route)
         if price is None:
-            logger.debug("unpriced model %r — counted in tokens, not in dollars", model)
+            logger.debug("unpriced model %r (route %r) — counted in tokens, not dollars",
+                         model, route)
             entry["unpriced_calls"] += 1
             call_cost = 0.0
         else:
             call_cost = (input_tokens / 1_000_000 * price["input"]
                          + output_tokens / 1_000_000 * price["output"])
         entry["cost_usd"] = round(entry["cost_usd"] + call_cost, 6)
+        # Per-(agent, model), so the APM rollup can name the model that is missing a
+        # price instead of the one that happened to run last.
+        slot = entry.setdefault("models", {}).setdefault(
+            str(model or UNPRICED_MODEL),
+            {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+             "cost_usd": 0.0, "unpriced_calls": 0},
+        )
+        slot["calls"] += 1
+        slot["input_tokens"] += input_tokens
+        slot["output_tokens"] += output_tokens
+        slot["cost_usd"] = round(slot["cost_usd"] + call_cost, 6)
+        if price is None:
+            slot["unpriced_calls"] += 1
         if call_cost:
             _daily[_today()] = round(_daily[_today()] + call_cost, 6)
         _save_unlocked()
@@ -278,8 +353,15 @@ def get_summary() -> dict:
     its `cost_usd` covers less than its tokens. `unpriced_calls` at the top level is how
     many such calls the whole figure is missing — a surface that prints a currency
     amount has to be able to say "plus N turns we cannot price".
+
+    Loads the persisted rollup first. Without that, every surface built on this —
+    `/api/cost`, `/api/analytics/cost`, `/api/admin/apm` — answered `total_cost_usd:
+    0.0, unpriced_calls: 0` after a restart until some other call happened to fault the
+    file in through `record()` or `spend_today_usd()`. A confident zero for spend that
+    is sitting on disk is the same lie this module was written to stop telling.
     """
     with _lock:
+        _load_unlocked()
         result = {}
         total_cost = 0.0
         total_unpriced = 0
@@ -288,7 +370,10 @@ def get_summary() -> dict:
             unpriced = int(data.get("unpriced_calls", 0))
             total_cost += cost
             total_unpriced += unpriced
-            result[agent] = {**data, "cost_usd": cost, "priced": unpriced == 0}
+            # `models` is an internal tally, not part of this surface's published
+            # shape — `apm_summary` reads `_usage` for it.
+            result[agent] = {k: v for k, v in data.items() if k != "models"}
+            result[agent].update(cost_usd=cost, priced=unpriced == 0)
         return {"agents": result, "total_cost_usd": round(total_cost, 6),
                 "unpriced_calls": total_unpriced}
 
@@ -303,9 +388,25 @@ def apm_summary() -> dict:
     dashboard renders a dollar figure, and it must be able to say how many runs that
     figure does not cover. On the per-model breakdown it also localises the gap — the
     row that cannot be priced is the row naming the model to add to the table.
+
+    That localisation is only true because `by_model` is built from the per-(agent,
+    model) tally. Built from the agent's LAST model — which is what `data["model"]`
+    holds, and what this did before — an agent that ran `grok-4.6` and then
+    `claude-sonnet-5` produced ONE row, named `claude-sonnet-5`, carrying the unpriced
+    count: the model actually missing from the table had no row at all, and the row that
+    said "unpriced" named a model that is priced. An operator following the dashboard
+    would have added a price for a model that already had one. Mixing models inside one
+    agent is exactly the case `unpriced_calls` was made a counter rather than a flag for.
+
+    A rollup written before this carries no per-model tally. Those agents fall back to
+    the old single-row shape rather than vanishing from the breakdown, and the fallback
+    row is marked `estimated_from_last_model` so a reader is not told the localisation
+    holds for it.
     """
     summary = get_summary()
     agents = summary["agents"]
+    with _lock:
+        tallies = {agent: dict(data.get("models") or {}) for agent, data in _usage.items()}
 
     totals = {"runs": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
               "unpriced_calls": 0}
@@ -332,15 +433,23 @@ def apm_summary() -> dict:
             "unpriced_calls": unpriced, "priced": unpriced == 0,
         })
 
-        m = by_model.setdefault(
-            model, {"model": model, "runs": 0, "input_tokens": 0,
-                    "output_tokens": 0, "cost_usd": 0.0, "unpriced_calls": 0},
-        )
-        m["runs"] += runs
-        m["input_tokens"] += in_tok
-        m["output_tokens"] += out_tok
-        m["cost_usd"] = round(m["cost_usd"] + cost, 6)
-        m["unpriced_calls"] += unpriced
+        per_model = tallies.get(agent) or {
+            model: {"calls": runs, "input_tokens": in_tok, "output_tokens": out_tok,
+                    "cost_usd": cost, "unpriced_calls": unpriced,
+                    "estimated_from_last_model": True},
+        }
+        for model_id, slot in per_model.items():
+            m = by_model.setdefault(
+                model_id, {"model": model_id, "runs": 0, "input_tokens": 0,
+                           "output_tokens": 0, "cost_usd": 0.0, "unpriced_calls": 0},
+            )
+            m["runs"] += int(slot.get("calls", 0))
+            m["input_tokens"] += int(slot.get("input_tokens", 0))
+            m["output_tokens"] += int(slot.get("output_tokens", 0))
+            m["cost_usd"] = round(m["cost_usd"] + float(slot.get("cost_usd", 0.0)), 6)
+            m["unpriced_calls"] += int(slot.get("unpriced_calls", 0))
+            if slot.get("estimated_from_last_model"):
+                m["estimated_from_last_model"] = True
 
     by_agent.sort(key=lambda r: r["cost_usd"], reverse=True)
     by_model_list = sorted(by_model.values(), key=lambda r: r["cost_usd"], reverse=True)
