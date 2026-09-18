@@ -681,3 +681,55 @@ def test_an_uncovered_handler_is_announced(caplog):
     assert any("NOT redacted" in r.getMessage() for r in caplog.records), (
         "a handler writing unredacted records was skipped without a word"
     )
+
+
+class _BrokenManager:
+    """The real logging manager, with a registry that cannot be read.
+
+    It delegates everything else — `logging.getLogger` goes through
+    `Logger.manager.getLogger`, so a manager that broke that too would fail the
+    install for the wrong reason.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    @property
+    def loggerDict(self):
+        raise RuntimeError("the logger registry is not readable here")
+
+
+def test_a_failed_registry_walk_is_announced_not_absorbed(monkeypatch):
+    """`_managed_loggers` returns `()` on failure, and `()` reads exactly like a
+    process that simply owns no other loggers. Without a word, the install
+    silently degrades to root-only — the one configuration this function exists
+    to rule out, because a non-propagating logger never reaches root.
+
+    `caplog` cannot be used here: its own setup walks `manager.loggerDict`, which
+    is the very thing this test breaks. The capture is wired by hand instead.
+    """
+    captured = []
+
+    class _Collect(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    module_logger = logging.getLogger("agents.core.security.log_redaction")
+    collector = _Collect()
+    module_logger.addHandler(collector)
+    previous = module_logger.level
+    module_logger.setLevel(logging.WARNING)
+    try:
+        monkeypatch.setattr(logging.Logger, "manager", _BrokenManager(logging.Logger.manager))
+        lr.install_log_redaction_everywhere()
+    finally:
+        monkeypatch.undo()
+        module_logger.removeHandler(collector)
+        module_logger.setLevel(previous)
+
+    assert any("NOT redacted" in m for m in captured), (
+        "the registry walk failed and the install reported full coverage anyway"
+    )

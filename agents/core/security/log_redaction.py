@@ -420,10 +420,21 @@ def _shared_factory() -> Callable[[], SecretRedactionFilter]:
 
 
 def _managed_loggers() -> Iterable[logging.Logger]:
-    """Every real ``Logger`` the logging module knows about (PlaceHolders skipped)."""
+    """Every real ``Logger`` the logging module knows about (PlaceHolders skipped).
+
+    An empty result is indistinguishable from a successful walk over a process
+    that owns no other loggers, so a walk that *fails* says so rather than
+    quietly degrading the install to root-only — which is precisely the case
+    where every non-propagating logger goes on writing unscanned.
+    """
     try:
         registry = list(logging.Logger.manager.loggerDict.values())
     except Exception:
+        logging.getLogger(__name__).warning(
+            "Could not enumerate the logger registry; only the root handlers are "
+            "covered, so records from a non-propagating logger are NOT redacted",
+            exc_info=True,
+        )
         return ()
     return [obj for obj in registry if isinstance(obj, logging.Logger)]
 
