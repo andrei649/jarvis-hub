@@ -263,6 +263,12 @@ def reset_turn_principal(token) -> None:
 def current_principal() -> Principal:
     """The principal bound to this turn; nobody in particular when none was bound."""
     return _turn_principal.get() or Principal()
+#: The per-turn route/model/latency/usage maps, context-local so two turns sharing one
+#: orchestrator cannot overwrite each other's. See the comment above ``_meter_store``.
+_TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
+    "jarvis_turn_meter_maps", default=None
+)
+
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
 )
@@ -1541,11 +1547,96 @@ class Orchestrator:
             return ""
         return resp or ""
 
+    # BUG-5, again, and this time it costs money. `_last_models`, `_last_routes`,
+    # `_last_latencies`, `_last_cached_tokens` and `_last_reported_usage` are per-TURN
+    # maps that lived as instance attributes on an orchestrator the whole process
+    # shares, and every turn starts by resetting them. `turn_lease` keys on the SESSION
+    # (`_lease_key`), not on the orchestrator, so a Telegram chat and a /chat tab hold
+    # different leases and run concurrently on the one `orch` built in `web.py` — and
+    # the second turn's reset wipes the first turn's maps while it is still awaiting
+    # `memory.add_turn`, `_maybe_checkpoint` and `_log_session` on its way to
+    # `_record_interactions`. The slower turn then metered as `unpriced`, or worse:
+    # when both turns were answered by the SAME agent id the surviving entry was the
+    # other turn's model, so a 1M-token Opus turn overlapped by a small Haiku one billed
+    # $1.00 instead of $5.00 with `priced: true` — a confident wrong figure, which is
+    # precisely what this meter exists to stop producing. `spend_today_usd()` backs the
+    # `llm.daily_cost_cap_usd` refusal, so the cap under-enforced silently.
+    #
+    # Same remedy the BUG-5 comment in `_handle_input` describes: the maps become
+    # context-local for the length of a turn. Reads and writes are unchanged at every
+    # call site — the properties below resolve to the turn's own store when one is
+    # bound, and to a per-instance store otherwise (a direct `_record_interactions`
+    # call in a test, a background tick).
+    def _meter_store(self) -> dict:
+        bound = _TURN_METER_MAPS.get()
+        if bound is not None:
+            return bound
+        store = self.__dict__.get("_meter_maps")
+        if store is None:
+            store = self.__dict__["_meter_maps"] = {}
+        return store
+
+    @property
+    def _last_models(self) -> dict:
+        return self._meter_store().setdefault("_last_models", {})
+
+    @_last_models.setter
+    def _last_models(self, value) -> None:
+        # Rebinds the slot rather than clearing it in place, so a caller holding the
+        # previous dict keeps seeing the previous dict — the semantics a plain attribute
+        # had.
+        self._meter_store()["_last_models"] = dict(value or {})
+
+    @property
+    def _last_routes(self) -> dict:
+        return self._meter_store().setdefault("_last_routes", {})
+
+    @_last_routes.setter
+    def _last_routes(self, value) -> None:
+        # Rebinds the slot rather than clearing it in place, so a caller holding the
+        # previous dict keeps seeing the previous dict — the semantics a plain attribute
+        # had.
+        self._meter_store()["_last_routes"] = dict(value or {})
+
+    @property
+    def _last_latencies(self) -> dict:
+        return self._meter_store().setdefault("_last_latencies", {})
+
+    @_last_latencies.setter
+    def _last_latencies(self, value) -> None:
+        # Rebinds the slot rather than clearing it in place, so a caller holding the
+        # previous dict keeps seeing the previous dict — the semantics a plain attribute
+        # had.
+        self._meter_store()["_last_latencies"] = dict(value or {})
+
+    @property
+    def _last_cached_tokens(self) -> dict:
+        return self._meter_store().setdefault("_last_cached_tokens", {})
+
+    @_last_cached_tokens.setter
+    def _last_cached_tokens(self, value) -> None:
+        # Rebinds the slot rather than clearing it in place, so a caller holding the
+        # previous dict keeps seeing the previous dict — the semantics a plain attribute
+        # had.
+        self._meter_store()["_last_cached_tokens"] = dict(value or {})
+
+    @property
+    def _last_reported_usage(self) -> dict:
+        return self._meter_store().setdefault("_last_reported_usage", {})
+
+    @_last_reported_usage.setter
+    def _last_reported_usage(self, value) -> None:
+        # Rebinds the slot rather than clearing it in place, so a caller holding the
+        # previous dict keeps seeing the previous dict — the semantics a plain attribute
+        # had.
+        self._meter_store()["_last_reported_usage"] = dict(value or {})
+
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
 
         origin_token = bind_turn_action_origin(channel)
+        meter_token = _TURN_METER_MAPS.set({})
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -1554,6 +1645,7 @@ class Orchestrator:
             return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
+            _TURN_METER_MAPS.reset(meter_token)
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -1718,6 +1810,7 @@ class Orchestrator:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
 
         origin_token = bind_turn_action_origin(channel)
+        meter_token = _TURN_METER_MAPS.set({})
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
@@ -1726,6 +1819,7 @@ class Orchestrator:
             return CONTINUATION_REFUSED_REPLY
         finally:
             reset_action_origin(origin_token)
+            _TURN_METER_MAPS.reset(meter_token)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -3486,6 +3580,11 @@ class Orchestrator:
                         metadata["input_tokens"],
                         metadata["output_tokens"],
                         model=routed_model or cost_tracker.UNPRICED_MODEL,
+                        # The route decides whether money moved; the id cannot. A paid
+                        # OpenRouter id like "deepseek/deepseek-chat" reads exactly like
+                        # an Ollama tag, and pricing the local families on the string
+                        # alone metered a whole provider class at a measured $0.00.
+                        route=agent_route or "",
                     )
                 except Exception:
                     logger.debug("cost record skipped", exc_info=True)

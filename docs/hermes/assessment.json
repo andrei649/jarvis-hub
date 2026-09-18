@@ -1431,7 +1431,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1855,7 +1855,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2233,7 +2233,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2374,7 +2374,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2883,7 +2883,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -4322,7 +4322,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4459,7 +4459,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4706,7 +4706,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
+          "sha256": "c34559bac63638d93d58e2cf5e8ae8c6f88785c87c0d861eec2dcd8bd441249e"
         },
         {
           "path": "agents/core/settings_db.py",

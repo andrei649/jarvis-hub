@@ -72,16 +72,37 @@ async def test_stream_single_agent_path_unchanged(monkeypatch, tmp_path):
 
 
 async def test_stream_route_map_is_per_turn_never_stale(monkeypatch, tmp_path):
+    """The map a turn records must hold only that turn's agents.
+
+    The observation moved INSIDE the turn, and the guarantee got stronger rather than
+    weaker. These maps are context-local now (a concurrent turn on the same orchestrator
+    was overwriting them, and the cost meter reads them), so a previous turn's entries
+    cannot reach this one at all — there is no longer a shared map for the turn's reset
+    to clean up, and reading `orch._last_routes` after the turn has ended no longer
+    reports what the turn did. The last assertion is the new half: what the earlier turn
+    left behind is still exactly where it was, untouched.
+    """
     orch, fake = await _stream_orch(monkeypatch, tmp_path, ["pepper"])
     # A previous (non-stream) turn left a stale per-agent route map behind.
     orch._last_routes = {"frigga": "local-deep", "ultron": "local"}
     orch._last_latencies = {"frigga": 12.0}
 
+    seen: dict[str, dict] = {}
+    real_record = orch._record_interactions
+
+    def _spy(*args, **kwargs):
+        seen["routes"] = dict(orch._last_routes)
+        seen["latencies"] = dict(orch._last_latencies)
+        return real_record(*args, **kwargs)
+
+    monkeypatch.setattr(orch, "_record_interactions", _spy)
+
     await orch.handle_input_stream("fresh stream turn", on_token=lambda t: None)
 
-    assert set(orch._last_routes) == {"pepper"}
-    assert orch._last_routes["pepper"]  # the primary's real route, recorded
-    assert set(orch._last_latencies) == {"pepper"}
+    assert set(seen["routes"]) == {"pepper"}
+    assert seen["routes"]["pepper"]  # the primary's real route, recorded
+    assert set(seen["latencies"]) == {"pepper"}
+    assert set(orch._last_routes) == {"frigga", "ultron"}
 
 
 async def test_stream_synthesis_holds_the_strict_local_floor(monkeypatch, tmp_path):
