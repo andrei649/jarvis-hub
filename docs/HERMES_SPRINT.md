@@ -275,7 +275,7 @@ The orchestrator now publishes `_last_models[agent_id]` — the id the router ac
 
 Seven behaviours were red-proofed by neutering each in turn and confirming a named test went red, then restoring the file byte-identically (md5 checked). Evidence re-pins: eight rows citing `agents/core/orchestrator.py` whose hashes still matched the inspected base (H146, H298, H363, H364, H449, H671, H673, H679) were re-pinned after the full suite ran green; H060, H061 and H398 were already stale at the base and are untouched. The headline is unchanged at 122/697 — this slice claims no row.
 
-Still open on the same subject, and deliberately out of this slice: `/api/admin/stats` builds its records as `{'model': r.route_name or 'unknown'}` (`admin.py:548-556`), so cloud traffic there renders $0.00 through `estimate_cost` with the `priced` flag dropped; and the meter still bills a cached prefix at the uncached rate, over-billing the tokens DRA-24 exists to discount.
+Still open on the same subject, and deliberately out of this slice: `/api/admin/stats` builds its records as `{'model': r.route_name or 'unknown'}` (`admin.py:573-579`), so cloud traffic there renders $0.00 through `estimate_cost` with the `priced` flag dropped; and the meter still bills a cached prefix at the uncached rate, over-billing the tokens DRA-24 exists to discount.
 
 ### 2026-09-18 — a turn can name the approvals it queued
 

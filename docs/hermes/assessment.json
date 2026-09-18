@@ -1452,7 +1452,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1504,7 +1504,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -1990,7 +1990,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -2014,7 +2014,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2417,7 +2417,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2558,7 +2558,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2610,7 +2610,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "tests/test_invocation_reasoning.py",
@@ -3067,7 +3067,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3119,7 +3119,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "a6e221cb160cf9880442525c07614534b429db23d87f4e4abf243524588214f3"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -3394,7 +3394,7 @@
       "evidence": [
         {
           "path": "agents/core/routers/analytics.py",
-          "sha256": "b9edf035733c84ff2fd986f852e9b71bcd931a8724396ddaa2f848d3cda9cb1a"
+          "sha256": "e7e7bc7e004586c3135d48aa03789b1710f10872c452cc0e73194607bbc6f83c"
         },
         {
           "path": "agents/core/observability/capability_registry.py",
@@ -4767,7 +4767,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4835,7 +4835,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "8fc8db70ccdf358eb5a1626907613439285bade2dc44dead47ce0baa4ee05a34"
+          "sha256": "94acc27938a5ed10c7e33bfd2944ceea272360a2d3301499192cb226f483b204"
         },
         {
           "path": "agents/cli/nerva.py",
@@ -4904,7 +4904,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5151,7 +5151,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2a91a59d1ccdeb57cc3a7f33465fd7335d8643317fa2c14af15f770b0ffefe65"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/settings_db.py",
