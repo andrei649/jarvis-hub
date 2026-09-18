@@ -49,31 +49,33 @@ def atomic_write_json(
     with ``0o666 & ~umask`` — 0644 on a default umask — so without this every
     JSON store was world-readable.
 
-    The tmp is **created** 0600 rather than chmod'd afterwards. A first cut wrote
-    the payload with ``write_text`` and chmod'd the tmp before the ``replace``,
-    reasoning that ``replace`` moves the tmp's inode over the target so the mode
-    must be right first. That ordering is the better of the two but it does not
-    close the window it claims to: ``write_text`` creates the tmp at
-    ``0o666 & ~umask`` and the whole payload is written before the ``chmod`` runs,
-    so the secret sits in a world-readable file for the length of the write.
-    ``os.open`` with an explicit mode is what actually closes it — the descriptor
-    never exists in any other mode. (H497)
+    The tmp is **created empty and owner-only before anything is written into
+    it.** A first cut wrote the payload with ``write_text`` and chmod'd the tmp
+    before the ``replace``, reasoning that ``replace`` moves the tmp's inode over
+    the target so the mode must be right first. That ordering is the better of the
+    two and it does not close the window it claims to: ``write_text`` *creates* the
+    tmp at ``0o666 & ~umask`` — 0644 on a default umask — and the whole payload is
+    in it by the time the ``chmod`` runs, so a store holding a pairing digest sits
+    world-readable for the length of the write. Creating the file first with an
+    explicit mode closes that: ``write_text`` then opens an *existing* file, which
+    leaves its mode alone. The write is still the same ``Path.write_text`` call, so
+    nothing about this helper's failure behaviour changes. (H497)
     """
     path = Path(path)
     payload = json.dumps(data, ensure_ascii=ensure_ascii, indent=indent)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(payload)
-        except BaseException:
-            os.close(fd)   # only reachable if fdopen itself failed to take the fd
-            raise
-        # A tmp left over from an older release (or an interrupted run) keeps its
-        # own mode through O_CREAT, so the mode is asserted rather than assumed.
+        # Create the tmp owner-only and EMPTY first, then write into it. `write_text`
+        # opens an existing file without touching its mode, so the payload never
+        # lands in a world-readable file — and the write itself is still the same
+        # `Path.write_text` call, which keeps this helper's failure behaviour (and
+        # the tests that interrupt it) exactly as it was.
+        os.close(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
+        # A tmp left over from an older release keeps its own mode through
+        # O_CREAT, so the mode is asserted rather than assumed.
         os.chmod(tmp, 0o600)
+        tmp.write_text(payload, encoding="utf-8")
         tmp.replace(path)  # atomic
     except Exception:
         tmp.unlink(missing_ok=True)

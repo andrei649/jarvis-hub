@@ -3558,7 +3558,7 @@
         },
         {
           "path": "agents/core/persistence/json_store.py",
-          "sha256": "7a11a9d71ee9e63099d79d3d3bc7d7f28ec4103f2acdbc262657294c47e2d9ae"
+          "sha256": "ba03fd683a4775c59692ba0dda7d1f595a6f81422f9cdb58c4b7c89ee0fa8383"
         },
         {
           "path": "tests/test_pairing_secrets_at_rest.py",
