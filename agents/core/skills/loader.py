@@ -42,6 +42,53 @@ EXTERNAL_SOURCE_MARKER = "EXTERNAL_SOURCE"
 # are never consulted as trust evidence (SEC-B8).
 OWNER_APPROVED_MARKER = "OWNER_APPROVED_IN_PROCESS"
 
+# H351 — the untrusted states the model-facing catalog still advertises.
+#
+# "unsigned" — the skill carries no ``SKILL.sig`` at all. That is the shipped default for
+#     every bundled skill (``glob("skills/*/SKILL.sig")`` is empty), so dropping it would
+#     empty the block and help nobody.
+# "algo-mismatch" — a sidecar exists, but its algo prefix differs from the one this host
+#     computes (``signing.verify_skill``/``compute_digest``: ``hmac-sha256`` when
+#     ``JARVIS_SKILL_SIGNING_KEY`` is set, ``sha256`` when it is not). That is a fact about
+#     *this host's key configuration at load time*, not about the SKILL.md bytes — sign a
+#     tree with a key, then start the process without the variable, and every skill reports
+#     "algo-mismatch" with sidecars and manifests byte-identical. Because the key is global
+#     to the host it fires for all signed skills at once, so dropping it would blank the
+#     model's whole skills index on a key rotation or a systemd unit that lost the variable.
+#
+# What still drops: "signature-mismatch" (the sidecar covers different bytes than the ones
+# on disk) and "malformed-signature" (the sidecar is not a signature at all), plus any
+# reason not listed here. Both mean: a sidecar is present and does not verify here. Neither
+# is proof of intent — a truncated write produces the second, and a partially restored
+# backup the first — so the gate is stated below for what it is.
+#
+# WHAT THIS GATE IS WORTH, plainly. It detects corruption and accidental drift in a skill
+# that ships a sidecar; it does not stop a motivated attacker. Anyone with write access to a
+# skill directory — exactly the access needed to edit SKILL.md in the first place — deletes
+# ``SKILL.sig`` in the same operation, the skill then verifies as "unsigned", and it is
+# advertised again on its new description (pinned by
+# ``test_deleting_the_sidecar_evades_the_trust_gate``). Closing that needs two things this
+# repo does not have yet: a signed skills tree, and a record kept OUTSIDE the tree of which
+# skills were once seen signed, so a sidecar that disappears reads as a drop rather than as
+# a reset to "unsigned". Until then this is a discovery hint, not an enforcement boundary.
+CATALOG_TOLERATED_UNTRUSTED_REASONS = frozenset({"unsigned", "algo-mismatch"})
+
+
+def _catalog_text(value: object, chars: int) -> str:
+    """One line, capped, and with invisible-TAG payloads removed.
+
+    Every field that lands inside a catalog row goes through this *before* it is scanned, so
+    what ``quarantine.detect_injection`` sees is the literal text ``Agent.build_prompt`` will
+    render. ``strip_invisible`` runs first because Unicode TAG characters (U+E0000–U+E007F)
+    are not whitespace to ``str.split`` and are matched by no injection pattern: they render
+    as nothing and carry an ASCII payload the model still reads (``quarantine`` module docs,
+    Hermes absorption 4a). The tool-result and MCP paths already strip them on the way in;
+    a SKILL.md frontmatter is the same kind of untrusted text headed for the same model.
+    """
+    from ..security import quarantine
+
+    return " ".join(quarantine.strip_invisible(str(value)).split())[:chars]
+
 # Product-owned identity of the exact skill sources shipped with this build.
 # Unknown names, extra files, or changed bytes are external even when placed
 # lexically under SKILLS_DIR. Text newlines are normalized so the same release
@@ -1079,13 +1126,65 @@ def register(skill):
         declares agents is shown only to those agents (or to all with ``all``); one that
         declares none is general. Descriptions are one line and capped, and the whole
         catalog is capped, because every row is paid for on every turn.
+
+        H351 — these rows are rendered VERBATIM into the system prompt by
+        ``Agent.build_prompt``, and both fields of a row (``command``, which carries the
+        manifest's ``args``, and ``description``) come out of a SKILL.md frontmatter that may
+        have been imported from a foreign install. Write-time scanning already refuses to
+        *generate* injection-flagged skills and flags imported ones, but nothing stood
+        between an already-on-disk manifest and the prompt. Two gates close that, both of
+        which only ever narrow the block:
+
+        * a skill that ships a ``SKILL.sig`` which does not verify here is not named at all
+          — see :data:`CATALOG_TOLERATED_UNTRUSTED_REASONS`, which also states what that
+          does and does not prove (it catches corruption, not an attacker who deletes the
+          sidecar along with the edit);
+        * a row that tries to talk to the model is dropped, scanned with the same
+          ``quarantine.detect_injection`` that fences retrieved memory — over a copy with
+          every Cf format character removed, so the scan does not depend on which
+          invisible character an attacker reached for.
+
+        **What the injection gate is worth, plainly.** ``detect_injection`` is an
+        eleven-entry regex table of high-signal phrases. It costs a row to a description
+        that says "ignore all previous instructions"; it does not cost a row to one that
+        says the same thing in words the table does not list, and there is no shortage of
+        those. It raises the floor on copied-in manifests and careless imports. It is not
+        a filter a motivated author cannot write around, and nothing here should be read
+        as though it were.
+
+        A hit drops the one row, never the block, and every drop is logged by skill name so a
+        disappearance from the model's index is never silent; if the trust gate takes every
+        skill, that is logged at ERROR rather than quietly returning an empty block. The scan
+        runs on the row as ``Agent.build_prompt`` will render it — ``f"{command}: {description}"``
+        with both fields already TAG-stripped, one-lined and truncated — so every
+        manifest-derived byte that reaches the prompt is scanned, and nothing beyond it is,
+        which matters because it is paid for on every turn.
+
+        Neither gate disables anything: a dropped skill is un-advertised, not revoked, and
+        its command still runs if the model or the owner names it directly. Un-advertising
+        must not become a silent capability revocation.
         """
+        from ..security import quarantine
+
         rows: list[dict] = []
+        dropped_untrusted: list[str] = []
         cap = max(0, int(limit))
         chars = max(0, int(description_chars))
         for name in sorted(self.skills):
             skill = self.skills[name]
             if skill.sandboxed:
+                continue
+            reason = str(getattr(skill, "signature_reason", "") or "")
+            if (
+                not getattr(skill, "trusted", False)
+                and reason not in CATALOG_TOLERATED_UNTRUSTED_REASONS
+            ):
+                dropped_untrusted.append(skill.name)
+                logger.warning(
+                    "Skill '%s' is NOT advertised to the model — signature %s",
+                    skill.name,
+                    reason or "unknown",
+                )
                 continue
             declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
             if agent_id and declared and agent_id not in declared and "all" not in declared:
@@ -1096,17 +1195,65 @@ def register(skill):
                 command = meta.get("command")
                 if not isinstance(command, str) or not re.fullmatch(r"\w+", command):
                     continue
+                # `\w+` bounds the character set and nothing bounds the length, and
+                # `command` is the one row field that never passed through `_catalog_text`
+                # — so a manifest declaring a 5,000-character command put 5,000 characters
+                # into every agent's system prompt on every turn. Capped like its
+                # neighbours. `\w` cannot carry a newline, so one-lining it is moot.
+                command = command[:chars]
                 args = meta.get("args") if isinstance(meta.get("args"), str) else ""
                 description = meta.get("description")
                 if not isinstance(description, str) or not description.strip():
                     description = skill.description
+                # ``args`` is manifest text rendered as verbatim prompt bytes exactly like
+                # ``description``, so it gets exactly the same treatment. It used to go
+                # straight through with only an isinstance check: a newline inside it broke
+                # the one-row-per-line format and handed a SKILL.md its own unattributed
+                # line in the system prompt, and its length was unbounded while the rest of
+                # the row was capped.
+                args = _catalog_text(args, chars)
+                description = _catalog_text(description, chars)
+                rendered = f"{command} <{args}>" if args else command
+                # Scan the row as ``Agent.build_prompt`` will render it, so no field can be
+                # the one that is not looked at — and scan it with every Cf format
+                # character removed, because one of those inside a phrase defeats
+                # `detect_injection` while reading to the model exactly like the phrase
+                # that does not. The STRIPPED copy is scanned and thrown away; the row
+                # emitted below is the original, so a legitimate Arabic number sign in a
+                # description survives while an evasion attempt does not decide the
+                # verdict.
+                flags = quarantine.detect_injection(
+                    quarantine.strip_format_chars(f"{rendered}: {description}")
+                )
+                if flags:
+                    logger.warning(
+                        "Skill '%s' command '%s' is NOT advertised to the model — its "
+                        "catalog row is injection-flagged: %s",
+                        skill.name,
+                        command,
+                        quarantine.injection_flag_names(flags),
+                    )
+                    continue
                 rows.append(
                     {
                         "skill": skill.name,
-                        "command": f"{command} <{args}>" if args else command,
-                        "description": " ".join(str(description).split())[:chars],
+                        "command": rendered,
+                        "description": description,
                     }
                 )
                 if len(rows) >= cap:
                     return rows
+        if not rows and dropped_untrusted:
+            # Over-filtering is the named risk of this gate, and an empty block is how it
+            # would show up. Do NOT re-advertise them as a "floor": that would hand any
+            # single-skill install a way to launder one edited manifest back into the
+            # prompt. Say it loudly instead, so a key rotation is diagnosable.
+            logger.error(
+                "The model-facing skills catalog is EMPTY: %d skill(s) were dropped by the "
+                "signature gate (%s). The model will be told of no skills at all. If this "
+                "host's signing key changed, re-sign the tree; see "
+                "CATALOG_TOLERATED_UNTRUSTED_REASONS.",
+                len(dropped_untrusted),
+                ", ".join(sorted(dropped_untrusted)),
+            )
         return rows
