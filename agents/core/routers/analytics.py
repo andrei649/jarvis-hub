@@ -99,11 +99,17 @@ async def get_analytics_cost():
 @router.get("/api/analytics/model-tiers")
 async def get_model_tiers():
     """Return per-agent model tier classification and usage summary."""
-    from agents.core.cost_tracker import get_summary
-    summary = get_summary()
+    from agents.core import cost_tracker
+
+    summary = cost_tracker.get_summary()
 
     def classify_tier(model: str) -> str:
-        m = model.lower()
+        m = (model or "").lower()
+        if not m or m == cost_tracker.UNPRICED_MODEL:
+            # The router could not name what ran. It is not a tier — putting it in
+            # "standard" would claim a mid-priced cloud turn we never measured, which
+            # is the same confident-wrong answer the meter itself stopped giving.
+            return "unknown"
         if "local" in m or m == "default":
             return "local"
         if "haiku" in m or "mini" in m or "flash" in m:
@@ -112,7 +118,8 @@ async def get_model_tiers():
             return "heavy"
         return "standard"
 
-    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": []}
+    tiers: dict[str, list] = {"local": [], "fast": [], "standard": [], "heavy": [],
+                              "unknown": []}
     for agent_name, data in summary.get("agents", {}).items():
         tier = classify_tier(data.get("model", "default"))
         tiers[tier].append({

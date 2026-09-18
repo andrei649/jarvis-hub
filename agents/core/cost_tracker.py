@@ -12,6 +12,15 @@ Fixed in three parts: the orchestrator now records every agent turn with the mod
 actually ran (see ``_record_interactions``); usage persists under the data root and is
 kept per UTC day so a cap and a monthly answer are both possible; and
 ``spend_today_usd()`` backs the ``llm.daily_cost_cap_usd`` check in the router.
+
+Audit 2026-09-18: both halves of that fix were wrong about *which* model ran. The
+orchestrator passed the agent's **configured** model, and `AgentConfig.model` defaults to
+a local id no agents.yaml entry overrides, so every cloud turn priced at $0.00 — the meter
+was fed and still read zero. And an id this table did not recognise fell through to the
+`default` $3/$15 row, so the other failure mode invented money nobody could tell from a
+measurement. The record site now carries the routed model (see ``_last_models`` in
+``orchestrator.py``), and an unrecognised id is reported ``priced: False`` rather than
+billed — the same distinction `llm/cost_estimator.py` already draws.
 """
 import json
 import logging
@@ -22,6 +31,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger("jarvis.cost")
+
+# What a caller records when it cannot name the model that ran. Deliberately NOT a price
+# row: it matches no family here, so `_price_for` returns None and the call is counted in
+# tokens but left out of the dollar figure. "The router never told us" and "it was free"
+# are different answers, and only one of them is honest about a cloud turn.
+UNPRICED_MODEL = "unknown"
 
 # Price per 1M tokens (input/output), USD. These are *family* keys: `_price_for` falls
 # back to the longest matching substring, so "claude-opus-5" and "claude-opus-4-8" both
@@ -42,6 +57,9 @@ logger = logging.getLogger("jarvis.cost")
 # cosmetic: `record()` feeds `spend_today_usd()`, which backs the
 # `llm.daily_cost_cap_usd` check in the router.
 MODEL_PRICES = {
+    # A placeholder mid-tier rate for a caller that asks for it by name. It is NOT the
+    # fallback for an id this table does not know — that fallback is what let an
+    # unrecognised model invoice $3/$15 it had never been quoted (see `_price_for`).
     "default":         {"input": 3.00,  "output": 15.00, "cached": 0.3},
     # Anthropic
     "claude-fable":    {"input": 10.00, "output": 50.00, "cached": 1.0},
@@ -66,9 +84,10 @@ MODEL_PRICES = {
     "gpt-4o-mini":     {"input": 0.15,  "output": 0.60, "cached": 0.075},
     "gpt-4o":          {"input": 2.50,  "output": 10.00, "cached": 1.25},
     # Local backends bill nothing. Named explicitly because a local id such as
-    # "google/gemma-4-31b-a4b" matches no family and would otherwise fall through to
-    # `default` and be billed at cloud rates — the opposite of what the caller in
-    # `orchestrator.py` documents ("A local route prices at zero").
+    # "google/gemma-4-31b-a4b" matches no family, and a measured $0.00 is the right
+    # answer for it — what the caller in `orchestrator.py` documents ("A local route
+    # prices at zero"). Without these rows it would now read *unpriced* instead, which
+    # is true of an unknown cloud model but a needless caveat over a local one.
     "local":           {"input": 0.00,  "output": 0.00, "cached": 0.0},
     "gemma":           {"input": 0.00,  "output": 0.00, "cached": 0.0},
     "qwen":            {"input": 0.00,  "output": 0.00, "cached": 0.0},
@@ -80,7 +99,13 @@ MODEL_PRICES = {
 
 _lock = threading.RLock()
 _usage: dict[str, dict] = defaultdict(
-    lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default", "cost_usd": 0.0}
+    # `unpriced_calls` counts the calls whose model this table could not price. It is a
+    # counter rather than a flag because one agent mixes models across a session, and an
+    # agent's `cost_usd` has to be readable as "the priced part of this, and N calls it
+    # does not cover". An older rollup on disk simply has no key here and starts at 0 —
+    # `_load_unlocked` only restores keys the entry already declares.
+    lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default",
+             "cost_usd": 0.0, "unpriced_calls": 0}
 )
 # Spend per UTC day, so a daily cap has something to read and last month is answerable.
 _daily: dict[str, float] = defaultdict(float)
@@ -166,14 +191,13 @@ def _exact_prices() -> dict:
     return MODELS
 
 
-def _price_for(model: str) -> dict:
-    """Price row for a model id, most specific source first.
+def _price_for(model: str) -> dict | None:
+    """Price row for a model id, most specific source first — or ``None`` if unpriced.
 
     1. an exact row in this module's family table (covers "default", "local");
     2. an exact row in the per-model table — **version-aware**, and the reason a
        generation-specific price is never flattened by its family;
-    3. the **longest** matching family substring;
-    4. `default`.
+    3. the **longest** matching family substring.
 
     Steps 2 and 3 both matter. A single coarse family row cannot price two live
     generations at once: Sonnet 5 is $2/$10 while Sonnet 4.5/4.6 remain $3/$15, so
@@ -185,8 +209,16 @@ def _price_for(model: str) -> dict:
     happened to be inserted first, so "gpt-4o-mini-2024-07-18" billed at the `gpt-4o`
     rate purely because that row sat higher in the literal. The more specific family is
     always the longer string ("gpt-4o-mini" > "gpt-4o").
+
+    There is deliberately no step 4. An id that matches no provider family is not a
+    $3/$15 model — it is a model nobody here has priced, and `default` as a last resort
+    turned that into a confident invoice figure an owner could not distinguish from a
+    measured one. `record()` counts those calls and leaves them out of the dollars; the
+    `default` row survives only for a caller that asks for it BY NAME, which is a
+    request for a placeholder rate, not a failed lookup. An empty/missing model id is a
+    failed lookup, not a request, so it resolves to `UNPRICED_MODEL`.
     """
-    key = (model or "default").lower()
+    key = (model or UNPRICED_MODEL).lower()
     exact = MODEL_PRICES.get(key)
     if exact is not None:
         return exact
@@ -195,17 +227,27 @@ def _price_for(model: str) -> dict:
         return per_model
     matches = [k for k in MODEL_PRICES if k != "default" and k in key]
     if not matches:
-        return MODEL_PRICES["default"]
+        return None
     return MODEL_PRICES[max(matches, key=len)]
 
 
-def record(agent_name: str, input_tokens: int, output_tokens: int, model: str = "default"):
+def record(agent_name: str, input_tokens: int, output_tokens: int,
+           model: str = UNPRICED_MODEL):
     """Record token usage for an agent, pricing each call at its own model.
 
     Cost is accumulated per call so mixed local+cloud usage is priced correctly.
     Previously only the last model was retained and get_summary() re-priced the
     agent's whole cumulative token count at that one model's rate — a single
     cloud call would re-bill millions of prior local (free) tokens at cloud rates.
+
+    `model` must be the model that ACTUALLY ran, not the agent's configured one and not
+    a route name: a route name ("cloud", "cloud-flash") matches no family row, and
+    pricing one through this table used to land on `default` — $3/$15 for a Flash call
+    that really costs $0.75/$3.75. A caller that cannot name the model passes
+    ``UNPRICED_MODEL``, which is also this argument's default: saying nothing is not a
+    request for the placeholder rate the way naming "default" is, and it used to bill
+    $3/$15 all the same. Either way the tokens are still counted; only the dollars are
+    withheld.
     """
     with _lock:
         _load_unlocked()
@@ -215,8 +257,13 @@ def record(agent_name: str, input_tokens: int, output_tokens: int, model: str = 
         entry["calls"] += 1
         entry["model"] = model
         price = _price_for(model)
-        call_cost = (input_tokens / 1_000_000 * price["input"]
-                     + output_tokens / 1_000_000 * price["output"])
+        if price is None:
+            logger.debug("unpriced model %r — counted in tokens, not in dollars", model)
+            entry["unpriced_calls"] += 1
+            call_cost = 0.0
+        else:
+            call_cost = (input_tokens / 1_000_000 * price["input"]
+                         + output_tokens / 1_000_000 * price["output"])
         entry["cost_usd"] = round(entry["cost_usd"] + call_cost, 6)
         if call_cost:
             _daily[_today()] = round(_daily[_today()] + call_cost, 6)
@@ -224,15 +271,26 @@ def record(agent_name: str, input_tokens: int, output_tokens: int, model: str = 
 
 
 def get_summary() -> dict:
-    """Return per-agent usage + cost estimates (cost accumulated at record time)."""
+    """Return per-agent usage + cost estimates (cost accumulated at record time).
+
+    Each agent carries `priced`, mirroring `llm/cost_estimator.estimate_cost`: False
+    means at least one of this agent's calls ran on a model nobody here has priced, so
+    its `cost_usd` covers less than its tokens. `unpriced_calls` at the top level is how
+    many such calls the whole figure is missing — a surface that prints a currency
+    amount has to be able to say "plus N turns we cannot price".
+    """
     with _lock:
         result = {}
         total_cost = 0.0
+        total_unpriced = 0
         for agent, data in _usage.items():
             cost = round(data["cost_usd"], 6)
+            unpriced = int(data.get("unpriced_calls", 0))
             total_cost += cost
-            result[agent] = {**data, "cost_usd": cost}
-        return {"agents": result, "total_cost_usd": round(total_cost, 6)}
+            total_unpriced += unpriced
+            result[agent] = {**data, "cost_usd": cost, "priced": unpriced == 0}
+        return {"agents": result, "total_cost_usd": round(total_cost, 6),
+                "unpriced_calls": total_unpriced}
 
 
 def apm_summary() -> dict:
@@ -240,11 +298,17 @@ def apm_summary() -> dict:
 
     Built on get_summary() (per-agent tokens + $). Adds organization totals and
     a per-model aggregation for the Admin APM dashboard.
+
+    `unpriced_calls` rides along at every level for the reason get_summary() gives: the
+    dashboard renders a dollar figure, and it must be able to say how many runs that
+    figure does not cover. On the per-model breakdown it also localises the gap — the
+    row that cannot be priced is the row naming the model to add to the table.
     """
     summary = get_summary()
     agents = summary["agents"]
 
-    totals = {"runs": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    totals = {"runs": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+              "unpriced_calls": 0}
     by_model: dict[str, dict] = {}
     by_agent = []
 
@@ -254,25 +318,29 @@ def apm_summary() -> dict:
         out_tok = data.get("output_tokens", 0)
         cost = data.get("cost_usd", 0.0)
         model = data.get("model", "default")
+        unpriced = int(data.get("unpriced_calls", 0))
 
         totals["runs"] += runs
         totals["input_tokens"] += in_tok
         totals["output_tokens"] += out_tok
         totals["cost_usd"] = round(totals["cost_usd"] + cost, 6)
+        totals["unpriced_calls"] += unpriced
 
         by_agent.append({
             "agent": agent, "model": model, "runs": runs,
             "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
+            "unpriced_calls": unpriced, "priced": unpriced == 0,
         })
 
         m = by_model.setdefault(
             model, {"model": model, "runs": 0, "input_tokens": 0,
-                    "output_tokens": 0, "cost_usd": 0.0},
+                    "output_tokens": 0, "cost_usd": 0.0, "unpriced_calls": 0},
         )
         m["runs"] += runs
         m["input_tokens"] += in_tok
         m["output_tokens"] += out_tok
         m["cost_usd"] = round(m["cost_usd"] + cost, 6)
+        m["unpriced_calls"] += unpriced
 
     by_agent.sort(key=lambda r: r["cost_usd"], reverse=True)
     by_model_list = sorted(by_model.values(), key=lambda r: r["cost_usd"], reverse=True)

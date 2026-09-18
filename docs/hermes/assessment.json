@@ -2,7 +2,7 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f9c7473a214b4a4dd3bbfe29161d1d8158563c2f",
+  "base_sha": "a9ecb4dd1bd6a4f9f6db7c41be499979406a45ab",
   "assessed_at": "2026-09-18T07:31:30Z",
   "reviews": [
     {
@@ -1431,7 +1431,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1855,7 +1855,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2233,7 +2233,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2374,7 +2374,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2883,7 +2883,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -4322,7 +4322,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4459,7 +4459,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4706,7 +4706,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "9fe69e1dd9a60ac6afbabf26e6fe9abbde2f404f2a701a09199334cf129861aa"
+          "sha256": "effc257c34587085c4a67168a4d1c4c9da435c02ec667b29e4bbcabe11af2091"
         },
         {
           "path": "agents/core/settings_db.py",

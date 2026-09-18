@@ -1831,6 +1831,11 @@ class Orchestrator:
         self._last_routes = {}
         self._last_latencies = {}
         self._last_timeout_floor = {}  # Hermes absorption 5c: per turn, like the two above
+        # The model id the router actually bound for each agent — the only thing that
+        # can price a turn. Per turn, and cleared for the same reason as the maps above:
+        # an absent entry must read as "we do not know what ran", never as last turn's
+        # model. `_record_interactions` meters an absent entry as unpriced.
+        self._last_models = {}
         # DRA-24: the per-turn cost inputs. `_record_interactions` used to write a
         # literal cached_tokens=0 / cache_hit=False on every turn and price the input at
         # `estimate_tokens(text)` — the user's raw words only. That under-reported what a
@@ -2050,6 +2055,11 @@ class Orchestrator:
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
+                # `model` is the id handed to generate_response a few lines up, so this
+                # is the thing that ran — not the agent's configured model, which no
+                # agents.yaml entry sets and which therefore reads as a local id for
+                # every agent on every route.
+                self._last_models[agent_id] = model or ""
                 self._last_latencies[agent_id] = (time.perf_counter() - t_s0) * 1000
                 # DRA-24: the real size of the request that just went out. With a cache
                 # bound, `prompt` was rebuilt from tail history only and the system
@@ -2079,6 +2089,7 @@ class Orchestrator:
         )
         if secondaries:
             primary_route = route_name or ""
+            primary_model = self._last_models.get(agent_id, "")
             primary_latency = self._last_latencies.get(agent_id, 0.0)
             primary_floor = self._last_timeout_floor.get(agent_id)
             primary_cached = self._last_cached_tokens.get(agent_id, 0)
@@ -2090,11 +2101,13 @@ class Orchestrator:
                 secondary_responses = await self._call_agents_parallel(
                     secondaries, text, intent.context, plugin_data
                 )
-            # _call_agents_parallel rebuilds all four per-agent maps — re-insert the
-            # primary so _record_interactions scores it with its real route and the
-            # real size of the request it streamed. Secondaries stay on the fallback
-            # estimate: that path bills them uncached, which is what they are.
+            # _call_agents_parallel rebuilds all five per-agent maps — re-insert the
+            # primary so _record_interactions scores it with its real route, its real
+            # model and the real size of the request it streamed. Secondaries stay on
+            # the fallback estimate: that path bills them uncached, which is what they
+            # are.
             self._last_routes[agent_id] = primary_route
+            self._last_models[agent_id] = primary_model
             self._last_latencies[agent_id] = primary_latency
             if primary_floor is not None:
                 self._last_timeout_floor[agent_id] = primary_floor
@@ -3132,6 +3145,11 @@ class Orchestrator:
         # route / latency maps below — but it is reset BEFORE the gather, because each
         # agent task records its own floor while it runs, not from the results.
         self._last_timeout_floor = {}
+        # Same shape, same reason: each task knows the model it resolved, and only that
+        # task knows it. Reset here rather than after the gather so a turn that never
+        # reached an agent leaves the map empty — `_record_interactions` then meters
+        # that agent as unpriced instead of at some other turn's model.
+        self._last_models = {}
 
         from .llm.usage_context import observer_scope
 
@@ -3157,6 +3175,14 @@ class Orchestrator:
                 route_name, model = self._timeout_inputs_for(agent_id, enriched_text, context)
             seconds, floor = self._agent_call_timeout(route_name=route_name, model=model)
             self._last_timeout_floor[agent_id] = {"floor": floor, "seconds": seconds}
+            # The model the router bound, kept for the cost meter — but only when the
+            # router actually answered. `_timeout_inputs_for` substitutes the agent's
+            # CONFIGURED model when it did not, and that value is a local id for every
+            # agent (nothing in agents.yaml sets `model`), so metering it would be the
+            # $0.00-for-a-cloud-turn bug all over again. An empty route is the router's
+            # "unknowable", the same signal `_route_for_agent` reports; leaving the
+            # entry blank makes the meter say unpriced rather than free.
+            self._last_models[agent_id] = model if route_name else ""
             # A per-agent copy: the tool loop reads its wall clock from here, and the
             # shared turn context must not carry one agent's budget into another's.
             agent_context = dict(context or {})
@@ -3425,28 +3451,41 @@ class Orchestrator:
                     metadata=metadata,
                     route_name=agent_route,
                 )
-                agent_model = self.agents[agent_id].config.get("model", "")
+                configured_model = self.agents[agent_id].config.get("model", "")
                 self.bench.record(
                     agent_id=agent_id,
                     latency=latency,
                     success=success,
                     output_length=len(resp),
-                    model=agent_model,
+                    model=configured_model,
                 )
                 # ADV-078: feed the cost meter. GET /api/cost, /api/analytics/cost and
                 # /api/admin/apm all read cost_tracker and NOTHING wrote to it, so every
                 # one of them rendered a confident 0.00 forever. This is the natural
-                # producer: the token counts are already in `metadata` above, and the
-                # model that actually ran is right here. A local route prices at zero, so
-                # a local-only install still reads 0.00 — but now because it measured
-                # nothing spent, not because nobody was counting.
+                # producer: the token counts are already in `metadata` above.
+                #
+                # 2026-09-18: the model came from the wrong place. This used to pass
+                # `configured_model or agent_route or "default"`, and `AgentConfig.model`
+                # defaults to "google/gemma-4-31b-a4b" while not one of the 18 agents in
+                # agents/_system/agents.yaml declares a `model` — so the first term was
+                # ALWAYS truthy, the two fallbacks were dead code, and every cloud turn
+                # priced at the local rate of $0.00. The meter was fed and still read
+                # zero. `agent_route` would not have saved it either: it is a route NAME
+                # ("cloud", "cloud-flash"), which matches no price row, and pricing one
+                # through the model table landed on the $3/$15 default — 4x over the real
+                # Flash rate. `_last_models` carries the id the router actually bound.
+                #
+                # When the router could not tell us, we say so: UNPRICED_MODEL counts the
+                # tokens and keeps the dollars out, because an honest "unknown" beats a
+                # confident wrong figure. A local route still prices at a measured zero.
                 try:
                     from agents.core import cost_tracker
+                    routed_model = getattr(self, "_last_models", {}).get(agent_id) or ""
                     cost_tracker.record(
                         agent_id,
                         metadata["input_tokens"],
                         metadata["output_tokens"],
-                        model=agent_model or agent_route or "default",
+                        model=routed_model or cost_tracker.UNPRICED_MODEL,
                     )
                 except Exception:
                     logger.debug("cost record skipped", exc_info=True)
