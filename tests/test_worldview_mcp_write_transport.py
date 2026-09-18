@@ -165,3 +165,74 @@ async def test_missing_mcp_secret_blocks_without_mint_or_mcp(monkeypatch):
         "tool": "reconstruct_event",
     }
     assert mcp.calls == []
+
+
+@pytest.mark.asyncio
+async def test_worldview_server_is_handed_the_api_url_it_reads_itself(monkeypatch):
+    """H502 repair (defect 2) — the stdio env baseline now ships on by default, so a
+    spawned server only sees `STDIO_ENV_ALLOWLIST` plus its own `env`. `WORLDVIEW_API_URL`
+    is in neither, and `worldview/mcp/src/config.ts` falls back to `http://localhost:4000`
+    *silently* — a wrong destination on a deployment with a remote WorldView backend, not
+    the loud auth error the flip's migration note promises. Nerva builds and spawns this
+    server itself, so "a third-party binary the owner attached" never applied to it.
+    """
+    from agents.core.mcp.client import MCPManager, MCPServer
+    from agents.core.mcp.worldview_write import WorldViewMCPWriteClient
+
+    monkeypatch.setenv("WORLDVIEW_API_URL", "https://worldview.internal:4000")
+    mgr = MCPManager()
+    client = WorldViewMCPWriteClient(
+        permission_gate=PermissionGate(),
+        mcp=mgr,
+        secret=_SECRET,
+        capability_token_id="agent-capability-token",
+        auto_connect=True,
+    )
+
+    connected: list[MCPServer] = []
+
+    async def fake_connect(self):
+        connected.append(self)
+        self.tools = [object()]
+        return True
+
+    monkeypatch.setattr(MCPServer, "connect", fake_connect)
+    assert await client._ensure_worldview_server(_SECRET, "watch_aoi") is None
+
+    srv = mgr.servers["worldview"]
+    assert srv.env["WORLDVIEW_MCP_SECRET"] == _SECRET
+    assert srv.env["WORLDVIEW_API_URL"] == "https://worldview.internal:4000"
+    # And it survives the baseline all the way to the subprocess env.
+    assert srv._merged_env()["WORLDVIEW_API_URL"] == "https://worldview.internal:4000"
+    assert connected == [srv]
+
+    # An already-registered server picks it up too, without clobbering a deliberate value.
+    mgr.servers["worldview"].env.pop("WORLDVIEW_API_URL")
+    await client._ensure_worldview_server(_SECRET, "watch_aoi")
+    assert srv.env["WORLDVIEW_API_URL"] == "https://worldview.internal:4000"
+    srv.env["WORLDVIEW_API_URL"] = "https://explicit:9000"
+    await client._ensure_worldview_server(_SECRET, "watch_aoi")
+    assert srv.env["WORLDVIEW_API_URL"] == "https://explicit:9000"
+
+
+@pytest.mark.asyncio
+async def test_worldview_host_env_is_absent_when_the_host_does_not_set_it(monkeypatch):
+    """No invented value: if the owner never set `WORLDVIEW_API_URL`, the server keeps its
+    own documented default rather than being handed an empty string."""
+    from agents.core.mcp.client import MCPManager, MCPServer
+    from agents.core.mcp.worldview_write import WorldViewMCPWriteClient
+
+    monkeypatch.delenv("WORLDVIEW_API_URL", raising=False)
+    mgr = MCPManager()
+    client = WorldViewMCPWriteClient(
+        permission_gate=PermissionGate(), mcp=mgr, secret=_SECRET,
+        capability_token_id="agent-capability-token", auto_connect=True,
+    )
+
+    async def fake_connect(self):
+        self.tools = [object()]
+        return True
+
+    monkeypatch.setattr(MCPServer, "connect", fake_connect)
+    await client._ensure_worldview_server(_SECRET, "watch_aoi")
+    assert "WORLDVIEW_API_URL" not in mgr.servers["worldview"].env

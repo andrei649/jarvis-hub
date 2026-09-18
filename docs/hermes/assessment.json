@@ -1729,11 +1729,11 @@
         },
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "agents/core/routers/mcp.py",
-          "sha256": "db2f278b57d1175be30fd1d4936a73d9796800ed195965e2c1ca526eb77049b0"
+          "sha256": "1366071f1a5824737de17f0be47964f208f21d5428a6e6487184c5cf53ed54c4"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -1757,11 +1757,11 @@
         },
         {
           "path": "tests/test_mcp_transports.py",
-          "sha256": "80784fd8dc5e5e71347fd36a9a15a09579a9eababa5dde3e9e0d1cfd10bb7264"
+          "sha256": "019833f794f49813dbaec03918f124ee53e5230dd5f085332ada314a3233da97"
         },
         {
           "path": "tests/test_mcp_admin.py",
-          "sha256": "f9875287333ce3fc0fb88aec4720f0c5f86fb09f34c53b314aa321962fe599f8"
+          "sha256": "21031150acccdb69eb4873940a6a6a23f3014a78551224bc4e438dd97dffd56a"
         },
         {
           "path": "tests/test_settings_integrity.py",
@@ -3605,6 +3605,35 @@
       ]
     },
     {
+      "id": "H502",
+      "row_sha256": "eb85116b7db6a25c51add0469ce9243053cbc58ea36d636d997830153fb6e6cb",
+      "status": "partial",
+      "summary": "**`JARVIS_MCP_STDIO_ENV_BASELINE` flips from opt-in to default-on**, so a spawned stdio MCP server is handed the `STDIO_ENV_ALLOWLIST` baseline plus its own `env` instead of `os.environ.copy()` — API keys, tokens, proxies and every `JARVIS_*` setting withheld. A second flag, `JARVIS_MCP_STDIO_ALLOWED_ENV`, is the owner-reachable migration remedy: a comma-separated list of host variable names that pass the baseline even when `_SECRET_LIKE` matches them. `_merged_env()` emits one INFO line per connect counting host values the child does not receive, carrying **no variable name and no value**. `GET /api/admin/mcp` rows gain `env_baseline`. And Nerva's own WorldView MCP server is handed its `WORLDVIEW_API_URL`, which the flip would otherwise have silently replaced with the built-in `http://localhost:4000`. **The review found two blocking majors and four false claims; all six are addressed.** **(1)** `routers/mcp.py` asserted an invariant the code did not hold: the comment said a row that spawns no subprocess reports `None` \"rather than a badge it has not earned\" and enumerated two cases. A third exists and is the only one an owner can create today — `POST /api/admin/mcp` does no command validation, so a row with a whitespace-only command or a shell metacharacter persists, and `connect()` answers `unsafe_command` from `_command_argv()` **before** `create_subprocess_exec`. Such a row reported `env_baseline: true` for a child that never existed; the row now calls the same `_command_argv()` `connect` does, so the two cannot disagree, and the guard test carries both spellings. **(2)** `BACKLOG.md` still shipped the pre-flip claim and therefore stated the OPPOSITE of the code — \"opt-in, default-off … keeps working until the owner opts in\" — in the one file `CLAUDE.md` tells a reader to query for what is delivered. That is exactly the misreading the slice's own documentation work exists to prevent. Corrected, and `test_env_baseline_is_documented_as_defence_in_depth_not_a_boundary` now covers BACKLOG.md too, including a check that the \"opt-in, default-off\" wording is gone. Two wording corrections went with them: the `env_baseline` field describes the live FLAG, i.e. the posture for the NEXT spawn, not the environment the running child holds (`_merged_env()` runs once at connect, the row is read per request); and the migration note steered the reader at auth failures only, when the flip also withholds `PYTHONPATH`, `NODE_OPTIONS`, `SSH_AUTH_SOCK`, `HTTPS_PROXY`/`NO_PROXY` and `GIT_CONFIG_GLOBAL` — plumbing whose absence produces an ImportError, a hang or a connect timeout, nothing resembling an auth error.",
+      "remaining": "**The documented per-server `env` migration path does not exist as a reachable surface.** `MCPServerConfig` has no `env` field, `POST /api/admin/mcp` drops the key (pydantic's default `extra=\"ignore\"`), and neither `to_config` nor `load_from_config` writes or reads one. The only remedy an owner can actually reach is the **host-wide** `JARVIS_MCP_STDIO_ALLOWED_ENV`, which is a strictly weaker grant than the per-server one the docs describe: an owner whose forge server needs `GITHUB_TOKEN` must allow it for every stdio server on the host. Whether to ship on that or build the per-server surface first is a product decision, written up as `docs/OWNER_TASKS.md` §P28.3 with both options. **Related and also owner-level:** `XAUTHORITY` and `DBUS_SESSION_BUS_ADDRESS` are both on `STDIO_ENV_ALLOWLIST`, and today one is listed-but-silently-dropped while the other is listed-and-handed-over — they should be consistent in one direction or the other. **And the honest ceiling, stated wherever the guarantee is:** this is **defence in depth, not a security boundary**. The child is same-UID with no namespace, so a server that can run a subprocess reads the withheld variables straight out of `/proc/<ppid>/environ`. What the baseline buys is that a *careless* or *curious* server does not get them by accident, and that an owner's `JARVIS_*` settings are not ambient in a third party's process. It does not stop an adversary, and the row says so rather than implying otherwise. **Unaddressed from the row:** there is no refusal of an MCP entry that is a backdoor wearing an MCP costume — no command allow-listing, no signature or provenance check on the spawned binary, and `POST /api/admin/mcp` still accepts any command string. This slice hardens what the child *receives*; the row also asks who the child is allowed to *be*.",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
+        },
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "1366071f1a5824737de17f0be47964f208f21d5428a6e6487184c5cf53ed54c4"
+        },
+        {
+          "path": "agents/core/mcp/worldview_write.py",
+          "sha256": "75fea632403b9a492046546575d457a5d523ae930c304c64f1023e09fe1f47d5"
+        },
+        {
+          "path": "tests/test_mcp_transports.py",
+          "sha256": "019833f794f49813dbaec03918f124ee53e5230dd5f085332ada314a3233da97"
+        },
+        {
+          "path": "tests/test_mcp_admin.py",
+          "sha256": "21031150acccdb69eb4873940a6a6a23f3014a78551224bc4e438dd97dffd56a"
+        }
+      ]
+    },
+    {
       "id": "H506",
       "row_sha256": "a5c5cf700464dd903d7a61017dfd520e44c96c3d8984bd3e0656cbad93a1df35",
       "status": "partial",
@@ -4138,7 +4167,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "tests/test_mcp_tool_filters.py",
@@ -4155,7 +4184,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "tests/test_mcp_tool_filters.py",
@@ -4172,7 +4201,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
