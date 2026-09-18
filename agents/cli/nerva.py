@@ -1,7 +1,8 @@
 """`nerva` — the command tree. See the package docstring for why it exists.
 
 Exit codes: 0 ok · 1 the verb failed (the hub said no, or a check is red) · 2 usage ·
-3 no hub is reachable · 4 a credential is required.
+3 no hub is reachable · 4 a credential is required · 5 the check could not run at all ·
+130 interrupted.
 """
 
 from __future__ import annotations
@@ -29,6 +30,10 @@ EXIT_AUTH = 4
 #: could not be made. Distinct from EXIT_FAILED on purpose: a script must never read
 #: "we could not look" as either "clean" or "findings". Nothing is claimed.
 EXIT_UNAVAILABLE = 5
+#: Ctrl-C. Not a new rung — 130 is what a shell reports for SIGINT (128 + 2) and what
+#: this process already exited with, just via an uncaught traceback. The value is kept
+#: so `nerva` agrees with every other command a script wraps.
+EXIT_INTERRUPTED = 130
 
 _OSV_DEFAULT = "https://api.osv.dev"
 
@@ -213,8 +218,35 @@ def build_parser() -> argparse.ArgumentParser:
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
     continuation.add_argument("--json", action="store_true")
 
-    chat = verbs.add_parser("chat", help="one scripted turn: send a message, print the reply")
-    chat.add_argument("message")
+    chat = verbs.add_parser(
+        "chat",
+        help="one scripted turn: send a message, print the reply (scripts, cron, CI)",
+        description="One turn in, one answer out. The message is the MESSAGE argument, else "
+                    "--file PATH (- reads stdin), else whatever is piped on stdin; a terminal is "
+                    "never read. With -z the answer is the ONLY thing on stdout and every "
+                    "diagnostic goes to stderr, so the command composes in a pipeline. A turn that "
+                    "did not complete — one that queued an approval, was refused, or came back "
+                    "empty — prints nothing on stdout and exits non-zero. Exit 0 answered · 1 the "
+                    "turn did not complete · 2 usage · 3 no hub · 4 not authorised · 130 "
+                    "interrupted.",
+        epilog="examples:\n"
+               "  nerva chat -z \"what is on my calendar?\"\n"
+               "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
+               "  nerva chat -z -f prompt.txt --agent athena\n"
+               "\n"
+               "This verb never auto-approves. If the turn queues an action for approval it\n"
+               "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
+               "decide with `nerva approvals`.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    chat.add_argument("message", nargs="?",
+                      help="the message; omit it to read --file or stdin")
+    chat.add_argument("-f", "--file", metavar="PATH",
+                      help="read the message from PATH, or from stdin when PATH is -")
+    chat.add_argument("-z", "--oneshot", action="store_true",
+                      help="only the answer on stdout; diagnostics on stderr; non-zero when the "
+                           "turn did not complete")
+    chat.add_argument("--usage-file", metavar="PATH",
+                      help="write a JSON report of this run (written even when it fails)")
     chat.add_argument("--agent", help="address one agent instead of the router")
     # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
     chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
@@ -1041,24 +1073,220 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+#: Replies that are NOT an answer. The hub returns each of these as a normal HTTP 200
+#: ``{"reply": …}``, so a caller that only looks at the status code cannot tell a refused
+#: turn from a real one — and a script would treat "Internal error." as the model's
+#: opinion. Each entry maps the hub's own wording to a short machine reason.
+#:
+#: This is a COPY of constants that live in `agents.core.*`, kept here because the CLI's
+#: parser and completion must stay stdlib-only (importing the orchestrator to read one
+#: string would pull the whole runtime into `nerva --help`). A copy can drift, so the
+#: drift is made loud rather than silent: ``test_nerva_oneshot.py`` imports the real
+#: constants and fails the moment one of them changes. Treat a failure there as this
+#: table needing an update, not as a broken test.
+_NOT_AN_ANSWER: dict[str, str] = {
+    # agents.core.agent_runtime._APPROVAL_REPLY
+    "I paused the tool loop because this action requires approval.":
+        "the turn queued an action for approval and was not executed",
+    # agents.core.orchestrator.TURN_BUSY_REPLY
+    "I'm still working on your previous message — send that again in a moment.":
+        "the session was busy with the previous turn",
+    # agents.core.conversation_clock.CONTEXT_REFUSED_REPLY
+    "I stopped this turn because its context compaction could not be safely committed. Please retry.":
+        "the turn was refused: its context could not be safely compacted",
+    # agents.core.session_continuation.CONTINUATION_REFUSED_REPLY
+    "I stopped this turn because this continued conversation could not be safely restored.":
+        "the turn was refused: the continued conversation could not be restored",
+    # agents.core.llm.base.LOCAL_SELECTION_UNAVAILABLE_REPLY
+    "\u26a0\ufe0f No local language model is available. Start LM Studio or Ollama and try again.":
+        "no local model is available",
+    # agents/web.py — the chat route's own two failure replies
+    "Internal error.": "the hub failed while handling the turn",
+    "Jarvis not initialized.": "the hub has no orchestrator",
+}
+
+#: An escape sequence is stripped whole, terminator included. Dropping only the ESC byte
+#: would leave `[2J` behind: inert on a terminal, but noise in the string a script parses.
+#: CSI and OSC cover what a model or an echoed tool result actually emits — colour, cursor
+#: moves, window titles; anything else falls through to _ANSWER_CONTROL below.
+_ANSWER_ESCAPE = re.compile(
+    r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC … BEL or ST
+    r"|\x1b\[[0-?]*[ -/]*[@-~]"             # CSI … final byte
+    r"|\x1b[@-Z\\-_]"                       # two-character escapes
+)
+
+#: An answer may legitimately contain newlines and tabs; everything else in the C0/C1
+#: range is stripped so a model (or anything upstream of it) cannot repaint the terminal
+#: or forge output in a piped run. Deliberately NOT `_plain`, which also eats \n and
+#: truncates at 200 characters — that would destroy the payload.
+_ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _answer_text(reply: Any) -> str:
+    text = str(reply if reply is not None else "")
+    return _ANSWER_CONTROL.sub("", _ANSWER_ESCAPE.sub("", text))
+
+
+def _utc_now() -> str:
+    """This run's clock. The hub has its own; these timestamps date the CLI's attempt."""
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
+def _elapsed_ms(started: str, finished: str) -> int | None:
+    from datetime import datetime
+
+    try:
+        return int((datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds() * 1000)
+    except (TypeError, ValueError):
+        return None
+
+
+def _usage_report(**fields: Any) -> dict[str, Any]:
+    """The run report, with `null` wherever the value was not actually obtained.
+
+    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured is
+    the exact lie this file exists to avoid. `cost_basis` says which it is, and today it
+    is always "unavailable" — see the H002 row's remainder for why the hub cannot yet
+    attribute one turn's spend.
+    """
+    report: dict[str, Any] = {
+        "schema": "nerva.chat.usage.v1",
+        "status": "failed", "completed": False, "exit_code": EXIT_FAILED,
+        "started_at": None, "finished_at": None, "duration_ms": None,
+        "session_id": None, "agent": None, "model": None, "provider": None,
+        "api_calls": None, "input_tokens": None, "output_tokens": None,
+        "estimated_cost_usd": None, "cost_basis": "unavailable",
+        "pending_approvals": [], "reason": None,
+    }
+    report.update(fields)
+    return report
+
+
+def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
+    """Write the report atomically, so a reader never sees a half-written file.
+
+    A path that cannot be written is a warning, not a different exit code: the run's
+    outcome is the run's outcome, and losing the receipt must not change it.
+    """
+    import tempfile
+
+    try:
+        target = Path(path)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False,
+                                         dir=str(target.parent or "."),
+                                         prefix=".nerva-usage-", suffix=".json") as handle:
+            json.dump(report, handle, indent=2, ensure_ascii=False, default=str)
+            handle.write("\n")
+            temporary = handle.name
+        os.replace(temporary, target)
+    except OSError as exc:
+        ctx.err.write(f"could not write the usage file to {_plain(path, 120)}: "
+                      f"{exc.strerror or type(exc).__name__}\n")
+
+
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
-    body: dict[str, Any] = {"message": ns.message}
+    """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
+
+    The governance clause of the row this implements is binding and visible here: Hermes'
+    one-shot mode sets its own YOLO and accept-hooks flags because "no user is watching".
+    Nerva does the opposite. A turn that queues an action for approval stays queued; this
+    verb reports it on stderr and exits non-zero, and there is no flag that changes that.
+    Nothing in this function can approve, execute or bypass a queued item.
+    """
+    oneshot = bool(getattr(ns, "oneshot", False))
+    usage_file = getattr(ns, "usage_file", None)
+    started = _utc_now()
+
+    def finish(code: int, *, status: str, reason: str | None = None,
+               pending: list[Any] | None = None) -> int:
+        if usage_file:
+            finished = _utc_now()
+            _write_usage(usage_file, _usage_report(
+                status=status, completed=(code == EXIT_OK), exit_code=code,
+                started_at=started, finished_at=finished,
+                duration_ms=_elapsed_ms(started, finished),
+                session_id=getattr(ns, "session", None) or None,
+                agent=getattr(ns, "agent", None) or None,
+                pending_approvals=list(pending or []), reason=reason,
+            ), ctx)
+        return code
+
+    if oneshot and ns.json:
+        ctx.err.write("-z and --json both own stdout; pick one\n")
+        return finish(EXIT_USAGE, status="usage", reason="-z and --json are mutually exclusive")
+    message, why = _send_body(ns, ctx, verb="nerva chat", bound=CHAT_MAX_CHARS)
+    if message is None:
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
+    if len(message) > CHAT_MAX_CHARS:
+        # _send_body bounds what it *reads* from a file or stdin; an argument arrives
+        # whole. `ChatRequest.message` is max_length=4096, so the hub would answer 422 —
+        # which a script reads as "the turn failed". It is a usage error, and it is one
+        # before the request rather than after it.
+        why = (f"the prompt is {len(message):,} characters, and one chat turn carries up to "
+               f"{CHAT_MAX_CHARS:,} — trim it, or split the turn")
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
+
+    body: dict[str, Any] = {"message": message}
     if ns.agent:
         body["agent"] = ns.agent
     if getattr(ns, "reasoning", None) is not None:
         body["reasoning"] = ns.reasoning
     if getattr(ns, "session", None):
         body["session_id"] = ns.session
-    reply = ctx.client().post("/chat", body)
-    if ns.json:
-        ctx.dump(reply)
-        return EXIT_OK
-    ctx.say(str((reply or {}).get("reply", "")))
-    return EXIT_OK
+    try:
+        reply = ctx.client().post("/chat", body)
+    except HubUnavailable:
+        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+        raise
+    except HubError as exc:
+        status = "unauthorised" if exc.status in (401, 403) else "failed"
+        finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
+               status=status, reason=str(exc))
+        raise
+
+    answer = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
+    # A hub that reports what the turn queued (ChatResponse.pending_approvals) lets this
+    # name the ids; an older one does not, and then the refusal is reported without them.
+    pending = list((reply or {}).get("pending_approvals") or []) if isinstance(reply, dict) else []
+    refusal = _NOT_AN_ANSWER.get(str(answer).strip())
+
+    if not oneshot:
+        # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
+        # that need the verdict use -z; changing this would break every existing caller.
+        if ns.json:
+            ctx.dump(reply)
+            return finish(EXIT_OK, status="completed", pending=pending)
+        ctx.say(str(answer))
+        return finish(EXIT_OK, status="completed", pending=pending)
+
+    if refusal or pending or not str(answer).strip():
+        reason = refusal or ("the turn queued an action for approval and was not executed"
+                             if pending else "the hub returned an empty answer")
+        if pending:
+            ids = ", ".join(_plain(i, 40) for i in pending)
+            reason = f"{reason} (approval {ids})"
+            ctx.err.write(f"{reason}; decide it with `nerva approvals`\n")
+        elif refusal and "approval" in refusal:
+            ctx.err.write(f"{reason}; this hub did not report the id — run `nerva approvals` to find it\n")
+        else:
+            ctx.err.write(f"{reason}\n")
+        status = "queued_for_approval" if (pending or (refusal and "approval" in refusal)) else "refused"
+        return finish(EXIT_FAILED, status=status, reason=reason, pending=pending)
+
+    ctx.out.write(_answer_text(answer) + "\n")
+    return finish(EXIT_OK, status="completed", pending=pending)
 
 
 #: What one send carries, subject included — the outbound seam's own bound.
 SEND_MAX_CHARS = 4_000
+#: What one chat turn carries: `ChatRequest.message` is `max_length=4096` (agents/web.py).
+#: Checked here so an over-long prompt is a usage error before the request, not an
+#: HTTP 422 that a script would read as "the turn failed".
+CHAT_MAX_CHARS = 4_096
 _NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or pipe it on stdin"
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
@@ -1077,12 +1305,17 @@ def _is_tty(stream: Any) -> bool:
         return False
 
 
-def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
+def _send_body(ns: argparse.Namespace, ctx: Context, *, verb: str = "nerva send",
+               bound: int = SEND_MAX_CHARS) -> tuple[str | None, str]:
     """``(body, "")`` from the MESSAGE argument, else ``--file`` (``-`` is stdin), else piped stdin.
 
     Hermes' precedence, with its one safety rule kept: a terminal is never read, so a
     script that forgot the body gets a usage error instead of a hang. ``(None, reason)``
     is a usage error; the reason names what to fix and never reflects the file's bytes.
+
+    *verb* and *bound* exist because `chat` reads its prompt exactly the way `send` reads
+    its message — same precedence, same refusals — but carries a different limit and must
+    name itself correctly when it refuses.
     """
     given = ns.message if isinstance(ns.message, str) and ns.message.strip() else None
     if given is not None and ns.file:
@@ -1093,28 +1326,29 @@ def _send_body(ns: argparse.Namespace, ctx: Context) -> tuple[str | None, str]:
         if ctx.inp is None or not hasattr(ctx.inp, "read"):
             return None, "stdin is closed; pipe the body or use --file PATH"
         if _is_tty(ctx.inp):
-            return None, "stdin is a terminal, and nerva send never reads one; pipe the body or use --file PATH"
-        return _read_body(ctx.inp, "stdin")
+            return None, f"stdin is a terminal, and {verb} never reads one; pipe the body or use --file PATH"
+        return _read_body(ctx.inp, "stdin", verb=verb, bound=bound)
     if ns.file:
         try:
             with open(ns.file, encoding="utf-8-sig") as handle:
-                return _read_body(handle, _plain(ns.file, 120))
+                return _read_body(handle, _plain(ns.file, 120), verb=verb, bound=bound)
         except OSError as exc:
             return None, f"cannot read {_plain(ns.file, 120)}: {exc.strerror or type(exc).__name__}"
     if ctx.inp is not None and hasattr(ctx.inp, "read") and not _is_tty(ctx.inp):
-        return _read_body(ctx.inp, "stdin")
+        return _read_body(ctx.inp, "stdin", verb=verb, bound=bound)
     return None, _NO_BODY
 
 
-def _read_body(stream: Any, label: str) -> tuple[str | None, str]:
+def _read_body(stream: Any, label: str, *, verb: str = "nerva send",
+               bound: int = SEND_MAX_CHARS) -> tuple[str | None, str]:
     """At most the bound plus one character is read: a runaway file is refused, not loaded."""
     try:
-        text = stream.read(SEND_MAX_CHARS + 1)
+        text = stream.read(bound + 1)
     except UnicodeDecodeError:
         if label == "stdin":
-            return None, "stdin is not UTF-8 text; nerva send carries text bodies only"
+            return None, f"stdin is not UTF-8 text; {verb} carries text bodies only"
         return None, (f"{label} is not a text file. --file reads the message body (logs, reports, "
-                      "markdown); native attachments are not carried by nerva send yet")
+                      f"markdown); native attachments are not carried by {verb} yet")
     except OSError as exc:
         return None, f"cannot read {label}: {exc.strerror or type(exc).__name__}"
     if isinstance(text, bytes):
@@ -1127,8 +1361,8 @@ def _read_body(stream: Any, label: str) -> tuple[str | None, str]:
     text = text.lstrip("\ufeff")
     if not text.strip():
         return None, _NO_BODY
-    if len(text) > SEND_MAX_CHARS:
-        return None, (f"{label} is longer than {SEND_MAX_CHARS:,} characters, which is what nerva send "
+    if len(text) > bound:
+        return None, (f"{label} is longer than {bound:,} characters, which is what {verb} "
                       "carries — trim it, or send the tail")
     return text, ""
 
@@ -1500,6 +1734,12 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
     except argparse.ArgumentTypeError as exc:
         ctx.err.write(f"{exc}\n")
         return EXIT_USAGE
+    except KeyboardInterrupt:
+        # Ctrl-C already exited 130 — but through an uncaught traceback, which in a
+        # one-shot pipeline is indistinguishable from a crash and can spill a partial
+        # answer. One line, nothing on stdout, the same code a shell would report.
+        ctx.err.write("interrupted\n")
+        return EXIT_INTERRUPTED
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised as a subprocess in tests
