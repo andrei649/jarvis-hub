@@ -196,12 +196,47 @@ def test_stale_evidence_is_still_demoted_rather_than_fatal(sample):
 
 
 def test_reviewed_rows_cite_lines_that_exist_in_the_code_they_pinned():
+    """The corrected citations resolve, checked against the pins that still hold.
+
+    These three published positions copied from a checkout other than the one they
+    hashed, and correcting them is what this slice delivers.
+
+    Asserting `basis == "reviewed"` for named rows would have pinned the wrong thing.
+    `assess` only screens citations when EVERY file a row pinned is still byte-identical
+    (`if current:`), so that assertion makes the test hostage to all ~44 files these
+    three rows pin between them: an unrelated edit to any one of them demotes the row,
+    the screen is skipped, and this test fails while reporting nothing about the
+    citations it exists to check. That is not hypothetical — H477 pins
+    `tests/test_h2311_operability.py`, which the serve.py EACCES fix in this same PR
+    added cases to, so the original form of this test went red on its own commit.
+
+    So screen the citations directly, against the subset of each row's evidence whose
+    hash still matches. Drift in one pinned file then narrows what can be verified
+    instead of silencing the check, and the non-vacuity assertions below keep a narrowed
+    set from passing by checking nothing.
+    """
     ledger, data = hs.load()
-    rows = {row["id"]: row for row in hs.assess(ledger, data, hs.REPO)}
-    # These three published positions copied from a checkout other than the one they
-    # hashed. `basis == "reviewed"` means their evidence still matches, so assess()
-    # really did check every citation in them rather than skipping a demoted row.
-    assert [rows[ident]["basis"] for ident in ("H456", "H477", "H510")] == ["reviewed"] * 3
+    reviews = {item["id"]: item for item in data["reviews"]}
+
+    for ident in ("H456", "H477", "H510"):
+        item = reviews[ident]
+        pinned = {}
+        for entry in item["evidence"]:
+            path = hs.REPO / entry["path"]
+            if path.is_file() and hs.file_digest(path) == entry["sha256"]:
+                pinned[entry["path"]] = path.read_text(encoding="utf-8").splitlines()
+
+        text = f"{item['summary']}\n{item['remaining']}"
+        assert pinned, f"{ident}: every pinned file drifted, so nothing could be screened"
+        cited = [m.group(0) for m in hs.CITATION.finditer(text)
+                 if sum(p == m.group(1) or p.endswith("/" + m.group(1)) for p in pinned) == 1]
+        assert cited, f"{ident}: no citation lands in a file still pinned — screen is vacuous"
+        assert hs._cited_lines(text, pinned) == [], f"{ident}: citation does not resolve"
+
+    # And the real corpus still exercises the screen broadly, so a repo-wide drift
+    # cannot quietly reduce every row to the skipped path.
+    rows = hs.assess(ledger, data, hs.REPO)
+    assert sum(row["basis"] == "reviewed" for row in rows) >= 50
 
 
 def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
