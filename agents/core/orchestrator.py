@@ -43,6 +43,7 @@ from .action_origin import (
     origin_for_channel,
     reset_action_origin,
 )
+from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
@@ -1636,6 +1637,11 @@ class Orchestrator:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
 
         origin_token = bind_turn_action_origin(channel)
+        # The reply is one string, so an approval this turn queues would otherwise
+        # be unnameable. The collector adopts a sink the caller opened (that is how
+        # /chat reads the ids back); otherwise the turn gets its own, so a voice or
+        # CLI turn never appends into a neighbour's.
+        approvals_token = bind_turn_approvals()
         meter_token = _TURN_METER_MAPS.set({})
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
@@ -1644,6 +1650,7 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
 
@@ -1810,6 +1817,7 @@ class Orchestrator:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
 
         origin_token = bind_turn_action_origin(channel)
+        approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
@@ -1818,6 +1826,7 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
 
