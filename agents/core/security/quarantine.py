@@ -82,26 +82,75 @@ def strip_invisible(text: str) -> str:
 # walk at import; `test_the_format_char_table_matches_unicodedata` does that walk instead,
 # so a Python that ships a new Cf character fails there rather than silently widening the
 # hole.
-_FORMAT_CHARS_RE = re.compile(
-    "[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e"
+_FORMAT_CHARS = (
+    "\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e"
     "\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb"
     "\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3"
-    "\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F]"
+    "\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F"
 )
+
+# Cf is not the whole invisible class an attacker may draw from, and a strip that stops at
+# Cf only tells them which character to reach for instead. Each of these renders as nothing,
+# is matched by no pattern in `_INJECTION_PATTERNS`, and is not whitespace to `str.split` —
+# the same three properties that make a zero-width space work:
+#   * the variation selectors U+FE00–U+FE0F and U+E0100–U+E01EF (Mn), the canonical
+#     emoji/tag smuggling characters, plus the Mongolian ones (U+180B–U+180D, U+180F);
+#   * U+034F COMBINING GRAPHEME JOINER and the Khmer inherent vowels U+17B4/U+17B5 (Mn);
+#   * the Hangul fillers U+115F, U+1160, U+3164, U+FFA0 (Lo) — blank, but letters;
+#   * the C0/C1 controls (Cc), U+0007 among them.
+# The Cc characters `str.split` calls whitespace (tab, newline, vertical tab, form feed,
+# carriage return, U+001C–U+001F, U+0085) are deliberately NOT here: they separate words, so
+# deleting one would glue two words together rather than uncover a phrase.
+_INVISIBLE_EXTRA_CHARS = (
+    "\x00-\x08\x0e-\x1b\x7f-\x84\x86-\x9f"
+    "\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u3164"
+    "\ufe00-\ufe0f\uffa0\U000E0100-\U000E01EF"
+)
+_FORMAT_CHARS_RE = re.compile(f"[{_FORMAT_CHARS}{_INVISIBLE_EXTRA_CHARS}]")
 
 
 def strip_format_chars(text: str) -> str:
-    """Remove every Cf format character — for SCANNING, not for display.
+    """Remove every invisible character — for SCANNING, not for display.
 
     `strip_invisible` stays TAG-only on purpose: it runs over tool results and MCP
     payloads, where a BOM or a bidi mark can be part of real data a caller expects back
     unchanged. This one is wider and is meant to be thrown away — scan the stripped copy,
     emit the original — so detection stops depending on which invisible character an
     attacker reached for, without rewriting anybody's Arabic.
+
+    Wider than Cf, and it has to be: the general category is not the property that matters
+    here — invisible-and-not-a-separator is, and that spans Cf, Mn, Lo and Cc. Pair it with
+    `detect_injection_normalized` rather than calling it alone: a deletion can destroy a
+    match as easily as it can reveal one.
     """
     if not text:
         return text
     return _FORMAT_CHARS_RE.sub("", text)
+
+
+def detect_injection_normalized(text: str) -> list[str]:
+    """`detect_injection` over the raw text AND over its invisible-stripped copy.
+
+    Union, never substitution — that is the whole point of the function. Scanning only the
+    stripped copy is *weaker* than scanning the raw text on some inputs, because the strip
+    deletes characters and a deletion destroys matches as readily as it uncovers them: the
+    ``you are now`` rule ends in a word boundary, and "You are now<U+200B>in developer mode"
+    supplies that boundary with the zero-width space itself. Take the character away and the
+    phrase matches nothing, so the text would scan clean with the instruction still spelled
+    out in it. Both copies are scanned and the hits unioned, raw first, in pattern order,
+    deduplicated.
+
+    This is the entry point for scanning text that will be rendered to a model verbatim;
+    `detect_injection` stays the literal scan it says it is.
+    """
+    hits = detect_injection(text)
+    stripped = strip_format_chars(text)
+    if stripped == text:
+        return hits
+    for pattern in detect_injection(stripped):
+        if pattern not in hits:
+            hits.append(pattern)
+    return hits
 
 
 _STRIP_MAX_DEPTH = 64

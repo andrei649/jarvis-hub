@@ -124,6 +124,16 @@ def probe_bind(host: str, port: int) -> None:
     *conflict* it prevents needs a working IPv6 stack and skips without one — it
     has not been executed on this box, which has none.)
 
+    ``EACCES`` is the one arm that names a *cause* rather than a symptom, so it is
+    the one arm that can be wrong about it. ``bind()`` returns EACCES for plenty of
+    reasons that are not the sub-1024 privilege rule — a Hyper-V/WSL/winnat
+    excluded port range on Windows (``WSAEACCES``, and those blocks routinely cover
+    8080, our default), an SELinux ``name_bind`` denial on Linux. Blaming the 1024
+    floor for a port that is already above it hands the owner a false diagnosis and
+    an impossible remedy, which is worse than uvicorn's cause-free "permission
+    denied". So the privileged-port sentence is only printed below 1024; at or
+    above it we name the symptom and the plausible remedies instead.
+
     Any ``OSError`` we do not recognise is swallowed for the same reason: an
     unexpected probe failure must not become a boot failure — uvicorn's own bind
     stays the authority on those. **The constructor is inside the guarded region
@@ -164,11 +174,22 @@ def probe_bind(host: str, port: int) -> None:
             )
             raise SystemExit(EXIT_PORT_IN_USE) from None
         if exc.errno == errno.EACCES:
-            print(
-                f"Port refused: not allowed to bind {host}:{port} — ports below 1024 need "
-                f"root or CAP_NET_BIND_SERVICE; set JARVIS_PORT to a port above 1024.",
-                file=sys.stderr,
-            )
+            if port < 1024:
+                print(
+                    f"Port refused: not allowed to bind {host}:{port} — ports below 1024 need "
+                    f"root or CAP_NET_BIND_SERVICE; set JARVIS_PORT to a port above 1024.",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Port refused: the OS denied permission to bind {host}:{port} — that port "
+                    f"is above 1024, so this is not the privileged-port rule and running as "
+                    f"root/Administrator will not help. Something on this box is reserving or "
+                    f"blocking it (Windows: `netsh interface ipv4 show excludedportrange tcp`; "
+                    f"Linux: a local policy such as SELinux). Set JARVIS_PORT to another port "
+                    f"and start again.",
+                    file=sys.stderr,
+                )
             raise SystemExit(EXIT_PORT_DENIED) from None
         # Anything else (a host that is not local to this box, an exotic family)
         # is not a diagnosis we can stand behind — let uvicorn's bind report it.

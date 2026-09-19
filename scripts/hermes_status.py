@@ -48,6 +48,30 @@ def _text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+CITATION = re.compile(r"([A-Za-z0-9_./-]+\.[A-Za-z0-9]{1,5}):(\d+)(?:-(\d+))?")
+
+
+def _cited_lines(text: str, pinned: dict[str, list[str]]) -> list[str]:
+    """Name the `path:line` pointers that miss the evidence the review pinned.
+
+    The hashes pin a file's content, never the positions inside it: a review drafted
+    against another checkout can publish numbers that fall past the end of the very
+    file it hashed, or onto a blank line. Only paths this review pinned are checked —
+    the rest name content nothing in the record froze, so nothing can verify them.
+    """
+    missed = []
+    for match in CITATION.finditer(text):
+        name, first = match.group(1), int(match.group(2))
+        last = int(match.group(3) or first)
+        found = [path for path in pinned if path == name or path.endswith("/" + name)]
+        if len(found) != 1:
+            continue
+        lines = pinned[found[0]]
+        if not (1 <= first <= last <= len(lines) and lines[first - 1].strip()):
+            missed.append(match.group(0))
+    return missed
+
+
 def _evidence(root: Path, item: Any) -> tuple[str, bool]:
     _require(isinstance(item, dict) and set(item) == {"path", "sha256"}, "invalid evidence")
     name = item["path"]
@@ -119,6 +143,11 @@ def assess(ledger: dict, data: dict, root: Path = REPO) -> list[dict]:
             tests = any(name.startswith("tests/") or "/test/" in name for name in names)
             _require(code and tests, "equivalence needs source and tests")
         current = all(match for _, match in checked)
+        if current:
+            missed = _cited_lines(
+                f"{item['summary']}\n{item['remaining']}",
+                {name: (root / name).read_text(encoding="utf-8").splitlines() for name in names})
+            _require(not missed, f"{ident}: citation does not resolve in pinned evidence: {', '.join(missed)}")
         row.update(status=item["status"] if current else "needs_review",
                    basis="reviewed" if current else "stale_evidence", evidence=item["evidence"],
                    summary=item["summary"], remaining=item["remaining"] if current else

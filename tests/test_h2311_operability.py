@@ -606,6 +606,95 @@ def test_probe_bind_exits_13_when_the_kernel_refuses_a_privileged_port():
     assert "JARVIS_PORT" in proc.stderr          # ...and the way out
 
 
+# ── EACCES must not assert a cause it cannot know ────────────────────────────
+#
+# EACCES is the one arm that names a *cause* rather than a symptom. ``bind()``
+# returns it for plenty of reasons that are not the sub-1024 privilege rule — a
+# Hyper-V/WSL/winnat excluded port range on Windows (``WSAEACCES`` → EACCES, and
+# those blocks routinely cover 8080, our shipped default), an SELinux
+# ``name_bind`` denial on a high port on Linux. Claiming the 1024 floor for a port
+# that is already above it is a false diagnosis plus an impossible remedy, which
+# is worse than the cause-free "permission denied" H042 replaced.
+
+def _refuses_bind_with(monkeypatch, serve, err):
+    """Stage a kernel that answers ``bind()`` with ``err`` (an errno).
+
+    A stub rather than a real refusal because the reproduction is a *Windows*
+    excluded port range, which cannot be staged on this box at all — and the
+    Linux analogue (SELinux name_bind on a high port) needs a policy this box has
+    no way to load. The arm under test branches on the port number alone, so the
+    stub drives exactly the production code path the owner hits.
+    """
+    class _Stub:
+        def __init__(self, family, type_):
+            pass
+
+        def setsockopt(self, level, optname, value):
+            pass
+
+        def bind(self, addr):
+            raise OSError(err, os.strerror(err))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(serve.socket, "socket", lambda fam, typ: _Stub(fam, typ))
+
+
+@pytest.mark.parametrize("port", [1024, 8080, 49152, 65535])
+def test_probe_bind_does_not_blame_the_1024_floor_for_a_high_port(monkeypatch, capsys, port):
+    """A refused port that is ALREADY above 1024 must not be told to move above 1024.
+
+    Parametrised across the range on purpose: the defect is the unconditional
+    claim, not one port, and 8080 (the shipped ``JARVIS_PORT`` default, and a port
+    Windows reserves for Hyper-V often enough to matter) is only the case the
+    owner meets first.
+    """
+    serve = _fresh_serve()
+    _refuses_bind_with(monkeypatch, serve, errno.EACCES)
+
+    with pytest.raises(SystemExit) as exc:
+        serve.probe_bind("127.0.0.1", port)
+    assert exc.value.code == 13                  # still the distinct denied-port code
+    err = capsys.readouterr().err
+
+    assert f"127.0.0.1:{port}" in err            # names the exact address refused
+    assert "CAP_NET_BIND_SERVICE" not in err, (
+        f"claimed a Linux privileged-port capability for port {port}, which is above "
+        f"the 1024 floor — on Windows that capability does not even exist: {err!r}"
+    )
+    assert "ports below 1024 need" not in err, (
+        f"blamed the sub-1024 privilege rule for port {port}, which is above it: {err!r}"
+    )
+    assert "set JARVIS_PORT to a port above 1024" not in err, (
+        f"told the owner to move above 1024 from port {port}, which already is: {err!r}"
+    )
+    # ...and it still has to be useful: name the symptom and a remedy that can work.
+    assert "excludedportrange" in err            # the Windows way to see the reservation
+    assert "JARVIS_PORT" in err                  # ...and the way out on any platform
+
+
+def test_probe_bind_still_names_the_privilege_rule_below_1024(monkeypatch, capsys):
+    """The other half: under 1024 the privileged-port sentence is correct and stays.
+
+    Guards the fix against over-correcting into a cause-neutral message everywhere,
+    which would lose the one diagnosis probe_bind genuinely can make. (The kernel
+    proves this arm too, in the setpriv test above — but only as root, so this
+    keeps it pinned everywhere.)
+    """
+    serve = _fresh_serve()
+    _refuses_bind_with(monkeypatch, serve, errno.EACCES)
+
+    with pytest.raises(SystemExit) as exc:
+        serve.probe_bind("127.0.0.1", 80)
+    assert exc.value.code == 13
+    err = capsys.readouterr().err
+    assert "127.0.0.1:80" in err
+    assert "ports below 1024" in err
+    assert "CAP_NET_BIND_SERVICE" in err
+    assert "JARVIS_PORT" in err
+
+
 # ── the flag adversarial review found missing ────────────────────────────────
 
 def test_probe_bind_sets_v6only_so_it_is_not_stricter_than_uvicorns_bind(monkeypatch):

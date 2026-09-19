@@ -69,8 +69,13 @@ the access line is *dropped*. Because ``high_entropy_secret`` matches any UUID,
 flattening would delete every access line whose path carries one. So when a
 secret is found, the format string and each argument are masked separately and
 the tuple is kept, as long as re-rendering them yields text the scanner no
-longer objects to. Only a secret straddling the boundary between format string
-and argument (``logger.info("sk-ant-%s", tail)``) falls back to flattening.
+longer objects to. A secret that straddles the boundary between format string
+and argument (``logger.info("sk-ant-%s", tail)``, or ``?pwd=`` in a request
+path, which ``password_assignment`` joins to the ``HTTP/`` that uvicorn's own
+format string puts after it) matches neither piece alone, so the arguments
+feeding the join are masked whole instead — the arity survives. Only a straddle
+no masking can clean, because the secret is in the format string itself, falls
+back to flattening.
 
 **The filter never raises, and says which failure it hit.** An exception out of
 ``Filter.filter`` propagates through ``Handler.handle`` → ``callHandlers`` →
@@ -124,6 +129,11 @@ __all__ = [
 
 REDACTION_UNAVAILABLE = "[redaction-unavailable]"
 LOG_FORMAT_ERROR = "[log-format-error]"
+
+# Stands in for the pattern name when an argument is inert on its own and only
+# becomes a secret once the record is rendered, and the scanner cannot say which
+# pattern fired. `_mask_joined_args` uses the real name whenever it can.
+_STRADDLE_PATTERN_NAME = "straddling_secret"
 
 # Snapshotted at import ON PURPOSE — see the module docstring. Default ON: the
 # floor ships enabled and only an operator's boot environment can lower it.
@@ -254,6 +264,56 @@ class SecretRedactionFilter(logging.Filter):
         record.msg = f"{LOG_FORMAT_ERROR} {self.redact_text(detail)}"
         record.args = ()
 
+    def _mask_joined_args(self, msg: str, args: object, candidate: str) -> object | None:
+        """Mask whole arguments until the RENDERED record is scanner-clean.
+
+        A pattern can match ACROSS the join between an argument and a literal
+        of the format string, matching neither piece on its own:
+        ``password_assignment``'s ``\\s*[=:]\\s*`` jumps the space uvicorn's
+        ``'%s - "%s %s HTTP/%s" %d'`` puts between ``full_path`` and
+        ``HTTP/``, so ``/login?pwd=`` is inert alone and a match once rendered.
+        Masking the pieces separately cannot catch that, and flattening the
+        record to ``msg``/``()`` is what DELETES the access line — any
+        unauthenticated client would only have to append ``?pwd=`` to erase its
+        own entry from the log.
+
+        So the arguments that feed the join are replaced WHOLE: the joined text
+        goes clean and the tuple ``AccessFormatter`` unpacks keeps its arity.
+        One argument at a time first, so as little of the line is lost as
+        possible, then cumulatively for a secret assembled from several. An
+        argument whose conversion refuses the mask is put back — which is also
+        what keeps uvicorn's ``%d`` status code an int.
+
+        Returns the new args, or None when no masking makes the line clean (the
+        secret lies in the format string itself) and the caller must flatten.
+        """
+        name = _STRADDLE_PATTERN_NAME
+        try:                                   # name the line after what it lost
+            findings = self._scanner.scan(candidate).findings
+        except Exception:                      # a scanner need only offer redact
+            findings = []
+        if findings:
+            name = getattr(findings[0], "pattern_name", "") or name
+        mask = f"[REDACTED:{name}]"
+        is_map = isinstance(args, dict)
+        keys = list(args) if is_map else list(range(len(args)))
+        for cumulative in (False, True):
+            trial = dict(args) if is_map else list(args)
+            for key in keys:
+                original = trial[key]
+                trial[key] = mask
+                rendered = trial if is_map else tuple(trial)
+                try:
+                    joined = msg % rendered
+                except Exception:
+                    trial[key] = original      # e.g. this mask under a `%d`
+                    continue
+                if self.redact_text(joined) == joined:
+                    return rendered
+                if not cumulative:
+                    trial[key] = original
+        return None
+
     def _redact_in_place(self, record: logging.LogRecord) -> bool:
         """Mask the secret while KEEPING ``record.args``, or report that it cannot.
 
@@ -270,8 +330,11 @@ class SecretRedactionFilter(logging.Filter):
         is never re-interpreted; only ``msg`` is the format string). This is
         only accepted when re-rendering the masked pieces yields text the
         scanner no longer objects to — a secret straddling the boundary
-        (``logger.info("sk-ant-%s", tail)``) is not caught this way. Returns
-        False then, and the caller flattens: correctness beats shape.
+        (``logger.info("sk-ant-%s", tail)``) is not caught this way. The
+        straddle is then taken to ``_mask_joined_args``, which masks whole
+        arguments instead of flattening; only a straddle no masking can clean
+        (the secret is in the format string itself) returns False and lets the
+        caller flatten: correctness beats shape.
         """
         args = record.args
         if not args:
@@ -292,7 +355,10 @@ class SecretRedactionFilter(logging.Filter):
                 return False
             candidate = new_msg % new_args
             if self.redact_text(candidate) != candidate:
-                return False
+                masked = self._mask_joined_args(new_msg, new_args, candidate)
+                if masked is None:
+                    return False
+                new_args = masked
         except Exception:
             return False
         record.msg = new_msg
