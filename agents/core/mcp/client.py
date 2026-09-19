@@ -15,15 +15,25 @@ tokens. **Default on** (H502): a third-party binary the owner attached is not a
 reason to hand it every provider credential on the box.
 
 **Scope of the guarantee — read this before calling it containment.** The child
-runs as the *same UID* as the hub, in no namespace and no sandbox, so on Linux it
-can read the parent's whole environment out of ``/proc/<ppid>/environ`` regardless
-of what it was handed. A deliberately hostile server therefore still recovers the
-withheld keys. This baseline is **defence in depth, not a security boundary**: it
+runs as the *same UID* as the hub, in no namespace and no sandbox, so a hostile
+server recovers the withheld keys by two routes, not one:
+
+* the parent's whole environment out of ``/proc/<ppid>/environ`` on Linux;
+* the **filesystem**, which this module does not narrow at all. ``cwd`` defaults to
+  the hub's own working directory, so ``open(".env")`` in the child reaches the very
+  file most of those keys were read from (``plugin_manager.build`` loads
+  ``<repo>/.env`` and ``<user home>/.env``). Withholding a variable does not take
+  away read access to the file that set it, and nothing here claims it does —
+  :func:`cwd_secret_files` exists so the owner is told when the two are the same
+  directory, rather than inferring a protection from the withheld count alone.
+
+So: this baseline is **defence in depth, not a security boundary**. It
 is a real fix for a careless or over-broad third-party server, for a server that
 echoes its environment into logs, and for leakage into crash reports — it is not a
 defence against a backdoor wearing an MCP costume. That boundary needs the
 still-unshipped command screener plus real process isolation (separate UID,
-namespace or container).
+namespace or container), which is the only thing that closes the filesystem route
+as well as the ``/proc`` one.
 
 The drop is announced once per connect at INFO as a COUNT, so a server that breaks
 because it relied on an inherited credential is diagnosable. The owner's narrow
@@ -45,6 +55,7 @@ import os
 import re
 import shlex
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from agents.core.automation_contracts import (
@@ -176,6 +187,40 @@ def stdio_env_extra_allowed(raw: object = _NO_RAW) -> frozenset[str]:
     """
     parts = env_list(STDIO_ENV_ALLOW_FLAG) if raw is _NO_RAW else str(raw or "").split(",")
     return frozenset(part.strip().upper() for part in parts if part.strip())
+
+
+#: Config files that hold exactly what the env baseline withholds. ``plugin_manager.build``
+#: reads the hub's provider keys out of ``<repo>/.env`` and ``<user home>/.env``, and a stdio
+#: child with no ``cwd`` of its own inherits the hub's — so the same keys are one ``open()``
+#: away from a server that was carefully not handed them.
+_CWD_SECRET_FILES = (".env", ".env.local")
+
+
+def cwd_secret_files(cwd: "str | None" = None) -> list[str]:
+    """Credential files a stdio child could read straight out of its working directory.
+
+    Not a check that can fail closed, and it is not offered as one: refusing to spawn a
+    server because a ``.env`` sits in the directory would break every dev checkout, and
+    pointing the child somewhere else would break every server that resolves a relative
+    path. The module's whole posture here is to *withhold and say so* (see the connect-time
+    count in :meth:`MCPServer._merged_env`), and the count on its own reads as more
+    protection than there is while the file the values came from is still readable. This
+    makes that visible, in the same breath, once per connect.
+
+    *cwd* is the server's configured working directory; ``None`` means it inherits the
+    hub's, which is the default and the case that matters. Unreadable and missing files are
+    both "not there" — the point is what the child can open, not what exists.
+    """
+    root = Path(cwd) if cwd else Path.cwd()
+    found = []
+    for name in _CWD_SECRET_FILES:
+        candidate = root / name
+        try:
+            if candidate.is_file() and os.access(candidate, os.R_OK):
+                found.append(name)
+        except OSError:
+            continue
+    return found
 
 
 def stdio_env_baseline(
@@ -481,6 +526,18 @@ class MCPServer:
                     "MCP %s: %d host variables withheld (allowlist baseline)",
                     self.name, withheld,
                 )
+                # ...and immediately say what that count is NOT worth here. The child
+                # inherits this directory, so a config file in it hands back what the
+                # baseline just withheld. Filenames only: a *variable* name enumerates
+                # which provider keys this box holds, which is why the line above is a
+                # bare count, but ".env" says nothing the owner does not already know.
+                readable = cwd_secret_files(self.cwd)
+                if readable:
+                    logger.warning(
+                        "MCP %s: withholding is undercut — %s readable in the server's "
+                        "working directory; the child can read what it was not handed",
+                        self.name, ", ".join(readable),
+                    )
             return env
         if not self.env:
             return None

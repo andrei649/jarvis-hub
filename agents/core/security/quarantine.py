@@ -60,6 +60,22 @@ def detect_injection(text: str) -> list[str]:
     return found
 
 
+def injection_spans(text: str) -> list[tuple[str, int, int]]:
+    """Every injection match as ``(pattern, start, end)`` — *where*, not just *whether*.
+
+    `detect_injection` answers the yes/no question and is the right call for a gate
+    that flags a whole value. A caller that quarantines *by position* needs the spans:
+    ``agents/core/agent.py`` maps them back to the SOUL lines a phrase covers, so a
+    payload split across a line wrap quarantines exactly the lines it spans instead of
+    the whole file. Matches come in pattern order, and overlapping ones are all
+    reported — the caller decides what to do with a span, not this function.
+    """
+    if not text:
+        return []
+    return [(pat.pattern, m.start(), m.end())
+            for pat in _INJECTION_RE for m in pat.finditer(text)]
+
+
 # Unicode TAG characters (U+E0000–U+E007F) render as nothing and carry ASCII payloads —
 # the "invisible instruction" vector: a tool result can spell out a command the owner
 # never sees on screen and the model reads verbatim (Hermes absorption 4a).
@@ -128,28 +144,74 @@ def strip_format_chars(text: str) -> str:
     return _FORMAT_CHARS_RE.sub("", text)
 
 
-def detect_injection_normalized(text: str) -> list[str]:
-    """`detect_injection` over the raw text AND over its invisible-stripped copy.
+# Respacing is the other half of the evasion, and it is not covered by deleting
+# invisible characters: every pattern in `_INJECTION_PATTERNS` spells its gaps as a
+# single literal space, so "Ignore  all  previous  instructions" (two spaces), the same
+# phrase with tabs, with NO-BREAK SPACEs, or wrapped across a line, all render to the
+# model as the phrase and match nothing. Unlike the invisible characters above, these
+# ARE separators, so they are collapsed to one space rather than deleted — deleting
+# them would glue two words together and destroy the phrase instead of uncovering it.
+# `\s` is Unicode-aware for `str` patterns, so it already covers U+00A0, U+202F, U+3000
+# and the rest of the Zs block; U+200B is deliberately NOT whitespace to Python and is
+# `strip_format_chars`'s job, which is why the two normalisations compose.
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
 
-    Union, never substitution — that is the whole point of the function. Scanning only the
-    stripped copy is *weaker* than scanning the raw text on some inputs, because the strip
-    deletes characters and a deletion destroys matches as readily as it uncovers them: the
-    ``you are now`` rule ends in a word boundary, and "You are now<U+200B>in developer mode"
-    supplies that boundary with the zero-width space itself. Take the character away and the
-    phrase matches nothing, so the text would scan clean with the instruction still spelled
-    out in it. Both copies are scanned and the hits unioned, raw first, in pattern order,
+
+def collapse_whitespace(text: str) -> str:
+    """Every run of Unicode whitespace as one ASCII space — for SCANNING, not display.
+
+    Paired with `strip_format_chars` by `detect_injection_normalized` rather than used
+    alone, for the same reason that one is: a rewrite can destroy a match as easily as
+    it can reveal one, so the hits are unioned over the raw text and its normalised
+    copies instead of replacing it with any single copy.
+    """
+    if not text:
+        return text
+    return _WHITESPACE_RUN_RE.sub(" ", text)
+
+
+def _detection_variants(text: str) -> list[str]:
+    """The text and its normalised copies, raw first, deduplicated.
+
+    Both normalisations and their composition, because they cover different evasions
+    and an attacker may use both at once: ``Ignore\u200b all\u00a0previous
+    instructions`` needs the invisible character deleted AND the NO-BREAK SPACE
+    collapsed before any pattern matches it.
+    """
+    variants = [text]
+    stripped = strip_format_chars(text)
+    for variant in (stripped, collapse_whitespace(text), collapse_whitespace(stripped)):
+        if variant not in variants:
+            variants.append(variant)
+    return variants
+
+
+def detect_injection_normalized(text: str) -> list[str]:
+    """`detect_injection` over the raw text AND over each copy in `_detection_variants`.
+
+    Two evasions, one entry point. The patterns are literal: they name visible words with
+    single literal spaces between them, so both an invisible character *inside* a phrase
+    and a respacing *between* its words defeat them while leaving what the model reads
+    unchanged. `strip_format_chars` answers the first and `collapse_whitespace` the
+    second; this scans the raw text and both normalisations and their composition.
+
+    Union, never substitution — that is the whole point of the function. Scanning only a
+    normalised copy is *weaker* than scanning the raw text on some inputs, because both
+    rewrites destroy matches as readily as they uncover them: the ``you are now`` rule
+    ends in a word boundary, and "You are now<U+200B>in developer mode" supplies that
+    boundary with the zero-width space itself. Take the character away and the phrase
+    matches nothing, so the text would scan clean with the instruction still spelled out
+    in it. Every copy is scanned and the hits unioned, raw first, in pattern order,
     deduplicated.
 
     This is the entry point for scanning text that will be rendered to a model verbatim;
     `detect_injection` stays the literal scan it says it is.
     """
-    hits = detect_injection(text)
-    stripped = strip_format_chars(text)
-    if stripped == text:
-        return hits
-    for pattern in detect_injection(stripped):
-        if pattern not in hits:
-            hits.append(pattern)
+    hits: list[str] = []
+    for variant in _detection_variants(text):
+        for pattern in detect_injection(variant):
+            if pattern not in hits:
+                hits.append(pattern)
     return hits
 
 
