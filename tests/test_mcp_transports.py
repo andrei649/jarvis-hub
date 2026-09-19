@@ -825,3 +825,66 @@ def test_http_flag_is_default_off_and_named(monkeypatch):
     monkeypatch.setenv(HTTP_CLIENT_FLAG, "true")
     assert ht.transport_allowed("http") is True
     assert ht.transport_allowed("sse") is False
+
+
+def test_cwd_secret_files_reports_what_the_child_can_open(tmp_path):
+    """The env baseline withholds values; it takes nothing away from the filesystem.
+
+    ``plugin_manager.build`` reads the hub's provider keys out of ``<repo>/.env``, and a
+    stdio child with no ``cwd`` of its own inherits the hub's — so the keys the baseline
+    carefully did not hand over are one ``open(".env")`` away. That is not a bug this
+    module can fix (pointing the child elsewhere breaks every server that resolves a
+    relative path), but the connect-time "N host variables withheld" line reads as more
+    protection than there is while it goes unsaid.
+    """
+    from agents.core.mcp.client import cwd_secret_files
+
+    assert cwd_secret_files(str(tmp_path)) == []
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-real\n", encoding="utf-8")
+    assert cwd_secret_files(str(tmp_path)) == [".env"]
+
+    # A directory is not a readable config file, however it is named.
+    (tmp_path / ".env.local").mkdir()
+    assert cwd_secret_files(str(tmp_path)) == [".env"]
+
+    (tmp_path / "nowhere").mkdir()
+    assert cwd_secret_files(str(tmp_path / "nowhere")) == []
+
+
+async def test_the_withheld_count_is_not_announced_alone_when_a_dotenv_is_reachable(
+    monkeypatch, tmp_path, caplog,
+):
+    """Withholding and its own limit are logged in the same breath, once per connect.
+
+    The count alone invites exactly the wrong conclusion. Filenames are logged and
+    variable names are not, deliberately: a variable name enumerates which provider keys
+    this box holds, while ".env" tells the owner nothing they did not already know.
+    """
+    import logging
+
+    from agents.core.mcp.client import MCPServer
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-withheld")
+    monkeypatch.delenv(STDIO_ENV_BASELINE_FLAG, raising=False)
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-withheld\n", encoding="utf-8")
+
+    server = MCPServer("s", command="/bin/true", cwd=str(tmp_path))
+    with caplog.at_level(logging.INFO, logger="jarvis.mcp"):
+        env = server._merged_env()
+
+    assert "OPENAI_API_KEY" not in env, "premise: the baseline withheld it"
+    assert any("host variables withheld" in r.getMessage() for r in caplog.records)
+    undercut = [r for r in caplog.records if "undercut" in r.getMessage()]
+    assert undercut, "the withheld count was announced with nothing beside it"
+    assert undercut[0].levelno == logging.WARNING
+    assert "OPENAI_API_KEY" not in undercut[0].getMessage(), (
+        "a variable name enumerates the box's providers — filenames only"
+    )
+
+    caplog.clear()
+    quiet = MCPServer("s", command="/bin/true", cwd=str(tmp_path / "elsewhere"))
+    with caplog.at_level(logging.INFO, logger="jarvis.mcp"):
+        quiet._merged_env()
+    assert not [r for r in caplog.records if "undercut" in r.getMessage()], (
+        "no reachable config file, no warning — this must not become noise"
+    )
