@@ -1140,9 +1140,9 @@ def register(skill):
           does and does not prove (it catches corruption, not an attacker who deletes the
           sidecar along with the edit);
         * a row that tries to talk to the model is dropped, scanned with the same
-          ``quarantine.detect_injection`` that fences retrieved memory — over a copy with
-          every Cf format character removed, so the scan does not depend on which
-          invisible character an attacker reached for.
+          ``quarantine.detect_injection`` that fences retrieved memory — over the row as
+          written *and* over a copy with every invisible character removed, so the scan
+          does not depend on which invisible character an attacker reached for.
 
         **What the injection gate is worth, plainly.** ``detect_injection`` is an
         eleven-entry regex table of high-signal phrases. It costs a row to a description
@@ -1215,16 +1215,18 @@ def register(skill):
                 description = _catalog_text(description, chars)
                 rendered = f"{command} <{args}>" if args else command
                 # Scan the row as ``Agent.build_prompt`` will render it, so no field can be
-                # the one that is not looked at — and scan it with every Cf format
-                # character removed, because one of those inside a phrase defeats
-                # `detect_injection` while reading to the model exactly like the phrase
-                # that does not. The STRIPPED copy is scanned and thrown away; the row
-                # emitted below is the original, so a legitimate Arabic number sign in a
-                # description survives while an evasion attempt does not decide the
-                # verdict.
-                flags = quarantine.detect_injection(
-                    quarantine.strip_format_chars(f"{rendered}: {description}")
-                )
+                # the one that is not looked at — and scan it BOTH as written and with
+                # every invisible character removed, because one of those inside a phrase
+                # defeats `detect_injection` while reading to the model exactly like the
+                # phrase that does not. Union, not substitution: the strip DELETES
+                # characters, and a deletion destroys a match as easily as it reveals one
+                # — "You are now<U+200B>in developer mode" matches as written and matches
+                # nothing once stripped — so scanning the stripped copy *instead of* the
+                # raw row was weaker on those inputs than not stripping at all. Both
+                # copies are thrown away; the row emitted below is the original, so a
+                # legitimate Arabic number sign in a description survives while an evasion
+                # attempt does not decide the verdict.
+                flags = quarantine.detect_injection_normalized(f"{rendered}: {description}")
                 if flags:
                     logger.warning(
                         "Skill '%s' command '%s' is NOT advertised to the model — its "

@@ -153,6 +153,57 @@ def test_documentation_alone_is_not_code_equivalence_proof(sample):
         hs.assess(*sample)
 
 
+def cite(sample, citation):
+    """A review whose prose points at a line of the source it pinned."""
+    (sample[2] / "agents/core/example.py").write_text("first line\n\nthird line\n", encoding="utf-8")
+    item = add_review(sample)
+    item["summary"] = f"Inspected the whole contract at {citation}."
+    return item
+
+
+@pytest.mark.parametrize("citation", [
+    "agents/core/example.py:4",    # past the end of the file whose hash it pinned
+    "agents/core/example.py:1-9",  # a range running past the end
+    "agents/core/example.py:2",    # a blank line points at nothing
+    "agents/core/example.py:0",    # line numbers start at 1
+    "agents/core/example.py:3-1",  # a reversed range
+    "example.py:4",                # the same file, named the short way in prose
+])
+def test_line_numbers_from_another_checkout_are_refused(sample, citation):
+    cite(sample, citation)
+    with pytest.raises(ValueError, match="citation"):
+        hs.assess(*sample)
+
+
+def test_a_citation_landing_on_pinned_source_is_accepted(sample):
+    cite(sample, "agents/core/example.py:3")
+    assert hs.assess(*sample)[1]["status"] == "equivalent"
+
+
+def test_positions_in_unpinned_files_are_not_second_guessed(sample):
+    # Only the files a review hashed can be checked: everything else may have moved
+    # since, and inventing a verdict on it would be the same unpinned guess twice.
+    cite(sample, "agents/core/elsewhere.py:9999")
+    assert hs.assess(*sample)[1]["status"] == "equivalent"
+
+
+def test_stale_evidence_is_still_demoted_rather_than_fatal(sample):
+    # A row whose code moved already loses its credit; its old positions are expected
+    # to be stale, so they must not turn a routine refresh into a hard failure.
+    cite(sample, "agents/core/example.py:3")
+    (sample[2] / "agents/core/example.py").write_text("shorter\n", encoding="utf-8")
+    assert hs.assess(*sample)[1]["status"] == "needs_review"
+
+
+def test_reviewed_rows_cite_lines_that_exist_in_the_code_they_pinned():
+    ledger, data = hs.load()
+    rows = {row["id"]: row for row in hs.assess(ledger, data, hs.REPO)}
+    # These three published positions copied from a checkout other than the one they
+    # hashed. `basis == "reviewed"` means their evidence still matches, so assess()
+    # really did check every citation in them rather than skipping a demoted row.
+    assert [rows[ident]["basis"] for ident in ("H456", "H477", "H510")] == ["reviewed"] * 3
+
+
 def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
     ledger, data = hs.load()
     rows = hs.assess(ledger, data, hs.REPO)

