@@ -604,3 +604,79 @@ def test_probe_bind_exits_13_when_the_kernel_refuses_a_privileged_port():
     assert "127.0.0.1:1" in proc.stderr          # names the address it was refused
     assert "ports below 1024" in proc.stderr     # ...and why
     assert "JARVIS_PORT" in proc.stderr          # ...and the way out
+
+
+# ── the flag adversarial review found missing ────────────────────────────────
+
+def test_probe_bind_sets_v6only_so_it_is_not_stricter_than_uvicorns_bind(monkeypatch):
+    """The probe must set every flag asyncio sets, and V6ONLY was missing.
+
+    ``BaseEventLoop.create_server`` sets ``IPV6_V6ONLY`` on every AF_INET6 socket
+    (CPython 3.12 ``base_events.py``, six lines below the SO_REUSEADDR it already
+    mirrored). Without it the probe performs a DUAL-STACK bind where uvicorn
+    performs a v6-only one: on Linux with the default ``net.ipv6.bindv6only=0``,
+    anything IPv4-only holding ``0.0.0.0:<port>`` makes ``JARVIS_HOST=::`` exit 12
+    from a boot uvicorn would have completed — the one thing `probe_bind`'s
+    docstring says it must never do, and EADDRINUSE is the arm that exits rather
+    than being swallowed.
+
+    Recorded through a stub rather than a live socket on purpose: this asserts the
+    PRODUCTION call is made, and it runs on a box with no IPv6 stack (this one has
+    none). The kernel behaviour it prevents is the test below, which skips here.
+    """
+    calls = []
+
+    class _Stub:
+        def __init__(self, family, type_):
+            self.family = family
+
+        def setsockopt(self, level, optname, value):
+            calls.append((level, optname, value))
+
+        def bind(self, addr):
+            pass
+
+        def close(self):
+            pass
+
+    serve = _fresh_serve()
+    monkeypatch.setattr(serve.socket, "socket", lambda fam, typ: _Stub(fam, typ))
+    serve.probe_bind("::1", 8080)
+
+    assert (socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, True) in calls, (
+        "probe_bind did not set IPV6_V6ONLY on an AF_INET6 socket, so it is a "
+        f"dual-stack bind where uvicorn's is not; calls were {calls}"
+    )
+
+    calls.clear()
+    serve.probe_bind("127.0.0.1", 8080)
+    assert not any(level == socket.IPPROTO_IPV6 for level, _o, _v in calls), (
+        "IPV6_V6ONLY was set on an AF_INET socket, which raises on a real socket"
+    )
+
+
+def test_probe_bind_stays_silent_when_only_an_ipv4_listener_holds_the_port():
+    """The kernel half of the same guarantee. Skips without an IPv6 stack.
+
+    An IPv4-only listener on ``0.0.0.0:<port>`` does not conflict with uvicorn's
+    v6-only ``[::]:<port>`` bind. The probe must agree with uvicorn and say
+    nothing; before the flag it raised SystemExit(12) here.
+    """
+    try:
+        probe = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        probe.close()
+    except OSError:                              # pragma: no cover - env-dependent
+        pytest.skip("no usable IPv6 stack on this box")
+
+    lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lst.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lst.bind(("0.0.0.0", 0))
+    port = lst.getsockname()[1]
+    lst.listen(1)
+    try:
+        assert _fresh_serve().probe_bind("::", port) is None, (
+            "the probe refused a bind uvicorn performs: an IPv4 wildcard listener "
+            "does not conflict with a v6-only bind on the same port"
+        )
+    finally:
+        lst.close()
