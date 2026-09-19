@@ -262,7 +262,7 @@
       "row_sha256": "f6d42d075ddac587b1d71f82cebfdbf017771363112e75cd00dcbcfb1f7e17ba",
       "status": "partial",
       "summary": "The port-conflict diagnostic, plus one stale line of evidence corrected. `serve.py` gains `probe_bind(host, port)`, called from `main()` after the posture guards and before uvicorn binds: a taken port prints the exact address, the command that identifies the holder (`nerva status`) and the way out (`JARVIS_PORT`), then exits **12**; `EACCES` on a privileged port exits **13**. Both are deliberately distinct from uvicorn's `STARTUP_FAILURE` (3), which it uses for *every* startup failure — that collision was the actual defect, because a supervisor could not tell \"the port is taken\" from \"the lifespan crashed\". The probe is a **diagnostic, not a lock**: it binds and closes, reserves nothing, and any `OSError` outside the two named arms is swallowed, so an unexpected probe failure can never turn a boot that would have worked into a refusal. The socket **constructor sits inside the guarded region** too — a first cut that built it above the `try` turned `JARVIS_HOST=::1` on a box with no IPv6 stack into an 8-frame traceback + exit 1 in place of uvicorn's one-line error + exit 3, the diagnostic making the boot worse than no diagnostic. It also mirrors asyncio's own flags rather than stricter ones: `SO_REUSEADDR` on POSIX, because `uvicorn.Server.startup` binds through `loop.create_server` where asyncio sets it, so a probe without it would refuse a port merely holding a TIME_WAIT connection from the instance the owner just stopped — a boot uvicorn would have completed. **The frozen 2026-09-07 evidence was stale on one point**: it recorded \"no --status\", but `nerva status` has existed since the unified CLI (`agents/cli/nerva.py:101,481`). 9 probe tests, and both exit codes are asserted **by execution** rather than by reading the branch — the `EACCES` arm runs in a child dropped to an unprivileged uid with `setpriv`, because pytest runs as root here and a sub-1024 bind simply succeeds. ENV-122 in `docs/test-manual/01-environment-and-boot.md` moves from a message-quality finding to an asserted string plus exit code.",
-      "remaining": "Hermes's row is start, check **and stop**, and the stop half is entirely absent: no `stop` verb, no pidfile, no ready file. The row cites `hermes dashboard --status/--stop` plus backend ready sentinels and a ready file (06-cli-f.md, 16 entries); Nerva has `nerva status`, which reads the HTTP surface and so cannot report a hub that is starting or wedged before the port opens, and Ctrl-C. Hermes also signals the conflict as a machine-readable `BACKEND_PORT_IN_USE`, where this slice signals it as an exit code and an English sentence — enough for a supervisor, not enough for a caller parsing a status stream. Not delivered either: `--isolated`, `--skip-build`, `--no-open`, the SSH session-token file and owner-nonce, or the interactive auth-setup prompt. **One known limit, in the safe direction:** the probe picks a single address family from the host string while uvicorn binds every address `getaddrinfo` returns, so a dual-stack name like `localhost` is probed on v4 only and can miss a conflict held on the v6 address — it misses silently, and uvicorn then reports it exactly as it does today. The Windows half of the `SO_REUSEADDR` choice is read off asyncio's `reuse_address = os.name == \"posix\"` line and has never been executed here; that test skips off POSIX and the docstring says so. **Adversarial review of this slice found the probe stricter than the bind it predicts, and it is fixed here:** `probe_bind` mirrored asyncio's `SO_REUSEADDR` but not the `IPV6_V6ONLY` it sets six lines below, on every AF_INET6 socket. On Linux with the default `net.ipv6.bindv6only=0` that made the probe a DUAL-STACK bind where uvicorn's is v6-only, so with anything IPv4-only holding `0.0.0.0:<port>`, `JARVIS_HOST=::` exited 12 from a boot uvicorn would have completed — the one thing the docstring forbids, and EADDRINUSE is the arm that exits rather than being swallowed. asyncio's own guard is reproduced character for character. The flag being set is pinned through a recording stub, which runs anywhere; the kernel conflict it prevents is pinned by a second test that SKIPS without an IPv6 stack and has NOT been executed — this box has none, so that half is read off CPython's `base_events.py` rather than observed, exactly as the Windows reuse half already is.",
+      "remaining": "Hermes's row is start, check **and stop**, and the stop half is entirely absent: no `stop` verb, no pidfile, no ready file. The row cites `hermes dashboard --status/--stop` plus backend ready sentinels and a ready file (06-cli-f.md, 16 entries); Nerva has `nerva status`, which reads the HTTP surface and so cannot report a hub that is starting or wedged before the port opens, and Ctrl-C. Hermes also signals the conflict as a machine-readable `BACKEND_PORT_IN_USE`, where this slice signals it as an exit code and an English sentence — enough for a supervisor, not enough for a caller parsing a status stream. Not delivered either: `--isolated`, `--skip-build`, `--no-open`, the SSH session-token file and owner-nonce, or the interactive auth-setup prompt. **One known limit, in the safe direction:** the probe picks a single address family from the host string while uvicorn binds every address `getaddrinfo` returns, so a dual-stack name like `localhost` is probed on v4 only and can miss a conflict held on the v6 address — it misses silently, and uvicorn then reports it exactly as it does today. The Windows half of the `SO_REUSEADDR` choice is read off asyncio's `reuse_address = os.name == \"posix\"` line and has never been executed here; that test skips off POSIX and the docstring says so.",
       "evidence": [
         {
           "path": "serve.py",
@@ -1504,7 +1504,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -1990,7 +1990,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -2085,7 +2085,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+          "sha256": "6df885b837c367aae7606d3e3b80dbed74b6da2423a4fd9241820f93ed0b301f"
         },
         {
           "path": "tests/test_file_search.py",
@@ -2921,7 +2921,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+          "sha256": "6df885b837c367aae7606d3e3b80dbed74b6da2423a4fd9241820f93ed0b301f"
         },
         {
           "path": "tests/test_file_search.py",
@@ -3119,7 +3119,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -3345,7 +3345,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -3434,7 +3434,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "agents/web.py",
@@ -3542,6 +3542,31 @@
         {
           "path": "tests/test_log_redaction.py",
           "sha256": "f65255b0cfe87b9a503f61af569fb4778869e60c18fc041fc672499a73212a25"
+        }
+      ]
+    },
+    {
+      "id": "H506",
+      "row_sha256": "a5c5cf700464dd903d7a61017dfd520e44c96c3d8984bd3e0656cbad93a1df35",
+      "status": "partial",
+      "summary": "**The write half, as a generic mechanism rather than a special case.** `agents/core/tool_rpc.py` gains a registrar-owned *call classifier*: a gated tool may register a pure function over one call's args returning bounded labels. `handle()` stamps them onto the durable approval card's payload and appends the notice to the card title; `execute()` re-derives them from the args about to run and refuses with `approval_class_mismatch` unless the approved card carried the same `class` — so a card approved as a scratch note cannot be redeemed against a write to SOUL.md. `_classify` fails closed (a raising, non-Mapping, over-long or non-alphanumeric result refuses the call rather than letting it through unlabelled) and strips the reserved `tool`/`args`/`target` keys so labels cannot rewrite the card's identity. `agents/core/file_tools.py` registers `FileTools.classify_mutation` for `file_write` and `file_delete`, matches on the BASENAME in any directory inside the roots (an instruction file is wherever the harness that reads it looks — `_load_soul` alone searches three), carries a `steers_future_runs` flag into the kernel Action payload, and adds a secondary floor in `_mutate`. A sandboxed script cannot label its own write nor strip the label off one: the classifier is registrar-owned and `handle()` returns `approval_required` before the handler is ever reached. **The review found one major and it is fixed here.** The roster omitted `HEARTBEAT.md` and `HEARTBEAT.local.md` — the files in this repo that *literally* schedule future runs: `core/heartbeat.py` scans every agent directory for them, prefers the gitignored `.local` overlay exactly as `SOUL.local.md` does, and turns what it finds into cron-scheduled agent runs. Reproduced against a real `ToolRPCServer`: a write to `HEARTBEAT.local.md` produced `class=None` and the generic title \"Tool 'file_write' via RPC\" — a card byte-identical to a write to a scratch note, for an action that installs a cron expression driving every later run. Both names are in the class now, and the roster is pinned against `heartbeat.py`'s own source rather than restated, so a loader that learns a new name fails the test instead of silently escaping the class. The exact-set pin beside it was tightened, not loosened.",
+      "remaining": "**The read half of the row is not here, and the slice says so rather than implying otherwise.** H506 requires the same file class to be scanned at context-load time for injection payloads — ignore-prior-instructions, hidden HTML comments, secret-reading and curl-exfil shapes, zero-width and bidi characters — with a positive match replaced by `[BLOCKED: … Content not loaded.]`. Nothing here touches `Agent._load_soul`: SOUL.md still reaches `system_prompt` unscanned, and `quarantine.detect_injection` is still wired only to the memory and import paths. Three smaller deviations, named rather than smoothed over. The row's *\"fails closed on a config read error\"* clause has no analogue, because the roster is a hard-coded frozenset with no config to read — arguably stronger, but nobody has adjudicated the substitution. The row's `allow_session=False` (each write re-asks) holds only *incidentally*: every gated toolrpc call already hard-codes `autonomy_level=\"ask\"` and `govern_enqueue` takes the stricter of caller and policy, so no `--yolo` path can auto-approve one today — but nothing in this slice pins it, so a future policy change that weakened gated toolrpc intake would turn no H506 test red. And the class covers `file_write`/`file_delete` only: any other way an instruction file could be written — a shell tool, the skill importer, the desktop operator — is outside it entirely. **One thing the review checked and could not close, stated as unchecked rather than as verified:** the queue path carries the notice untruncated (`TaskQueue.enqueue` stores the title as given and `govern_enqueue` passes it through), but whether the Telegram decision card and the HUD decision inbox render that title verbatim to the owner's eyes is untested by this slice. The notice is the whole point of the class, so the last hop being unproven is worth a reader knowing. Finally, `_mutate`'s floor is deliberately weaker than `skill.install`'s permanent one: it is lifted by a caller-supplied `approved=True`, and the shipped ToolRPC path passes it by design — defence-in-depth for the next direct caller, not the production gate.",
+      "evidence": [
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "6df885b837c367aae7606d3e3b80dbed74b6da2423a4fd9241820f93ed0b301f"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
+        },
+        {
+          "path": "tests/test_file_tools_instruction_floor.py",
+          "sha256": "c2babcfbbad9a9a54ce48fae23f2e0142c0fe028d3052164a8f02aed4be0c6fa"
+        },
+        {
+          "path": "tests/test_file_tools_instruction_class_toolrpc.py",
+          "sha256": "02d3f06fde36065848cf5857abe513a73880e994369185121d36289801475a94"
         }
       ]
     },
@@ -4008,7 +4033,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+          "sha256": "6df885b837c367aae7606d3e3b80dbed74b6da2423a4fd9241820f93ed0b301f"
         },
         {
           "path": "tests/test_file_search.py",
@@ -4277,7 +4302,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "f315232087a76cadb695b47d6fa3ab169ccc24c081ea19844af4ab89f2319244"
+          "sha256": "6df885b837c367aae7606d3e3b80dbed74b6da2423a4fd9241820f93ed0b301f"
         },
         {
           "path": "tests/test_file_search.py",
@@ -4334,7 +4359,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "aaac12fae35b37ab7f1fd1b841ea6a2b969d90acbced4dc3a70f5beaa570b9c1"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "tests/test_code_tools.py",

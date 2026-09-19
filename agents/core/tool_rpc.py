@@ -13,6 +13,14 @@ This module is the **governed RPC surface** — the security-critical core:
   * **Risk gating:** read-only tools run inline; *gated* (external/mutating)
     tools never execute from the sandbox — they enqueue an ask-tier governed
     task and return ``approval_required`` (the script can't escalate).
+  * **Call classes (H506):** a gated tool may register a *classifier* saying that
+    some of its calls are a distinct class the owner must be told about — a
+    ``file_write`` to ``SOUL.md`` is not the ask a ``file_write`` to a scratch note
+    is. The class is stamped on the approval card (payload and title), and
+    ``execute`` re-derives it and refuses (``approval_class_mismatch``) unless the
+    approved card carried it: a classed call runs only off an approval that named
+    the class. The classifier is registrar-owned, so call data can neither label
+    its own call nor strip the label off.
   * **Secret containment:** the sandbox never sees secrets — handlers resolve
     credentials host-side, and every response is run through the secret-scrubber
     (defense-in-depth) before it crosses back.
@@ -54,6 +62,17 @@ def current_tool_actor() -> str:
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
+#: H506 — a *registrar-supplied* look at one call's arguments that answers "is this
+#: call a distinct class of thing the owner must be told about?". Returns a small
+#: mapping of labels (``class``, ``notice``, plus flat scalars) or ``None``. It is
+#: server-owned like :data:`Preflight`: call data selects the tool, never the
+#: classifier, so a script cannot label its own call — or unlabel it.
+Classifier = Callable[[dict], Optional[Mapping]]
+
+#: Label keys a classifier may not set: they are the card's own identity.
+_RESERVED_LABEL_KEYS = frozenset({"tool", "args", "target"})
+_MAX_LABELS = 8
+_MAX_LABEL_CHARS = 200
 
 _KIND_PREFIX = "toolrpc."
 _RISK_TIER = 2
@@ -135,6 +154,7 @@ class ToolRPCServer:
         trusted_execution: bool = False,
         untrusted_output: bool = False,
         gated_intake: GatedIntake | None = None,
+        classifier: Classifier | None = None,
         max_result_bytes: int | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
@@ -144,6 +164,15 @@ class ToolRPCServer:
         loop fences such a result as DATA before the model reads it and raises the
         turn's recall taint so an action built from it queues for approval
         (Hermes absorption 5a). The declaration is per tool, never per call.
+
+        ``classifier`` (H506) lets the registrar say that *some* calls to this tool
+        are a distinct class the owner must be told about — a ``file_write`` whose
+        target steers a future run (``SOUL.md``, ``AGENTS.md``, ...) is not the same
+        ask as a ``file_write`` to a scratch note. Its labels are stamped onto the
+        approval card the owner reads, and :meth:`execute` re-derives them and
+        refuses a call whose approved card did not carry the class it belongs to —
+        so a classed call can only ever run off an approval that named the class.
+        Gated tools only: an ungated tool never produces a card to label.
 
         ``max_result_bytes`` is this tool's own statement of how much it may put in
         the context window (H298). It is the fourth rung of the threshold ladder —
@@ -164,6 +193,8 @@ class ToolRPCServer:
             not callable(gated_intake) or not gated or not trusted_execution
         ):
             raise ValueError("custom intake requires a trusted gated tool")
+        if classifier is not None and (not callable(classifier) or not gated):
+            raise ValueError("a call classifier requires a gated tool")
         if capability_id is not None:
             if (
                 not isinstance(capability_id, str)
@@ -194,6 +225,7 @@ class ToolRPCServer:
             "trusted_execution": bool(trusted_execution),
             "untrusted_output": bool(untrusted_output),
             "gated_intake": gated_intake,
+            "classifier": classifier,
             "max_result_bytes": max_result_bytes,
             "active_tasks": set(),
         }
@@ -339,10 +371,25 @@ class ToolRPCServer:
                 return {"ok": False, "reason": "kernel_denied", "tool": name, "detail": denied}
             if self._enqueue is None:
                 return {"ok": False, "reason": "approval_required", "tool": name}
+            # H506 — the card the owner reads must say what class of thing this is.
+            # A file_write to SOUL.md and one to notes.txt used to be byte-identical
+            # asks; the classifier's labels ride on the payload and, when it names a
+            # class, in the title, so the owner decides knowing.
+            labels, denial = self._classify(spec, args)
+            if denial is not None:
+                self._record(
+                    "toolrpc.classify_failed", f"{name}: {denial}", agent=effective_actor)
+                return {"ok": False, "reason": denial, "tool": name}
+            payload = {"tool": name, "args": args, "target": name}
+            payload.update(labels)
+            title = f"Tool '{name}' via RPC"
+            notice = labels.get("notice")
+            if isinstance(notice, str) and notice:
+                title = f"{title} — {notice}"
             try:
                 task_id = self._enqueue(
-                    effective_actor, f"toolrpc.{name}", f"Tool '{name}' via RPC",
-                    payload={"tool": name, "args": args, "target": name},
+                    effective_actor, f"toolrpc.{name}", title,
+                    payload=payload,
                     risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
             except Exception:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
@@ -389,6 +436,27 @@ class ToolRPCServer:
             return {
                 "status": "failed",
                 "reason": denial["reason"],
+                "tool": name,
+            }
+        # H506 — bind the approval to the class. The labels are re-derived here from
+        # the args that are actually about to run, and must match the class the card
+        # carried: a call that belongs to a class executes only off an approval that
+        # named that class. This is not bypassable by the handler — the handler is
+        # never reached — and it holds with the kernel off, which is the default.
+        labels, classify_denial = self._classify(spec, args)
+        if classify_denial is not None:
+            self._record(
+                "toolrpc.classify_failed", f"{name}: {classify_denial}",
+                agent=effective_actor)
+            return {"status": "failed", "reason": classify_denial, "tool": name}
+        if labels.get("class") != payload.get("class"):
+            self._record(
+                "toolrpc.approval_class_mismatch",
+                f"{name}: {payload.get('class')!r} approved, {labels.get('class')!r} now",
+                agent=effective_actor)
+            return {
+                "status": "failed",
+                "reason": "approval_class_mismatch",
                 "tool": name,
             }
         if spec.get("trusted_execution"):
@@ -458,6 +526,45 @@ class ToolRPCServer:
             _tool_actor.reset(token)
             if task is not None:
                 active.discard(task)
+
+    def _classify(self, spec: dict, args: dict):
+        """H506: the registrar's labels for this call, or a bounded denial.
+
+        Returns ``(labels, None)`` or ``(None, reason)``. A classifier that blows up
+        refuses the call rather than letting it through unlabelled: an unlabelled
+        classed call is exactly the failure the class exists to prevent.
+        """
+        classifier = spec.get("classifier")
+        if classifier is None:
+            return {}, None
+        try:
+            raw = classifier(dict(args))
+        except Exception:
+            logger.warning("tool-rpc classifier failed", exc_info=True)
+            return None, "classify_failed"
+        if raw is None:
+            return {}, None
+        if not isinstance(raw, Mapping):
+            return None, "classify_failed"
+        labels: dict = {}
+        for key, value in raw.items():
+            if not isinstance(key, str) or key in _RESERVED_LABEL_KEYS:
+                continue
+            if isinstance(value, str):
+                if len(value) > _MAX_LABEL_CHARS:
+                    return None, "classify_failed"
+            elif not isinstance(value, (bool, int, float)):
+                continue
+            labels[key] = value
+            if len(labels) > _MAX_LABELS:
+                return None, "classify_failed"
+        cls = labels.get("class")
+        if cls is not None and (
+            not isinstance(cls, str) or not cls or len(cls) > 64
+            or not cls.replace("_", "").replace(".", "").isalnum()
+        ):
+            return None, "classify_failed"
+        return labels, None
 
     def _run_preflight(self, spec: dict, args: dict, name: str):
         preflight = spec.get("preflight")
