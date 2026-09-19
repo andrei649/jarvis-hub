@@ -54,6 +54,18 @@ async def admin_mcp_list():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.mcp.client import TRANSPORT_STDIO, stdio_env_baseline_enabled
+    # H502 — the live FLAG, read per request. Stated precisely, because the first
+    # wording ("so the admin panel can never claim a hardening the running process is
+    # not applying") claimed more than this is: `_merged_env()` runs once, at connect
+    # time, while this row is evaluated per request. Clear the flag after a server
+    # connected under it and the row reports the new value for a child that was
+    # spawned under the old one. Nothing in production mutates `os.environ` after
+    # boot except one diagnostic harness, so the divergence is not reachable today —
+    # but the field describes the host's posture for the NEXT spawn, not the
+    # environment the running child actually holds, and saying otherwise is the kind
+    # of claim this slice exists to stop making.
+    env_baseline = stdio_env_baseline_enabled()
     servers = []
     for name, srv in orch.mcp.servers.items():
         servers.append({
@@ -62,6 +74,28 @@ async def admin_mcp_list():
             "command": srv.command,
             "url": srv.url,
             "connected": srv._proc is not None and srv._proc.returncode is None,
+            # True → the next spawn of this server gets the allow-listed env baseline
+            # plus its own `env` only; False → it inherits the hub's whole
+            # environment; None → the field does not apply, because this row spawns no
+            # subprocess at all. Stamping True there would show a containment badge
+            # for an HTTP server whose credentials live in `headers`, which the
+            # baseline never touches.
+            #
+            # Three ways a row spawns nothing, not two. The first cut enumerated a
+            # non-stdio server (persisted before DRA-25 refused them) and a stdio row
+            # with no `command` — and missed the one an owner can create today:
+            # `POST /api/admin/mcp` does no command validation, so a row with a
+            # whitespace-only command or a shell metacharacter in it persists, and
+            # `connect()` answers `unsafe_command` from `_command_argv()` BEFORE
+            # `create_subprocess_exec`. Such a row reported `env_baseline: true` for a
+            # child that never existed. `_command_argv()` is the same check `connect`
+            # makes, so the row and the spawn cannot disagree.
+            "env_baseline": (
+                env_baseline
+                if (srv.transport == TRANSPORT_STDIO and srv.command
+                    and srv._command_argv())
+                else None
+            ),
             # Hermes absorption 4b — the owner's trust tier for this server and, per tool,
             # whether the server itself declared it read-only (the only claim a read-only
             # tier honours).
