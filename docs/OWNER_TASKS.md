@@ -1316,3 +1316,37 @@ your risk appetite. **(a)** Specify the tiers and let the next slice build the c
 **(b)** Accept an argv-only card and close the row's middle tier as intentionally skipped.
 
 ---
+
+## P29 — Copilot Autofix rejects its configured model, and that jams every autonomous merge
+
+**Since 2026-09-19, the `github-advanced-security` check fails on every PR head, and the
+merge policy treats that as red.** The check is GitHub's Copilot Autofix agent, not a
+scanner the repository configures. Its log names the cause exactly:
+
+```
+CAPIError: 400 The requested model is not supported.
+COPILOT_AGENT_MODEL: sweagent-capi:claude-opus-5[ReasoningEffort=medium]
+```
+
+It passed on #1164 on 2026-09-18 and fails identically on #1161 and #1175 on 2026-09-19 —
+two unrelated PRs, one of them (#1175) changing only markdown and JSON. Nothing in the
+repository changed the model it asks for; GitHub's side did.
+
+**Why it blocks the whole pipeline, by design.** `selfdev-policy.json` sets
+`require_all_reported_checks_pass: true` and tolerates only `success | neutral | skipped`
+on checks outside the required seven. `failure` is not in that set, so the autonomous
+merge path refuses every PR while this check is reported red — including the Max stack
+(#1161 → #1174) and the ledger-hygiene PR #1175. This is the policy working as written; it
+was not relaxed to get around it.
+
+**Why this is yours and not taken here.** The model Copilot Autofix uses is a repository /
+organisation Copilot setting on GitHub, not a file in the tree — and if it were a workflow,
+`.github/workflows/**` is a protected path. Two ways out, either is one setting:
+
+1. Point Copilot Autofix at a model its API currently supports (Settings → Code security →
+   Copilot Autofix), or
+2. Stop it being a *reported* check on PRs if it is not wanted as a gate — the policy only
+   reads checks that appear on the head.
+
+Until one of those lands, PRs that are otherwise green wait on a manual merge by you;
+the seven required checks are unaffected and keep telling the truth.
