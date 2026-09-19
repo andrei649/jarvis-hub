@@ -73,6 +73,37 @@ def strip_invisible(text: str) -> str:
     return _INVISIBLE_TAGS_RE.sub("", text)
 
 
+# Every Unicode format character (general category Cf), the TAG block included. These
+# render as nothing and are matched by no pattern in `_INJECTION_PATTERNS`, so ONE of them
+# inside a phrase defeats `detect_injection` outright: "Ignore\u200b all previous
+# instructions" scans clean and reads to the model exactly like the phrase that does not.
+#
+# The table is hardcoded because building it from `unicodedata` costs a ~1.1M-codepoint
+# walk at import; `test_the_format_char_table_matches_unicodedata` does that walk instead,
+# so a Python that ships a new Cf character fails there rather than silently widening the
+# hole.
+_FORMAT_CHARS_RE = re.compile(
+    "[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e"
+    "\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb"
+    "\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3"
+    "\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F]"
+)
+
+
+def strip_format_chars(text: str) -> str:
+    """Remove every Cf format character — for SCANNING, not for display.
+
+    `strip_invisible` stays TAG-only on purpose: it runs over tool results and MCP
+    payloads, where a BOM or a bidi mark can be part of real data a caller expects back
+    unchanged. This one is wider and is meant to be thrown away — scan the stripped copy,
+    emit the original — so detection stops depending on which invisible character an
+    attacker reached for, without rewriting anybody's Arabic.
+    """
+    if not text:
+        return text
+    return _FORMAT_CHARS_RE.sub("", text)
+
+
 _STRIP_MAX_DEPTH = 64
 
 
