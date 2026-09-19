@@ -94,18 +94,35 @@ def probe_bind(host: str, port: int) -> None:
 
     That guarantee is why the socket mirrors asyncio's own flags instead of
     stricter ones. ``uvicorn.Server.startup`` binds through
-    ``loop.create_server(host=..., port=...)``, and asyncio sets ``SO_REUSEADDR``
-    there on POSIX only (``reuse_address = os.name == "posix"``). A probe *without*
-    it would be stricter than the real bind: a port still holding a TIME_WAIT
-    connection from the instance the owner just Ctrl-C'd refuses a plain bind but
-    accepts uvicorn's, so the probe would block a restart that actually works. On
-    Windows asyncio sets no reuse flag and neither do we — there ``SO_REUSEADDR``
-    means "bind over whoever holds it", which would make the probe report a busy
-    port as free. (Read against uvicorn 0.52.4 + CPython 3.12. The POSIX half is
-    *executed* here — `test_probe_bind_does_not_block_a_restart_over_time_wait`
-    reproduces the TIME_WAIT state and watches the probe stay silent. The Windows
-    half is read off asyncio's ``reuse_address = os.name == "posix"`` line and has
-    never been run: this is Linux, and that test skips off POSIX.)
+    ``loop.create_server(host=..., port=...)``, and asyncio sets **two** flags
+    there. Both are mirrored, because either one missing makes the probe stricter
+    than the bind it is predicting:
+
+    * ``SO_REUSEADDR`` on POSIX only (``reuse_address = os.name == "posix"``).
+      Without it a port still holding a TIME_WAIT connection from the instance the
+      owner just Ctrl-C'd refuses a plain bind but accepts uvicorn's, so the probe
+      would block a restart that actually works. On Windows asyncio sets no reuse
+      flag and neither do we — there ``SO_REUSEADDR`` means "bind over whoever
+      holds it", which would make the probe report a busy port as free.
+    * ``IPV6_V6ONLY`` on every AF_INET6 socket (``base_events.py``: guarded by
+      ``_HAS_IPv6 and af == AF_INET6 and hasattr(socket, "IPPROTO_IPV6")``, which
+      is the guard reproduced below). This one was missing and adversarial review
+      caught it. On Linux with the default ``net.ipv6.bindv6only=0`` a probe
+      without it is a *dual-stack* bind: with anything IPv4-only already holding
+      ``0.0.0.0:<port>``, ``JARVIS_HOST=::`` made the probe see EADDRINUSE and exit
+      12, while uvicorn — which sets the flag — binds ``[::]:<port>`` beside the
+      IPv4 listener and serves. Exactly the "turn a boot that would have worked
+      into a refusal" this docstring forbids, and EADDRINUSE is the one arm that
+      exits rather than being swallowed, so the safety net below did not cover it.
+
+    (Read against uvicorn 0.52.4 + CPython 3.12. The POSIX reuse half is *executed*
+    here — `test_probe_bind_does_not_block_a_restart_over_time_wait` reproduces the
+    TIME_WAIT state and watches the probe stay silent. The Windows half is read off
+    asyncio's ``reuse_address = os.name == "posix"`` line and has never been run:
+    this is Linux, and that test skips off POSIX. The V6ONLY half is pinned by
+    asserting the flag is set on the socket, which runs everywhere; the dual-stack
+    *conflict* it prevents needs a working IPv6 stack and skips without one — it
+    has not been executed on this box, which has none.)
 
     Any ``OSError`` we do not recognise is swallowed for the same reason: an
     unexpected probe failure must not become a boot failure — uvicorn's own bind
@@ -130,6 +147,12 @@ def probe_bind(host: str, port: int) -> None:
         sock = socket.socket(family, socket.SOCK_STREAM)
         if os.name == "posix":
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # asyncio's own guard, character for character — see the docstring. Without
+        # it an AF_INET6 probe is dual-stack where uvicorn's bind is not, and an
+        # IPv4 listener on the same port turns a working boot into exit 12.
+        if (socket.has_ipv6 and family == socket.AF_INET6
+                and hasattr(socket, "IPPROTO_IPV6")):
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, True)
         sock.bind((host, port))
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
