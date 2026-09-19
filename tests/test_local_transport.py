@@ -902,3 +902,105 @@ async def test_the_transport_refuses_a_decoy_wrapped_catastrophe_before_spawn(ro
         "reason": "hardline_denied:wipefs",
     }
     assert spawn.calls == [], "a catastrophic command reached the spawn seam"
+
+
+# ── four defects adversarial review of this slice found ──────────────────────
+#
+# Two bypasses and two false refusals, all reproduced before they were fixed, and
+# the shell semantics behind them checked against real /bin/sh, /bin/dash and
+# /bin/bash rather than read off a man page.
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("env FOO=1 sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("FOO=1 sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("sudo -u root sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("nice -n 10 sh -c 'wipefs -a /dev/sda'", "wipefs"),
+    ("env FOO=1 BAR=2 bash -lc 'rm -rf /'", "recursive_root_removal"),
+    (["env", "FOO=1", "sh", "-c", "mkfs.ext4 /dev/sda"], "mkfs"),
+    (["sudo", "-u", "root", "sh", "-c", "mkfs.ext4 /dev/sda"], "mkfs"),
+])
+def test_a_prefix_in_front_of_the_shell_does_not_skip_payload_screening(command, expected):
+    """The walk demanded the word right after the wrappers BE the shell.
+
+    Anything else in the prefix ended it on a non-shell word, no payload was
+    extracted, and the entire `sh -c` mechanism was skipped — `env FOO=1 sh -c
+    'mkfs.ext4 /dev/sda'` reached a real shell with this floor answering None,
+    while deleting the five characters `FOO=1 ` made the same string
+    `hardline_denied:mkfs`. `_CMD` had already been widened for that assignment
+    prefix; the payload unwrapper had not. Options that take a separate argument
+    (`sudo -u root`) were the same miss.
+    """
+    assert hardline_match(command) == expected
+
+
+def test_a_line_continuation_is_spliced_not_separated():
+    """`\\` + newline outside quotes joins two lines into ONE command.
+
+    Verified against /bin/sh, /bin/dash and /bin/bash: `ec\\` + newline + `ho X`
+    prints X. Treating it as a separator broke the floor in the dangerous
+    direction — the shell runs `mkfs.ext4 /dev/sda` and the check saw two
+    harmless fragments.
+    """
+    assert hardline_match("mk\\\nfs.ext4 /dev/sda") == "mkfs"
+    assert hardline_match("wipe\\\nfs -a /dev/sda") == "wipefs"
+
+
+@pytest.mark.parametrize("command", [
+    "ansible-playbook -i hosts \\\n  reboot.yml",
+    "docker build \\\n  --build-arg SHUTDOWN_GRACE=30 \\\n  -t app .",
+])
+def test_a_line_continuation_does_not_invent_a_command_position(command):
+    """The same bug the other way round: splitting there put the second line in
+    command position, so an ordinary two-line invocation naming a playbook
+    `reboot.yml` was refused as `power_cycle`. On origin/main it ran."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command", [
+    "cat > /srv/app/config.yaml <<'EOF'\nshutdown: graceful\nEOF",
+    "cat > x.yml <<EOF\nreboot: always\nEOF",
+    "cat <<-'END'\n\tmkfs is mentioned in this doc\n\tEND",
+])
+def test_a_heredoc_body_is_data_not_a_command_position(command):
+    """A heredoc body is stdin. Confirmed against all three shells: the body of
+    `cat <<'EOF'` is printed, never executed.
+
+    Joining every line with `;` made each body line a command position, so writing
+    a config file with a `shutdown:` key was refused as `power_cycle` — exactly the
+    case `_CMD`'s own docstring promises not to trip."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("cat <<EOF\n$(mkfs.ext4 /dev/sda)\nEOF", "mkfs"),
+    ("cat <<EOF\n`wipefs -a /dev/sda`\nEOF", "wipefs"),
+])
+def test_command_substitution_inside_a_heredoc_is_still_caught(command, expected):
+    """The other half, and the reason the body is joined rather than dropped.
+
+    An UNQUOTED heredoc substitutes — `$(echo X)` in a body prints X on real
+    /bin/sh — so deleting those lines would have been a bypass. They stay in the
+    screened text and carry their own `(` anchor; only the statement separator is
+    withheld."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "jq '{reboot: .needs_reboot}' host.json",
+    "jq -r '{shutdown: .state}' /tmp/x.json",
+])
+def test_a_brace_in_an_argument_is_not_a_command_position(command):
+    """`{` is a command position only when the shell reads it as its own WORD —
+    POSIX requires whitespace after it. Anchoring on a bare `{` made a jq object
+    constructor whose key is named after a hardline word a refusal."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("{ mkfs.ext4 /dev/sda; }", "mkfs"),
+    ("true && { wipefs -a /dev/sda; }", "wipefs"),
+])
+def test_a_real_brace_group_still_anchors(command, expected):
+    """The case the `{` anchor was added for, which the narrowing must not lose."""
+    assert hardline_match(command) == expected
