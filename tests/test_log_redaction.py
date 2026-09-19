@@ -6,6 +6,7 @@ agents/core/log.py:setup_logging().
 """
 
 import copy
+import importlib
 import io
 import logging
 import os
@@ -262,6 +263,46 @@ def restore_logging():
         else:
             os.environ[var] = value
     log.setup_logging(logging.INFO)
+    _drop_redaction_filters()
+
+
+def _drop_redaction_filters() -> None:
+    """Take the process-wide redactor back off on the way out.
+
+    `setup_logging()` installs a `SecretRedactionFilter` on EVERY handler of EVERY
+    logger in the process — that is the point of `install_log_redaction_everywhere`
+    — and nothing here removed it, so a pytest worker that ran this file carried a
+    live redactor into every test that followed it.
+
+    It is not inert. The scanner's `high_entropy_secret` pattern matches an
+    ordinary pytest tmp path, so under `-n auto --dist loadfile`
+    `tests/test_soul_injection_guard.py::test_a_truncated_soul_logs_a_warning_naming_the_path`
+    received its own warning as `truncated: [REDACTED:high_entropy_secret].md` and
+    went red — a real cross-file interaction, found by running the two files
+    together, not a flake.
+    """
+    loggers = [logging.getLogger()]
+    loggers += [obj for obj in logging.Logger.manager.loggerDict.values()
+                if isinstance(obj, logging.Logger)]
+    for lg in loggers:
+        for handler in list(getattr(lg, "handlers", ()) or ()):
+            for installed in list(getattr(handler, "filters", ()) or ()):
+                if _is_redactor(installed):
+                    handler.removeFilter(installed)
+
+
+def _is_redactor(obj) -> bool:
+    """By class NAME, not `isinstance` — see `tests/conftest.py`.
+
+    This repo imports both as `agents.core.*` and as `core.*`, so one source file
+    becomes two module objects with two distinct classes. An `isinstance` check
+    written against one path reports a handler clean while the other path's filter
+    sits on it, which is exactly how a redactor survived the first attempt at this
+    cleanup.
+    """
+    cls = type(obj)
+    return (cls.__name__ == "SecretRedactionFilter"
+            and cls.__module__.endswith("security.log_redaction"))
 
 
 # The fixture object under its own name: inside a test that takes `restore_logging`
@@ -732,4 +773,106 @@ def test_a_failed_registry_walk_is_announced_not_absorbed(monkeypatch):
 
     assert any("NOT redacted" in m for m in captured), (
         "the registry walk failed and the install reported full coverage anyway"
+    )
+
+
+def test_the_fixture_leaves_no_redactor_behind(restore_logging, tmp_path, monkeypatch):
+    """The isolation pin. `setup_logging()` installs the filter process-wide, and a
+    test file that leaves it installed rewrites log records for every later test on
+    the same worker — which is exactly how this was found, with a tmp path arriving
+    as `[REDACTED:high_entropy_secret]` in an unrelated file's assertion.
+
+    The fixture body is driven directly so its teardown is observable.
+    """
+    monkeypatch.setenv("JARVIS_LOG_FILE", str(tmp_path / "x.log"))
+    fixture_fn = getattr(restore_logging_fixture, "__wrapped__", restore_logging_fixture)
+    gen = fixture_fn()
+    next(gen)                                  # setup
+    import agents.core.log as log
+    log.setup_logging(logging.INFO)            # installs the redactor everywhere
+    installed_before = _count_redaction_filters()
+    assert installed_before, "premise: setup_logging really does install the filter"
+
+    with pytest.raises(StopIteration):
+        next(gen)                              # teardown
+
+    assert _count_redaction_filters() == 0, (
+        "the redactor survived teardown and will rewrite records in later tests"
+    )
+
+
+def _count_redaction_filters() -> int:
+    loggers = [logging.getLogger()]
+    loggers += [obj for obj in logging.Logger.manager.loggerDict.values()
+                if isinstance(obj, logging.Logger)]
+    return sum(
+        _is_redactor(f)
+        for lg in loggers
+        for handler in (getattr(lg, "handlers", ()) or ())
+        for f in (getattr(handler, "filters", ()) or ())
+    )
+
+
+# ---------------------------------------------------------------------------
+# The harness pin. These two are a PAIR and run in file order: the first leaves a
+# process-wide install behind exactly as a `setup_logging()` call does, and the
+# second asserts it was gone before it started. What they pin lives in
+# `tests/conftest.py::_isolate_log_redaction`, not here — deliberately, because
+# the leak is not this file's alone. `test_h2311_operability.py`,
+# `test_errors.py` and `test_admin_knobs_wiring.py` each reproduce it too, so a
+# per-file teardown is whack-a-mole: the next file to call `setup_logging()`
+# brings it straight back.
+# ---------------------------------------------------------------------------
+
+
+def test_a_process_wide_install_is_left_behind_for_the_next_test():
+    """First half of the pair. Installs, asserts the install is real, cleans nothing."""
+    lr.install_log_redaction_everywhere()
+    assert _count_redaction_filters(), (
+        "premise failed: the process-wide install attached no filter at all, so "
+        "the test below would pass without proving anything"
+    )
+
+
+def test_the_next_test_does_not_inherit_the_redactor():
+    """Second half. Runs after the one above and must start clean.
+
+    If this goes red, every test that follows a `setup_logging()` call in the same
+    xdist worker is reading log records the secret scanner has rewritten — which
+    is how `test_soul_injection_guard.py` came to assert against
+    `truncated: [REDACTED:high_entropy_secret].md`.
+    """
+    assert _count_redaction_filters() == 0, (
+        "a redactor installed by the previous test survived into this one; "
+        "tests/conftest.py::_isolate_log_redaction is not stripping it"
+    )
+
+
+def test_a_redactor_installed_through_the_other_import_path_is_left_behind():
+    """Third of the group, and the one that would have caught the first miss.
+
+    `agents/` is on `sys.path`, so `core.security.log_redaction` and
+    `agents.core.security.log_redaction` are two module objects over one file with
+    two distinct `SecretRedactionFilter` classes. The first version of this cleanup
+    used `isinstance` against one of them and reported a process clean while the
+    root `StreamHandler` carried the other — which is why
+    `test_soul_injection_guard.py` stayed red after the "fix".
+    """
+    other = importlib.import_module("core.security.log_redaction")
+    assert other is not lr, (
+        "premise: the two import paths no longer produce distinct modules, so this "
+        "test proves nothing — delete it or re-point it at whatever replaced them"
+    )
+    other.install_log_redaction_everywhere()
+    assert _count_redaction_filters(), (
+        "premise failed: nothing was installed through the alternate path"
+    )
+
+
+def test_the_next_test_does_not_inherit_the_other_paths_redactor():
+    """Fourth. Same contract as the second, against the alternate class."""
+    assert _count_redaction_filters() == 0, (
+        "a redactor installed through the `core.*` import path survived into this "
+        "test; tests/conftest.py::_isolate_log_redaction is matching by isinstance "
+        "somewhere instead of by class name"
     )
