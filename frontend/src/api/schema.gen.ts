@@ -9644,6 +9644,11 @@ export interface components {
         ChatResponse: {
             /** Reply */
             reply: string;
+            /**
+             * Pending Approvals
+             * @default []
+             */
+            pending_approvals: number[];
         };
         /** ClimateControlBody */
         ClimateControlBody: {

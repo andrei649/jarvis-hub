@@ -34,6 +34,7 @@ from typing import Awaitable, Callable, Optional
 
 from .automation_contracts import ContractTemplate, predicate
 from .security.quarantine import strip_invisible_deep
+from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
 
@@ -319,6 +320,10 @@ class ToolRPCServer:
                     logger.warning("tool-rpc bound intake failed", exc_info=True)
                     return {"ok": False, "reason": "enqueue_failed", "tool": name}
                 self._record("toolrpc.gated", name, agent=effective_actor)
+                # The caller of the *turn* only ever sees the loop's prose reply, so
+                # the id is noted here too — where it is known — for the collector the
+                # turn holds. Reporting only: the row stays proposed either way.
+                record_pending_approval(task_id)
                 return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
@@ -343,6 +348,7 @@ class ToolRPCServer:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
                 return {"ok": False, "reason": "enqueue_failed", "tool": name}
             self._record("toolrpc.gated", name, agent=effective_actor)
+            record_pending_approval(task_id)
             return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
         try:

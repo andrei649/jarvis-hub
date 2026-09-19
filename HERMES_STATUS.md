@@ -11,14 +11,14 @@ Din acestea, **15** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 123 | 17.6% |
-| Parțial | 373 | 53.5% |
-| Lipsă | 94 | 13.5% |
+| Parțial | 375 | 53.8% |
+| Lipsă | 92 | 13.2% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 0 | 0.0% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 123/590 = **20.8%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 116/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 122/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -39,17 +39,17 @@ Din acestea, **15** au fost reevaluate pe cod în această livrare; **108** păs
 | providers | 27 | 4 | 13 | 3 | 7 | 0 |
 | agent-core | 36 | 8 | 15 | 9 | 4 | 0 |
 | memory | 27 | 8 | 14 | 3 | 2 | 0 |
-| automation | 32 | 1 | 24 | 4 | 3 | 0 |
+| automation | 32 | 1 | 25 | 3 | 3 | 0 |
 | security | 34 | 7 | 18 | 4 | 5 | 0 |
 | media | 27 | 7 | 15 | 4 | 1 | 0 |
-| acp-mcp-dev | 33 | 3 | 12 | 12 | 6 | 0 |
+| acp-mcp-dev | 33 | 3 | 13 | 11 | 6 | 0 |
 | docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
 | delta | 42 | 3 | 29 | 5 | 5 | 0 |
 
 ## Actualizare
 
-Evaluare: `2026-09-18T07:31:30Z`. Cod inspectat: `a9ecb4dd1bd6a4f9f6db7c41be499979406a45ab`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-19T06:33:06Z`. Cod inspectat: `45be62bd63b5d7dbefaad74c7cad8599555727b4`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
