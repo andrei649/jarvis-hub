@@ -668,7 +668,8 @@ class TelegramChannel(ChannelAdapter):
         if self._speaker is None:
             self._speaker = SpokenReply()
         speaker = self._speaker
-        refused = speaker.refusal()
+        # The first probe imports the optional speech stack: off the loop, like the reader.
+        refused = await __import__("asyncio").to_thread(speaker.refusal)
         if refused is not None:
             return refused
         # Synthesis takes a moment; the "recording a voice message" indicator says so.

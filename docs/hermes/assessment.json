@@ -513,7 +513,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -534,7 +534,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
@@ -546,7 +546,7 @@
         },
         {
           "path": "agents/core/channels/spoken_reply.py",
-          "sha256": "400015d23ef5268ce0e419b8c06b063cd38f3d98c974bb575041e25aa93da0e0"
+          "sha256": "ef7b5dfc6f0d1f644685f28abb4c55e9af323c158f96b97b474d8110c65456c7"
         },
         {
           "path": "agents/core/commands.py",
@@ -778,7 +778,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -807,7 +807,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -1496,7 +1496,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -3132,7 +3132,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -4026,7 +4026,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5386,7 +5386,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",

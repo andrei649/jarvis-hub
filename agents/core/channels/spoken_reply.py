@@ -24,6 +24,7 @@ What is deliberately *not* here:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import logging
@@ -187,7 +188,9 @@ class SpokenReply:
 
     async def __call__(self, text: object, *, lang: str = "ro") -> Audio:
         """Synthesize the speakable part of *text*; refusals are reasons, not raises."""
-        refused = self.refusal()
+        # The gate's first answer imports the optional speech stack; that is paid in
+        # a worker thread, never on the event loop (the bounded-request-path rule).
+        refused = await asyncio.to_thread(self.refusal)
         if refused is not None:
             return refused
         spoken = speakable(text, max_chars=self.max_chars)
@@ -221,12 +224,22 @@ class SpokenReply:
                      backend=self.backend_label())
 
     async def _engine_call(self, text: str, lang: str) -> str | None:
-        """Speak on the same engine and voice setting the ``/tts`` route uses."""
-        from agents.core.settings_db import get_value
-        from agents.core.voice.tts import TTSEngine
+        """Speak on the same engine and voice setting the ``/tts`` route uses.
 
-        engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
+        The engine module pulls the optional speech backends at import, so the
+        import and the construction happen in a worker thread; only the
+        synthesis itself, which is already async, runs on the loop.
+        """
+        engine = await asyncio.to_thread(_load_engine)
         return await engine.speak(text, lang=lang)
+
+
+def _load_engine():
+    """Import and build the TTS engine off the event loop (see ``_engine_call``)."""
+    from agents.core.settings_db import get_value
+    from agents.core.voice.tts import TTSEngine
+
+    return TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
 
 
 __all__ = [
