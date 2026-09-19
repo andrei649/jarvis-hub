@@ -22,11 +22,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -371,11 +371,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -396,11 +396,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -430,15 +430,15 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -451,15 +451,15 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -480,11 +480,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -513,7 +513,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -525,24 +525,48 @@
       "id": "H071",
       "row_sha256": "81d218221e09a9f699c79e7e344245e0a742d8eb19d721de2e1ab147ddf93516",
       "status": "partial",
-      "summary": "Un mesaj vocal pe Telegram e transcris înainte să-l vadă agentul — echivalentul lui `stt_enabled` din Hermes, și jumătatea care lipsea cu totul: „`rg 'voice' agents/core/channels/telegram.py` → nimic\". `InboundVoiceReader` întreabă poarta *înainte* de descărcare (o gazdă fără motor de vorbire nu trage înregistrarea nimănui pe disc degeaba), mărginește octeții, îi trimite prin `BytesIO` direct la decodor — vorbirea nu atinge niciodată discul — și transformă fiecare eșec într-un motiv numit. Santinelele motorului (`[silence]`, `[STT unavailable]`, `[STT error: ...]`) nu ajung niciodată la model ca vorbire. Diferența de design față de `media_reader` e deliberată și e miezul securității: descrierea unei poze e observația unui model despre octeți aleși de altcineva, deci circulă în gardul netrusted; un transcript sunt chiar cuvintele expeditorului, la exact nivelul de încredere pe care l-ar fi avut scrise, deci circulă ca o tură obișnuită. A-l pune în gard ar spune modelului să citească cererea proprie a owner-ului ca date în carantină și ar reclama o protecție care nu e cea care lucrează aici — aceea e filtrul de halucinații (H530).",
-      "remaining": "Doar intrarea, doar pe Telegram. Nelivrate din cele 7 intrări ale rândului: `stt_echo_transcripts` (să spună înapoi ce a auzit — util exact când transcrie greșit, dar cere o citire de setări în canal și n-a fost strecurat aici); `/voice` ca mod per-conversație (off / răspuns vocal la mesaj vocal / TTS la fiecare replică); intrarea și ieșirea dintr-un canal de voce pe Discord; consumatorul TTS în flux care începe să vorbească propozițiile terminate cât timp modelul încă generează; și, în general, replici rostite pe canalele de chat. NEVERIFICAT pe servicii reale: suita e ermetică — niciun mesaj vocal Telegram adevărat primit, niciun model Whisper încărcat cu adevărat.",
+      "summary": "Un mesaj vocal pe Telegram e transcris înainte să-l vadă agentul — echivalentul lui `stt_enabled` din Hermes. `InboundVoiceReader` întreabă poarta înainte de descărcare, mărginește octeții, îi trimite prin `BytesIO` direct la decodor (vorbirea nu atinge discul) și transformă fiecare eșec într-un motiv numit; santinelele motorului nu ajung niciodată la model ca vorbire. Transcriptul circulă ca o tură obișnuită, nu în gard: sunt chiar cuvintele expeditorului, iar protecția reală e filtrul de halucinații (H530). Jumătatea rostită: `/voice off|voice|always` e mod per conversație (`voice_mode.py`, magazie JSON `canal:chat`, implicit off, setat de chat pentru chat), `stt_echo_transcripts` e setarea `voice.stt_echo_transcripts` (o linie de serviciu „am auzit: …” înaintea răspunsului, niciodată rostită), iar `spoken_reply.py` transformă textul livrat într-o notă vocală peste motorul TTS al gazdei — doar proza (fără cod, linkuri, marcaje), tăiată la o limită de propoziție, fișierul șters după citire, nimic din text în log. Cârligul stă unde textul chiar ajunge (`send()` și `finish()` al draftului în flux), deci modul nu poate livra ca audio ce ruterul n-ar fi livrat ca text; orice eșec costă nota vocală, niciodată textul; un 400 pe `sendVoice` reîncearcă o dată ca `sendAudio`. `/voice` numește motorul care ar vorbi și spune „cloud” când e edge-tts. 15/15 mutanți uciși.",
+      "remaining": "Consumatorul TTS în flux care începe să rostească propozițiile terminate cât timp modelul încă generează (nota vocală se sintetizează după răspunsul complet). Intrarea/ieșirea dintr-un canal de voce pe Discord e sărită deliberat de rândul original (funcție de comunitate, nu de asistent). Doar Telegram: pe Slack/Discord replica trece prin brokerul `channel.reply`, fără audio. NEVERIFICAT pe servicii reale: niciun mesaj vocal Telegram adevărat, niciun model Whisper încărcat, niciun `sendVoice` real — Telegram acceptă `.mp3` ca mesaj vocal după documentație, iar căderea pe `sendAudio` e plasa pentru cazul în care nu.",
       "evidence": [
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
           "sha256": "4678036fa5986574dc6743471d3a7ca8c70b79050afdf7d35cf49852e826f6f7"
         },
         {
+          "path": "agents/core/channels/voice_mode.py",
+          "sha256": "1f0125c5bed7ab0da850936c66c6237ba226d3fc6f1fa725a00ff8b83d6ed757"
+        },
+        {
+          "path": "agents/core/channels/spoken_reply.py",
+          "sha256": "400015d23ef5268ce0e419b8c06b063cd38f3d98c974bb575041e25aa93da0e0"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+        },
+        {
           "path": "tests/test_inbound_voice_read.py",
           "sha256": "15ada43c9a080101fdc8c118896e3a2f2e37a6eaefbb3ea5985887d57b4693c4"
+        },
+        {
+          "path": "tests/test_voice_mode.py",
+          "sha256": "4e0341861c3851536c62a0f251e053c309f278ee9adbfffa9869f1dc21cd8dcc"
+        },
+        {
+          "path": "tests/test_spoken_reply.py",
+          "sha256": "bffbe8aba102fb9fc01ceb5a079bc7282c588b50ec59723c99650b36c1578897"
+        },
+        {
+          "path": "tests/test_telegram_voice_reply.py",
+          "sha256": "28ee1c698612c30681f680fbeadb06456404a4fde7845650e900fd86e554cf8a"
         }
       ]
     },
@@ -563,11 +587,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -754,7 +778,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -775,7 +799,7 @@
         },
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
@@ -783,7 +807,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -1074,7 +1098,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "agents/web.py",
@@ -1452,7 +1476,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1472,7 +1496,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -1691,7 +1715,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1712,7 +1736,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1741,7 +1765,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "scripts/nerva_import.py",
@@ -1786,7 +1810,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1892,7 +1916,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "agents/core/scheduler_service.py",
@@ -2014,7 +2038,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2417,11 +2441,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
@@ -2558,11 +2582,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -2829,7 +2853,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -3088,7 +3112,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3108,7 +3132,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -4002,11 +4026,11 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -4071,7 +4095,7 @@
         },
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "tests/test_inbound_voice_read.py",
@@ -4880,11 +4904,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -5017,11 +5041,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
@@ -5264,11 +5288,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -5329,11 +5353,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -5362,7 +5386,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "0473bff98619410a449adcc2a9a4bb7e404af1a21a824bb5a4cb27ede5d91454"
         },
         {
           "path": "tests/test_telegram_streaming.py",

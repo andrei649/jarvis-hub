@@ -202,3 +202,28 @@ never touched.
   while the chat is still generating) — the building block for that (`SentenceAggregator`)
   exists and is tested, but the chat→TTS pipe still resolves the full reply first.
 - **No live `voice_state`** — `/status` reports a static `"idle"`; the HUD owns loop state client-side.
+
+---
+
+## 7. Voice on chat channels (Telegram) — H071
+
+A third front-end for the same engines: the chat platform. Both halves are in
+`agents/core/channels/`, and both refuse honestly on a host without the engine.
+
+| Direction | Module | What happens |
+|-----------|--------|--------------|
+| **In** — a voice note arrives | `inbound_voice.py` (`InboundVoiceReader`) | The local gate is asked *before* the download (no speech engine → the recording is never pulled), bytes are size-capped and handed to Whisper through `BytesIO` (never written to disk), the hallucination filter runs inside the engine, and the transcript becomes an ordinary turn — the sender's own words, not fenced. Every failure is one plain line back. |
+| **Echo** | setting `voice.stt_echo_transcripts` (default off) | Hermes's `stt_echo_transcripts`: one service line, `🎙️ I heard: “…”`, before the answer, so a misheard note is caught by the person who sent it. Never spoken, never counted as the reply. |
+| **Out** — the reply is spoken | `voice_mode.py` + `spoken_reply.py` | `/voice off\|voice\|always` sets a **per-chat** mode (`voice` = a voice note back when you sent one; `always` = every reply). The text goes out first, on the ordinary path; the clip follows only from a delivery that succeeded (`TelegramChannel.send()` / the streaming draft's `finish()`), so a mode can never hand a chat as audio what the router withheld as text. Prose only — fenced code dropped, links become "link", markers stripped — cut at a sentence boundary inside 1,500 chars; the clip is read once and unlinked. Telegram's 400 on `sendVoice` is retried once as `sendAudio`. |
+
+**Off by default, and the backend is named.** Speaking a reply hands its text to the
+host's TTS backend, and the default one (`edge-tts`) is a Microsoft cloud service. Nothing
+turns that on for anyone; `/voice` shows the current mode and says which engine would
+speak, calling cloud "cloud". A host with no engine records the wish and keeps
+answering in text until one is installed.
+
+**Not there yet:** the clip is synthesized after the whole reply (no clause-by-clause
+speaking while the model still generates — see §6), Discord live voice channels are
+deliberately out of scope, and Slack/Discord replies stay text through `channel.reply`.
+None of this has been run against a real Telegram voice message, a loaded Whisper model
+or a real `sendVoice`; the suites are hermetic.

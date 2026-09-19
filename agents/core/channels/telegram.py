@@ -25,7 +25,8 @@ from .inbound_media import (
     describe,
     turn_text,
 )
-from .inbound_voice import InboundVoiceReader, Transcript
+from . import voice_mode
+from .inbound_voice import InboundVoiceReader, Transcript, echo_line
 from .inbound_voice import REASON_DOWNLOAD as VOICE_REASON_DOWNLOAD
 from .inbound_voice import note as voice_note
 from .inbound_voice import turn_text as voice_turn_text
@@ -37,7 +38,9 @@ from .media_reader import (
 from .media_reader import note as read_note
 from .media_reader import turn_text as image_turn_text
 from .render import chunk, to_plain, to_telegram_html
+from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..log_safe import log_safe
+from ..settings_db import get_value
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
@@ -143,6 +146,9 @@ class TelegramDraft:
         for piece in pieces[1:]:
             if not await self._channel._send_chunk(self._chat_id, piece):
                 return False
+        if ok:
+            # Same rule as `send()`: the text landed, so the chat's voice mode applies.
+            await self._channel._after_reply(self._chat_id, text)
         return ok
 
 
@@ -197,6 +203,16 @@ class TelegramChannel(ChannelAdapter):
         # The same shape for a voice note, transcribed on the host's own speech
         # engine. Built on first use; a host without one simply refuses.
         self._voice_reader: Optional[InboundVoiceReader] = None
+        # H071, the spoken half: a delivered reply becomes a voice note too when
+        # this chat asked for it with `/voice`. Built on first use; a host with
+        # no speech engine refuses with a reason and the text still lands.
+        self._speaker: Optional[SpokenReply] = None
+        # Injectable per-chat mode store; production uses the process-wide one.
+        self._voice_modes: Optional[voice_mode.VoiceModeStore] = None
+        # Chats whose current turn arrived as a voice note. The reply answering
+        # it consumes the mark, which is how "voice for voice" tells a spoken
+        # question from a typed one.
+        self._voice_turns: set = set()
 
     async def start(self):
         self._running = True
@@ -236,6 +252,9 @@ class TelegramChannel(ChannelAdapter):
         for piece in chunk(str(message or ""), self.descriptor.max_message_length):
             if not await self._send_chunk(cid, piece):
                 return False
+        # The words are delivered; a voice note follows only if this chat asked.
+        # `voice=False` marks a service line (a transcript echo) that is never spoken.
+        await self._after_reply(cid, str(message or ""), speak=kwargs.get("voice", True))
         return True
 
     async def send_scheduled_text(self, text: str, *, chat_id: int) -> bool:
@@ -430,7 +449,12 @@ class TelegramChannel(ChannelAdapter):
                     # Pass the sender id so the gateway's H12.19 pairing gate can
                     # hold unknown senders for approval (no-op unless enabled).
                     if turn:
-                        await self.receive(turn, chat_id=chat_id, sender=str(uid))
+                        try:
+                            await self.receive(turn, chat_id=chat_id, sender=str(uid))
+                        finally:
+                            # A turn the router answered with nothing must not leave
+                            # its voice mark behind for the next, typed, question.
+                            self._voice_turns.discard(chat_id)
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await __import__("asyncio").sleep(3)
@@ -566,8 +590,17 @@ class TelegramChannel(ChannelAdapter):
         if attachment.kind == KIND_VOICE:
             transcript = await self._read_voice(attachment)
             logger.info("Telegram voice read: %s", transcript.to_dict())
-            return ((voice_turn_text(transcript, spoken), "") if transcript.ok
-                    else ("", voice_note(transcript)))
+            if not transcript.ok:
+                return "", voice_note(transcript)
+            # The reply to this turn answers speech: `/voice voice` keys on the mark.
+            self._voice_turns.add(chat_id)
+            if self._echo_transcripts():
+                # Hermes `stt_echo_transcripts`: say what was heard before answering
+                # it, so a misheard note is caught by the person who sent it. A
+                # service line — it is never itself spoken, and it never spends the
+                # mark above.
+                await self.send(echo_line(transcript), chat_id=chat_id, voice=False)
+            return voice_turn_text(transcript, spoken), ""
         # A kind in READABLE_KINDS with no branch here would silently answer
         # nothing; say so instead, and the descriptor invariant catches the
         # declaration half.
@@ -590,6 +623,86 @@ class TelegramChannel(ChannelAdapter):
         if not data:
             return Transcript(False, reason=VOICE_REASON_DOWNLOAD)
         return await reader(data)
+
+    # ── the spoken half (H071) ──────────────────────────────────────────────
+
+    @staticmethod
+    def _echo_transcripts() -> bool:
+        return bool(get_value("voice", "stt_echo_transcripts", False))
+
+    def _voice_mode_store(self) -> voice_mode.VoiceModeStore:
+        if self._voice_modes is None:
+            self._voice_modes = voice_mode.default_store()
+        return self._voice_modes
+
+    async def _after_reply(self, chat_id, text: str, *, speak: bool = True) -> None:
+        """After the words landed: a voice note too, when this chat asked for one.
+
+        Reached only from a delivery that succeeded, so the mode can never hand a
+        chat as audio what it was not going to receive as text — whether to reply
+        at all was decided upstream and stays decided. A failure anywhere below
+        costs the voice note and nothing else, and is logged as a reason, never
+        as the reply.
+        """
+        if not speak:
+            return
+        inbound_voice = chat_id in self._voice_turns
+        self._voice_turns.discard(chat_id)
+        try:
+            mode = self._voice_mode_store().get("telegram", chat_id)
+        except Exception:
+            logger.debug("Telegram voice mode lookup failed; staying text-only", exc_info=True)
+            return
+        if not voice_mode.wants_voice(mode, inbound_voice=inbound_voice):
+            return
+        audio = await self._speak(chat_id, text)
+        if not audio.ok:
+            logger.info("Telegram spoken reply skipped: %s", audio.to_dict())
+            return
+        if not await self._send_voice(chat_id, audio):
+            logger.info("Telegram spoken reply not delivered: %s",
+                        {**audio.to_dict(), "reason": REASON_SEND})
+
+    async def _speak(self, chat_id, text: str) -> Audio:
+        """Synthesize one reply. Refusals are Audio values, never raises."""
+        if self._speaker is None:
+            self._speaker = SpokenReply()
+        speaker = self._speaker
+        refused = speaker.refusal()
+        if refused is not None:
+            return refused
+        # Synthesis takes a moment; the "recording a voice message" indicator says so.
+        await self.send_action(chat_id, "record_voice")
+        lang = str(get_value("voice", "stt_language", "ro") or "ro")
+        return await speaker(text, lang=lang)
+
+    async def _send_voice(self, chat_id, audio: Audio) -> bool:
+        """POST the clip as a voice message; as an audio file if Telegram refuses the format.
+
+        Telegram plays an ``.ogg``/OPUS, ``.mp3`` or ``.m4a`` body inline as a voice
+        message; anything it refuses with a 400 is sent once more as a plain audio
+        file rather than dropped. True only when Telegram acknowledged a message.
+        """
+        suffix = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav",
+                  "audio/mp4": "m4a"}.get(audio.mime, "bin")
+        filename = f"reply.{suffix}"
+        try:
+            resp = await self.client.post(
+                f"{self.api_base}/sendVoice",
+                data={"chat_id": str(chat_id)},
+                files={"voice": (filename, audio.data, audio.mime)},
+            )
+            if resp.status_code == 400:
+                logger.info("Telegram refused the clip as a voice message; sending it as audio")
+                resp = await self.client.post(
+                    f"{self.api_base}/sendAudio",
+                    data={"chat_id": str(chat_id)},
+                    files={"audio": (filename, audio.data, audio.mime)},
+                )
+            return self._scheduled_ack(resp)
+        except Exception as e:
+            logger.warning("Telegram sendVoice failed: %s", e)
+            return False
 
     async def _read_image(self, attachment) -> Description:
         """Download and describe one photo. Every failure is a Description, not a raise."""
