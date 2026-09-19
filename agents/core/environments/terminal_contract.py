@@ -14,15 +14,19 @@ here spawns anything; the transport (``local_transport.py``) and the runner
    worth more than a clever exception. Because the promise is "regardless of
    approval", the scan runs over *more* spellings than the one submitted: the
    payload of a shell wrapper (``sh -cx``, ``bash -lc``, ``cmd /c``,
-   ``powershell -Command``) is screened as its own command, and intra-word
+   ``powershell -Command``) is screened as its own command, a command word is
+   read by its basename so ``/sbin/mkfs.ext4`` is ``mkfs``, and intra-word
    quoting/escapes (``mk""fs``) are collapsed. Every extra spelling can only
    *add* a refusal — none can clear one — and every payload that is found is
-   screened, never dropped to stay inside a budget, because a budget the
-   caller can fill with decoy segments is not a floor. The budget limits one
-   thing only: how far a payload is unwrapped *again*. The set is deliberately
-   **not** exhaustive. ``_detection_variants`` lists the gaps this module knows
-   about — a list of known gaps, not a proof that there are no others, and the
-   review that produced the current list found five it did not have.
+   both screened *and* unwrapped again, because a budget the caller can fill
+   with decoy segments is not a floor and a re-expansion budget spent in
+   encounter order is exactly that. Only nesting DEPTH is capped; breadth needs
+   no cap, because the payloads at one level are disjoint substrings of the
+   level above, so the whole expansion is linear in the input. The set is
+   deliberately **not** exhaustive. ``_detection_variants`` lists the gaps this
+   module knows about — a list of known gaps, not a proof that there are no
+   others, and the two reviews that produced the current list found eleven it
+   did not have.
 2. **TERMINAL_EXEC_CONTRACT** — the ``ContractTemplate`` for the kernel kind
    ``terminal.exec``: target/backend present, argv fingerprinted, cwd inside
    the configured roots, timeout bounded, a durable approved task presented.
@@ -125,12 +129,15 @@ _POSIX_C_FLAG_RE = re.compile(r"-[a-z]*c[a-z]*")
 # PowerShell accepts, and the `-c` alias.
 _WINDOWS_C_FLAG_RE = re.compile(r"[-/](?:c|k|co|com|comm|comma|comman|command)")
 
+# The ONLY cap on the variant scan, and the only one that can be one: nesting
+# depth. A breadth cap moved the bypass rather than closing it — the caller picks
+# the encounter order, so eight cheap `sh -c ok` segments in front of a
+# `sh -c "sh -c 'mkfs…'"` spent the whole re-expansion budget and the real
+# payload was never unwrapped. Breadth needs no cap anyway: at most one payload
+# is taken per segment and a payload is a token of the level above, so the
+# payloads at each level are disjoint substrings of the input and the total work
+# is linear in it.
 _MAX_SHELL_DEPTH = 2
-# Bounds *re-expansion* only. A payload beyond this many is still screened as a
-# command in its own right; it is merely not unwrapped one level further. A cap
-# that skipped the scan instead would let a caller bury the real payload behind
-# cheap decoy segments it controls the order of.
-_MAX_SHELL_EXPANSIONS = 8
 
 # De-obfuscation neighbours: a quote or backslash only *hides* a command name
 # when it sits between ordinary word characters (``mk""fs``, ``m\kfs``). Shell
@@ -155,11 +162,21 @@ _INTRA_ESCAPE_RE = re.compile(rf"\\(?={_OBF_NEIGHBOUR})")
 # whitespace after it (`{ cmd; }`). Anchoring on a bare `{` made
 # `jq '{reboot: .needs_reboot}'` a power_cycle refusal, which is precisely the
 # "a commit message mentioning mkfs must not trip this" case two lines up.
+# A command word may carry a DIRECTORY PREFIX, and `/` is not one of the anchors
+# above: `/sbin/mkfs.ext4 /dev/sda` and `mkfs.ext4 /dev/sda` are the same program,
+# so every anchored entry was one absolute path away from being skipped. Spelled
+# as repeated `component/` chunks rather than `.*[/\\]` so the match is
+# deterministic (no backtracking over a long word), and `=` is excluded so a bare
+# assignment (`FOO=/sbin/mkfs.ext4`) stays an assignment instead of becoming a
+# command position.
+_PATH_PREFIX = r"(?:[^\s;&|(){}<>`'\"=/\\]*[/\\])*"
 _CMD = (r"(?:^|[;&|(`]\s*|\{\s+)"
         r"(?:(?:then|do|else|elif)\s+)*"
         r"(?:[a-z_][a-z0-9_]*=\S*\s+)*"
-        r"(?:(?:sudo|doas|env|nice|nohup|xargs|time|command|exec|busybox)\s+"
-        r"(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)*")
+        r"(?:" + _PATH_PREFIX +
+        r"(?:sudo|doas|env|nice|nohup|xargs|time|command|exec|busybox)\s+"
+        r"(?:-\S+\s+|[a-z_][a-z0-9_]*=\S*\s+)*)*"
+        + _PATH_PREFIX)
 
 HARDLINE: tuple[HardlinePattern, ...] = (
     HardlinePattern("mkfs", _CMD + r"mkfs(?:\.[a-z0-9]+)?\b"),
@@ -176,7 +193,8 @@ HARDLINE: tuple[HardlinePattern, ...] = (
     ),
     HardlinePattern(
         "network_to_shell",
-        r"\b(?:curl|wget|invoke-webrequest|iwr)\b.*\|\s*(?:sudo\s+)?(?:ba|z|k|da|fi)?sh\b",
+        r"\b(?:curl|wget|invoke-webrequest|iwr)\b.*\|\s*(?:sudo\s+)?"
+        + _PATH_PREFIX + r"(?:ba|z|k|da|fi)?sh\b",
     ),
     HardlinePattern(
         "power_cycle",
@@ -258,7 +276,80 @@ def _unquoted_lines(command: str) -> list[str]:
     return [line for line in lines if line.strip()] or [""]
 
 
-_HEREDOC_RE = re.compile(r"<<-?\s*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*))")
+_HEREDOC_DELIM_RE = re.compile(r"-?[ \t]*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _heredoc_open(line: str) -> tuple[int, str] | None:
+    """``(offset, delimiter)`` of the first real heredoc redirection on *line*.
+
+    ``<<`` by itself is not a heredoc, and reading it as one is expensive: the
+    rest of the input is marked as body, which is the whole newline screening
+    switched off. So this is quote- and context-aware. ``<<`` inside quotes is
+    text (`grep "<<<<<<< HEAD" src/x.py`, `echo "a<<b"`), ``<<`` inside
+    ``$(( ))`` is the arithmetic shift operator (`echo $((1 << n))`), and ``<<<``
+    is a here-STRING, which has no body at all.
+    """
+    index = 0
+    quote = ""
+    while index < len(line):
+        char = line[index]
+        if quote:
+            if char == "\\" and quote == '"' and index + 1 < len(line):
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in "'\"":
+            quote = char
+            index += 1
+            continue
+        if char == "\\":
+            index += 2
+            continue
+        if char == "(" and line[index + 1:index + 2] == "(":
+            close = line.find("))", index + 2)
+            index = len(line) if close < 0 else close + 2
+            continue
+        if char == "<" and line[index + 1:index + 2] == "<":
+            if line[index + 2:index + 3] == "<":
+                index += 3
+                continue
+            match = _HEREDOC_DELIM_RE.match(line, index + 2)
+            if match is not None:
+                delimiter = next(g for g in match.groups() if g is not None)
+                if delimiter:
+                    return index, delimiter
+            index += 2
+            continue
+        index += 1
+    return None
+
+
+def _heredoc_feeds_a_shell(prefix: str) -> bool:
+    """Does the command this heredoc redirects into EXECUTE the body?
+
+    ``cat <<EOF`` hands the body to a program that prints it; ``bash <<EOF``,
+    ``sh <<'EOF'`` and ``bash -s <<EOF`` hand it to a shell, which runs every
+    line of it — so treating those lines as data was a hole straight through the
+    floor. Only the last pipeline stage before the ``<<`` owns the redirection,
+    which is why *prefix* is the text left of it: ``cat x | sh <<EOF`` counts and
+    ``bash --version; cat <<EOF`` does not.
+    """
+    try:
+        lexer = shlex.shlex(prefix, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = [str(token).strip().lower() for token in lexer]
+    except ValueError:
+        tokens = [token.strip().lower() for token in prefix.split()]
+    stage: list[str] = []
+    for token in tokens:
+        if token and all(char in ";&|" for char in token):
+            stage = []
+        else:
+            stage.append(token)
+    return _shell_head(stage) is not None
 
 
 def _heredoc_body(lines: list[str]) -> list[bool]:
@@ -275,27 +366,94 @@ def _heredoc_body(lines: list[str]) -> list[bool]:
     unquoted heredoc caught — `$(mkfs.ext4 /dev/sda)` carries its own `(` anchor —
     while ordinary data lines stop being read as commands.
 
+    Two things make a heredoc real, and both are checked here because each was a
+    way to switch the newline screening off: the ``<<`` has to be a redirection
+    rather than quoted text or an arithmetic shift (``_heredoc_open``), and the
+    delimiter has to come BACK. An invented delimiter that never reappears is not
+    a heredoc, so those lines stay statements — an unterminated real heredoc lands
+    there too, which is the conservative direction.
+
     Nesting and multiple heredocs on one line are not modelled: the first
-    delimiter on a line wins and the body runs to the next line equal to it. A
-    miss here leaves a line marked as a statement, which is the conservative
-    direction.
+    delimiter on a line wins and the body runs to the next line equal to it.
     """
     body = [False] * len(lines)
     index = 0
     while index < len(lines):
-        match = _HEREDOC_RE.search(lines[index])
-        if match is None:
+        opened = _heredoc_open(lines[index])
+        if opened is None:
             index += 1
             continue
-        delimiter = next(g for g in match.groups() if g is not None)
-        index += 1
-        while index < len(lines) and lines[index].strip().lstrip("\t") != delimiter:
-            body[index] = True
+        offset, delimiter = opened
+        start = index + 1
+        end = next(
+            (
+                position
+                for position in range(start, len(lines))
+                if lines[position].strip().lstrip("\t") == delimiter
+            ),
+            None,
+        )
+        if end is None:
             index += 1
-        if index < len(lines):
-            body[index] = True          # the terminator line is data too
-            index += 1
+            continue
+        if not _heredoc_feeds_a_shell(lines[index][:offset]):
+            for position in range(start, end):
+                body[position] = True
+        body[end] = True                # the terminator line is data either way
+        index = end + 1
     return body
+
+
+# A `case` LABEL sits exactly where a command does but is a PATTERN, not a command
+# word: joining `case $1 in` / `shutdown) echo bye ;;` with `; ` put `shutdown` in
+# command position, so any script dispatching on a `shutdown`/`reboot`/`halt`
+# subcommand became a refusal no approval can lift.
+#
+# The label is removed from the screened text rather than skipped inside `_CMD`,
+# and only inside a `case … esac` region, because a word ending in `)` means
+# something else everywhere else: `(echo | reboot)` is a pipeline whose last stage
+# is a command, and a `_CMD` that stepped over `reboot)` would have lost it. What
+# sits in FRONT of the label is kept — the `;;` that closed the clause before it,
+# a `;` put in place of `in` for the first — so the branch BODY stays a command
+# position and `a) mkfs.ext4 /dev/sda ;;` still refuses.
+#
+# A label follows `in` or the `;;` (`;&`, `;;&`) that ended the previous clause,
+# never a plain `;`: inside a branch a `;` is an ordinary separator, and
+# `a) (echo; reboot) ;;` must keep its `reboot`. A `(pattern)` label is not
+# handled either, for the same reason — dropping a leading `(` would take
+# `; (reboot)` with it.
+_CASE_BLOCK_RE = re.compile(r"\bcase\b.*?\besac\b")
+_CASE_PATTERN = r"[;&\s]*[^\s;&(){}<>`'\"]*\)(?=[\s;]|$)"
+_CASE_LABEL_RE = re.compile(r"(?:(?<=;;)|(?<=;&))" + _CASE_PATTERN)
+_CASE_FIRST_LABEL_RE = re.compile(r"(?<=\bin)" + _CASE_PATTERN)
+
+
+def _strip_case_labels(flat: str) -> str:
+    """*flat* with the patterns of every ``case`` clause removed."""
+    def clause(match: re.Match[str]) -> str:
+        block = _CASE_FIRST_LABEL_RE.sub("; ", match.group(0))
+        return _CASE_LABEL_RE.sub(" ", block)
+
+    return _CASE_BLOCK_RE.sub(clause, flat)
+
+
+_SUBSTITUTION_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
+
+
+def _substituted(text: str) -> str:
+    """The parts of a heredoc body line a shell would still RUN, as statements.
+
+    An unquoted heredoc substitutes, so `$(rm -rf /)` in a body executes while
+    the words around it are data. Joined with `;` so each substitution is its own
+    segment.
+    """
+    parts = [
+        group
+        for match in _SUBSTITUTION_RE.finditer(text)
+        for group in match.groups()
+        if group
+    ]
+    return " ; ".join(parts)
 
 
 def _normalize(command: str | Sequence[str]) -> tuple[str, tuple[tuple[str, ...], ...]]:
@@ -329,13 +487,22 @@ def _normalize(command: str | Sequence[str]) -> tuple[str, tuple[tuple[str, ...]
         # /dev/sda'` passed the floor. Splitting is quote-aware: a newline INSIDE
         # quotes is data, and splitting there would screen ordinary text as a
         # command.
-        for line in lines:
+        for position, line in enumerate(lines):
+            # The same rule as the `text` join, which `segments` used to ignore:
+            # a body line is stdin, so tokenising all of it and handing it to
+            # `_recursive_root_removal` refused a README that quotes `rm -rf /`.
+            # What a body line still RUNS is its command substitutions, so that
+            # is what is segmented — dropping the line outright would have let
+            # `cat <<EOF` / `$(rm -rf /)` / `EOF` through.
+            source = _substituted(line) if is_body[position] else line
+            if not source.strip():
+                continue
             try:
-                lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+                lexer = shlex.shlex(source, posix=True, punctuation_chars=True)
                 lexer.whitespace_split = True
                 tokens = tuple(lexer)
             except ValueError:
-                tokens = tuple(line.split())
+                tokens = tuple(source.split())
             current: list[str] = []
             for token in tokens:
                 if token and all(char in ";&|" for char in token):
@@ -349,19 +516,28 @@ def _normalize(command: str | Sequence[str]) -> tuple[str, tuple[tuple[str, ...]
     else:
         segments = [tuple(str(item) for item in command)]
         text = " ".join(segments[0])
-    flat = _WS_RE.sub(" ", str(text or "")).strip().lower()
+    flat = _strip_case_labels(_WS_RE.sub(" ", str(text or "")).strip().lower())
     return flat, tuple(segments)
 
 
 def _recursive_root_removal(tokens: Sequence[str]) -> bool:
-    """``rm -rf /``-style deletions (any flag spelling, any root operand)."""
+    """``rm -rf /``-style deletions (any flag spelling, any root operand).
+
+    Command words are compared by BASENAME. This used to list ``/bin/rm`` and
+    ``/usr/bin/rm`` literally — a path problem solved for one spelling of one
+    command — and the wrapper walk did not do it at all, so ``/usr/bin/sudo`` was
+    not a wrapper and ``/usr/local/bin/rm`` was not ``rm``.
+    """
     if not tokens:
         return False
-    head = 0
     lowered = [str(token).strip().lower() for token in tokens]
-    while head < len(lowered) and lowered[head] in _WRAPPERS:
+    # A `case` clause opens with a pattern the shell never runs; the flat text has
+    # those removed, and a segment gets the same treatment so `wipe) rm -rf / ;;`
+    # is read as the `rm` it is.
+    head = 2 if len(lowered) > 1 and lowered[1] == ")" else 0
+    while head < len(lowered) and _command_name(lowered[head]) in _WRAPPERS:
         head += 1
-    if head >= len(lowered) or lowered[head] not in {"rm", "/bin/rm", "/usr/bin/rm"}:
+    if head >= len(lowered) or _command_name(lowered[head]) != "rm":
         return False
     recursive = False
     for token in lowered[head + 1:]:
@@ -384,11 +560,13 @@ def _basename(token: str) -> str:
     return token.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
 
 
-def _shell_name(token: str) -> str:
+def _command_name(token: str) -> str:
     """Basename of a command word with a Windows ``.exe`` suffix dropped.
 
     ``C:\\Windows\\System32\\cmd.exe`` and ``sh.exe`` name the same shells as
-    ``cmd`` and ``sh``; keeping the extension would hide the payload.
+    ``cmd`` and ``sh``; keeping the extension would hide the payload. Used for
+    every command word compared against a name — shells, ``_WRAPPERS`` and
+    ``rm`` — because a path in front of any of them is the same evasion.
     """
     name = _basename(token)
     return name[:-4] if name.endswith(".exe") else name
@@ -422,7 +600,7 @@ def _shell_head(lowered: Sequence[str]) -> int | None:
     after_option = False
     while index < len(lowered):
         word = lowered[index]
-        if _shell_name(word) in _POSIX_SHELLS or _shell_name(word) in _WINDOWS_SHELLS:
+        if _command_name(word) in _POSIX_SHELLS or _command_name(word) in _WINDOWS_SHELLS:
             return index
         if word == "--":
             index += 1
@@ -471,7 +649,7 @@ def _shell_c_payloads(command: str | Sequence[str]) -> tuple[str, ...]:
         head = _shell_head(lowered)
         if head is None:
             continue
-        name = _shell_name(lowered[head])
+        name = _command_name(lowered[head])
         if name in _POSIX_SHELLS:
             flag_re = _POSIX_C_FLAG_RE
         elif name in _WINDOWS_SHELLS:
@@ -538,12 +716,15 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
     name. Then the payloads of shell wrappers (recursive, depth-capped), then a
     de-obfuscated copy of each, in that order.
 
-    **Every payload found is yielded.** The caps bound how far a payload is
-    *re-expanded*, never whether it is screened, because the caller chooses the
-    order: capping the yields let seven cheap decoy ``sh -c ok; `` segments push
-    a trailing ``sh -c 'mkfs…'`` out of the scan entirely. Work stays bounded
-    anyway — level-1 payloads are substrings of the input, and only
-    ``_MAX_SHELL_EXPANSIONS`` of them are unwrapped again.
+    **Every payload found is yielded, and every payload found is re-expanded.**
+    The only cap is ``_MAX_SHELL_DEPTH``, because the caller chooses the order and
+    anything counted in encounter order is something they fill with decoys:
+    capping the yields let seven cheap ``sh -c ok; `` segments push a trailing
+    ``sh -c 'mkfs…'`` out of the scan, and capping the re-expansions let eight of
+    them push ``sh -c "sh -c 'mkfs…'"`` out of the unwrapping instead — the same
+    bypass one level down. Work stays bounded without a breadth cap: at most one
+    payload is taken per segment and a payload is a token of the level above, so
+    each level's payloads are disjoint substrings of the input.
 
     Spellings this deliberately does **not** reach, so nobody reads it as total:
     nesting deeper than ``_MAX_SHELL_DEPTH``; a quote at a word *boundary*
@@ -556,12 +737,19 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
     de-obfuscation pass runs after payload extraction and its output is not fed
     back through it.
 
+    Nor is a ``case`` label with a leading ``(`` (``(shutdown) echo bye ;;``) or a
+    ``case`` nested inside another one read as a label — both are refusals that
+    are not commands, which is the direction that costs nothing but a false no.
+
     This list is what the module knows it misses, not a proof of completeness.
-    An adversarial review of the list itself found five entries missing from it —
-    a decoy option between ``-c`` and the payload, a newline inside a payload, an
-    assignment prefix, a brace group and a compound-command keyword position.
-    Those are closed rather than listed; the point of recording it here is that
-    the next five are found the same way, by somebody trying.
+    Two adversarial reviews of the list itself found eleven entries missing from
+    it — a decoy option between ``-c`` and the payload, a newline inside a
+    payload, an assignment prefix, a brace group, a compound-command keyword
+    position, a re-expansion budget filled with decoys, a path in front of the
+    command word, a ``<<`` that opens no heredoc, a heredoc a shell reads as a
+    script, a heredoc body screened as argv, and a ``case`` label. Those are
+    closed rather than listed; the point of recording it here is that the next
+    eleven are found the same way, by somebody trying.
     """
     yield command
     produced: list[str | Sequence[str]] = [command]
@@ -576,12 +764,12 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
                 seen.add(payload)
                 yield payload
                 produced.append(payload)
-                # Re-expansion is the only step that can fan out, so it is the
-                # only step the cap touches; the payload was screened above
-                # either way. A payload longer than one legal argument is also
-                # not re-expanded.
-                if len(payload) <= MAX_ARG_CHARS and len(following) < _MAX_SHELL_EXPANSIONS:
-                    following.append(payload)
+                # EVERY payload is re-expanded, not the first few and not the
+                # short ones: both of those were budgets the caller filled — with
+                # decoy segments in front, or with padding inside the payload —
+                # and a budget the caller can fill is not a floor. Depth is what
+                # bounds the work.
+                following.append(payload)
         if not following:
             break
         layer = following

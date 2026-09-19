@@ -31,8 +31,9 @@ Governance (MOONSHOT §5):
   Nothing here self-authorizes; the kernel registration itself is the
   integrator's edit (see the slice report).
 * H506 (write half) — a file that *steers a future run* (``SOUL.md``,
-  ``SOUL.local.md``, ``AGENTS.md``, ``CLAUDE.md``, ``GEMINI.md``,
-  ``.cursorrules``; see :data:`INSTRUCTION_FILE_NAMES`) is its own class on top of
+  ``AGENTS.md``, ``CLAUDE.md``, ``GEMINI.md``, ``HEARTBEAT.md``, each with its
+  gitignored ``.local`` overlay, plus ``.cursorrules`` and Cursor's ``*.mdc`` rules;
+  see :data:`INSTRUCTION_FILE_NAMES`) is its own class on top of
   that contract, enforced in two places that are **not** the same strength:
 
   1. *On the production path*, :func:`register_file_tools` registers
@@ -217,7 +218,8 @@ def _has_secret_part(relative_parts: Sequence[str]) -> bool:
 # Files whose *contents* steer a future run. ``Agent._load_soul``
 # (agents/core/agent.py) reads ``SOUL.local.md`` → ``SOUL.md`` straight into the
 # system prompt, and the assistant harnesses around this repo load ``AGENTS.md``
-# / ``CLAUDE.md`` / ``GEMINI.md`` / ``.cursorrules`` as standing instructions.
+# / ``CLAUDE.md`` / ``GEMINI.md`` / ``.cursorrules`` / ``.cursor/rules/*.mdc`` as
+# standing instructions.
 # Writing one of these is not an ordinary edit — it is an edit to what Nerva will
 # be *told to do* next time — so it is its own class layered on top of
 # ``file.write``: the owner's approval card names it, and the approved execution
@@ -230,16 +232,35 @@ def _has_secret_part(relative_parts: Sequence[str]) -> bool:
 # note called ``claude.md`` anywhere in the workspace now always asks — and
 # asking is the side of that trade to be wrong on.
 #
-# ``heartbeat.md`` / ``heartbeat.local.md`` are the sharpest case in this repo and were
-# missing from the first cut. ``core/heartbeat.py`` scans every agent directory for
-# them and turns their contents into CRON-SCHEDULED agent runs, with the gitignored
-# ``.local`` overlay winning — the same overlay convention as ``SOUL.local.md``, whose
-# sibling was already here. A file whose literal job is to schedule future runs cannot
-# be the one that asks with the title of a scratch note.
-INSTRUCTION_FILE_NAMES = frozenset({
-    "soul.md", "soul.local.md", "agents.md", "claude.md", "gemini.md", ".cursorrules",
-    "heartbeat.md", "heartbeat.local.md",
+# The gitignored ``.local`` overlay is part of the *rule*, not an extra name: every
+# loader here prefers ``<name>.local.md`` over ``<name>.md`` when it exists —
+# ``Agent._load_soul`` for ``SOUL.local.md``, ``core/heartbeat.py`` for
+# ``HEARTBEAT.local.md`` (whose contents become CRON-SCHEDULED agent runs), the
+# assistant harnesses for ``CLAUDE.local.md`` / ``AGENTS.local.md``. So the overlays are
+# *derived* from the roster below instead of being listed one by one: a name added here
+# brings its overlay with it, and none can be forgotten. The first cut spelled two of
+# them out by hand, which left ``CLAUDE.local.md`` — same authority, same loader — asking
+# with the title of a scratch note.
+INSTRUCTION_BASE_NAMES = frozenset({
+    "soul.md", "agents.md", "claude.md", "gemini.md", ".cursorrules", "heartbeat.md",
 })
+
+
+def _local_overlay(name: str) -> str | None:
+    """``claude.md`` → ``claude.local.md``; ``None`` for a name with no stem to overlay."""
+    stem, dot, ext = name.rpartition(".")
+    return f"{stem}.local.{ext}" if stem and dot else None
+
+
+#: The roster plus the ``.local`` overlay of every name that has one.
+INSTRUCTION_FILE_NAMES = frozenset(INSTRUCTION_BASE_NAMES).union(
+    overlay for overlay in map(_local_overlay, INSTRUCTION_BASE_NAMES) if overlay
+)
+#: Cursor's *current* rules format — ``.cursor/rules/<anything>.mdc`` — which superseded
+#: the single ``.cursorrules`` file the roster already covers. Those rule files are named
+#: freely, so this half of the class is matched by extension: an ``.mdc`` file is a rules
+#: file by convention, and it is read as standing instructions like the rest.
+INSTRUCTION_FILE_SUFFIXES = (".mdc",)
 INSTRUCTION_CLASS = "agent_instructions"
 #: The one line the owner reads on the approval card. It is the whole point of the
 #: class: the ask for SOUL.md must not look like the ask for a scratch note.
@@ -248,7 +269,10 @@ INSTRUCTION_NOTICE = "this file steers future runs"
 
 def looks_instruction_name(name: object) -> bool:
     """True when a file *name* is one a future run is steered by (case-insensitive)."""
-    return str(name or "").strip().lower() in INSTRUCTION_FILE_NAMES
+    lowered = str(name or "").strip().lower()
+    if not lowered:
+        return False
+    return lowered in INSTRUCTION_FILE_NAMES or lowered.endswith(INSTRUCTION_FILE_SUFFIXES)
 
 
 def instruction_labels(*names: object) -> dict[str, Any] | None:
@@ -1411,7 +1435,8 @@ __all__ = [
     "FILE_WRITE_CONTRACT", "FILE_TOOL_SPECS", "GATED_TOOL_KINDS",
     "FileScope", "FileScopeError", "FileTools", "Snapshot", "SnapshotStore",
     "SECRET_NAME_TOKENS", "looks_secret_name", "restore_snapshot", "register_file_tools",
-    "INSTRUCTION_FILE_NAMES", "INSTRUCTION_CLASS", "INSTRUCTION_NOTICE",
+    "INSTRUCTION_BASE_NAMES", "INSTRUCTION_FILE_NAMES", "INSTRUCTION_FILE_SUFFIXES",
+    "INSTRUCTION_CLASS", "INSTRUCTION_NOTICE",
     "looks_instruction_name", "instruction_labels",
     "file_tools_enabled",
 ]
