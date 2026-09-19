@@ -117,6 +117,18 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function build() {
     const st = S.current, W = st.w, H = st.h, cx = W / 2, cy = H / 2; st.cx = cx; st.cy = cy;
     const nodes: any[] = [], edges: any[] = []; const R = Math.min(W, H);
+    const edgesByA = new Map<string, any[]>();
+    const agentModelEdgeMap = new Map<string, any>();
+    const addEdge = (e: any) => {
+      edges.push(e);
+      const list = edgesByA.get(e.a) || [];
+      list.push(e);
+      edgesByA.set(e.a, list);
+      if (e.kind === 'am') {
+        agentModelEdgeMap.set(e.a, e);
+      }
+    };
+
     const liveAgents = Array.isArray(st.agents) ? st.agents : [];
     nodes.push({ id: 'jarvis', kind: 'core', baseAng: 0, baseRad: 0, r: Math.max(15, R * (st.cinema ? 0.058 : 0.05)), label: 'JARVIS', agent: liveAgents.find((a) => a.id === 'jarvis'), i: 0 });
     const meshModels = Array.isArray(st.models) ? st.models : [];
@@ -124,7 +136,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     meshModels.forEach((m, i) => {
       const ang = -Math.PI / 2 + i * (2 * Math.PI / meshModels.length);
       nodes.push({ id: 'model:' + m.key, kind: 'model', baseAng: ang, baseRad: mR, r: 6 + m.size * 10, model: m, label: m.label, i });
-      edges.push({ a: 'jarvis', b: 'model:' + m.key, kind: 'mc' });
+      addEdge({ a: 'jarvis', b: 'model:' + m.key, kind: 'mc' });
     });
     // Pick edge targets from whatever models actually exist, so agent→model
     // wiring survives a live roster of just one local model (or a cloud lane).
@@ -136,10 +148,12 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       nodes.push({ id: a.id, kind: 'agent', baseAng: ang, baseRad: aR, r: st.cinema ? 7 : 5.5, agent: a, label: a.name, i });
       const preferLocal = a.tier === 'FND' || a.id === 'frigga' || a.id === 'ultron' || a.id === 'hephaestus';
       const target = (preferLocal || !cloudModels.length) ? localModel : cloudModels[i % cloudModels.length];
-      if (target) edges.push({ a: a.id, b: 'model:' + target.key, kind: 'am' });
-      edges.push({ a: a.id, b: 'jarvis', kind: 'ac' });
+      if (target) addEdge({ a: a.id, b: 'model:' + target.key, kind: 'am' });
+      addEdge({ a: a.id, b: 'jarvis', kind: 'ac' });
     });
     st.nodes = nodes; st.edges = edges;
+    st.edgesByA = edgesByA;
+    st.agentModelEdgeMap = agentModelEdgeMap;
     st.nodeMap = new Map(nodes.map((n) => [n.id, n]));
     st.stars = Array.from({ length: 46 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.1 + 0.2, a: Math.random() * 0.4 + 0.1 }));
   }
@@ -147,7 +161,9 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function fire(id, big?) {
     const st = S.current, n = node(id); if (!n) return; const c = colorFor(n);
     st.rings.push({ x: n.x, y: n.y, life: 0, c, big });
-    st.edges.filter((e) => e.a === id).forEach((e) => {
+    // Bolt Optimization: O(1) Map lookup via edgesByA instead of O(E) array scan
+    const outgoing = st.edgesByA ? st.edgesByA.get(id) : st.edges.filter((e) => e.a === id);
+    (outgoing || []).forEach((e) => {
       for (let k = 0; k < (big ? 4 : 3); k++) {
         st.particles.push({ e, life: -k * 0.12, sp: 0.017 + ((n.i + k) % 3) * 0.005, c, big });
       }
@@ -156,7 +172,9 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function corePulse() {
     const st = S.current, c = node('jarvis'); if (!c) return;
     st.rings.push({ x: c.x, y: c.y, life: 0, c: '#8fe0ff', big: true });
-    st.edges.filter((e) => e.a === 'jarvis').forEach((e) => { for (let k = 0; k < 2; k++) st.particles.push({ e, life: -k * 0.1, sp: 0.022, c: '#8fe0ff', big: true }); });
+    // Bolt Optimization: O(1) Map lookup via edgesByA instead of O(E) array scan
+    const outgoing = st.edgesByA ? st.edgesByA.get('jarvis') : st.edges.filter((e) => e.a === 'jarvis');
+    (outgoing || []).forEach((e) => { for (let k = 0; k < 2; k++) st.particles.push({ e, life: -k * 0.1, sp: 0.022, c: '#8fe0ff', big: true }); });
   }
 
   function resize() {
@@ -219,7 +237,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     if (!calm && !st.demo && st.tick % 8 === 0) {
       st.nodes.forEach((n) => {
         if (n.kind === 'agent' && isExecutingAgent(n.agent)) {
-          const e = st.edges.find((x) => x.a === n.id && x.kind === 'am');
+          // Bolt Optimization: O(1) Map lookup via agentModelEdgeMap instead of O(E) array scan per executing agent frame
+          const e = st.agentModelEdgeMap ? st.agentModelEdgeMap.get(n.id) : st.edges.find((x) => x.a === n.id && x.kind === 'am');
           if (e) st.particles.push({ e, life: 0, sp: 0.015 + (n.i % 3) * 0.004, c: colorFor(n) });
         }
       });
