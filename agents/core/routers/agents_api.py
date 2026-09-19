@@ -61,13 +61,19 @@ def _soul_guard_verdict(content: str, filename: str) -> dict:
     endpoint, never a reason to fail the read.
     """
     try:
-        from agents.core.agent import _cap_soul_body, _scan_soul_body, _soul_max_chars
+        from agents.core.agent import (
+            _body_line_offset,
+            _cap_soul_body,
+            _scan_soul_body,
+            _soul_max_chars,
+        )
         try:
             from agents.core.cognition.frontmatter import parse_frontmatter
             _meta, body = parse_frontmatter(content)
         except Exception:
             body = content
-        body, flags, blocked = _scan_soul_body(body, filename)
+        body, flags, blocked = _scan_soul_body(
+            body, filename, _body_line_offset(content, body))
         truncated = False
         if not blocked:
             _capped, truncated = _cap_soul_body(body, filename, _soul_max_chars())

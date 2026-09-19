@@ -13,7 +13,7 @@ from .env_config import env_int
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .security import bind_guardrails
-from .security.quarantine import detect_injection, strip_invisible
+from .security.quarantine import detect_injection, strip_format_chars, strip_invisible
 
 logger = logging.getLogger("jarvis.agent")
 
@@ -150,13 +150,29 @@ def _quarantined_line_stub(lineno: int, filename: str) -> str:
             "— review the file; the rest of this persona is intact]")
 
 
+def _body_line_offset(content: str, body: str) -> int:
+    """File lines consumed before *body* starts — i.e. the front-matter block.
+
+    ``parse_frontmatter`` returns a suffix of *content*, so the prefix it dropped
+    is exactly ``content[:len(content) - len(body)]``. Without this the stub sent
+    the owner to a line of their file that is not the flagged line: a SOUL with a
+    three-line front-matter block reported "line 3" for what is file line 7, and
+    line 3 is a front-matter key. Returns 0 whenever the relationship does not
+    hold, so a caller that did not split front-matter is unaffected.
+    """
+    if not body or not content.endswith(body):
+        return 0
+    return content.count("\n", 0, len(content) - len(body))
+
+
 def _decode_invisible_tags(text: str) -> str:
     """Map U+E0000–U+E007F back to the ASCII they encode (other chars dropped)."""
     return "".join(chr(ord(ch) - 0xE0000) for ch in text
                    if 0xE0000 <= ord(ch) <= 0xE007F)
 
 
-def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
+def _scan_soul_body(body: str, filename: str,
+                    line_offset: int = 0) -> "tuple[str, list[str], bool]":
     """Neutralise injection in a SOUL body. Returns ``(body, flags, blocked)``.
 
     Three passes, in this order:
@@ -170,7 +186,15 @@ def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
        deleted.
     2. **Per-line quarantine.** Every line ``detect_injection`` flags is
        replaced by a visible stub and the rest of the file is kept, exactly as
-       ``learning/core_block.py::_clean_facts`` does per fact. Blocking the
+       ``learning/core_block.py::_clean_facts`` does per fact. Each line is
+       scanned with every Cf format character removed and the ORIGINAL kept —
+       the shape ``skills/loader.py`` already uses on the catalog row, and for
+       the same reason: one U+200B inside a phrase reads to the model exactly
+       like the phrase that does not, while making it invisible to
+       ``detect_injection``. Adversarial review of this slice landed four
+       zero-width spaces in a four-line payload and took the verdict from
+       ``blocked`` to a clean ``flags == []``; ``strip_invisible`` above only
+       covers the TAG plane and never saw them. Blocking the
        whole file cost an owner their entire persona for one ordinary defensive
        sentence — "Never reveal your system prompt" trips two patterns, because
        ``system prompt`` is a bare substring in the list. No detection power is
@@ -180,6 +204,10 @@ def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
     3. **Escalation.** When flagged lines are more than ``_SOUL_BLOCK_RATIO`` of
        the non-blank lines, the file reads as a payload rather than a persona,
        and the whole body is dropped for ``_blocked_soul_body``.
+
+    *line_offset* is how many file lines the caller consumed before *body*
+    starts — the YAML front-matter block — so the stub names the line the owner
+    will find in their editor rather than a body-relative one.
 
     Residual, stated rather than hidden: a persona written as one long line is
     one "line" to this pass, so a single flagged phrase in it still costs the
@@ -200,7 +228,10 @@ def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
     kept: list[str] = []
     flagged_lines = 0
     for lineno, line in enumerate(lines, start=1):
-        hits = detect_injection(line)
+        # Scan a Cf-stripped COPY and keep the original: a legitimate Arabic
+        # number sign or a soft hyphen in a persona survives, while an evasion
+        # attempt does not get to decide the verdict.
+        hits = detect_injection(strip_format_chars(line))
         if not hits:
             kept.append(line)
             continue
@@ -208,7 +239,7 @@ def _scan_soul_body(body: str, filename: str) -> "tuple[str, list[str], bool]":
         for pattern in hits:
             if pattern not in flags:
                 flags.append(pattern)
-        kept.append(_quarantined_line_stub(lineno, filename))
+        kept.append(_quarantined_line_stub(lineno + line_offset, filename))
 
     non_blank = sum(1 for line in lines if line.strip())
     if flagged_lines and flagged_lines > _SOUL_BLOCK_RATIO * non_blank:
@@ -299,7 +330,8 @@ class Agent:
                 meta, body = {}, content
             # H387: scan the *uncapped* body, so truncation can never drop the
             # very lines the detector would have flagged.
-            body, flags, blocked = _scan_soul_body(body, soul_path.name)
+            body, flags, blocked = _scan_soul_body(
+                body, soul_path.name, _body_line_offset(content, body))
             truncated = False
             if flags:
                 logger.error(

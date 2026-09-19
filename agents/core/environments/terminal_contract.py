@@ -151,7 +151,11 @@ _INTRA_ESCAPE_RE = re.compile(rf"\\(?={_OBF_NEIGHBOUR})")
 # mkfs.ext4 /dev/sda; fi` (a compound-command keyword), `FOO=1 mkfs.ext4
 # /dev/sda` and `env FOO=1 mkfs.ext4 /dev/sda` (an assignment prefix, which the
 # shell consumes before deciding what to run).
-_CMD = (r"(?:^|[;&|(`{]\s*)"
+# `{` is a command position only when the shell reads it as a WORD — POSIX requires
+# whitespace after it (`{ cmd; }`). Anchoring on a bare `{` made
+# `jq '{reboot: .needs_reboot}'` a power_cycle refusal, which is precisely the
+# "a commit message mentioning mkfs must not trip this" case two lines up.
+_CMD = (r"(?:^|[;&|(`]\s*|\{\s+)"
         r"(?:(?:then|do|else|elif)\s+)*"
         r"(?:[a-z_][a-z0-9_]*=\S*\s+)*"
         r"(?:(?:sudo|doas|env|nice|nohup|xargs|time|command|exec|busybox)\s+"
@@ -226,6 +230,17 @@ def _unquoted_lines(command: str) -> list[str]:
             current.append(command[index + 1])
             index += 2
             continue
+        if not quote and char == "\\" and command[index + 1:index + 2] in ("\r", "\n"):
+            # A line continuation, NOT a statement separator: the shell splices the
+            # two lines into one command and removes both characters. Splitting here
+            # invented a command position the shell does not have
+            # (`ansible-playbook -i hosts \` + newline + `reboot.yml` became
+            # `...; reboot.yml` and tripped power_cycle) and broke one the shell does
+            # join (`mk\` + newline + `fs.ext4 /dev/sda` runs as `mkfs.ext4`).
+            index += 2
+            if command[index - 1] == "\r" and command[index:index + 1] == "\n":
+                index += 1
+            continue
         if quote:
             if char == quote:
                 quote = ""
@@ -243,6 +258,46 @@ def _unquoted_lines(command: str) -> list[str]:
     return [line for line in lines if line.strip()] or [""]
 
 
+_HEREDOC_RE = re.compile(r"<<-?\s*(?:'([^']*)'|\"([^\"]*)\"|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _heredoc_body(lines: list[str]) -> list[bool]:
+    """Per line: is it the BODY of a heredoc rather than a statement?
+
+    A heredoc body is text the shell feeds to a command's stdin — it never parses
+    those lines as commands, so joining them with `;` invented command positions
+    that do not exist. Writing a config file through
+    `cat > x <<'EOF'` / `shutdown: graceful` / `EOF` was refused as `power_cycle`,
+    which is the exact case `_CMD`'s docstring promises not to trip.
+
+    The body is still screened, just not as a statement: `_normalize` joins these
+    lines with a space instead of `; `. That keeps command SUBSTITUTION inside an
+    unquoted heredoc caught — `$(mkfs.ext4 /dev/sda)` carries its own `(` anchor —
+    while ordinary data lines stop being read as commands.
+
+    Nesting and multiple heredocs on one line are not modelled: the first
+    delimiter on a line wins and the body runs to the next line equal to it. A
+    miss here leaves a line marked as a statement, which is the conservative
+    direction.
+    """
+    body = [False] * len(lines)
+    index = 0
+    while index < len(lines):
+        match = _HEREDOC_RE.search(lines[index])
+        if match is None:
+            index += 1
+            continue
+        delimiter = next(g for g in match.groups() if g is not None)
+        index += 1
+        while index < len(lines) and lines[index].strip().lstrip("\t") != delimiter:
+            body[index] = True
+            index += 1
+        if index < len(lines):
+            body[index] = True          # the terminator line is data too
+            index += 1
+    return body
+
+
 def _normalize(command: str | Sequence[str]) -> tuple[str, tuple[tuple[str, ...], ...]]:
     """Return ``(flat_text, segments)`` for either a command string or an argv.
 
@@ -256,7 +311,15 @@ def _normalize(command: str | Sequence[str]) -> tuple[str, tuple[tuple[str, ...]
         # space leaves no anchor, so line 2 of a payload was never in command
         # position. A newline IS a `;` to a shell, so it is spelled as one here.
         lines = _unquoted_lines(command)
-        text = "; ".join(lines)
+        # A heredoc body is stdin, not statements — join those with a space so they
+        # carry no command-position anchor, and the rest with `; ` as before.
+        is_body = _heredoc_body(lines)
+        text = ""
+        for position, line in enumerate(lines):
+            if not text:
+                text = line
+            else:
+                text += (" " if is_body[position] else "; ") + line
         segments: list[tuple[str, ...]] = []
         # An UNQUOTED newline is a statement separator in a shell, exactly like
         # `;` — and a `sh -c` payload is a shell script, so this is the most
@@ -331,6 +394,56 @@ def _shell_name(token: str) -> str:
     return name[:-4] if name.endswith(".exe") else name
 
 
+_ASSIGNMENT_RE = re.compile(r"[a-z_][a-z0-9_]*=.*", re.IGNORECASE)
+
+
+def _shell_head(lowered: Sequence[str]) -> int | None:
+    """Index of the shell a segment invokes, or None if it does not invoke one.
+
+    The walk used to step over head tokens that were literally in ``_WRAPPERS`` and
+    then demand the very next word be a shell. Anything else in the prefix ended
+    the walk on a non-shell word, so no payload was extracted and the whole `sh -c`
+    screening was skipped — `env FOO=1 sh -c 'mkfs.ext4 /dev/sda'` reached a real
+    shell with this floor returning None, and removing the five characters
+    ``FOO=1 `` turned the same string into `hardline_denied:mkfs`. `_CMD` had been
+    widened for exactly that assignment prefix; this had not.
+
+    Three prefix shapes are stepped over, all of them things a shell consumes
+    before deciding what to run: an assignment (`FOO=1`), a wrapper from
+    ``_WRAPPERS``, and a wrapper's own options — including an option that takes a
+    separate argument (`sudo -u root`, `nice -n 10`), which is why one bare word is
+    allowed directly after an option. `--` ends option parsing.
+
+    Conservative by construction: anything it does not recognise ends the walk and
+    the segment is skipped, which is the same answer as before rather than a new
+    refusal.
+    """
+    index = 0
+    after_option = False
+    while index < len(lowered):
+        word = lowered[index]
+        if _shell_name(word) in _POSIX_SHELLS or _shell_name(word) in _WINDOWS_SHELLS:
+            return index
+        if word == "--":
+            index += 1
+            after_option = False
+            continue
+        if len(word) > 1 and word.startswith("-"):
+            index += 1
+            after_option = True
+            continue
+        if _ASSIGNMENT_RE.fullmatch(word) or word in _WRAPPERS:
+            index += 1
+            after_option = False
+            continue
+        if after_option:                 # the argument of the option before it
+            index += 1
+            after_option = False
+            continue
+        return None
+    return None
+
+
 def _shell_c_payloads(command: str | Sequence[str]) -> tuple[str, ...]:
     """Payloads of ``sh -c <payload>``-style invocations, at most one per segment.
 
@@ -355,10 +468,8 @@ def _shell_c_payloads(command: str | Sequence[str]) -> tuple[str, ...]:
     payloads: list[str] = []
     for segment in segments:
         lowered = [str(token).strip().lower() for token in segment]
-        head = 0
-        while head < len(lowered) and lowered[head] in _WRAPPERS:
-            head += 1
-        if head >= len(lowered):
+        head = _shell_head(lowered)
+        if head is None:
             continue
         name = _shell_name(lowered[head])
         if name in _POSIX_SHELLS:

@@ -266,11 +266,11 @@
       "evidence": [
         {
           "path": "serve.py",
-          "sha256": "2bbdd26202564b01aa306c0a3d17eb548fbf21415c83b828a46331745bd5fcfe"
+          "sha256": "cf03556034d4e2aa3f6cfbf12c2203047c937d755a028d27845bec735d7d01bc"
         },
         {
           "path": "tests/test_h2311_operability.py",
-          "sha256": "b24d0dd29284695cee82c4eca0c93864292000dc7888cbf2e0793ccff125bb63"
+          "sha256": "c28e4b52c178eb2197ebae6bf298c980c84f7a3dd15f24b1f8bf94844e4db004"
         },
         {
           "path": "docs/test-manual/01-environment-and-boot.md",
@@ -1444,7 +1444,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -2010,7 +2010,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2357,7 +2357,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -2506,7 +2506,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -2700,19 +2700,19 @@
       "row_sha256": "297a94b67213e9fc13fcc86a6e835bb684f8daf85807e703f91ee8397a9f46d9",
       "status": "partial",
       "summary": "**The SOUL body is scanned before it reaches the model, and the HUD is told when it was.** `Agent._load_soul` now strips invisible Unicode, runs `detect_injection` over the *uncapped* body (so truncation can never drop the very lines the detector would have flagged), quarantines the flagged lines and caps the result. `GET /api/agents/{id}/soul` keeps returning the raw bytes on disk — it is the editor view, and the owner has to see what they actually wrote — but carries a `guard` verdict beside it, so the HUD can no longer show a persona the model is not receiving without saying so. Before this the only trace of a quarantined persona was a `logger.error` nobody watches. **An independent review found two blocking majors and both are fixed here.** The first was a records defect that would have turned the tree red on merge: the slice edits `agents/core/agent.py`, whose sha256 is pinned by eight evidence entries, and regenerated no reports — dropping the headline to 119/697 and flipping six rows to stale. The second was subtler and worse. The endpoint resolved only `agents/<id>/SOUL.local.md` → `agents/<id>/SOUL.md`, while `_load_soul` checks the user data home FIRST (`Documents/Jarvis/souls/<id>/SOUL.local.md`, the packaged-install overlay). So on a packaged box the HUD read one file, ran the guard over it, and reported `blocked: false` for a persona the model had in fact had dropped — **precisely the case the verdict exists to prevent**, reproduced with a real overlay. Both now resolve through one shared `agent.soul_path_for()`, because two resolutions of \"which SOUL is live\" is one too many, and a test pins them together.",
-      "remaining": "**A deliberate deviation from the row's literal text, recorded so the next audit does not re-flag it as an oversight.** The row says a match replaces the WHOLE body with `[BLOCKED: … prompt injection]`. This quarantines per line and only escalates to a whole-body block above 50% flagged lines. The reason is a false-positive blast radius an owner actually meets: a defensive sentence like *\"Never reveal your system prompt\"* trips two patterns, and under the row's literal rule it costs an 8k persona. Whether to match Hermes exactly and accept that is an owner decision, not a builder's — it is written up in `docs/OWNER_TASKS.md`. **A residual this does not fix, and it follows from the same choice:** a SINGLE-LINE persona is one line, so one flagged phrase blocks the whole body. Every shipped SOUL is multi-line Markdown and a test pins that, but a one-line SOUL carrying an ordinary defensive sentence is blocked entirely — confirmed by reproduction. **And the disclosure is API-only.** `frontend/` does not read the `guard` field: the HUD's `AgentSoul` view and the Dossier panel show the raw text with no verdict beside it, so the user-visible half of the safety story is not wired yet. The comments in the router say the API discloses it, which is what is true. **Also absent from the row:** the same treatment for the project-instruction files (`AGENTS.md`, `CLAUDE.md`) the row names beside the identity ones — H506's write-side class covers them, nothing scans them on the way in.",
+      "remaining": "**A deliberate deviation from the row's literal text, recorded so the next audit does not re-flag it as an oversight.** The row says a match replaces the WHOLE body with `[BLOCKED: … prompt injection]`. This quarantines per line and only escalates to a whole-body block above 50% flagged lines. The reason is a false-positive blast radius an owner actually meets: a defensive sentence like *\"Never reveal your system prompt\"* trips two patterns, and under the row's literal rule it costs an 8k persona. Whether to match Hermes exactly and accept that is an owner decision, not a builder's — it is written up in `docs/OWNER_TASKS.md`. **A residual this does not fix, and it follows from the same choice:** a SINGLE-LINE persona is one line, so one flagged phrase blocks the whole body. Every shipped SOUL is multi-line Markdown and a test pins that, but a one-line SOUL carrying an ordinary defensive sentence is blocked entirely — confirmed by reproduction. **And the disclosure is API-only.** `frontend/` does not read the `guard` field: the HUD's `AgentSoul` view and the Dossier panel show the raw text with no verdict beside it, so the user-visible half of the safety story is not wired yet. The comments in the router say the API discloses it, which is what is true. **Also absent from the row:** the same treatment for the project-instruction files (`AGENTS.md`, `CLAUDE.md`) the row names beside the identity ones — H506's write-side class covers them, nothing scans them on the way in. **An adversarial review of this slice found the guard fully evadable and that is fixed here, not filed:** the per-line scan ran `detect_injection` on the raw line, and `strip_invisible` covers only the TAG plane, so any other Cf format character — U+200B, U+00AD, U+FEFF, the bidi marks — survived into the scanned text while reading to the model exactly like the phrase that does not contain it. Four zero-width spaces in a four-line payload took the verdict from `blocked` to `flags == []`, passed the payload through byte-identically, and made `GET /api/agents/{id}/soul` report a clean `guard` for a persona that was 100% injection. The fix is the shape H351 had already put in the same stack one commit earlier: scan `quarantine.strip_format_chars(line)` and emit the original, so a legitimate Arabic number sign in a persona survives while an evasion does not decide the verdict. Six format-character classes are pinned and the payload must now earn the SAME verdict with and without them. Two more from the same review: the quarantine stub numbered the BODY, so with front-matter present it sent the owner to a line that is not the flagged line (`_body_line_offset` now shifts it to the file line); and `test_the_editor_endpoint_reads_the_file_the_model_reads` asserted only on `soul_path_for` and never called the endpoint, so the router half of the packaged-install fix could be reverted green — it drives the real endpoint now and goes red when it is.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/routers/agents_api.py",
-          "sha256": "40d3cebccb1ee7da8739297e857906683c1b9668ecc938d6328aa85c2a02964f"
+          "sha256": "6c20487eb3a8e21d6ecb8479e775595ec2abaf3c725f2f74716c0eb829372ec5"
         },
         {
           "path": "tests/test_soul_injection_guard.py",
-          "sha256": "c743147bd95a7186fd90c4071a003a3b4f54e7c90cfddc7c311d56d44dbd76da"
+          "sha256": "05b0832dca0b2f8bf64a939ec42cc31bc4e8bdc8a48b758bb2a2b9e8dd0b4cee"
         }
       ]
     },
@@ -3080,7 +3080,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -3479,7 +3479,7 @@
         },
         {
           "path": "tests/test_h2311_operability.py",
-          "sha256": "b24d0dd29284695cee82c4eca0c93864292000dc7888cbf2e0793ccff125bb63"
+          "sha256": "c28e4b52c178eb2197ebae6bf298c980c84f7a3dd15f24b1f8bf94844e4db004"
         },
         {
           "path": "tests/test_hud_v2_parity.py",
@@ -3533,15 +3533,15 @@
       "row_sha256": "be1a9cbf277c7596f9f4ae1c2dcd2dcd3cafb53c551cfd6b932108affe199f5d",
       "status": "partial",
       "summary": "**The variant-expansion half of the row.** `hardline_match` no longer screens one spelling: the old single-pass body becomes `_scan_one`, and the public function screens the command in every spelling `_detection_variants` yields — as given, unwrapped from a shell wrapper (`_shell_c_payloads`, recursively to `_MAX_SHELL_DEPTH = 2`), and de-obfuscated (intra-word quotes and escapes collapsed, so `mk\"\"fs` reads as `mkfs`), type-preserving so an argv stays an argv. A non-string command is materialised ONCE up front, which fixes a real one-shot-iterator drain that turned `hardline_match(iter([\"rm\",\"-rf\",\"/\"]))` from a refusal into a miss. Nothing in HARDLINE or the contract changes, so the pass is additive: an 80,000-case differential fuzz against the pre-slice module returned `refusals_cleared_by_slice = 0`. **An independent review found two blocking majors and four false claims; all six are addressed here, and every one was reproduced against a real shell first.** **(1)** The payload was taken as the token immediately after the first `-c`-shaped flag, and the search then stopped — but a shell keeps parsing options until the first non-option operand. `/bin/sh -c -x 'echo RAN'` runs, and `sh -c -x 'mkfs.ext4 /dev/sda'`, `sh -c -- 'rm -rf /'`, `sh -c -e …`, `sh -c -u …` and `sudo sh -c -- 'wipefs -a /dev/sda'` all returned None. One decoy character defeated the entire mechanism, reachable end to end at the transport's spawn seam. The scan steps over options to the first operand now, `--` included. **(2)** A `sh -c` payload is a shell SCRIPT, and a newline separates statements exactly as `;` does — but the newline was squeezed into a space before segmentation, so nothing ever occupied a command position on line 2 and `sh -c 'echo hi\\nmkfs.ext4 /dev/sda'` passed the floor. **Pressing Enter was the bypass.** Unquoted newlines are separators now, quote-aware so a newline inside a string literal stays data and ordinary prose is not screened as a command. **(3)** `_CMD`'s command-position anchor learned four more shapes a shell steps over, each a live miss: a brace group (`{ mkfs.ext4 /dev/sda; }`), a compound-command keyword (`if true; then mkfs.ext4 …`), an assignment prefix (`FOO=1 mkfs.ext4 …`) and `env FOO=1 mkfs.ext4 …`. **(4)** `busybox` was named as a shell but not as a command-position wrapper, so `busybox mkfs.ext4 /dev/sda` — the standard shape on exactly the container targets this module says it keeps the floor on — walked straight through. Four documentation claims were corrected rather than left standing, including the one that said the known-gap list was complete (the review found five entries missing from it) and the one that said an over-matched flag shape can never clear a refusal (it could: `powershell /c -Command Stop-Computer` returned None where `powershell -Command Stop-Computer` refused — fixed by the same change as (1)). A test whose NAME promised a bound on work it never measured was renamed to what it actually pins, which is the opposite: that depth-3 nesting is a deliberate miss.",
-      "remaining": "**The middle tier does not exist.** The row asks for three stacked layers; this is the first, with its matching repaired. There is still no ~40-rule severity/reversibility-tagged risky-pattern catalogue feeding the approval card's description, so `rm -rf ~/projects` is neither hardline nor pattern-classified and the owner's card still says \"run this argv\" rather than \"recursive delete\" — which the row's rationale names as the point. No user-editable `approvals.deny` fnmatch list at hardline level. No parser limits that themselves hardline-block and save an oversized payload to a file for manual review (128k chars / 4096 separator-free / 25k segments). **Variants Hermes produces and this still does not:** NFKC normalisation, `$()`/backtick substitution, `$HOME`/`$HERMES_HOME` folding, grep-pattern span masking, and `python -c` / `perl -e` / `node -e` payload extraction — the last left alone on purpose, since `jobs_scripts.snapshot_script` legitimately builds `[sys.executable, '-I', '-c', source]`. **Gaps this module knows it still has, now listed honestly rather than as a complete set:** nesting deeper than `_MAX_SHELL_DEPTH`; a quote at a word BOUNDARY (`'mkfs.ext4' /dev/sda`) rather than inside a word; `powershell -EncodedCommand` base64; a `cmd /c` payload split across several argv items; and an obfuscated shell HEAD in argv form (`['s\"\"h','-c',…]`), because the de-obfuscation pass runs after payload extraction and its output is not fed back through it. **Two pre-existing false positives are unchanged and are not this slice's doing** — verified identical on the base: `git commit -m \"fix;mkfs.ext4 handling\"` refuses, and `grep -r \"(shutdown\" docs/` refuses. **And a measured cost:** the variant pass adds ~38 ms of synchronous work on a maximal 64x4000-character argv (219 ms against 181 ms on base), on the event loop, before every exec. No test measures that, and the one whose name implied it does not.",
+      "remaining": "**The middle tier does not exist.** The row asks for three stacked layers; this is the first, with its matching repaired. There is still no ~40-rule severity/reversibility-tagged risky-pattern catalogue feeding the approval card's description, so `rm -rf ~/projects` is neither hardline nor pattern-classified and the owner's card still says \"run this argv\" rather than \"recursive delete\" — which the row's rationale names as the point. No user-editable `approvals.deny` fnmatch list at hardline level. No parser limits that themselves hardline-block and save an oversized payload to a file for manual review (128k chars / 4096 separator-free / 25k segments). **Variants Hermes produces and this still does not:** NFKC normalisation, `$()`/backtick substitution, `$HOME`/`$HERMES_HOME` folding, grep-pattern span masking, and `python -c` / `perl -e` / `node -e` payload extraction — the last left alone on purpose, since `jobs_scripts.snapshot_script` legitimately builds `[sys.executable, '-I', '-c', source]`. **Gaps this module knows it still has, now listed honestly rather than as a complete set:** nesting deeper than `_MAX_SHELL_DEPTH`; a quote at a word BOUNDARY (`'mkfs.ext4' /dev/sda`) rather than inside a word; `powershell -EncodedCommand` base64; a `cmd /c` payload split across several argv items; and an obfuscated shell HEAD in argv form (`['s\"\"h','-c',…]`), because the de-obfuscation pass runs after payload extraction and its output is not fed back through it. **Two pre-existing false positives are unchanged and are not this slice's doing** — verified identical on the base: `git commit -m \"fix;mkfs.ext4 handling\"` refuses, and `grep -r \"(shutdown\" docs/` refuses. **And a measured cost:** the variant pass adds ~38 ms of synchronous work on a maximal 64x4000-character argv (219 ms against 181 ms on base), on the event loop, before every exec. No test measures that, and the one whose name implied it does not. **Adversarial review of this slice found four more defects in it, all fixed here and each reproduced first, with the shell semantics checked against real /bin/sh, /bin/dash and /bin/bash rather than read off a man page.** Two were bypasses: (1) `_shell_c_payloads` demanded the word after the wrappers BE the shell, so `env FOO=1 sh -c 'mkfs.ext4 /dev/sda'` — and `sudo -u root sh -c …`, `nice -n 10 sh -c …` — skipped the whole `sh -c` screening and reached a real shell with this floor answering None, while deleting `FOO=1 ` made the same string `hardline_denied:mkfs`; `_CMD` had been widened for that assignment prefix and the unwrapper had not. (2) `_unquoted_lines` read a backslash-newline as a statement separator when it is a line CONTINUATION, so `mk\\`+newline+`fs.ext4 /dev/sda`, which all three shells splice into `mkfs.ext4`, was seen as two harmless fragments. Two were false refusals of ordinary work: (3) every heredoc body line became a command position, so writing a config file through `cat > x.yaml <<'EOF'` / `shutdown: graceful` / `EOF` was refused as `power_cycle` — the exact case `_CMD`'s docstring promises not to trip; body lines are now joined as data, and because an UNQUOTED heredoc really does substitute, `$(mkfs.ext4 …)` inside one is still caught through its own `(` anchor. (4) `{` anchored bare, so `jq '{reboot: .needs_reboot}'` was a `power_cycle` refusal; POSIX requires whitespace after `{` for a brace group, and `{ mkfs.ext4 /dev/sda; }` is still refused. Each fix is red-proofed on its own: four separate mutations each turn red exactly its own tests.",
       "evidence": [
         {
           "path": "agents/core/environments/terminal_contract.py",
-          "sha256": "7f9248431d09b6902645cadf4d4882769466c8d163d837e8639d20dbdb312fa5"
+          "sha256": "f180d44856e3dcfa9b54a8ab37a7d87b17a6985ae9b1b5f9125464e82561be8c"
         },
         {
           "path": "tests/test_local_transport.py",
-          "sha256": "ed967fc460cb1a30e469df33ce40b5188f42b00eac7ac0430ca8bcc15ddd2b41"
+          "sha256": "671fe1052c6306b6df21ea9379ef0c2e56f1a2497c5c9bca25fb2e7ad299e254"
         }
       ]
     },
@@ -4836,7 +4836,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -4973,7 +4973,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -5212,7 +5212,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "afaed3b0efdac2d7788c593166914355ec4dc858a609ab3691473ebdd5031a8f"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
