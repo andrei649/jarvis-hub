@@ -40,6 +40,10 @@ class Principal:
     channel: str = "unknown"
     sender: str | None = None
     admin: bool = False
+    #: The conversation the turn came from (a Telegram chat id), when the channel
+    #: has one. Per-chat commands such as ``/voice`` act on it; a channel with no
+    #: conversation identity leaves it None and those commands say so.
+    chat: str | None = None
 
 
 @dataclass
@@ -267,6 +271,45 @@ def _remind(ctx: CommandContext) -> str:
     return f"Armed {job.id}: {job.schedule_text} ({job.cron}) — {message}. /jobs lists it; the HUD or `nerva jobs` can pause or delete it."
 
 
+def _voice(ctx: CommandContext) -> str:
+    """Per-chat voice mode (Hermes ``/voice``): off, voice-for-voice, or always.
+
+    Set by the chat, for the chat, off by default — speaking a reply hands its
+    text to the host's text-to-speech backend, which may be a cloud service, so
+    the answer names the backend that would do the speaking.
+    """
+    from .channels import voice_mode
+    from .channels.spoken_reply import SpokenReply
+
+    chat = ctx.principal.chat
+    if not chat:
+        return (
+            "Voice mode is set per chat on a chat channel such as Telegram; "
+            "there is no chat here to set it for."
+        )
+    speaker = SpokenReply()
+    engine = (
+        f"Replies would be spoken by {speaker.backend_label()}."
+        if speaker.is_available
+        else "No text-to-speech engine is installed on this host yet, so replies stay text "
+        "until one is (pip install edge-tts)."
+    )
+    usage = "Usage: /voice off | voice | always."
+    store = voice_mode.default_store()
+    wanted = (ctx.args or "").strip().lower()
+    if not wanted:
+        mode = store.get(ctx.principal.channel, chat)
+        return (
+            f"Voice mode here: {mode} — {voice_mode.DESCRIPTIONS[mode]}. {usage} {engine}"
+        )
+    if wanted not in voice_mode.MODES:
+        return f"Unknown voice mode {wanted[:24]!r}. {usage}"
+    store.set(ctx.principal.channel, chat, wanted)
+    if wanted == voice_mode.OFF:
+        return "Voice mode here is now off — text only."
+    return f"Voice mode here is now {wanted} — {voice_mode.DESCRIPTIONS[wanted]}. {engine}"
+
+
 def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -277,4 +320,5 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))
     registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
+    registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     return registry

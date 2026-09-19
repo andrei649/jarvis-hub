@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f89a7b931446463c5963bcbed54665527faefaf6",
-  "assessed_at": "2026-09-19T07:59:26Z",
+  "base_sha": "494a13b2fc661a3023a2bbe0f5e242ee0237bb39",
+  "assessed_at": "2026-09-19T11:28:02Z",
   "reviews": [
     {
       "id": "H001",
@@ -22,11 +22,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -371,11 +371,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -396,11 +396,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -430,15 +430,15 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -451,15 +451,15 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -480,11 +480,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -513,7 +513,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -525,24 +525,48 @@
       "id": "H071",
       "row_sha256": "81d218221e09a9f699c79e7e344245e0a742d8eb19d721de2e1ab147ddf93516",
       "status": "partial",
-      "summary": "Un mesaj vocal pe Telegram e transcris înainte să-l vadă agentul — echivalentul lui `stt_enabled` din Hermes, și jumătatea care lipsea cu totul: „`rg 'voice' agents/core/channels/telegram.py` → nimic\". `InboundVoiceReader` întreabă poarta *înainte* de descărcare (o gazdă fără motor de vorbire nu trage înregistrarea nimănui pe disc degeaba), mărginește octeții, îi trimite prin `BytesIO` direct la decodor — vorbirea nu atinge niciodată discul — și transformă fiecare eșec într-un motiv numit. Santinelele motorului (`[silence]`, `[STT unavailable]`, `[STT error: ...]`) nu ajung niciodată la model ca vorbire. Diferența de design față de `media_reader` e deliberată și e miezul securității: descrierea unei poze e observația unui model despre octeți aleși de altcineva, deci circulă în gardul netrusted; un transcript sunt chiar cuvintele expeditorului, la exact nivelul de încredere pe care l-ar fi avut scrise, deci circulă ca o tură obișnuită. A-l pune în gard ar spune modelului să citească cererea proprie a owner-ului ca date în carantină și ar reclama o protecție care nu e cea care lucrează aici — aceea e filtrul de halucinații (H530).",
-      "remaining": "Doar intrarea, doar pe Telegram. Nelivrate din cele 7 intrări ale rândului: `stt_echo_transcripts` (să spună înapoi ce a auzit — util exact când transcrie greșit, dar cere o citire de setări în canal și n-a fost strecurat aici); `/voice` ca mod per-conversație (off / răspuns vocal la mesaj vocal / TTS la fiecare replică); intrarea și ieșirea dintr-un canal de voce pe Discord; consumatorul TTS în flux care începe să vorbească propozițiile terminate cât timp modelul încă generează; și, în general, replici rostite pe canalele de chat. NEVERIFICAT pe servicii reale: suita e ermetică — niciun mesaj vocal Telegram adevărat primit, niciun model Whisper încărcat cu adevărat.",
+      "summary": "Un mesaj vocal pe Telegram e transcris înainte să-l vadă agentul — echivalentul lui `stt_enabled` din Hermes. `InboundVoiceReader` întreabă poarta înainte de descărcare, mărginește octeții, îi trimite prin `BytesIO` direct la decodor (vorbirea nu atinge discul) și transformă fiecare eșec într-un motiv numit; santinelele motorului nu ajung niciodată la model ca vorbire. Transcriptul circulă ca o tură obișnuită, nu în gard: sunt chiar cuvintele expeditorului, iar protecția reală e filtrul de halucinații (H530). Jumătatea rostită: `/voice off|voice|always` e mod per conversație (`voice_mode.py`, magazie JSON `canal:chat`, implicit off, setat de chat pentru chat), `stt_echo_transcripts` e setarea `voice.stt_echo_transcripts` (o linie de serviciu „am auzit: …” înaintea răspunsului, niciodată rostită), iar `spoken_reply.py` transformă textul livrat într-o notă vocală peste motorul TTS al gazdei — doar proza (fără cod, linkuri, marcaje), tăiată la o limită de propoziție, fișierul șters după citire, nimic din text în log. Cârligul stă unde textul chiar ajunge (`send()` și `finish()` al draftului în flux), deci modul nu poate livra ca audio ce ruterul n-ar fi livrat ca text; orice eșec costă nota vocală, niciodată textul; un 400 pe `sendVoice` reîncearcă o dată ca `sendAudio`. `/voice` numește motorul care ar vorbi și spune „cloud” când e edge-tts. 15/15 mutanți uciși.",
+      "remaining": "Consumatorul TTS în flux care începe să rostească propozițiile terminate cât timp modelul încă generează (nota vocală se sintetizează după răspunsul complet). Intrarea/ieșirea dintr-un canal de voce pe Discord e sărită deliberat de rândul original (funcție de comunitate, nu de asistent). Doar Telegram: pe Slack/Discord replica trece prin brokerul `channel.reply`, fără audio. NEVERIFICAT pe servicii reale: niciun mesaj vocal Telegram adevărat, niciun model Whisper încărcat, niciun `sendVoice` real — Telegram acceptă `.mp3` ca mesaj vocal după documentație, iar căderea pe `sendAudio` e plasa pentru cazul în care nu.",
       "evidence": [
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
           "sha256": "4678036fa5986574dc6743471d3a7ca8c70b79050afdf7d35cf49852e826f6f7"
         },
         {
+          "path": "agents/core/channels/voice_mode.py",
+          "sha256": "1f0125c5bed7ab0da850936c66c6237ba226d3fc6f1fa725a00ff8b83d6ed757"
+        },
+        {
+          "path": "agents/core/channels/spoken_reply.py",
+          "sha256": "ef7b5dfc6f0d1f644685f28abb4c55e9af323c158f96b97b474d8110c65456c7"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+        },
+        {
           "path": "tests/test_inbound_voice_read.py",
           "sha256": "15ada43c9a080101fdc8c118896e3a2f2e37a6eaefbb3ea5985887d57b4693c4"
+        },
+        {
+          "path": "tests/test_voice_mode.py",
+          "sha256": "4e0341861c3851536c62a0f251e053c309f278ee9adbfffa9869f1dc21cd8dcc"
+        },
+        {
+          "path": "tests/test_spoken_reply.py",
+          "sha256": "bffbe8aba102fb9fc01ceb5a079bc7282c588b50ec59723c99650b36c1578897"
+        },
+        {
+          "path": "tests/test_telegram_voice_reply.py",
+          "sha256": "28ee1c698612c30681f680fbeadb06456404a4fde7845650e900fd86e554cf8a"
         }
       ]
     },
@@ -563,11 +587,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -754,7 +778,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -775,7 +799,7 @@
         },
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
@@ -783,7 +807,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -1074,7 +1098,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "agents/web.py",
@@ -1452,7 +1476,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1472,7 +1496,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -1691,7 +1715,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1712,7 +1736,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1720,7 +1744,7 @@
       "id": "H270",
       "row_sha256": "4dd0333449b8b2a88a0076d65ff72ef9ef28f309cfbf9368bed8f9550d6946ef",
       "status": "partial",
-      "summary": "H270 stays PARTIAL; the triage's \"already equivalent\" does not survive contact with the code. Hermes' contract has two halves and Nerva has only one of them. Outbound (what a child inherits) is genuinely stronger than Hermes and is tested: scrub_child_env (agents/core/environments/__init__.py:172-210) is default-deny with SAFE_ENV_PREFIXES (:17-33) plus the three-name JARVIS_CHILD_ALLOWED_ENV (:47-51), covered by tests/test_environment_primitives.py:62,90; STDIO_ENV_ALLOWLIST/stdio_env_baseline (agents/core/mcp/client.py:101-142) drops a credential-shaped name even when allowlisted (:138), covered by tests/test_mcp_transports.py:349. Inbound (what a surface may persist) does not exist as a policy at all: no ENV_VAR_NAME/WRITE_DENYLIST equivalent anywhere, and none of Hermes' hijack names (LD_PRELOAD, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND, …) appears in agents/, tests/ or frontend/src/ outside the research docs. Confirmed there is no env writer to gate today: no os.environ assignment in agents/ except the reality harness's JARVIS_STRICT_EGRESS toggle (agents/core/observability/reality_harness.py:685,714); no set_key/dotenv write; agents/core/paths.py:130-134 only copies .env.example verbatim; GET /api/admin/env (agents/core/routers/admin.py:167-179) is read-only and mask-redacted with no PUT; the HUD states it in its own copy (frontend/src/panels/workflows-advanced.tsx:48 \"There is NO route to change either\"). Nerva's actual config writer is settings_db.put_category (agents/core/settings_db.py:531-563), which UPSERTs only DEFAULTS-declared keys and skips the rest (:546-560), behind validate_category (:509-529) and the 422 at agents/core/routers/admin.py:110-116 — the right shape, but over settings keys, not env names. Three things are nevertheless still owed, so this is not equivalence. (1) The row's own deliverable — a declared-names allowlist at the write boundary, depends_on \"the key registry\" — is unbuilt, and the rationale defers rather than excludes it (\"the moment the config writer lands, this must land with it\"). (2) The MCP env boundary is unrefused and untested: MCPServerConfig (agents/core/routers/mcp.py:94-105) sets no model_config, so pydantic's default extra=\"ignore\" SILENTLY DROPS an `env` body key rather than refusing it (verified by probe), and no test pins that to_config (agents/core/mcp/client.py:616-630) and load_from_config (:632-668) never round-trip `env`, while the field it would fill is live: MCPServer.env (:245,:275) → _merged_env (:382-395) → create_subprocess_exec(env=…) (:310). (3) The triage's claim that only the legacy _merged_env path skips the filter is wrong — stdio_env_baseline applies per-server overrides unfiltered in the STRICT path too (:141-142, docstring \"Explicit per-server overrides always win\"; docs/FLAGS.md:521), and the allowlist itself is behind JARVIS_MCP_STDIO_ENV_BASELINE, off by default, with tests/test_mcp_transports.py:395-399 pinning the default as a full parent-env inherit carrying OPENAI_API_KEY. Also checked and cleared, which the triage never examined: scripts/nerva_import.py IS a setup-flow writer that persists foreign env-var names verbatim (docstring :19, parse_json_tokens :287-292, SecretStore write :701), but _SECRET_NAME_RE (:70) admits only credential-shaped names so no hijack name can pass, and SecretStore names never reach a process env. Tests run: 74 passed across the six relevant files; none exercises an env-var write boundary.",
+      "summary": "H270 stays PARTIAL; the triage's \"already equivalent\" does not survive contact with the code. Hermes' contract has two halves and Nerva has only one of them. Outbound (what a child inherits) is genuinely stronger than Hermes and is tested: scrub_child_env (agents/core/environments/__init__.py:172-210) is default-deny with SAFE_ENV_PREFIXES (:17-33) plus the three-name JARVIS_CHILD_ALLOWED_ENV (:47-51), covered by tests/test_environment_primitives.py:62,90; STDIO_ENV_ALLOWLIST/stdio_env_baseline (agents/core/mcp/client.py:101-142) drops a credential-shaped name even when allowlisted (:138), covered by tests/test_mcp_transports.py:349. Inbound (what a surface may persist) does not exist as a policy at all: no ENV_VAR_NAME/WRITE_DENYLIST equivalent anywhere, and none of Hermes' hijack names (LD_PRELOAD, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND, …) appears in agents/, tests/ or frontend/src/ outside the research docs. Confirmed there is no env writer to gate today: no os.environ assignment in agents/ except the reality harness's JARVIS_STRICT_EGRESS toggle (agents/core/observability/reality_harness.py:685,714); no set_key/dotenv write; agents/core/paths.py:130-134 only copies .env.example verbatim; GET /api/admin/env (agents/core/routers/admin.py:167-179) is read-only and mask-redacted with no PUT; the HUD states it in its own copy (frontend/src/panels/workflows-advanced.tsx:48 \"There is NO route to change either\"). Nerva's actual config writer is settings_db.put_category (agents/core/settings_db.py:532-564), which UPSERTs only DEFAULTS-declared keys and skips the rest (:546-560), behind validate_category (:509-529) and the 422 at agents/core/routers/admin.py:110-116 — the right shape, but over settings keys, not env names. Three things are nevertheless still owed, so this is not equivalence. (1) The row's own deliverable — a declared-names allowlist at the write boundary, depends_on \"the key registry\" — is unbuilt, and the rationale defers rather than excludes it (\"the moment the config writer lands, this must land with it\"). (2) The MCP env boundary is unrefused and untested: MCPServerConfig (agents/core/routers/mcp.py:94-105) sets no model_config, so pydantic's default extra=\"ignore\" SILENTLY DROPS an `env` body key rather than refusing it (verified by probe), and no test pins that to_config (agents/core/mcp/client.py:616-630) and load_from_config (:632-668) never round-trip `env`, while the field it would fill is live: MCPServer.env (:245,:275) → _merged_env (:382-395) → create_subprocess_exec(env=…) (:310). (3) The triage's claim that only the legacy _merged_env path skips the filter is wrong — stdio_env_baseline applies per-server overrides unfiltered in the STRICT path too (:141-142, docstring \"Explicit per-server overrides always win\"; docs/FLAGS.md:521), and the allowlist itself is behind JARVIS_MCP_STDIO_ENV_BASELINE, off by default, with tests/test_mcp_transports.py:395-399 pinning the default as a full parent-env inherit carrying OPENAI_API_KEY. Also checked and cleared, which the triage never examined: scripts/nerva_import.py IS a setup-flow writer that persists foreign env-var names verbatim (docstring :19, parse_json_tokens :287-292, SecretStore write :701), but _SECRET_NAME_RE (:70) admits only credential-shaped names so no hijack name can pass, and SecretStore names never reach a process env. Tests run: 74 passed across the six relevant files; none exercises an env-var write boundary.",
       "remaining": "Nerva has no write-side policy for environment-variable names — the row's deliverable (a declared-names allowlist, depends_on \"the key registry\") does not exist, and the row defers it rather than excluding it. Three concrete items are owed, two of them shippable today against real surfaces:\n\n1. THE REGISTRY (the row's core item, blocked on its stated dependency). No ENV_VAR_NAME allowlist/denylist exists anywhere (grep for ENV_VAR_NAME/ENV_WRITE/WRITE_DENYLIST/writable_env across agents/, scripts/, frontend/src/ is empty), no `config.write` capability kind exists in agents/core/capability_actions.py, and none of Hermes' hijack names (LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, PYTHONPATH/HOME/STARTUP, NODE_OPTIONS/NODE_PATH, PATH, SHELL, BROWSER, EDITOR, VISUAL, PAGER, GIT_SSH_COMMAND) or posture flags is named in code or tests. When any env/config writer lands, a declared-names allowlist must land in the SAME PR, refusing an undeclared name before authorization — the shape of agents/core/capability_actions.py:143-146 refusing missing_inputs before the authorizer at :156.\n\n2. THE MCP `env` BOUNDARY IS UNREFUSED AND UNTESTED (shippable now). agents/core/routers/mcp.py:94-105 sets no `model_config`, so pydantic's default extra=\"ignore\" makes `POST /api/admin/mcp {\"env\": {\"LD_PRELOAD\": \"/tmp/evil.so\"}}` return 200 and silently drop the key instead of refusing it. The field it would populate is live — MCPServer.env (agents/core/mcp/client.py:245, :275) → _merged_env (:382-395) → create_subprocess_exec(env=…) (:310). Owed: `extra=\"forbid\"` (or an explicit named refusal) on MCPServerConfig, plus tests asserting the route refuses an `env` body and that to_config (:616-630) / load_from_config (:632-668) never round-trip `env`.\n\n3. PER-SERVER `env` BYPASSES THE ALLOWLIST IN BOTH BRANCHES, AND THE ALLOWLIST IS OFF BY DEFAULT. stdio_env_baseline applies overrides unfiltered after the allowlist loop (agents/core/mcp/client.py:141-142; docstring: \"Explicit per-server overrides always win\"), and the legacy branch does `merged.update(self.env)` with no filter (:394) — so the strict path is not a safe landing zone for an operator-supplied `env` either. Compounding it, JARVIS_MCP_STDIO_ENV_BASELINE is off by default (:119-120; docs/FLAGS.md:521) and tests/test_mcp_transports.py:395-399 pins the default as a full parent-env inherit carrying OPENAI_API_KEY. Owed: run per-server overrides through the same name policy (or make the bypass an explicitly reviewed, audited exception), and decide whether the baseline should become the default. Severity, checked directly rather than inferred: the bypass is LATENT today. `MCPServerConfig` has no `env` field at all, `to_config` (:616-630) does not export `env` and `load_from_config` (:632-668) does not read it, and the only production caller that passes an override is Nerva's own WorldView writer with an in-repo secret (agents/core/mcp/worldview_write.py:200-206). No untrusted input reaches the override loop, so this is a boundary to close before `env` becomes operator-settable, not a live hole.",
       "evidence": [
         {
@@ -1741,7 +1765,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "scripts/nerva_import.py",
@@ -1786,7 +1810,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         }
       ]
     },
@@ -1847,7 +1871,7 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva — but the row is not equivalent, because the cron half of Hermes' contract has unmet clauses that last night's triage never looked at.\n\nShipped and verified. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:297, default 3600), resynced every coordinator tick (agents/core/autonomy_coordinator.py:265-269) and enforced by `TaskQueue.reap_stuck_running` (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), called first in `tick` (worker.py:889-891). The crash-grace window is the same mechanism, and it satisfies the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped` — it never re-queues, so an already-authorized action is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane carries the same property independently: a manual request found `running` with its cross-process gate free is recorded `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has a 64-stripe cross-process file gate every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105), an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121), APScheduler `max_instances=1`, a workdir allowlist (agents/core/autonomy/jobs_workdir.py), estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904) and a validated media deadline `jobs.media_send_timeout_seconds` (settings_db.py:226/485, jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243), and `resolve_task_mediation_mode()` defaults to \"off\" with `JARVIS_TASK_MEDIATION` unset — orchestrator.py:553-556 calls it \"shipped dark\". In the default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927), and `transition` (queue.py:1459-1497) validates only the status edge, with no compare-and-swap on `mediation_execution_id`. The triage's \"a second claimant cannot win\" is true only with mediation enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses; the triage addressed none of them. (a) There is no per-run wall clock on the plain cron path: `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` anywhere, while the script path already has exactly that pattern at jobs_scripts.py:405 (120 s) and :455 (30 s). The model call is bounded inside the orchestrator, but the channel send is awaited bare, so a hung adapter holds the gate stripe and the `max_instances=1` slot indefinitely. (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0 = unbounded (executor.py:39-42, autonomy_coordinator.py:1039-1042), so out of the box the only bound on a hung in-process task is the 3600 s reaper — the triage flagged this itself and then filed it as \"not this row\"; HERMES_CRON_TIMEOUT is the first line of this row's contract. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), against the task queue's 30 s of both (queue.py:212-214), so jobs.db writers fall back to SQLite's 5 s default on a WAL shared by the gateway drain loop and cron firings — the _SESSION_DB_TIMEOUT clause, unmet. The delivery-destination knobs are excluded by the row's own rationale and are not counted against it (and are in fact covered anyway by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board remains a product decision, not a slice.\n\n472 tests pass across the scheduled/queued surface with zero failures.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva — but the row is not equivalent, because the cron half of Hermes' contract has unmet clauses that last night's triage never looked at.\n\nShipped and verified. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:298, default 3600), resynced every coordinator tick (agents/core/autonomy_coordinator.py:265-269) and enforced by `TaskQueue.reap_stuck_running` (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), called first in `tick` (worker.py:889-891). The crash-grace window is the same mechanism, and it satisfies the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped` — it never re-queues, so an already-authorized action is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane carries the same property independently: a manual request found `running` with its cross-process gate free is recorded `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has a 64-stripe cross-process file gate every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105), an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121), APScheduler `max_instances=1`, a workdir allowlist (agents/core/autonomy/jobs_workdir.py), estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904) and a validated media deadline `jobs.media_send_timeout_seconds` (settings_db.py:227/485, jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243), and `resolve_task_mediation_mode()` defaults to \"off\" with `JARVIS_TASK_MEDIATION` unset — orchestrator.py:553-556 calls it \"shipped dark\". In the default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927), and `transition` (queue.py:1459-1497) validates only the status edge, with no compare-and-swap on `mediation_execution_id`. The triage's \"a second claimant cannot win\" is true only with mediation enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses; the triage addressed none of them. (a) There is no per-run wall clock on the plain cron path: `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` anywhere, while the script path already has exactly that pattern at jobs_scripts.py:405 (120 s) and :455 (30 s). The model call is bounded inside the orchestrator, but the channel send is awaited bare, so a hung adapter holds the gate stripe and the `max_instances=1` slot indefinitely. (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0 = unbounded (executor.py:39-42, autonomy_coordinator.py:1039-1042), so out of the box the only bound on a hung in-process task is the 3600 s reaper — the triage flagged this itself and then filed it as \"not this row\"; HERMES_CRON_TIMEOUT is the first line of this row's contract. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), against the task queue's 30 s of both (queue.py:212-214), so jobs.db writers fall back to SQLite's 5 s default on a WAL shared by the gateway drain loop and cron firings — the _SESSION_DB_TIMEOUT clause, unmet. The delivery-destination knobs are excluded by the row's own rationale and are not counted against it (and are in fact covered anyway by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board remains a product decision, not a slice.\n\n472 tests pass across the scheduled/queued surface with zero failures.",
       "remaining": "Three cron-lane clauses of Hermes' contract are unmet; the Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT — no per-run wall clock on the plain cron path. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1107-1163, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level; in particular `_send_tracked`/`_send` (jobs.py:1379-1412) awaits the channel adapter bare, so a hung Telegram/Discord send holds the job's gate stripe (jobs_dispatch.py:33-48) and its APScheduler `max_instances=1` slot with nothing to break it. The script path already does this correctly — `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455 — so the fix is to apply the same bound (ideally a `jobs.run_timeout_seconds` setting alongside the existing `jobs.media_send_timeout_seconds`) to the cron path, recording the overrun as a normal failed run through `_failed` so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0 = unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1039-1042), so out of the box a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Give it a non-zero shipped default (or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`), with a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT — the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:508-511), unlike the task queue's `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID) are excluded by the row's own rationale; the residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
@@ -1892,7 +1916,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "agents/core/scheduler_service.py",
@@ -2014,7 +2038,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2417,11 +2441,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
@@ -2558,11 +2582,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -2829,7 +2853,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -3088,7 +3112,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -3108,7 +3132,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -4002,11 +4026,11 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -4071,7 +4095,7 @@
         },
         {
           "path": "agents/core/channels/inbound_voice.py",
-          "sha256": "aa1874368ad9641cdacb0597ed0ce6116faefbd5bb9dadb68f2f2539b10aaf64"
+          "sha256": "e05b9d1f8b730d4e5d46299274777368904c0cf29a825332af2174aa3f83e47a"
         },
         {
           "path": "tests/test_inbound_voice_read.py",
@@ -4880,11 +4904,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -5017,11 +5041,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
@@ -5264,11 +5288,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
+          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
+          "sha256": "4b7c33b19cce462bffd7d743aacf482c288fe0eb50dd20f29f505b5d9fe24880"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -5329,11 +5353,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "e7c6c3c20d373b09f8625f5ece6e07645f0ef2fbe6ac694fc1f1bd2f5e7d34ca"
+          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "4239387ff22992e156bf5723d6cda54dff25ce26d4ebd6cf15f48085d5a4aa22"
+          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
         }
       ]
     },
@@ -5362,7 +5386,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "d4515fed21bd6d895f76d639e11c5a17c5740e6e82a9cc041418f18cc638e74a"
+          "sha256": "ca5b120749e9ddcd119a2904c3de0cae69fe59c1c36eb3b6c25e35c4c1f91994"
         },
         {
           "path": "tests/test_telegram_streaming.py",
