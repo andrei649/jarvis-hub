@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "86cc203a32fda6a8d7d5b303a998465794494bdb",
-  "assessed_at": "2026-09-18T07:31:30Z",
+  "base_sha": "c92abb0ee01db4c830b7b82c553e4c762db39af4",
+  "assessed_at": "2026-09-18T11:35:00Z",
   "reviews": [
     {
       "id": "H001",
@@ -3475,6 +3475,27 @@
         {
           "path": "tests/test_nerva_cli.py",
           "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+        }
+      ]
+    },
+    {
+      "id": "H495",
+      "row_sha256": "2bf6aa1843cc0a74882eff56b11d19dff9fd2be109968e321640f1dd225fd12c",
+      "status": "partial",
+      "summary": "The logging half of the row, and only that half. `agents/core/security/log_redaction.py` adds `SecretRedactionFilter`, a `logging.Filter` that runs every record's message and its `args` through `SecretScanner.redact` before a handler can write it. The enable flag is snapshotted at import, so an agent-authored mid-session write to `JARVIS_LOG_REDACTION` cannot turn it off — Hermes's `_REDACT_ENABLED` rule, ported deliberately. A cheap length/substring pre-check runs before any regex (≈8.75 µs per clean record, ~1.9× faster than the full scan; the builder's report said 17.22 µs and ~2.1×, which did not reproduce and is corrected here). `setup_logging()` installs it. **Two majors found by an independent review and fixed before landing:** the module's own docstring tripped the AUD-14 raw-env-read ratchet — the prose contained a literal `os.environ[...]` subscript and the ratchet greps file text line by line, so `tests/test_o26_p2_env_config.py` was RED in the delivered tree; and `install_log_redaction()` walked only the root logger's handlers, while `uvicorn` and `uvicorn.access` set `propagate=False` and own theirs, so the production HTTP server's own access and error logs — the ones that carry an `Authorization` header — were structurally unreachable. `install_log_redaction_everywhere()` now covers every handler owned by any logger in `logging.Logger.manager`, and a test drives a real uvicorn `dictConfig` and asserts a key in an access line is masked. Three minors fixed with it: the length floor was defeated by an extra pattern whose NAME collided with a built-in (it now matches by regex SHAPE, one-to-one, and fails closed on any mismatch); an ordinary `%`-format bug was being swallowed into a bare `[redaction-unavailable]` instead of logging's loud diagnostic (now `[log-format-error]` with the message, args and exception, all scanned first); and the test fixture destroyed an ambient `JARVIS_LOG_FILE` for the rest of the session. 47 tests, each fix red-proofed by neutering it. **Follow-up in the same PR:** the blocking bandit gate flagged both swallowed exceptions as NEW findings. Only the filter's last-ditch blank was suppressed (`# nosec B110`, with its reason); `_cover`'s per-handler swallow became a counted, warned coverage figure and `_managed_loggers`' registry-walk failure became a warning, closing the gap this row disclosed. 52 tests.",
+      "remaining": "This is one of the row's seven paths. Hermes applies `redact.py` to logs, verbose output, tool output, approval prompts, gateway messages, transcripts and memory; this slice covers LOGS. Still owed, and the rationale calls them the part that matters most: the hash-chained audit DB (a `cat .env` from `terminal_run` still writes a live credential into an append-only log that by design cannot be edited), the decision-inbox approval card the owner reads on a phone, task payloads, terminal output, and the observability exports — which Hermes scrubs unconditionally with no knob, returning `[redaction-unavailable]` rather than raw text. Also absent: the second mask mode (a syntactically INVALID `«redacted:ghp_…»` sentinel for file reads, so an agent cannot write a masked-but-plausible key back and silently kill the credential), `code_file=True` sparing source constants, `_mask_control_split_tokens()` for tokens smuggled across ANSI/zero-width characters, and the shared `.env` basename list. The two silent-degradation paths named at review are now CLOSED, after the SAST gate forced the question: a handler whose `addFilter` fails is counted and published through `uncovered_handler_count()` and a warning naming how many handlers are writing unredacted, and a `loggerDict` walk that raises warns that coverage fell back to root-only. The one silent swallow left is the filter's own last-ditch blank (`# nosec B110`), where a `logging.Filter` that raises would take down the caller's log call and the scanner has already failed. `install_log_redaction()` remains exported although the `everywhere` variant is what production uses.",
+      "evidence": [
+        {
+          "path": "agents/core/security/log_redaction.py",
+          "sha256": "71b61834ca71f10b8f680570429e2790e44c2209dd194938a9cca99a5dc8ba5f"
+        },
+        {
+          "path": "agents/core/log.py",
+          "sha256": "9651f9f1eac46e9039b3a4ad3b0d768dab1feaf117f6e199e61bcef630bccf24"
+        },
+        {
+          "path": "tests/test_log_redaction.py",
+          "sha256": "f65255b0cfe87b9a503f61af569fb4778869e60c18fc041fc672499a73212a25"
         }
       ]
     },
