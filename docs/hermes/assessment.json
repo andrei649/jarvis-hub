@@ -266,11 +266,11 @@
       "evidence": [
         {
           "path": "serve.py",
-          "sha256": "2bbdd26202564b01aa306c0a3d17eb548fbf21415c83b828a46331745bd5fcfe"
+          "sha256": "cf03556034d4e2aa3f6cfbf12c2203047c937d755a028d27845bec735d7d01bc"
         },
         {
           "path": "tests/test_h2311_operability.py",
-          "sha256": "b24d0dd29284695cee82c4eca0c93864292000dc7888cbf2e0793ccff125bb63"
+          "sha256": "c28e4b52c178eb2197ebae6bf298c980c84f7a3dd15f24b1f8bf94844e4db004"
         },
         {
           "path": "docs/test-manual/01-environment-and-boot.md",
@@ -3458,7 +3458,7 @@
         },
         {
           "path": "tests/test_h2311_operability.py",
-          "sha256": "b24d0dd29284695cee82c4eca0c93864292000dc7888cbf2e0793ccff125bb63"
+          "sha256": "c28e4b52c178eb2197ebae6bf298c980c84f7a3dd15f24b1f8bf94844e4db004"
         },
         {
           "path": "tests/test_hud_v2_parity.py",
