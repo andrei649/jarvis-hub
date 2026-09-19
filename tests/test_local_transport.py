@@ -199,6 +199,17 @@ def root(tmp_path):
         ("ufw disable", "security_disable"),
         ("setenforce 0", "security_disable"),
         ("Set-MpPreference -DisableRealtimeMonitoring $true", "security_disable"),
+        # A floor that holds "regardless of who approved it" cannot be stepped
+        # around by spelling the same command as a shell payload, nor by hiding
+        # the command name behind intra-word quoting/escapes.
+        ("sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+        ('mk""fs.ext4 /dev/sda', "mkfs"),
+        ("m\\kfs.ext4 /dev/sda", "mkfs"),
+        # `c` need not END the short-flag cluster: `-cx`/`-cv` run the payload
+        # exactly as `-c` does, so they must be screened exactly as `-c` is.
+        ("sh -cx 'mkfs.ext4 /dev/sda'", "mkfs"),
+        ("sudo sh -cx 'wipefs -a /dev/sda'", "wipefs"),
+        ("bash -cv 'shutdown -h now'", "power_cycle"),
     ],
 )
 def test_hardline_catches_catastrophic_commands(command, name):
@@ -220,6 +231,18 @@ def test_hardline_catches_catastrophic_commands(command, name):
         "grep -r reboot docs/",
         "chmod 644 README.md",
         "kill -9 1234",
+        # Unwrapping a shell payload must not turn a mention into a command: the
+        # `_CMD` anchor still applies *inside* the extracted payload.
+        ["bash", "-c", "echo mkfs"],
+        ["sh", "-c", "git commit -m 'rm -rf /'"],
+        ["sh", "-c", "pytest -q"],
+        ["echo", "sh -c mkfs"],
+        # De-obfuscation collapses quotes only between word characters, never
+        # next to a shell operator: `print("reboot ...")` must not become a
+        # command position after the paren.
+        ["sh", "-c", "python -c \"print('hi')\""],
+        ["python", "-c", 'print("reboot complete")'],
+        ["bash", "-c", "make -j4 && ./run.sh"],
     ],
 )
 def test_hardline_lets_ordinary_commands_through(command):
@@ -232,6 +255,110 @@ def test_hardline_screens_argv_sequences_without_a_shell():
     # An argv never meets a shell: a literal argument is not a command.
     assert hardline_match(["echo", "rm -rf /"]) is None
     assert hardline_match(["echo", "shutdown"]) is None
+
+
+def test_hardline_screens_shell_c_payloads_as_commands():
+    """`sh -c '<catastrophe>'` is the catastrophe, whoever approved the argv."""
+    assert hardline_match(["sh", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    assert hardline_match(["bash", "-c", "rm -rf /"]) == "recursive_root_removal"
+    assert hardline_match(["sudo", "sh", "-c", "shutdown -h now"]) == "power_cycle"
+    assert hardline_match(["env", "bash", "-lc", "wipefs -a /dev/sda"]) == "wipefs"
+    # An absolute shell path and a `busybox sh -c` stack are the same command.
+    assert hardline_match(["/bin/sh", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    assert hardline_match(["busybox", "sh", "-c", "wipefs -a /dev/sda"]) == "wipefs"
+    # One level of re-wrapping is still unwrapped (the cap is depth 2).
+    assert hardline_match(["sh", "-c", "sh -c 'mkfs.ext4 /dev/sda'"]) == "mkfs"
+
+
+def test_hardline_screens_shell_c_payloads_whatever_the_flag_cluster_spelling():
+    """`sh -cx` is `sh -c` with tracing on — the payload still runs."""
+    assert hardline_match(["sh", "-cx", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    assert hardline_match(["bash", "-cv", "rm -rf /"]) == "recursive_root_removal"
+    assert hardline_match(["zsh", "-cx", "wipefs -a /dev/sda"]) == "wipefs"
+    assert hardline_match(["sh", "-cxe", "shutdown -h now"]) == "power_cycle"
+    # The already-covered orders keep working: `c` first, last or in the middle.
+    assert hardline_match(["bash", "-lc", "wipefs -a /dev/sda"]) == "wipefs"
+    assert hardline_match(["sh", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    # A cluster without `c` at all introduces no payload, so nothing is unwrapped.
+    assert hardline_match(["sh", "-x", "mkfs.ext4 /dev/sda"]) is None
+
+
+def test_hardline_screens_windows_and_other_shell_payloads():
+    """Six HARDLINE entries are Windows-only; their shells must be unwrapped too."""
+    assert hardline_match(["cmd", "/c", "diskpart"]) == "diskpart"
+    assert hardline_match(["cmd.exe", "/c", "format c:"]) == "format_drive"
+    assert hardline_match(["cmd", "/k", "wipefs -a /dev/sda"]) == "wipefs"
+    assert hardline_match(["powershell", "-Command", "Stop-Computer"]) == "power_cycle"
+    assert hardline_match(["powershell.exe", "-command", "Restart-Computer"]) == "power_cycle"
+    assert hardline_match(["pwsh", "-c", "Restart-Computer"]) == "power_cycle"
+    assert hardline_match(["fish", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    assert hardline_match(["tcsh", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    # A `.exe` suffix names the same shell.
+    assert hardline_match(["sh.exe", "-c", "mkfs.ext4 /dev/sda"]) == "mkfs"
+    # Ordinary payloads on those shells still pass: unwrapping only adds refusals.
+    assert hardline_match(["cmd", "/c", "dir"]) is None
+    assert hardline_match(["powershell", "-Command", "Get-Process"]) is None
+
+
+def test_hardline_scans_every_payload_not_just_the_first_few():
+    """A breadth bound must never leave a *later* payload unscanned.
+
+    The caller picks the order, so a cap on how many variants are screened is a
+    cap an attacker fills with decoys. `execution.py` hands a docker target this
+    very string to `sh -c`, so the trailing segment is the one that runs.
+    """
+    for decoys in (0, 7, 8, 12, 40):
+        padded = "".join(f"sh -c ok{i}; " for i in range(decoys))
+        assert hardline_match(padded + "sh -c 'mkfs.ext4 /dev/sda'") == "mkfs", decoys
+    # Same shape without a wrapper, and with the catastrophe last.
+    assert hardline_match("echo a; echo b; echo c; sh -c 'wipefs -a /dev/sda'") == "wipefs"
+
+
+def test_hardline_materialises_a_one_shot_iterable_before_scanning():
+    """Screening a command several times must not consume it the first time."""
+    assert hardline_match(iter(["rm", "-rf", "/"])) == "recursive_root_removal"
+    assert hardline_match(iter(["mkfs.ext4", "/dev/sda"])) == "mkfs"
+    assert hardline_match(x for x in ["shutdown", "-h", "now"]) == "power_cycle"
+    assert hardline_match(iter(["sh", "-c", "mkfs.ext4 /dev/sda"])) == "mkfs"
+    assert hardline_match(iter(["echo", "hello"])) is None
+    # A shape that is not iterable at all still fails closed, as it always did.
+    assert hardline_match(5) == "unparseable"
+    assert hardline_match(None) == "unparseable"
+
+
+def test_hardline_sees_through_intra_word_quoting_and_escapes():
+    """`mk""fs` and `m\\kfs` are the command `mkfs`, spelled to dodge a regex."""
+    assert hardline_match(['mk""fs.ext4', "/dev/sda"]) == "mkfs"
+    assert hardline_match(["m\\kfs.ext4", "/dev/sda"]) == "mkfs"
+    assert hardline_match(["sh", "-c", 'mk""fs.ext4 /dev/sda']) == "mkfs"
+    # Quotes that open or close a word are load-bearing shell syntax, not
+    # obfuscation: collapsing them would read a literal argument as a command.
+    assert hardline_match(["python", "-c", 'print("reboot complete")']) is None
+    assert hardline_match(["echo", '"shutdown"']) is None
+
+
+def test_nesting_past_the_depth_cap_is_a_miss_and_that_is_the_pin():
+    """Renamed after a review: the old name promised something it never measured.
+
+    It was `test_hardline_variant_expansion_stays_bounded`, with the docstring
+    "nested wrappers cannot fan out: this runs before every exec" — and the body
+    measures no work, no time and no variant count. It would stay green under an
+    obvious performance regression (the review measured one: 219 ms on a maximal
+    64x4000-character argv against 181 ms on base, i.e. +38 ms of synchronous work
+    on the event loop, entirely invisible here).
+
+    What it actually pins is the opposite of what the name said: `_MAX_SHELL_DEPTH`
+    is 2, so the THIRD nesting level is not reached, and this is that honest limit
+    written down so a later widening is a deliberate change that turns a test red
+    rather than a silent one.
+    """
+    nested = "sh -c " + "'sh -c " * 8 + "ls" + "'" * 8
+    assert hardline_match(nested) is None
+    deep = ["sh", "-c", "sh -c 'sh -c \"mkfs.ext4 /dev/sda\"'"]
+    assert hardline_match(deep) is None, (
+        "depth-3 nesting is now reached — widen _MAX_SHELL_DEPTH deliberately and "
+        "update this pin, or find out why the cap stopped applying"
+    )
 
 
 def test_hardline_table_is_static_and_named():
@@ -389,6 +516,31 @@ async def test_transport_hardline_and_argv_shape_refuse_before_spawn(root):
     assert (await transport.run(["ls", ""], cwd=root))["reason"] == "invalid_argv"
     assert (await transport.run(["ls"], cwd=root, timeout=0))["reason"] == "invalid_timeout"
     assert (await transport.run(["ls"], cwd=root, timeout=601))["reason"] == "invalid_timeout"
+    assert spawn.calls == []
+
+
+async def test_transport_refuses_shell_wrapped_catastrophe_before_spawn(root):
+    """The transport screens the payload of `sh -c`, not just the argv head."""
+    spawn = _FakeSpawn()
+    transport = LocalHostTransport([root], spawn=spawn)
+    assert await transport.run(["sh", "-c", "mkfs.ext4 /dev/sda"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:mkfs",
+    }
+    assert await transport.run(["bash", "-c", "rm -rf /"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:recursive_root_removal",
+    }
+    # `-cx` really executes the payload (`/bin/sh -cx 'echo hi'` prints it), so
+    # the transport must refuse it before the spawn exactly as it refuses `-c`.
+    assert await transport.run(["sh", "-cx", "mkfs.ext4 /dev/sda"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:mkfs",
+    }
+    assert await transport.run(["bash", "-cv", "rm -rf /"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:recursive_root_removal",
+    }
     assert spawn.calls == []
 
 
@@ -664,3 +816,191 @@ def test_local_host_flag_is_default_off(monkeypatch):
 
     monkeypatch.delenv("JARVIS_TERMINAL_LOCAL_HOST", raising=False)
     assert env_flag("JARVIS_TERMINAL_LOCAL_HOST") is False
+
+
+# ── the review round: three ways one keystroke defeated the whole floor ───────
+#
+# Each case below was RUN against a real shell first (`/bin/sh -c -x 'echo RAN'`
+# prints `RAN`), then against this floor, which returned None.
+
+@pytest.mark.parametrize("argv,expected", [
+    (["sh", "-c", "-x", "mkfs.ext4 /dev/sda"], "mkfs"),
+    (["sh", "-c", "--", "mkfs.ext4 /dev/sda"], "mkfs"),
+    (["sh", "-c", "-e", "rm -rf /"], "recursive_root_removal"),
+    (["sh", "-c", "-u", "wipefs -a /dev/sda"], "wipefs"),
+    (["sudo", "sh", "-c", "--", "wipefs -a /dev/sda"], "wipefs"),
+    (["bash", "-c", "-x", "mkfs.ext4 /dev/sda"], "mkfs"),
+])
+def test_a_decoy_option_after_dash_c_does_not_hide_the_payload(argv, expected):
+    """A shell keeps parsing options after `-c` and runs the first NON-OPTION
+    operand. Taking `index + 1` on faith meant the floor screened the decoy option
+    and never saw the script — one extra character, and the whole mechanism was
+    gone."""
+    assert hardline_match(argv) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    (["sh", "-c", "echo hi\nmkfs.ext4 /dev/sda"], "mkfs"),
+    ("sh -c 'echo hi\nmkfs.ext4 /dev/sda'", "mkfs"),
+    ("echo hi\nmkfs.ext4 /dev/sda", "mkfs"),
+    ("echo hi\nrm -rf /", "recursive_root_removal"),
+])
+def test_a_newline_is_a_statement_separator_like_a_semicolon(command, expected):
+    """A `sh -c` payload is a shell SCRIPT, and pressing Enter separates statements
+    exactly as `;` does. The newline used to be squeezed into a space, so nothing
+    ever occupied a command position on line 2 — and a multi-line payload is the
+    most ordinary shape one takes."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "echo 'hello\nmkfs.ext4 /dev/sda is a scary command'",
+    'echo "line one\nmkfs.ext4 /dev/sda"',
+])
+def test_a_newline_inside_quotes_is_data_not_a_separator(command):
+    """The other half of the same change, and the reason the split is quote-aware:
+    a newline inside a string literal is text the shell passes to `echo`, and
+    splitting there would put ordinary prose into a command position and refuse
+    it."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["busybox", "mkfs.ext4", "/dev/sda"], "mkfs"),
+    (["busybox", "wipefs", "-a", "/dev/sda"], "wipefs"),
+    (["sudo", "busybox", "mkfs.ext4", "/dev/sda"], "mkfs"),
+])
+def test_a_busybox_applet_is_still_the_command_it_names(argv, expected):
+    """`busybox` was named as a shell (so `busybox sh -c …` was screened) but not
+    as a command-position wrapper, so `busybox mkfs.ext4 /dev/sda` — the standard
+    shape on the container targets this module says it keeps the floor on — passed
+    straight through."""
+    assert hardline_match(argv) == expected
+
+
+async def test_the_transport_refuses_a_decoy_wrapped_catastrophe_before_spawn(root):
+    """End to end, at the seam that matters.
+
+    The slice's own transport test covered `-c <payload>` and `-cx <payload>`
+    only, so it stayed green while `LocalHostTransport.run(["sh","-c","-x",
+    "mkfs.ext4 /dev/sda"])` reached the spawn — verified by binding a spawn that
+    raises, which is what `_FakeSpawn` recording zero calls stands in for here.
+    """
+    spawn = _FakeSpawn()
+    transport = LocalHostTransport([root], spawn=spawn)
+
+    assert await transport.run(["sh", "-c", "-x", "mkfs.ext4 /dev/sda"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:mkfs",
+    }
+    assert await transport.run(["sh", "-c", "echo hi\nrm -rf /"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:recursive_root_removal",
+    }
+    assert await transport.run(["busybox", "wipefs", "-a", "/dev/sda"], cwd=root) == {
+        "ok": False,
+        "reason": "hardline_denied:wipefs",
+    }
+    assert spawn.calls == [], "a catastrophic command reached the spawn seam"
+
+
+# ── four defects adversarial review of this slice found ──────────────────────
+#
+# Two bypasses and two false refusals, all reproduced before they were fixed, and
+# the shell semantics behind them checked against real /bin/sh, /bin/dash and
+# /bin/bash rather than read off a man page.
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("env FOO=1 sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("FOO=1 sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("sudo -u root sh -c 'mkfs.ext4 /dev/sda'", "mkfs"),
+    ("nice -n 10 sh -c 'wipefs -a /dev/sda'", "wipefs"),
+    ("env FOO=1 BAR=2 bash -lc 'rm -rf /'", "recursive_root_removal"),
+    (["env", "FOO=1", "sh", "-c", "mkfs.ext4 /dev/sda"], "mkfs"),
+    (["sudo", "-u", "root", "sh", "-c", "mkfs.ext4 /dev/sda"], "mkfs"),
+])
+def test_a_prefix_in_front_of_the_shell_does_not_skip_payload_screening(command, expected):
+    """The walk demanded the word right after the wrappers BE the shell.
+
+    Anything else in the prefix ended it on a non-shell word, no payload was
+    extracted, and the entire `sh -c` mechanism was skipped — `env FOO=1 sh -c
+    'mkfs.ext4 /dev/sda'` reached a real shell with this floor answering None,
+    while deleting the five characters `FOO=1 ` made the same string
+    `hardline_denied:mkfs`. `_CMD` had already been widened for that assignment
+    prefix; the payload unwrapper had not. Options that take a separate argument
+    (`sudo -u root`) were the same miss.
+    """
+    assert hardline_match(command) == expected
+
+
+def test_a_line_continuation_is_spliced_not_separated():
+    """`\\` + newline outside quotes joins two lines into ONE command.
+
+    Verified against /bin/sh, /bin/dash and /bin/bash: `ec\\` + newline + `ho X`
+    prints X. Treating it as a separator broke the floor in the dangerous
+    direction — the shell runs `mkfs.ext4 /dev/sda` and the check saw two
+    harmless fragments.
+    """
+    assert hardline_match("mk\\\nfs.ext4 /dev/sda") == "mkfs"
+    assert hardline_match("wipe\\\nfs -a /dev/sda") == "wipefs"
+
+
+@pytest.mark.parametrize("command", [
+    "ansible-playbook -i hosts \\\n  reboot.yml",
+    "docker build \\\n  --build-arg SHUTDOWN_GRACE=30 \\\n  -t app .",
+])
+def test_a_line_continuation_does_not_invent_a_command_position(command):
+    """The same bug the other way round: splitting there put the second line in
+    command position, so an ordinary two-line invocation naming a playbook
+    `reboot.yml` was refused as `power_cycle`. On origin/main it ran."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command", [
+    "cat > /srv/app/config.yaml <<'EOF'\nshutdown: graceful\nEOF",
+    "cat > x.yml <<EOF\nreboot: always\nEOF",
+    "cat <<-'END'\n\tmkfs is mentioned in this doc\n\tEND",
+])
+def test_a_heredoc_body_is_data_not_a_command_position(command):
+    """A heredoc body is stdin. Confirmed against all three shells: the body of
+    `cat <<'EOF'` is printed, never executed.
+
+    Joining every line with `;` made each body line a command position, so writing
+    a config file with a `shutdown:` key was refused as `power_cycle` — exactly the
+    case `_CMD`'s own docstring promises not to trip."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("cat <<EOF\n$(mkfs.ext4 /dev/sda)\nEOF", "mkfs"),
+    ("cat <<EOF\n`wipefs -a /dev/sda`\nEOF", "wipefs"),
+])
+def test_command_substitution_inside_a_heredoc_is_still_caught(command, expected):
+    """The other half, and the reason the body is joined rather than dropped.
+
+    An UNQUOTED heredoc substitutes — `$(echo X)` in a body prints X on real
+    /bin/sh — so deleting those lines would have been a bypass. They stay in the
+    screened text and carry their own `(` anchor; only the statement separator is
+    withheld."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "jq '{reboot: .needs_reboot}' host.json",
+    "jq -r '{shutdown: .state}' /tmp/x.json",
+])
+def test_a_brace_in_an_argument_is_not_a_command_position(command):
+    """`{` is a command position only when the shell reads it as its own WORD —
+    POSIX requires whitespace after it. Anchoring on a bare `{` made a jq object
+    constructor whose key is named after a hardline word a refusal."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("{ mkfs.ext4 /dev/sda; }", "mkfs"),
+    ("true && { wipefs -a /dev/sda; }", "wipefs"),
+])
+def test_a_real_brace_group_still_anchors(command, expected):
+    """The case the `{` anchor was added for, which the narrowing must not lose."""
+    assert hardline_match(command) == expected

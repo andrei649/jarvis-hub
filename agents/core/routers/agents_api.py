@@ -14,6 +14,7 @@ orchestrator (via `get_orch()`) or leaf imports. The agent-id regex moved with t
 (only the soul + history routes use it).
 """
 
+import logging
 import re
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ import agents as _agents_pkg
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
+
+logger = logging.getLogger("jarvis.agents_api")
 
 router = APIRouter(tags=["agents"])
 
@@ -49,6 +52,37 @@ async def api_agents():
     return nocache_json({"agents": _enrich_agents()})
 
 
+def _soul_guard_verdict(content: str, filename: str) -> dict:
+    """What Agent._load_soul would do to *content* — flags/blocked/truncated.
+
+    Runs the same helpers on the same text rather than re-implementing them, so
+    the HUD's verdict cannot drift from the guard. Any failure degrades to a
+    clean verdict with an ``error`` note: this is a disclosure on a read
+    endpoint, never a reason to fail the read.
+    """
+    try:
+        from agents.core.agent import (
+            _body_line_offset,
+            _cap_soul_body,
+            _scan_soul_body,
+            _soul_max_chars,
+        )
+        try:
+            from agents.core.cognition.frontmatter import parse_frontmatter
+            _meta, body = parse_frontmatter(content)
+        except Exception:
+            body = content
+        body, flags, blocked = _scan_soul_body(
+            body, filename, _body_line_offset(content, body))
+        truncated = False
+        if not blocked:
+            _capped, truncated = _cap_soul_body(body, filename, _soul_max_chars())
+        return {"flags": flags, "blocked": blocked, "truncated": truncated}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("SOUL guard verdict skipped for %s", filename, exc_info=True)
+        return {"flags": [], "blocked": False, "truncated": False, "error": str(exc)}
+
+
 @router.get("/api/agents/{agent_id}/soul", dependencies=[Depends(user_guard)])
 async def get_agent_soul(agent_id: str):
     """Read and return the live SOUL.md content for an agent."""
@@ -66,11 +100,17 @@ async def get_agent_soul(agent_id: str):
     )
     soul_path = None
     if agent_dir is not None:
-        # The personalized overlay (SOUL.local.md, gitignored) wins when present —
-        # same resolution as Agent._load_soul.
-        soul_path = agent_dir / "SOUL.local.md"
-        if not soul_path.exists():
-            soul_path = agent_dir / "SOUL.md"
+        # Resolved by `Agent.soul_path_for`, the SAME function `Agent._load_soul`
+        # uses — not a second copy of the precedence rules. This endpoint used to
+        # check only the repo-local pair, so on a packaged install (where the data
+        # home's `souls/<id>/SOUL.local.md` wins) it read one file and reported an
+        # injection verdict for it while the model was given another: an owner
+        # whose overlay had been quarantined saw `blocked: false` for the persona
+        # that was in fact dropped — the exact case the verdict exists to prevent.
+        # `agent_dir` is still enumerated above so no request value reaches a path
+        # expression; the id handed over here is that trusted directory name.
+        from agents.core.agent import soul_path_for
+        soul_path = soul_path_for(agent_dir.name)
 
     orch = get_orch()
     if orch and agent_id not in orch.agents:
@@ -81,9 +121,16 @@ async def get_agent_soul(agent_id: str):
 
     try:
         content = soul_path.read_text(encoding="utf-8")
-        return {"agent_id": agent_id, "soul": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read SOUL.md: {e}")
+    # H387: this is the editor view, so `soul` stays the raw bytes on disk — the
+    # owner has to see what they actually wrote. But the model does not
+    # necessarily get that text: Agent._load_soul strips invisible Unicode,
+    # quarantines injection-flagged lines and caps an oversized body. Report the
+    # guard's verdict beside the raw text, so the HUD cannot show a persona the
+    # model is not receiving without saying so. Previously the only trace of a
+    # quarantined persona was a logger.error nobody watches.
+    return {"agent_id": agent_id, "soul": content, "guard": _soul_guard_verdict(content, soul_path.name)}
 
 
 @router.get("/agents")

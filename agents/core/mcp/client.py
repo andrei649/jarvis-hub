@@ -8,12 +8,33 @@ Streamable HTTP. The tool-call contract below admits ``stdio`` always and
 ``streamable-http`` only while the flag is set, so a config persisted while the
 flag was on cannot keep calling out after the owner unsets it.
 
-Stdio subprocess environment (Hermes parity, governed): with
-``JARVIS_MCP_STDIO_ENV_BASELINE`` set, a spawned MCP server inherits only an
-allow-listed baseline (PATH/HOME/locale/temp/platform plumbing) plus the
-per-server ``env`` overrides — never the hub's API keys and tokens. Default
-off (the historical full-inherit behaviour) because a server that relied on
-inheriting a credential would otherwise break silently.
+Stdio subprocess environment (Hermes parity, governed): a spawned MCP server is
+*handed* only an allow-listed baseline (PATH/HOME/locale/temp/platform plumbing)
+plus the per-server ``env`` overrides — it is not handed the hub's API keys and
+tokens. **Default on** (H502): a third-party binary the owner attached is not a
+reason to hand it every provider credential on the box.
+
+**Scope of the guarantee — read this before calling it containment.** The child
+runs as the *same UID* as the hub, in no namespace and no sandbox, so on Linux it
+can read the parent's whole environment out of ``/proc/<ppid>/environ`` regardless
+of what it was handed. A deliberately hostile server therefore still recovers the
+withheld keys. This baseline is **defence in depth, not a security boundary**: it
+is a real fix for a careless or over-broad third-party server, for a server that
+echoes its environment into logs, and for leakage into crash reports — it is not a
+defence against a backdoor wearing an MCP costume. That boundary needs the
+still-unshipped command screener plus real process isolation (separate UID,
+namespace or container).
+
+The drop is announced once per connect at INFO as a COUNT, so a server that breaks
+because it relied on an inherited credential is diagnosable. The owner's narrow
+remedy is ``JARVIS_MCP_STDIO_ALLOWED_ENV`` (see :func:`stdio_env_extra_allowed`):
+a comma-separated list of host variable names stdio MCP servers may keep
+inheriting. The per-server ``env`` block also wins over the baseline, but it has no
+owner-facing configuration surface today — it is settable only in-process and is
+not persisted (see :meth:`MCPManager.to_config`), so first-party callers such as
+``worldview_write`` are its only users. ``JARVIS_MCP_STDIO_ENV_BASELINE=0`` is the
+blunt escape hatch back to the historical full-inherit behaviour, for every server
+on the box at once.
 """
 
 import asyncio
@@ -33,7 +54,7 @@ from agents.core.automation_contracts import (
     one_of,
     predicate,
 )
-from agents.core.env_config import env_flag
+from agents.core.env_config import env_flag, env_list
 from agents.core.mcp.http_transport import (
     HTTP_CLIENT_FLAG,
     SUPPORTED_TRANSPORTS,
@@ -54,7 +75,16 @@ _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 _SHELL_METACHARS = frozenset(";&|<>`\n\r")
 
 #: Owner flag: spawn stdio MCP servers with the allow-listed env baseline only.
+#: Default ON — set it to ``0`` to go back to full inheritance.
 STDIO_ENV_BASELINE_FLAG = "JARVIS_MCP_STDIO_ENV_BASELINE"
+
+#: Owner flag: a comma-separated list of host variable NAMES stdio MCP servers may keep
+#: inheriting on top of :data:`STDIO_ENV_ALLOWLIST`. This is the *narrow* remedy for a
+#: server that legitimately needs one hub credential after the H502 default flip — the
+#: alternative, ``JARVIS_MCP_STDIO_ENV_BASELINE=0``, surrenders the whole environment to
+#: every stdio server at once. Host-wide, not per-server: a name listed here reaches
+#: every stdio MCP server the hub spawns, so list the minimum.
+STDIO_ENV_ALLOW_FLAG = "JARVIS_MCP_STDIO_ALLOWED_ENV"
 
 #: Trust tiers (Hermes absorption 4b). A server is *read-only* unless the owner says
 #: otherwise: only a tool whose ``annotations.readOnlyHint`` is true may be called on it;
@@ -117,7 +147,35 @@ _SECRET_LIKE = re.compile(
 
 
 def stdio_env_baseline_enabled() -> bool:
-    return env_flag(STDIO_ENV_BASELINE_FLAG)
+    """The default since H502: an MCP server the owner attached is a third-party
+    binary, and handing it ``os.environ`` handed it every provider key on the box.
+
+    Two escape hatches, deliberately unequal. ``JARVIS_MCP_STDIO_ALLOWED_ENV`` names
+    the individual host variables that may keep flowing and is the one to reach for.
+    ``JARVIS_MCP_STDIO_ENV_BASELINE=0`` turns the baseline off for every stdio server
+    at once and is the blunt last resort. (The per-server ``env`` block also wins over
+    the baseline, but it is in-process only — it has no admin-API or config surface,
+    so it is not a remedy an owner can reach.)
+    """
+    return env_flag(STDIO_ENV_BASELINE_FLAG, True)
+
+
+#: Sentinel: "no explicit value given", distinct from an explicit ``None``/empty flag.
+_NO_RAW = object()
+
+
+def stdio_env_extra_allowed(raw: object = _NO_RAW) -> frozenset[str]:
+    """Upper-cased host variable names the owner named in ``JARVIS_MCP_STDIO_ALLOWED_ENV``.
+
+    With no argument the hub's own environment is read through
+    :func:`agents.core.env_config.env_list` (the sanctioned accessor — AUD-14 caps raw
+    ``os.environ`` reads). *raw* is the flag's value read out of some other environment
+    mapping, which is how :func:`stdio_env_baseline` keeps the owner's declaration and
+    the values it governs in one place. Empty, unset or whitespace-only → the empty set,
+    i.e. the allow-list alone.
+    """
+    parts = env_list(STDIO_ENV_ALLOW_FLAG) if raw is _NO_RAW else str(raw or "").split(",")
+    return frozenset(part.strip().upper() for part in parts if part.strip())
 
 
 def stdio_env_baseline(
@@ -130,12 +188,27 @@ def stdio_env_baseline(
     nevertheless looks like a credential is still dropped — belt and braces
     against an odd platform variable. Explicit per-server overrides always win:
     they are the operator's deliberate hand-off (e.g. a shared secret).
+
+    A name the owner listed in ``JARVIS_MCP_STDIO_ALLOWED_ENV`` (read from *environ*
+    itself, so the declaration and the values always come from one environment) is
+    passed through even when it looks like a credential: naming a credential the
+    server needs is the entire point of that flag, and it is how an owner recovers
+    from the H502 default flip without reaching for the global off switch.
     """
     source = os.environ if environ is None else environ
+    extra_allowed = (
+        stdio_env_extra_allowed()
+        if environ is None
+        else stdio_env_extra_allowed(source.get(STDIO_ENV_ALLOW_FLAG))
+    )
     baseline: dict[str, str] = {}
     for key, value in source.items():
         name = str(key)
-        if name.upper() not in STDIO_ENV_ALLOWLIST or _SECRET_LIKE.search(name):
+        upper = name.upper()
+        if upper in extra_allowed:
+            baseline[name] = str(value)
+            continue
+        if upper not in STDIO_ENV_ALLOWLIST or _SECRET_LIKE.search(name):
             continue
         baseline[name] = str(value)
     for key, value in dict(overrides or {}).items():
@@ -382,12 +455,33 @@ class MCPServer:
     def _merged_env(self) -> dict[str, str] | None:
         """Environment for the stdio subprocess.
 
-        Baseline flag on → allow-listed baseline + per-server overrides only.
-        Flag off (default) → historical behaviour: inherit everything (``None``)
+        Baseline on (default) → allow-listed baseline + the owner's
+        ``JARVIS_MCP_STDIO_ALLOWED_ENV`` names + per-server overrides only.
+        Flag explicitly ``0`` → historical behaviour: inherit everything (``None``)
         or the full parent env plus overrides.
+
+        Not a boundary: the child is same-UID, so on Linux it can still read the
+        hub's real environment from ``/proc/<ppid>/environ``. See the module
+        docstring — this withholds, it does not contain.
         """
         if stdio_env_baseline_enabled():
-            return stdio_env_baseline(None, self.env)
+            env = stdio_env_baseline(None, self.env)
+            # The default drops variables, so it must not drop them silently: a
+            # server that stops working because it relied on an inherited credential
+            # otherwise reports a bare auth error with nothing pointing back here.
+            # COUNT only — never a name and never a value, because the *names* alone
+            # enumerate which provider keys this box holds.
+            # Count host *values* the child does not receive, not names the child does
+            # not see: a per-server override that shadows a host variable keeps the
+            # name but withholds the host's value, and the owner reading this line is
+            # very often debugging exactly that case.
+            withheld = sum(1 for name, value in os.environ.items() if env.get(name) != value)
+            if withheld:
+                logger.info(
+                    "MCP %s: %d host variables withheld (allowlist baseline)",
+                    self.name, withheld,
+                )
+            return env
         if not self.env:
             return None
         merged = os.environ.copy()

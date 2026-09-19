@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agents.core.env_config import env_str
 from agents.core.kernel import Action, Capability, Verdict, kernel_enabled
 from agents.core.mcp.client import TRUST_FULL, MCPManager, MCPServer
 from agents.core.security.worldview_mcp import mint_capability
@@ -32,6 +33,27 @@ def _default_mcp_cwd() -> str:
 
 def _default_mcp_command() -> str:
     return os.environ.get("WORLDVIEW_MCP_COMMAND", "node dist/server.js")
+
+
+#: Host variables the first-party WorldView MCP server reads for itself
+#: (``worldview/mcp/src/config.ts``). Since H502 a spawned stdio server is handed only
+#: ``STDIO_ENV_ALLOWLIST`` plus its own ``env``, so anything this server reads off the
+#: host has to be named here or it silently falls back to its built-in default — for
+#: ``WORLDVIEW_API_URL`` that default is ``http://localhost:4000``, i.e. a *wrong
+#: destination* on any deployment with a remote backend, not a loud auth error.
+#: This is Nerva's own server, which the hub builds and spawns; the H502 argument
+#: ("a third-party binary the owner attached") does not apply to it.
+WORLDVIEW_HOST_ENV: tuple[str, ...] = ("WORLDVIEW_API_URL",)
+
+
+def _worldview_host_env() -> dict[str, str]:
+    """The :data:`WORLDVIEW_HOST_ENV` variables actually set on the host, if any."""
+    found: dict[str, str] = {}
+    for name in WORLDVIEW_HOST_ENV:
+        value = env_str(name).strip()
+        if value:
+            found[name] = value
+    return found
 
 
 class WorldViewMCPWriteClient:
@@ -202,7 +224,7 @@ class WorldViewMCPWriteClient:
                 transport="stdio",
                 command=_default_mcp_command(),
                 cwd=_default_mcp_cwd(),
-                env={"WORLDVIEW_MCP_SECRET": secret},
+                env={"WORLDVIEW_MCP_SECRET": secret, **_worldview_host_env()},
                 # Nerva's own WorldView writer: every call already crosses the plugin
                 # gate and the kernel above, so the tier that would refuse writes by
                 # hint is the wrong gate here.
@@ -211,6 +233,10 @@ class WorldViewMCPWriteClient:
             self.mcp.register(server)
         elif isinstance(server, MCPServer):
             server.env["WORLDVIEW_MCP_SECRET"] = secret
+            # A server registered earlier (or by someone else) still needs the host
+            # variables it reads, but an env someone set deliberately wins over ours.
+            for name, value in _worldview_host_env().items():
+                server.env.setdefault(name, value)
 
         if not server.tools:
             try:

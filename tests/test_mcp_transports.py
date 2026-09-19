@@ -26,10 +26,12 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.mcp import http_transport as ht  # noqa: E402
 from agents.core.mcp.client import (  # noqa: E402
+    STDIO_ENV_ALLOW_FLAG,
     STDIO_ENV_BASELINE_FLAG,
     MCPManager,
     MCPServer,
     stdio_env_baseline,
+    stdio_env_extra_allowed,
 )
 from agents.core.mcp.http_transport import (  # noqa: E402
     HTTP_CLIENT_FLAG,
@@ -381,7 +383,13 @@ class _FakeProc:
         self.stdin, self.stdout, self.stderr, self.returncode = _FakeStdin(), _FakeStdout(), None, None
 
 
-async def test_stdio_subprocess_env_baseline_under_flag(monkeypatch):
+async def test_stdio_subprocess_env_baseline_is_the_default(monkeypatch):
+    """H502 — the flip. This test used to assert the opposite direction for the UNSET
+    flag (flag off → full inherit); the containment default moved, so the assertions
+    are inverted deliberately rather than relaxed: unset now means *baseline applies*,
+    and only the explicit escape hatch ``=0`` restores the historical full inherit.
+    Both directions stay pinned, so neither can drift unnoticed again.
+    """
     monkeypatch.setenv("OPENAI_API_KEY", "sk-leak")
     monkeypatch.setenv("PATH", "/usr/bin")
     calls = []
@@ -391,18 +399,203 @@ async def test_stdio_subprocess_env_baseline_under_flag(monkeypatch):
         return _FakeProc()
 
     monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
-    # Flag off (default): historical behaviour — inherit everything.
+    # Flag UNSET (the shipped default): baseline + overrides only — no provider key.
     monkeypatch.delenv(STDIO_ENV_BASELINE_FLAG, raising=False)
     await MCPServer("plain", transport="stdio", command="run-x").connect()
-    assert calls[-1]["env"] is None
+    env = calls[-1]["env"]
+    assert env is not None, "unset flag must no longer mean inherit-everything"
+    assert "OPENAI_API_KEY" not in env and env["PATH"] == "/usr/bin"
     await MCPServer("ovr", transport="stdio", command="run-x", env={"K": "v"}).connect()
+    env = calls[-1]["env"]
+    assert "OPENAI_API_KEY" not in env
+    assert env["PATH"] == "/usr/bin" and env["K"] == "v"
+    # Explicit escape hatch: =0 is the documented way back to full inheritance.
+    monkeypatch.setenv(STDIO_ENV_BASELINE_FLAG, "0")
+    await MCPServer("legacy", transport="stdio", command="run-x").connect()
+    assert calls[-1]["env"] is None
+    await MCPServer("legacy-ovr", transport="stdio", command="run-x", env={"K": "v"}).connect()
     assert calls[-1]["env"]["OPENAI_API_KEY"] == "sk-leak" and calls[-1]["env"]["K"] == "v"
-    # Flag on: baseline + overrides only.
+    # Flag explicitly on: same as the default.
     monkeypatch.setenv(STDIO_ENV_BASELINE_FLAG, "1")
     await MCPServer("strict", transport="stdio", command="run-x", env={"K": "v"}).connect()
     env = calls[-1]["env"]
     assert "OPENAI_API_KEY" not in env
     assert env["PATH"] == "/usr/bin" and env["K"] == "v"
+
+
+async def test_stdio_env_withheld_count_is_logged_without_names_or_values(monkeypatch, caplog):
+    """The default drops variables, so it says so: one INFO line per connect carrying
+    the COUNT and the server name — never a variable name, never a value (the names
+    alone would enumerate which provider keys this box holds)."""
+    monkeypatch.setattr(os, "environ", {
+        "PATH": "/usr/bin", "HOME": "/home/o",
+        "OPENAI_API_KEY": "sk-leak", "GITHUB_TOKEN": "ghp-leak", "JARVIS_SECRET_X": "s",
+    })
+
+    async def fake_exec(*argv, **kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
+    caplog.set_level("INFO", logger="jarvis.mcp")
+    await MCPServer("scanner", transport="stdio", command="run-x").connect()
+
+    lines = [r.getMessage() for r in caplog.records if "withheld" in r.getMessage()]
+    assert lines == ["MCP scanner: 3 host variables withheld (allowlist baseline)"]
+    blob = "\n".join(lines)
+    for leaked in ("OPENAI_API_KEY", "GITHUB_TOKEN", "JARVIS_SECRET_X", "sk-leak", "ghp-leak"):
+        assert leaked not in blob
+
+
+def test_owner_named_env_passthrough_is_the_reachable_narrow_remedy():
+    """H502 repair (defect 1) — the documented migration path has to be one an owner can
+    actually walk. The per-server ``env`` block is not: no POST field, not persisted by
+    ``to_config``, not read by ``load_from_config``. ``JARVIS_MCP_STDIO_ALLOWED_ENV`` is:
+    it names the individual variables that may keep flowing, so the owner is not funnelled
+    into ``JARVIS_MCP_STDIO_ENV_BASELINE=0``, which drops containment for every server.
+    """
+    environ = {
+        "PATH": "/usr/bin",
+        "GITHUB_TOKEN": "ghp-needed",
+        "OPENAI_API_KEY": "sk-not-needed",
+        "SOME_PLAIN_VAR": "v",
+        STDIO_ENV_ALLOW_FLAG: " github_token , ",  # case- and whitespace-insensitive
+    }
+    env = stdio_env_baseline(environ)
+    # The owner named it, so it flows — even though `_SECRET_LIKE` matches "TOKEN".
+    assert env["GITHUB_TOKEN"] == "ghp-needed"
+    # Everything the owner did NOT name stays withheld: this is a scalpel, not `=0`.
+    assert "OPENAI_API_KEY" not in env
+    assert "SOME_PLAIN_VAR" not in env
+    assert env["PATH"] == "/usr/bin"
+
+    # Unset / empty / whitespace-only means the allow-list alone.
+    for raw in (None, "", "   ", ",,"):
+        assert stdio_env_extra_allowed(raw) == frozenset()
+    bare = dict(environ)
+    del bare[STDIO_ENV_ALLOW_FLAG]
+    assert "GITHUB_TOKEN" not in stdio_env_baseline(bare)
+
+
+async def test_owner_named_env_passthrough_reaches_the_real_subprocess(monkeypatch):
+    """The same remedy on the production path: the flag read off the hub's own
+    environment (through `env_config.env_list`, not a raw `os.environ` read) and carried
+    all the way into the argv/env `create_subprocess_exec` is called with."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp-needed")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-needed")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.delenv(STDIO_ENV_BASELINE_FLAG, raising=False)
+    calls = []
+
+    async def fake_exec(*argv, **kwargs):
+        calls.append(kwargs)
+        return _FakeProc()
+
+    monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
+
+    monkeypatch.delenv(STDIO_ENV_ALLOW_FLAG, raising=False)
+    await MCPServer("forge", transport="stdio", command="run-x").connect()
+    assert "GITHUB_TOKEN" not in calls[-1]["env"]  # withheld by default
+
+    monkeypatch.setenv(STDIO_ENV_ALLOW_FLAG, "GITHUB_TOKEN")
+    await MCPServer("forge", transport="stdio", command="run-x").connect()
+    env = calls[-1]["env"]
+    assert env["GITHUB_TOKEN"] == "ghp-needed"
+    # Still a scalpel, not `JARVIS_MCP_STDIO_ENV_BASELINE=0`.
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_per_server_env_has_no_owner_reachable_config_surface():
+    """The counterpart pin for defect 1: the docs may only call the per-server ``env``
+    block an in-process facility, because that is all it is. If a future change gives it
+    a real surface (POST body + ``to_config`` + ``load_from_config``), this test goes red
+    and the CHANGELOG / FLAGS.md wording that says "not a remedy you can reach" must be
+    updated with it — extend this assertion in place, do not drop it.
+    """
+    from agents.core.routers.mcp import MCPServerConfig
+
+    assert "env" not in MCPServerConfig.model_fields
+    mgr = MCPManager()
+    mgr.servers["s"] = MCPServer("s", transport="stdio", command="x", env={"K": "v"})
+    exported = mgr.to_config()[0]
+    assert "env" not in exported
+    reloaded = MCPManager()
+    reloaded.load_from_config([dict(exported, env={"K": "v"})])
+    assert reloaded.servers["s"].env == {}
+
+
+async def test_stdio_env_withheld_count_counts_host_values_not_names(monkeypatch, caplog):
+    """H502 repair (defect 5) — a per-server override that *shadows* a host variable
+    withholds the host's value while keeping the name, so counting names under-reported
+    by one per shadowed variable. The line is the slice's only diagnostic surface and the
+    owner reading it is very often debugging exactly a credential-shadowing case.
+    """
+    monkeypatch.setattr(os, "environ", {
+        "PATH": "/usr/bin",
+        "GITHUB_TOKEN": "ghp-host",      # shadowed by the server's own env below
+        "OPENAI_API_KEY": "sk-leak",     # withheld outright
+    })
+
+    async def fake_exec(*argv, **kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
+    caplog.set_level("INFO", logger="jarvis.mcp")
+    srv = MCPServer("shadow", transport="stdio", command="run-x",
+                    env={"GITHUB_TOKEN": "ghp-server-own"})
+    await srv.connect()
+
+    lines = [r.getMessage() for r in caplog.records if "withheld" in r.getMessage()]
+    # 2, not 1: the host's GITHUB_TOKEN value never reaches the child either.
+    assert lines == ["MCP shadow: 2 host variables withheld (allowlist baseline)"]
+    for leaked in ("GITHUB_TOKEN", "OPENAI_API_KEY", "ghp-host", "sk-leak"):
+        assert leaked not in "\n".join(lines)
+
+
+def test_env_baseline_is_documented_as_defence_in_depth_not_a_boundary():
+    """H502 repair (defect 3) — a spawned server is same-UID with no namespace, so it can
+    read the withheld keys straight out of ``/proc/<ppid>/environ``. The docs sold this as
+    containment against exactly the adversary that defeats it. Pin the honest framing so
+    the overstatement cannot come back: the caveat must be stated wherever the guarantee
+    is, and the unqualified "never the hub's API keys" phrasing must stay gone.
+    """
+    client_src = (repo_root / "agents" / "core" / "mcp" / "client.py").read_text(encoding="utf-8")
+    flags = (repo_root / "docs" / "FLAGS.md").read_text(encoding="utf-8")
+    changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
+    arch = (repo_root / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    # BACKLOG.md was missing from this list, and it is the one an owner is told to
+    # query for what is delivered — so it kept saying "opt-in, default-off" after the
+    # flip, i.e. the exact misreading the rest of this pin exists to prevent.
+    backlog = (repo_root / "BACKLOG.md").read_text(encoding="utf-8")
+
+    for name, text in (("client.py", client_src), ("FLAGS.md", flags),
+                       ("CHANGELOG.md", changelog), ("ARCHITECTURE.md", arch),
+                       ("BACKLOG.md", backlog)):
+        assert "/proc/<ppid>/environ" in text, f"{name} states the guarantee without the caveat"
+    for name, text in (("client.py", client_src), ("FLAGS.md", flags),
+                       ("CHANGELOG.md", changelog), ("BACKLOG.md", backlog)):
+        assert "defence in depth, not a security boundary" in text.lower() \
+            or "defence in depth, not a boundary" in text.lower(), \
+            f"{name} must not sell withholding as containment"
+    # The exact overstatements the reviewer found, by their old wording.
+    assert "never the hub's API keys and tokens" not in client_src
+    assert "never the hub's API keys, tokens or proxies" not in flags
+    assert "no longer gets the owner's keys by default" not in changelog
+    assert "stdio env stripping (opt-in, default-off)" not in backlog.lower(), (
+        "the owner-facing ledger still says the baseline is off by default"
+    )
+
+
+async def test_stdio_env_withheld_log_is_silent_when_nothing_is_dropped(monkeypatch, caplog):
+    """No drop, no line — the log records a fact, not the posture."""
+    monkeypatch.setattr(os, "environ", {"PATH": "/usr/bin", "HOME": "/home/o"})
+
+    async def fake_exec(*argv, **kwargs):
+        return _FakeProc()
+
+    monkeypatch.setattr("agents.core.mcp.client.asyncio.create_subprocess_exec", fake_exec)
+    caplog.set_level("INFO", logger="jarvis.mcp")
+    await MCPServer("clean", transport="stdio", command="run-x").connect()
+    assert [r.getMessage() for r in caplog.records if "withheld" in r.getMessage()] == []
 
 
 # ── stdio server loop ────────────────────────────────────────────────────────

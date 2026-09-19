@@ -3,6 +3,11 @@
 The repo ships generic templates (SOUL.md / HEARTBEAT.md); the owner's
 personalized copies live in SOUL.local.md / HEARTBEAT.local.md and must
 override the template without any code or config change.
+
+The exact-content assertions below still hold verbatim after H387 added a size
+cap and an injection scan to ``_load_soul``: both guards are no-ops for a short,
+clean body, which is the whole point. What the guards *do* when a body is
+oversized or flagged is pinned in tests/test_soul_injection_guard.py.
 """
 
 import sys

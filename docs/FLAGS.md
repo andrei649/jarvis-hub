@@ -1,9 +1,12 @@
 # FLAGS.md — action-posture flags: know what flipping costs
 
-Environment flags change what Nerva may do without asking you. **Every flag on this
-page ships default-off** (`env_flag` returns False unless explicitly set,
+Environment flags change what Nerva may do without asking you. **Nearly every flag on
+this page ships default-off** (`env_flag` returns False unless explicitly set,
 `agents/core/env_config.py:78`); string/list flags are unset by default and the
-surface behind them refuses by name. This is what each one actually buys you — and
+surface behind them refuses by name. The two exceptions ship **on** because off is the
+dangerous setting: `JARVIS_CHANNEL_PAIRING` (an unpaired chat bot answers anyone) and,
+since H502, `JARVIS_MCP_STDIO_ENV_BASELINE` (off hands every spawned MCP server the
+whole keyring). The `Default` column of the decision table is the authority. This is what each one actually buys you — and
 what it costs. The first three are the posture flags everything else composes with;
 verified against code at `75e92811`. The wave-2026-09-06 flags are appended after
 them and verified against `214bc5eb`.
@@ -289,9 +292,11 @@ Null client and the result is deferred/degraded — byte-identical to before.
 **Cost:** real external writes, posts and phone calls — after your approval.
 **Revert:** unset + restart → Null clients.
 
-### `JARVIS_MCP_HTTP_CLIENT` · `JARVIS_MCP_STDIO_ENV_BASELINE`
+### `JARVIS_MCP_HTTP_CLIENT` · `JARVIS_MCP_STDIO_ENV_BASELINE` · `JARVIS_MCP_STDIO_ALLOWED_ENV`
 
-**Defaults: both OFF.**
+**Defaults: `JARVIS_MCP_HTTP_CLIENT` OFF · `JARVIS_MCP_STDIO_ENV_BASELINE` ON ·
+`JARVIS_MCP_STDIO_ALLOWED_ENV` empty** (H502 — the env baseline flipped from opt-in to
+the default; `JARVIS_MCP_STDIO_ALLOWED_ENV` is the narrow remedy, `=0` the blunt one).
 
 - **`JARVIS_MCP_HTTP_CLIENT`** (`agents/core/mcp/http_transport.py:61`): ON,
   `MCPServer.connect()` speaks Streamable HTTP for `transport: streamable-http`
@@ -303,11 +308,51 @@ Null client and the result is deferred/degraded — byte-identical to before.
   `transport_disabled:JARVIS_MCP_HTTP_CLIENT`. The deprecated HTTP+SSE pair stays
   refused by name (`unsupported_transport:sse`) either way.
 - **`JARVIS_MCP_STDIO_ENV_BASELINE`** (`agents/core/mcp/client.py`
-  `STDIO_ENV_BASELINE_FLAG`): ON, stdio MCP subprocesses inherit **only**
-  `STDIO_ENV_ALLOWLIST` (PATH/HOME/locale/temp/platform/toolchain/TLS roots) plus the
-  per-server `env` overrides — never the hub's API keys, tokens or proxies. A server
-  that relied on inheriting a hub credential stops seeing it; pass it explicitly in
-  that server's `env`. Default off precisely so nothing breaks silently.
+  `STDIO_ENV_BASELINE_FLAG`) — **on by default since H502.** stdio MCP subprocesses are
+  handed **only** `STDIO_ENV_ALLOWLIST` (PATH/HOME/locale/temp/platform/toolchain/TLS
+  roots), the names in `JARVIS_MCP_STDIO_ALLOWED_ENV` and the per-server `env`
+  overrides — they are not handed the hub's API keys, tokens or proxies. An MCP server
+  is a third-party binary the owner attached; attaching it is not a decision to hand it
+  every provider credential on the box, so withholding them is the default rather than
+  an opt-in nobody sets. The drop is **not silent**: each connect logs one INFO line,
+  `MCP <server>: <n> host variables withheld (allowlist baseline)` — the count only,
+  never a variable name or value (the names alone would enumerate which provider keys
+  this box holds). The count is of host **values** the child does not receive, so a
+  per-server `env` that shadows a host variable is counted too. The live posture is
+  reported as `env_baseline` by `GET /api/admin/mcp`, read from the flag at request
+  time, so the admin panel cannot claim a posture the running process is not applying;
+  a row that spawns no subprocess (non-stdio, or stdio with no `command`) reports
+  `null` rather than a badge it has not earned.
+
+  **What this is and is not.** It stops a server from *being handed* the hub's
+  credentials. It is **defence in depth, not a security boundary**: the child runs as
+  the same UID as the hub, in no namespace and no sandbox, so on Linux it can read the
+  hub's real environment out of `/proc/<ppid>/environ` whatever it was handed. A
+  deliberately hostile server — the "backdoor wearing an MCP costume" this work is aimed
+  at — still recovers the withheld keys that way. What the baseline does buy is real:
+  a careless or over-broad third-party server no longer sees credentials it never asked
+  for, and they no longer leak into that server's logs, telemetry or crash reports. The
+  boundary needs the still-unshipped command screener plus process isolation (separate
+  UID, namespace or container).
+
+  **If a server of yours broke on the upgrade**, set `JARVIS_MCP_STDIO_ALLOWED_ENV`
+  (below). Do **not** reach for the per-server `env` block: it wins over the baseline,
+  but it has no owner-facing surface — `POST /api/admin/mcp` has no `env` field,
+  `MCPManager.to_config()` does not persist one and `load_from_config()` does not read
+  one, so it is settable only from in-process Python (first-party callers such as
+  `agents/core/mcp/worldview_write.py`) and does not survive a restart.
+  `JARVIS_MCP_STDIO_ENV_BASELINE=0` restores the historical full inherit wholesale, for
+  every stdio server on the box at once — the last resort, not the first.
+- **`JARVIS_MCP_STDIO_ALLOWED_ENV`** (`agents/core/mcp/client.py`
+  `STDIO_ENV_ALLOW_FLAG`, `stdio_env_extra_allowed`) — **empty by default.** A
+  comma-separated list of host variable **names** stdio MCP servers may keep inheriting
+  on top of the allow-list, e.g. `JARVIS_MCP_STDIO_ALLOWED_ENV=GITHUB_TOKEN`. This is
+  the owner-reachable remedy for the H502 flip: it names the one credential a server
+  legitimately needs instead of surrendering the whole environment. A name listed here
+  is passed through **even when it looks like a credential** — naming one is the point.
+  Host-wide, not per-server: every stdio MCP server the hub spawns sees every name on
+  the list, so keep it to the minimum. Names are matched case-insensitively; names not
+  set on the host are ignored.
 
 ### `JARVIS_VLM_PRESET`
 
@@ -518,7 +563,8 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_SOCIAL_LIVE` | off (`social.py`) | `HttpSocialClient` posts/replies/DMs on X after approval | Real posts; needs secret `x_api_token`; Postiz path unaffected | Unset + restart: Null client |
 | `JARVIS_CALL_LIVE` | off (`autonomy/call_broker.py`) | `HttpCallClient` dials via Twilio/Telnyx after approval **and** within the interrupt budget | Real phone calls; refuses `credential_not_configured` / `call_config_missing:<keys>` before spending a budget slot; needs `JARVIS_CALL_CONFIG` | Unset + restart: Null client |
 | `JARVIS_MCP_HTTP_CLIENT` | off (`mcp/http_transport.py:61`) | `MCPServer.connect()` speaks Streamable HTTP for `transport: streamable-http`; the tool-call contract widens via `active_tool_call_contract()` | Outbound HTTP to configured MCP endpoints through the SSRF-pinned `PluginHTTPClient`; bearer headers in memory only | Unset (no restart): `connect()` refuses `transport_disabled:JARVIS_MCP_HTTP_CLIENT`, contract reverts to stdio-only at the next call |
-| `JARVIS_MCP_STDIO_ENV_BASELINE` | off (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses inherit only `STDIO_ENV_ALLOWLIST` plus the per-server `env` — never the hub's API keys, tokens or proxies | A server that relied on inheriting a hub credential stops seeing it; pass it explicitly in that server's `env` | Unset + reconnect: full parent env inherited again |
+| `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
+| `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |

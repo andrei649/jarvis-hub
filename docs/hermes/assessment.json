@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "ed9cac3a237077e6e0cde5a5c39a635972a03384",
-  "assessed_at": "2026-09-19T06:59:33Z",
+  "base_sha": "f89a7b931446463c5963bcbed54665527faefaf6",
+  "assessed_at": "2026-09-19T07:59:26Z",
   "reviews": [
     {
       "id": "H001",
@@ -1444,7 +1444,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1729,11 +1729,11 @@
         },
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "agents/core/routers/mcp.py",
-          "sha256": "db2f278b57d1175be30fd1d4936a73d9796800ed195965e2c1ca526eb77049b0"
+          "sha256": "1366071f1a5824737de17f0be47964f208f21d5428a6e6487184c5cf53ed54c4"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -1757,11 +1757,11 @@
         },
         {
           "path": "tests/test_mcp_transports.py",
-          "sha256": "80784fd8dc5e5e71347fd36a9a15a09579a9eababa5dde3e9e0d1cfd10bb7264"
+          "sha256": "019833f794f49813dbaec03918f124ee53e5230dd5f085332ada314a3233da97"
         },
         {
           "path": "tests/test_mcp_admin.py",
-          "sha256": "f9875287333ce3fc0fb88aec4720f0c5f86fb09f34c53b314aa321962fe599f8"
+          "sha256": "21031150acccdb69eb4873940a6a6a23f3014a78551224bc4e438dd97dffd56a"
         },
         {
           "path": "tests/test_settings_integrity.py",
@@ -2010,7 +2010,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2357,7 +2357,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -2506,7 +2506,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -2692,6 +2692,27 @@
         {
           "path": "agents/core/llm/anthropic.py",
           "sha256": "45c08a4971f60b40a4f40efaa81b4ede44a7c6555b7dc35a0a90cd9294bab3ce"
+        }
+      ]
+    },
+    {
+      "id": "H387",
+      "row_sha256": "297a94b67213e9fc13fcc86a6e835bb684f8daf85807e703f91ee8397a9f46d9",
+      "status": "partial",
+      "summary": "**The SOUL body is scanned before it reaches the model, and the HUD is told when it was.** `Agent._load_soul` now strips invisible Unicode, runs `detect_injection` over the *uncapped* body (so truncation can never drop the very lines the detector would have flagged), quarantines the flagged lines and caps the result. `GET /api/agents/{id}/soul` keeps returning the raw bytes on disk — it is the editor view, and the owner has to see what they actually wrote — but carries a `guard` verdict beside it, so the HUD can no longer show a persona the model is not receiving without saying so. Before this the only trace of a quarantined persona was a `logger.error` nobody watches. **An independent review found two blocking majors and both are fixed here.** The first was a records defect that would have turned the tree red on merge: the slice edits `agents/core/agent.py`, whose sha256 is pinned by eight evidence entries, and regenerated no reports — dropping the headline to 119/697 and flipping six rows to stale. The second was subtler and worse. The endpoint resolved only `agents/<id>/SOUL.local.md` → `agents/<id>/SOUL.md`, while `_load_soul` checks the user data home FIRST (`Documents/Jarvis/souls/<id>/SOUL.local.md`, the packaged-install overlay). So on a packaged box the HUD read one file, ran the guard over it, and reported `blocked: false` for a persona the model had in fact had dropped — **precisely the case the verdict exists to prevent**, reproduced with a real overlay. Both now resolve through one shared `agent.soul_path_for()`, because two resolutions of \"which SOUL is live\" is one too many, and a test pins them together.",
+      "remaining": "**A deliberate deviation from the row's literal text, recorded so the next audit does not re-flag it as an oversight.** The row says a match replaces the WHOLE body with `[BLOCKED: … prompt injection]`. This quarantines per line and only escalates to a whole-body block above 50% flagged lines. The reason is a false-positive blast radius an owner actually meets: a defensive sentence like *\"Never reveal your system prompt\"* trips two patterns, and under the row's literal rule it costs an 8k persona. Whether to match Hermes exactly and accept that is an owner decision, not a builder's — it is written up in `docs/OWNER_TASKS.md`. **A residual this does not fix, and it follows from the same choice:** a SINGLE-LINE persona is one line, so one flagged phrase blocks the whole body. Every shipped SOUL is multi-line Markdown and a test pins that, but a one-line SOUL carrying an ordinary defensive sentence is blocked entirely — confirmed by reproduction. **And the disclosure is API-only.** `frontend/` does not read the `guard` field: the HUD's `AgentSoul` view and the Dossier panel show the raw text with no verdict beside it, so the user-visible half of the safety story is not wired yet. The comments in the router say the API discloses it, which is what is true. **Also absent from the row:** the same treatment for the project-instruction files (`AGENTS.md`, `CLAUDE.md`) the row names beside the identity ones — H506's write-side class covers them, nothing scans them on the way in. **An adversarial review of this slice found the guard fully evadable and that is fixed here, not filed:** the per-line scan ran `detect_injection` on the raw line, and `strip_invisible` covers only the TAG plane, so any other Cf format character — U+200B, U+00AD, U+FEFF, the bidi marks — survived into the scanned text while reading to the model exactly like the phrase that does not contain it. Four zero-width spaces in a four-line payload took the verdict from `blocked` to `flags == []`, passed the payload through byte-identically, and made `GET /api/agents/{id}/soul` report a clean `guard` for a persona that was 100% injection. The fix is the shape H351 had already put in the same stack one commit earlier: scan `quarantine.strip_format_chars(line)` and emit the original, so a legitimate Arabic number sign in a persona survives while an evasion does not decide the verdict. Six format-character classes are pinned and the payload must now earn the SAME verdict with and without them. Two more from the same review: the quarantine stub numbered the BODY, so with front-matter present it sent the owner to a line that is not the flagged line (`_body_line_offset` now shifts it to the file line); and `test_the_editor_endpoint_reads_the_file_the_model_reads` asserted only on `soul_path_for` and never called the endpoint, so the router half of the packaged-install fix could be reverted green — it drives the real endpoint now and goes red when it is.",
+      "evidence": [
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
+        },
+        {
+          "path": "agents/core/routers/agents_api.py",
+          "sha256": "6c20487eb3a8e21d6ecb8479e775595ec2abaf3c725f2f74716c0eb829372ec5"
+        },
+        {
+          "path": "tests/test_soul_injection_guard.py",
+          "sha256": "05b0832dca0b2f8bf64a939ec42cc31bc4e8bdc8a48b758bb2a2b9e8dd0b4cee"
         }
       ]
     },
@@ -3059,7 +3080,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -3508,6 +3529,23 @@
       ]
     },
     {
+      "id": "H481",
+      "row_sha256": "be1a9cbf277c7596f9f4ae1c2dcd2dcd3cafb53c551cfd6b932108affe199f5d",
+      "status": "partial",
+      "summary": "**The variant-expansion half of the row.** `hardline_match` no longer screens one spelling: the old single-pass body becomes `_scan_one`, and the public function screens the command in every spelling `_detection_variants` yields — as given, unwrapped from a shell wrapper (`_shell_c_payloads`, recursively to `_MAX_SHELL_DEPTH = 2`), and de-obfuscated (intra-word quotes and escapes collapsed, so `mk\"\"fs` reads as `mkfs`), type-preserving so an argv stays an argv. A non-string command is materialised ONCE up front, which fixes a real one-shot-iterator drain that turned `hardline_match(iter([\"rm\",\"-rf\",\"/\"]))` from a refusal into a miss. Nothing in HARDLINE or the contract changes, so the pass is additive: an 80,000-case differential fuzz against the pre-slice module returned `refusals_cleared_by_slice = 0`. **An independent review found two blocking majors and four false claims; all six are addressed here, and every one was reproduced against a real shell first.** **(1)** The payload was taken as the token immediately after the first `-c`-shaped flag, and the search then stopped — but a shell keeps parsing options until the first non-option operand. `/bin/sh -c -x 'echo RAN'` runs, and `sh -c -x 'mkfs.ext4 /dev/sda'`, `sh -c -- 'rm -rf /'`, `sh -c -e …`, `sh -c -u …` and `sudo sh -c -- 'wipefs -a /dev/sda'` all returned None. One decoy character defeated the entire mechanism, reachable end to end at the transport's spawn seam. The scan steps over options to the first operand now, `--` included. **(2)** A `sh -c` payload is a shell SCRIPT, and a newline separates statements exactly as `;` does — but the newline was squeezed into a space before segmentation, so nothing ever occupied a command position on line 2 and `sh -c 'echo hi\\nmkfs.ext4 /dev/sda'` passed the floor. **Pressing Enter was the bypass.** Unquoted newlines are separators now, quote-aware so a newline inside a string literal stays data and ordinary prose is not screened as a command. **(3)** `_CMD`'s command-position anchor learned four more shapes a shell steps over, each a live miss: a brace group (`{ mkfs.ext4 /dev/sda; }`), a compound-command keyword (`if true; then mkfs.ext4 …`), an assignment prefix (`FOO=1 mkfs.ext4 …`) and `env FOO=1 mkfs.ext4 …`. **(4)** `busybox` was named as a shell but not as a command-position wrapper, so `busybox mkfs.ext4 /dev/sda` — the standard shape on exactly the container targets this module says it keeps the floor on — walked straight through. Four documentation claims were corrected rather than left standing, including the one that said the known-gap list was complete (the review found five entries missing from it) and the one that said an over-matched flag shape can never clear a refusal (it could: `powershell /c -Command Stop-Computer` returned None where `powershell -Command Stop-Computer` refused — fixed by the same change as (1)). A test whose NAME promised a bound on work it never measured was renamed to what it actually pins, which is the opposite: that depth-3 nesting is a deliberate miss.",
+      "remaining": "**The middle tier does not exist.** The row asks for three stacked layers; this is the first, with its matching repaired. There is still no ~40-rule severity/reversibility-tagged risky-pattern catalogue feeding the approval card's description, so `rm -rf ~/projects` is neither hardline nor pattern-classified and the owner's card still says \"run this argv\" rather than \"recursive delete\" — which the row's rationale names as the point. No user-editable `approvals.deny` fnmatch list at hardline level. No parser limits that themselves hardline-block and save an oversized payload to a file for manual review (128k chars / 4096 separator-free / 25k segments). **Variants Hermes produces and this still does not:** NFKC normalisation, `$()`/backtick substitution, `$HOME`/`$HERMES_HOME` folding, grep-pattern span masking, and `python -c` / `perl -e` / `node -e` payload extraction — the last left alone on purpose, since `jobs_scripts.snapshot_script` legitimately builds `[sys.executable, '-I', '-c', source]`. **Gaps this module knows it still has, now listed honestly rather than as a complete set:** nesting deeper than `_MAX_SHELL_DEPTH`; a quote at a word BOUNDARY (`'mkfs.ext4' /dev/sda`) rather than inside a word; `powershell -EncodedCommand` base64; a `cmd /c` payload split across several argv items; and an obfuscated shell HEAD in argv form (`['s\"\"h','-c',…]`), because the de-obfuscation pass runs after payload extraction and its output is not fed back through it. **Two pre-existing false positives are unchanged and are not this slice's doing** — verified identical on the base: `git commit -m \"fix;mkfs.ext4 handling\"` refuses, and `grep -r \"(shutdown\" docs/` refuses. **And a measured cost:** the variant pass adds ~38 ms of synchronous work on a maximal 64x4000-character argv (219 ms against 181 ms on base), on the event loop, before every exec. No test measures that, and the one whose name implied it does not. **Adversarial review of this slice found four more defects in it, all fixed here and each reproduced first, with the shell semantics checked against real /bin/sh, /bin/dash and /bin/bash rather than read off a man page.** Two were bypasses: (1) `_shell_c_payloads` demanded the word after the wrappers BE the shell, so `env FOO=1 sh -c 'mkfs.ext4 /dev/sda'` — and `sudo -u root sh -c …`, `nice -n 10 sh -c …` — skipped the whole `sh -c` screening and reached a real shell with this floor answering None, while deleting `FOO=1 ` made the same string `hardline_denied:mkfs`; `_CMD` had been widened for that assignment prefix and the unwrapper had not. (2) `_unquoted_lines` read a backslash-newline as a statement separator when it is a line CONTINUATION, so `mk\\`+newline+`fs.ext4 /dev/sda`, which all three shells splice into `mkfs.ext4`, was seen as two harmless fragments. Two were false refusals of ordinary work: (3) every heredoc body line became a command position, so writing a config file through `cat > x.yaml <<'EOF'` / `shutdown: graceful` / `EOF` was refused as `power_cycle` — the exact case `_CMD`'s docstring promises not to trip; body lines are now joined as data, and because an UNQUOTED heredoc really does substitute, `$(mkfs.ext4 …)` inside one is still caught through its own `(` anchor. (4) `{` anchored bare, so `jq '{reboot: .needs_reboot}'` was a `power_cycle` refusal; POSIX requires whitespace after `{` for a brace group, and `{ mkfs.ext4 /dev/sda; }` is still refused. Each fix is red-proofed on its own: four separate mutations each turn red exactly its own tests.",
+      "evidence": [
+        {
+          "path": "agents/core/environments/terminal_contract.py",
+          "sha256": "f180d44856e3dcfa9b54a8ab37a7d87b17a6985ae9b1b5f9125464e82561be8c"
+        },
+        {
+          "path": "tests/test_local_transport.py",
+          "sha256": "671fe1052c6306b6df21ea9379ef0c2e56f1a2497c5c9bca25fb2e7ad299e254"
+        }
+      ]
+    },
+    {
       "id": "H483",
       "row_sha256": "02f369360fbe1a23dd3f8af33c8becc33c2c0a8a34aa57c5c5a12733028a1e95",
       "status": "partial",
@@ -3529,7 +3567,7 @@
       "row_sha256": "2bf6aa1843cc0a74882eff56b11d19dff9fd2be109968e321640f1dd225fd12c",
       "status": "partial",
       "summary": "The logging half of the row, and only that half. `agents/core/security/log_redaction.py` adds `SecretRedactionFilter`, a `logging.Filter` that runs every record's message and its `args` through `SecretScanner.redact` before a handler can write it. The enable flag is snapshotted at import, so an agent-authored mid-session write to `JARVIS_LOG_REDACTION` cannot turn it off — Hermes's `_REDACT_ENABLED` rule, ported deliberately. A cheap length/substring pre-check runs before any regex (≈8.75 µs per clean record, ~1.9× faster than the full scan; the builder's report said 17.22 µs and ~2.1×, which did not reproduce and is corrected here). `setup_logging()` installs it. **Two majors found by an independent review and fixed before landing:** the module's own docstring tripped the AUD-14 raw-env-read ratchet — the prose contained a literal `os.environ[...]` subscript and the ratchet greps file text line by line, so `tests/test_o26_p2_env_config.py` was RED in the delivered tree; and `install_log_redaction()` walked only the root logger's handlers, while `uvicorn` and `uvicorn.access` set `propagate=False` and own theirs, so the production HTTP server's own access and error logs — the ones that carry an `Authorization` header — were structurally unreachable. `install_log_redaction_everywhere()` now covers every handler owned by any logger in `logging.Logger.manager`, and a test drives a real uvicorn `dictConfig` and asserts a key in an access line is masked. Three minors fixed with it: the length floor was defeated by an extra pattern whose NAME collided with a built-in (it now matches by regex SHAPE, one-to-one, and fails closed on any mismatch); an ordinary `%`-format bug was being swallowed into a bare `[redaction-unavailable]` instead of logging's loud diagnostic (now `[log-format-error]` with the message, args and exception, all scanned first); and the test fixture destroyed an ambient `JARVIS_LOG_FILE` for the rest of the session. 47 tests, each fix red-proofed by neutering it. **Follow-up in the same PR:** the blocking bandit gate flagged both swallowed exceptions as NEW findings. Only the filter's last-ditch blank was suppressed (`# nosec B110`, with its reason); `_cover`'s per-handler swallow became a counted, warned coverage figure and `_managed_loggers`' registry-walk failure became a warning, closing the gap this row disclosed. 52 tests.",
-      "remaining": "This is one of the row's seven paths. Hermes applies `redact.py` to logs, verbose output, tool output, approval prompts, gateway messages, transcripts and memory; this slice covers LOGS. Still owed, and the rationale calls them the part that matters most: the hash-chained audit DB (a `cat .env` from `terminal_run` still writes a live credential into an append-only log that by design cannot be edited), the decision-inbox approval card the owner reads on a phone, task payloads, terminal output, and the observability exports — which Hermes scrubs unconditionally with no knob, returning `[redaction-unavailable]` rather than raw text. Also absent: the second mask mode (a syntactically INVALID `«redacted:ghp_…»` sentinel for file reads, so an agent cannot write a masked-but-plausible key back and silently kill the credential), `code_file=True` sparing source constants, `_mask_control_split_tokens()` for tokens smuggled across ANSI/zero-width characters, and the shared `.env` basename list. The two silent-degradation paths named at review are now CLOSED, after the SAST gate forced the question: a handler whose `addFilter` fails is counted and published through `uncovered_handler_count()` and a warning naming how many handlers are writing unredacted, and a `loggerDict` walk that raises warns that coverage fell back to root-only. The one silent swallow left is the filter's own last-ditch blank (`# nosec B110`), where a `logging.Filter` that raises would take down the caller's log call and the scanner has already failed. `install_log_redaction()` remains exported although the `everywhere` variant is what production uses.",
+      "remaining": "This is one of the row's seven paths. Hermes applies `redact.py` to logs, verbose output, tool output, approval prompts, gateway messages, transcripts and memory; this slice covers LOGS. Still owed, and the rationale calls them the part that matters most: the hash-chained audit DB (a `cat .env` from `terminal_run` still writes a live credential into an append-only log that by design cannot be edited), the decision-inbox approval card the owner reads on a phone, task payloads, terminal output, and the observability exports — which Hermes scrubs unconditionally with no knob, returning `[redaction-unavailable]` rather than raw text. Also absent: the second mask mode (a syntactically INVALID `«redacted:ghp_…»` sentinel for file reads, so an agent cannot write a masked-but-plausible key back and silently kill the credential), `code_file=True` sparing source constants, `_mask_control_split_tokens()` for tokens smuggled across ANSI/zero-width characters, and the shared `.env` basename list. The two silent-degradation paths named at review are now CLOSED, after the SAST gate forced the question: a handler whose `addFilter` fails is counted and published through `uncovered_handler_count()` and a warning naming how many handlers are writing unredacted, and a `loggerDict` walk that raises warns that coverage fell back to root-only. The one silent swallow left is the filter's own last-ditch blank (`# nosec B110`), where a `logging.Filter` that raises would take down the caller's log call and the scanner has already failed. `install_log_redaction()` remains exported although the `everywhere` variant is what production uses. **A later slice's full-suite run surfaced one more thing about this control, recorded here rather than fixed:** the scanner's `high_entropy_secret` pattern matches an ordinary filesystem path. Under `-n auto --dist loadfile` a warning naming a pytest tmp file arrived as `truncated: [REDACTED:high_entropy_secret].md`, which is what a real operator would see when a log line names a file with a long random-looking segment — a debuggability cost the module docstring already warns about in general terms, now with a concrete case. Separately, `setup_logging()` installs the filter on every handler of every logger and nothing took it back off, so every later test on the same xdist worker ran under a live redactor. The installer is PRODUCTION code, not the tests: `agents/run.py` calls `setup_logging()` at module level, so importing it installs the filter during pytest COLLECTION — before any fixture runs — and eight test files import it; `agents/web.py` calls it from the FastAPI lifespan, so any test that drives the app installs it again; five test files call it directly on top of that. There is no list of leaking files to fix. The cleanup therefore lives in `tests/conftest.py` as an autouse fixture that strips unconditionally BEFORE each test as well as after — a snapshot-and-restore fixture, which is what the two neighbouring isolation fixtures do and what this was first written as, treats a collection-time install as pre-existing and preserves it for the life of the worker. That version went green locally and RED in CI on exactly the test it was meant to fix. The first attempt at it matched by `isinstance` and silently did nothing: `agents/` is on `sys.path`, so `core.security.log_redaction` and `agents.core.security.log_redaction` are two module objects over this one file with two distinct `SecretRedactionFilter` classes, and the root handler was carrying the other one. The match is by class name now, and four paired tests pin both halves — including the alternate import path, which is the case the first attempt missed.",
       "evidence": [
         {
           "path": "agents/core/security/log_redaction.py",
@@ -3541,7 +3579,7 @@
         },
         {
           "path": "tests/test_log_redaction.py",
-          "sha256": "f65255b0cfe87b9a503f61af569fb4778869e60c18fc041fc672499a73212a25"
+          "sha256": "87b2ae524464b760aedd8f089a427fd4b23099b6ee5f815ccd28304ab0b3ba31"
         }
       ]
     },
@@ -3563,6 +3601,35 @@
         {
           "path": "tests/test_pairing_secrets_at_rest.py",
           "sha256": "8f5bf2fe7d3b60944267ec55128e48c2d3970a0d09bfc8e6f3ec6e34f71b1e5a"
+        }
+      ]
+    },
+    {
+      "id": "H502",
+      "row_sha256": "eb85116b7db6a25c51add0469ce9243053cbc58ea36d636d997830153fb6e6cb",
+      "status": "partial",
+      "summary": "**`JARVIS_MCP_STDIO_ENV_BASELINE` flips from opt-in to default-on**, so a spawned stdio MCP server is handed the `STDIO_ENV_ALLOWLIST` baseline plus its own `env` instead of `os.environ.copy()` — API keys, tokens, proxies and every `JARVIS_*` setting withheld. A second flag, `JARVIS_MCP_STDIO_ALLOWED_ENV`, is the owner-reachable migration remedy: a comma-separated list of host variable names that pass the baseline even when `_SECRET_LIKE` matches them. `_merged_env()` emits one INFO line per connect counting host values the child does not receive, carrying **no variable name and no value**. `GET /api/admin/mcp` rows gain `env_baseline`. And Nerva's own WorldView MCP server is handed its `WORLDVIEW_API_URL`, which the flip would otherwise have silently replaced with the built-in `http://localhost:4000`. **The review found two blocking majors and four false claims; all six are addressed.** **(1)** `routers/mcp.py` asserted an invariant the code did not hold: the comment said a row that spawns no subprocess reports `None` \"rather than a badge it has not earned\" and enumerated two cases. A third exists and is the only one an owner can create today — `POST /api/admin/mcp` does no command validation, so a row with a whitespace-only command or a shell metacharacter persists, and `connect()` answers `unsafe_command` from `_command_argv()` **before** `create_subprocess_exec`. Such a row reported `env_baseline: true` for a child that never existed; the row now calls the same `_command_argv()` `connect` does, so the two cannot disagree, and the guard test carries both spellings. **(2)** `BACKLOG.md` still shipped the pre-flip claim and therefore stated the OPPOSITE of the code — \"opt-in, default-off … keeps working until the owner opts in\" — in the one file `CLAUDE.md` tells a reader to query for what is delivered. That is exactly the misreading the slice's own documentation work exists to prevent. Corrected, and `test_env_baseline_is_documented_as_defence_in_depth_not_a_boundary` now covers BACKLOG.md too, including a check that the \"opt-in, default-off\" wording is gone. Two wording corrections went with them: the `env_baseline` field describes the live FLAG, i.e. the posture for the NEXT spawn, not the environment the running child holds (`_merged_env()` runs once at connect, the row is read per request); and the migration note steered the reader at auth failures only, when the flip also withholds `PYTHONPATH`, `NODE_OPTIONS`, `SSH_AUTH_SOCK`, `HTTPS_PROXY`/`NO_PROXY` and `GIT_CONFIG_GLOBAL` — plumbing whose absence produces an ImportError, a hang or a connect timeout, nothing resembling an auth error.",
+      "remaining": "**The documented per-server `env` migration path does not exist as a reachable surface.** `MCPServerConfig` has no `env` field, `POST /api/admin/mcp` drops the key (pydantic's default `extra=\"ignore\"`), and neither `to_config` nor `load_from_config` writes or reads one. The only remedy an owner can actually reach is the **host-wide** `JARVIS_MCP_STDIO_ALLOWED_ENV`, which is a strictly weaker grant than the per-server one the docs describe: an owner whose forge server needs `GITHUB_TOKEN` must allow it for every stdio server on the host. Whether to ship on that or build the per-server surface first is a product decision, written up as `docs/OWNER_TASKS.md` §P28.3 with both options. **Related and also owner-level:** `XAUTHORITY` and `DBUS_SESSION_BUS_ADDRESS` are both on `STDIO_ENV_ALLOWLIST`, and today one is listed-but-silently-dropped while the other is listed-and-handed-over — they should be consistent in one direction or the other. **And the honest ceiling, stated wherever the guarantee is:** this is **defence in depth, not a security boundary**. The child is same-UID with no namespace, so a server that can run a subprocess reads the withheld variables straight out of `/proc/<ppid>/environ`. What the baseline buys is that a *careless* or *curious* server does not get them by accident, and that an owner's `JARVIS_*` settings are not ambient in a third party's process. It does not stop an adversary, and the row says so rather than implying otherwise. **Unaddressed from the row:** there is no refusal of an MCP entry that is a backdoor wearing an MCP costume — no command allow-listing, no signature or provenance check on the spawned binary, and `POST /api/admin/mcp` still accepts any command string. This slice hardens what the child *receives*; the row also asks who the child is allowed to *be*.",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
+        },
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "1366071f1a5824737de17f0be47964f208f21d5428a6e6487184c5cf53ed54c4"
+        },
+        {
+          "path": "agents/core/mcp/worldview_write.py",
+          "sha256": "75fea632403b9a492046546575d457a5d523ae930c304c64f1023e09fe1f47d5"
+        },
+        {
+          "path": "tests/test_mcp_transports.py",
+          "sha256": "019833f794f49813dbaec03918f124ee53e5230dd5f085332ada314a3233da97"
+        },
+        {
+          "path": "tests/test_mcp_admin.py",
+          "sha256": "21031150acccdb69eb4873940a6a6a23f3014a78551224bc4e438dd97dffd56a"
         }
       ]
     },
@@ -4100,7 +4167,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "tests/test_mcp_tool_filters.py",
@@ -4117,7 +4184,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "tests/test_mcp_tool_filters.py",
@@ -4134,7 +4201,7 @@
       "evidence": [
         {
           "path": "agents/core/mcp/client.py",
-          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+          "sha256": "29e0a6e2ecb6d389a994c96e226f298f1651fdcb1e3b8cc5ab9bdfbcbcbdc4a6"
         },
         {
           "path": "agents/core/llm/tool_dialects.py",
@@ -4769,7 +4836,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -4906,7 +4973,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -5145,7 +5212,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "6c69694515a8d972635b7a07279e2905910e0811a4e24aa7303e3f20b9a37cb0"
+          "sha256": "9576c866a5805684ced5522ece8b3adbebd25c5f39ec6019e73320c9abf00ffa"
         },
         {
           "path": "agents/core/checkpoint.py",
