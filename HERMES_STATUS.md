@@ -18,7 +18,7 @@ Din acestea, **15** au fost reevaluate pe cod în această livrare; **108** păs
 
 **Ținta acceptată în produs:** 590 rânduri; progres 123/590 = **20.8%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 122/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 124/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -49,7 +49,7 @@ Din acestea, **15** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-09-19T06:33:06Z`. Cod inspectat: `45be62bd63b5d7dbefaad74c7cad8599555727b4`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-19T06:41:04Z`. Cod inspectat: `8c7bd046006d5ab57e50424c4d39a7d42c5691f4`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

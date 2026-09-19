@@ -11,10 +11,15 @@ These are the productionization pieces a credible 1.0 needs so a supervisor
 - ``core.log.setup_logging`` — attaches a ``RotatingFileHandler`` only when
   opted in (``$JARVIS_LOG_FILE`` or ``system.log_to_file``); never crashes boot.
 """
+import errno
 import inspect
 import logging
 import os
+import shutil
+import socket
+import subprocess
 import sys
+import tempfile
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from types import SimpleNamespace
@@ -365,3 +370,313 @@ def test_assert_safe_bind_allows_open_bind_with_ack(monkeypatch):
     monkeypatch.delenv("JARVIS_ADMIN_TOKEN", raising=False)
     monkeypatch.setenv("JARVIS_ALLOW_INSECURE_BIND", "1")
     serve.assert_safe_bind("0.0.0.0")   # explicit insecure acknowledgement → allowed
+
+
+# ── serve.probe_bind — port-conflict diagnostic (H042) ────────────────────────
+#
+# Before this, a taken port produced uvicorn's bare `[Errno 98] address already in
+# use` + exit 3 — the same exit code it uses for a lifespan crash, so neither the
+# owner nor a supervisor could tell the two apart (ENV-122).
+
+def _taken_port():
+    """A live listener on an OS-assigned loopback port, plus that port.
+
+    OS-assigned (bind to 0) on purpose: a hardcoded 8080 would flake on any box
+    that happens to be running the hub.
+    """
+    lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lst.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(1)
+    return lst, lst.getsockname()[1]
+
+
+def _free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def test_probe_bind_names_the_taken_port_and_the_next_command(capsys):
+    """A busy port exits 12 with a sentence that names the address AND what to run
+    next — not a raw errno the owner has to interpret."""
+    listener, port = _taken_port()
+    try:
+        with pytest.raises(SystemExit) as exc:
+            _fresh_serve().probe_bind("127.0.0.1", port)
+        assert exc.value.code == 12          # distinct from uvicorn's STARTUP_FAILURE (3)
+        err = capsys.readouterr().err
+        assert f"127.0.0.1:{port}" in err    # names the exact address that is taken
+        assert "nerva status" in err         # ...and the command that identifies the holder
+        assert "JARVIS_PORT" in err          # ...and the way out
+    finally:
+        listener.close()
+
+
+def test_probe_bind_is_silent_on_a_free_port():
+    """The happy path says nothing and does not exit — a diagnostic that fired on a
+    free port would be worse than no diagnostic at all."""
+    port = _free_port()
+    assert _fresh_serve().probe_bind("127.0.0.1", port) is None
+    # And the port is still bindable afterwards.
+    after = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        after.bind(("127.0.0.1", port))
+    finally:
+        after.close()
+
+
+def test_probe_bind_closes_its_socket_explicitly():
+    """The probe must close what it opened in a ``finally``, not lean on CPython
+    refcounting: under a deferred-GC runtime a still-open probe socket would widen
+    the very window between probe and real bind that the docstring calls out.
+
+    Asserting "the port is bindable again" cannot prove this — CPython drops the
+    last reference when ``probe_bind`` returns and closes the socket either way —
+    so observe the close directly.
+    """
+    serve = _fresh_serve()
+    port = _free_port()          # before the patch — _free_port opens/closes its own
+    closed = []
+    real_socket = socket.socket
+
+    class _Watched(real_socket):
+        def close(self):
+            closed.append(True)
+            super().close()
+
+    original = serve.socket.socket
+    try:
+        serve.socket.socket = _Watched
+        assert serve.probe_bind("127.0.0.1", port) is None
+    finally:
+        serve.socket.socket = original
+    assert closed, "probe_bind returned without closing its probe socket"
+
+
+def test_probe_bind_does_not_block_a_restart_over_time_wait():
+    """Regression guard for the flag choice.
+
+    uvicorn binds via ``loop.create_server``, and asyncio sets SO_REUSEADDR there on
+    POSIX — so a port merely holding a TIME_WAIT connection (the normal state right
+    after the owner Ctrl-C's an instance that had traffic) is still bindable by
+    uvicorn. A probe that omitted SO_REUSEADDR would be *stricter* than the real
+    bind and would refuse a restart that works. It must stay silent here.
+    """
+    if os.name != "posix":                       # pragma: no cover - POSIX-only premise
+        pytest.skip("asyncio only sets SO_REUSEADDR on POSIX")
+    lst, port = _taken_port()
+    client = socket.create_connection(("127.0.0.1", port))
+    conn, _ = lst.accept()
+    lst.close()
+    conn.close()      # server closes first → 127.0.0.1:port sits in TIME_WAIT
+    client.close()
+    # Sanity: the premise holds — a no-SO_REUSEADDR bind really is refused here.
+    strict = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        strict.bind(("127.0.0.1", port))
+    except OSError:
+        pass          # expected: this is the state that would cause a false positive
+    else:
+        pytest.skip("kernel did not hold the port in TIME_WAIT; premise not reproduced")
+    finally:
+        strict.close()
+    assert _fresh_serve().probe_bind("127.0.0.1", port) is None
+
+
+def test_probe_bind_ignores_port_zero(monkeypatch):
+    """Port 0 means 'any free port' — there is nothing to conflict with, so the
+    probe must not open anything. Asserting "returns None" alone would pass even
+    without the guard, so assert that no socket was created at all."""
+    serve = _fresh_serve()
+    opened = []
+    real_socket = socket.socket
+
+    def recording(*args, **kwargs):
+        opened.append(args)
+        return real_socket(*args, **kwargs)
+
+    monkeypatch.setattr(serve.socket, "socket", recording)
+    assert serve.probe_bind("127.0.0.1", 0) is None
+    assert opened == []
+
+
+def test_probe_bind_runs_after_the_posture_guards():
+    """Ordering is a security property, not a style choice: a mis-configured
+    hardened profile or an unauthenticated external bind must still fail closed
+    even when the port is also taken. The diagnostic comes last."""
+    src = inspect.getsource(_fresh_serve().main)
+    assert src.index("assert_safe_bind") < src.index("probe_bind")
+    assert src.index("assert_hardened_posture") < src.index("probe_bind")
+    assert src.index("probe_bind") < src.index("ensure_user_home")
+
+
+# ── probe_bind must never turn a working boot into a refusal ──────────────────
+#
+# The docstring's swallow guarantee is the whole safety case for adding a second
+# bind to the boot path. These three assert it literally, including the socket
+# *constructor* — which a first cut left above the ``try``, so `JARVIS_HOST=::1`
+# on a box without an IPv6 stack died with a traceback + exit 1 instead of
+# uvicorn's one-line error + exit 3. The diagnostic was making boots worse.
+
+def test_probe_bind_swallows_an_unrecognised_oserror_from_the_socket_constructor(
+    monkeypatch, capsys
+):
+    """``socket.socket()`` raises too, and that is not a diagnosis we can stand behind.
+
+    EAFNOSUPPORT is the real-world case (no IPv6 stack, ``JARVIS_HOST=::1``, which
+    ``boot_guards._LOOPBACK_HOSTS`` waves through). Patched here so the assertion
+    holds on a box that *does* have IPv6 — the unpatched version of this is the
+    test below, which skips when the premise is absent.
+    """
+    serve = _fresh_serve()
+
+    def refuses(*args, **kwargs):
+        raise OSError(errno.EAFNOSUPPORT, "Address family not supported by protocol")
+
+    monkeypatch.setattr(serve.socket, "socket", refuses)
+    assert serve.probe_bind("127.0.0.1", 8080) is None   # swallowed, never re-raised
+    assert capsys.readouterr().err == ""                 # and silent — uvicorn reports it
+
+
+def test_probe_bind_survives_an_address_family_this_box_does_not_have():
+    """The same guarantee against the real kernel rather than a patched constructor.
+
+    Skips where the premise cannot be reproduced, exactly like the TIME_WAIT test
+    above: on a dual-stack box AF_INET6 simply works and there is nothing to prove.
+    """
+    try:
+        socket.socket(socket.AF_INET6, socket.SOCK_STREAM).close()
+    except OSError:
+        pass                    # no IPv6 stack — this is the box the defect needs
+    else:
+        pytest.skip("this box has an IPv6 stack; EAFNOSUPPORT is not reproducible here")
+    assert _fresh_serve().probe_bind("::1", 8080) is None
+
+
+def test_probe_bind_exits_13_when_the_kernel_refuses_a_privileged_port():
+    """The EACCES arm, proven by execution instead of by reading it.
+
+    pytest runs as root here, where a sub-1024 bind just succeeds — so the branch
+    is driven in a child that has dropped to an unprivileged uid. Every premise it
+    needs is checked and skipped on rather than faked, because a test that quietly
+    asserts the root-only outcome would be worse than no test.
+    """
+    if os.name != "posix":                       # pragma: no cover - POSIX-only premise
+        pytest.skip("the sub-1024 privilege rule is POSIX")
+    if os.geteuid() != 0:
+        pytest.skip("not root: no privilege to drop, so EACCES cannot be staged")
+    if shutil.which("setpriv") is None:
+        pytest.skip("setpriv not available to drop privileges")
+    floor = Path("/proc/sys/net/ipv4/ip_unprivileged_port_start")
+    if not floor.exists() or int(floor.read_text().strip()) <= 1:
+        pytest.skip("kernel does not reserve port 1 for privileged users")
+
+    # conftest points JARVIS_HOME at a root-owned root, and pytest's own tmp_path
+    # lives under a 0700 /tmp/pytest-of-root — neither is traversable by the uid we
+    # drop to, and the child would die at import long before probe_bind. Hand it a
+    # world-traversable root of its own instead.
+    serve = _fresh_serve()
+    child_home = Path(tempfile.mkdtemp(prefix="h042-eacces-"))
+    child_home.chmod(0o777)
+    try:
+        proc = subprocess.run(
+            ["setpriv", "--reuid=65534", "--regid=65534", "--clear-groups",
+             sys.executable, "-c",
+             "import serve; serve.probe_bind('127.0.0.1', 1); print('PROBE-STAYED-SILENT')"],
+            cwd=str(Path(serve.__file__).resolve().parent),
+            env={**os.environ,
+                 "JARVIS_HOME": str(child_home),
+                 "JARVIS_KEY_DIR": str(child_home / "keys")},
+            capture_output=True, text=True, timeout=180,
+        )
+    finally:
+        shutil.rmtree(child_home, ignore_errors=True)
+
+    # Three outcomes, and only one of them may be skipped over: a child that never
+    # reached probe_bind at all. A child that reached it and stayed silent is a
+    # real failure and must be asserted, not skipped.
+    if proc.returncode != 13 and "PROBE-STAYED-SILENT" not in proc.stdout:
+        pytest.skip(f"unprivileged child could not run serve: {proc.stderr.strip()[:300]}")
+    assert proc.returncode == 13, (proc.returncode, proc.stdout, proc.stderr)
+    assert "127.0.0.1:1" in proc.stderr          # names the address it was refused
+    assert "ports below 1024" in proc.stderr     # ...and why
+    assert "JARVIS_PORT" in proc.stderr          # ...and the way out
+
+
+# ── the flag adversarial review found missing ────────────────────────────────
+
+def test_probe_bind_sets_v6only_so_it_is_not_stricter_than_uvicorns_bind(monkeypatch):
+    """The probe must set every flag asyncio sets, and V6ONLY was missing.
+
+    ``BaseEventLoop.create_server`` sets ``IPV6_V6ONLY`` on every AF_INET6 socket
+    (CPython 3.12 ``base_events.py``, six lines below the SO_REUSEADDR it already
+    mirrored). Without it the probe performs a DUAL-STACK bind where uvicorn
+    performs a v6-only one: on Linux with the default ``net.ipv6.bindv6only=0``,
+    anything IPv4-only holding ``0.0.0.0:<port>`` makes ``JARVIS_HOST=::`` exit 12
+    from a boot uvicorn would have completed — the one thing `probe_bind`'s
+    docstring says it must never do, and EADDRINUSE is the arm that exits rather
+    than being swallowed.
+
+    Recorded through a stub rather than a live socket on purpose: this asserts the
+    PRODUCTION call is made, and it runs on a box with no IPv6 stack (this one has
+    none). The kernel behaviour it prevents is the test below, which skips here.
+    """
+    calls = []
+
+    class _Stub:
+        def __init__(self, family, type_):
+            self.family = family
+
+        def setsockopt(self, level, optname, value):
+            calls.append((level, optname, value))
+
+        def bind(self, addr):
+            pass
+
+        def close(self):
+            pass
+
+    serve = _fresh_serve()
+    monkeypatch.setattr(serve.socket, "socket", lambda fam, typ: _Stub(fam, typ))
+    serve.probe_bind("::1", 8080)
+
+    assert (socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, True) in calls, (
+        "probe_bind did not set IPV6_V6ONLY on an AF_INET6 socket, so it is a "
+        f"dual-stack bind where uvicorn's is not; calls were {calls}"
+    )
+
+    calls.clear()
+    serve.probe_bind("127.0.0.1", 8080)
+    assert not any(level == socket.IPPROTO_IPV6 for level, _o, _v in calls), (
+        "IPV6_V6ONLY was set on an AF_INET socket, which raises on a real socket"
+    )
+
+
+def test_probe_bind_stays_silent_when_only_an_ipv4_listener_holds_the_port():
+    """The kernel half of the same guarantee. Skips without an IPv6 stack.
+
+    An IPv4-only listener on ``0.0.0.0:<port>`` does not conflict with uvicorn's
+    v6-only ``[::]:<port>`` bind. The probe must agree with uvicorn and say
+    nothing; before the flag it raised SystemExit(12) here.
+    """
+    try:
+        probe = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        probe.close()
+    except OSError:                              # pragma: no cover - env-dependent
+        pytest.skip("no usable IPv6 stack on this box")
+
+    lst = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lst.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    lst.bind(("0.0.0.0", 0))
+    port = lst.getsockname()[1]
+    lst.listen(1)
+    try:
+        assert _fresh_serve().probe_bind("::", port) is None, (
+            "the probe refused a bind uvicorn performs: an IPv4 wildcard listener "
+            "does not conflict with a v6-only bind on the same port"
+        )
+    finally:
+        lst.close()
