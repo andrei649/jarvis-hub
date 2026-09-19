@@ -11,14 +11,14 @@ Din acestea, **14** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 122 | 17.5% |
-| Parțial | 327 | 46.9% |
+| Parțial | 315 | 45.2% |
 | Lipsă | 92 | 13.2% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 49 | 7.0% |
+| De reverificat | 61 | 8.8% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 122/590 = **20.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 81/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 69/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -26,7 +26,7 @@ Din acestea, **14** au fost reevaluate pe cod în această livrare; **108** păs
 
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 16 | 17 | 3 | 10 | 10 |
+| cli | 56 | 16 | 16 | 3 | 10 | 11 |
 | gateway | 33 | 5 | 11 | 6 | 5 | 6 |
 | platforms | 39 | 5 | 20 | 5 | 8 | 1 |
 | web | 40 | 9 | 16 | 6 | 7 | 2 |
@@ -34,16 +34,16 @@ Din acestea, **14** au fost reevaluate pe cod în această livrare; **108** păs
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
 | config | 18 | 4 | 9 | 3 | 1 | 1 |
 | env | 28 | 2 | 16 | 2 | 5 | 3 |
-| tools — the agent-callable surface | 32 | 8 | 16 | 3 | 2 | 3 |
-| skills | 33 | 6 | 13 | 6 | 8 | 0 |
+| tools — the agent-callable surface | 32 | 8 | 15 | 3 | 2 | 4 |
+| skills | 33 | 6 | 11 | 6 | 8 | 2 |
 | providers | 27 | 4 | 12 | 3 | 7 | 1 |
-| agent-core | 36 | 7 | 11 | 9 | 4 | 5 |
-| memory | 27 | 8 | 10 | 3 | 2 | 4 |
-| automation | 32 | 1 | 20 | 3 | 3 | 5 |
-| security | 34 | 7 | 17 | 4 | 5 | 1 |
-| media | 27 | 7 | 15 | 4 | 1 | 0 |
+| agent-core | 36 | 7 | 10 | 9 | 4 | 6 |
+| memory | 27 | 8 | 9 | 3 | 2 | 5 |
+| automation | 32 | 1 | 19 | 3 | 3 | 6 |
+| security | 34 | 7 | 14 | 4 | 5 | 4 |
+| media | 27 | 7 | 14 | 4 | 1 | 1 |
 | acp-mcp-dev | 33 | 3 | 13 | 11 | 6 | 0 |
-| docs-features | 48 | 8 | 24 | 5 | 9 | 2 |
+| docs-features | 48 | 8 | 23 | 5 | 9 | 3 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
 | delta | 42 | 3 | 26 | 5 | 5 | 3 |
 
