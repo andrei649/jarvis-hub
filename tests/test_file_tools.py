@@ -329,7 +329,13 @@ async def test_kernel_hook_deny_refuses_before_bytes_move(workspace, tmp_path, m
     assert (workspace / "notes.txt").read_text(encoding="utf-8") == "hello"
     action = kernel.calls[0]
     assert action.kind == KIND and action.payload["op"] == "write"
-    assert set(action.payload) == {"op", "path", "bytes", "snapshot_ref"}
+    # H506 extended this shape: the kernel now decides a file.write knowing whether
+    # the target steers a future run (SOUL.md / AGENTS.md / ...). Still an exact
+    # set — nothing else may ride along into the Action payload.
+    assert set(action.payload) == {
+        "op", "path", "bytes", "snapshot_ref", "steers_future_runs",
+    }
+    assert action.payload["steers_future_runs"] is False  # notes.txt is ordinary
     assert any(c["action"] == "file.kernel_denied" for c in audit.calls)
 
 

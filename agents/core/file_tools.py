@@ -30,6 +30,33 @@ Governance (MOONSHOT §5):
   the ToolRPC server reaches solely from :meth:`ToolRPCServer.execute`).
   Nothing here self-authorizes; the kernel registration itself is the
   integrator's edit (see the slice report).
+* H506 (write half) — a file that *steers a future run* (``SOUL.md``,
+  ``SOUL.local.md``, ``AGENTS.md``, ``CLAUDE.md``, ``GEMINI.md``,
+  ``.cursorrules``; see :data:`INSTRUCTION_FILE_NAMES`) is its own class on top of
+  that contract, enforced in two places that are **not** the same strength:
+
+  1. *On the production path*, :func:`register_file_tools` registers
+     :meth:`FileTools.classify_mutation` as the ToolRPC ``classifier`` for both
+     gated tools. The approval card the owner reads then names the class
+     (``class='agent_instructions'``, title ``… — this file steers future runs``)
+     instead of being byte-identical to a write to a scratch note, and
+     :meth:`ToolRPCServer.execute` re-derives the class from the args about to run
+     and refuses (``approval_class_mismatch``) unless the approved card carried it.
+     So an instruction-file write executes only off an approval that told the
+     owner what it was. This holds with the kernel off, which is the default, and
+     no caller can pass it — the handler is never reached.
+  2. *On this module's own API*, :meth:`FileTools._mutate` additionally refuses an
+     instruction-file mutation without ``approved=True``, whatever the kernel says
+     and whether or not it is on. This one is defense-in-depth for a future
+     in-process caller of ``write_file`` / ``delete_file``; the shipped ToolRPC
+     path passes it **by design**, because it only runs after the owner decided
+     the card. It is therefore weaker than ``skill.install``'s permanent owner
+     floor (:meth:`PromotionBroker.propose`), which has no caller-supplied flag at
+     all — do not read the two as the same guarantee.
+
+  Not shipped here: the *read* half. ``Agent._load_soul`` still splices
+  ``SOUL.md`` into the system prompt with no injection scan — a separate change
+  that needs a product decision about what a blocked SOUL means.
 * Default-off: :func:`register_file_tools` is a no-op unless
   ``JARVIS_FILE_TOOLS`` is set. Roots come from ``JARVIS_FILE_ROOTS``
   (default ``data_path('workspace')``); the byte cap from
@@ -47,6 +74,7 @@ longer matches its reference and restore refuses.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -182,6 +210,79 @@ def _has_secret_part(relative_parts: Sequence[str]) -> bool:
         elif part in relative_parts:
             return True
     return any(looks_secret_name(part) for part in relative_parts)
+
+
+# ── instruction-file policy (H506) ───────────────────────────────────────────
+
+# Files whose *contents* steer a future run. ``Agent._load_soul``
+# (agents/core/agent.py) reads ``SOUL.local.md`` → ``SOUL.md`` straight into the
+# system prompt, and the assistant harnesses around this repo load ``AGENTS.md``
+# / ``CLAUDE.md`` / ``GEMINI.md`` / ``.cursorrules`` as standing instructions.
+# Writing one of these is not an ordinary edit — it is an edit to what Nerva will
+# be *told to do* next time — so it is its own class layered on top of
+# ``file.write``: the owner's approval card names it, and the approved execution
+# is refused unless the card did (see the module docstring for which half of this
+# is on the production path and which is defense-in-depth on this API).
+#
+# Matched on the *basename*, in any directory inside the roots: an instruction
+# file is wherever the harness that reads it looks, and ``_load_soul`` alone
+# searches three roots. The trade is deliberate and known — an owner-legitimate
+# note called ``claude.md`` anywhere in the workspace now always asks — and
+# asking is the side of that trade to be wrong on.
+#
+# ``heartbeat.md`` / ``heartbeat.local.md`` are the sharpest case in this repo and were
+# missing from the first cut. ``core/heartbeat.py`` scans every agent directory for
+# them and turns their contents into CRON-SCHEDULED agent runs, with the gitignored
+# ``.local`` overlay winning — the same overlay convention as ``SOUL.local.md``, whose
+# sibling was already here. A file whose literal job is to schedule future runs cannot
+# be the one that asks with the title of a scratch note.
+INSTRUCTION_FILE_NAMES = frozenset({
+    "soul.md", "soul.local.md", "agents.md", "claude.md", "gemini.md", ".cursorrules",
+    "heartbeat.md", "heartbeat.local.md",
+})
+INSTRUCTION_CLASS = "agent_instructions"
+#: The one line the owner reads on the approval card. It is the whole point of the
+#: class: the ask for SOUL.md must not look like the ask for a scratch note.
+INSTRUCTION_NOTICE = "this file steers future runs"
+
+
+def looks_instruction_name(name: object) -> bool:
+    """True when a file *name* is one a future run is steered by (case-insensitive)."""
+    return str(name or "").strip().lower() in INSTRUCTION_FILE_NAMES
+
+
+def instruction_labels(*names: object) -> dict[str, Any] | None:
+    """The H506 class labels when any of *names* steers a future run, else ``None``.
+
+    One builder for both sides of the approval — the card :meth:`ToolRPCServer.handle`
+    enqueues and the floor inside :meth:`FileTools._mutate` — so the two can never
+    disagree about what is in the class.
+    """
+    if not any(looks_instruction_name(name) for name in names):
+        return None
+    return {
+        "class": INSTRUCTION_CLASS,
+        "steers_future_runs": True,
+        "notice": INSTRUCTION_NOTICE,
+    }
+
+
+def _requested_name(raw_path: object) -> str:
+    """The basename as the caller spelled it, *before* symlink resolution.
+
+    :meth:`FileScope.resolve` already returns a fully realpath-ed target, so a
+    write aimed at ``notes.md`` that is a symlink to ``SOUL.md`` arrives here
+    already named ``SOUL.md`` — the resolved name covers that direction. The
+    reverse it does not cover: ``SOUL.md`` symlinked onto ``real.md`` resolves to
+    ``real.md``, while every harness still *reads* it through the ``SOUL.md``
+    name. So the spelling the caller used is checked as well.
+    """
+    if not isinstance(raw_path, str) or not raw_path:
+        return ""
+    try:
+        return Path(raw_path).name
+    except (OSError, ValueError):  # pragma: no cover - defensive
+        return ""
 
 
 # ── scope ────────────────────────────────────────────────────────────────────
@@ -739,10 +840,39 @@ class FileTools:
             self._record("file.contract_denied", f"{op} {target}: {reason}", ok=False)
             return {"ok": False, "reason": reason, "snapshot_ref": snap.ref}
 
+        # H506 — does this write steer a future run? Checked on both the resolved
+        # target and the name the caller spelled, because a symlink can hide one
+        # behind the other in either direction (see :func:`_requested_name`).
+        # Carried in the payload so the kernel decides *knowing* that.
+        labels = instruction_labels(target.name, _requested_name(raw_path))
+        steers = labels is not None
+        payload["steers_future_runs"] = steers
+
         denied = self._authorize(op, target, payload, approved=approved)
         if denied is not None:
             self._record("file.kernel_denied", f"{op} {target}: {denied}", ok=False)
             return {"ok": False, "reason": denied, "snapshot_ref": snap.ref}
+        # A floor on *this API surface*, for any caller that reaches write_file /
+        # delete_file directly: such a call must say ``approved=True`` for an
+        # instruction file, whatever the kernel says and whether or not it is on.
+        # It sits after the kernel so a DENY keeps its own, more informative reason.
+        #
+        # Scope, plainly: the shipped ToolRPC path passes this floor by design —
+        # :func:`register_file_tools`' closures run only from
+        # :meth:`ToolRPCServer.execute`, i.e. only after the owner decided the card,
+        # and they pass ``approved=True``. What makes the class distinct *there* is
+        # the classifier: the card names the class (see
+        # :meth:`FileTools.classify_mutation`) and ``execute`` refuses a call whose
+        # approved card did not carry it. This floor is the belt for a future
+        # in-process caller, not the braces the owner sees.
+        if steers and not approved:
+            self._record("file.instruction_floor", f"{op} {target}", ok=False)
+            return {
+                "ok": False,
+                "reason": "approval_required",
+                "class": INSTRUCTION_CLASS,
+                "snapshot_ref": snap.ref,
+            }
 
         def _apply() -> None:
             if op == "delete":
@@ -782,7 +912,10 @@ class FileTools:
             return None
         action = Action(
             kind=KIND, agent=self.agent, title=f"file {op} {target.name}",
-            payload={k: payload[k] for k in ("op", "path", "bytes", "snapshot_ref")},
+            payload={
+                k: payload[k]
+                for k in ("op", "path", "bytes", "snapshot_ref", "steers_future_runs")
+            },
             origin=current_action_origin(),
         )
         try:
@@ -840,6 +973,26 @@ class FileTools:
         return True
 
     # ── preflights (bound to this scope) ─────────────────────────────────────
+
+    def classify_mutation(self, args: Mapping[str, Any]) -> dict[str, Any] | None:
+        """H506 — the class labels for a ``file_write`` / ``file_delete`` call.
+
+        Registered as the ToolRPC ``classifier`` for both gated tools, so it runs at
+        *intake* (stamping the owner's approval card) and again at *execution*
+        (where a mismatch against the approved card refuses the call). It is a pure
+        look at the arguments: no bytes move, nothing is authorized here.
+
+        Both symlink directions are covered, as in :meth:`_mutate`: the name the
+        caller spelled, and — best effort, because intake must not fail on a path
+        that has not been validated yet — the name it resolves to.
+        """
+        raw_path = (args or {}).get("path")
+        names: list[object] = [_requested_name(raw_path)]
+        # An unresolvable path is the preflight's refusal to make, not ours — but the
+        # spelled name has already been checked, so nothing in the class slips past.
+        with contextlib.suppress(FileScopeError, OSError, ValueError):
+            names.append(self.scope.resolve(raw_path).name)
+        return instruction_labels(*names)
 
     def preflight(self, name: str) -> Callable[[dict], Mapping]:
         spec = FILE_TOOL_SPECS[name]
@@ -1146,7 +1299,9 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
     "file_write": {
         "description": (
             "Propose replacing one file's contents inside the owner's file roots; "
-            "runs only after approval, with the previous bytes snapshotted for restore."
+            "runs only after approval, with the previous bytes snapshotted for restore. "
+            "A file that steers a future run (SOUL.md, AGENTS.md, CLAUDE.md, ...) is "
+            "asked as its own class and the owner is told so."
         ),
         "gated": True,
         "trusted_execution": True,
@@ -1165,7 +1320,8 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
     "file_delete": {
         "description": (
             "Propose deleting one file inside the owner's file roots; runs only after "
-            "approval, with the bytes snapshotted for restore."
+            "approval, with the bytes snapshotted for restore. Deleting a file that "
+            "steers a future run is asked as its own class."
         ),
         "gated": True,
         "trusted_execution": True,
@@ -1214,15 +1370,24 @@ def register_file_tools(
 
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
-        # (gated tools never run inline from handle()).
+        # (gated tools never run inline from handle()), and only after that
+        # execute matched the call's H506 class against the approved card.
         return await instance.write_file(args, approved=True)
 
     async def _delete(args: dict) -> dict:
         return await instance.delete_file(args, approved=True)
 
+    def _classify(args: dict) -> Mapping[str, Any] | None:
+        # H506 — server-owned, registered here, never selectable by call data: a
+        # sandboxed script cannot label its own write, nor strip the label off one.
+        return instance.classify_mutation(args)
+
     handlers = {
         "file_read": _read, "file_list": _list, "file_search": _search,
         "file_write": _write, "file_delete": _delete,
+    }
+    classifiers: dict[str, Callable[[dict], Mapping[str, Any] | None]] = {
+        "file_write": _classify, "file_delete": _classify,
     }
     registered: list[str] = []
     for name, spec in FILE_TOOL_SPECS.items():
@@ -1235,6 +1400,7 @@ def register_file_tools(
             capability_id=spec["capability_id"],
             preflight=instance.preflight(name),
             trusted_execution=spec["trusted_execution"],
+            classifier=classifiers.get(name),
         )
         registered.append(name)
     return registered
@@ -1245,5 +1411,7 @@ __all__ = [
     "FILE_WRITE_CONTRACT", "FILE_TOOL_SPECS", "GATED_TOOL_KINDS",
     "FileScope", "FileScopeError", "FileTools", "Snapshot", "SnapshotStore",
     "SECRET_NAME_TOKENS", "looks_secret_name", "restore_snapshot", "register_file_tools",
+    "INSTRUCTION_FILE_NAMES", "INSTRUCTION_CLASS", "INSTRUCTION_NOTICE",
+    "looks_instruction_name", "instruction_labels",
     "file_tools_enabled",
 ]
