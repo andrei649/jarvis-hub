@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c92abb0ee01db4c830b7b82c553e4c762db39af4",
-  "assessed_at": "2026-09-18T11:35:00Z",
+  "base_sha": "f89a7b931446463c5963bcbed54665527faefaf6",
+  "assessed_at": "2026-09-19T07:59:26Z",
   "reviews": [
     {
       "id": "H001",
@@ -14,11 +14,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",
@@ -89,11 +89,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -106,11 +106,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -123,11 +123,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -140,11 +140,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -190,11 +190,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -232,11 +232,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -308,7 +308,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_desktop_setup.py",
@@ -329,7 +329,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_prompt_size.py",
@@ -346,11 +346,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -363,11 +363,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",
@@ -388,11 +388,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",
@@ -430,7 +430,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/commands.py",
@@ -451,7 +451,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/commands.py",
@@ -472,11 +472,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",
@@ -555,11 +555,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",
@@ -858,19 +858,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         }
       ]
     },
@@ -1315,7 +1315,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
+          "sha256": "2e73717f3c5994e03218c790d78b6bf5f2366a309687bc75b4c0c660e026e845"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -1404,7 +1404,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
+          "sha256": "2e73717f3c5994e03218c790d78b6bf5f2366a309687bc75b4c0c660e026e845"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -1624,32 +1624,32 @@
       "id": "H199",
       "row_sha256": "1cd105df91f9f4d98563965ec01e5c43dd76b860d72a706db0a7327e9720576a",
       "status": "partial",
-      "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea există acum (PATCH /api/jobs/{id}, `nerva jobs edit`, formular în panou), dar rândul cere în plus un constructor vizual de program, ținte de livrare per job și galeria de 16 blueprint-uri tipizate; Nerva are 3 blueprint-uri și nicio țintă per job.",
+      "summary": "Motorul SQLite, CLI și HUD pot crea, edita, porni, pune pe pauză, relua și șterge joburi; există istoric, un constructor vizual de program, galeria de 16 blueprint-uri tipizate (`BLUEPRINTS` din `jobs.py`, bază + `EXTRA_BLUEPRINTS`) și o țintă de livrare per job (`Job.channel`). Reevaluat 2026-09-19: textul anterior spunea „3 blueprint-uri și nicio țintă per job\" — ambele expirate.",
+      "remaining": "„Deliver to\" în Hermes e o listă cu mai multe ținte bifabile; Nerva are o singură țintă per job (`channel: str | None`), nu mai multe. Avertismentul de impact al modelului și toast-ul de confirmare pentru un model scump nu sunt verificate în panou. Crearea unui job trebuie să treacă prin kernel (`schedule.create` nou, sau `goal.approve` refolosit) — kind în `agents/core/kernel/**`, path protejat, sarcina owner-ului. NEVERIFICAT pe scheduler și canale reale.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
+          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         }
       ]
     },
@@ -1662,7 +1662,7 @@
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
-          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+          "sha256": "5a74c8f280d8f97d48b6bd891dd5ab6073f90395917f087063df43a9aac5e0f7"
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
@@ -1683,15 +1683,15 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
         }
       ]
     },
@@ -1704,15 +1704,15 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
         }
       ]
     },
@@ -1778,15 +1778,15 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "dd003486f74c5e0a1822d9bc3273d65f98396d34fa7bcb0f6fa7f643c21d15d4"
+          "sha256": "82b6fe99d7c09da17bf22739e130399a9d12f5a4bf8119e8aab1ac15f48cbf7f"
         }
       ]
     },
@@ -1799,7 +1799,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -1807,7 +1807,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -1823,23 +1823,23 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
+          "sha256": "0aac39c7a049f6cd31cada57e6e3a289e1fa7ad322a145d6b2eca089fa16b90a"
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
+          "sha256": "9ad457a5d66c951e14b59b6766f1b60daf1187da7c44952aeb572729f4db1c87"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
+          "sha256": "5adddc9deb061dd23a335da593a4666f6c606ecd8de24388360b2b5604916e0e"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
+          "sha256": "b243e5cfde7b041a15551d66347bde5448e71a280c87a5e84a313ecde022c4a0"
         }
       ]
     },
@@ -2106,7 +2106,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2114,7 +2114,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2126,7 +2126,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "9dc22c8879ba680f2942a9bd560c5fcde2e9992156fc09d86e0d5eb07c170346"
+          "sha256": "a4eb4a7223c78c75c5731ff1d049d63311638773c728f534e93cddce54b94485"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -2138,35 +2138,35 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cd9f7f9b3c61ccdaf8bf3fef1969c71f4937c6adc59bc5e157c9842c8c72cec2"
+          "sha256": "0aac39c7a049f6cd31cada57e6e3a289e1fa7ad322a145d6b2eca089fa16b90a"
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "095da57835ad79dda2d298b8a0020d8bd9d4d778d0561d4614fbd674532d8999"
+          "sha256": "c636d4f1a31d81a1d8ca1ffeb64e11b57d3b00b12923cd3a0185ef480d88280c"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "464545ffcf9c294fc6d9bf7a1e4ee652f3b9cd3a6ebaaacfcb3cb0ade9e34a6b"
+          "sha256": "9ad457a5d66c951e14b59b6766f1b60daf1187da7c44952aeb572729f4db1c87"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "de3b281de96d9d36ca50d34c0fce15e6cac3370082ea63e697d4080157e260e1"
+          "sha256": "5adddc9deb061dd23a335da593a4666f6c606ecd8de24388360b2b5604916e0e"
         },
         {
           "path": "tests/test_session_kernels.py",
-          "sha256": "e1e5c2bc361bee48e6ab9199c521d6e4fd52ffef30b70e5c68488c37b4ac4a7a"
+          "sha256": "b243e5cfde7b041a15551d66347bde5448e71a280c87a5e84a313ecde022c4a0"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "9ba1ca27180b4b4818a437760c0825b30a43846771b1806d11da11fe20eb3930"
+          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "b9b9f3e89eddd7dbdbfbc224f60b782ca2dd1c746cdddadf87bc599d8b3fb277"
+          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
-          "sha256": "4c73bee6a76b04513c4169f75c4e4899287fd541d06b1b247d0b04dc445129a0"
+          "sha256": "e807de9a6af22d15c6222709ed0e564ab1ad74b1ed3d25201cdd5ca6c0818808"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -2174,7 +2174,7 @@
         },
         {
           "path": "agents/core/tool_result_store.py",
-          "sha256": "c28b131f21e4fb6933954b01da348a48f05df7b4ade23f167afb52439d457783"
+          "sha256": "2026e456e05be1d619714f11cc55242e78c5f58630181533ca495b0f53424597"
         },
         {
           "path": "agents/core/environments/output_limits.py",
@@ -2182,7 +2182,7 @@
         },
         {
           "path": "tests/test_tool_result_store.py",
-          "sha256": "922c21d965226b4e1dacb555deff6f6c5ac7b60bc2aba8976f403fbb34c9949d"
+          "sha256": "1384edef022d3a2da196b5fa3fa43b0d019e5fc4a311105f9a118498735fef74"
         }
       ]
     },
@@ -2215,24 +2215,24 @@
       "id": "H312",
       "row_sha256": "84f70dcd63be6cb22a5a7a54cbc0947ff6714b0090ce4e5eb28d27fcf512c097",
       "status": "partial",
-      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact.",
-      "remaining": "Lipsesc upscalingul, alegerea modelului/backend-ului si mai multe imagini de referinta; editarea nu este probata pe un ComfyUI real. Video lipseste in intregime.",
+      "summary": "Generare locala din prompt si editare (image-to-image) prin ComfyUI, cu aceeasi aprobare exacta; imaginea de referinta se rezolva doar printr-un ID opac de artefact. Reevaluat 2026-09-19: alegerea backend-ului există pe cerere (`backend` — ComfyUI local implicit sau `openai`, `media_backends/openai_image.py`, în spatele aceleiași aprobări), upscale 2× (singura valoare acceptată de `comfyui.py`) și până la 4 imagini de referință ca ID-uri opace de artefact, validate înainte de dispatch.",
+      "remaining": "Video lipsește în întregime. Upscale doar 2×, fără alt factor. Editarea și generarea nu sunt probate pe un ComfyUI sau un endpoint OpenAI real; ruta cloud trimite promptul owner-ului în afara cutiei și stă corect în spatele aprobării, dar nu are probă live.",
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "8bb65b45f9ad78ffcc4884d091a016219feca13f6002c7c125f76fae32533f65"
+          "sha256": "1dc5952279ff3931bf21d3c1e0ff68ce3f4fffac7ea24ff38cc7f4be85f19a39"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "a80e1e2588a4df60ee85c12770a5847256f7e7f23f7ffdbe208abbc8725d3547"
+          "sha256": "ef72a07e7858cdb782cb479dc8ecd4ca58b5871542033d73a378b2ef5d1520aa"
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "314d5a527b6f3833f8eadc6dd4a9b82272cdfd9e556d9f9d955192ae43052956"
+          "sha256": "f75cf19854b376823cb7b133a441282a36a4870225ee2436e9ded214d7cbcb82"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
-          "sha256": "0f11a515b3577825822c2478101e165d8989b502c47ef85f67d9414dde17c9c5"
+          "sha256": "a9641d8cc418f527aa38840471a258711533cf0724acefbdd4d0fdde0a01218f"
         },
         {
           "path": "tests/test_image_generation_api_flow.py",
@@ -2240,7 +2240,7 @@
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "5584d978a07135dd47d990528f8083f0eb959d3ef946597ecf92ce0ef48ba196"
+          "sha256": "4edd83a175b701eca6febcdf7fe47012eb23d821481cd1d363698a1fac13f96c"
         },
         {
           "path": "tests/test_image_edit.py",
@@ -2257,7 +2257,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2265,7 +2265,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2328,23 +2328,23 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
+          "sha256": "45c08a4971f60b40a4f40efaa81b4ede44a7c6555b7dc35a0a90cd9294bab3ce"
         }
       ]
     },
@@ -2675,23 +2675,23 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         },
         {
           "path": "agents/core/llm/anthropic.py",
-          "sha256": "5cfc9b87b7eafeadc3898624a976ecf948f40f5725b65f242f04bb9d17dd93c6"
+          "sha256": "45c08a4971f60b40a4f40efaa81b4ede44a7c6555b7dc35a0a90cd9294bab3ce"
         }
       ]
     },
@@ -2746,19 +2746,19 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         }
       ]
     },
@@ -2775,19 +2775,19 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         }
       ]
     },
@@ -2821,7 +2821,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -2829,7 +2829,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "b6bd59921dcb40d6293a1754ed81903ed92c8343e4bb3016e91d7b2ff9b5ca00"
+          "sha256": "b88f7dd4bd9b8bdf07835d83d3787131dbe801626ebe1db35e612860dce48f5f"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -2846,7 +2846,7 @@
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
-          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+          "sha256": "5a74c8f280d8f97d48b6bd891dd5ab6073f90395917f087063df43a9aac5e0f7"
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
@@ -2867,7 +2867,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2875,7 +2875,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2892,7 +2892,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2900,7 +2900,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2917,7 +2917,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "44c8a02e7b3080e20dcd9b66fafc4c62965fe4ed427d4395ac58a85f35a50ba7"
+          "sha256": "0b50eb71334351dfe1e695b43aad515fdcad8772784de8faec64d34230a19e25"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -2925,7 +2925,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66f1b2d237b1540e1464b5d796e86482c80ce1dc12dac89bac90296a235d03a4"
+          "sha256": "e2e5251c751540210f37f1487db4152485fabcad68d5f9437dff4f5e34d08f6c"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -2963,7 +2963,7 @@
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
-          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+          "sha256": "5a74c8f280d8f97d48b6bd891dd5ab6073f90395917f087063df43a9aac5e0f7"
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
@@ -3040,7 +3040,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f06d7c2f82419e0d2bc5f4028aaa43177115c7914d4bd5fbc9d9c549e7a58511"
+          "sha256": "2e73717f3c5994e03218c790d78b6bf5f2366a309687bc75b4c0c660e026e845"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -3169,19 +3169,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         }
       ]
     },
@@ -3194,19 +3194,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         }
       ]
     },
@@ -3300,19 +3300,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         }
       ]
     },
@@ -3325,19 +3325,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         }
       ]
     },
@@ -3554,11 +3554,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         }
       ]
     },
@@ -4545,7 +4545,7 @@
       "evidence": [
         {
           "path": "frontend/src/modes.tsx",
-          "sha256": "642c18756102037d7d724fef56c8f0c635a0bf79269034fc9a0f6f86cc8baee9"
+          "sha256": "5a74c8f280d8f97d48b6bd891dd5ab6073f90395917f087063df43a9aac5e0f7"
         },
         {
           "path": "frontend/src/panels/memory-neighborhood.tsx",
@@ -4636,31 +4636,31 @@
       "row_sha256": "47f438aab4a3e246d57bb290768c34eddf706864e1c9b00d2efba558e1f03292",
       "status": "partial",
       "summary": "Motorul SQLite, CLI și HUD pot crea, porni, pune pe pauză, relua și șterge joburi; există istoric.",
-      "remaining": "Editarea există acum end-to-end; rămân opțiunile avansate ale rândului — repeat, ținte de livrare per job, workdir și pin-uri de model/provider.",
+      "remaining": "Reevaluat 2026-09-19: repeat (`options.repeat`, 1–10000), ținta de livrare per job (`Job.channel`), workdir (`jobs_workdir.py`), pin-uri de model/provider (`llm/job_selection.py`), scripturi fără agent (`jobs_scripts.py`), rulări manuale asincrone (`jobs_dispatch.py`), media programată (`jobs_media.py`), doctor (`jobs_health.py`) și toolset-uri per job (`job_toolsets.py`) sunt livrate — textul anterior le cerea ca lipsă. Rămân din cerința Hermes: înlănțuirea `context_from` între joburi și continuitatea, intenția de rutare `all` și rutarea pe topicuri Telegram, suprimarea `[SILENT]`, livrările continuabile care se reatașează unei sesiuni, raportarea fire-urilor ratate și recuperarea misfire, joburile susținute de skill-uri, programarea gestionată de agent în spatele unui flag, efortul de raționament per job, și clauza de guvernanță: crearea unui job ca `schedule.create` prin kernel (path protejat, owner). NEVERIFICAT pe scheduler și canale reale.",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "8306a6c9035cedb9bee1d8befd0a80ade67faa008760597f314af052e17e6161"
+          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         }
       ]
     },
@@ -5154,19 +5154,19 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "6d2b986f99cb8275e81182be0f67ef92a11304c286c2b72a0848bb79dc65e85d"
+          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "d79e247ec119e092737ee22990037c8a2643cf270e97f6b3dc0259c5df13f142"
+          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
         },
         {
           "path": "tests/test_owner_jobs.py",
-          "sha256": "0b61c7d84704f61fb5d2119e8242565ff955ef96e85ef009621e6848fd437348"
+          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
         },
         {
           "path": "tests/test_jobs_routes.py",
-          "sha256": "c4354c0778c966f2dd121008b747f31a0ef944f4d4a80959887a28a5932de919"
+          "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
         },
         {
           "path": "agents/core/action_origin.py",
@@ -5187,19 +5187,19 @@
         },
         {
           "path": "agents/core/llm/base.py",
-          "sha256": "e12976726b673f7c7dfd41985f2468ca3275badc0b33292582b168ed5336b416"
+          "sha256": "19e7c9afd0130166b4ff5e67c9ee93b8eed7457ec3996b7ccf4399cabe1322c8"
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "823575ba5e2f4553f9b3f24390a81b98172e5af1196ca691e6728b624da0a6b7"
+          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
-          "sha256": "13ab247cfbcf0f8cf3b3f3633dc04b468bf7b70aa0f5e2f6c342b519a38eaad5"
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
         },
         {
           "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "47ec04553f311a7ab367e8cc482cc165e76cf054cbd4e262fb1ed5682a9c1fae"
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         }
       ]
     },
@@ -5321,11 +5321,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "dc79b2b2eb1fae9d341b32c82789a6ed4b4b3320f3ad9feac672e77a85182ab2"
+          "sha256": "70f1866cd8506fb6d27da5780e4b1d8831e93eb43108a01c6cb0e90dd1849003"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "a437fe84be21e282f2a9a9549e31ffc3131cec5a6bb6e7116328e951f41abe8d"
+          "sha256": "c35abd26c27ddfddfb51b55aa6be5d16d3876648cc938a77f0d54be1cb32fae5"
         },
         {
           "path": "agents/core/commands.py",

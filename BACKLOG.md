@@ -204,6 +204,29 @@
   of it — silence auto-stop on the recorder — already existed in
   `frontend/src/voice.ts` and merely had no test; it has five now), then native
   overlay and channel streaming.
+  **Ledger hygiene 2026-09-19:** 72 commits from three parallel sessions had
+  drifted the evidence of 49 reviewed rows into `needs_review` — 48 `partial`,
+  one `equivalent` (H398). Each was re-evaluated rather than re-hashed: all 30
+  cited backend test files and all 6 cited frontend files pass on the new head
+  (the one failure is the known Python-3.11-only artefact), the function-level
+  diff of the shared files (`nerva.py`, `jobs.py`, `orchestrator.py`,
+  `agent_runtime.py`) shows additions plus rewrites whose regressions still pass,
+  and the lease, the `__main__` block and the taint suite were checked by hand.
+  Three rows had gone stale in the *other* direction and were rewritten from the
+  code: H199 claimed 3 blueprints and no per-job target (16 and `Job.channel`),
+  H620 listed as missing what `jobs_workdir`, `job_selection`, `jobs_scripts`,
+  `jobs_dispatch`, `jobs_media`, `jobs_health` and `job_toolsets` had delivered,
+  H312 lacked the backend choice, 2× upscale and up-to-4 references now in
+  `comfyui.py`. No job row rises to equivalent: all four share the un-built
+  `schedule.create` kernel kind (protected, owner). Ledger 122 → 123/697,
+  `needs_review` 49 → 0. Merging `main` afterwards (#1161's approvals collector,
+  #1163's six rows) drifted eight of these rows again on `orchestrator.py`,
+  `tool_rpc.py` and `schema.gen.ts`; each was re-evaluated against that additive
+  diff (no claim moved, cited suites green on the merged tree) and re-stamped —
+  current reviews 130 once the PRs merged in the meantime (#1167 H495, #1168 H042,
+  #1169 H351, #1170 H506, #1171 H497 and the ones after) were merged in as well —
+  #1170's call classifiers drifted H287 and H305 on `tool_rpc.py`, re-evaluated
+  (actor path and sandbox pipeline untouched) — still 123/697, `needs_review` 0.
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
