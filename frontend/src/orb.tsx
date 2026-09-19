@@ -97,10 +97,23 @@ export function VoiceOrb({ status = 'off', level = 0, motion = 'lively', density
   const vis = useMemo(() => orbVisual({ status, level, motion }), [status, level, motion]);
   const [reduced] = useState(prefersReducedMotion);
   const count = density === 'compact' ? 220 : 620;
-  const S = useRef<any>({
-    pts: sphereParticles(count), links: filaments(count),
-    w: 300, h: 300, dpr: 1, raf: 0, tick: 0, yaw: 0, energy: 0, vis,
-  });
+  // Bolt Optimization: Memoize geometry generation so trig calculations (sphereParticles & filaments)
+  // are not executed on every component re-render when level/status changes.
+  const geometry = useMemo(() => ({
+    pts: sphereParticles(count),
+    links: filaments(count),
+  }), [count]);
+
+  const S = useRef<any>(null);
+  if (!S.current) {
+    S.current = {
+      pts: geometry.pts, links: geometry.links,
+      w: 300, h: 300, dpr: 1, raf: 0, tick: 0, yaw: 0, energy: 0, vis,
+    };
+  } else {
+    S.current.pts = geometry.pts;
+    S.current.links = geometry.links;
+  }
   S.current.vis = vis;
   // A hard reduced-motion preference wins over the HUD's own motion setting.
   S.current.frozen = reduced;
