@@ -2282,11 +2282,36 @@
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "172e5352a2720961b0135dafb090c96518c7236bc9753cd3cae9eb6aa41e0d34"
+          "sha256": "da7c237b17c16ddfbdd987e255f56321abbfdf6e6c8c8605c836b5c456ffb016"
         },
         {
           "path": "tests/test_skills_in_prompt.py",
-          "sha256": "1042e3a3c9e306915309eb2ff0428b766534d3d8423867d1ab3b2288d1cb11c2"
+          "sha256": "8cdc8416736096fa3bbf5f8220144295ed1f6ab302bafcff5e3889dd2c1b34ca"
+        }
+      ]
+    },
+    {
+      "id": "H351",
+      "row_sha256": "4475e9419bee8010e08c8b8de80ecc618b982eca73a815d6e98f194b79e9b295",
+      "status": "partial",
+      "summary": "**The discovery surface, not the one the row names — and the row says so.** `SkillLoader.prompt_catalog` produces the \"Available skills\" block that `Agent.build_prompt` renders **verbatim** into every system prompt, and both of a row's fields (`command`, carrying the manifest's `args`, and `description`) come out of a SKILL.md frontmatter that may have been imported from a foreign install. Write-time scanning already refuses to *generate* an injection-flagged skill and flags imported ones — nothing stood between an already-on-disk manifest and the prompt. Two gates close that, and both only ever narrow the block. **(1)** A skill shipping a `SKILL.sig` that does not verify here is not named at all; `unsigned` and `algo-mismatch` are tolerated on purpose, because the first is the shipped default for every bundled skill and the second is a fact about *this host's key configuration at load time* that fires for all signed skills at once — dropping either would blank the model's whole skills index on a key rotation. **(2)** A row that tries to talk to the model loses its row, scanned with the same `quarantine.detect_injection` that fences retrieved memory. A hit costs one row, never the block; every drop is WARNING-logged by skill name so a disappearance from the index is never silent, and a catalog emptied by the signature gate is logged at ERROR rather than quietly returned. Nothing is revoked: a dropped skill is un-advertised, and its command still runs if the model or the owner names it. **An independent adversarial review found two majors and both are fixed here.** `command` was the one row field nothing bounded — `re.fullmatch(r\"\\\\w+\", command)` bounds the character set and not the length, and `command` never passed through the new `_catalog_text` — so a manifest declaring a 5,000-character command put 5,000 characters into every agent's prompt on every turn; reproduced, and capped like its neighbours. And the injection scan was defeated by a single Cf format character: `strip_invisible` is TAG-only by design, so \"Ignore\\u200b all previous instructions\" scanned clean while reading to the model exactly like the phrase that does not — reproduced against U+200B, U+FEFF, U+2060, U+00AD and U+200E. `quarantine.strip_format_chars` now removes every Cf character and the scan runs over that **thrown-away copy**, so a legitimate Arabic number sign survives into the prompt untouched while an evasion attempt does not decide the verdict. The Cf table is hardcoded to keep import cheap and pinned against `unicodedata` by a test, so a new Cf character in a future Python fails there rather than silently widening the hole. Two overstated test docstrings were corrected rather than left to read as guarantees.",
+      "remaining": "**This is not the surface H351 asks for.** The row wants a *load-time* warning on the skill BODY: a skill whose file sits outside the trusted roots, or whose content matches `_INJECTION_PATTERNS`, flagged in the `skill_view` result so the model sees the warning beside the content, with the body fenced as data the way `rag_guard` fences recall. None of that is here. This slice hardens the *discovery* block — the row's declared dependency (\"model-facing discovery, row 1\") — so a manifest cannot address the model through the skills index. `skill_view` still returns a body nothing re-checks after import and nothing spotlights or datamarks. **What the two gates are worth, stated plainly rather than implied.** The signature gate detects corruption and accidental drift in a skill that ships a sidecar; it does not stop an attacker. Anyone with write access to a skill directory — exactly the access needed to edit SKILL.md — deletes `SKILL.sig` in the same operation, the skill verifies as `unsigned`, and it is advertised again on its new description. That evasion is pinned by a test on purpose (`test_deleting_the_sidecar_evades_the_trust_gate`). Closing it needs two things this repo does not have: a signed skills tree, and a record kept OUTSIDE the tree of which skills were once seen signed. The review raised a second, simpler evasion that is also real and is recorded here rather than fixed: at the shipped default, with no `JARVIS_SKILL_SIGNING_KEY`, the \"signature\" is a plain sha256 anyone can recompute (`agents/core/skills/signing.py`, SEC-B2). The injection gate is an eleven-entry phrase table: it costs a row to a description that says \"ignore all previous instructions\" and not to one that says the same thing in words the table does not list. It raises the floor on copied-in manifests; it is not a filter a motivated author cannot write around. **One thing deliberately left narrow:** `strip_invisible` stays TAG-only for `strip_invisible_deep`, which runs over tool results and MCP payloads where a BOM or a bidi mark can be part of data a caller expects back unchanged. Whether those paths should also scan a format-stripped copy is a separate slice with its own blast radius.",
+      "evidence": [
+        {
+          "path": "agents/core/skills/loader.py",
+          "sha256": "da7c237b17c16ddfbdd987e255f56321abbfdf6e6c8c8605c836b5c456ffb016"
+        },
+        {
+          "path": "agents/core/security/quarantine.py",
+          "sha256": "ed40ac580fe70bcc23e1e46ee0600f0ac31ea138cbfbb57395e713fbc2ff1140"
+        },
+        {
+          "path": "tests/test_skills_in_prompt.py",
+          "sha256": "8cdc8416736096fa3bbf5f8220144295ed1f6ab302bafcff5e3889dd2c1b34ca"
+        },
+        {
+          "path": "tests/test_h17_1_quarantine.py",
+          "sha256": "239e3af7e879133d013eb1b426218ccab24382d3a989a645b1170bae615e2c72"
         }
       ]
     },
@@ -2679,11 +2704,11 @@
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "172e5352a2720961b0135dafb090c96518c7236bc9753cd3cae9eb6aa41e0d34"
+          "sha256": "da7c237b17c16ddfbdd987e255f56321abbfdf6e6c8c8605c836b5c456ffb016"
         },
         {
           "path": "tests/test_skills_in_prompt.py",
-          "sha256": "1042e3a3c9e306915309eb2ff0428b766534d3d8423867d1ab3b2288d1cb11c2"
+          "sha256": "8cdc8416736096fa3bbf5f8220144295ed1f6ab302bafcff5e3889dd2c1b34ca"
         }
       ]
     },
