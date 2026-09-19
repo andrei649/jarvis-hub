@@ -4230,6 +4230,43 @@
       ]
     },
     {
+      "id": "H557",
+      "row_sha256": "4c23281b93f84035e368929c2600ffba11eb991e0ebafafcca9a4b3b38cdbfe2",
+      "status": "partial",
+      "summary": "H557 is PARTIAL, not missing and not equivalent. The 2026-09-07 verdict is stale on one half and still correct on the other; the overnight triage's \"already equivalent\" is wrong.\n\nSHIPPED (the row's rationale half). The name-collision correctness bug is fixed and tested: agents/core/mcp/client.py:566-594 `MCPManager._resolve` accepts a bare tool name only when exactly one server offers it and otherwise returns `{\"error\": \"ambiguous_tool\", \"servers\": [...]}`; `server/tool` or an explicit `server=` pins the server; `find_tool` (client.py:597) and `call_tool` (client.py:606) both route through it; `MCPTool.qualified_name` (client.py:230-233) is the `server/tool` form. tests/test_mcp_hardening.py:41-73 proves first-wins is gone (3 tests, passing). This is a genuine different-spelling equivalent of Hermes' disambiguation property, so `missing` under-reports the row.\n\nNOT SHIPPED (the row's headline half). There is no `_normalize_mcp_input_schema` equivalent. agents/core/mcp/client.py:402-417 `_list_tools` still stores `t.get(\"inputSchema\", {})` verbatim (client.py:410) into `MCPTool.input_schema` (client.py:220) with zero repair — the 2026-09-07 evidence sentence is still literally true. Nerva repairs at the dialect boundary instead, and only for ONE of four providers: agents/core/llm/tool_dialects.py:369-437 `gemini_schema` covers Hermes' `required`-pruning (:423-427) and missing-`type` coercion (:419, :427), and :441-452 avoids the empty-OBJECT 400. The Anthropic path (tool_dialects.py:147-151) and both OpenAI paths (tool_protocol.py:19-27 `as_openai`, responses.py:72-81) pass `input_schema` through byte-for-byte. Two of Hermes' five repairs are absent on every path: I ran the code and confirmed `gemini_schema({\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null})` → `{\"default\": null, \"anyOf\": [{\"type\":\"string\"}, {}]}` (the Pydantic null branch is not collapsed, it degenerates to an empty schema), and `{\"definitions\":{\"Node\":…},\"properties\":{\"node\":{\"$ref\":\"#/definitions/Node\"}}}` → `{\"properties\":{\"node\":{}}}` (draft-07 `definitions`/`$ref` are not promoted to `$defs`, the referenced shape is silently deleted). No name sanitization exists anywhere: `grep -rn \"mcp__\" agents/` is empty, and `qualified_name`'s `/` is not a legal provider function-name character.\n\nON REACHABILITY. The triage is right that this is currently unreachable from a model: `MCPManager.get_tools()` (client.py:560-564) has zero callers in the whole repo, `MCPTool.input_schema` is read nowhere outside its constructor, and agents/core/routers/mcp.py:71-79 and :193-194 expose only name/description/read_only to the HUD, never the schema. But the triage's grep was scoped wrong and missed a real production consumer of the dispatch path: agents/core/mcp/worldview_write.py:141 calls `self.mcp.call_tool(tool, mcp_args)` by bare name (it lives inside agents/core/mcp/, which their grep excluded). So `_resolve` is not dead code, and its bare-name path is live today.\n\nUnreachability is a reason the remaining work is small and belongs inside the bridge PR — it is not a reason to record the row as done. Six of Hermes' nine clauses are unsatisfied or satisfied on only one of four provider paths, and no test anywhere exercises repair of a third-party `inputSchema`. Recording `equivalent` would put a false claim on a public status page; `partial` with a named remainder is the honest row.",
+      "remaining": "No provider-agnostic repair of a third-party MCP server's JSON Schema exists. (1) `agents/core/mcp/client.py:402-417` `_list_tools` still stores `inputSchema` verbatim (`:410`); add a `_normalize_mcp_input_schema` applied at registration. (2) Two of Hermes' five repairs are absent on every path, verified by running the code: draft-07 `definitions`/`#/definitions/...` are never promoted to `$defs`/`#/$defs/...` (and `gemini_schema` silently reduces a `$ref` property to `{}`, deleting the shape), and a Pydantic nullable union `anyOf:[{...},{\"type\":\"null\"}], default:null` is never collapsed to its non-null branch (`gemini_schema` yields `anyOf:[{\"type\":\"string\"},{}]` with `default:null` retained — the exact shape Anthropic 400s on). (3) The three repairs that do exist (`required` pruned to declared names, missing `type` coerced, empty-OBJECT avoided) live only in `agents/core/llm/tool_dialects.py:369-452` and therefore apply to Gemini alone; `anthropic_tools` (tool_dialects.py:147-151), `ToolSpec.as_openai` (tool_protocol.py:19-27) and the Responses payload (responses.py:72-81) pass `input_schema` through unrepaired. (4) No name sanitization or provider-legal prefixing: `MCPTool.qualified_name` (client.py:230-233) is `server/tool`, whose `/` is outside the `[A-Za-z0-9_-]` function-name charset both Anthropic and OpenAI enforce, and nothing replaces characters outside `[A-Za-z0-9_]`; `grep -rn \"mcp__\" agents/` returns nothing. (5) The row's security property — a third-party tool shadowing a built-in governed tool name — is unaddressed: `_resolve` disambiguates only among MCP servers, never against the agent tool registry. (6) No test covers any of this; `grep -rln \"gemini_schema\" tests/` returns only tests/test_cloud_tool_turns.py, and nothing tests `MCPTool.input_schema`. All of the above is currently unreachable by a model because no MCP-client -> tool-registry bridge exists (`MCPManager.get_tools()` has zero callers repo-wide), so the normalizer plus its tests should land inside whichever PR first offers MCP client tools to the model, not as a standalone pure function.",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "9f41fd74338dc3a4093409eaf4581cd40783b52648d7a717163d3f35147df308"
+        },
+        {
+          "path": "agents/core/llm/tool_dialects.py",
+          "sha256": "4cf3f463f951d68144ee444564c6d94dbc72fd3297e0dfb286e6e61edf7f2482"
+        },
+        {
+          "path": "agents/core/llm/tool_protocol.py",
+          "sha256": "95ac4be1beb26f8165b9f38e8bf1eb607790246ded8932cad88e7390154e599b"
+        },
+        {
+          "path": "agents/core/llm/responses.py",
+          "sha256": "2ead092995191ca22abba17c3c3b6cda73f842dbca782ef76c5e0dbe44d7996a"
+        },
+        {
+          "path": "tests/test_mcp_hardening.py",
+          "sha256": "809511b4614ee4ca32a43fc0018006c8382f59d9bbb125342c010e059189351d"
+        },
+        {
+          "path": "tests/test_cloud_tool_turns.py",
+          "sha256": "242600961f83aec798973fb83f5b8b62e79c7b7777fd4648866d75707182960a"
+        },
+        {
+          "path": "tests/test_mcp_tool_filters.py",
+          "sha256": "26f3a2f2617b6866791c6b34c4e0ca5b4a0c9cc9dfa69bf52bf48f0c9b6a4657"
+        }
+      ]
+    },
+    {
       "id": "H566",
       "row_sha256": "b6972f5f0508020fafb457913bab19e4ddb3d4af0f65c5ae7c3f4a35e1c14309",
       "status": "partial",
