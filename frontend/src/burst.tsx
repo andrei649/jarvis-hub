@@ -51,6 +51,9 @@ export function burstRegions({ agents = [], tasks = [] }: any = {}) {
   const list = Array.isArray(agents) ? agents : [];
   const running = runningTasks(Array.isArray(tasks) ? tasks : []);
   const byTier = new Map<string, any>();
+  // Bolt Optimization: Maintain O(1) agent-id -> tier-key map to avoid O(Tasks * Tiers * Agents) nested array scans
+  const agentToTier = new Map<string, string>();
+
   list.forEach((a) => {
     const tier = tierOf(a) || 'cabinet';
     const key = tier.toLowerCase();
@@ -58,13 +61,23 @@ export function burstRegions({ agents = [], tasks = [] }: any = {}) {
     const cur = byTier.get(key) || { key, label: look.label, color: look.color, nodes: 0, firing: 0, tasks: 0, ids: [] };
     cur.nodes += 1;
     if (isExecutingAgent(a)) cur.firing += 1;
-    cur.ids.push(String(a.id || '').toLowerCase());
+    const agentId = String(a.id || '').toLowerCase();
+    cur.ids.push(agentId);
+    if (agentId) {
+      agentToTier.set(agentId, key);
+    }
     byTier.set(key, cur);
   });
+
   running.forEach((tk) => {
     const owner = ownerOf(tk);
-    byTier.forEach((r) => { if (r.ids.indexOf(owner) >= 0) r.tasks += 1; });
+    const tierKey = agentToTier.get(owner);
+    if (tierKey) {
+      const r = byTier.get(tierKey);
+      if (r) r.tasks += 1;
+    }
   });
+
   // stable order → the field doesn't reshuffle between renders
   return Array.from(byTier.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
