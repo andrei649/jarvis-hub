@@ -1367,7 +1367,10 @@ class Orchestrator:
                 (sender_text is not None and sender_text in allowed)
                 or (owner_chat and chat_id is not None and str(chat_id) == owner_chat)
             )
-        return Principal(channel=channel, sender=sender_text, admin=admin)
+        return Principal(
+            channel=channel, sender=sender_text, admin=admin,
+            chat=None if chat_id is None else str(chat_id),
+        )
 
     async def _dispatch_command(self, text: str):
         """Answer a slash command from the registry, or None when *text* is not one."""

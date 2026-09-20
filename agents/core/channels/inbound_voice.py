@@ -207,6 +207,20 @@ def note(transcript: Transcript) -> str:
     return NOTES.get(transcript.reason, "I could not make it out")
 
 
+def echo_line(transcript: Transcript) -> str:
+    """The one line that says back what was heard (Hermes ``stt_echo_transcripts``).
+
+    Sent before the answer, so a misheard note is caught by the person who
+    sent it. A service line: the adapter never speaks it and it never counts
+    as the reply to the note.
+    """
+    if not isinstance(transcript, Transcript):
+        raise TypeError("echo_line() needs a Transcript")
+    if not transcript.ok:
+        return ""
+    return f"🎙️ I heard: “{transcript.text.strip()}”"
+
+
 def turn_text(transcript: Transcript, caption: str = "") -> str:
     """The turn: what the sender said, as if they had typed it.
 
@@ -240,6 +254,7 @@ __all__ = [
     "SENTINEL_UNAVAILABLE",
     "InboundVoiceReader",
     "Transcript",
+    "echo_line",
     "note",
     "turn_text",
 ]
