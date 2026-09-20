@@ -202,7 +202,8 @@ async def test_the_telegram_owner_is_the_admin_principal_and_a_guest_is_not(esto
 
     reply = await orch.channel_handler("/pause", channel="telegram", chat_id=1, sender="42")
     assert "Emergency stop engaged" in reply
-    assert seen["principal"] == Principal(channel="telegram", sender="42", admin=True)
+    # The chat rides on the principal so per-chat commands (/voice) know their chat.
+    assert seen["principal"] == Principal(channel="telegram", sender="42", admin=True, chat="1")
 
     reply = await orch.channel_handler("/resume", channel="telegram", chat_id=1, sender="7")
     assert "owner command" in reply
@@ -230,9 +231,11 @@ async def test_a_command_never_reaches_the_model_and_a_message_still_does():
 
 def test_the_default_registry_names_the_first_wave():
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
-        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind",
+        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind", "voice",
     }
-    assert {c.name for c in build_default_registry().visible(GUEST)} == {"help", "status", "sessions", "jobs"}
+    assert {c.name for c in build_default_registry().visible(GUEST)} == {
+        "help", "status", "sessions", "jobs", "voice",
+    }
     assert commands_module.USER == "user"
 
 
