@@ -231,6 +231,17 @@
   The full inventory remains the scope;
   these first slices are not a replacement denominator. Live-service proof is tracked
   separately. Query `scripts/hermes_status.py summary | list | show H515`.
+  **Ledger hygiene, second pass (2026-09-19, #1177 drift):** #1177's security fixes
+  changed five modules without reassessing the twelve rows citing them, so `main`
+  carried `needs_review` 12. Each row was re-evaluated against the diff with its cited
+  tests, then handed to an independent skeptic told to break the verdict; six were
+  re-stamped unchanged, six rewritten (H042, H351, H477, H481, H495, H506), three of
+  those corrected by their skeptic. Two findings against #1177 itself are recorded as
+  open gaps rather than smoothed over: the hardline floor now clears TRUE refusals in
+  two shapes (a `case`-label strip reaching a subshell's last word; a heredoc body fed
+  to a shell after the redirection) and adds a `./reboot.sh` false refusal (H481); the
+  SOUL scan misses a payload it caught before #1177 (H506). No status moves;
+  `needs_review` 12 → 0.
 
 ## Darwin feature absorption — 2026-09-09
 
