@@ -11,7 +11,9 @@ extend = "ruff-baseline.toml"
 target-version = "py312"
 line-length = 100
 # Keep the analysis scoped to source we own.
-extend-exclude = ["repo_export.txt", "docs/internal/design_handoff_jarvis_hub", ".opencode"]
+# .claude/plugins/superpowers is a byte-identical vendored copy of upstream (H22.11);
+# its own tests are not ours to lint and must not be edited to satisfy this config.
+extend-exclude = ["repo_export.txt", "docs/internal/design_handoff_jarvis_hub", ".opencode", ".claude/plugins/superpowers"]
 
 [tool.ruff.lint]
 # High-signal rules: real bugs (F), pyflakes/pycodestyle (E,W), import hygiene (I),
