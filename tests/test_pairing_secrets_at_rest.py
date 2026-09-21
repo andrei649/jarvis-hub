@@ -461,3 +461,44 @@ def test_the_write_is_still_atomic_and_still_cleans_up_after_itself(tmp_path):
 
     assert json.loads(target.read_text(encoding="utf-8")) == {"good": 1}
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_the_kdf_a_stranger_can_trigger_stays_inside_the_guess_budget(store):
+    """Stretching the code hands a stranger a CPU lever; the budget is what bounds it.
+
+    ``POST /api/channels/pairing/request`` is the one pairing route an unpaired sender is
+    meant to reach, and a presented code costs 240k PBKDF2 rounds to check. The per-sender
+    limit cannot bound that on its own — the sender id is whatever the caller wrote in the
+    body, so a guesser rotates it — which is exactly why ``_code_guess_budget_spent`` is
+    store-wide and is consulted BEFORE the compare.
+
+    Counting the hashes rather than timing them: a slow CI box must not be able to fail
+    this, and the round count is the cost.
+    """
+    from agents.core.channels import pairing as mod
+
+    store.set_code("7777")
+    calls = []
+    real = mod._stretch
+    mod._stretch = lambda salt, value, rounds: (calls.append(rounds), real(salt, value, rounds))[1]
+    try:
+        statuses = [store.request("telegram", f"stranger-{i}", code="0000")["status"]
+                    for i in range(mod._MAX_CODE_GUESSES_PER_WINDOW * 6)]
+    finally:
+        mod._stretch = real
+
+    assert len(calls) <= mod._MAX_CODE_GUESSES_PER_WINDOW, (
+        f"{len(calls)} KDF runs for {len(statuses)} requests — the budget is not holding "
+        "the lever down"
+    )
+    assert statuses.count("rate_limited") > len(statuses) // 2, (
+        "premise: the flood must actually be turned away, not merely un-hashed"
+    )
+    # And a sender who presents no code at all never reaches the KDF in the first place.
+    calls.clear()
+    mod._stretch = lambda salt, value, rounds: (calls.append(rounds), real(salt, value, rounds))[1]
+    try:
+        store.request("telegram", "polite-stranger")
+    finally:
+        mod._stretch = real
+    assert calls == []
