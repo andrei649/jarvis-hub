@@ -109,12 +109,14 @@ export function VoiceOrb({ status = 'off', level = 0, motion = 'lively', density
     S.current = {
       pts: geometry.pts, links: geometry.links,
       w: 300, h: 300, dpr: 1, raf: 0, tick: 0, yaw: 0, energy: 0, vis,
+      proj: [], density,
     };
   } else {
     S.current.pts = geometry.pts;
     S.current.links = geometry.links;
   }
   S.current.vis = vis;
+  S.current.density = density;
   // A hard reduced-motion preference wins over the HUD's own motion setting.
   S.current.frozen = reduced;
 
@@ -174,49 +176,61 @@ export function VoiceOrb({ status = 'off', level = 0, motion = 'lively', density
     const cosT = Math.cos(tilt), sinT = Math.sin(tilt);
     const breathe = st.frozen ? 0 : Math.sin(st.tick * 0.035) * 0.5 + 0.5;
 
-    // project every particle once; the lattice reuses the same screen positions
-    const proj: any[] = [];
-    st.pts.forEach((p) => {
+    // Bolt Optimization: Pre-allocate and mutate projection objects in st.proj to eliminate
+    // 620+ object allocations per frame (~37,200 allocations/sec at 60 FPS), eliminating GC pressure.
+    if (!st.proj || st.proj.length !== st.pts.length) {
+      st.proj = st.pts.map(() => ({ x: 0, y: 0, d: 0 }));
+    }
+    const proj = st.proj;
+    const pts = st.pts;
+    const numPts = pts.length;
+    for (let i = 0; i < numPts; i++) {
+      const p = pts[i];
       // radial displacement: steady breathing + per-particle turbulence scaled by energy
       const wob = st.frozen ? 0
         : Math.sin(st.tick * 0.05 + p.phase) * 0.035 + Math.sin(st.tick * 0.11 + p.i) * 0.02 * e;
       const rr = R * (1 + wob + e * 0.16 * breathe);
-      let x = p.x, y = p.y, z = p.z;
+      const x = p.x, y = p.y, z = p.z;
       const x1 = x * cosY - z * sinY, z1 = x * sinY + z * cosY;          // yaw
       const y2 = y * cosT - z1 * sinT, z2 = y * sinT + z1 * cosT;         // tilt
       const depth = (z2 + 1) / 2;                                        // 0 back … 1 front
       const persp = 1 / (1.9 - z2 * 0.55);
-      proj.push({
-        x: cx + x1 * rr * persp * 1.55,
-        y: cy + y2 * rr * persp * 1.55,
-        d: depth,
-      });
-    });
+      const pr = proj[i];
+      pr.x = cx + x1 * rr * persp * 1.55;
+      pr.y = cy + y2 * rr * persp * 1.55;
+      pr.d = depth;
+    }
 
     if (v.linked) {
       ctx.lineWidth = 0.6;
-      st.links.forEach(([a, b]) => {
-        const pa = proj[a], pb = proj[b];
-        if (!pa || !pb) return;
+      const links = st.links;
+      const numLinks = links.length;
+      for (let k = 0; k < numLinks; k++) {
+        const link = links[k];
+        const pa = proj[link[0]], pb = proj[link[1]];
+        if (!pa || !pb) continue;
         const alpha = Math.min(pa.d, pb.d) * 0.22 * e;
-        if (alpha <= 0.01) return;
+        if (alpha <= 0.01) continue;
         ctx.globalAlpha = alpha;
         ctx.strokeStyle = v.color;
         ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
-      });
+      }
     }
 
-    proj.forEach((p) => {
-      const size = 0.5 + p.d * (density === 'compact' ? 1.1 : 1.6) + e * 0.7;
+    const isCompact = st.density === 'compact';
+    const particleMult = isCompact ? 1.1 : 1.6;
+    for (let i = 0; i < numPts; i++) {
+      const p = proj[i];
+      const size = 0.5 + p.d * particleMult + e * 0.7;
       ctx.globalAlpha = 0.12 + p.d * 0.72;
       ctx.fillStyle = p.d > 0.78 ? '#eaf6ff' : v.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, 7); ctx.fill();
-    });
+    }
 
     // arc-reactor rings — the "it is a machine" cue, tilted with the sphere
     ctx.globalAlpha = 0.30 + e * 0.35;
     ctx.strokeStyle = v.color;
-    ctx.lineWidth = density === 'compact' ? 0.8 : 1.2;
+    ctx.lineWidth = isCompact ? 0.8 : 1.2;
     for (let k = 0; k < 2; k++) {
       const rr = R * (1.12 + k * 0.22);
       ctx.beginPath();
