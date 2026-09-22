@@ -442,6 +442,11 @@ async def lifespan(application: FastAPI):
             token=tg_token, handler=gateway.route,
             allowed_user_ids=_telegram_allowed_user_ids(),
             group_policy=GroupPolicy.from_env(os.environ),
+            # The one SenderPairing this process holds: the object the gateway gates
+            # on and the pairing router mints/revokes deeplinks from. A channel that
+            # opened its own store over the same file would resurrect spent links —
+            # a `/start <token>` redeemed here came back on the owner's next save.
+            pairing=gateway.pairing,
         )
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")

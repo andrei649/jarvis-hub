@@ -57,8 +57,22 @@ mirror of the H16.2 A2A peer allowlist:
   once on open and rewritten hashed, keeping each link's channel and expiry so an
   upgrade never locks the owner out or resurrects a spent link. (H497)
 
-File-backed (JSON under ``memory_logs/sender_pairing.json``), pure-Python,
+File-backed (JSON at ``data_path("sender_pairing.json")`` — ``memory_logs/`` in a
+plain checkout, ``$JARVIS_HOME`` when the data root is relocated), pure-Python,
 offline-testable.
+
+**One instance per process.** The file is read once, at construction, and every save
+writes the whole in-memory state back. A second ``SenderPairing`` over the same file
+is therefore not a second view of the store but a second store: a link spent through
+one is still outstanding in the other, and the other's next save — any save; a
+stranger knocking is enough — puts the spent link back on disk, where a third
+instance redeems it again. That is precisely the "pair twice" the deeplink promise
+above forbids, and it once happened in production: the Telegram adapter built a
+throwaway ``SenderPairing()`` per ``/start <token>`` while the orchestrator held the
+long-lived one. The orchestrator's ``sender_pairing`` is the one instance — the
+gateway gates on it, the pairing router mints and revokes on it, and every adapter
+that redeems a link is handed it at construction (``TelegramChannel(pairing=...)``).
+An adapter without one refuses to pair rather than opening its own.
 """
 
 from __future__ import annotations

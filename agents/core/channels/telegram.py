@@ -176,7 +176,8 @@ class TelegramChannel(ChannelAdapter):
 
     def __init__(self, token: str, handler: Optional[Callable] = None,
                  allowed_user_ids: Optional[list[int]] = None,
-                 group_policy: Optional[GroupPolicy] = None):
+                 group_policy: Optional[GroupPolicy] = None,
+                 pairing=None):
         super().__init__("telegram", handler)
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}"
@@ -193,9 +194,14 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = None
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
-        # Injectable so deeplink pairing is testable without touching the data
-        # root; production leaves it None and the store is built on first use.
-        self._pairing = None
+        # The process's ONE `SenderPairing` — the object the gateway gates on and
+        # the pairing router mints and revokes deeplinks from; `web.py` hands it
+        # in. It is never built here: a second store over the same file is not a
+        # second view of it, and whichever saves last writes the other's spent
+        # links back to disk — a link redeemed here would pair a second phone
+        # after the owner's store next saved. None means "not wired", and
+        # `_maybe_pair_deeplink` then refuses to pair rather than opening its own.
+        self._pairing = pairing
         # H108 second half: reads an inbound photo over a *proven-local* vision
         # model. Built on first use from the environment, so a deployment with
         # no local VLM costs nothing and simply refuses with a reason.
@@ -478,10 +484,15 @@ class TelegramChannel(ChannelAdapter):
         if len(parts) < 2 or not parts[1].strip():
             return False  # bare /start — an ordinary message
         token = parts[1].strip()
+        pairing = self._pairing
+        if pairing is None:
+            # Not wired to the shared store. Opening one here is the bug this branch
+            # exists to prevent — see ``__init__`` — so refuse instead, in the same
+            # words as a bad token: the sender learns nothing, and the log says why.
+            logger.warning("Telegram deeplink pairing refused: no shared pairing store is wired")
+            await self.send("That pairing link is not valid.", chat_id=chat_id)
+            return True
         try:
-            from ..channels.pairing import SenderPairing
-
-            pairing = self._pairing or SenderPairing()
             result = pairing.redeem_deeplink(token, "telegram", str(uid))
         except Exception:
             # Never leak the token or the failure detail through an exception path.
