@@ -264,8 +264,10 @@ async def test_local_skill_import_is_quarantined_and_dry_run_writes_nothing(home
     assert skill.sandboxed is True and skill.trusted is False
     assert "quarantine" in skill.signature_reason
 
+    # H344 — a re-run re-detects the source: same bytes read as "unchanged", not
+    # the old blanket "skipped/exists" that hid whether upstream had moved.
     again = await importer.import_local_skill(skill_dir, "hermes")
-    assert again["status"] == "skipped" and again["reason"] == "exists"
+    assert again["status"] == "unchanged" and again["sha256"] == result["sha256"]
 
 
 @pytest.mark.asyncio
@@ -288,6 +290,344 @@ async def test_local_skill_import_rejects_unsafe_name_and_flags_injection(tmp_pa
     assert (tmp_path / "skills" / "sneaky" / "PENDING_REVIEW").exists()
 
     assert (await importer.import_local_skill(sneaky, "cursor"))["reason"] == "unknown_source"
+
+
+# ── skills: re-detect / diff after import (H344) ─────────────────
+
+EXTRA_LINE = "- `issues close <n>` — close an issue\n"
+
+
+def _edit_source(skill_dir: Path) -> bytes:
+    new = (SKILL_MD + EXTRA_LINE).encode("utf-8")
+    (skill_dir / "SKILL.md").write_bytes(new)
+    return new
+
+
+def _rows(report) -> list[dict]:
+    return report["sections"]["skills"]
+
+
+def _approval_loader(tmp_path):
+    """A real SkillLoader over a private approval registry (the owner's approve path)."""
+    import agents.core.skills.loader as loader_mod
+    from agents.core.skills.approval import SkillApprovalStore
+
+    store = SkillApprovalStore(tmp_path / "skill_approvals.json")
+    return loader_mod.SkillLoader(approval_store=store), store
+
+
+@pytest.mark.asyncio
+async def test_rescan_reports_unchanged_then_changed_with_both_digests(home, tmp_path):
+    import hashlib
+
+    importer = SkillImporter(str(tmp_path / "skills"))
+    skill_dir = _hermes(home).skill_dirs[0]
+    first = await importer.import_local_skill(skill_dir, "hermes")
+    assert first["status"] == "imported"
+
+    unchanged = await importer.import_local_skill(skill_dir, "hermes")
+    assert unchanged["status"] == "unchanged" and unchanged["reason"] == ""
+
+    new = _edit_source(skill_dir)
+    changed = await importer.import_local_skill(skill_dir, "hermes")
+    assert changed["status"] == "changed" and changed["reason"] == "source_changed"
+    assert changed["old_sha256"] == first["sha256"]
+    assert changed["new_sha256"] == hashlib.sha256(new).hexdigest() != first["sha256"]
+    assert changed["diff"]["lines_added"] == 1 and changed["diff"]["lines_removed"] == 0
+    assert any("issues close" in line for line in changed["diff"]["preview"])
+    assert changed["local_modified"] is False
+    # Noticing is read-only: the imported copy keeps its old bytes and its marker.
+    target = tmp_path / "skills" / "github-issues"
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert (target / "PENDING_REVIEW").exists()
+
+    # A dry run reports the same classification and still writes nothing.
+    assert (await importer.import_local_skill(skill_dir, "hermes", dry_run=True))["status"] == "changed"
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+
+@pytest.mark.asyncio
+async def test_existing_skill_not_imported_from_that_source_is_never_overwritten(home, tmp_path):
+    skills = tmp_path / "skills"
+    mine = skills / "github-issues"
+    mine.mkdir(parents=True)
+    (mine / "SKILL.md").write_text("---\nname: github-issues\n---\n# mine\n", encoding="utf-8")
+    importer = SkillImporter(str(skills))
+    skill_dir = _hermes(home).skill_dirs[0]
+
+    plain = await importer.import_local_skill(skill_dir, "hermes")
+    assert plain["status"] == "skipped" and plain["reason"] == "exists"
+    forced = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=tmp_path / "bk",
+        revoke_approval=lambda path: True,
+    )
+    assert forced["status"] == "skipped" and forced["reason"] == "exists_not_imported_from_source"
+    assert (mine / "SKILL.md").read_text(encoding="utf-8").endswith("# mine\n")
+    assert not (mine / "PENDING_REVIEW").exists() and not (tmp_path / "bk").exists()
+
+
+@pytest.mark.asyncio
+async def test_runner_plan_reports_unchanged_changed_and_source_removed(home, tmp_path):
+    import shutil
+
+    skills_dir = tmp_path / "skills"
+    applied = await ni.ImportRunner(
+        _hermes(home), authorizer=RecordingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply()
+    first = _rows(applied)[0]
+    assert first["status"] == "imported"
+
+    def planner():
+        return ni.ImportRunner(_hermes(home), skills_dir=skills_dir, sections=("skills",))
+
+    assert [r["status"] for r in _rows(await planner().plan())] == ["unchanged"]
+
+    skill_dir = _hermes(home).skill_dirs[0]
+    _edit_source(skill_dir)
+    rows = _rows(await planner().plan())
+    assert [r["status"] for r in rows] == ["changed"]
+    assert rows[0]["old_sha256"] == first["sha256"] and rows[0]["new_sha256"] != first["sha256"]
+
+    shutil.rmtree(skill_dir)
+    rows = _rows(await planner().plan())
+    assert rows == [{
+        "slug": "github-issues", "status": "source_removed", "reason": "source_path_missing",
+        "source_path": str(skill_dir / "SKILL.md"), "sha256": first["sha256"],
+    }]
+    # Nothing is deleted on Nerva's side: removing the imported copy is the owner's call.
+    assert (skills_dir / "github-issues" / "SKILL.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_rescan_reports_renamed_and_linked_sources(home, tmp_path):
+    skills_dir = tmp_path / "skills"
+    await ni.ImportRunner(
+        _hermes(home), authorizer=RecordingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply()
+    skill_md = _hermes(home).skill_dirs[0] / "SKILL.md"
+
+    skill_md.write_text(SKILL_MD.replace("name: github-issues", "name: gh-issues"), encoding="utf-8")
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), skills_dir=skills_dir, sections=("skills",)
+    ).plan())
+    by_status = {r["status"]: r for r in rows}
+    assert set(by_status) == {"would_import", "source_renamed"}
+    assert by_status["would_import"]["slug"] == "gh-issues"
+    assert by_status["source_renamed"]["slug"] == "github-issues"
+    assert by_status["source_renamed"]["new_slug"] == "gh-issues"
+
+    outside = tmp_path / "outside.md"
+    outside.write_text(SKILL_MD, encoding="utf-8")
+    skill_md.unlink()
+    try:
+        skill_md.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    [row] = ni.rescan_imported(skills_dir, "hermes")
+    assert row["status"] == "source_removed" and row["reason"] == "source_not_plain_file"
+    assert ni.rescan_imported(skills_dir, "openclaw") == []
+    with pytest.raises(ValueError):
+        ni.rescan_imported(skills_dir, "cursor")
+
+
+@pytest.mark.asyncio
+async def test_apply_update_reimports_changed_skill_into_quarantine_and_revokes_approval(
+    home, tmp_path
+):
+    skills_dir = tmp_path / "skills"
+    backups = tmp_path / "backups"
+    loader, store = _approval_loader(tmp_path)
+    first = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=RecordingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply())[0]
+    target = skills_dir / "github-issues"
+
+    # The owner reviews and approves the quarantined import (the real approve path).
+    loader._load_skill(target)
+    assert loader.approve_generated_skill("github-issues") is True
+    assert store.is_approved(target) and not (target / "PENDING_REVIEW").exists()
+    assert (target / "SKILL.sig").exists()
+
+    skill_dir = _hermes(home).skill_dirs[0]
+    new = _edit_source(skill_dir)
+
+    # --apply without --update: the change is reported, never written.
+    quiet = RecordingAuthorizer()
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=quiet, skills_dir=skills_dir, sections=("skills",),
+        skill_backup_dir=backups, approval_revoker=loader.revoke_approval,
+    ).apply())
+    assert [r["status"] for r in rows] == ["changed"] and quiet.actions == []
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert store.is_approved(target) and not backups.exists()
+
+    # --apply --update: re-imported only after crossing skill.install, back into quarantine.
+    auth = RecordingAuthorizer()
+    updater = ni.ImportRunner(
+        _hermes(home), authorizer=auth, skills_dir=skills_dir, sections=("skills",),
+        update_skills=True, skill_backup_dir=backups, approval_revoker=loader.revoke_approval,
+    )
+    row = _rows(await updater.apply())[0]
+    assert row["status"] == "reimported" and row["kernel"] == "queue"
+    assert row["old_sha256"] == first["sha256"] and row["new_sha256"] == row["sha256"]
+    assert row["approval_revoked"] is True and row["quarantined"] is True
+    assert (target / "SKILL.md").read_bytes() == new
+    assert (target / "PENDING_REVIEW").exists()
+    assert not (target / "SKILL.sig").exists()  # the approval-time signature is gone
+    assert not store.is_approved(target) and not store.tracks_path(target)
+    backup = Path(row["backup_path"])
+    assert backup.parent.parent == backups and backup.read_text(encoding="utf-8") == SKILL_MD
+    sidecar = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    assert sidecar["content_sha256"] == row["new_sha256"]
+    assert sidecar["previous_sha256"] == first["sha256"] and sidecar["quarantined"] is True
+
+    [action] = auth.actions
+    assert action.kind == "skill.install" and action.origin == "external"
+    assert action.payload["op"] == "reimport" and action.payload["name"] == "github-issues"
+    assert action.payload["content_sha256"] == row["new_sha256"]
+    assert action.payload["previous_sha256"] == first["sha256"]
+    assert action.payload["quarantined"] is True and action.payload["tainted"] is True
+
+    # The loader sees a quarantined skill again: registered, never exec'd in-process.
+    loader._load_skill(target)
+    skill = loader.skills["github-issues"]
+    assert skill.sandboxed is True and skill.trusted is False
+    assert "quarantine" in skill.signature_reason
+
+    # Idempotent: the next update run finds nothing to do and asks the kernel nothing.
+    again = RecordingAuthorizer()
+    updater.authorizer = again
+    assert [r["status"] for r in _rows(await updater.apply())] == ["unchanged"]
+    assert again.actions == []
+
+
+@pytest.mark.asyncio
+async def test_reimport_refuses_without_backup_dir_or_revoker(home, tmp_path):
+    skills_dir = tmp_path / "skills"
+    importer = SkillImporter(str(skills_dir))
+    skill_dir = _hermes(home).skill_dirs[0]
+    await importer.import_local_skill(skill_dir, "hermes")
+    _edit_source(skill_dir)
+    no_backup = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, revoke_approval=lambda path: True
+    )
+    assert no_backup["status"] == "rejected" and no_backup["reason"] == "backup_dir_unset"
+    no_revoker = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=tmp_path / "bk"
+    )
+    assert no_revoker["status"] == "rejected" and no_revoker["reason"] == "approval_revoker_unset"
+    assert (skills_dir / "github-issues" / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+    # The runner refuses the same way before it ever asks the kernel.
+    auth = RecordingAuthorizer()
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=auth, skills_dir=skills_dir, sections=("skills",),
+        update_skills=True, approval_revoker=lambda path: True,
+    ).apply())
+    assert [(r["status"], r["reason"]) for r in rows] == [("rejected", "backup_dir_unset")]
+    assert auth.actions == []
+    assert (skills_dir / "github-issues" / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+
+@pytest.mark.asyncio
+async def test_skill_import_crosses_skill_install_and_a_denial_writes_nothing(home, tmp_path):
+    skills_dir = tmp_path / "skills"
+    denier = RecordingAuthorizer("deny", "kill_switch")
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=denier, skills_dir=skills_dir, sections=("skills",)
+    ).apply())
+    assert [(r["status"], r["reason"]) for r in rows] == [("denied", "kill_switch")]
+    assert len(denier.actions) == 1 and not (skills_dir / "github-issues").exists()
+
+    auth = RecordingAuthorizer()  # default-style QUEUE → lands quarantined for owner review
+    row = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=auth, skills_dir=skills_dir, sections=("skills",)
+    ).apply())[0]
+    assert row["status"] == "imported" and row["kernel"] == "queue"
+    assert (skills_dir / "github-issues" / "PENDING_REVIEW").exists()
+    [action] = auth.actions
+    assert action.kind == "skill.install" and action.origin == "external"
+    payload = action.payload
+    assert payload["op"] == "import" and payload["action"] == "install"
+    assert payload["name"] == "github-issues" and payload["source"] == "hermes"
+    assert payload["content_sha256"] == row["sha256"] and "previous_sha256" not in payload
+    assert payload["quarantined"] is True and payload["tainted"] is True
+    assert payload["taint_source"] == "import:hermes"
+    assert "Triage GitHub issues" not in json.dumps(payload)  # ids only, never the body
+
+    # The default CLI authorizer queues skills with a skill-specific reason.
+    assert ni.queue_only_authorizer(action).reason == "imported_skill_requires_owner_review"
+    assert ni.queue_only_authorizer(None).reason == "imported_memory_requires_owner_approval"
+
+
+@pytest.mark.asyncio
+async def test_real_action_kernel_as_skill_authorizer_halts_and_never_grants(home, tmp_path):
+    """The seam takes the real ``kernel.authorize``: an engaged kill switch denies
+    the skill.install before a byte is written, and with the switch off the
+    ``external`` origin keeps even a policy GRANT at QUEUE (quarantined write)."""
+    import functools
+
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import authorize
+    from agents.core.security.capability import KillSwitch
+
+    kill_switch = KillSwitch(tmp_path / "kill.json")
+    kernel = functools.partial(authorize, kill_switch=kill_switch, policy=AutonomyPolicy())
+    skills_dir = tmp_path / "skills"
+
+    kill_switch.engage(reason="test")
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=kernel, skills_dir=skills_dir, sections=("skills",)
+    ).apply())
+    assert rows[0]["status"] == "denied" and "kill-switch" in rows[0]["reason"]
+    assert not (skills_dir / "github-issues").exists()
+
+    kill_switch.disengage()
+    row = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=kernel, skills_dir=skills_dir, sections=("skills",)
+    ).apply())[0]
+    assert row["status"] == "imported" and row["kernel"] == "queue"
+    assert (skills_dir / "github-issues" / "PENDING_REVIEW").exists()
+
+
+def test_skill_import_contract_gates_quarantine_taint_and_op():
+    base = {
+        "kind": "skill.install", "op": "import", "action": "install", "name": "brief",
+        "source": "hermes", "content_sha256": "a" * 64, "quarantined": True,
+        "tainted": True, "taint_source": "import:hermes", "injection_flags": [],
+    }
+    decision = ni.SKILL_IMPORT_CONTRACT.evaluate(base)
+    assert decision.admissible and decision.requires_approval
+
+    def denial(**patch):
+        return ni.contract_denial(ni.SKILL_IMPORT_CONTRACT.evaluate({**base, **patch}))
+
+    assert denial(quarantined=False) == "not_quarantined"
+    assert denial(tainted=False) == "untainted_import"
+    assert denial(taint_source="import:cursor") == "unknown_import_origin"
+    assert denial(op="delete") == "unknown_operation"
+    assert denial(name="../pwned") == "invalid_skill_name"
+    assert denial(content_sha256="nope") == "invalid_digest"
+    assert denial(op="reimport") == "invalid_digest"  # a re-import names the bytes it replaces
+    assert denial(op="reimport", previous_sha256="b" * 64) is None
+    assert denial(kind="kg.write") == "invalid_kind"
+
+
+@pytest.mark.asyncio
+async def test_source_edited_after_authorization_is_refused(home, tmp_path):
+    skills_dir = tmp_path / "skills"
+    skill_dir = _hermes(home).skill_dirs[0]
+
+    class EditingAuthorizer(RecordingAuthorizer):
+        def __call__(self, action):
+            _edit_source(skill_dir)  # the source moves between the grant and the write
+            return super().__call__(action)
+
+    row = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=EditingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply())[0]
+    assert row["status"] == "rejected" and row["reason"] == "source_changed_since_authorized"
+    assert not (skills_dir / "github-issues").exists()
 
 
 # ── memory facts + contract ───────────────────────────────────────
@@ -530,6 +870,63 @@ def test_cli_apply_queues_memory_under_data_path(home, tmp_path, monkeypatch, ca
     assert store.count(ni.PENDING) == 4
     assert (data_home / "imports" / "hermes" / "persona_preview.md").exists()
     assert not (tmp_path / "skills").exists()  # --only excluded skills
+
+
+def test_cli_update_reimports_changed_skills_only_with_apply(home, tmp_path, monkeypatch, capsys):
+    import agents.core.skills.loader as loader_mod
+    from agents.core.skills.approval import SkillApprovalStore
+
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("JARVIS_HOME", str(data_home))
+    skills_dir = tmp_path / "skills"
+    target = skills_dir / "github-issues"
+    base = ["--from", "hermes", "--home", str(home), "--only", "skills", "--skills-dir", str(skills_dir)]
+
+    assert ni.main([*base, "--apply"]) == 0
+    assert "1 imported" in capsys.readouterr().out
+    loader = loader_mod.SkillLoader()  # the default registry under $JARVIS_HOME, as the CLI uses
+    loader._load_skill(target)
+    assert loader.approve_generated_skill("github-issues") is True
+    assert SkillApprovalStore().is_approved(target)
+
+    new = _edit_source(_hermes(home).skill_dirs[0])
+
+    # --update without --apply is still a dry run: it shows the change, writes nothing.
+    assert ni.main([*base, "--update", "--json"]) == 0
+    [report] = json.loads(capsys.readouterr().out)
+    assert [r["status"] for r in report["sections"]["skills"]] == ["changed"]
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+    assert ni.main([*base, "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "1 changed" in out and "--apply --update" in out
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+    assert ni.main([*base, "--apply", "--update"]) == 0
+    assert "1 reimported" in capsys.readouterr().out
+    assert (target / "SKILL.md").read_bytes() == new and (target / "PENDING_REVIEW").exists()
+    assert not SkillApprovalStore().is_approved(target)
+    assert list((data_home / "imports" / "skill_backups" / "github-issues").iterdir())
+
+    assert ni.main([*base, "--apply", "--update"]) == 0
+    assert "1 unchanged" in capsys.readouterr().out
+
+
+def test_cli_reports_source_removed_when_the_whole_install_is_gone(home, tmp_path, capsys):
+    import shutil
+
+    skills_dir = tmp_path / "skills"
+    base = ["--from", "hermes", "--home", str(home), "--only", "skills", "--skills-dir", str(skills_dir)]
+    assert ni.main([*base, "--apply"]) == 0
+    capsys.readouterr()
+    shutil.rmtree(home / ".hermes")
+
+    assert ni.main([*base, "--json"]) == 0
+    [report] = json.loads(capsys.readouterr().out)
+    rows = report["sections"]["skills"]
+    assert [(r["slug"], r["status"]) for r in rows] == [("github-issues", "source_removed")]
+    assert report["source"]["source"] == "hermes"
+    assert (skills_dir / "github-issues" / "SKILL.md").exists()
 
 
 # ── BUG-13: live smoke lane (schedule-only CI, var-gated; skipped locally) ──

@@ -17,11 +17,15 @@ A legacy ``manifest.json``/``manifest.yaml`` layout is still accepted as a
 fallback for older repos.
 """
 
+import difflib
 import hashlib
 import hmac
 import json
 import logging
+import os
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -596,20 +600,46 @@ class SkillImporter:
         return imported
 
     async def import_local_skill(
-        self, skill_dir: Path, source: str, *, dry_run: bool = False, overwrite: bool = False
+        self,
+        skill_dir: Path,
+        source: str,
+        *,
+        dry_run: bool = False,
+        overwrite: bool = False,
+        expected_sha256: Optional[str] = None,
+        backup_dir: Optional[Path] = None,
+        revoke_approval: Optional[Callable[[Path], bool]] = None,
     ) -> dict:
         """Copy one local ``SKILL.md`` (a Hermes/OpenClaw/Claude Code install) into
         the skills tree, **quarantined** — see ``_import_local_skill`` below.
 
         Returns ``{"slug", "status", "reason", ...}`` with ``status`` one of
-        ``imported`` / ``would_import`` (dry-run) / ``skipped`` (already present) /
-        ``rejected`` (unsafe name, unreadable, save refused). ``injection_flags``
-        lists ``quarantine.detect_injection`` hits for the owner's review card; a
-        hit does not block the import because the skill is quarantined either way.
+        ``imported`` / ``would_import`` (dry-run) / ``unchanged`` / ``changed`` /
+        ``reimported`` / ``skipped`` / ``rejected``. When the target already exists
+        the call re-detects instead of blindly skipping (H344): a target whose
+        ``manifest.json`` records *this* source file reads ``unchanged`` (same
+        digest) or ``changed`` (``old_sha256``/``new_sha256`` plus a bounded line
+        diff); any other existing target is ``skipped``/``exists``.
+
+        ``overwrite=True`` re-imports a ``changed`` skill only — never a skill this
+        source did not import — and requires ``backup_dir`` (the current copy is
+        kept there) and ``revoke_approval`` (the owner's prior approval of the old
+        bytes is dropped; the skill goes back to ``PENDING_REVIEW``).
+        ``expected_sha256`` binds a write to the bytes an authorizer saw: a source
+        edited in between is refused. ``injection_flags`` lists
+        ``quarantine.detect_injection`` hits for the owner's review card; a hit
+        does not block the import because the skill is quarantined either way.
         A dry run touches nothing on disk.
         """
         return await _import_local_skill(
-            self, skill_dir, source, dry_run=dry_run, overwrite=overwrite
+            self,
+            skill_dir,
+            source,
+            dry_run=dry_run,
+            overwrite=overwrite,
+            expected_sha256=expected_sha256,
+            backup_dir=backup_dir,
+            revoke_approval=revoke_approval,
         )
 
     def list_imported(self) -> list[dict]:
@@ -765,6 +795,14 @@ def _scan_skill_dirs(skills_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(found))
 
 
+def install_root(source: str, home: Optional[Path] = None) -> Path:
+    """Where *source*'s install lives under *home* (default ``~``); it may not exist."""
+    if source not in MIGRATION_SOURCES:
+        raise ValueError(f"unknown migration source: {source!r}")
+    base = Path(home).expanduser() if home is not None else Path.home()
+    return base / _MIGRATION_LAYOUTS[source]["root"][0]
+
+
 def detect_sources(home: Optional[Path] = None, only: Optional[str] = None) -> list[DetectedSource]:
     """Find Hermes / OpenClaw / Claude Code installs under *home* (default ``~``).
 
@@ -781,7 +819,7 @@ def detect_sources(home: Optional[Path] = None, only: Optional[str] = None) -> l
         if only is not None and source != only:
             continue
         layout = _MIGRATION_LAYOUTS[source]
-        root = base / layout["root"][0]
+        root = install_root(source, base)
         if not _is_plain_dir(root):
             continue
         skill_dirs: list[Path] = []
@@ -808,8 +846,241 @@ def _local_skill_result(slug: Optional[str], status: str, reason: str = "", **ex
     return result
 
 
+# ── H344: re-detect / diff after import ──────────────────────────────────────
+#
+# Import-once stays the only way a foreign skill enters the skills tree: a
+# live-scanned foreign directory would be a folder someone else's tool writes
+# into, a trust boundary Nerva would have to re-check on every turn. What a re-run
+# adds is *noticing*. The ``manifest.json`` sidecar already records the source
+# file and the digest of the bytes imported, so a later run reports each skill as
+# ``unchanged`` / ``changed`` (both digests + a bounded line diff) /
+# ``source_removed``, and re-imports a changed one only on an explicit owner
+# request: the current copy is backed up outside the tree, the skill goes back to
+# ``PENDING_REVIEW`` before the new bytes land, and the owner's approval of the
+# old bytes is revoked.
+
+_MAX_DIFF_PREVIEW_LINES = 40
+_MAX_DIFF_LINE_CHARS = 200
+_MAX_RESCAN_DIRS = 2000
+# Approval-time artefacts that vouch for the OLD bytes: the signature
+# ``approve_generated_skill`` mints and the legacy in-tree approval marker.
+_REIMPORT_CLEARED_CONTROLS: tuple[str, ...] = ("SKILL.sig", "OWNER_APPROVED_IN_PROCESS")
+_REIMPORT_CONTROL_FILES: tuple[str, ...] = (
+    "SKILL.md",
+    "manifest.json",
+    "PENDING_REVIEW",
+    *_REIMPORT_CLEARED_CONTROLS,
+)
+
+
+def _same_path(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _read_import_record(target: Path) -> Optional[dict]:
+    """The local-import provenance of *target*, or None when it has none we trust.
+
+    Only a real directory holding a regular (non-link) ``manifest.json`` whose
+    ``source_install`` names a migration source, with a recorded ``source_path``
+    and a sha256 ``content_sha256``, counts. Anything else is a skill this
+    importer did not write: it is reported ``exists`` and never re-imported.
+    """
+    if not _is_plain_dir(target):
+        return None
+    sidecar = target / "manifest.json"
+    if not _is_plain_file(sidecar):
+        return None
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("source_install") not in MIGRATION_SOURCES:
+        return None
+    source_path = data.get("source_path")
+    digest = data.get("content_sha256")
+    if not isinstance(source_path, str) or not source_path:
+        return None
+    if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+        return None
+    return data
+
+
+def _diff_summary(old: bytes, new: bytes) -> dict:
+    """Line counts plus a bounded unified-diff preview (imported copy → source)."""
+    old_lines = old.decode("utf-8", errors="replace").splitlines()
+    new_lines = new.decode("utf-8", errors="replace").splitlines()
+    # [2:] drops the ---/+++ file header; a changed line may itself start with "--".
+    diff = list(
+        difflib.unified_diff(old_lines, new_lines, "imported", "source", lineterm="", n=0)
+    )[2:]
+    body = [line for line in diff if not line.startswith("@@")]
+    return {
+        "lines_added": sum(1 for line in body if line.startswith("+")),
+        "lines_removed": sum(1 for line in body if line.startswith("-")),
+        "preview": [line[:_MAX_DIFF_LINE_CHARS] for line in diff[:_MAX_DIFF_PREVIEW_LINES]],
+        "truncated": len(diff) > _MAX_DIFF_PREVIEW_LINES,
+    }
+
+
+def _classify_existing(
+    target: Path, skill_md: Path, source: str, raw: bytes, digest: str
+) -> dict:
+    """``exists`` / ``unchanged`` / ``changed`` for an already-present *target*."""
+    record = _read_import_record(target)
+    if (
+        record is None
+        or record.get("source_install") != source
+        or not _same_path(record["source_path"], str(skill_md))
+    ):
+        return {"status": "exists"}
+    old_digest = record["content_sha256"]
+    if old_digest == digest:
+        return {"status": "unchanged"}
+    current = target / "SKILL.md"
+    try:
+        local = current.read_bytes() if _is_plain_file(current) else b""
+    except OSError:
+        local = b""
+    return {
+        "status": "changed",
+        "old_sha256": old_digest,
+        "new_sha256": digest,
+        # The owner edited the imported copy by hand: a re-import replaces that
+        # edit (the backup keeps it), so the report says so up front.
+        "local_modified": hashlib.sha256(local).hexdigest() != old_digest,
+        "diff": _diff_summary(local, raw),
+    }
+
+
+def _pending_review_text(
+    source: str, skill_md: Path, digest: str, flags, previous: str = ""
+) -> str:
+    text = (
+        f"source={source}\nimported_from={skill_md}\nsha256={digest}\n"
+        f"injection_flags={len(flags)}\n"
+    )
+    if previous:
+        text += f"previous_sha256={previous}\n"
+    return text
+
+
+def _unique_backup_path(backup_dir: Path, slug: str, old_digest: str) -> Path:
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    folder = Path(backup_dir) / slug
+    candidate = folder / f"{stamp}-{old_digest[:12]}.SKILL.md"
+    counter = 1
+    while candidate.exists() or candidate.is_symlink():
+        candidate = folder / f"{stamp}-{old_digest[:12]}-{counter}.SKILL.md"
+        counter += 1
+    return candidate
+
+
+async def _reimport_local_skill(
+    importer: "SkillImporter",
+    target: Path,
+    skill_md: Path,
+    source: str,
+    *,
+    text: str,
+    raw: bytes,
+    digest: str,
+    flags,
+    old_digest: str,
+    backup_dir: Optional[Path],
+    revoke_approval: Optional[Callable[[Path], bool]],
+) -> dict:
+    slug = target.name
+    info = {
+        "sha256": digest,
+        "old_sha256": old_digest,
+        "new_sha256": digest,
+        "injection_flags": flags,
+    }
+    if backup_dir is None:
+        return _local_skill_result(slug, "rejected", "backup_dir_unset", **info)
+    if revoke_approval is None:
+        return _local_skill_result(slug, "rejected", "approval_revoker_unset", **info)
+    try:
+        target.resolve().relative_to(importer.skills_dir.resolve())
+    except (OSError, ValueError):
+        return _local_skill_result(slug, "rejected", "target_outside_skills_dir", **info)
+    for name in _REIMPORT_CONTROL_FILES:
+        control = target / name
+        if control.is_symlink() or (control.exists() and not control.is_file()):
+            return _local_skill_result(slug, "rejected", "target_not_plain", **info)
+    current = target / "SKILL.md"
+    try:
+        old_bytes = current.read_bytes() if current.exists() else b""
+    except OSError:
+        return _local_skill_result(slug, "rejected", "target_unreadable", **info)
+
+    # 1) The current copy is kept OUTSIDE the skills tree: inside it, the backup
+    #    would become part of the skill's reviewed source snapshot.
+    try:
+        backup = _unique_backup_path(Path(backup_dir), slug, old_digest)
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_bytes(old_bytes)
+    except OSError:
+        return _local_skill_result(slug, "rejected", "backup_failed", **info)
+
+    # 2) Quarantine BEFORE the new bytes land: no loader pass may ever see the new
+    #    source without the PENDING_REVIEW marker (CDX-8).
+    marker = target / "PENDING_REVIEW"
+    marker.write_text(
+        _pending_review_text(source, skill_md, digest, flags, old_digest), encoding="utf-8"
+    )
+    # 3) The approval-time signature and legacy marker vouch for the OLD bytes.
+    for name in _REIMPORT_CLEARED_CONTROLS:
+        (target / name).unlink(missing_ok=True)
+
+    saved = await importer._save_skill(
+        slug,
+        source,
+        skill_md_text=text,
+        skill_md_bytes=raw,
+        provenance={
+            "source_install": source,
+            "source_path": str(skill_md),
+            "content_sha256": digest,
+            "previous_sha256": old_digest,
+            "reimported_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "quarantined": True,
+        },
+    )
+    if not saved:
+        # Fail closed: the step-2 marker stays, so whatever bytes remain are quarantined.
+        return _local_skill_result(
+            slug, "rejected", "save_refused", backup_path=str(backup), **info
+        )
+
+    # 4) Drop the owner's approval bound to this path: it approved other bytes, and
+    #    a later revert to them must not inherit it (DRA-54).
+    try:
+        revoked = bool(revoke_approval(target))
+    except Exception:  # the marker already fails closed; report, never raise
+        logger.warning("Approval revoke failed for re-imported skill %s", slug, exc_info=True)
+        revoked = False
+    return _local_skill_result(
+        slug,
+        "reimported",
+        "",
+        quarantined=True,
+        approval_revoked=revoked,
+        backup_path=str(backup),
+        **info,
+    )
+
+
 async def _import_local_skill(
-    importer: "SkillImporter", skill_dir: Path, source: str, *, dry_run: bool, overwrite: bool
+    importer: "SkillImporter",
+    skill_dir: Path,
+    source: str,
+    *,
+    dry_run: bool,
+    overwrite: bool,
+    expected_sha256: Optional[str] = None,
+    backup_dir: Optional[Path] = None,
+    revoke_approval: Optional[Callable[[Path], bool]] = None,
 ) -> dict:
     if source not in MIGRATION_SOURCES:
         return _local_skill_result(None, "rejected", "unknown_source")
@@ -831,9 +1102,52 @@ async def _import_local_skill(
 
     flags = quarantine.detect_injection(text)
     digest = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 is not None and digest != expected_sha256:
+        # The bytes moved between the authorizer's look and this write: the grant
+        # covered other bytes, so nothing is written.
+        return _local_skill_result(
+            slug,
+            "rejected",
+            "source_changed_since_authorized",
+            sha256=digest,
+            expected_sha256=expected_sha256,
+            injection_flags=flags,
+        )
     target = importer.skills_dir / slug
-    if target.exists() and not overwrite:
-        return _local_skill_result(slug, "skipped", "exists", sha256=digest, injection_flags=flags)
+    if target.exists() or target.is_symlink():
+        state = _classify_existing(target, skill_md, source, raw, digest)
+        status = state.pop("status")
+        if status == "exists":
+            reason = "exists_not_imported_from_source" if overwrite else "exists"
+            return _local_skill_result(
+                slug, "skipped", reason, sha256=digest, injection_flags=flags
+            )
+        if status == "unchanged":
+            return _local_skill_result(
+                slug,
+                "unchanged",
+                "",
+                sha256=digest,
+                injection_flags=flags,
+                quarantined=(target / "PENDING_REVIEW").exists(),
+            )
+        if dry_run or not overwrite:
+            return _local_skill_result(
+                slug, "changed", "source_changed", sha256=digest, injection_flags=flags, **state
+            )
+        return await _reimport_local_skill(
+            importer,
+            target,
+            skill_md,
+            source,
+            text=text,
+            raw=raw,
+            digest=digest,
+            flags=flags,
+            old_digest=state["old_sha256"],
+            backup_dir=backup_dir,
+            revoke_approval=revoke_approval,
+        )
     if dry_run:
         return _local_skill_result(
             slug, "would_import", "", sha256=digest, injection_flags=flags, quarantined=True
@@ -856,10 +1170,75 @@ async def _import_local_skill(
     # (``SkillLoader.approve_generated_skill``). A foreign install's skill is
     # untrusted code by definition — flags or not.
     (target / "PENDING_REVIEW").write_text(
-        f"source={source}\nimported_from={skill_md}\nsha256={digest}\n"
-        f"injection_flags={len(flags)}\n",
-        encoding="utf-8",
+        _pending_review_text(source, skill_md, digest, flags), encoding="utf-8"
     )
     return _local_skill_result(
         slug, "imported", "", sha256=digest, injection_flags=flags, quarantined=True
     )
+
+
+def rescan_imported(skills_dir: Path, source: Optional[str] = None) -> list[dict]:
+    """Imported skills whose recorded source is gone or now declares another name.
+
+    Read-only (H344). Walks the direct children of *skills_dir* (bounded, never
+    through a link) and, for every local-import record of *source* (or of any
+    migration source), reports ``source_removed`` when the recorded ``SKILL.md`` is
+    no longer a regular file, ``source_renamed`` when it now declares a different
+    skill name (a re-run imports it under the new slug), and ``source_unreadable``
+    when it can no longer be read within the import bound. A still-matching source
+    yields no row: the per-skill re-detect covers it. Nothing is deleted: removing
+    an imported skill stays the owner's decision.
+    """
+    if source is not None and source not in MIGRATION_SOURCES:
+        raise ValueError(f"unknown migration source: {source!r}")
+    root = Path(skills_dir)
+    if not _is_plain_dir(root):
+        return []
+    try:
+        children = sorted(root.iterdir())[:_MAX_RESCAN_DIRS]
+    except OSError:
+        return []
+    rows: list[dict] = []
+    for target in children:
+        record = _read_import_record(target)
+        if record is None or (source is not None and record["source_install"] != source):
+            continue
+        source_path = Path(record["source_path"])
+        info = {"source_path": str(source_path), "sha256": record["content_sha256"]}
+        try:
+            linked = source_path.is_symlink()
+            missing = not linked and not source_path.exists()
+            plain = not linked and source_path.is_file()
+        except OSError:
+            missing, plain = True, False
+        if missing:
+            rows.append(
+                _local_skill_result(target.name, "source_removed", "source_path_missing", **info)
+            )
+            continue
+        if not plain:
+            rows.append(
+                _local_skill_result(target.name, "source_removed", "source_not_plain_file", **info)
+            )
+            continue
+        if not _is_plain_file(source_path):
+            rows.append(
+                _local_skill_result(target.name, "source_unreadable", "skill_md_too_large", **info)
+            )
+            continue
+        try:
+            text = source_path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            rows.append(
+                _local_skill_result(target.name, "source_unreadable", "skill_md_unreadable", **info)
+            )
+            continue
+        declared = SkillImporter._extract_frontmatter(text).get("name")
+        slug = _safe_slug(str(declared) if declared else source_path.parent.name)
+        if slug != target.name:
+            rows.append(
+                _local_skill_result(
+                    target.name, "source_renamed", "declared_name_changed", new_slug=slug, **info
+                )
+            )
+    return rows
