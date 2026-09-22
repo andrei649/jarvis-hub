@@ -135,10 +135,3 @@ def protocol_refusal(backend: str, url: object) -> str:
         f"{hostname_of(url)} accepts only {mandated}; llm:{backend} speaks "
         f"{spoken or 'an undeclared protocol'} — refused before the request or its credential left"
     )
-
-
-def check_backend_host(backend: str, url: object) -> None:
-    """Raise :class:`HostProtocolRefused` when *backend* must not speak to *url*."""
-    reason = protocol_refusal(backend, url)
-    if reason:
-        raise HostProtocolRefused(reason)
