@@ -49,22 +49,39 @@ sampling) and the CI-robustness review of the six wall-clock pins (0.25–2.0 s)
 twice to container restarts; they are the most expensive runs of the day. Options: merge as
 is (fixes are pinned and reproduced), or run those two reviews first.
 
-### #1192 — B, H506 HEARTBEAT.md read-side scan — **draft, untouched today**
-Branch `hermes/h506-read-side-scan`, head `abbb3c6c`. Content verified in round one
-(`scan_heartbeat_config`, fail-closed walker, `blocked` in status, spaced-copy / NFKC /
-U+2800+PUA detection variants in `quarantine.py`, 47 tests). Before ready: merge main (the
-ledger conflicts on the `assessed_at` hunk and generated reports — take main's, carry the
-H506/H288/H684 rows, regenerate), then **rewrite H351** (its spaced copy closes the two
-placements #1189 recorded as open), re-stamp H351's `quarantine.py` hash, regenerate. Round
-two (false-positive sweep over shipped SOUL/HEARTBEAT/SKILL + multilingual corpus, bypass
-hunt through the real loaders, route-contract review of `GET /heartbeat/status` `blocked[].path`)
-never ran. `agents/core/security/**` is control-plane → owner merge.
+### #1192 — B, H506 HEARTBEAT.md read-side scan — **ready for review**
+Branch `hermes/h506-read-side-scan`, head `e526de6f` (merge `b1fd9c42` + records `e526de6f`).
+Content verified in round one (`scan_heartbeat_config`, fail-closed walker, `blocked` in
+status, spaced-copy / NFKC / U+2800+PUA detection variants in `quarantine.py`, 47 tests).
+Finished 2026-09-22 evening: merged onto main 97ee1835 (only source conflict a comment in
+`heartbeat.py`), **H351 rewritten** as the merge gate required, and the claim verified end to
+end through `prompt_catalog` instead of assumed — five shapes that `main` advertises
+(`Ignore<U+200B>all previous instructions`, the same phrase with every gap spelled U+3164 /
+U+FE0F / U+FFA0 / U+2800, a `command` spelled with Hangul fillers, and the fullwidth spelling)
+all lose their row here, while six legitimate English / Romanian / Arabic / Japanese /
+emoji-with-tag / fullwidth descriptions keep theirs on both sides. Pinned where the row is
+paid: 17 new cases in `tests/test_skills_in_prompt.py` (32 → 49), each red against the
+pre-slice module. `loader.py` docstring drift corrected (two-copy scan, "eleven-entry" against
+ten) — comment-only. Rows re-stamped: H288, H326, H351, H389, H506, H684. 212 tests green on
+Python 3.12; `needs_review` 22 = main's own drift. Round two (false-positive sweep, bypass
+hunt through the loaders, route-contract review) still never ran and is stated as such in the
+PR. `agents/core/security/**` is control-plane → owner merge.
+
+**Why it matters more than it looked.** #1187 landed this branch's refusal *bookkeeping*
+without the scan that fills it. On `main` today `HeartbeatScheduler._blocked` is declared,
+read by four paths (withheld agents.yaml interval, skipped `start()` job,
+`get_status()["blocked"]` on the unauthenticated `GET /heartbeat/status`, the resume refusal)
+and the module docstring states "an entry the injection scan refused is scheduled from neither
+source" — while nothing in `agents/` ever writes to it and `_parse_heartbeat` is a bare
+`yaml.safe_load`. The map is permanently empty and the documented property is absent until
+this PR lands.
 
 ## Debt on main (records)
 #1187 and #1188 re-stamped only their own rows (H497) and left **24 rows in `needs_review`**
 on main (H060 H061 H068 H071 H104 H108 H130 H135 H139 H146 H288 H298 H363 H364 H398 H449
 H477 H510 H523 H671 H673 H679 H683 H684 — drift from `pairing.py`, `telegram.py`,
-`orchestrator.py`, `web.py`, `heartbeat.py`, `docs/ARCHITECTURE.md`). A catch-up PR in the
+`orchestrator.py`, `web.py`, `heartbeat.py`, `docs/ARCHITECTURE.md`). #1192 re-reads and
+re-stamps H288 and H684 of those, so 22 remain for the catch-up once it lands. A catch-up PR in the
 style of #1189 is owed: re-read each row against `git diff 3a7a039a...main -- <cited paths>`,
 keep or rewrite, re-stamp, `hermes_status.py write && check`, `status_sync.py
 --reuse-js-counts`, BACKLOG sentence. E and A each restore their own subset when they merge
@@ -98,9 +115,11 @@ thousand tokens. Rules adopted for the next session:
 4. Push every commit as soon as its checks pass; the branch is the checkpoint.
 
 ## Resume checklist (in order, cheapest first)
-1. Owner: merge #1193; decide on #1190 (merge as is, or run the two remaining reviews).
-2. B (#1192): merge main + H351 rewrite + regenerate; then round two only if budget allows.
-3. Records catch-up on main for the 24 drifted rows.
+1. Owner: merge #1193 and #1192; decide on #1190 (merge as is, or run the two remaining
+   reviews). #1192 first if you want main's heartbeat docstring to stop describing a scan
+   that is not there.
+2. Records catch-up on main for the 22 drifted rows (#1187/#1188 re-stamped only their own).
+3. Round two on #1190 and #1192, only if budget allows.
 4. Routines: `Backlog Complete Check` (trig_01Ky7Y9wkbG7VwMGE5aSxkCP, bound to
    session_01AtEguXmhahM4PahpcgHRFe) was asked to update its own prompt; confirm at its next
    firing. The delivery-day check-in for #1190/#1192/#1193 was cancelled with this handoff.
