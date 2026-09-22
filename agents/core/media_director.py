@@ -735,11 +735,26 @@ class SessionBoard:
         self._store.save(self.list())
 
 
+def holds_device(session: MediaSession | None) -> bool:
+    """Whether *session* is media the etiquette protects on its device.
+
+    Playing or paused media holds the device. An ``announce`` never does: it is a
+    one-shot notice, over once said, so the board's record of it is not something
+    the owner is watching or listening to (H313 — otherwise every announcement
+    would lock its speaker against the next one until a manual restore)."""
+    return (
+        session is not None
+        and session.state in ("playing", "paused")
+        and session.mode != "announce"
+    )
+
+
 def may_interrupt(session: MediaSession | None, *, urgency: str) -> bool:
     """Media etiquette (MOONSHOT §5.4 in the living room): an active playback
     session is only interrupted by a *high*-urgency present; everything else
-    must pick another device or wait. No session → free."""
-    if session is None or session.state not in ("playing", "paused"):
+    must pick another device or wait. No session, or only a finished-by-nature
+    announcement → free."""
+    if not holds_device(session):
         return True
     return urgency == "high"
 
@@ -795,6 +810,11 @@ class MediaDirector:
     def local_roots(self) -> tuple[Path, ...]:
         """The owner-configured roots ``local`` content must live under (read-only)."""
         return tuple(self._local_roots)
+
+    @property
+    def presence_room(self) -> str:
+        """The owner-configured room ``presence:auto`` resolves to; blank = unconfigured."""
+        return self._presence_room
 
     def driver_for(self, device: MediaDevice) -> MediaDriver:
         return self._drivers.get(device.kind, self._null)
@@ -866,8 +886,8 @@ class MediaDirector:
 
     @staticmethod
     def _consume_interrupt_budget(current, urgency: str, interrupt_budget) -> str | None:
-        active = current is not None and current.state in {"playing", "paused"}
-        if not active or urgency != "high":
+        # Cutting into an announcement interrupts nothing of the owner's: no spend.
+        if not holds_device(current) or urgency != "high":
             return None
         try:
             consume = getattr(interrupt_budget, "consume", None)
@@ -969,7 +989,13 @@ class MediaDirector:
         if budget_refusal is not None:
             return {"ok": False, "reason": budget_refusal}
 
-        previous = current.to_dict() if current else None
+        if current is not None and current.mode == "announce":
+            # An announcement is never the restore point: whatever it cut into
+            # stays the snapshot, so restore brings back the owner's media rather
+            # than replaying a notice (whose clip may already be gone).
+            previous = dict(current.previous) if current.previous is not None else None
+        else:
+            previous = current.to_dict() if current else None
         if previous is not None:
             previous["previous"] = None
         outcome = self._play(driver, device, content, duration)

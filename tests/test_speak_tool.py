@@ -10,8 +10,10 @@ drives an output device itself. Registered only with the Media Director on,
 offered only to the owner at the operator surface.
 """
 
+import functools
 import os
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +34,7 @@ from agents.core.media_director import (  # noqa: E402
     DeviceRegistry,
     MediaDevice,
     MediaDirector,
+    MediaSession,
     SessionBoard,
 )
 from agents.core.routers import media_director as media_routes  # noqa: E402
@@ -87,7 +90,8 @@ class _Kernel:
         return Decision(Verdict.GRANT, reason="allowed", tier=2)
 
 
-def _director(root: Path, driver: _Driver, *, supports=("announce",)) -> MediaDirector:
+def _director(root: Path, driver: _Driver, *, supports=("announce", "play"),
+              presence_room: str = "kitchen") -> MediaDirector:
     registry = DeviceRegistry(path=None)
     registry.register(MediaDevice(
         id="speaker-kitchen", name="Kitchen speaker", kind="speaker",
@@ -101,6 +105,8 @@ def _director(root: Path, driver: _Driver, *, supports=("announce",)) -> MediaDi
         sessions=SessionBoard(path=None),
         drivers={"speaker": driver, "tv": driver},
         local_roots=(root,),
+        presence=lambda: None,  # no fresh presence signal unless a test gives one
+        presence_room=presence_room,
     )
 
 
@@ -130,6 +136,8 @@ def media_env(tmp_path, monkeypatch):
     monkeypatch.setattr(media_routes, "_director", director)
     synth_log = []
     monkeypatch.setattr(speak_tool, "default_speaker", _speaker(synth_log))
+    # The proposal-time probe asks whether a speech backend is installed at all.
+    monkeypatch.setattr(speak_tool, "tts_installed", lambda: True)
     return SimpleNamespace(root=root, driver=driver, director=director, synth=synth_log)
 
 
@@ -145,10 +153,14 @@ class _RecordingQueue:
         return None
 
 
+_NO_KERNEL = object()
+
+
 def _wired(kernel=None):
     queue = _RecordingQueue()
     orch = SimpleNamespace(agents={}, autonomy_queue=queue, secret_broker=None, intent_log=None)
-    AutonomyCoordinator(orch)._wire_agent_tool_runtime(action_kernel=kernel)
+    bound = _Kernel() if kernel is None else (None if kernel is _NO_KERNEL else kernel)
+    AutonomyCoordinator(orch)._wire_agent_tool_runtime(action_kernel=bound)
     return orch, queue
 
 
@@ -272,7 +284,8 @@ async def test_media_director_off_refuses_even_a_registered_tool(media_env, monk
 
 
 async def test_a_room_proposal_names_its_announce_device_on_the_card(media_env):
-    orch, queue = _wired()
+    kernel = _Kernel()
+    orch, queue = _wired(kernel)
     response = await _propose(orch, {"text": "Dinner is ready.", "target": "kitchen"})
     assert response["reason"] == "approval_required"
     (args, kwargs), = queue.enqueued
@@ -282,7 +295,64 @@ async def test_a_room_proposal_names_its_announce_device_on_the_card(media_env):
     assert kwargs["payload"]["args"] == {
         "text": "Dinner is ready.", "target": "speaker-kitchen", "urgency": "normal",
     }
+    assert args[2].endswith("say aloud on speaker-kitchen")
+    # The kernel was shown exactly the row that became the card, so the worker's
+    # mediation bridge can bind that decision as the row's intake evidence.
+    (proposal,) = kernel.actions
+    assert (proposal.kind, proposal.agent, proposal.title) == ("toolrpc.speak", args[0], args[2])
+    assert proposal.payload == kwargs["payload"]
+    assert proposal.origin == kwargs["origin"]
     assert media_env.driver.calls == [] and media_env.synth == []
+
+
+@pytest.mark.parametrize(
+    ("breakage", "reason"),
+    [
+        ("unified_api_off", "unified_action_api_disabled"),
+        ("kernel_off", "action_kernel_disabled"),
+        ("no_kernel", "kernel_unavailable"),
+        ("no_media_root", "media_root_unconfigured"),
+        ("no_tts", "tts_unavailable"),
+        ("no_driver", "no_media_driver"),
+    ],
+)
+@pytest.mark.parametrize("target", ["kitchen", "speaker-kitchen", "presence:auto"])
+async def test_a_card_that_could_only_be_refused_is_never_raised(
+        media_env, monkeypatch, breakage, reason, target):
+    # The owner is never asked to approve a speak the approved run can only refuse.
+    kernel = None
+    if breakage == "unified_api_off":
+        monkeypatch.delenv("JARVIS_UNIFIED_ACTION_API")
+    elif breakage == "kernel_off":
+        monkeypatch.delenv("JARVIS_ACTION_KERNEL")
+    elif breakage == "no_kernel":
+        kernel = _NO_KERNEL
+    elif breakage == "no_media_root":
+        monkeypatch.setattr(media_env.director, "_local_roots", ())
+    elif breakage == "no_tts":
+        monkeypatch.setattr(speak_tool, "tts_installed", lambda: False)
+    elif breakage == "no_driver":
+        monkeypatch.setattr(media_env.director, "_drivers", {})
+    orch, queue = _wired(kernel)
+    response = await _propose(orch, {"text": "Dinner is ready.", "target": target})
+    assert response == {"ok": False, "reason": reason, "tool": "speak"}
+    assert queue.enqueued == []
+    assert media_env.synth == [] and media_env.driver.calls == []
+
+
+async def test_presence_needs_a_configured_room_with_an_announce_speaker(media_env, monkeypatch):
+    orch, queue = _wired()
+    args = {"text": "Your call starts now.", "target": "presence:auto"}
+    monkeypatch.setattr(media_env.director, "_presence_room", "")
+    assert await _propose(orch, args) == {
+        "ok": False, "reason": "presence_room_unconfigured", "tool": "speak"}
+    monkeypatch.setattr(media_env.director, "_presence_room", "living")  # a TV, no announce
+    assert await _propose(orch, args) == {
+        "ok": False, "reason": "unsupported_mode", "tool": "speak"}
+    monkeypatch.setattr(media_env.director, "_presence_room", "attic")
+    assert await _propose(orch, args) == {
+        "ok": False, "reason": "target_unresolved", "tool": "speak"}
+    assert queue.enqueued == []
 
 
 async def test_presence_target_is_kept_for_execution_time(media_env):
@@ -308,11 +378,16 @@ def durable(tmp_path):
 
     queue = TaskQueue(db_path=str(tmp_path / "autonomy.db")).initialize()
 
-    def build(kernel):
+    def build(kernel, *, intent_log=None, through_worker_gate=False):
         worker = AutonomyWorker(queue, policy=AutonomyPolicy())
         orch = SimpleNamespace(agents={}, autonomy=worker, autonomy_queue=queue,
-                               secret_broker=None, intent_log=None)
+                               secret_broker=None, intent_log=intent_log)
         coordinator = AutonomyCoordinator(orch)
+        if through_worker_gate:
+            # Production composition (build_executor's `_broker_kernel`): the bound
+            # kernel sits behind the worker's mediation bridge.
+            worker.bind_mediation(kernel, None)
+            kernel = worker.kernel_gate
         coordinator._wire_agent_tool_runtime(action_kernel=kernel)
         generic = []
 
@@ -409,6 +484,156 @@ async def test_kernel_deny_produces_no_playback_and_no_clip(media_env, durable):
     assert media_env.director.sessions.get("speaker-kitchen") is None
 
 
+class _AuditSink:
+    """An IntentLog-shaped sink: ``record(actor, action, why, cause, metadata)``."""
+
+    def __init__(self):
+        self.rows = []
+
+    def record(self, actor, action, why, cause="", metadata=None, ts=None):
+        self.rows.append({"actor": actor, "action": action, "why": why,
+                          "metadata": dict(metadata or {})})
+        return self.rows[-1]
+
+
+def _real_kernel(tmp_path, audit):
+    """The production front door: kernel.authorize bound to a kill switch and policy."""
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.kernel import authorize
+    from agents.core.security.capability import KillSwitch
+
+    kill = KillSwitch(tmp_path / "kill_switch.json")
+    bound = functools.partial(
+        authorize, kill_switch=kill, capabilities=None, policy=AutonomyPolicy(), audit=audit,
+    )
+    return kill, bound
+
+
+async def _speak(rig, text="Dinner is ready.", target="kitchen", **extra):
+    proposed = await rig.orch.tool_rpc.handle(
+        {"tool": "speak", "args": {"text": text, "target": target, **extra}}, actor="jarvis",
+    )
+    assert proposed["reason"] == "approval_required", proposed
+    return proposed["task_id"]
+
+
+async def test_the_real_kernel_mediates_and_audits_an_approved_speak(
+        media_env, durable, tmp_path):
+    audit = _AuditSink()
+    _kill, kernel = _real_kernel(tmp_path, audit)
+    rig = durable(kernel, intent_log=audit, through_worker_gate=True)
+    task_id = await _speak(rig)
+    done = await _approve_and_run(rig, task_id)
+
+    assert done.result["status"] == "ok", done.result
+    assert [c[:2] for c in media_env.driver.calls] == [("play", "speaker-kitchen")]
+    kernel_rows = [r for r in audit.rows if r["actor"] == "kernel"]
+    assert [r["action"] for r in kernel_rows][-1] == "authorize:media.present"
+    assert "authorize:tool.rpc" in [r["action"] for r in kernel_rows]
+    # The policy asked for approval of the present; the accepted row answered it, and
+    # the chain says so — a queued present never executes without a record of why.
+    assert kernel_rows[-1]["metadata"]["verdict"] == "queue"
+    honoured = [r for r in audit.rows if r["action"] == "speak.durably_approved"]
+    assert len(honoured) == 1, audit.rows
+    assert honoured[0]["metadata"]["task_id"] == task_id
+    assert honoured[0]["metadata"]["decided_by"] == "andrei"
+    assert honoured[0]["metadata"]["target"] == "speaker-kitchen"
+
+
+async def test_the_real_kill_switch_engaged_after_approval_silences_the_speak(
+        media_env, durable, tmp_path):
+    audit = _AuditSink()
+    kill, kernel = _real_kernel(tmp_path, audit)
+    rig = durable(kernel, intent_log=audit, through_worker_gate=True)
+    task_id = await _speak(rig)
+    kill.engage(reason="owner stop")
+    done = await _approve_and_run(rig, task_id)
+
+    # ToolRPC's execution-time kernel re-check refuses before the handler runs...
+    assert done.result["status"] == "failed"
+    assert done.result["reason"] == "kernel_denied"
+    assert "kill-switch" in done.result["detail"]
+    assert media_env.driver.calls == [] and media_env.synth == []
+    assert _clips(media_env.root) == []
+    assert not [r for r in audit.rows if r["action"] == "speak.durably_approved"]
+
+    # ...and past it, the present itself is refused by the same kernel, clip dropped.
+    task = SimpleNamespace(kind="toolrpc.speak", agent="jarvis", origin="generated",
+                           id=task_id, decided_by="andrei")
+    tool = speak_tool.SpeakTool(
+        director=lambda: media_env.director, approved_task=lambda: task,
+        authorizer=kernel, audit=lambda: audit,
+    )
+    result = await tool.execute({"text": "Dinner is ready.", "target": "speaker-kitchen"})
+    assert result["reason"] == "kernel_denied"
+    assert "kill-switch" in result["detail"]
+    assert media_env.driver.calls == []
+    assert _clips(media_env.root) == []
+    assert audit.rows[-1]["action"] == "authorize:media.present"
+    assert audit.rows[-1]["metadata"]["verdict"] == "deny"
+
+
+async def test_the_real_kill_switch_refuses_the_card_itself(media_env, durable, tmp_path):
+    audit = _AuditSink()
+    kill, kernel = _real_kernel(tmp_path, audit)
+    rig = durable(kernel, intent_log=audit, through_worker_gate=True)
+    kill.engage(reason="owner stop")
+    proposed = await rig.orch.tool_rpc.handle(
+        {"tool": "speak", "args": {"text": "Dinner is ready.", "target": "kitchen"}},
+        actor="jarvis",
+    )
+    assert proposed == {"ok": False, "reason": "kernel_denied", "tool": "speak"}
+    assert rig.queue.list() == []
+    assert audit.rows[-1]["action"] == "authorize:toolrpc.speak"
+    assert audit.rows[-1]["metadata"]["verdict"] == "deny"
+
+
+async def test_back_to_back_normal_speaks_on_one_device_both_play(media_env, durable, tmp_path):
+    _kill, kernel = _real_kernel(tmp_path, None)
+    rig = durable(kernel, through_worker_gate=True)
+    budget = _CountingBudget()
+    rig.worker.budget = budget
+    first = await _approve_and_run(rig, await _speak(rig, "Dinner is ready."))
+    second = await _approve_and_run(rig, await _speak(rig, "The door is open."))
+    third = await _approve_and_run(rig, await _speak(rig, "The laundry is done.", "speaker-kitchen"))
+
+    for done in (first, second, third):
+        assert done.result["status"] == "ok", done.result
+    assert [c[:2] for c in media_env.driver.calls] == [("play", "speaker-kitchen")] * 3
+    assert budget.spent == 0
+    session = media_env.director.sessions.get("speaker-kitchen")
+    assert session.mode == "announce" and session.previous is None
+
+
+async def test_speaking_over_music_keeps_the_music_as_the_restore_point(
+        media_env, durable, tmp_path):
+    music = {"type": "url", "value": "https://radio.example/stream", "provenance": "direct"}
+    media_env.director.sessions.set(MediaSession(
+        device_id="speaker-kitchen", content=music, mode="play", privacy="household",
+        started_at=1.0,
+    ))
+    _kill, kernel = _real_kernel(tmp_path, None)
+    rig = durable(kernel, through_worker_gate=True)
+    budget = _CountingBudget()
+    rig.worker.budget = budget
+
+    # Normal urgency does not cut into the owner's music...
+    polite = await _approve_and_run(rig, await _speak(rig, "Dinner is ready."))
+    assert polite.result["reason"] == "session_etiquette"
+    assert budget.spent == 0
+    # ...high urgency does, once, and pays for it once.
+    urgent = await _approve_and_run(rig, await _speak(rig, "Dinner is ready.", urgency="high"))
+    follow = await _approve_and_run(rig, await _speak(rig, "Really, it is ready."))
+    again = await _approve_and_run(rig, await _speak(rig, "Last call.", urgency="high"))
+
+    for done in (urgent, follow, again):
+        assert done.result["status"] == "ok", done.result
+    assert budget.spent == 1
+    session = media_env.director.sessions.get("speaker-kitchen")
+    assert session.mode == "announce"
+    assert session.previous["content"] == music and session.previous["mode"] == "play"
+
+
 async def test_kernel_off_refuses_rather_than_driving_the_device(media_env, durable, monkeypatch):
     kernel = _Kernel(present_verdict=Verdict.GRANT)
     rig = durable(kernel)
@@ -419,6 +644,21 @@ async def test_kernel_off_refuses_rather_than_driving_the_device(media_env, dura
     monkeypatch.delenv("JARVIS_UNIFIED_ACTION_API")
     done = await _approve_and_run(rig, proposed["task_id"])
     assert done.result["reason"] == "unified_action_api_disabled"
+    assert media_env.driver.calls == [] and media_env.synth == []
+    assert _clips(media_env.root) == []
+
+
+async def test_the_handler_alone_still_takes_the_facades_refusal(media_env, monkeypatch):
+    # The execution-time preflight catches a flag flipped after acceptance; the handler
+    # itself still cannot reach a driver without the facade, and drops its clip.
+    task = SimpleNamespace(kind="toolrpc.speak", agent="jarvis", origin="generated")
+    tool = speak_tool.SpeakTool(
+        director=lambda: media_env.director, approved_task=lambda: task,
+        authorizer=_Kernel(present_verdict=Verdict.GRANT),
+    )
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL")
+    result = await tool.execute({"text": "Dinner is ready.", "target": "speaker-kitchen"})
+    assert result == {"ok": False, "reason": "action_kernel_disabled"}
     assert media_env.driver.calls == []
     assert _clips(media_env.root) == []
 
@@ -462,6 +702,18 @@ async def test_a_device_without_a_driver_is_named_and_the_clip_is_dropped(
     monkeypatch.setattr(media_env.director, "_drivers", {})  # NullMediaDriver: refuses honestly
     done = await _approve_and_run(rig, proposed["task_id"])
     assert done.result["reason"] == "no_media_driver"
+    assert media_env.synth == []
+    assert _clips(media_env.root) == []
+
+    # Reached past the preflight, the director's own refusal is named and the clip dropped.
+    task = SimpleNamespace(kind="toolrpc.speak", agent="jarvis", origin="generated")
+    tool = speak_tool.SpeakTool(
+        director=lambda: media_env.director, approved_task=lambda: task,
+        authorizer=_Kernel(present_verdict=Verdict.GRANT),
+    )
+    result = await tool.execute({"text": "Dinner is ready.", "target": "speaker-kitchen"})
+    assert result == {"ok": False, "reason": "no_media_driver"}
+    assert len(media_env.synth) == 1
     assert _clips(media_env.root) == []
 
 
@@ -475,18 +727,67 @@ async def test_the_handler_refuses_without_the_approved_speak_row(media_env):
     assert media_env.synth == [] and media_env.driver.calls == []
 
 
+@pytest.mark.parametrize("kind", ["toolrpc.file_write", "toolrpc.desktop_run", "tool.rpc", None])
+async def test_an_approved_row_of_another_kind_cannot_speak(media_env, kind):
+    # ToolRPC takes the tool name from the payload, and the trusted-context check admits
+    # every trusted kind: only a row approved *as* toolrpc.speak may say anything.
+    task = SimpleNamespace(kind=kind, agent="jarvis", origin="generated",
+                           payload={"tool": "speak", "args": {}})
+    tool = speak_tool.SpeakTool(
+        director=lambda: media_env.director, approved_task=lambda: task,
+        authorizer=_Kernel(present_verdict=Verdict.GRANT),
+    )
+    result = await tool.execute({"text": "Dinner is ready.", "target": "speaker-kitchen"})
+    assert result == {"ok": False, "reason": "approval_required"}
+    assert media_env.synth == [] and media_env.driver.calls == []
+
+
+class _CountingBudget:
+    """The autonomy interrupt budget, counting every spend."""
+
+    def __init__(self, allow=True):
+        self.spent = 0
+        self.allow = allow
+
+    def consume(self):
+        self.spent += 1
+        return self.allow
+
+
 async def test_the_spool_stays_bounded(media_env):
     task = SimpleNamespace(kind="toolrpc.speak", agent="jarvis", origin="generated")
-    budget = SimpleNamespace(consume=lambda: True)  # each clip interrupts the last
+    budget = _CountingBudget()
     tool = speak_tool.SpeakTool(
         director=lambda: media_env.director, approved_task=lambda: task,
         authorizer=_Kernel(present_verdict=Verdict.GRANT), interrupt_budget=lambda: budget,
     )
+    # Normal urgency, back to back on one device: an announcement never holds the
+    # speaker against the next one, and no interrupt is spent on cutting into one.
     for n in range(speak_tool.MAX_SPOOL_CLIPS + 3):
-        result = await tool.execute({"text": f"Reminder {n}.", "target": "speaker-kitchen",
-                                     "urgency": "high"})
+        result = await tool.execute({"text": f"Reminder {n}.", "target": "speaker-kitchen"})
         assert result["ok"] is True, result
     assert len(_clips(media_env.root)) == speak_tool.MAX_SPOOL_CLIPS
+    assert budget.spent == 0
+
+
+async def test_stale_partial_clips_are_pruned_but_a_fresh_one_is_left(media_env):
+    folder = media_env.root / speak_tool.SPOOL_DIRNAME
+    folder.mkdir(mode=0o700)
+    stale = folder / ".speak-1-deadbeef0000.mp3.part"
+    stale.write_bytes(b"crashed mid-write")
+    old = time.time() - 3600
+    os.utime(stale, (old, old))
+    fresh = folder / ".speak-2-deadbeef0001.mp3.part"  # another speak still writing
+    fresh.write_bytes(b"in flight")
+    task = SimpleNamespace(kind="toolrpc.speak", agent="jarvis", origin="generated")
+    tool = speak_tool.SpeakTool(
+        director=lambda: media_env.director, approved_task=lambda: task,
+        authorizer=_Kernel(present_verdict=Verdict.GRANT),
+    )
+    result = await tool.execute({"text": "Dinner is ready.", "target": "speaker-kitchen"})
+    assert result["ok"] is True, result
+    assert not stale.exists()
+    assert fresh.exists()
 
 
 async def test_a_room_with_two_announce_speakers_and_no_default_is_not_guessed(media_env):

@@ -437,7 +437,8 @@ class AutonomyCoordinator:
         )
         # H313 — the model may decide to say one thing aloud on one room's speaker.
         # Default-off (registered only with the Media Director on) and gated like
-        # image_generate; the approved run presents the clip through
+        # image_generate, with its own intake so the kernel sees the exact row the
+        # card becomes; the approved run presents the clip through
         # CapabilityActionAPI("action:media.present", mode announce), so the kernel
         # authorizes the effect and the tool itself never reaches a driver.
         from .voice.speak_tool import register_speak_tool
@@ -452,8 +453,10 @@ class AutonomyCoordinator:
             director=_media_director,
             approved_task=_APPROVED_TASK.get,
             authorizer=action_kernel,
+            enqueue=self._governed_enqueue,
             interrupt_budget=lambda: getattr(
                 getattr(self._orch, "autonomy", None), "budget", None),
+            audit=lambda: getattr(self._orch, "intent_log", None),
         )
 
         async def _rpc_echo(args):

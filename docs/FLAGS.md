@@ -71,7 +71,7 @@ house (`agents/core/house/actuation.py:365`), media
 **End-to-end — `POST /api/media/present`:** the route builds a request-scoped
 facade whose authorizer is the bound kernel (`make_action_kernel`,
 `agents/core/routers/media_director.py:156`), registers
-`action:media.present` (`agents/core/media_director.py:1066`), then `perform()`:
+`action:media.present` (`agents/core/media_director.py:1092`), then `perform()`:
 missing required params → `refused` before any authorization
 (`capability_actions.py:139`); kernel DENY → `refused`, QUEUE → `queued` with an
 approval card, GRANT → handler runs (`capability_actions.py:175`). With either
@@ -81,11 +81,22 @@ command.
 **The model's `speak` tool (H313) takes the same facade.** Registered only while
 `JARVIS_MEDIA_DIRECTOR` is on, it is a gated ToolRPC tool (owner at the HUD or
 voice loop only — never inbound, guest or unattended turns): the call is an
-approval card naming the device, and only the accepted `toolrpc.speak` row
-synthesizes the clip (under `<first JARVIS_MEDIA_ROOTS>/.nerva-speak`, at most 16
-kept) and `perform()`s `action:media.present` in `announce` mode. With either flag
-off it refuses by name (`unified_action_api_disabled` / `action_kernel_disabled`);
-it never reaches a driver itself.
+approval card naming the device, raised through the kernel as the exact
+`toolrpc.speak` row it becomes, and only that accepted row synthesizes the clip
+and `perform()`s `action:media.present` in `announce` mode; the kernel's `queue`
+on that present is honoured as the accepted row and logged as
+`speak.durably_approved`. No card is raised that could only be refused: with
+either flag off, no bound kernel, no media root, no speech backend, no driver
+for the device, or (for `presence:auto`) no configured presence room with a
+speaker, the call refuses by name (`unified_action_api_disabled`,
+`action_kernel_disabled`, `kernel_unavailable`, `media_root_unconfigured`,
+`tts_unavailable`, `no_media_driver`, `presence_room_unconfigured`). It never
+reaches a driver itself. Clips live under `<first JARVIS_MEDIA_ROOTS>/.nerva-speak`
+(owner-only files; the newest 16 are kept because an async driver may still be
+streaming one, and partial writes older than 5 minutes are removed). An
+`announce` session never holds its device: the next present there is not refused
+by etiquette and spends no interrupt budget, and what the announcement cut into
+stays the restore point.
 
 **Risk delta vs OFF:** OFF, these surfaces are inert refusals. ON, house
 mutations / media playback / desktop steps can complete on a kernel GRANT
