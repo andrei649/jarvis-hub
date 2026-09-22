@@ -74,6 +74,9 @@ ToolProfileHook = Callable[[str, list[dict[str, Any]]], tuple[Any, Any]]
 _APPROVAL_REPLY = "I paused the tool loop because this action requires approval."
 _DEADLINE_REPLY = "I stopped the tool loop because it reached the safety deadline."
 _CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safety budget."
+# H672 — the offer re-resolved at a compaction boundary came back empty: every tool
+# was revoked, or the registry could not answer and the refresh failed closed.
+_TOOLS_WITHDRAWN_REPLY = "I stopped the tool loop because the tools it was using were withdrawn."
 _WINDOW_REPLY = "I stopped the tool loop because the model context window metadata could not be validated."
 _REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool call."
 # Hermes absorption 3a — a model that calls the same tool with the same arguments again and
@@ -253,6 +256,44 @@ class AgentToolRuntime:
             return [], None
         return [dict(tool) for tool in offered if allows(str(tool.get("name") or ""))], decision
 
+    @staticmethod
+    def _specs_for(
+        metadata: list[dict[str, Any]],
+    ) -> tuple[list[ToolSpec], dict[str, bool], set[str]]:
+        """The three views of one offer: the provider specs, the gate map — whose keys
+        are the offered names the executor checks a call against — and the
+        declared-untrusted set. Built once at the top of a run and again at a
+        compaction boundary (H672), so the two can never disagree on what is offered."""
+        tools = [
+            ToolSpec(
+                name=tool["name"],
+                description=tool.get("description", ""),
+                input_schema=tool.get("input_schema", {"type": "object", "properties": {}}),
+            )
+            for tool in metadata
+        ]
+        gated_tools = {tool["name"]: bool(tool.get("gated")) for tool in metadata}
+        untrusted_tools = {
+            tool["name"] for tool in metadata if tool.get("untrusted_output") is True
+        }
+        return tools, gated_tools, untrusted_tools
+
+    def _resolve_offer(self, agent_id: str) -> list[dict[str, Any]]:
+        """Re-resolve the offer from the LIVE registry, for a compaction boundary (H672).
+
+        The same three steps the top of ``_run_loop`` takes — ToolRPC → capability
+        registry (when planning through it) → job toolset + tool profile — minus
+        that path's side effects (the gap capture, the ``tool_profile`` event), which
+        belong to the turn's start. Raises whatever the registry raises: the caller is
+        ``session_refresh.refresh_tools``, which turns a raise into an empty offer,
+        and that is the fail-closed half this row is about.
+        """
+        metadata = self._server.tools()
+        if self._registry_mode():
+            metadata = self._registry_metadata(metadata)
+        offered, _decision = self._profiled(agent_id, metadata)
+        return offered
+
     async def run(
         self,
         *,
@@ -418,18 +459,7 @@ class AgentToolRuntime:
             )
         if not metadata:
             return _NO_TOOLS_REPLY
-        tools = [
-            ToolSpec(
-                name=tool["name"],
-                description=tool.get("description", ""),
-                input_schema=tool.get("input_schema", {"type": "object", "properties": {}}),
-            )
-            for tool in metadata
-        ]
-        gated_tools = {tool["name"]: bool(tool.get("gated")) for tool in metadata}
-        untrusted_tools = {
-            tool["name"] for tool in metadata if tool.get("untrusted_output") is True
-        }
+        tools, gated_tools, untrusted_tools = self._specs_for(metadata)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
@@ -452,6 +482,7 @@ class AgentToolRuntime:
                                  "effective_window": known_window or 0}
         schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
+            folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
                 compacted,
@@ -463,6 +494,50 @@ class AgentToolRuntime:
                 event_sink=event_sink,
             ):
                 return _CONTEXT_REPLY
+            if len(compacted) > folds_before:
+                # H672 — a committed fold is the compaction boundary: the one moment a
+                # running turn may pick up a changed registry. The offer is re-resolved
+                # from the LIVE registry and fails CLOSED — a resolver that cannot
+                # answer withdraws everything, because holding a possibly-revoked
+                # capability open for the rest of the loop is strictly worse than
+                # ending it with a named reason. Between folds the set never moves:
+                # a tool set that shifts under a turn invalidates the model's own plan.
+                from .session_refresh import refresh_tools
+                refreshed = refresh_tools(lambda: self._resolve_offer(agent_id), metadata)
+                if refreshed.changed or refreshed.reason == "failed-closed":
+                    await self._emit(
+                        event_sink,
+                        {
+                            "event": "tool_offer_refreshed",
+                            "agent_id": _bounded_identity(agent_id),
+                            "reason": refreshed.reason,
+                            "added": [
+                                _bounded_identity(name)
+                                for name in refreshed.added[:_EVENT_WITHHELD_NAMES]
+                            ],
+                            "removed": [
+                                _bounded_identity(name)
+                                for name in refreshed.removed[:_EVENT_WITHHELD_NAMES]
+                            ],
+                            "offered": len(refreshed.tools),
+                        },
+                    )
+                    metadata = [dict(tool) for tool in refreshed.tools]
+                    if not metadata:
+                        await self._emit(
+                            event_sink,
+                            {
+                                "event": "tool_loop_withdrawn",
+                                "agent_id": _bounded_identity(agent_id),
+                                "status": refreshed.reason,
+                            },
+                        )
+                        return _TOOLS_WITHDRAWN_REPLY
+                    tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+                    schema_tokens = (
+                        estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
+                        if known_window else 0
+                    )
             turn = await backend.generate_tool_turn(
                 model=model,
                 messages=messages,

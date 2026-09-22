@@ -11,14 +11,14 @@ Din acestea, **11** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 119 | 17.1% |
-| Parțial | 363 | 52.1% |
-| Lipsă | 92 | 13.2% |
+| Parțial | 364 | 52.2% |
+| Lipsă | 91 | 13.1% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 16 | 2.3% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 119/590 = **20.2%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 114/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 115/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -45,11 +45,11 @@ Din acestea, **11** au fost reevaluate pe cod în această livrare; **108** păs
 | acp-mcp-dev | 33 | 2 | 11 | 11 | 6 | 3 |
 | docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
-| delta | 42 | 1 | 28 | 5 | 5 | 3 |
+| delta | 42 | 1 | 29 | 4 | 5 | 3 |
 
 ## Actualizare
 
-Evaluare: `2026-09-19T12:19:22Z`. Cod inspectat: `494a13b2fc661a3023a2bbe0f5e242ee0237bb39`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-22T06:48:07Z`. Cod inspectat: `494a13b2fc661a3023a2bbe0f5e242ee0237bb39`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

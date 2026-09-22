@@ -3,7 +3,7 @@
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
   "base_sha": "494a13b2fc661a3023a2bbe0f5e242ee0237bb39",
-  "assessed_at": "2026-09-19T12:19:22Z",
+  "assessed_at": "2026-09-22T06:48:07Z",
   "reviews": [
     {
       "id": "H001",
@@ -430,7 +430,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
+          "sha256": "e2d360fa31547e1461e08b109db2117ffd7834c78f8ee42d4abe45fd0256242f"
         },
         {
           "path": "agents/core/commands.py",
@@ -451,7 +451,7 @@
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
+          "sha256": "e2d360fa31547e1461e08b109db2117ffd7834c78f8ee42d4abe45fd0256242f"
         },
         {
           "path": "agents/core/commands.py",
@@ -2067,7 +2067,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -2083,7 +2083,7 @@
       "id": "H301",
       "row_sha256": "61e8cc59670a245e60696007796088a2e6cc4d8b3ab3f219b8d531d3c4e5d670",
       "status": "equivalent",
-      "summary": "Oferta este calculată din principal, origine/suprafață și restricțiile agentului; seturile sunt verificate prin snapshot. Catalogul Hermes de platforme excluse nu este copiat.",
+      "summary": "Oferta este calculată din principal, origine/suprafață și restricțiile agentului; seturile sunt verificate prin snapshot. Catalogul Hermes de platforme excluse nu este copiat. Din H672, aceeași rezoluție (`_profiled`, prin `_resolve_offer`) se reaplică și la granița de compactare din tură, cu eșec închis: un profil care nu poate răspunde retrage toate uneltele în loc să păstreze o ofertă posibil revocată.",
       "remaining": "",
       "evidence": [
         {
@@ -2092,7 +2092,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -2356,7 +2356,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -2703,7 +2703,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -2761,7 +2761,7 @@
       "id": "H391",
       "row_sha256": "6efeb3348c1b1080d980201e737e6003572488fc5040a3c1ba9ebea2fe21f5ec",
       "status": "partial",
-      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii.",
+      "summary": "Dialectele de unelte cloud, compactarea în tură și recuperarea răspunsului gol au implementări și regresii. Din H672, un fold comis în `_run_loop` este și granița la care oferta de unelte se re-rezolvă din registrul viu (eșec închis; `tests/test_h672_compaction_refresh.py`).",
       "remaining": "Rândurile includ mai multe fire de streaming/cache/compactare/recuperare; completarea și probele fiecărei căi rămân explicite.",
       "evidence": [
         {
@@ -2774,7 +2774,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -2803,7 +2803,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -2824,7 +2824,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -2845,7 +2845,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -2853,7 +2853,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "5157bdccc59a84246b2cbdc6778ab0633baf0f9fa4789fb9b802b0da5da1e590"
+          "sha256": "e2d360fa31547e1461e08b109db2117ffd7834c78f8ee42d4abe45fd0256242f"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -3369,7 +3369,7 @@
       "id": "H456",
       "row_sha256": "d1c6513baf1d4189c5db66a1b381789cdcf2d75fbbea1fcfca7811eede3fbf08",
       "status": "partial",
-      "summary": "H456 reviewed against live code on 2026-09-18; the 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale but the row stays partial. The enabled_toolsets half of the contract has shipped and is well built: agents/core/job_toolsets.py holds an immutable CATALOG (:7-11 basic/files/terminal), strict `validate()` refusing unknown, non-list or duplicate ids (:14-21), `resolve()` refusing a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37), and a `toolset_scope()` (:63-79) whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults — intersect-never-union, enforced. It is enforced at three boundaries, not one: the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208), the runtime filter before and after the profile (agents/core/agent_runtime.py:245-253), and RPC intake ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`). Store boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create/edit both re-resolve (:1041, :1062). Fire time: jobs.py:1242-1244 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:175,185,893-899) and the HUD (frontend/src/panels/job-builder.tsx:35-49); PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328). Hermes' two removal rules are met structurally: I enumerated every register_tool on the production server (agents/core/autonomy_coordinator.py:428-728 plus :741-825 installing file_*, session_search, web_search/web_extract, search_memory and execute_code) and none creates a job, no `schedule.create` kernel capability exists, and none is a messaging/clarify tool that needs a live human. Verified green: 27 cases in tests/test_job_toolsets.py, 28 in tests/test_job_model_pins.py, 306 in the wider related batch (0 failures), and 21 HUD cases in frontend/src/panels/job-toolsets.test.tsx + jobs.test.tsx. What keeps the row open is the contract's second half: a job cannot pin reasoning effort. Selection carries only model/provider (agents/core/llm/job_selection.py:21-25), validate_options rejects any unknown option (jobs.py:350) so the pin cannot be stored, and _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,379,398-399 — while the closed-lifetime transport machinery already exists and is entered only by the live chat path (agents/core/llm/request_context.py:44-72; agents/web.py:1088,1141). Secondary: the bound is expressible over only 8 of the ~17 tools the server actually registers, so a job needing web_search, execute_code or search_memory must run unbounded on the default net — a residual docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
+      "summary": "H456 reviewed against live code on 2026-09-18; the 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale but the row stays partial. The enabled_toolsets half of the contract has shipped and is well built: agents/core/job_toolsets.py holds an immutable CATALOG (:7-11 basic/files/terminal), strict `validate()` refusing unknown, non-list or duplicate ids (:14-21), `resolve()` refusing a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37), and a `toolset_scope()` (:63-79) whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults — intersect-never-union, enforced. It is enforced at three boundaries, not one: the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208), the runtime filter before and after the profile (agents/core/agent_runtime.py:248-257, re-applied at the in-turn compaction boundary by `_resolve_offer`, H672), and RPC intake ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`). Store boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create/edit both re-resolve (:1041, :1062). Fire time: jobs.py:1242-1244 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:175,185,893-899) and the HUD (frontend/src/panels/job-builder.tsx:35-49); PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328). Hermes' two removal rules are met structurally: I enumerated every register_tool on the production server (agents/core/autonomy_coordinator.py:428-728 plus :741-825 installing file_*, session_search, web_search/web_extract, search_memory and execute_code) and none creates a job, no `schedule.create` kernel capability exists, and none is a messaging/clarify tool that needs a live human. Verified green: 27 cases in tests/test_job_toolsets.py, 28 in tests/test_job_model_pins.py, 306 in the wider related batch (0 failures), and 21 HUD cases in frontend/src/panels/job-toolsets.test.tsx + jobs.test.tsx. What keeps the row open is the contract's second half: a job cannot pin reasoning effort. Selection carries only model/provider (agents/core/llm/job_selection.py:21-25), validate_options rejects any unknown option (jobs.py:350) so the pin cannot be stored, and _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,379,398-399 — while the closed-lifetime transport machinery already exists and is entered only by the live chat path (agents/core/llm/request_context.py:44-72; agents/web.py:1088,1141). Secondary: the bound is expressible over only 8 of the ~17 tools the server actually registers, so a job needing web_search, execute_code or search_memory must run unbounded on the default net — a residual docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
       "remaining": "(1) Per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented: `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), `validate_pins` (:35-43) never sees an effort, `validate_options` rejects any option outside the known ten (agents/core/autonomy/jobs.py:350) so the pin cannot reach the store, and `JobRunner._ask` (jobs.py:1242-1244) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`; a job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :379, :398-399. The transport half already exists and is clamped (agents/core/llm/request_context.py:44-72; anthropic.py:81-86 with per-model overrides; gemini.py:134; xai.py:73; provider_request.py:46 and :54) but is entered only by the live chat path (agents/web.py:1088, :1141). Work owed: accept `reasoning` in validate_pins/validate_options against LADDER, enter `reasoning_scope(...)` in `_ask` beside the other two scopes, expose it on the CLI/HUD/doctor like the model and provider pins, and test it in tests/test_job_model_pins.py. (2) The bound is only expressible over 8 of the ~17 tools the production server registers: CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run, while web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich and image_generate (registered at agents/core/autonomy_coordinator.py:428-728 and :741-825) belong to no group — a job that needs any of them must leave `enabled_toolsets` unset and run at the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\", and doctor reports the upper bound, not effective offers). (3) Minor: Hermes' middle precedence tier — a per-platform `cron` tools config defaulting every scheduled job — has no equivalent; only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
       "evidence": [
         {
@@ -3394,7 +3394,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "agents/core/llm/job_selection.py",
@@ -4989,6 +4989,39 @@
       ]
     },
     {
+      "id": "H672",
+      "row_sha256": "26809538f674259749017132356dd69f04d08689822f9dc94e74da037875ed23",
+      "status": "partial",
+      "summary": "Both refreshes from Hermes's row exist (`agents/core/session_refresh.py`, the parked mechanism commit 89b53e85 cherry-picked unchanged) and are now wired at Nerva's two compaction boundaries, each failing in its own direction. **Nerva is turn-based, so most of the row was already true between turns and is pinned as such**: `Orchestrator._prompt_context` reads the skills catalog per turn, the plugin block is rendered per turn, and `AgentToolRuntime._run_loop` resolves ToolRPC → capability registry → tool profile at the top of every run (`test_between_turns_the_offer_was_already_live`). Two things were not live. **(1) The system prompt.** `Agent._load_soul` ran once in `__init__` and `orchestrator.py` sent `agent.soul[\"content\"]` for the life of the process, so a persona edited or quarantined mid-session needed a restart. `Agent._read_soul` is now the one builder (same file resolution, same H387 scan, same cap) behind both `_load_soul` and the new `Agent.refresh_soul`, and `_refresh_souls_at_boundary` (orchestrator.py, a module function so the bare-stub tests of that path keep working) calls it for every agent from `_history_for_prompt`'s `publish()` — after the clock CAS, never before it — through `session_refresh.refresh_prompt`: the keep path is byte equality of the builder's output (a rewrite of the same bytes leaves the very dict the HUD reports untouched), a builder that throws or a file absent for the instant of an editor's rename keeps the last-good bytes (fails OPEN), and a scan verdict is not a failure — a persona that is now mostly injection is dropped exactly as a restart would drop it. **(2) The tool set inside one turn.** A loop of up to `llm.tool_loop_max_iterations` model turns kept the list it resolved at the top. `_run_loop` now treats a committed fold (`_compact_context` grew `compacted`) as the boundary and re-resolves through `_resolve_offer` (the same three steps, minus the turn-start side effects) via `session_refresh.refresh_tools`, which fails CLOSED: a resolver that raises withdraws every tool, an empty resolution is a revocation, and either ends the loop with `_TOOLS_WITHDRAWN_REPLY` after a `tool_loop_withdrawn` event rather than asking a provider a turn on a stale or empty list. The offer and the executor move together (`_specs_for` rebuilds the specs, the gate map the executor checks `offered` against, and the untrusted set), so a model that still names the withdrawn tool gets `tool_not_allowed` locally. Between folds the registry is not consulted at all — mid-turn tool sets stay stable, which is Hermes's rule too. A `tool_offer_refreshed` event (added/removed/reason) is written only when something moved. 17 mechanism tests (`tests/test_session_refresh.py`, red-proofed by mutation in the parked commit) plus 15 wiring tests (`tests/test_h672_compaction_refresh.py`); each half was neutered once and shown red (5 tool-half tests, 2 prompt-half tests).",
+      "remaining": "**The boundaries are opt-in, so on a shipped default nothing migrates**: the conversation-level commit exists only with `memory.context_compression` on (default off) and the in-turn fold only with `llm.tool_loop_enabled` on (default off) — a default install still needs a restart for a persona edit, exactly as before. The prompt half covers the SOUL only: Nerva's plugin and skills sections live in the user prompt and were already per-turn, so there is no plugin section in the system prompt to fail open — the fail-open is exercised on the SOUL builder. The in-turn boundary does not rebuild `messages[0]`: a persona change reaches the *next* turn, not the loop in flight. \"A newly configured MCP server appears without a restart\" is only as true as the MCP manager's registration into ToolRPC is hot, which this slice did not verify. The lineage row stays at `nerva.context-compaction.v1`; the boundary note is a log line plus the runtime event, not a field on the row. `refresh_tools` compares names, so a tool whose schema changed under the same name is adopted only because the fresh list is taken whenever the set moved, never on its own. H298, H671 and H673 cite the same files and are carried needs_review from #1179 (a sibling stream).",
+      "evidence": [
+        {
+          "path": "agents/core/session_refresh.py",
+          "sha256": "3e871985abd10476069f33191108c9aa61fbb8fafb109d6dc26dbfd0816bbe72"
+        },
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "df9fb85f3f61be0970f1e9f4f3ac81917c4b7609eb7a0b991a2fbc032677e60e"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "e2d360fa31547e1461e08b109db2117ffd7834c78f8ee42d4abe45fd0256242f"
+        },
+        {
+          "path": "tests/test_session_refresh.py",
+          "sha256": "300f2dc6076ea37ddda2f07a38a07952cc00efde5ffe2a623220f47c7593ff38"
+        },
+        {
+          "path": "tests/test_h672_compaction_refresh.py",
+          "sha256": "50c182f3fdf23482500ee68bf9a79d39ea66eef46c7ea040fd57b6a64c654b82"
+        }
+      ]
+    },
+    {
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
@@ -5215,7 +5248,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "817b66c2a7dafd90e84398cc7a98287a4645f1fbd20b73f5a45a24519a62657b"
+          "sha256": "7272a1e33b36771d8752d8b4c3a4324fdd26864923d3a429048a2e6aa8312083"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",

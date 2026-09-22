@@ -316,6 +316,47 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     return billable_input, usage.output_tokens, usage.cache_read
 
 
+def _refresh_souls_at_boundary(orchestrator) -> list[str]:
+    """H672 — the compaction commit is the one safe migration point for a live session.
+
+    Nerva re-resolves tools, skills and the plugin block every turn already; the
+    one thing a running conversation never picked up was the persona — the
+    system prompt — read once in ``Agent.__init__``. Each agent re-reads it here,
+    through the same builder a restart uses (``Agent._read_soul``: same file
+    resolution, same H387 scan, same cap), gated on byte equality and failing
+    OPEN per agent: a builder that throws keeps that agent's last-good bytes and
+    never touches the others. Called from ``_history_for_prompt``'s ``publish()``
+    after the clock CAS, so a refused commit migrates nothing. A module function,
+    not a method: that path is exercised with bare stubs for ``self`` and must
+    keep working for an orchestrator that carries no agents at all. The note is a
+    log line, not a field on the lineage row (which stays
+    ``nerva.context-compaction.v1``), and it is written only when something
+    moved: a note on every fold would train a reader to skip it, and this line
+    exists to be read on the day a persona changed and somebody asks when.
+    """
+    from .session_refresh import PromptRefresh, ToolRefresh, boundary_note
+
+    notes: list[str] = []
+    for agent_id, agent in dict(getattr(orchestrator, "agents", None) or {}).items():
+        refresh = getattr(agent, "refresh_soul", None)
+        if not callable(refresh):
+            continue
+        try:
+            out = refresh()
+        except Exception:
+            logger.warning("SOUL refresh at the compaction boundary failed for %s",
+                           agent_id, exc_info=True)
+            continue
+        if isinstance(out, PromptRefresh):
+            note = boundary_note(out, ToolRefresh())
+            if note:
+                notes.append(f"{agent_id}: {note}")
+    if notes:
+        logger.info("context compaction boundary (session %s) — %s",
+                    str(getattr(orchestrator, "session_id", "") or "")[:128], "; ".join(notes))
+    return notes
+
+
 class Orchestrator:
     # DRA-08: the reply-target resolver is pure and stateless (no per-instance
     # config), so it lives on the class. That also keeps `channel_handler`
@@ -3104,6 +3145,10 @@ class Orchestrator:
                 # Iterative merge state (bounded: one entry per live session key).
                 cache[sid] = {"summary": result["summary"],
                                           "covered": result["covered"]}
+            if result["compressed"]:
+                # H672 — the commit is the boundary: the persona the next prompt is
+                # built from is re-read here, after the CAS above, never before it.
+                _refresh_souls_at_boundary(self)
         def _fmt(ts):
             return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
                     for t in ts]

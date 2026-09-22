@@ -402,49 +402,97 @@ class Agent:
         self._checkpoint_manager = None
         self._load_soul()
 
-    def _load_soul(self):
+    def _read_soul(self, *, quiet: bool = False) -> dict:
+        """Read, scan and cap the SOUL the model will be given — touching nothing on ``self``.
+
+        The one builder behind both ``_load_soul`` (construction) and ``refresh_soul``
+        (a compaction boundary, H672), so a refresh can never resolve a different
+        file, skip the H387 scan or cap differently from a restart. A missing file
+        raises ``FileNotFoundError``; the caller decides what "no persona" means for
+        it. ``quiet`` silences the guard's own log lines: a boundary probe that finds
+        the same bytes it already has must not re-announce a verdict every fold.
+        """
         soul_path = soul_path_for(self.id)
-        if soul_path.exists():
-            content = soul_path.read_text(encoding="utf-8")
-            # H21.2: split optional YAML front-matter (personality/affect config)
-            # from the prose body. No front-matter → ({}, full text) = no-op.
-            try:
-                from .cognition.frontmatter import parse_frontmatter
-                meta, body = parse_frontmatter(content)
-            except Exception:
-                meta, body = {}, content
-            # H387: scan the *uncapped* body, so truncation can never drop the
-            # very lines the detector would have flagged.
-            body, flags, blocked = _scan_soul_body(
-                body, soul_path.name, _body_line_offset(content, body))
-            truncated = False
-            if flags:
-                logger.error(
-                    "SOUL injection scan flagged %s for agent %s — %s; matched: %s",
-                    soul_path, self.id,
-                    "persona dropped" if blocked else "flagged lines quarantined",
-                    ", ".join(flags),
+        if not soul_path.exists():
+            raise FileNotFoundError(str(soul_path))
+        content = soul_path.read_text(encoding="utf-8")
+        # H21.2: split optional YAML front-matter (personality/affect config)
+        # from the prose body. No front-matter → ({}, full text) = no-op.
+        try:
+            from .cognition.frontmatter import parse_frontmatter
+            meta, body = parse_frontmatter(content)
+        except Exception:
+            meta, body = {}, content
+        # H387: scan the *uncapped* body, so truncation can never drop the
+        # very lines the detector would have flagged.
+        body, flags, blocked = _scan_soul_body(
+            body, soul_path.name, _body_line_offset(content, body))
+        truncated = False
+        if flags and not quiet:
+            logger.error(
+                "SOUL injection scan flagged %s for agent %s — %s; matched: %s",
+                soul_path, self.id,
+                "persona dropped" if blocked else "flagged lines quarantined",
+                ", ".join(flags),
+            )
+        if not blocked:
+            limit = _soul_max_chars()
+            body, truncated = _cap_soul_body(body, soul_path.name, limit)
+            if truncated and not quiet:
+                logger.warning(
+                    "SOUL for agent %s exceeds the %d-char cap and was truncated: %s",
+                    self.id, limit, soul_path,
                 )
-            if not blocked:
-                limit = _soul_max_chars()
-                body, truncated = _cap_soul_body(body, soul_path.name, limit)
-                if truncated:
-                    logger.warning(
-                        "SOUL for agent %s exceeds the %d-char cap and was truncated: %s",
-                        self.id, limit, soul_path,
-                    )
-            # ``meta`` (front-matter) is left as parsed: it is typed persona
-            # config — trait floats, affect setpoints, tier/archetype labels —
-            # never free text injected into a prompt, so it is not this
-            # boundary. ``flags``/``truncated``/``blocked`` are the guard's
-            # verdict; GET /api/agents/{id}/soul reports the same three beside
-            # the raw file so the HUD cannot show a persona the model is not
-            # receiving without saying so.
-            self.soul = {"content": body, "path": soul_path, "meta": meta,
-                         "flags": flags, "truncated": truncated, "blocked": blocked}
+        if not quiet:
             logger.info(f"Loaded SOUL for {self.id} ({len(content)} chars)")
-        else:
+        # ``meta`` (front-matter) is left as parsed: it is typed persona
+        # config — trait floats, affect setpoints, tier/archetype labels —
+        # never free text injected into a prompt, so it is not this
+        # boundary. ``flags``/``truncated``/``blocked`` are the guard's
+        # verdict; GET /api/agents/{id}/soul reports the same three beside
+        # the raw file so the HUD cannot show a persona the model is not
+        # receiving without saying so.
+        return {"content": body, "path": soul_path, "meta": meta,
+                "flags": flags, "truncated": truncated, "blocked": blocked}
+
+    def _load_soul(self):
+        try:
+            self.soul = self._read_soul()
+        except FileNotFoundError:
             logger.warning(f"SOUL.md not found for {self.id}")
+
+    def refresh_soul(self):
+        """H672 — re-read the persona at a compaction boundary; fails OPEN.
+
+        Nerva re-resolves tools, skills and the plugin block every turn; the one
+        thing a running conversation never picked up was the persona, which is the
+        system prompt (``orchestrator.py``: ``system_prompt = agent.soul["content"]``),
+        read once in ``__init__``. The orchestrator calls this at the compaction
+        commit. The keep path is byte equality of the fresh body against the one in
+        force — never a dirty flag — and a builder that raises (file gone for the
+        instant of an editor's rename, a front-matter parser crash) keeps the
+        last-good ``self.soul`` untouched. A scan verdict is not a failure: a persona
+        that is now mostly injection is dropped exactly as a restart would drop it,
+        and the HUD's ``guard`` reports it. Returns the ``PromptRefresh`` so the
+        boundary can say what moved.
+        """
+        from .session_refresh import refresh_prompt
+
+        fresh: dict = {}
+
+        def build() -> str:
+            fresh.update(self._read_soul(quiet=True))
+            return fresh["content"]
+
+        out = refresh_prompt(build, self.soul.get("content", ""))
+        if out.changed:
+            self.soul = fresh
+            logger.info(
+                "SOUL for agent %s rebuilt at a compaction boundary (%d chars; flags=%s, "
+                "blocked=%s, truncated=%s)",
+                self.id, len(out.text), fresh["flags"], fresh["blocked"], fresh["truncated"],
+            )
+        return out
 
     @property
     def last_latency(self) -> float:
