@@ -802,3 +802,97 @@ async def test_cancelled_session_discards_open_stream_spills(tmp_path):
         if not task.done():
             task.cancel()
         await tool._kernels.shutdown()
+
+
+# ── H661: the notice is the exact call, and the spill has a ceiling ──────────
+
+def _server_with_file_read(tmp_path):
+    """The test server plus a real `file_read` scoped to the spill directory."""
+    from agents.core.file_tools import FileScope, FileTools, SnapshotStore, register_file_tools
+
+    spills = tmp_path / "spills"
+    spills.mkdir(exist_ok=True)
+    server = _server()
+    register_file_tools(server, FileTools(FileScope([spills]),
+                                          snapshots=SnapshotStore(tmp_path / "snaps")),
+                        enabled=True)
+    return server
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session", [False, True])
+async def test_the_stdout_notice_is_a_call_that_pages_the_whole_stream_back(tmp_path, session):
+    """Hermes: "FULL output saved to {path} — page it with read_file(path=…, offset=…)".
+
+    Not a hint that a file exists: the call itself, path filled in, which the model can
+    make as written and keep making from `next_offset` until it has every byte — without
+    running the script a second time.
+    """
+    from agents.core.tool_result_store import page_recipe
+
+    server = _server_with_file_read(tmp_path)
+    factory = _session_tool if session else _tool
+    _, tool = factory(tmp_path, server=server, result_store=_store(tmp_path))
+    try:
+        result = await _run(tool, "print(''.join(f'line-{i:06d}\\n' for i in range(20000)))")
+    finally:
+        if session:
+            await tool._kernels.shutdown()
+
+    recipe = page_recipe(result["stdout_file"], page_bytes=result["output_limit"])
+    assert result["stdout_read_with"] == {"tool": "file_read", "arguments": recipe["arguments"]}
+    assert recipe["call"] in result["stdout_notice"]
+    assert "next_offset" in result["stdout_notice"]
+    assert "whole or in parts" not in result["stdout_notice"]
+
+    pages, args = [], dict(result["stdout_read_with"]["arguments"])
+    while True:
+        reply = await server.handle({"tool": "file_read", "args": args})
+        assert reply["ok"] is True, reply
+        pages.append(reply["result"]["content"])
+        if "next_offset" not in reply["result"]:
+            break
+        args["offset"] = reply["result"]["next_offset"]
+    assert len(pages) > 1
+    assert "".join(pages) == Path(result["stdout_file"]).read_text(encoding="utf-8")
+    assert "".join(pages).count("\n") >= 20_000, "every line, the middle included"
+
+
+@pytest.mark.asyncio
+async def test_a_turn_without_file_read_is_told_so_rather_than_handed_a_dead_call(tmp_path):
+    _server_, tool = _tool(tmp_path, result_store=_store(tmp_path))
+
+    result = await _run(tool, "print('z' * 200000)")
+
+    assert Path(result["stdout_file"]).is_file(), "the file is still kept for the owner"
+    assert "stdout_read_with" not in result
+    assert "file_read is not offered" in result["stdout_notice"]
+
+
+@pytest.mark.asyncio
+async def test_a_runaway_stdout_spill_stops_at_its_ceiling_and_says_so(tmp_path):
+    from agents.core.tool_result_store import ToolResultStore
+
+    server = _server_with_file_read(tmp_path)
+    store = ToolResultStore(tmp_path / "spills", max_stream_bytes=100_000)
+    _server_, tool = _tool(tmp_path, server=server, result_store=store)
+
+    result = await _run(tool, "print('z' * 300000)")
+
+    raw = Path(result["stdout_file"]).read_bytes()
+    assert raw[:100_000] == b"z" * 100_000
+    assert raw[100_000:].count(b"[... spill capped at 100000 bytes") == 1
+    assert result["stdout_spill_capped"] is True
+    assert result["stdout_bytes"] == 300_001, "what the script printed, not what was kept"
+    assert result["stdout_file_bytes"] == len(raw)
+    assert result["stdout_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert "spill capped" in result["stdout_notice"]
+    assert result["ok"] is True, "a capped spill is a note, not a failed run"
+
+
+@pytest.mark.asyncio
+async def test_a_spill_under_its_ceiling_carries_no_cap_flag(tmp_path):
+    _server_, tool = _tool(tmp_path, server=_server_with_file_read(tmp_path),
+                           result_store=_store(tmp_path))
+    result = await _run(tool, "print('z' * 200000)")
+    assert "stdout_spill_capped" not in result and "stdout_file_bytes" not in result

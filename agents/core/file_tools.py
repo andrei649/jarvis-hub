@@ -597,6 +597,19 @@ class FileTools:
     # ── ungated ──────────────────────────────────────────────────────────────
 
     async def read_file(self, args: Mapping[str, Any]) -> dict:
+        """One bounded page of a file, starting at ``offset`` (H661).
+
+        A read that stops before the end says where the next page starts
+        (``next_offset``), so a file bigger than one page — a spilled tool result is
+        the case this exists for — is reachable to its last byte without re-running
+        whatever produced it. A bad ``offset`` is refused by name: reading from 0
+        instead would return the first page labelled as the one that was asked for.
+        """
+        offset = args.get("offset")
+        if offset is None:
+            offset = 0
+        elif isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            return {"ok": False, "reason": "bad_offset"}
         try:
             target = self.scope.resolve(args.get("path"))
         except FileScopeError as exc:
@@ -611,18 +624,12 @@ class FileTools:
                 return {"ok": False, "reason": "not_a_file"}
             size = target.stat().st_size
             if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
-                return _read_document(target, size, limit)
+                return _read_document(target, size, limit, offset)
             with target.open("rb") as handle:
+                handle.seek(offset)
                 data = handle.read(limit)
-            return {
-                "ok": True,
-                "path": str(target),
-                "content": data.decode("utf-8", errors="replace"),
-                "bytes": len(data),
-                "size": size,
-                "truncated": size > len(data),
-                "sha256": hashlib.sha256(data).hexdigest(),
-            }
+            return {"ok": True, "path": str(target), **_page(data, offset=offset, total=size),
+                    "size": size}
 
         try:
             result = await asyncio.to_thread(_read)
@@ -1061,8 +1068,65 @@ def _parser_available(suffix: str) -> bool:
         return False
 
 
-def _read_document(target: Path, size: int, limit: int) -> dict:
-    """The text of a .pdf / .docx, bounded like any read; a named refusal otherwise."""
+def _utf8_page_end(data: bytes) -> int:
+    """How much of *data* to keep so a page never ends inside a UTF-8 character.
+
+    A byte page cut through a multi-byte character decodes as a replacement mark at
+    the end of one page and another at the start of the next, so a reader paging a
+    perfectly good file reassembles a corrupted one. Dropping the incomplete tail
+    moves those bytes to the next page instead. Never returns 0: a page too small for
+    one whole character keeps the fragment rather than stall the reader at the same
+    offset forever.
+    """
+    size = len(data)
+    for back in range(1, min(4, size) + 1):
+        byte = data[size - back]
+        if byte & 0xC0 == 0x80:  # a continuation byte: keep looking for the lead
+            continue
+        if 0xF0 <= byte <= 0xF7:
+            needed = 4
+        elif 0xE0 <= byte <= 0xEF:
+            needed = 3
+        elif 0xC0 <= byte <= 0xDF:
+            needed = 2
+        else:
+            needed = 1
+        if needed > back and size - back > 0:
+            return size - back
+        return size
+    return size
+
+
+def _page(data: bytes, *, offset: int, total: int) -> dict:
+    """The page fields every read shares: what was returned, and where the rest is.
+
+    ``truncated`` keeps its meaning — more of the file follows what was returned —
+    and ``next_offset`` is present exactly when it is true, so "pass next_offset back
+    as offset until it is absent" reads the whole file and stops.
+    """
+    end = offset + len(data)
+    if end < total:
+        data = data[:_utf8_page_end(data)]
+        end = offset + len(data)
+    fields: dict[str, Any] = {
+        "content": data.decode("utf-8", errors="replace"),
+        "bytes": len(data),
+        "offset": offset,
+        "truncated": end < total,
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    if end < total:
+        fields["next_offset"] = end
+    return fields
+
+
+def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
+    """The text of a .pdf / .docx, bounded like any read; a named refusal otherwise.
+
+    ``offset`` counts bytes of the *extracted text* (UTF-8), not of the file: that is
+    the text the reader was shown, so it is the only thing a page number can mean.
+    ``size`` stays the file's size on disk and ``text_size`` names the text's.
+    """
     suffix = target.suffix.lower()
     if not _parser_available(suffix):
         return {
@@ -1074,17 +1138,14 @@ def _read_document(target: Path, size: int, limit: int) -> dict:
     if text is None:
         return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
     data = text.encode("utf-8")
-    shown = data[:limit]
     return {
         "ok": True,
         "path": str(target),
-        "content": shown.decode("utf-8", errors="ignore"),
-        "bytes": len(shown),
+        **_page(data[offset:offset + limit], offset=offset, total=len(data)),
         "size": size,
+        "text_size": len(data),
         "extracted": True,
         "format": suffix.lstrip("."),
-        "truncated": len(data) > len(shown),
-        "sha256": hashlib.sha256(shown).hexdigest(),
     }
 
 
@@ -1198,6 +1259,11 @@ def _preflight_read(args: dict) -> Mapping:
         if not isinstance(args["raw"], bool):
             raise ToolRPCValidationError("bad_flag")
         clean["raw"] = args["raw"]
+    if "offset" in args:
+        value = args["offset"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ToolRPCValidationError("bad_offset")
+        clean["offset"] = value
     return clean
 
 
@@ -1264,7 +1330,9 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
     "file_read": {
         "description": (
             "Read one UTF-8 file inside the owner's file roots (bounded bytes); a .pdf or "
-            ".docx is returned as its extracted text (raw=true for the bytes)."
+            ".docx is returned as its extracted text (raw=true for the bytes). offset "
+            "starts the read at that byte; a read that stops early returns next_offset — "
+            "pass it back as offset to page through a large file or a spilled tool result."
         ),
         "gated": False,
         "trusted_execution": False,
@@ -1274,6 +1342,7 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "properties": {
                 "path": _PATH_SCHEMA,
                 "max_bytes": {"type": "integer", "minimum": 1},
+                "offset": {"type": "integer", "minimum": 0},
                 "raw": {"type": "boolean"},
             },
             "required": ["path"],

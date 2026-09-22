@@ -822,6 +822,9 @@ class AutonomyCoordinator:
                 retention_seconds=float(
                     _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
                 max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
+                # H661 — the notice names `file_read` only while the registry has it
+                # (JARVIS_FILE_TOOLS); a call that would be refused is no recipe.
+                read_back=lambda: server.allows("file_read"),
             ),
         )
         # K3 — the operator surface reads and resets what K2 owns, so the manager has
@@ -846,6 +849,7 @@ class AutonomyCoordinator:
                 retention_seconds=float(
                     _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
                 max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
+                read_back=lambda: server.allows("file_read"),
             ),
             result_thresholds=lambda: _get_setting("llm.tool_result_thresholds", {}) or {},
             # Left at 0 the window comes from the model the turn is running on.

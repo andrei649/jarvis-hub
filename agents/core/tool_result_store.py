@@ -34,6 +34,17 @@ Three things decide how big is too big, in this order:
 Retention is part of the contract, not a follow-up: :meth:`ToolResultStore.sweep`
 enforces an age limit, a file count and a total size on every write, so the spill
 directory cannot grow without bound on a box nobody is watching.
+
+**Paging it back (H661).** A spill is only worth writing if the model can get the
+dropped part without running the tool again, so every notice carries the exact call —
+:func:`page_recipe`, ``file_read(path="…", offset=0, max_bytes=…)`` with the path
+filled in, plus the same arguments as data — and ``file_read`` pages from any byte
+offset and names the next one. Where the host has no ``file_read`` to offer, the
+notice says so instead of naming a call that would be refused. A *stream* spill
+(:meth:`ToolResultStore.open_stream`) also has a ceiling —
+:data:`DEFAULT_MAX_STREAM_BYTES`, then one explicit ``[... spill capped ...]`` marker
+and ``capped=True`` on the result — because agent-written code decides how much it
+prints, and without one a runaway child fills the disk until its timeout.
 """
 
 from __future__ import annotations
@@ -67,11 +78,14 @@ DEFAULT_MAX_RESULT_BYTES = MAX_OUTPUT_BYTES
 #: How much of a spilled result the model still sees inline.
 PREVIEW_CHARS = 1_500
 
+#: The tool a spill is read back with, and the one every notice names.
+READ_TOOL = "file_read"
+
 #: Tools whose results are never spilled, and why it matters that this is *pinned*
 #: rather than merely configured: ``file_read`` is how a spilled result is read back.
 #: If reading a spill could itself spill, a large file would generate an unbounded
 #: chain of files, each one describing the last.
-PINNED_THRESHOLDS: dict[str, float] = {"file_read": math.inf}
+PINNED_THRESHOLDS: dict[str, float] = {READ_TOOL: math.inf}
 
 #: Bridged MCP tools share one default: their sizes are a third party's decision, so
 #: they get a tighter allowance than first-party tools rather than the global one.
@@ -96,6 +110,16 @@ SPILL_DIRNAME = "tool_results"
 DEFAULT_RETENTION_SECONDS = 24 * 3600.0
 DEFAULT_MAX_FILES = 512
 DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024
+#: The most one *streamed* spill keeps (H661, Hermes' own figure). Past it the writer
+#: stops, the file ends in one explicit marker and the result says ``capped``. A
+#: whole-result spill needs no such ceiling: its bytes are already a string in host
+#: memory, bounded by whatever produced them, and cutting JSON would make the file
+#: unreadable as what it claims to be.
+DEFAULT_MAX_STREAM_BYTES = 5_000_000
+#: The page size a notice suggests when the caller has no better figure. The per-result
+#: floor on purpose: it is the smallest allowance any model gets, so the first page a
+#: notice proposes fits whichever model reads it. The model may ask for more.
+DEFAULT_PAGE_BYTES = PER_RESULT_FLOOR_BYTES
 
 _SAFE_NAME = re.compile(r"[^a-z0-9_.-]+")
 #: Two shapes live here. A spilled tool *result* is JSON, because that is what the
@@ -104,6 +128,25 @@ _SAFE_NAME = re.compile(r"[^a-z0-9_.-]+")
 #: envelope to read a log. Nothing else is a reference.
 _REFERENCE = re.compile(r"^[a-z0-9_.-]{1,120}\.(?:json|txt)$")
 _SPILL_GLOB = ("*.json", "*.txt")
+
+
+def page_recipe(path: str, *, page_bytes: int = DEFAULT_PAGE_BYTES, offset: int = 0) -> dict:
+    """The exact call that reads *path* one page at a time, as data and as text.
+
+    ``arguments`` is what a tool call carries; ``call`` is the same thing written out
+    for a notice, with the path JSON-quoted so a Windows path or a quote in a name is
+    still one argument when the model copies it. Both name :data:`READ_TOOL`, the tool
+    :data:`PINNED_THRESHOLDS` guarantees never spills its own read.
+    """
+    size = max(1, int(page_bytes))
+    start = max(0, int(offset))
+    target = str(path)
+    return {
+        "tool": READ_TOOL,
+        "arguments": {"path": target, "offset": start, "max_bytes": size},
+        "call": (f"{READ_TOOL}(path={json.dumps(target, ensure_ascii=False)}, "
+                 f"offset={start}, max_bytes={size})"),
+    }
 
 
 def _safe_tool_name(tool: str) -> str:
@@ -187,16 +230,33 @@ def _positive_int(raw: object) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class SpilledResult:
-    """Where the full bytes went, and what the model is told about them."""
+    """Where the full bytes went, and what the model is told about them.
+
+    ``original_bytes`` is what the tool produced; ``stored_bytes`` is the file's size,
+    and the two differ only when ``capped`` — the stream ran past
+    :data:`DEFAULT_MAX_STREAM_BYTES` and the file ends in the marker instead. ``sha256``
+    is always the digest of the file on disk. ``readable`` says whether the host has a
+    ``file_read`` to page it with; a notice that names a call the model cannot make is
+    the same dead end as no notice.
+    """
 
     reference: str
     path: str
     original_bytes: int
     sha256: str
+    stored_bytes: int | None = None
+    capped: bool = False
+    readable: bool = True
+
+    def __post_init__(self) -> None:
+        if self.stored_bytes is None:
+            object.__setattr__(self, "stored_bytes", self.original_bytes)
 
     def as_dict(self) -> dict:
         return {"reference": self.reference, "path": self.path,
-                "original_bytes": self.original_bytes, "sha256": self.sha256}
+                "original_bytes": self.original_bytes, "sha256": self.sha256,
+                "stored_bytes": self.stored_bytes, "capped": self.capped,
+                "readable": self.readable}
 
 
 class ToolResultStore:
@@ -210,12 +270,38 @@ class ToolResultStore:
         max_files: int = DEFAULT_MAX_FILES,
         max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
         clock: Callable[[], float] = time.time,
+        max_stream_bytes: int = DEFAULT_MAX_STREAM_BYTES,
+        read_back: Callable[[], bool] | None = None,
     ) -> None:
         self._root = Path(root) if root is not None else None
         self._retention = max(60.0, float(retention_seconds))
         self._max_files = max(1, int(max_files))
         self._max_total_bytes = max(1024, int(max_total_bytes))
         self._clock = clock
+        self._max_stream_bytes = max(1, int(max_stream_bytes))
+        # H661. Whether a `file_read` exists to page a spill with. None means the
+        # caller did not say, which keeps the notice's recipe (the historical claim);
+        # the coordinator wires the live registry so the claim is checked, not assumed.
+        self._read_back = read_back
+
+    @property
+    def max_stream_bytes(self) -> int:
+        return self._max_stream_bytes
+
+    def readable(self) -> bool:
+        """True when the host offers the tool a notice would tell the model to call.
+
+        A probe that raises counts as "no": naming a call on a guess is how a notice
+        sends the model into a refusal instead of to the bytes.
+        """
+        if self._read_back is None:
+            return True
+        try:
+            return bool(self._read_back())
+        except Exception:
+            logger.warning("tool result read-back probe failed; not naming file_read",
+                           exc_info=True)
+            return False
 
     @property
     def root(self) -> Path:
@@ -267,9 +353,11 @@ class ToolResultStore:
         # about to hand to the model, so it must survive its own retention pass.
         self.sweep(keep=reference)
         return SpilledResult(reference=reference, path=str(target),
-                             original_bytes=len(raw), sha256=digest)
+                             original_bytes=len(raw), sha256=digest,
+                             stored_bytes=len(raw), readable=self.readable())
 
-    def open_stream(self, *, tool: str, suffix: str = "txt") -> StreamSpill | None:
+    def open_stream(self, *, tool: str, suffix: str = "txt",
+                    max_bytes: int | None = None) -> StreamSpill | None:
         """A spill written as it arrives, for bytes that must never be buffered whole.
 
         :meth:`spill` takes a string the caller already holds. A sandboxed child's
@@ -282,6 +370,10 @@ class ToolResultStore:
 
         ``None`` means the directory could not be opened; the caller truncates as
         before rather than losing the turn.
+
+        The file keeps at most ``max_bytes`` (default :attr:`max_stream_bytes`); what
+        follows is counted, not written, and :meth:`StreamSpill.close` ends the file
+        in one marker that says how much was left out.
         """
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -294,8 +386,9 @@ class ToolResultStore:
             logger.warning("tool result stream spill could not be opened; "
                            "falling back to truncation", exc_info=True)
             return None
+        cap = self._max_stream_bytes if max_bytes is None else max(1, int(max_bytes))
         return StreamSpill(store=self, handle=handle, temporary=temporary,
-                           tool=tool, suffix=suffix)
+                           tool=tool, suffix=suffix, max_bytes=cap)
 
     # ── reading back ─────────────────────────────────────────────────────────
 
@@ -377,10 +470,10 @@ class StreamSpill:
     """
 
     __slots__ = ("_store", "_handle", "_temporary", "_tool", "_suffix",
-                 "_digest", "_written", "_failed", "_closed")
+                 "_digest", "_written", "_kept", "_cap", "_capped", "_failed", "_closed")
 
     def __init__(self, *, store: ToolResultStore, handle, temporary: Path,
-                 tool: str, suffix: str) -> None:
+                 tool: str, suffix: str, max_bytes: int = DEFAULT_MAX_STREAM_BYTES) -> None:
         self._store = store
         self._handle = handle
         self._temporary = temporary
@@ -388,12 +481,29 @@ class StreamSpill:
         self._suffix = "txt" if str(suffix or "").lower() not in {"json", "txt"} else str(suffix).lower()
         self._digest = hashlib.sha256()
         self._written = 0
+        self._kept = 0
+        self._cap = max(1, int(max_bytes))
+        self._capped = False
         self._failed = False
         self._closed = False
 
     @property
     def written_bytes(self) -> int:
+        """Every byte the stream produced, kept or not — its true length.
+
+        This is the figure the caller compares against what the model was shown, so
+        it must not stop at the ceiling: a stream past the cap was certainly cut.
+        """
         return self._written
+
+    @property
+    def capped(self) -> bool:
+        return self._capped
+
+    def _marker(self) -> bytes:
+        dropped = max(0, self._written - self._kept)
+        return (f"\n[... spill capped at {self._cap} bytes: {dropped} more bytes of "
+                f"this stream were not kept ...]\n").encode()
 
     def write(self, chunk: bytes) -> None:
         """Take one chunk. A write that fails disables the spill without raising.
@@ -409,6 +519,16 @@ class StreamSpill:
         """
         if self._failed or self._closed or not chunk:
             return
+        self._written += len(chunk)
+        room = self._cap - self._kept
+        if len(chunk) > room:
+            # H661. The ceiling: keep the head of this chunk, count the rest, and let
+            # `close` say so once. Writing nothing further is the point — the reader
+            # keeps draining the child, the disk stops filling.
+            self._capped = True
+            chunk = chunk[:room]
+            if not chunk:
+                return
         try:
             self._handle.write(chunk)
         except (OSError, ValueError):
@@ -416,7 +536,7 @@ class StreamSpill:
             self._failed = True
             return
         self._digest.update(chunk)
-        self._written += len(chunk)
+        self._kept += len(chunk)
 
     def discard(self) -> None:
         """Close and remove, for a stream the model already has in full.
@@ -445,6 +565,17 @@ class StreamSpill:
         if self._closed:
             return None
         self._closed = True
+        stored = self._kept
+        if self._capped and not self._failed and self._kept > 0:
+            marker = self._marker()
+            try:
+                self._handle.write(marker)
+                self._digest.update(marker)
+                stored += len(marker)
+            except (OSError, ValueError):
+                logger.warning("tool result stream spill failed to mark its cap",
+                               exc_info=True)
+                self._failed = True
         try:
             self._handle.flush()
             os.fsync(self._handle.fileno())
@@ -457,7 +588,7 @@ class StreamSpill:
             except (OSError, ValueError):
                 logger.warning("tool result stream spill failed to close", exc_info=True)
                 self._failed = True
-        if self._failed or self._written <= 0:
+        if self._failed or self._kept <= 0:
             self._store._unlink(self._temporary)
             return None
         digest = self._digest.hexdigest()
@@ -473,7 +604,9 @@ class StreamSpill:
             return None
         self._store.sweep(keep=reference)
         return SpilledResult(reference=reference, path=str(target),
-                             original_bytes=self._written, sha256=digest)
+                             original_bytes=self._written, sha256=digest,
+                             stored_bytes=stored, capped=self._capped,
+                             readable=self._store.readable())
 
 
 def preview_envelope(
@@ -484,28 +617,49 @@ def preview_envelope(
     reason: object,
     spill: SpilledResult,
     preview_chars: int = PREVIEW_CHARS,
+    page_bytes: int = DEFAULT_PAGE_BYTES,
 ) -> str:
-    """The bounded thing the model sees, with the footer that names the full copy."""
+    """The bounded thing the model sees, with the footer that names the full copy.
+
+    The footer is an instruction the model can follow verbatim (H661): the exact
+    ``file_read`` call, path filled in, as text in ``notice`` and as arguments in
+    ``read_with``. When the host has no ``file_read`` to offer, ``read_with`` is left
+    out and the notice says why, so the model is not sent into a refusal.
+    """
     body = str(encoded or "")
     kept = max(64, int(preview_chars))
     head = body[: kept // 2]
     tail = body[-(kept - len(head)):] if len(body) > kept else ""
+    recipe = page_recipe(spill.path, page_bytes=page_bytes) if spill.readable else None
+    if recipe is not None:
+        notice = (
+            f"This result was too large for the context window. The complete result "
+            f"({spill.original_bytes} bytes) is on disk at {spill.path}. Page it with "
+            f"{recipe['call']} and pass each page's next_offset back as offset until a "
+            f"page has none, instead of running the tool again."
+        )
+    else:
+        notice = (
+            f"This result was too large for the context window. The complete result "
+            f"({spill.original_bytes} bytes) is on disk at {spill.path} for the owner; "
+            f"{READ_TOOL} is not available on this host, so this turn cannot page it. "
+            f"If the omitted part matters, ask for a narrower result rather than "
+            f"repeating the same call."
+        )
     payload: dict[str, object] = {
         "ok": bool(ok),
         "tool": str(tool or "")[:64],
         "truncated": True,
         "spilled": True,
-        "notice": (
-            "This result was too large for the context window. The complete result is "
-            "on disk at the path below; read it with file_read (whole or in parts) "
-            "instead of running the tool again."
-        ),
+        "notice": notice,
         "original_bytes": spill.original_bytes,
         "preview": {"head": head, "tail": tail},
         "result_file": spill.path,
         "result_reference": spill.reference,
         "sha256": spill.sha256,
     }
+    if recipe is not None:
+        payload["read_with"] = {"tool": recipe["tool"], "arguments": recipe["arguments"]}
     if not ok and isinstance(reason, str):
         payload["reason"] = reason[:120]
     return json.dumps(payload, ensure_ascii=False, allow_nan=False)
@@ -513,10 +667,12 @@ def preview_envelope(
 
 __all__ = [
     "BYTES_PER_TOKEN", "Budget", "DEFAULT_MAX_FILES", "DEFAULT_MAX_RESULT_BYTES",
-    "DEFAULT_MAX_TOTAL_BYTES", "DEFAULT_RETENTION_SECONDS", "MAX_LINE_LENGTH",
+    "DEFAULT_MAX_STREAM_BYTES", "DEFAULT_MAX_TOTAL_BYTES", "DEFAULT_PAGE_BYTES",
+    "DEFAULT_RETENTION_SECONDS", "MAX_LINE_LENGTH",
     "MAX_OUTPUT_BYTES", "MAX_OUTPUT_LINES", "MCP_DEFAULT_BYTES", "MCP_PREFIX",
     "PER_RESULT_FLOOR_BYTES", "PER_TURN_FLOOR_BYTES", "PINNED_THRESHOLDS",
-    "PREVIEW_CHARS", "SPILL_DIRNAME", "SpilledResult", "StreamSpill",
+    "PREVIEW_CHARS", "READ_TOOL", "SPILL_DIRNAME", "SpilledResult", "StreamSpill",
     "ToolResultStore",
-    "budget_for_context_window", "cap_lines", "preview_envelope", "threshold_for",
+    "budget_for_context_window", "cap_lines", "page_recipe", "preview_envelope",
+    "threshold_for",
 ]
