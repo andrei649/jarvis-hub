@@ -1,15 +1,19 @@
 """scripts/doctor.py — the install check-up: every check reports a named reason.
 
 Hermetic: a fake urllib opener stands in for /readyz and the runtime probes, a temp
-root stands in for the checkout, and the smoke is a fake runner. No network, no server.
+root stands in for the checkout, and the smoke is a fake runner. No network, no server —
+except one test that binds an ephemeral loopback port to cut a reply off mid-body, the
+way only a real socket and the real urllib opener can.
 """
 
 import hashlib
+import http.client
 import io
 import json
 import subprocess
 import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -42,6 +46,8 @@ def healthy_root(tmp_path, monkeypatch):
     venv_py.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "data"))
     monkeypatch.delenv("JARVIS_HOST", raising=False)
+    monkeypatch.delenv("JARVIS_PORT", raising=False)
+    monkeypatch.delenv("NERVA_HUB_URL", raising=False)
     monkeypatch.delenv("JARVIS_USER_TOKEN", raising=False)
     monkeypatch.delenv("JARVIS_ADMIN_TOKEN", raising=False)
     return tmp_path
@@ -53,21 +59,58 @@ class _Resp:
         self._body = body
 
     def read(self):
+        if isinstance(self._body, BaseException):  # a reply cut off mid-body
+            raise self._body
         return self._body
 
     def close(self):
         pass
 
 
-def _opener(*, readyz=200, ollama=True):
+def _model_block(**overrides):
+    """The ``model`` block of ``GET /api/onboarding/command-center`` — the hub's own
+    resolution of the route a Jarvis turn takes (``onboarding._model_snapshot``)."""
+    block = {
+        "ready": True,
+        "reason": "resident",
+        "route": "local",
+        "selected_provider": "ollama",
+        "selected_model": "test-route-model",
+        "active_provider": "ollama",
+        "active_model": "test-route-model",
+        "configured_model": "test-route-model",
+        "resident_models": [{"provider": "ollama", "id": "test-route-model"}],
+        "residency_state": "known",
+    }
+    block.update(overrides)
+    return block
+
+
+def _opener(*, readyz=200, ollama=True, command_center=None, seen=None, opens=None):
+    """A fake urlopen. ``command_center`` is the JSON body served for the strict route
+    check, an int for an HTTP error status, an exception its ``read`` raises, or None for
+    a runnable route; ``opens`` is an exception the open itself raises."""
+    body = {"model": _model_block()} if command_center is None else command_center
+
     def open_(url, timeout=None):
-        if url.endswith("/readyz"):
+        target = getattr(url, "full_url", url)  # the doctor sends a Request when it needs headers
+        if seen is not None:
+            seen.append(url)
+        if target.endswith("/readyz"):
             if readyz is None:
                 raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
             if readyz != 200:
-                raise urllib.error.HTTPError(url, readyz, "not ready", {}, None)
+                raise urllib.error.HTTPError(target, readyz, "not ready", {}, None)
             return _Resp(200)
-        if "11434" in url and ollama:
+        if target.endswith("/api/onboarding/command-center"):
+            if opens is not None:
+                raise opens
+            if isinstance(body, int):
+                raise urllib.error.HTTPError(target, body, "denied", {}, None)
+            if isinstance(body, (bytes, BaseException)):
+                return _Resp(200, body)
+            return _Resp(200, json.dumps(body).encode("utf-8"))
+        if "11434" in target and ollama:
             return _Resp(200, b"{}")
         raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
     return open_
@@ -86,6 +129,8 @@ def test_healthy_install_is_green_and_exits_zero(healthy_root, capsys):
     assert by["data_root_writable"].detail == str(healthy_root / "data")
     assert by["runtimes"].reason == "found:ollama"
     assert by["readyz"].reason == "ready"
+    assert by["runtime_resolves"].status == doctor.OK
+    assert by["runtime_resolves"].reason == "resolves:ollama/test-route-model"
     assert by["smoke"].status == doctor.SKIP and by["smoke"].reason == "skipped"
     assert [c.name for c in report.checks] == list(doctor.REQUIRED) + list(doctor.ADVISORY)
 
@@ -211,11 +256,253 @@ def test_runtimes_check_is_advisory_with_named_detail():
     assert check.detail == "ollama=connection_refused;lm_studio=connection_refused"
 
 
+# ── runtime_resolves: the strict check (Hermes setup.runtime_check) ─
+def test_runtime_resolves_warns_when_the_route_model_is_not_resident_though_a_runtime_answers(
+        healthy_root):
+    """A runtime answering on loopback is not a runnable route. Ollama is up and holds a
+    model, but the route a Jarvis turn takes asks LM Studio for a model it has not
+    loaded: the loose check stays green, the strict one warns and names why."""
+    stuck = {"model": _model_block(
+        ready=False, reason="configured_not_resident", selected_provider="lm-studio",
+        selected_model="test-route-model", active_provider=None, active_model=None,
+        resident_models=[{"provider": "ollama", "id": "test-other-model"}])}
+    report = doctor.run_doctor(healthy_root, opener=_opener(command_center=stuck),
+                               version_info=(3, 12, 0, "final", 0))
+    by = report.by_name()
+    assert (by["runtimes"].status, by["runtimes"].reason) == (doctor.OK, "found:ollama")
+    check = by["runtime_resolves"]
+    assert (check.status, check.reason) == (doctor.WARN, "configured_not_resident")
+    assert "route=local" in check.detail
+    assert "provider=lm-studio" in check.detail and "model=test-route-model" in check.detail
+    assert "resident=ollama/test-other-model" in check.detail
+    assert "[warn] runtime_resolves" in doctor.format_report(report)
+
+
+@pytest.mark.parametrize("model, reason", [
+    (_model_block(ready=None, reason="residency_unknown", active_provider=None,
+                  active_model=None, residency_state="unknown", resident_models=[]),
+     "residency_unknown"),
+    (_model_block(ready=False, reason="route_unselected", route=None, selected_provider=None,
+                  selected_model=None, active_provider=None, active_model=None),
+     "route_unselected"),
+    (_model_block(ready=False, reason="provider_unresolved", route="not-cloud",
+                  selected_provider=None, active_provider=None, active_model=None),
+     "provider_unresolved"),
+    (_model_block(ready=False, reason="provider_offline", residency_state="offline",
+                  active_provider=None, active_model=None, resident_models=[]),
+     "provider_offline"),
+    # a hub that predates the named reason still never reads as runnable
+    ({k: v for k, v in _model_block(ready=False).items() if k != "reason"}, "unreported"),
+])
+def test_runtime_resolves_names_each_not_runnable_reason(model, reason):
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center={"model": model}), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, reason)
+
+
+def test_runtime_resolves_passes_on_a_selected_cloud_route():
+    cloud = {"model": _model_block(
+        reason="cloud_selected", route="cloud-flash", selected_provider="gemini",
+        selected_model="test-cloud-model", active_provider="gemini",
+        active_model="test-cloud-model", resident_models=[])}
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=cloud), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.OK, "resolves:gemini/test-cloud-model")
+    assert "route=cloud-flash" in check.detail and "cloud_selected" in check.detail
+
+
+@pytest.mark.parametrize("readyz, reason", [
+    (None, "skipped:hub_down"),
+    (503, "skipped:hub_not_ready"),
+])
+def test_runtime_resolves_does_not_pass_without_a_ready_hub(healthy_root, readyz, reason):
+    """The route is resolved by the running hub; with no ready hub the check did not run
+    — it is reported as skipped with the named cause, never as ok."""
+    seen = []
+    opener = _opener(readyz=readyz, seen=seen)
+    report = doctor.run_doctor(healthy_root, opener=opener, version_info=(3, 12, 0, "final", 0))
+    check = report.by_name()["runtime_resolves"]
+    assert (check.status, check.reason) == (doctor.SKIP, reason)
+    assert not any(getattr(u, "full_url", u).endswith("/command-center") for u in seen)
+
+
+def test_runtime_resolves_is_a_read_that_carries_the_local_token_and_never_prints_it():
+    seen = []
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    env = {"JARVIS_USER_TOKEN": "user-secret", "JARVIS_ADMIN_TOKEN": "admin-secret"}
+    check = doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready, env=env)
+    assert check.status == doctor.OK
+    (request,) = seen
+    assert request.full_url == "http://127.0.0.1:8080/api/onboarding/command-center"
+    assert request.get_method() == "GET" and request.data is None
+    # The route is user-guarded: the least-privileged credential that opens it is sent,
+    # never both — the admin token stays home when a user token is set.
+    assert request.get_header("X-user-token") == "user-secret"
+    assert request.get_header("X-admin-token") is None
+    assert "secret" not in check.reason + check.detail
+
+    seen.clear()
+    doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready,
+                                  env={"JARVIS_ADMIN_TOKEN": "admin-secret"})
+    assert seen[0].get_header("X-admin-token") == "admin-secret"
+    assert seen[0].get_header("X-user-token") is None
+
+    seen.clear()
+    doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready, env={})
+    assert seen[0].get_header("X-user-token") is None and seen[0].get_header("X-admin-token") is None
+
+
+@pytest.mark.parametrize("env", [
+    {},
+    {"JARVIS_PORT": "9000"},
+    {"JARVIS_HOST": "localhost", "JARVIS_PORT": "9001"},
+    {"JARVIS_HOST": "0.0.0.0", "JARVIS_PORT": "9002"},
+    {"JARVIS_HOST": "::", "JARVIS_PORT": "9003"},
+    {"JARVIS_HOST": "  ", "JARVIS_PORT": " "},
+    {"NERVA_HUB_URL": "http://127.0.0.1:7000/", "JARVIS_PORT": "9000"},
+])
+def test_doctor_reads_the_hub_nerva_status_reads(env):
+    """One address for both owner tools: the doctor derives the hub's base URL exactly as
+    ``nerva status`` does (agents/cli/client.hub_url — mirrored, so the doctor stays
+    stdlib-only and import-light)."""
+    from agents.cli.client import WILDCARD_HOSTS, hub_url
+
+    assert doctor.hub_url(env) == hub_url(env)
+    assert doctor.WILDCARD_HOSTS == WILDCARD_HOSTS
+
+
+def _hub_urls(seen):
+    """The requests that went to the hub (not the loopback runtime probes)."""
+    urls = [getattr(u, "full_url", u) for u in seen]
+    return [u for u in urls if u.endswith(("/readyz", "/api/onboarding/command-center"))]
+
+
+def test_doctor_sends_its_probes_and_token_to_the_configured_hub_not_a_fixed_port(healthy_root):
+    """The hub runs on JARVIS_PORT=9000 (8080 belongs to something else): /readyz and the
+    route read both go to :9000, so readyz vouches for the same hub the token goes to,
+    and nothing — least of all a credential — is sent to :8080."""
+    seen = []
+    env = {"JARVIS_PORT": "9000", "JARVIS_USER_TOKEN": "user-secret",
+           "JARVIS_HOME": str(healthy_root / "data")}
+    report = doctor.run_doctor(healthy_root, env=env, opener=_opener(seen=seen),
+                               version_info=(3, 12, 0, "final", 0))
+    assert _hub_urls(seen) == ["http://127.0.0.1:9000/readyz",
+                               "http://127.0.0.1:9000/api/onboarding/command-center"]
+    assert report.by_name()["runtime_resolves"].status == doctor.OK
+
+    seen.clear()
+    doctor.run_doctor(healthy_root, env={"NERVA_HUB_URL": "http://127.0.0.1:7000/"},
+                      opener=_opener(seen=seen), version_info=(3, 12, 0, "final", 0))
+    assert _hub_urls(seen) == ["http://127.0.0.1:7000/readyz",
+                               "http://127.0.0.1:7000/api/onboarding/command-center"]
+
+
+def test_a_hub_address_that_is_not_a_url_is_named_not_a_traceback(healthy_root):
+    fake = _opener()
+
+    def opener(url, timeout=None):
+        if "not-a-url" in getattr(url, "full_url", url):
+            return urllib.request.urlopen(url, timeout=timeout)  # ValueError before any I/O
+        return fake(url, timeout=timeout)
+
+    report = doctor.run_doctor(healthy_root, env={"NERVA_HUB_URL": "not-a-url"},
+                               opener=opener, version_info=(3, 12, 0, "final", 0))
+    by = report.by_name()
+    assert (by["readyz"].status, by["readyz"].reason) == (doctor.WARN, "hub_url_invalid")
+    assert (by["runtime_resolves"].status, by["runtime_resolves"].reason) == (
+        doctor.SKIP, "skipped:hub_url_invalid")
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    direct = doctor.check_runtime_resolves(readyz=ready, env={"NERVA_HUB_URL": "not-a-url"})
+    assert (direct.status, direct.reason) == (doctor.WARN, "hub_url_invalid")
+
+
+@pytest.mark.parametrize("command_center, reason", [
+    (401, "needs_token"),
+    (403, "needs_token"),
+    (500, "command_center_status:500"),
+    (b"not json", "malformed_reply"),
+    ({"install": {}}, "malformed_reply"),
+    # a hub killed mid-reply: http.client raises, and it is not an OSError
+    (http.client.IncompleteRead(b'{"model": {"rea', 385), "hub_unreachable"),
+    # a strict check never turns green on a verdict that names nothing
+    ({"model": {"ready": True}}, "malformed_reply"),
+    ({"model": _model_block(route=None)}, "malformed_reply"),
+    ({"model": _model_block(selected_provider=None, active_provider=None)}, "malformed_reply"),
+    ({"model": _model_block(selected_model="", active_model=None)}, "malformed_reply"),
+])
+def test_runtime_resolves_names_why_it_could_not_read_the_route(command_center, reason):
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=command_center), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, reason)
+    if reason == "needs_token":
+        assert "JARVIS_USER_TOKEN" in check.detail
+
+
+def test_runtime_resolves_names_a_listener_that_does_not_speak_http():
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    opener = _opener(opens=http.client.BadStatusLine("SSH-2.0-OpenSSH"))
+    check = doctor.check_runtime_resolves(opener, readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "hub_unreachable")
+    assert "BadStatusLine" in check.detail
+
+
+def test_runtime_resolves_ignores_a_resident_list_that_is_not_a_list():
+    stuck = {"model": _model_block(ready=False, reason="configured_not_resident",
+                                   active_provider=None, active_model=None, resident_models=3)}
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=stuck), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "configured_not_resident")
+    assert "resident=" not in check.detail
+
+
+def test_runtime_resolves_survives_a_reply_cut_off_on_a_real_socket():
+    """The review's reproduction, kept as a test: a real listener promises 400 bytes, sends
+    15 and closes (a hub killed mid-reply). The real urllib opener raises IncompleteRead;
+    the row names it instead of the doctor dying with a traceback."""
+    import http.server
+    import threading
+
+    class Truncating(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 — the stdlib's handler name
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "400")
+            self.end_headers()
+            self.wfile.write(b'{"model": {"rea')
+            self.wfile.flush()
+            self.close_connection = True
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Truncating)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        ready = doctor.Check("readyz", doctor.OK, "ready")
+        check = doctor.check_runtime_resolves(readyz=ready, env={"JARVIS_PORT": str(port)})
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert (check.status, check.reason) == (doctor.WARN, "hub_unreachable")
+    assert "IncompleteRead" in check.detail
+
+
 def test_readyz_reasons():
     assert doctor.check_readyz(_opener(readyz=None)).reason == "server_not_running"
     not_ready = doctor.check_readyz(_opener(readyz=503))
     assert (not_ready.status, not_ready.reason) == (doctor.WARN, "readyz_status:503")
     assert doctor.check_readyz(_opener(readyz=200)).status == doctor.OK
+
+
+def test_readyz_names_a_listener_that_does_not_speak_http():
+    def opener(url, timeout=None):
+        raise http.client.BadStatusLine("SSH-2.0-OpenSSH")
+
+    check = doctor.check_readyz(opener, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "readyz_bad_reply")
+    assert "BadStatusLine" in check.detail
 
 
 def test_smoke_runs_only_on_request_and_names_failures(healthy_root):
@@ -252,6 +539,16 @@ def test_advisory_failures_do_not_fail_the_run(healthy_root):
     assert report.ok is True
     statuses = {c.name: c.status for c in report.checks}
     assert statuses["runtimes"] == doctor.WARN and statuses["readyz"] == doctor.WARN
+    assert statuses["runtime_resolves"] == doctor.SKIP
+
+
+def test_a_route_that_does_not_resolve_is_advisory_not_a_failed_install(healthy_root):
+    stuck = {"model": _model_block(ready=False, reason="configured_not_resident",
+                                   active_provider=None, active_model=None)}
+    report = doctor.run_doctor(healthy_root, opener=_opener(command_center=stuck),
+                               version_info=(3, 12, 0, "final", 0))
+    assert report.ok is True
+    assert report.by_name()["runtime_resolves"].status == doctor.WARN
 
 
 def test_required_failure_fails_the_run_and_the_cli(healthy_root, monkeypatch, capsys):
