@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "e6461cdc6a2ec4beae072b239a49fe52d8070c3a",
-  "assessed_at": "2026-09-22T12:51:09Z",
+  "base_sha": "b55afff8e939052298faf57a62f1e3b145cd4630",
+  "assessed_at": "2026-09-22T13:02:14Z",
   "reviews": [
     {
       "id": "H001",
@@ -1476,7 +1476,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -2038,7 +2038,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -2441,7 +2441,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2582,7 +2582,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3112,7 +3112,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -4920,7 +4920,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5009,7 +5009,7 @@
       "row_sha256": "26809538f674259749017132356dd69f04d08689822f9dc94e74da037875ed23",
       "status": "partial",
       "summary": "Both refreshes from Hermes's row exist (`agents/core/session_refresh.py`, the parked mechanism commit 89b53e85 cherry-picked unchanged; its module docstring has since gained a note on where each half is wired) and are wired at Nerva's two compaction boundaries, each failing in its own direction. **Nerva is turn-based, so most of the row was already true between turns and is pinned as such**: `Orchestrator._prompt_context` reads the skills catalog per turn, the plugin block is rendered per turn, and `AgentToolRuntime._run_loop` resolves ToolRPC → capability registry → tool profile at the top of every run (`test_between_turns_the_offer_was_already_live`). Two things were not live. **(1) The system prompt.** `Agent._load_soul` ran once in `__init__` and `orchestrator.py` sent `agent.soul[\"content\"]` for the life of the process, so a persona edited or quarantined mid-session needed a restart. `Agent._read_soul` is the one builder (same file resolution, same H387 scan, same cap) behind both `_load_soul` and `Agent.refresh_soul`, and `_refresh_souls_at_boundary` (orchestrator.py, a module function so the bare-stub tests of that path keep working) calls it for every agent from `_history_for_prompt`'s `publish()` — after the clock CAS, never before it, and pinned as such: a refused `commit_clock` migrates nothing, an accepted one is followed by the refresh in that order. In front of the builder sits an `os.stat` probe (`_soul_signature`: resolved path, inode, size, mtime, ctime and the body cap), because once a session is over budget the conversation-level commit happens on **every** turn — `ContextCompressor.compact()` recomputes from the raw turns each call — and the walk is process-wide: an unchanged persona costs one stat, and only a file whose kernel signature moved reaches the builder (measured over the 18 shipped SOULs, 76 KB: 59.0 ms → 0.55 ms per boundary, 18 → 0 reads and scans). A file written within the last two seconds has no trusted signature (git's racy rule: a same-size edit in the same timestamp tick would be invisible to a stat) and is read and compared by bytes until it ages. Past the probe the keep path is byte equality of the builder's whole output — body *and* front-matter, so a tier or trait edit with the same body is adopted and the HUD's `soul[\"meta\"]` follows — never a dirty flag; a builder that throws keeps the last-good bytes (fails OPEN); a file absent for the instant of an editor's save-by-rename keeps them with a plain warning, and an agent that had no persona and still has none is unchanged, not failed. A scan verdict is not a failure — a persona that is now mostly injection is dropped exactly as a restart would drop it — and it is announced exactly as a restart announces it: `_announce_soul_verdict` is the one place both moments log, so a quarantine at the boundary is the H387 ERROR line, not an INFO line. **(2) The tool set inside one turn.** A loop of up to `llm.tool_loop_max_iterations` model turns kept the list it resolved at the top. `_run_loop` treats a committed fold (`_compact_context` grew `compacted`) as the boundary and re-resolves through `_resolve_offer` (the same three steps, minus the turn-start side effects) via `session_refresh.refresh_tools`, which fails CLOSED: a resolver that raises withdraws every tool, an empty resolution is a revocation, and either ends the loop with `_TOOLS_WITHDRAWN_REPLY` after a `tool_loop_withdrawn` event rather than asking a provider a turn on a stale or empty list. The offer and the executor move together (`_specs_for` rebuilds the specs, the gate map the executor checks `offered` against, and the untrusted set) — pinned by a tool withdrawn through the *profile* while still registered in ToolRPC, the one shape that can tell the executor's `tool_not_allowed` from the RPC's own (keeping the stale gate map runs the handler, and that test goes red). Between folds the registry is not consulted at all, so the set stays stable between two folds; Nerva's fold happens inside one user turn, so Hermes's \"mid-turn tool sets stay stable\" reads here as *between folds*. A `tool_offer_refreshed` event (added/removed/reason) is written only when something moved. 17 mechanism tests (`tests/test_session_refresh.py`, red-proofed by mutation in the parked commit) plus 26 wiring tests (`tests/test_h672_compaction_refresh.py`). An independent review of the first cut found 14 items (4 major, 6 minor, 4 nits: the per-turn, process-wide re-read cost; the H387 verdict suppressed at the boundary; the overclaim that `ToolRPC.handle` refuses profile revocations; the unpinned gate map and CAS order; the front-matter blind spot; the traceback for a persona-less agent; the docstrings); 13 are addressed here and each code fix was neutered once and shown red (8 mutations, 11 distinct tests red).",
-      "remaining": "**The boundaries are opt-in, so on a shipped default nothing migrates**: the conversation-level commit exists only with `memory.context_compression` on (default off) and the in-turn fold only with `llm.tool_loop_enabled` on (default off) — a default install still needs a restart for a persona edit, exactly as before. **Profile revocations are not enforced on the execution path**: `ToolRPCServer.handle` checks the job toolset, registration and the gate, never the tool profile, and the executor's gate map is rebuilt only at a fold — so in a loop that never folds (small results, the common shape) a tool the profile withdrew mid-turn stays offered *and* executes until the loop ends; pre-existing, unchanged by this slice, pinned as a limit by `test_between_folds_a_profile_revocation_is_not_enforced_by_the_executor_either`. **The persona migration is process-wide**: `orchestrator.agents` is every agent and `agent.soul` is the one dict every session's system prompt reads, so the session that commits migrates the persona for all sessions (the boundary log line says so); refreshing only the routed agents would need the route at `_history_for_prompt`, which it does not have. **On the staged shared-route path the turn's budget is computed against the persona in force before the commit** (`_shared_route_plan` → `build()` measures `agent.soul` while planning; the refresh runs in `accept()` → `publish()`), so a persona that grew is sent that turn with a budget computed for the old size — bounded by `_soul_max_chars`, self-correcting next turn; the H363 cached prefix and the H673 usage anchor under-count for one turn after a rebuild the same way. The probe trusts the kernel's signature; what the builder reads outside the file (the scan patterns) is code and needs a restart. The prompt half covers the SOUL only: Nerva's plugin and skills sections live in the user prompt and were already per-turn, so there is no plugin section in the system prompt to fail open — the fail-open is exercised on the SOUL builder. The in-turn boundary does not rebuild `messages[0]`: a persona change reaches the *next* turn, not the loop in flight. \"A newly configured MCP server appears without a restart\" is only as true as the MCP manager's registration into ToolRPC is hot, which this slice did not verify. The lineage row stays at `nerva.context-compaction.v1`; the boundary note is a log line plus the runtime event, not a field on the row. `refresh_tools` compares names, so a tool whose schema changed under the same name is adopted only because the fresh list is taken whenever the set moved, never on its own. The stale comment at `agents/core/file_tools.py` saying `_load_soul` runs no injection scan predates H387 and is left for a hygiene commit (it would drift five unrelated rows). Nine ledger rows cite `agent.py`, `agent_runtime.py` or `orchestrator.py` and were drifted by this branch (and by #1188 on main: its registry path in `orchestrator.py`, and the pairing kwarg, refusal branch and lifespan hand-over in `telegram.py` and `web.py`, which H146, H449, H364 and H671 also cite and were read against — the pairing store is not their subject); each was re-read against the diff on its cited paths before its hashes moved. Six keep their text and take fresh stamps — H146, H298, H363, H364, H449, H679: the in-turn re-resolution runs through `_profiled`, which still applies the job toolset on both sides of the profile, and the result-spill, cache, reasoning and job-pin mechanism those rows cite is untouched. Three are rewritten — H387: the ERROR line now comes from `_announce_soul_verdict` behind the `_read_soul` builder, for boot and boundary alike; H671 and H673: `publish()` re-reads the personas after the clock CAS, and the staged-route budget limit above is now on H673's own row. The 14 other needs_review rows on main (H060, H061, H068, H071, H104, H108, H130, H135, H139, H398, H477, H510, H523, H683) are #1188's drift on `orchestrator.py`, `web.py` and `telegram.py`, not this branch's, and are left untouched here.",
+      "remaining": "**The boundaries are opt-in, so on a shipped default nothing migrates**: the conversation-level commit exists only with `memory.context_compression` on (default off) and the in-turn fold only with `llm.tool_loop_enabled` on (default off) — a default install still needs a restart for a persona edit, exactly as before. **Profile revocations are not enforced on the execution path**: `ToolRPCServer.handle` checks the job toolset, registration and the gate, never the tool profile, and the executor's gate map is rebuilt only at a fold — so in a loop that never folds (small results, the common shape) a tool the profile withdrew mid-turn stays offered *and* executes until the loop ends; pre-existing, unchanged by this slice, pinned as a limit by `test_between_folds_a_profile_revocation_is_not_enforced_by_the_executor_either`. **The persona migration is process-wide**: `orchestrator.agents` is every agent and `agent.soul` is the one dict every session's system prompt reads, so the session that commits migrates the persona for all sessions (the boundary log line says so); refreshing only the routed agents would need the route at `_history_for_prompt`, which it does not have. **On the staged shared-route path the turn's budget is computed against the persona in force before the commit** (`_shared_route_plan` → `build()` measures `agent.soul` while planning; the refresh runs in `accept()` → `publish()`), so a persona that grew is sent that turn with a budget computed for the old size — bounded by `_soul_max_chars`, self-correcting next turn; the H363 cached prefix and the H673 usage anchor under-count for one turn after a rebuild the same way. The probe trusts the kernel's signature; what the builder reads outside the file (the scan patterns) is code and needs a restart. The prompt half covers the SOUL only: Nerva's plugin and skills sections live in the user prompt and were already per-turn, so there is no plugin section in the system prompt to fail open — the fail-open is exercised on the SOUL builder. The in-turn boundary does not rebuild `messages[0]`: a persona change reaches the *next* turn, not the loop in flight. \"A newly configured MCP server appears without a restart\" is only as true as the MCP manager's registration into ToolRPC is hot, which this slice did not verify. The lineage row stays at `nerva.context-compaction.v1`; the boundary note is a log line plus the runtime event, not a field on the row. `refresh_tools` compares names, so a tool whose schema changed under the same name is adopted only because the fresh list is taken whenever the set moved, never on its own. The stale comment at `agents/core/file_tools.py` saying `_load_soul` runs no injection scan predates H387 and is left for a hygiene commit (it would drift five unrelated rows). Nine ledger rows cite `agent.py`, `agent_runtime.py` or `orchestrator.py` and were drifted by this branch (and by #1188 on main: its registry path in `orchestrator.py`, and the pairing kwarg, refusal branch and lifespan hand-over in `telegram.py` and `web.py`, which H146, H449, H364 and H671 also cite and were read against — the pairing store is not their subject); each was re-read against the diff on its cited paths before its hashes moved. Six keep their text and take fresh stamps — H146, H298, H363, H364, H449, H679: the in-turn re-resolution runs through `_profiled`, which still applies the job toolset on both sides of the profile, and the result-spill, cache, reasoning and job-pin mechanism those rows cite is untouched. Three are rewritten — H387: the ERROR line now comes from `_announce_soul_verdict` behind the `_read_soul` builder, for boot and boundary alike; H671 and H673: `publish()` re-reads the personas after the clock CAS, and the staged-route budget limit above is now on H673's own row. The 16 other needs_review rows on main (H060, H061, H068, H071, H104, H108, H130, H135, H139, H398, H477, H510, H523, H683 from #1188's edits to `orchestrator.py`, `web.py` and `telegram.py`; H288 and H684 from #1187's `heartbeat.py` and `docs/ARCHITECTURE.md`) are main's own drift, not this branch's, and are left untouched here; #1187's five-line comment in `orchestrator.py` re-drifted the nine rows above once more, and they were re-read against it and re-stamped.",
       "evidence": [
         {
           "path": "agents/core/session_refresh.py",
@@ -5025,7 +5025,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "tests/test_session_refresh.py",
@@ -5090,7 +5090,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5337,7 +5337,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c0b0a21b07d4b9c41869612d0893b3523558e2677c9ed7d270ff5e2f076796db"
+          "sha256": "45f03c8ac0f1123a4d7dd56135449451b22baca181577dc6a7d76da066323439"
         },
         {
           "path": "agents/core/settings_db.py",
