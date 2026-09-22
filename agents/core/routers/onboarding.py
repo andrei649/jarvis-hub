@@ -169,6 +169,21 @@ def _provider_residency_state(inventory: dict, provider: str | None) -> str:
     return aggregate if aggregate in {"known", "unknown", "offline"} else "unknown"
 
 
+#: Why ``_model_snapshot`` reached its verdict — one named reason per outcome, so a
+#: terminal check (``scripts/doctor.py`` ``runtime_resolves``, ``nerva status``'s
+#: ``runnable:`` line) reports the same cause the HUD acts on, without re-deriving it.
+#: ready=True: ``resident`` (local pair proven resident) · ``cloud_selected``.
+#: ready=False: ``route_unselected`` · ``provider_unresolved`` (the router handed back
+#: a backend that is not the one its route names — an indirect fallback) ·
+#: ``provider_offline`` · ``configured_not_resident``.
+#: ready=None: ``router_unavailable`` · ``inventory_unavailable`` · ``residency_unknown``.
+MODEL_READINESS_REASONS = frozenset({
+    "resident", "cloud_selected",
+    "route_unselected", "provider_unresolved", "provider_offline", "configured_not_resident",
+    "router_unavailable", "inventory_unavailable", "residency_unknown",
+})
+
+
 async def _model_snapshot() -> dict:
     """Return the model truth for the exact route used by a short Jarvis chat.
 
@@ -177,6 +192,13 @@ async def _model_snapshot() -> dict:
     without generation; a local route is ready only when that provider/model
     pair is proven resident, while a selected cloud route is ready by the
     router's own availability decision.
+
+    This is Nerva's ``setup.runtime_check`` (Hermes, H242): the same
+    ``select_backend`` call a Jarvis turn makes, not "some runtime answers" or
+    "some credential exists".  ``reason`` names the verdict (see
+    ``MODEL_READINESS_REASONS``); ``selected_provider``/``selected_model`` name
+    what the route asked for even when it is not runnable, while
+    ``active_provider``/``active_model`` stay None unless it is.  Read-only.
     """
     orch = get_orch()
     llm_router = getattr(orch, "llm_router", None) if orch else None
@@ -190,6 +212,9 @@ async def _model_snapshot() -> dict:
             "active_provider": None,
             "route": None,
             "ready": None,
+            "reason": "router_unavailable",
+            "selected_provider": None,
+            "selected_model": None,
             "cloud_configured": False,
         }
 
@@ -229,20 +254,23 @@ async def _model_snapshot() -> dict:
         provider or _canonical_provider(inventory.get("backend")) or _fallback_backend(llm_router)
     )
 
+    ready: bool | None
     if not route_selected:
-        ready: bool | None = False
+        ready, reason = False, "route_unselected"
     elif provider is None:
-        ready = False
+        ready, reason = False, "provider_unresolved"
     elif provider in {"gemini", "claude"}:
-        ready = True
+        ready, reason = True, "cloud_selected"
     elif not inventory_available:
-        ready = None
-    elif provider is not None and (provider, selected_model) in resident_pairs:
-        ready = True
+        ready, reason = None, "inventory_unavailable"
+    elif (provider, selected_model) in resident_pairs:
+        ready, reason = True, "resident"
     elif residency_state == "unknown":
-        ready = None
+        ready, reason = None, "residency_unknown"
+    elif residency_state == "offline":
+        ready, reason = False, "provider_offline"
     else:
-        ready = False
+        ready, reason = False, "configured_not_resident"
 
     return {
         "backend": backend,
@@ -253,6 +281,9 @@ async def _model_snapshot() -> dict:
         "residency_state": residency_state,
         "route": route,
         "ready": ready,
+        "reason": reason,
+        "selected_provider": provider,
+        "selected_model": selected_model if route_selected else None,
         "cloud_configured": cloud_configured,
     }
 

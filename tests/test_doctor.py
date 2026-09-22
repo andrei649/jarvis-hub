@@ -59,15 +59,46 @@ class _Resp:
         pass
 
 
-def _opener(*, readyz=200, ollama=True):
+def _model_block(**overrides):
+    """The ``model`` block of ``GET /api/onboarding/command-center`` — the hub's own
+    resolution of the route a Jarvis turn takes (``onboarding._model_snapshot``)."""
+    block = {
+        "ready": True,
+        "reason": "resident",
+        "route": "local",
+        "selected_provider": "ollama",
+        "selected_model": "test-route-model",
+        "active_provider": "ollama",
+        "active_model": "test-route-model",
+        "configured_model": "test-route-model",
+        "resident_models": [{"provider": "ollama", "id": "test-route-model"}],
+        "residency_state": "known",
+    }
+    block.update(overrides)
+    return block
+
+
+def _opener(*, readyz=200, ollama=True, command_center=None, seen=None):
+    """A fake urlopen. ``command_center`` is the JSON body served for the strict route
+    check, an int for an HTTP error status, or None for a runnable route."""
+    body = {"model": _model_block()} if command_center is None else command_center
+
     def open_(url, timeout=None):
-        if url.endswith("/readyz"):
+        target = getattr(url, "full_url", url)  # the doctor sends a Request when it needs headers
+        if seen is not None:
+            seen.append(url)
+        if target.endswith("/readyz"):
             if readyz is None:
                 raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
             if readyz != 200:
-                raise urllib.error.HTTPError(url, readyz, "not ready", {}, None)
+                raise urllib.error.HTTPError(target, readyz, "not ready", {}, None)
             return _Resp(200)
-        if "11434" in url and ollama:
+        if target.endswith("/api/onboarding/command-center"):
+            if isinstance(body, int):
+                raise urllib.error.HTTPError(target, body, "denied", {}, None)
+            raw = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
+            return _Resp(200, raw)
+        if "11434" in target and ollama:
             return _Resp(200, b"{}")
         raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
     return open_
@@ -86,6 +117,8 @@ def test_healthy_install_is_green_and_exits_zero(healthy_root, capsys):
     assert by["data_root_writable"].detail == str(healthy_root / "data")
     assert by["runtimes"].reason == "found:ollama"
     assert by["readyz"].reason == "ready"
+    assert by["runtime_resolves"].status == doctor.OK
+    assert by["runtime_resolves"].reason == "resolves:ollama/test-route-model"
     assert by["smoke"].status == doctor.SKIP and by["smoke"].reason == "skipped"
     assert [c.name for c in report.checks] == list(doctor.REQUIRED) + list(doctor.ADVISORY)
 
@@ -211,6 +244,109 @@ def test_runtimes_check_is_advisory_with_named_detail():
     assert check.detail == "ollama=connection_refused;lm_studio=connection_refused"
 
 
+# ── runtime_resolves: the strict check (Hermes setup.runtime_check) ─
+def test_runtime_resolves_warns_when_the_route_model_is_not_resident_though_a_runtime_answers(
+        healthy_root):
+    """A runtime answering on loopback is not a runnable route. Ollama is up and holds a
+    model, but the route a Jarvis turn takes asks LM Studio for a model it has not
+    loaded: the loose check stays green, the strict one warns and names why."""
+    stuck = {"model": _model_block(
+        ready=False, reason="configured_not_resident", selected_provider="lm-studio",
+        selected_model="test-route-model", active_provider=None, active_model=None,
+        resident_models=[{"provider": "ollama", "id": "test-other-model"}])}
+    report = doctor.run_doctor(healthy_root, opener=_opener(command_center=stuck),
+                               version_info=(3, 12, 0, "final", 0))
+    by = report.by_name()
+    assert (by["runtimes"].status, by["runtimes"].reason) == (doctor.OK, "found:ollama")
+    check = by["runtime_resolves"]
+    assert (check.status, check.reason) == (doctor.WARN, "configured_not_resident")
+    assert "route=local" in check.detail
+    assert "provider=lm-studio" in check.detail and "model=test-route-model" in check.detail
+    assert "resident=ollama/test-other-model" in check.detail
+    assert "[warn] runtime_resolves" in doctor.format_report(report)
+
+
+@pytest.mark.parametrize("model, reason", [
+    (_model_block(ready=None, reason="residency_unknown", active_provider=None,
+                  active_model=None, residency_state="unknown", resident_models=[]),
+     "residency_unknown"),
+    (_model_block(ready=False, reason="route_unselected", route=None, selected_provider=None,
+                  selected_model=None, active_provider=None, active_model=None),
+     "route_unselected"),
+    (_model_block(ready=False, reason="provider_unresolved", route="not-cloud",
+                  selected_provider=None, active_provider=None, active_model=None),
+     "provider_unresolved"),
+    (_model_block(ready=False, reason="provider_offline", residency_state="offline",
+                  active_provider=None, active_model=None, resident_models=[]),
+     "provider_offline"),
+    # a hub that predates the named reason still never reads as runnable
+    ({k: v for k, v in _model_block(ready=False).items() if k != "reason"}, "unreported"),
+])
+def test_runtime_resolves_names_each_not_runnable_reason(model, reason):
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center={"model": model}), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, reason)
+
+
+def test_runtime_resolves_passes_on_a_selected_cloud_route():
+    cloud = {"model": _model_block(
+        reason="cloud_selected", route="cloud-flash", selected_provider="gemini",
+        selected_model="test-cloud-model", active_provider="gemini",
+        active_model="test-cloud-model", resident_models=[])}
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=cloud), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.OK, "resolves:gemini/test-cloud-model")
+    assert "route=cloud-flash" in check.detail and "cloud_selected" in check.detail
+
+
+@pytest.mark.parametrize("readyz, reason", [
+    (None, "skipped:hub_down"),
+    (503, "skipped:hub_not_ready"),
+])
+def test_runtime_resolves_does_not_pass_without_a_ready_hub(healthy_root, readyz, reason):
+    """The route is resolved by the running hub; with no ready hub the check did not run
+    — it is reported as skipped with the named cause, never as ok."""
+    seen = []
+    opener = _opener(readyz=readyz, seen=seen)
+    report = doctor.run_doctor(healthy_root, opener=opener, version_info=(3, 12, 0, "final", 0))
+    check = report.by_name()["runtime_resolves"]
+    assert (check.status, check.reason) == (doctor.SKIP, reason)
+    assert not any(getattr(u, "full_url", u).endswith("/command-center") for u in seen)
+
+
+def test_runtime_resolves_is_a_read_that_carries_the_local_token_and_never_prints_it():
+    seen = []
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    env = {"JARVIS_USER_TOKEN": "user-secret", "JARVIS_ADMIN_TOKEN": "admin-secret"}
+    check = doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready, env=env)
+    assert check.status == doctor.OK
+    (request,) = seen
+    assert request.full_url == "http://127.0.0.1:8080/api/onboarding/command-center"
+    assert request.get_method() == "GET" and request.data is None
+    assert request.get_header("X-user-token") == "user-secret"
+    assert request.get_header("X-admin-token") == "admin-secret"
+    assert "secret" not in check.reason + check.detail
+
+    seen.clear()
+    doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready, env={})
+    assert seen[0].get_header("X-user-token") is None and seen[0].get_header("X-admin-token") is None
+
+
+@pytest.mark.parametrize("command_center, reason", [
+    (401, "needs_token"),
+    (403, "needs_token"),
+    (500, "command_center_status:500"),
+    (b"not json", "malformed_reply"),
+    ({"install": {}}, "malformed_reply"),
+])
+def test_runtime_resolves_names_why_it_could_not_read_the_route(command_center, reason):
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=command_center), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, reason)
+    if reason == "needs_token":
+        assert "JARVIS_USER_TOKEN" in check.detail
+
+
 def test_readyz_reasons():
     assert doctor.check_readyz(_opener(readyz=None)).reason == "server_not_running"
     not_ready = doctor.check_readyz(_opener(readyz=503))
@@ -252,6 +388,16 @@ def test_advisory_failures_do_not_fail_the_run(healthy_root):
     assert report.ok is True
     statuses = {c.name: c.status for c in report.checks}
     assert statuses["runtimes"] == doctor.WARN and statuses["readyz"] == doctor.WARN
+    assert statuses["runtime_resolves"] == doctor.SKIP
+
+
+def test_a_route_that_does_not_resolve_is_advisory_not_a_failed_install(healthy_root):
+    stuck = {"model": _model_block(ready=False, reason="configured_not_resident",
+                                   active_provider=None, active_model=None)}
+    report = doctor.run_doctor(healthy_root, opener=_opener(command_center=stuck),
+                               version_info=(3, 12, 0, "final", 0))
+    assert report.ok is True
+    assert report.by_name()["runtime_resolves"].status == doctor.WARN
 
 
 def test_required_failure_fails_the_run_and_the_cli(healthy_root, monkeypatch, capsys):

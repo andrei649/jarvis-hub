@@ -347,6 +347,202 @@ def test_command_center_requires_the_selected_route_to_be_runnable(client, monke
     assert rejected_sentinel["model"]["ready"] is False
 
 
+def test_model_block_names_why_the_route_is_or_is_not_runnable(client, monkeypatch):
+    """H242 (Hermes ``setup.runtime_check``): the strict verdict carries a named reason
+    and the route's own provider/model, so a terminal check (``nerva doctor``'s
+    ``runtime_resolves``, ``nerva status``'s ``runnable:``) can say *why* without
+    re-deriving it. ``active_*`` stay None when not ready; ``selected_*`` name what the
+    route asked for either way."""
+    from agents import web
+    from agents.core.routers import onboarding
+
+    cold = _get(client)["model"]
+    assert (cold["ready"], cold["reason"]) == (None, "router_unavailable")
+    assert cold["selected_provider"] is None and cold["selected_model"] is None
+
+    monkeypatch.setattr(web, "orch", _FakeOrch(), raising=False)
+    warm = _get(client)["model"]
+    assert (warm["ready"], warm["reason"]) == (True, "resident")
+    assert (warm["selected_provider"], warm["selected_model"]) == ("lm-studio", "test-local-model")
+
+    async def other_provider_resident(**kwargs):
+        return {
+            "backend": "lm-studio",
+            "configured_model": "test-local-model",
+            "resident_models": [{"provider": "ollama", "id": "test-other-model"}],
+            "residency_state": "known",
+            "providers": [
+                {"name": "lm-studio", "online": True, "residency_state": "known"},
+                {"name": "ollama", "online": True, "residency_state": "known"},
+            ],
+            "models": [],
+        }
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", other_provider_resident)
+    stuck = _get(client)["model"]
+    assert (stuck["ready"], stuck["reason"]) == (False, "configured_not_resident")
+    assert (stuck["selected_provider"], stuck["selected_model"]) == ("lm-studio", "test-local-model")
+    assert stuck["active_provider"] is None and stuck["active_model"] is None
+
+    async def provider_offline(**kwargs):
+        snapshot = await other_provider_resident(**kwargs)
+        snapshot["providers"][0] = {"name": "lm-studio", "online": False, "residency_state": "offline"}
+        return snapshot
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", provider_offline)
+    offline = _get(client)["model"]
+    assert (offline["ready"], offline["reason"]) == (False, "provider_offline")
+
+    async def residency_unknown(**kwargs):
+        snapshot = await other_provider_resident(**kwargs)
+        snapshot["providers"][0]["residency_state"] = "unknown"
+        return snapshot
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", residency_unknown)
+    unknown = _get(client)["model"]
+    assert (unknown["ready"], unknown["reason"]) == (None, "residency_unknown")
+
+    async def inventory_down(**kwargs):
+        raise RuntimeError("probe failed")
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", inventory_down)
+    unverified = _get(client)["model"]
+    assert (unverified["ready"], unverified["reason"]) == (None, "inventory_unavailable")
+
+    cloud_router = _FakeRouter(route="cloud-flash", model="test-cloud-model", backend_name="none")
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=cloud_router), raising=False)
+    cloud = _get(client)["model"]
+    assert (cloud["ready"], cloud["reason"]) == (True, "cloud_selected")
+    assert (cloud["selected_provider"], cloud["selected_model"]) == ("gemini", "test-cloud-model")
+
+    claude_only = _FakeRouter(model="test-cloud-model", backend_name="none", route_error=True)
+    claude_only._claude_backend = object()
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=claude_only), raising=False)
+    no_route = _get(client)["model"]
+    assert (no_route["ready"], no_route["reason"]) == (False, "route_unselected")
+    assert no_route["selected_model"] is None
+
+    unsafe_route = _FakeRouter(route="not-cloud", model="test-pretender-model", backend_name="none")
+    unsafe_route._gemini_backend = object()
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=unsafe_route), raising=False)
+    mismatch = _get(client)["model"]
+    assert (mismatch["ready"], mismatch["reason"]) == (False, "provider_unresolved")
+    assert mismatch["selected_provider"] is None
+    assert mismatch["selected_model"] == "test-pretender-model"
+
+    # Every reason the hub can name is exercised above — a new one needs a case here.
+    verdicts = (cold, warm, stuck, offline, unknown, unverified, cloud, no_route, mismatch)
+    assert {v["reason"] for v in verdicts} == onboarding.MODEL_READINESS_REASONS
+
+
+class _AppResponse:
+    """What urllib's opener returns, backed by the in-process app (context manager too,
+    because agents/cli/client.py reads it with ``with``)."""
+
+    def __init__(self, resp):
+        self.status = resp.status_code
+        self._body = resp.content
+
+    def read(self):
+        return self._body
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _app_opener(client, seen, canned=None):
+    """A urlopen stand-in that forwards to the in-process app. ``canned`` answers other
+    paths (``/status`` needs a full orchestrator, which this suite does not build)."""
+    import json
+    from types import SimpleNamespace
+    from urllib.parse import urlsplit
+
+    def open_(request, timeout=None):
+        path = urlsplit(request.full_url).path
+        seen.append((request.get_method(), path))
+        assert request.get_method() == "GET" and request.data is None  # a read, nothing else
+        if canned and path in canned:
+            fake = SimpleNamespace(status_code=200, content=json.dumps(canned[path]).encode())
+            return _AppResponse(fake)
+        return _AppResponse(client.get(path, headers=dict(request.header_items())))
+
+    return open_
+
+
+def test_doctor_and_status_read_the_hubs_own_verdict_end_to_end(client, monkeypatch):
+    """The terminal checks consume this route's real reply, not a hand-built payload:
+    `nerva doctor` (runtime_resolves) and `nerva status` (runnable:) both report the
+    verdict `_model_snapshot` reached, with its named reason."""
+    import io
+
+    from agents import web
+    from agents.cli.client import HubClient
+    from agents.cli.nerva import Context, main
+    from agents.core.routers import onboarding
+    from scripts import doctor
+
+    monkeypatch.setattr(web, "orch", _FakeOrch(), raising=False)
+
+    async def ollama_holds_another_model(**kwargs):
+        return {
+            "backend": "lm-studio",
+            "configured_model": "test-local-model",
+            "resident_models": [{"provider": "ollama", "id": "test-other-model"}],
+            "residency_state": "known",
+            "providers": [
+                {"name": "lm-studio", "online": True, "residency_state": "known"},
+                {"name": "ollama", "online": True, "residency_state": "known"},
+            ],
+            "models": [],
+        }
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", ollama_holds_another_model)
+    seen = []
+    ready_hub = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_app_opener(client, seen), readyz=ready_hub, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "configured_not_resident")
+    assert check.detail == (
+        "route=local provider=lm-studio model=test-local-model resident=ollama/test-other-model"
+    )
+    assert seen == [("GET", "/api/onboarding/command-center")]
+
+    canned = {
+        "/status": {"version": "1.0.0", "llm_backend": "lm-studio", "model_state": "ready",
+                    "loaded_model": "test-other-model", "agents_total": 1, "channels": []},
+        "/api/ops/estop": {"engaged": False, "state": None},
+    }
+    seen.clear()
+    hub = HubClient(opener=_app_opener(client, seen, canned))
+    out = io.StringIO()
+    ctx = Context(environ={}, out=out, err=io.StringIO(), client_factory=lambda env: hub)
+    assert main(["status"], context=ctx) == 0
+    assert ("GET", "/api/onboarding/command-center") in seen
+    text = out.getvalue()
+    assert "test-other-model (resident)" in text
+    assert "runnable:    no — configured_not_resident: route local → lm-studio/test-local-model" in text
+
+    monkeypatch.setattr(onboarding, "get_local_model_inventory", _inventory_truth_resident)
+    ok = doctor.check_runtime_resolves(_app_opener(client, seen), readyz=ready_hub, env={})
+    assert (ok.status, ok.reason) == (doctor.OK, "resolves:lm-studio/test-local-model")
+
+
+async def _inventory_truth_resident(**kwargs):
+    return {
+        "backend": "lm-studio",
+        "configured_model": "test-local-model",
+        "resident_models": [{"provider": "lm-studio", "id": "test-local-model"}],
+        "residency_state": "known",
+        "providers": [{"name": "lm-studio", "online": True, "residency_state": "known"}],
+        "models": [],
+    }
+
+
 def test_docs_action_becomes_ready_with_configured_folder(client, monkeypatch):
     from agents import web
 

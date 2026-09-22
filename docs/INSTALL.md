@@ -95,8 +95,21 @@ Changes nothing; one named reason per row. Required rows (`FAIL` → exit 1): `p
 `venv`, `locks_in_sync` (same rule as `scripts/lock_deps.sh --check`),
 `bind_is_loopback` (what `boot_guards.assert_safe_bind` would refuse),
 `data_root_writable`. Advisory rows (`warn`, never exit 1): `runtimes`
-(`no_local_runtime`), `readyz` (`server_not_running` / `readyz_status:503`), `smoke`
-(`skipped` unless `--smoke`). Paste the `--json` output into a bug report.
+(`no_local_runtime`), `readyz` (`server_not_running` / `readyz_status:503`),
+`runtime_resolves`, `smoke` (`skipped` unless `--smoke`). Paste the `--json` output into
+a bug report.
+
+`runtimes` only proves a model runtime answers on loopback. `runtime_resolves` is the
+strict check: it asks the running hub which route a Jarvis turn would take (the same
+`select_backend` call a chat makes) and whether that exact provider/model pair is
+loaded — `ok` reads `resolves:lm-studio/<model>`; otherwise it warns with the reason
+(`configured_not_resident`, `route_unselected`, `provider_unresolved`,
+`provider_offline`, `residency_unknown`, `inventory_unavailable`) and names the route,
+provider, model and what *is* resident. It needs the hub: with no ready hub it is
+`skip` (`skipped:hub_down` / `skipped:hub_not_ready`), never `ok`. When the hub has
+`JARVIS_USER_TOKEN` set, export it (or `JARVIS_ADMIN_TOKEN`) for the doctor too, or the
+row reads `needs_token`. The doctor never uploads anything: the diagnostics bundle
+(`GET /api/support/bundle`, admin) is built and kept on this machine.
 
 ## The `nerva` command
 
@@ -104,7 +117,7 @@ One command for the whole product, for a terminal, an SSH session or a script:
 
 ```bash
 python scripts/nerva.py doctor                 # the check-up above, same reasons
-python scripts/nerva.py status                 # backend, model, agents, channels, e-stop
+python scripts/nerva.py status                 # backend, model, runnable route, agents, channels, e-stop
 python scripts/nerva.py config list llm        # settings, secrets masked (--reveal shows them)
 python scripts/nerva.py config set llm.tool_loop_enabled on   # validated; the hub reloads in ≤30 s
 python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
@@ -148,3 +161,6 @@ for the owner `/pause`, `/stop`, `/resume` and `/remind <when> | <message>`, wor
 | `non_loopback_without_token` | you set `JARVIS_HOST` to a LAN address without `JARVIS_USER_TOKEN`; see [`PHONE_ACCESS.md`](PHONE_ACCESS.md) |
 | `lock_stale:requirements-beta.lock` | a checkout mid-edit: `./scripts/lock_deps.sh` (needs `uv`) or `git checkout -- requirements-beta.lock` |
 | `data_root_not_writable` | the folder in `JARVIS_HOME` (or `memory_logs/`) is not writable by your user |
+| `configured_not_resident` | the route's model (named in the row) is not loaded on that provider — load it in LM Studio / Ollama, or point the route at a model that is (`resident=` lists them) |
+| `route_unselected` / `provider_unresolved` | no route answers a Jarvis turn, or the router fell back to a backend its route does not name — check the model settings in Admin → settings |
+| `residency_unknown` / `inventory_unavailable` | the provider answered but could not say what is loaded — restart the model server, then re-run the doctor |

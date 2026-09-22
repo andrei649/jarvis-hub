@@ -16,11 +16,23 @@ locks_in_sync       required   a ``requirements*.lock`` is stale or missing for 
 bind_is_loopback    required   ``JARVIS_HOST`` is set to a non-loopback address without a
                                token — ``boot_guards.assert_safe_bind`` would refuse to boot
 data_root_writable  required   the runtime-data root cannot be created/written
-runtimes            advisory   no local model runtime answers on loopback
+runtimes            advisory   no local model runtime answers on loopback (reachability
+                               only — a runtime that answers may not hold the model)
 readyz              advisory   no server answering ``/readyz`` on :8080 (not started, or
                                not ready)
+runtime_resolves    advisory   the route a Jarvis turn takes does not resolve to a usable
+                               model (``configured_not_resident``, ``route_unselected``,
+                               ``residency_unknown`` …) — read from the running hub; with
+                               no ready hub it is ``skip`` (``skipped:hub_down``), never ok
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
 ==================  =========  ==========================================================
+
+``runtime_resolves`` is the strict check (Hermes ``setup.runtime_check``, ledger H242):
+``runtimes`` proves something listens, this proves the configured route is runnable. It
+reads the ``model`` block of ``GET /api/onboarding/command-center`` — the hub's own
+``select_backend`` + residency verdict (``agents/core/routers/onboarding._model_snapshot``)
+— with ``JARVIS_USER_TOKEN`` / ``JARVIS_ADMIN_TOKEN`` when set. One loopback GET; it
+starts, loads and uploads nothing.
 
 Exit status: 0 when every *required* check is ok, 1 otherwise. Advisory failures are
 reported as ``warn`` and never fail the run — a doctor that reds on "server not started"
@@ -50,14 +62,16 @@ from scripts import bootstrap  # noqa: E402
 
 LOCK_SOURCES = ("requirements.txt", "requirements-beta.txt", "requirements-dev.txt")
 LOCK_HEADER = "# source-sha256: "
-READYZ_URL = "http://127.0.0.1:8080/readyz"
+HUB_URL = "http://127.0.0.1:8080"
+READYZ_URL = HUB_URL + "/readyz"
+COMMAND_CENTER_URL = HUB_URL + "/api/onboarding/command-center"
 
 # Mirrors ``agents.core.boot_guards._LOOPBACK_HOSTS`` — kept local so the doctor stays
 # stdlib-only; ``tests/test_doctor.py`` pins the two sets equal so they cannot drift.
 LOOPBACK_HOSTS = frozenset({"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 REQUIRED = ("python", "venv", "locks_in_sync", "bind_is_loopback", "data_root_writable")
-ADVISORY = ("runtimes", "readyz", "smoke")
+ADVISORY = ("runtimes", "readyz", "runtime_resolves", "smoke")
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
 
@@ -201,6 +215,76 @@ def check_readyz(opener=urllib.request.urlopen, url: str = READYZ_URL, timeout: 
     return _result("readyz", True, "ready", body[:200])
 
 
+def _hub_headers(env) -> dict:
+    """The same local credentials ``nerva`` sends (agents/cli/client.py) — never printed."""
+    headers = {"Accept": "application/json"}
+    user = env.get("JARVIS_USER_TOKEN", "").strip()
+    admin = env.get("JARVIS_ADMIN_TOKEN", "").strip()
+    if user:
+        headers["x-user-token"] = user
+    if admin:
+        headers["x-admin-token"] = admin
+    return headers
+
+
+def check_runtime_resolves(opener=urllib.request.urlopen, *, readyz: Check | None = None,
+                           env=None, url: str = COMMAND_CENTER_URL,
+                           timeout: float = 10.0) -> Check:
+    """Does the route a Jarvis turn takes resolve to a usable model — not "does some
+    runtime answer"? Ok only when the hub's verdict is ``ready: true``; every other
+    verdict warns with the hub's named reason and a detail naming route/provider/model.
+
+    Runs only after ``readyz`` is ok: the verdict belongs to the running hub, so with no
+    ready hub the check did not run and says so (``skip``), rather than passing.
+    """
+    name = "runtime_resolves"
+    if readyz is not None and readyz.status != OK:
+        cause = "hub_down" if readyz.reason == "server_not_running" else "hub_not_ready"
+        return Check(name, SKIP, f"skipped:{cause}",
+                     "the route is resolved by the running hub — start it, then re-run")
+    env = os.environ if env is None else env
+    request = urllib.request.Request(url, headers=_hub_headers(env), method="GET")
+    try:
+        resp = opener(request, timeout=timeout)
+        try:
+            raw = resp.read()
+        finally:
+            close = getattr(resp, "close", None)
+            if close:
+                close()
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return _result(name, False, "needs_token",
+                           "set JARVIS_USER_TOKEN (or JARVIS_ADMIN_TOKEN) to read the route")
+        return _result(name, False, f"command_center_status:{exc.code}")
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return _result(name, False, "hub_unreachable", url)
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        payload = None
+    model = payload.get("model") if isinstance(payload, dict) else None
+    if not isinstance(model, dict):
+        return _result(name, False, "malformed_reply", "no model block in the hub's reply")
+
+    ready = model.get("ready")
+    route = model.get("route") or "none"
+    provider = model.get("selected_provider") or model.get("active_provider") or "none"
+    model_id = model.get("selected_model") or model.get("active_model") or "none"
+    reason = str(model.get("reason") or "unreported")
+    detail = f"route={route} provider={provider} model={model_id}"
+    if ready is True:
+        return _result(name, True, f"resolves:{provider}/{model_id}", f"{detail} ({reason})")
+    residents = [
+        f"{row.get('provider')}/{row.get('id')}"
+        for row in (model.get("resident_models") or [])
+        if isinstance(row, dict) and row.get("provider") and row.get("id")
+    ]
+    if residents:
+        detail += " resident=" + ",".join(residents[:8])
+    return _result(name, False, reason, detail)
+
+
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
     if not enabled:
         return Check("smoke", SKIP, "skipped", "pass --smoke to run it (~30s)")
@@ -219,6 +303,7 @@ def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
 def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=urllib.request.urlopen,
                smoke: bool = False, run=None, version_info=None) -> DoctorReport:
     root = Path(root)
+    readyz = check_readyz(opener)
     checks = [
         check_python(version_info),
         check_venv(root),
@@ -226,7 +311,8 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=urllib.request.urlope
         check_bind(env),
         check_data_root(root, env),
         check_runtimes(opener),
-        check_readyz(opener),
+        readyz,
+        check_runtime_resolves(opener, readyz=readyz, env=env),
         check_smoke(root, enabled=smoke, run=run),
     ]
     ok = all(c.status != FAIL for c in checks)
@@ -247,7 +333,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="python scripts/doctor.py",
         description="Check a Nerva install: interpreter, venv, locks, bind, data root, "
-                    "runtimes, /readyz. Changes nothing.",
+                    "runtimes, /readyz, and whether the configured model route resolves. "
+                    "Changes nothing.",
     )
     parser.add_argument("--root", default=str(REPO_ROOT))
     parser.add_argument("--smoke", action="store_true",

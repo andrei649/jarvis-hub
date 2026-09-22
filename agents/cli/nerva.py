@@ -510,6 +510,57 @@ def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK if success else EXIT_FAILED
 
 
+#: /status's legacy ``model_state`` says ``ready`` when ANY model is resident — even one
+#: the Jarvis route would not use. The terminal shows it as what it is; whether the route
+#: is runnable is the separate ``runnable:`` line (H242).
+_MODEL_STATE_WORDS = {"ready": "resident"}
+
+
+def _runnable(client: HubClient) -> dict:
+    """The hub's strict route verdict — the model block of the first-run command center
+    (onboarding._model_snapshot: the same select_backend a Jarvis turn makes, plus
+    residency). Hermes's ``setup.runtime_check``. Read-only; never raises for a verdict
+    it could not read — that is a named reason too."""
+    try:
+        center = client.get("/api/onboarding/command-center")
+    except HubUnavailable:
+        raise
+    except HubError as exc:
+        if exc.status in (401, 403):
+            return {"ready": None, "reason": "needs_token"}
+        return {"ready": None, "reason": "command_center_unavailable",
+                "error": f"HTTP {exc.status}: {exc.reason}"}
+    model = center.get("model") if isinstance(center, dict) else None
+    if not isinstance(model, dict):
+        return {"ready": None, "reason": "malformed_reply"}
+    ready = model.get("ready")
+    return {
+        "ready": ready if isinstance(ready, bool) else None,
+        "reason": str(model.get("reason") or "unreported"),
+        "route": model.get("route"),
+        "provider": model.get("selected_provider") or model.get("active_provider"),
+        "model": model.get("selected_model") or model.get("active_model"),
+    }
+
+
+def _runnable_line(verdict: Mapping[str, Any]) -> str:
+    reason = verdict.get("reason")
+    if reason == "needs_token":
+        return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
+    if reason in ("command_center_unavailable", "malformed_reply"):
+        error = verdict.get("error")
+        return f"unknown — {reason}" + (f" ({error})" if error else "")
+    route = verdict.get("route")
+    target = (
+        f"route {route} → {verdict.get('provider') or '?'}/{verdict.get('model') or '?'}"
+        if route else "no route"
+    )
+    if verdict.get("ready") is True:
+        return f"yes — {target} ({reason})"
+    word = "unknown" if verdict.get("ready") is None else "no"
+    return f"{word} — {reason}: {target}"
+
+
 def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
     status = client.get("/status")
@@ -521,16 +572,19 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     except HubError as exc:
         if exc.status not in (401, 403):
             raise
+    runnable = _runnable(client)
     if ns.json:
-        ctx.dump({"status": status, "estop": estop})
+        ctx.dump({"status": status, "estop": estop, "runnable": runnable})
         return EXIT_OK
     agents = status.get("agents") or []
     ctx.say(f"nerva {status.get('version', '?')} — {client.base_url}")
     ctx.say(f"  backend:     {status.get('llm_backend', 'none')}")
+    state = str(status.get("model_state", "unknown"))
     ctx.say(
         f"  model:       {status.get('loaded_model') or status.get('configured_model') or '—'}"
-        f" ({status.get('model_state', 'unknown')})"
+        f" ({_MODEL_STATE_WORDS.get(state, state)})"
     )
+    ctx.say(f"  runnable:    {_runnable_line(runnable)}")
     ctx.say(f"  agents:      {status.get('agents_online', 0)}/{status.get('agents_total', len(agents))} busy")
     channels = status.get("channels") or []
     names = ", ".join(

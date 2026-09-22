@@ -222,6 +222,88 @@ def test_status_json_is_the_raw_reply():
     assert code == EXIT_OK and json.loads(out)["estop"]["engaged"] is True
 
 
+_ESTOP_OFF = {"engaged": False, "state": None}
+
+
+def _command_center(**model):
+    block = {
+        "ready": False, "reason": "configured_not_resident", "route": "local",
+        "selected_provider": "lm-studio", "selected_model": "test-route-model",
+        "active_provider": None, "active_model": None, "residency_state": "known",
+        "resident_models": [{"provider": "ollama", "id": "test-other-model"}],
+    }
+    block.update(model)
+    return {"install": {"ready": True}, "model": block}
+
+
+def test_status_says_the_route_is_not_runnable_though_a_model_is_resident():
+    """H242: `status` used to print `(ready)` whenever ANY model was resident. The
+    `runnable:` line carries the hub's strict verdict for the route a Jarvis turn takes,
+    with the named reason; the legacy inventory word is shown as what it is."""
+    resident_elsewhere = {**STATUS, "loaded_model": "test-other-model", "model_state": "ready"}
+    hub = _FakeHub({
+        "GET /status": resident_elsewhere,
+        "GET /api/ops/estop": {"engaged": False, "state": None},
+        "GET /api/onboarding/command-center": _command_center(),
+    })
+
+    code, out, _err, hub = _run(["status"], hub)
+
+    assert code == EXIT_OK
+    assert "runnable:    no — configured_not_resident: route local → lm-studio/test-route-model" in out
+    assert "test-other-model (resident)" in out and "(ready)" not in out
+    assert ("GET", "/api/onboarding/command-center", None) in hub.calls
+
+
+@pytest.mark.parametrize("model, line", [
+    ({"ready": True, "reason": "resident", "selected_model": "test-route-model",
+      "active_provider": "lm-studio", "active_model": "test-route-model"},
+     "runnable:    yes — route local → lm-studio/test-route-model (resident)"),
+    ({"ready": True, "reason": "cloud_selected", "route": "cloud-flash",
+      "selected_provider": "gemini", "selected_model": "test-cloud-model"},
+     "runnable:    yes — route cloud-flash → gemini/test-cloud-model (cloud_selected)"),
+    ({"ready": None, "reason": "residency_unknown"},
+     "runnable:    unknown — residency_unknown: route local → lm-studio/test-route-model"),
+    ({"ready": False, "reason": "route_unselected", "route": None,
+      "selected_provider": None, "selected_model": None},
+     "runnable:    no — route_unselected: no route"),
+])
+def test_status_runnable_line_names_the_verdict(model, line):
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF,
+                    "GET /api/onboarding/command-center": _command_center(**model)})
+    code, out, _err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK and line in out
+
+
+def test_status_runnable_line_says_when_it_needs_a_token_or_could_not_read():
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF})
+    hub.routes["GET /api/onboarding/command-center"] = (
+        lambda body: (_ for _ in ()).throw(HubError(401, "user token required")))
+    code, out, _err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK
+    assert "runnable:    (needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)" in out
+
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF,
+                    "GET /api/onboarding/command-center": {"install": {}}})
+    code, out, _err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK and "runnable:    unknown — malformed_reply" in out
+
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF})  # no such route: 404
+    code, out, _err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK and "runnable:    unknown — command_center_unavailable (HTTP 404" in out
+
+
+def test_status_json_carries_the_runnable_verdict():
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF,
+                    "GET /api/onboarding/command-center": _command_center()})
+    code, out, _err, _hub = _run(["status", "--json"], hub)
+    assert code == EXIT_OK
+    assert json.loads(out)["runnable"] == {
+        "ready": False, "reason": "configured_not_resident", "route": "local",
+        "provider": "lm-studio", "model": "test-route-model",
+    }
+
+
 def test_approvals_list_and_decide_use_the_admin_routes():
     hub = _FakeHub(
         {
