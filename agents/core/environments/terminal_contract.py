@@ -25,8 +25,8 @@ here spawns anything; the transport (``local_transport.py``) and the runner
    level above, so the whole expansion is linear in the input. The set is
    deliberately **not** exhaustive. ``_detection_variants`` lists the gaps this
    module knows about — a list of known gaps, not a proof that there are no
-   others, and the three reviews that produced the current list found thirteen it
-   did not have.
+   others, and the four reviews that produced the current list found twenty-two
+   it did not have.
 2. **TERMINAL_EXEC_CONTRACT** — the ``ContractTemplate`` for the kernel kind
    ``terminal.exec``: target/backend present, argv fingerprinted, cwd inside
    the configured roots, timeout bounded, a durable approved task presented.
@@ -46,7 +46,7 @@ import json
 import os
 import re
 import shlex
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -341,9 +341,11 @@ def _statement_pieces(text: str) -> list[tuple[int, str]]:
     """``(start, statement)`` for each ``;``/``&&``/``||``/``&``-bounded piece.
 
     A single ``|`` is a PIPE and stays inside the piece; ``||`` is a separator.
-    Quote-aware, so a separator inside a string literal is data. The start index
-    is into *text*, which is how the piece owning a ``<<`` at a known offset is
-    found.
+    The ``&`` of a redirection (``2>&1``, ``>&2``, ``&>x``) and of a ``|&`` pipe is
+    not a separator either — splitting ``cat <<EOF 2>&1 | sh`` at that ``&`` put
+    the ``sh`` in a piece of its own and the body went unread. Quote-aware, so a
+    separator inside a string literal is data. The start index is into *text*,
+    which is how the piece owning a ``<<`` at a known offset is found.
     """
     pieces: list[tuple[int, str]] = []
     start = 0
@@ -367,7 +369,11 @@ def _statement_pieces(text: str) -> list[tuple[int, str]]:
         if char == ";":
             step = 1
         elif char == "&":
-            step = 2 if text[index + 1:index + 2] == "&" else 1
+            following = text[index + 1:index + 2]
+            if following == "&":
+                step = 2
+            elif following != ">" and (index == 0 or text[index - 1] not in "<>|"):
+                step = 1
         elif char == "|" and text[index + 1:index + 2] == "|":
             step = 2
         if step:
@@ -380,92 +386,260 @@ def _statement_pieces(text: str) -> list[tuple[int, str]]:
     return pieces
 
 
-def _pipe_stages(statement: str) -> list[str]:
-    """*statement* split at its single ``|`` pipes, quote-aware."""
-    stages: list[str] = []
-    current: list[str] = []
+def _pipe_stages(statement: str) -> list[tuple[int, str]]:
+    """``(start, stage)`` for each stage of *statement*, split at its single
+    ``|`` (or bash ``|&``) pipes, quote-aware. The start is into *statement*."""
+    stages: list[tuple[int, str]] = []
+    start = 0
     index = 0
     quote = ""
     while index < len(statement):
         char = statement[index]
         if quote:
             if char == "\\" and quote == '"' and index + 1 < len(statement):
-                current.append(char)
-                current.append(statement[index + 1])
                 index += 2
                 continue
-            current.append(char)
             if char == quote:
                 quote = ""
             index += 1
             continue
         if char in "'\"":
             quote = char
-            current.append(char)
             index += 1
             continue
         if char == "|" and statement[index + 1:index + 2] != "|":
-            stages.append("".join(current))
-            current = []
-            index += 1
+            stages.append((start, statement[start:index]))
+            index += 2 if statement[index + 1:index + 2] == "&" else 1
+            start = index
             continue
-        current.append(char)
         index += 1
-    stages.append("".join(current))
+    stages.append((start, statement[start:]))
     return stages
 
 
-_REDIRECT_RE = re.compile(r"\d*>>?\s*([^\s;&|<>()`'\"&]+)")
+# A redirection with its operand, dropped before a stage is read as words so
+# `bash <<EOF` does not read `<<`/`EOF` as the shell's script operand.
+_REDIRECTION_RE = re.compile(
+    r"\d*(?:&>>?|[<>]&|>>?|<<<|<<-?|<)\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|<>()`'\"]*)")
+# The FILE a `>`/`>>`/`&>` redirection writes to, quoted or bare. Quoted
+# spellings are targets too: `cat > "x.sh" <<'EOF'` + `bash x.sh` runs the body.
+_REDIRECT_TARGET_RE = re.compile(
+    r"(?:\d*>>?|&>>?)\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s;&|<>()`'\"]+))")
+# Tokens a shell steps over on its way to the command of a stage: a subshell or
+# brace-group opener, negation, and the compound-command keywords `_CMD` accepts.
+# `(sh x.sh)`, `{ sh x.sh; }` and `if true; then sh x.sh; fi` all run x.sh.
+_COMMAND_PREFIXES = frozenset({"(", "{", "!", "if", "then", "do", "else", "elif", "while", "until"})
+# The builtins that read a file and execute it in the current shell, and `eval`,
+# which runs whatever a command substitution read (`eval "$(cat)"`).
+_SOURCE_BUILTINS = frozenset({".", "source"})
+_RUN_BUILTINS = _SOURCE_BUILTINS | {"eval"}
+# Script operands that ARE the shell's standard input: `sh /dev/stdin <<EOF` and
+# `sh -c '. /dev/stdin' <<EOF` run the body exactly as `sh <<EOF` does.
+_STDIN_FILES = frozenset({"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"})
+# Shell options that take a separate argument, so the word after them is not the
+# script operand: `bash -o pipefail <<EOF` reads its stdin.
+_SHELL_OPTIONS_WITH_ARGUMENT = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
+_WINDOWS_FILE_FLAG_RE = re.compile(r"[-/](?:f|fi|fil|file)")
 
 
-def _heredoc_feeds_a_shell(line: str, offset: int, tail: Sequence[str]) -> bool:
+def _stage_words(stage: str) -> list[str]:
+    """The words of a pipeline stage, redirections dropped and the prefixes a
+    shell steps over (``(``, ``{``, ``!``, ``then``, ``do``, …) removed."""
+    words = _shell_words(_REDIRECTION_RE.sub(" ", stage))
+    index = 0
+    while index < len(words) and words[index] in _COMMAND_PREFIXES:
+        index += 1
+    return words[index:]
+
+
+def _interpreter_call(words: Sequence[str]) -> tuple[str, str | None] | None:
+    """How the command in *words* (one stage's words) executes a script, if at all.
+
+    * ``("stdin", None)`` — a shell that reads its STANDARD INPUT as the script:
+      ``sh``, ``bash -s``, ``sh -``, ``bash -o pipefail``. This is the only kind
+      that runs a heredoc body piped or redirected into it.
+    * ``("file", name)`` — a shell, or the ``.``/``source`` builtin, running the
+      named file: ``sh x.sh``, ``sudo bash ./x.sh``, ``. x.sh``. Its stdin is that
+      script's DATA.
+    * ``("payload", text)`` — a shell running an inline ``-c`` command line (or a
+      Windows ``/c``-style flag, whose payload is left to ``_shell_c_payloads``).
+      Its stdin is data unless the command line itself hands it to something
+      that executes it (``_payload_reads_stdin``): ``cat <<EOF | sh -c cat``
+      prints the body, ``bash -c sh <<EOF`` runs it.
+    * ``("eval", None)`` — ``eval`` fed by a command substitution, which reads the
+      stdin of the stage it runs in: ``cat <<EOF | eval "$(cat)"`` and ``sh -c
+      'eval "$(cat)"' <<EOF`` run the body. On the heredoc's OWN stage the
+      substitution expands before the redirection attaches (``eval "$(cat)"
+      <<EOF`` runs nothing), which is why this is its own kind.
+    * ``None`` — not an interpreter call, or one reached through ``xargs``:
+      ``xargs sh -c 'rm -f {}'`` hands the lines it reads to the shell as
+      ARGUMENTS (``{}``, ``$@``), never as its script.
+    """
+    head = _shell_head(words, _RUN_BUILTINS)
+    if head is None:
+        return None
+    if any(_command_name(word) == "xargs" for word in words[:head]):
+        return None
+    name = _command_name(words[head])
+    rest = words[head + 1:]
+    if name == "eval":
+        substituted = any(word in ("$", "(", "`") or "$(" in word or "`" in word for word in rest)
+        return ("eval", None) if substituted else None
+    if name in _SOURCE_BUILTINS:
+        operand = next((word for word in rest if not word.startswith("-")), None)
+        if operand in _STDIN_FILES:
+            return ("stdin", None)
+        return ("file", operand) if operand else None
+    if name in _WINDOWS_SHELLS:
+        if any(_WINDOWS_C_FLAG_RE.fullmatch(word) for word in rest):
+            return ("payload", None)
+        for index, word in enumerate(rest):
+            if _WINDOWS_FILE_FLAG_RE.fullmatch(word) and index + 1 < len(rest):
+                return ("file", rest[index + 1])
+        return ("stdin", None)
+    cursor = 0
+    while cursor < len(rest):
+        word = rest[cursor]
+        if word in ("--", "-"):
+            cursor += 1
+            break
+        if len(word) > 1 and word[0] in "-+":
+            if word[0] == "-" and word[1] != "-" and _POSIX_C_FLAG_RE.fullmatch(word):
+                # A real shell keeps parsing options after -c and runs the first
+                # NON-option operand, `--` included — the same walk as
+                # `_shell_c_payloads`.
+                cursor += 1
+                while cursor < len(rest) and len(rest[cursor]) > 1 and rest[cursor][0] in "-+":
+                    if rest[cursor] == "--":
+                        cursor += 1
+                        break
+                    cursor += 1
+                return ("payload", rest[cursor] if cursor < len(rest) else None)
+            if word[1] != "-" and "s" in word[1:]:
+                return ("stdin", None)   # `-s`: the operands are positional parameters
+            cursor += 2 if word in _SHELL_OPTIONS_WITH_ARGUMENT else 1
+            continue
+        break
+    if cursor < len(rest) and rest[cursor] not in _STDIN_FILES:
+        return ("file", rest[cursor])
+    return ("stdin", None)
+
+
+def _payload_reads_stdin(text: str) -> bool:
+    """Does the inline command line *text* execute the stdin of the shell running it?
+
+    ``bash -c sh <<EOF``, ``bash -c 'cat | sh' <<EOF``, ``sh -c 'eval "$(cat)"'
+    <<EOF`` and ``sh -c '. /dev/stdin' <<EOF`` all run the body (the inner shell
+    inherits the heredoc); ``sh -c cat <<EOF`` prints it. One level only, the
+    same depth ``_script_runs`` reads a payload at.
+    """
+    for _, piece in _statement_pieces(text):
+        for _, stage in _pipe_stages(piece):
+            call = _interpreter_call(_stage_words(stage))
+            if call is not None and call[0] in ("stdin", "eval"):
+                return True
+    return False
+
+
+def _script_runs(text: str, depth: int = 0) -> set[str]:
+    """Names (and basenames) of the files a shell READS AND EXECUTES in *text*.
+
+    ``sh x.sh``, ``sudo bash ./x.sh``, ``. x.sh``, ``source x.sh``, the same
+    behind ``(``/``{``/``then``/``do``, a file an upstream stage reads into a
+    stdin-reading shell (``cat x.sh | sh``), and — one level down — a file the
+    shell's own ``-c`` command line runs (``sh -c '. x.sh'``). A file that is
+    merely an ARGUMENT of a shell-run script (``bash run.sh x.yaml``) is not run
+    by that shell and is not named here.
+    """
+    names: set[str] = set()
+    for _, piece in _statement_pieces(text):
+        staged = [_stage_words(stage) for _, stage in _pipe_stages(piece)]
+        calls = [_interpreter_call(words) for words in staged]
+        for index, call in enumerate(calls):
+            if call is None:
+                continue
+            kind, value = call
+            if kind == "file" and value:
+                names.add(value)
+            elif kind == "payload" and value and depth == 0:
+                names |= _script_runs(value, depth + 1)
+            elif kind == "stdin":
+                for earlier in range(index):
+                    if calls[earlier] is None:
+                        names.update(word for word in staged[earlier][1:] if not word.startswith("-"))
+    return names | {_basename(name) for name in names}
+
+
+def _heredoc_feeds_a_shell(line: str, offset: int, later: Callable[[], set[str]]) -> bool:
     """Does a shell EXECUTE the body of the heredoc opened at *offset* on *line*?
 
-    ``cat <<EOF`` hands the body to a program that prints it; a shell runs it,
-    every line a statement — so treating those lines as data was a hole straight
-    through the floor. A shell reaches the body three ways, all checked here:
+    ``cat <<EOF`` hands the body to a program that prints it; a shell that reads
+    its stdin as a script runs it, every line a statement — so treating those
+    lines as data was a hole straight through the floor. A shell reaches the body
+    three ways, all checked here:
 
-    * The heredoc's own pipeline stage IS a shell: ``bash <<EOF``, ``sh <<'EOF'``,
-      ``bash -s <<EOF``, ``sudo bash <<EOF``.
-    * A LATER stage of the same pipeline is a shell: ``cat <<EOF | sh``,
-      ``cat <<EOF | grep -v '^#' | sh``. #1177 read only the stage LEFT of ``<<``
-      and so missed these, although /bin/sh, dash and bash all run the body.
-    * The body is redirected to a FILE that a shell then runs in the same command:
-      ``cat <<'EOF' >x.sh; sh x.sh`` (same line) or ``cat <<EOF >y.sh`` … ``sh
-      y.sh`` (a later line).
+    * The heredoc's own pipeline stage IS such a shell: ``bash <<EOF``,
+      ``sh <<'EOF'``, ``bash -s <<EOF``, ``sudo bash <<EOF``, ``sh /dev/stdin
+      <<EOF`` — or a shell whose ``-c`` line launches one (``bash -c sh <<EOF``).
+    * A stage DOWNSTREAM of it is: ``cat <<EOF | sh``, ``cat <<EOF | grep -v '^#'
+      | sh``. #1177 read only the stage LEFT of ``<<`` and so missed these,
+      although /bin/sh, dash and bash all run the body.
+    * The body is written to a FILE — a ``>``/``>>`` target, quoted or not, or a
+      ``tee`` operand, on the owning stage or downstream — that a shell then runs
+      in the same command: ``cat <<'EOF' >x.sh; sh x.sh`` (same line) or ``cat
+      <<EOF >y.sh`` … ``. y.sh`` (a later line; *later* returns the files run on
+      the statement lines after the heredoc, computed lazily by the caller).
 
-    The heredoc belongs to one ``;``/``&&``/``||``/``&``-bounded statement, so
-    ``bash --version; cat <<EOF`` does not count and ``cat <<EOF; sh`` — where
-    ``sh`` is a separate statement reading the parent's stdin, not the heredoc —
-    is still data. ``./x.sh`` (a script run without a named shell) is a disclosed
-    gap: it is a bare path in command position, not a shell reading a file.
+    A heredoc redirects only its OWN command's stdin, so a shell UPSTREAM of that
+    command (``bash -c echo | cat <<EOF``) never sees the body and does not count
+    — every shell prints the literal body there. Nor does a shell with its own
+    script (``cat <<EOF | bash run.sh``, ``| sh -c cat``, and on the own stage
+    ``sh -c cat <<EOF`` / ``bash run.sh <<EOF``, which #1177 refused although
+    every shell prints the body) or one behind ``xargs``, whose stdin is data
+    (``_interpreter_call``). The heredoc belongs to one
+    ``;``/``&&``/``||``/``&``-bounded statement, so ``bash --version; cat <<EOF``
+    does not count and ``cat <<EOF; sh`` — where ``sh`` is a separate statement
+    reading the parent's stdin, not the heredoc — is still data. The file test
+    looks only at the operand a shell RUNS (``_script_runs``), never at every
+    word of the statement: a heredoc-written ``x.yaml`` handed to ``bash run.sh
+    x.yaml`` is an argument, not a script.
     """
     pieces = _statement_pieces(line)
     # The piece OWNING the ``<<`` is the one with the greatest start at or before
     # the offset; pieces are in order, so it is the last that qualifies.
-    statement = line
-    for start, piece in pieces:
+    owner = 0
+    for index, (start, _) in enumerate(pieces):
         if start <= offset:
-            statement = piece
-        else:
-            break
-    for stage in _pipe_stages(statement):
-        if _shell_head(_shell_words(stage)) is not None:
+            owner = index
+    statement_start, statement = pieces[owner]
+    stages = _pipe_stages(statement)
+    first = 0
+    for index, (start, _) in enumerate(stages):
+        if statement_start + start <= offset:
+            first = index
+    downstream = [(stage, _stage_words(stage)) for _, stage in stages[first:]]
+    for index, (_, words) in enumerate(downstream):
+        call = _interpreter_call(words)
+        if call is None:
+            continue
+        kind, value = call
+        if kind == "stdin" or (kind == "eval" and index > 0):
             return True
-    targets = {t.lower() for t in _REDIRECT_RE.findall(statement)}
+        if kind == "payload" and value and _payload_reads_stdin(value):
+            return True
+    targets: set[str] = set()
+    for stage, words in downstream:
+        for groups in _REDIRECT_TARGET_RE.findall(stage):
+            targets.add(next(group for group in groups if group).lower())
+        head = _shell_head(words, frozenset({"tee"}))
+        if head is not None and _command_name(words[head]) == "tee":
+            targets.update(word for word in words[head + 1:] if not word.startswith("-"))
     if not targets:
         return False
-    later = [piece for start, piece in pieces if start > offset]
-    for line_after in tail:
-        later.extend(piece for _, piece in _statement_pieces(line_after))
-    target_names = targets | {_basename(t) for t in targets}
-    for candidate in later:
-        words = _shell_words(candidate)
-        if _shell_head(words) is None:
-            continue
-        if any(word in target_names or _basename(word) in target_names for word in words):
-            return True
-    return False
+    names = targets | {_basename(target) for target in targets}
+    if owner + 1 < len(pieces) and names & _script_runs(line[pieces[owner + 1][0]:]):
+        return True
+    return bool(names & later())
 
 
 def _heredoc_body(lines: list[str]) -> list[bool]:
@@ -489,10 +663,17 @@ def _heredoc_body(lines: list[str]) -> list[bool]:
     a heredoc, so those lines stay statements — an unterminated real heredoc lands
     there too, which is the conservative direction.
 
+    Whether a shell runs a body (``_heredoc_feeds_a_shell``) is decided LAST
+    heredoc first: the answer depends only on the heredoc's own statement and the
+    text after it, and the body of a later heredoc a shell runs is itself
+    statements that may run an earlier heredoc's file. The statement lines after
+    each heredoc are tokenised once, lazily, and shared — doing it per heredoc
+    was quadratic (400 ``cat <<E >x`` blocks: 2.5 s).
+
     Nesting and multiple heredocs on one line are not modelled: the first
     delimiter on a line wins and the body runs to the next line equal to it.
     """
-    body = [False] * len(lines)
+    extents: list[tuple[int, int, int]] = []
     index = 0
     while index < len(lines):
         opened = _heredoc_open(lines[index])
@@ -512,11 +693,29 @@ def _heredoc_body(lines: list[str]) -> list[bool]:
         if end is None:
             index += 1
             continue
-        if not _heredoc_feeds_a_shell(lines[index], offset, lines[end + 1:]):
-            for position in range(start, end):
-                body[position] = True
-        body[end] = True                # the terminator line is data either way
+        extents.append((index, offset, end))
         index = end + 1
+    body = [False] * len(lines)
+    for opener, _, end in extents:
+        for position in range(opener + 1, end + 1):
+            body[position] = True        # the terminator line is data either way
+    run_names: set[str] = set()
+    unscanned: list[int] = []
+    pending = len(lines) - 1
+
+    def later() -> set[str]:
+        while unscanned:
+            run_names.update(_script_runs(lines[unscanned.pop()]))
+        return run_names
+
+    for opener, offset, end in reversed(extents):
+        while pending > end:
+            if not body[pending]:
+                unscanned.append(pending)
+            pending -= 1
+        if _heredoc_feeds_a_shell(lines[opener], offset, later):
+            for position in range(opener + 1, end):
+                body[position] = False
     return body
 
 
@@ -548,54 +747,90 @@ def _heredoc_body(lines: list[str]) -> list[bool]:
 # `a) (echo; reboot) ;;` must keep its `reboot`. A `(pattern)` label is not
 # handled either, for the same reason — dropping a leading `(` would take
 # `; (reboot)` with it.
-# Kept starting with the literal ``case`` (not a command-position alternation) so
-# the regex engine still fast-scans to the rare ``case`` occurrences instead of
-# testing every position — the alternation form cost ~4x on a maximal no-``case``
-# argv. It also requires ``case WORD in`` so a lone ``case``/``esac`` never opens a
-# region. Command position is confirmed per match by ``_in_command_position``,
-# which reads only the tail of the text before the ``case``.
-_CASE_BLOCK_RE = re.compile(r"\bcase\s+[^\s;&|]\S*\s+.*?\bin\b.*?\besac\b")
+#
+# The region is found by three single-purpose searches rather than one regex:
+# the opener `case WORD `, then the first `in` after it, then the first `esac`
+# after that. A single `\bcase\s+WORD\s+.*?\bin\b.*?\besac\b` gave the same
+# answer but, for every `case` with no later `esac`, re-scanned to the end of the
+# text once per later `in` — and `case`/`in` are ordinary English words, so 4000
+# chars of prose cost 0.5 s and eight argv items of it 128 s. Each search here
+# starts where the last one stopped, so the whole strip is linear in the text.
+_CASE_OPEN_RE = re.compile(r"\bcase\s+[^\s;&|]\S*\s+")
+_CASE_IN_RE = re.compile(r"\bin\b")
+_CASE_ESAC_RE = re.compile(r"\besac\b")
 _CASE_PATTERN = r"[;&\s]*[^\s;&(){}<>`'\"]*\)(?=[\s;]|$)"
 _CASE_LABEL_RE = re.compile(r"(?:(?<=;;)|(?<=;&))" + _CASE_PATTERN)
 _CASE_FIRST_LABEL_RE = re.compile(r"(?<=\bin)" + _CASE_PATTERN)
+# A compound-command keyword right before the `case`, whether spaced (`; then
+# case`) or compact (`;then case`, `b;do case`): the word boundary in front of
+# the keyword is the start of the text, whitespace or a shell operator.
+_KEYWORD_BEFORE_RE = re.compile(r"(?:^|[\s;&|(`])(?:then|do|else|elif)$")
 
 
-def _in_command_position(prefix: str) -> bool:
-    """Is a ``case`` at the end of *prefix* a keyword rather than an argument?
+def _in_command_position(text: str, position: int) -> bool:
+    """Is a ``case`` at *position* in *text* a keyword rather than an argument?
 
     A ``case`` in command position opens a real statement; ``echo case`` does not.
     Only the tail matters — the start of the text, a shell operator (optionally
     then whitespace), a POSIX brace group ``{`` followed by whitespace, or a
-    compound-command keyword right before it.
+    compound-command keyword right before it. The keyword test used to read the
+    last whitespace-separated WORD, so the compact ``if true;then case`` saw
+    ``true;then``, judged the ``case`` an argument, skipped the label strip and
+    refused the label — on a script every shell runs label-only.
     """
-    tail = prefix[-64:]
-    stripped = tail.rstrip()
-    if not stripped:
-        return not prefix or prefix.isspace()
-    last = stripped[-1]
+    index = position
+    while index > 0 and text[index - 1].isspace():
+        index -= 1
+    if index == 0:
+        return True
+    last = text[index - 1]
     if last in ";&|(`":
         return True
-    if last == "{" and len(tail) > len(stripped):
-        return True
-    word = stripped.rsplit(None, 1)[-1]
-    return word in {"then", "do", "else", "elif"}
+    if last == "{":
+        return index < position
+    return _KEYWORD_BEFORE_RE.search(text, max(0, index - 8), index) is not None
 
 
-def _strip_case_labels(flat: str) -> str:
-    """*flat* with the patterns of every real ``case`` clause removed.
+def _strip_case_labels(text: str) -> str:
+    """*text* with the patterns of every real ``case`` clause removed.
 
     A clause is stripped only when its ``case`` is a keyword in command position
     (``_in_command_position``): ``case`` and ``esac`` used as ordinary words —
     ``(echo case in; reboot); echo esac`` — must keep the command the subshell
-    still runs after the unrelated ``in``.
+    still runs after the unrelated ``in``. The region never crosses a newline
+    (one can sit inside quotes on a segment line), as the regex it replaces did
+    not.
     """
-    def clause(match: re.Match[str]) -> str:
-        if not _in_command_position(match.string[:match.start()]):
-            return match.group(0)
-        block = _CASE_FIRST_LABEL_RE.sub("; ", match.group(0))
-        return _CASE_LABEL_RE.sub(" ", block)
-
-    return _CASE_BLOCK_RE.sub(clause, flat)
+    if "case" not in text:
+        return text
+    out: list[str] = []
+    last = 0
+    position = 0
+    while True:
+        opener = _CASE_OPEN_RE.search(text, position)
+        if opener is None:
+            break
+        if not _in_command_position(text, opener.start()):
+            position = opener.start() + 1
+            continue
+        line_end = text.find("\n", opener.end())
+        if line_end < 0:
+            line_end = len(text)
+        marker = _CASE_IN_RE.search(text, opener.end(), line_end)
+        closer = _CASE_ESAC_RE.search(text, marker.end(), line_end) if marker else None
+        if closer is None:
+            # No `in … esac` is left on this line, so no later `case` on it can
+            # open a region either.
+            position = line_end
+            continue
+        block = text[opener.start():closer.end()]
+        out.append(text[last:opener.start()])
+        out.append(_CASE_LABEL_RE.sub(" ", _CASE_FIRST_LABEL_RE.sub("; ", block)))
+        last = position = closer.end()
+    if not out:
+        return text
+    out.append(text[last:])
+    return "".join(out)
 
 
 _SUBSTITUTION_RE = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
@@ -744,8 +979,11 @@ def _command_name(token: str) -> str:
 _ASSIGNMENT_RE = re.compile(r"[a-z_][a-z0-9_]*=.*", re.IGNORECASE)
 
 
-def _shell_head(lowered: Sequence[str]) -> int | None:
+def _shell_head(lowered: Sequence[str], extra: frozenset[str] = frozenset()) -> int | None:
     """Index of the shell a segment invokes, or None if it does not invoke one.
+
+    *extra* names further command words that end the walk the way a shell does
+    (the ``.``/``source`` builtins, ``tee``) for callers reading a pipeline stage.
 
     The walk used to step over head tokens that were literally in ``_WRAPPERS`` and
     then demand the very next word be a shell. Anything else in the prefix ended
@@ -769,7 +1007,8 @@ def _shell_head(lowered: Sequence[str]) -> int | None:
     after_option = False
     while index < len(lowered):
         word = lowered[index]
-        if _command_name(word) in _POSIX_SHELLS or _command_name(word) in _WINDOWS_SHELLS:
+        name = _command_name(word)
+        if name in _POSIX_SHELLS or name in _WINDOWS_SHELLS or name in extra:
             return index
         if word == "--":
             index += 1
@@ -904,26 +1143,45 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
     base64; a ``cmd /c`` payload split across several argv items; an obfuscated
     shell HEAD in argv form (``['s""h', '-c', …]``), because the de-obfuscation
     pass runs after payload extraction and its output is not fed back through it;
-    and a heredoc body written to a file that is then run WITHOUT a named shell
-    (``… >x.sh; ./x.sh``) — ``_heredoc_feeds_a_shell`` catches ``sh x.sh``/``bash
-    x.sh`` and the pipe forms, but a bare ``./x.sh`` is a path in command
-    position, not a shell reading a file.
+    and, for a heredoc body written to a file, the ways of running that file that
+    name neither a shell nor the file: a bare path in command position (``…
+    >x.sh; ./x.sh``), a file name carried by a variable (``for f in x.sh; do sh
+    $f; done``), a file the environment loads (``BASH_ENV=x.sh bash -c :``), and
+    a heredoc opened inside a command substitution (``eval "$(cat <<EOF …)"``,
+    which ``_heredoc_open`` reads as quoted text). ``_heredoc_feeds_a_shell``
+    catches ``sh x.sh``, ``. x.sh``/``source x.sh``, the same behind ``(``/``{``/
+    ``then``, a ``tee`` or quoted target, ``cat x.sh | sh``, ``sh -c '. x.sh'`` and
+    the pipe forms — each pinned — and misses two more pipe shapes: ``xargs -I{}
+    sh -c '{}'`` (each line becomes the command line; an ``xargs``-reached shell
+    is read as taking arguments) and a ``;`` inside a ``( )`` group of a pipe
+    stage (``cat <<EOF | (cd /tmp; sh)``, split at the ``;`` like every ``;``).
 
     Nor is a ``case`` label with a leading ``(`` (``(shutdown) echo bye ;;``) or a
     ``case`` nested inside another one read as a label — both are refusals that
     are not commands, which is the direction that costs nothing but a false no.
 
     This list is what the module knows it misses, not a proof of completeness.
-    Three adversarial reviews of the list itself found thirteen entries missing
+    Four adversarial reviews of the list itself found twenty-two entries missing
     from it — a decoy option between ``-c`` and the payload, a newline inside a
     payload, an assignment prefix, a brace group, a compound-command keyword
     position, a re-expansion budget filled with decoys, a path in front of the
     command word, a ``<<`` that opens no heredoc, a heredoc a shell reads as a
     script, a heredoc body screened as argv, a ``case`` label, a ``case`` word
-    that is not a ``case`` statement (``(echo case in; reboot); echo esac``), and
-    a heredoc body a shell consumes AFTER the redirection (``cat <<EOF | sh``).
-    Those are closed rather than listed; the point of recording it here is that
-    the next entries are found the same way, by somebody trying.
+    that is not a ``case`` statement (``(echo case in; reboot); echo esac``), a
+    heredoc body a shell consumes AFTER the redirection (``cat <<EOF | sh``), and
+    — from the review of that last closure, which had named ``./x.sh`` as its only
+    remaining gap — nine spellings of running the written file: six closed since
+    (a shell behind ``(``/``{``/``then``, the ``.``/``source`` builtins, a ``tee``
+    operand, a quoted redirect target, a file piped into a stdin-reading shell, a
+    ``-c`` command line that runs the file) and three listed above (a
+    variable-carried name, ``BASH_ENV``, a heredoc inside a substitution). That
+    review also found the closure over-refusing five shapes no shell executes — a
+    shell UPSTREAM of the heredoc's stage, an ``xargs``-reached shell, a shell
+    with its own script or ``-c`` line, a written file handed to a script as an
+    ARGUMENT, and a compact ``;then case`` read as an argument — and two of its
+    new scans super-linear on prose; all fixed. Closed entries are closed rather
+    than listed; the point of recording it here is that the next entries are
+    found the same way, by somebody trying.
     """
     yield command
     produced: list[str | Sequence[str]] = [command]
