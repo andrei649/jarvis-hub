@@ -6,14 +6,16 @@ agents.yaml for interval-based heartbeats. Schedules agent routines
 using APScheduler with jitter and MIN_HEARTBEAT_INTERVAL guardrails.
 """
 
+import datetime
 import hashlib
 import logging
 import random
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
 
-from .security.quarantine import detect_injection, detect_injection_normalized, strip_invisible
+from .security.quarantine import detect_injection_normalized, strip_invisible
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -47,37 +49,76 @@ JITTER_MAX = 30
 # or scheduler, so it is outside this scan by construction (a loader that starts
 # reading it must route it through `scan_heartbeat_config`; the tripwire is
 # tests/test_instruction_files_read_side_scan.py). Within the front-matter every
-# string is scanned — keys and values, at any depth — because the whole mapping is
-# handed to the agent and no field is reserved for prose. One hit refuses the whole
-# entry: a heartbeat is one scheduled job with no "rest of the persona" to preserve,
-# so unlike the per-line SOUL quarantine the fail-closed answer is simply not to
-# schedule it. The reason is logged with the file's digest, never the payload, and
-# `get_status()["blocked"]` carries the verdict to the HUD and the runtime run-log.
+# string is scanned — keys and values, nested to `_SCAN_MAX_DEPTH` — because the whole
+# mapping is handed to the agent and no field is reserved for prose. The walker fails
+# CLOSED: a container at the bound, a `!!binary` value or a type `yaml.safe_load` never
+# produces is a flag that refuses the entry, not a leaf the walker had nothing to say
+# about. (The first cut returned silently at the bound and skipped `set` and `bytes`,
+# and "nothing found" read as clean — the review loaded, scheduled and echoed a payload
+# through each.) One hit refuses the whole entry: a heartbeat is one scheduled job with
+# no "rest of the persona" to preserve, so unlike the per-line SOUL quarantine the
+# fail-closed answer is simply not to schedule it — and `load_from_config`, which runs
+# right after `load_all` at startup, does not schedule the agents.yaml interval for a
+# refused agent either. The reason is logged with the file's digest, never the payload,
+# and `get_status()["blocked"]` carries the verdict to the HUD and the runtime run-log,
+# naming the file relative to its root (the route is public; the log keeps the path).
 #
 # Each string is scanned as the union of itself and its normalised copies
 # (`detect_injection_normalized`): the patterns are literal, so an invisible character
-# inside a phrase or a respacing between its words defeats a raw scan, and a scan of
-# a stripped copy alone destroys the `you are now\b` match when the invisible
-# character was what supplied the boundary. A TAG-plane payload (U+E0000–U+E007F,
-# rendered as nothing) is decoded and scanned too, so it is named rather than merely
-# deleted. All of it is a no-op for every shipped HEARTBEAT.md, pinned by the same test.
+# inside a phrase, a blank character in place of a space, a respacing between words or
+# a fullwidth spelling defeats a raw scan, and a scan of a stripped copy alone destroys
+# the `you are now\b` match when the invisible character was what supplied the
+# boundary. A TAG-plane payload (U+E0000–U+E007F, rendered as nothing) is decoded and
+# scanned too, so it is named rather than merely deleted — with one shape excused from
+# the bare-invisible-run flag: a subdivision flag emoji (🏴, a few TAG letters, CANCEL
+# TAG — England, Scotland, Wales) is ordinary text, and what such runs spell is still
+# scanned. All of it is a no-op for every shipped HEARTBEAT.md, pinned by the same test.
 _INVISIBLE_TAG_FLAG = "invisible-unicode-tag"
-_SCAN_MAX_DEPTH = 8
+_NESTING_FLAG = "nesting-too-deep"
+_UNSCANNABLE_FLAG = "unscannable-value-type"
+# Deep enough for any front-matter a person writes (the shipped ones reach three),
+# shallow enough that a `&x [*x]` alias cycle — which PyYAML really does build — stops
+# here, as a refusal, rather than in the interpreter's recursion limit.
+_SCAN_MAX_DEPTH = 16
+# YAML's own non-text scalars: nothing in them reads as words. `bool` is an `int`,
+# `datetime` is a `date`.
+_INERT_SCALAR_TYPES = (bool, int, float, datetime.date)
+# 🏴 (U+1F3F4), one to eight TAG letters or digits, CANCEL TAG (U+E007F).
+_FLAG_EMOJI_RE = re.compile("\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{1,8}\U000E007F")
 
 
-def _string_leaves(value: Any, depth: int = 0) -> Iterator[str]:
-    """Every string a parsed front-matter carries — keys and values, nested, bounded."""
+def _add(flags: list[str], flag: str) -> None:
+    if flag not in flags:
+        flags.append(flag)
+
+
+def _string_leaves(value: Any, flags: list[str], depth: int = 0) -> Iterator[str]:
+    """Every string a parsed front-matter carries; a shape it will not vouch for is a flag.
+
+    Refusing is the only safe answer to a shape the walker does not read: the caller
+    treats "nothing yielded" as clean, so a silent return here would admit whatever
+    the shape hid.
+    """
     if isinstance(value, str):
         yield value
-    elif depth >= _SCAN_MAX_DEPTH:
+    elif value is None or isinstance(value, _INERT_SCALAR_TYPES):
         return
+    elif isinstance(value, (bytes, bytearray)):
+        # `!!binary`: decoded so the verdict names what it hid, refused regardless —
+        # the encoding is a guess, and the agent could not use the value anyway.
+        _add(flags, f"{_UNSCANNABLE_FLAG}:bytes")
+        yield bytes(value).decode("utf-8", "replace")
+    elif depth >= _SCAN_MAX_DEPTH:
+        _add(flags, _NESTING_FLAG)
     elif isinstance(value, dict):
         for key, item in value.items():
-            yield from _string_leaves(key, depth + 1)
-            yield from _string_leaves(item, depth + 1)
-    elif isinstance(value, (list, tuple)):
+            yield from _string_leaves(key, flags, depth + 1)
+            yield from _string_leaves(item, flags, depth + 1)
+    elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
-            yield from _string_leaves(item, depth + 1)
+            yield from _string_leaves(item, flags, depth + 1)
+    else:
+        _add(flags, f"{_UNSCANNABLE_FLAG}:{type(value).__name__}")
 
 
 def _decode_invisible_tags(text: str) -> str:
@@ -97,22 +138,26 @@ def _join_surrogates(text: str) -> str:
 
 
 def scan_heartbeat_config(config: Any) -> list[str]:
-    """Injection patterns found anywhere in a parsed HEARTBEAT front-matter (empty = clean)."""
+    """Injection patterns found anywhere in a parsed HEARTBEAT front-matter (empty = clean).
+
+    Structural refusals (`nesting-too-deep`, `unscannable-value-type:<type>`) are flags
+    like any other: the entry is refused, and the verdict says why.
+    """
     flags: list[str] = []
-
-    def add(pattern: str) -> None:
-        if pattern not in flags:
-            flags.append(pattern)
-
-    for leaf in _string_leaves(config):
+    for leaf in _string_leaves(config, flags):
         joined = _join_surrogates(leaf)
         for text in ((leaf, joined) if joined != leaf else (leaf,)):
-            if strip_invisible(text) != text:
-                add(_INVISIBLE_TAG_FLAG)
-                for pattern in detect_injection(_decode_invisible_tags(text)):
-                    add(pattern)
+            visible = _FLAG_EMOJI_RE.sub("", text)
+            if strip_invisible(visible) != visible:
+                _add(flags, _INVISIBLE_TAG_FLAG)
+            decoded = _decode_invisible_tags(text)
+            if decoded:
+                # CANCEL TAG decodes to DEL, which the normaliser reads as the blank it
+                # is — so flag-shaped runs that together spell a phrase are named too.
+                for pattern in detect_injection_normalized(decoded):
+                    _add(flags, pattern)
             for pattern in detect_injection_normalized(text):
-                add(pattern)
+                _add(flags, pattern)
     return flags
 
 
@@ -138,6 +183,10 @@ class HeartbeatScheduler:
         for agent_dir in self.agents_dir.iterdir():
             if not agent_dir.is_dir():
                 continue
+            # A reload starts this directory from a clean slate: the verdict an earlier
+            # load recorded belongs to the file as it was then, and so does the config
+            # it admitted (dropped below if the file is refused now).
+            self._blocked.pop(agent_dir.name, None)
             # Personalization overlay: HEARTBEAT.local.md (gitignored) wins over
             # the shipped template — same convention as SOUL.local.md. A user
             # data home (Documents/Jarvis/souls/<id>/) wins over both.
@@ -157,6 +206,10 @@ class HeartbeatScheduler:
                 if config:
                     self._heartbeat_configs[config["agent"]] = config
                     logger.info(f"Loaded heartbeat: {config['agent']} — {config.get('cadence', 'unknown')}")
+                elif agent_dir.name in self._blocked:
+                    # Refused now: a config an earlier load admitted for this directory
+                    # must not outlive the file that earned it.
+                    self._heartbeat_configs.pop(agent_dir.name, None)
 
     def _parse_heartbeat(self, path: Path) -> Optional[dict]:
         """Parse the YAML frontmatter from a HEARTBEAT.md file.
@@ -166,7 +219,10 @@ class HeartbeatScheduler:
         caller that could be bypassed. A refused file is recorded in ``_blocked`` under
         the directory that carried it and reported by ``get_status()``.
         """
-        content = path.read_text(encoding="utf-8")
+        # One read: the digest below is over the buffer that was parsed and scanned,
+        # so a file rewritten in between cannot earn a verdict naming other bytes.
+        raw = path.read_bytes()
+        content = raw.decode("utf-8")
         if not content.startswith("---"):
             return None
 
@@ -180,9 +236,9 @@ class HeartbeatScheduler:
         flags = scan_heartbeat_config(config)
         if flags:
             # The bytes on disk, so the owner can match the log line with `sha256sum`.
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = hashlib.sha256(raw).hexdigest()
             self._blocked[path.parent.name] = {
-                "agent_id": path.parent.name, "path": str(path),
+                "agent_id": path.parent.name, "path": self._public_path(path),
                 "flags": flags, "digest": digest,
             }
             logger.error(
@@ -192,6 +248,26 @@ class HeartbeatScheduler:
             )
             return None
         return config
+
+    def _public_path(self, path: Path) -> str:
+        """The file as the verdict names it: relative to the root it was found under.
+
+        ``GET /heartbeat/status`` is a deliberately public route (aggregate
+        observability, no token), and a data-home overlay's absolute path spells the
+        OS user name and the data-home layout. The owner needs to know WHICH file —
+        ``agents/<id>/HEARTBEAT.local.md`` or ``souls/<id>/HEARTBEAT.local.md`` — and
+        the log line, owner-only, keeps the absolute path beside the digest.
+        """
+        from .paths import user_souls_dir
+        for root in (self.agents_dir, user_souls_dir()):
+            if root is None:
+                continue
+            try:
+                relative = path.resolve().relative_to(Path(root).resolve())
+            except ValueError:
+                continue
+            return str(Path(Path(root).name) / relative)
+        return path.name
 
     def _cron_fires_per_day(self, parts: list[str]) -> float:
         """Estimate how many times a cron expression fires in a 24h period."""
@@ -244,6 +320,16 @@ class HeartbeatScheduler:
             if agent_cfg.status != "active":
                 continue
             if not agent_cfg.has_heartbeat:
+                continue
+            if agent_id in self._blocked:
+                # The orchestrator calls this right after `load_all`, and an interval
+                # entry written here unconditionally would put a refused agent back
+                # into `_heartbeat_configs` before `start()` — scheduled after all.
+                logger.warning(
+                    "Heartbeat %s: agents.yaml interval not scheduled — its HEARTBEAT file "
+                    "was refused by the injection scan (sha256 %s)",
+                    agent_id, self._blocked[agent_id]["digest"],
+                )
                 continue
             interval_str = agent_cfg.heartbeat if hasattr(agent_cfg, 'heartbeat') else None
             if not isinstance(interval_str, str) or interval_str == "no":

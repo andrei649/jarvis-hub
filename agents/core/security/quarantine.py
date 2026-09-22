@@ -21,6 +21,7 @@ the enforcement core is fully testable without an LLM.
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -113,14 +114,19 @@ _FORMAT_CHARS = (
 #     emoji/tag smuggling characters, plus the Mongolian ones (U+180B–U+180D, U+180F);
 #   * U+034F COMBINING GRAPHEME JOINER and the Khmer inherent vowels U+17B4/U+17B5 (Mn);
 #   * the Hangul fillers U+115F, U+1160, U+3164, U+FFA0 (Lo) — blank, but letters;
-#   * the C0/C1 controls (Cc), U+0007 among them.
+#   * the C0/C1 controls (Cc), U+0007 among them;
+#   * U+2800 BRAILLE PATTERN BLANK (So), an empty braille cell, and every private-use
+#     character (Co: U+E000–U+F8FF and planes 15–16), which no default font draws.
 # The Cc characters `str.split` calls whitespace (tab, newline, vertical tab, form feed,
 # carriage return, U+001C–U+001F, U+0085) are deliberately NOT here: they separate words, so
-# deleting one would glue two words together rather than uncover a phrase.
+# deleting one would glue two words together rather than uncover a phrase — which is also
+# why `_detection_variants` scans a copy where each of these becomes a space, not only
+# the copy where it is deleted: the attacker may have put it where the space was.
 _INVISIBLE_EXTRA_CHARS = (
     "\x00-\x08\x0e-\x1b\x7f-\x84\x86-\x9f"
-    "\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u3164"
-    "\ufe00-\ufe0f\uffa0\U000E0100-\U000E01EF"
+    "\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180d\u180f\u2800\u3164"
+    "\ufe00-\ufe0f\uffa0\ue000-\uf8ff\U000E0100-\U000E01EF"
+    "\U000F0000-\U000FFFFD\U00100000-\U0010FFFD"
 )
 _FORMAT_CHARS_RE = re.compile(f"[{_FORMAT_CHARS}{_INVISIBLE_EXTRA_CHARS}]")
 
@@ -177,12 +183,30 @@ def _detection_variants(text: str) -> list[str]:
     and an attacker may use both at once: ``Ignore\u200b all\u00a0previous
     instructions`` needs the invisible character deleted AND the NO-BREAK SPACE
     collapsed before any pattern matches it.
+
+    Deleting is not the only right answer to an invisible character, so there is also
+    a copy in which each one becomes a space. Placed BESIDE a space it has to go
+    ("Ignore\u200b all" → "Ignore all"); placed INSTEAD of the space it has to become
+    one ("Ignore\u3164all" → "Ignore all", and "You are now\u3164in" gets back the
+    space that ends the ``you are now\b`` rule — the Hangul filler is a letter to
+    ``\b``, so the raw copy misses that one too). Each copy alone misses the other
+    placement, which is how both loaders admitted the second one until the review.
+
+    And every copy again over the NFKC fold of the text, because fullwidth
+    "Ｉｇｎｏｒｅ" renders as the word and is a different code point to every
+    pattern until it is folded; NFKC also folds ideographic spaces and ligatures. It
+    does NOT fold a Cyrillic homoglyph or a combining overlay — that is a confusables
+    table, and it is not here.
     """
-    variants = [text]
-    stripped = strip_format_chars(text)
-    for variant in (stripped, collapse_whitespace(text), collapse_whitespace(stripped)):
-        if variant not in variants:
-            variants.append(variant)
+    variants: list[str] = []
+    folded = unicodedata.normalize("NFKC", text)
+    for base in ((text, folded) if folded != text else (text,)):
+        stripped = strip_format_chars(base)
+        spaced = _FORMAT_CHARS_RE.sub(" ", base)
+        for variant in (base, stripped, collapse_whitespace(base),
+                        collapse_whitespace(stripped), collapse_whitespace(spaced)):
+            if variant not in variants:
+                variants.append(variant)
     return variants
 
 
