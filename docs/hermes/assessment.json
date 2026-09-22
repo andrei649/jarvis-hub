@@ -1708,12 +1708,12 @@
       "id": "H153",
       "row_sha256": "4cf373559835467b03603fea55b6ed2f0a4f3cb840b0dbc4a0fb9db3b73bc510",
       "status": "partial",
-      "summary": "Backend CRUD is admin-guarded. `GET` and `POST /api/webhooks` (agents/core/routers/webhooks.py:37, agents/core/routers/webhooks.py:43) list and create hooks, and `DELETE /api/webhooks/{hook_id}` (agents/core/routers/webhooks.py:53) removes one. `WebhookStore.create` (agents/core/webhooks.py:69) mints a token and, when `signed`, an HMAC signing secret, both returned once. `WebhookStore.list` (agents/core/webhooks.py:107) masks both and reports `signed`. The trigger `POST /api/webhooks/{hook_id}` (agents/core/routers/webhooks.py:59) authenticates with the token or with `X-Signature-256`. An agent-target trigger goes through `handle_input(channel=\"webhook\")`. `origin_for_channel` (agents/core/action_origin.py:36) classifies that as `inbound`, so the payload is tainted and the kernel's GRANT->QUEUE escalation applies (pinned by tests/test_h17_origin_by_construction.py). The primary v2 cockpit only lists webhooks, read-only (frontend/src/modes2.tsx:332, hydrated at frontend/src/api/live.ts:405). The legacy /v1 `WebhooksPanel` (agents/web/static/tools.js:310) can create and delete. It calls `api()` and a plain `fetch` without `X-Admin-Token` (agents/web/static/tools.js:316), so it works only in the no-admin-token localhost posture.",
-      "remaining": "(1) No per-route enable/disable: WebhookStore has no `enabled` field and no route toggles one, so deleting a hook (and losing its token) is the only way to stop it. (2) No management UI in the v2 cockpit. There is no create form (name, target, target type, signed), no one-time token/secret reveal, and no delete or toggle. The /v1 panel omits the admin credential. (3) Create and delete write no audit event. (4) Workflow targets are broken. The trigger calls `engine.run(hook[\"target\"], {\"input\": text})` (agents/core/routers/webhooks.py:98), but `WorkflowEngine.run` (agents/core/workflows/engine.py:81) expects a Pipeline and a string. Every workflow-target trigger therefore raises AttributeError ('str' object has no attribute 'steps', reproduced). That path also bypasses `handle_input`, so it binds no inbound origin.",
+      "summary": "Backend CRUD is admin-guarded. `GET` and `POST /api/webhooks` (agents/core/routers/webhooks.py:38, agents/core/routers/webhooks.py:44) list and create hooks, and `DELETE /api/webhooks/{hook_id}` (agents/core/routers/webhooks.py:54) removes one. `WebhookStore.create` (agents/core/webhooks.py:69) mints a token and, when `signed`, an HMAC signing secret, both returned once. `WebhookStore.list` (agents/core/webhooks.py:107) masks both and reports `signed`. The trigger `POST /api/webhooks/{hook_id}` (agents/core/routers/webhooks.py:60) authenticates with the token or with `X-Signature-256`. An agent-target trigger goes through `handle_input(channel=\"webhook\")`. `origin_for_channel` (agents/core/action_origin.py:36) classifies that as `inbound`, so the payload is tainted and the kernel's GRANT->QUEUE escalation applies (pinned by tests/test_h17_origin_by_construction.py). The primary v2 cockpit only lists webhooks, read-only (frontend/src/modes2.tsx:332, hydrated at frontend/src/api/live.ts:405). The legacy /v1 `WebhooksPanel` (agents/web/static/tools.js:310) can create and delete. It calls `api()` and a plain `fetch` without `X-Admin-Token` (agents/web/static/tools.js:316), so it works only in the no-admin-token localhost posture. A workflow target runs its pipeline on the delivered text: the trigger resolves it with the same precedence as the workflow run route (a saved user workflow over a builtin of the same id — `resolve_pipeline`, agents/core/routers/workflows.py:37), refuses a target that names no pipeline with 404 (agents/core/routers/webhooks.py:105), and runs it under the inbound action origin (agents/core/routers/webhooks.py:110), so every step the engine runs through handle_input stays an inbound turn; pinned by the three workflow-target tests in tests/test_h10_8_webhooks.py.",
+      "remaining": "(1) No per-route enable/disable: WebhookStore has no `enabled` field and no route toggles one, so deleting a hook (and losing its token) is the only way to stop it. (2) No management UI in the v2 cockpit. There is no create form (name, target, target type, signed), no one-time token/secret reveal, and no delete or toggle. The /v1 panel omits the admin credential. (3) Create and delete write no audit event.",
       "evidence": [
         {
           "path": "agents/core/routers/webhooks.py",
-          "sha256": "285190ee8b4a87246f1de57f920b0b4a864b4c231d9d9757ab099afacc80f72b"
+          "sha256": "249ea88fa9a03af8ca46e7aee4e4ce8e57b234ab73885eeece7a0f53dc029933"
         },
         {
           "path": "agents/core/webhooks.py",
@@ -1741,7 +1741,7 @@
         },
         {
           "path": "tests/test_h10_8_webhooks.py",
-          "sha256": "72767adf256d0646097cd295291311441b22a8bb6f954823e49ce2da69891e81"
+          "sha256": "a5accbcf2d33da65e03769bd90366a7005eb723dc7088ac3b95237d9f76787fb"
         },
         {
           "path": "tests/test_h16_4_signed_triggers.py",
@@ -1750,6 +1750,10 @@
         {
           "path": "tests/test_h17_origin_by_construction.py",
           "sha256": "3bc3a630afe5c9e013e2ee0653baa850341b986b402956cb7134e871b7b4e997"
+        },
+        {
+          "path": "agents/core/routers/workflows.py",
+          "sha256": "82ba2d7e4c9482a34069e0a65436b5a9e7944fbec7f4367b1bc5149422aa4794"
         }
       ]
     },
@@ -2185,12 +2189,12 @@
       "id": "H200",
       "row_sha256": "bc41a5786031627ac820827a053d95aa9eca9a1f63c70d78c3bef29feb5650e2",
       "status": "partial",
-      "summary": "The backend is admin-guarded CRUD. GET, POST and DELETE /api/webhooks (agents/core/routers/webhooks.py:37-56) all carry Depends(admin_guard). WebhookStore.create (agents/core/webhooks.py:69) returns the bearer token once, plus an HMAC signing_secret when signed=True. WebhookStore.list (agents/core/webhooks.py:107-115) strips token and signing_secret and exposes only a 4-character token_hint. The trigger route (agents/core/routers/webhooks.py:59) fails closed with 401 on a missing or invalid token or X-Signature-256. The only HUD surface is the read-only WEBHOOKS list in Interop mode (frontend/src/modes2.tsx:332-339), fed by apiGet('/api/webhooks') in frontend/src/api/live.ts:405. That mapping renders id as the event, target as the url and defaults status to 'active'. tests/test_h10_8_webhooks.py covers store create/verify, list masking, HMAC verification and the admin requirement on management routes; all 9 tests pass.",
-      "remaining": "Nothing calls POST or DELETE /api/webhooks: there is no HUD control, no CLI verb and no mobile screen. An owner still cannot create or remove a webhook without hand-crafting an admin HTTP request. Five accepted parts are missing. (1) A create dialog: agent/workflow target, name, signed toggle. Workflow targets do not work today: trigger_webhook calls engine.run(hook[\"target\"], {\"input\": text}) with the pipeline id and a dict (agents/core/routers/webhooks.py:98), while WorkflowEngine.run expects a Pipeline and a string, so every workflow-target delivery raises; the dialog has to wait for that fix or offer agent targets only. (2) A created-result view that shows the trigger URL and the token or signing_secret exactly once, with copy, and never again. (3) A detail pane: target, target_type, signed, calls, last_called, token_hint. (4) A delete control with confirmation. (5) The governance half: create_webhook and delete_webhook write no audit record. The precedent is _audit_settings_change in agents/core/routers/admin.py:90-98 (audit.log of a SecurityEvent, no secret values). The Hermes receiver-disabled and restart-gateway banners are not needed, because the router is always mounted.",
+      "summary": "The backend is admin-guarded CRUD. GET, POST and DELETE /api/webhooks (agents/core/routers/webhooks.py:38-57) all carry Depends(admin_guard). WebhookStore.create (agents/core/webhooks.py:69) returns the bearer token once, plus an HMAC signing_secret when signed=True. WebhookStore.list (agents/core/webhooks.py:107-115) strips token and signing_secret and exposes only a 4-character token_hint. The trigger route (agents/core/routers/webhooks.py:60) fails closed with 401 on a missing or invalid token or X-Signature-256. The only HUD surface is the read-only WEBHOOKS list in Interop mode (frontend/src/modes2.tsx:332-339), fed by apiGet('/api/webhooks') in frontend/src/api/live.ts:405. That mapping renders id as the event, target as the url and defaults status to 'active'. tests/test_h10_8_webhooks.py covers store create/verify, list masking, HMAC verification and the admin requirement on management routes; all 9 tests pass.",
+      "remaining": "Nothing calls POST or DELETE /api/webhooks: there is no HUD control, no CLI verb and no mobile screen. An owner still cannot create or remove a webhook without hand-crafting an admin HTTP request. Five accepted parts are missing. (1) A create dialog: agent/workflow target, name, signed toggle. (2) A created-result view that shows the trigger URL and the token or signing_secret exactly once, with copy, and never again. (3) A detail pane: target, target_type, signed, calls, last_called, token_hint. (4) A delete control with confirmation. (5) The governance half: create_webhook and delete_webhook write no audit record. The precedent is _audit_settings_change in agents/core/routers/admin.py:90-98 (audit.log of a SecurityEvent, no secret values). The Hermes receiver-disabled and restart-gateway banners are not needed, because the router is always mounted.",
       "evidence": [
         {
           "path": "agents/core/routers/webhooks.py",
-          "sha256": "285190ee8b4a87246f1de57f920b0b4a864b4c231d9d9757ab099afacc80f72b"
+          "sha256": "249ea88fa9a03af8ca46e7aee4e4ce8e57b234ab73885eeece7a0f53dc029933"
         },
         {
           "path": "agents/core/webhooks.py",
@@ -2210,7 +2214,7 @@
         },
         {
           "path": "tests/test_h10_8_webhooks.py",
-          "sha256": "72767adf256d0646097cd295291311441b22a8bb6f954823e49ce2da69891e81"
+          "sha256": "a5accbcf2d33da65e03769bd90366a7005eb723dc7088ac3b95237d9f76787fb"
         }
       ]
     },
@@ -8090,7 +8094,7 @@
       "id": "H659",
       "row_sha256": "ed24a3a447f23fcf89deda19a6e76a2838ed6c0ce85ff17bdb2304b9d0a724c7",
       "status": "missing",
-      "summary": "No external intake has request-level idempotency. POST /api/actions/request (agents/core/routers/actions.py:34) calls ActionApprovalQueue.request, which mints a fresh uuid on every call (agents/core/autonomy/action_approvals.py:44). POST /api/webhooks/{id} (agents/core/routers/webhooks.py:59) runs orch.handle_input on every delivery to an agent target (a workflow-target delivery calls engine.run with a pipeline id and a dict instead of a Pipeline and a string, and raises) and keeps only a call counter. A2ARegistry.receive_task mints a new inbox id for every verified body (agents/core/a2a.py:244). A scratch probe confirmed that two identical requests produce two pending actions and two A2A inbox rows. The only idempotency_key under agents/ is a field on an inert value type (agents/core/execution_provider_contract.py:481) with no reservation store behind it. Nothing sits in front of govern_enqueue in agents/core/autonomy/worker.py.",
+      "summary": "No external intake has request-level idempotency. POST /api/actions/request (agents/core/routers/actions.py:34) calls ActionApprovalQueue.request, which mints a fresh uuid on every call (agents/core/autonomy/action_approvals.py:44). POST /api/webhooks/{id} (agents/core/routers/webhooks.py:60) runs orch.handle_input on every delivery to an agent target and a workflow target's resolved pipeline as an inbound turn, and keeps only a call counter. A2ARegistry.receive_task mints a new inbox id for every verified body (agents/core/a2a.py:244). A scratch probe confirmed that two identical requests produce two pending actions and two A2A inbox rows. The only idempotency_key under agents/ is a field on an inert value type (agents/core/execution_provider_contract.py:481) with no reservation store behind it. Nothing sits in front of govern_enqueue in agents/core/autonomy/worker.py.",
       "remaining": "The whole accepted row is missing:\n- Idempotency-Key header parsing, with 1–255 visible-ASCII validation and HTTP 400 invalid_idempotency_key.\n- A durable UNIQUE(scope,key) SQLite reservation taken under BEGIN IMMEDIATE that survives restarts and multiple workers. It stores only a request fingerprint and a public status/result reference, never bodies or credentials.\n- A caller-derived scope (webhook id, A2A peer, principal) so two callers cannot collide.\n- A duplicate returns the original action/run, and a key reused with a different fingerprint is refused.\n- A `durable` property on the store.\n- Placement in front of the kernel/approval enqueue, so a retry never becomes a second approval item or audit row.\nIt has to be wired into /api/actions/request, /api/webhooks/{id} and /api/a2a/task, and into the run-create route once H476 lands.",
       "evidence": [
         {
@@ -8103,7 +8107,7 @@
         },
         {
           "path": "agents/core/routers/webhooks.py",
-          "sha256": "285190ee8b4a87246f1de57f920b0b4a864b4c231d9d9757ab099afacc80f72b"
+          "sha256": "249ea88fa9a03af8ca46e7aee4e4ce8e57b234ab73885eeece7a0f53dc029933"
         },
         {
           "path": "agents/core/a2a.py",
@@ -8123,7 +8127,7 @@
         },
         {
           "path": "tests/test_h10_8_webhooks.py",
-          "sha256": "72767adf256d0646097cd295291311441b22a8bb6f954823e49ce2da69891e81"
+          "sha256": "a5accbcf2d33da65e03769bd90366a7005eb723dc7088ac3b95237d9f76787fb"
         },
         {
           "path": "tests/test_a2a_hf16_2.py",
