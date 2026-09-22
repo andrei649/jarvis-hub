@@ -118,16 +118,19 @@ def test_resolve_backup_matches_listing(data_root):
     assert bk.resolve_backup("../../etc/passwd", out_dir=out_dir) is None
 
 
-def test_safe_extract_rejects_traversal(tmp_path):
-    # craft an archive with a member escaping the destination
+def test_verify_and_restore_reject_traversal(tmp_path):
+    # craft an archive with a member escaping the destination; both entry points that
+    # unpack a backup must refuse it (H503: through the shared archive_safe module)
     evil = tmp_path / "evil.tar.gz"
     payload = tmp_path / "payload.txt"
     payload.write_text("x", encoding="utf-8")
     with tarfile.open(evil, "w:gz") as tar:
         tar.add(str(payload), arcname="../escape.txt")
-    with tarfile.open(evil, "r:gz") as tar:
-        with pytest.raises(ValueError):
-            bk._safe_extract(tar, tmp_path / "dest")
+    with pytest.raises(ValueError):
+        bk.verify_backup(str(evil))
+    with pytest.raises(ValueError):
+        bk.restore_backup(str(evil), str(tmp_path / "dest" / "inner"))
+    assert not (tmp_path / "dest" / "escape.txt").exists()
 
 
 def test_verify_detects_corrupt_db(data_root):
@@ -207,3 +210,192 @@ def test_wrong_key_cannot_decrypt(data_root):
     res = bk.create_backup(source_root=str(data_root), key=_BK_KEY)
     with pytest.raises(SecretStoreError):
         bk.verify_backup(res["archive"], key=_BK_OTHER)
+
+
+# ── H503: one hardened extractor, atomic producer ──────────────────
+def _tampered_archive(path: Path, extra) -> Path:
+    """A real-looking backup (manifest + DB-less file) with one extra member appended."""
+    import io
+    with tarfile.open(path, "w:gz") as tar:
+        data = b'{"version": 1}'
+        info = tarfile.TarInfo("backup_manifest.json")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+        note = b"hello"
+        info = tarfile.TarInfo("tokens/note.txt")
+        info.size = len(note)
+        tar.addfile(info, io.BytesIO(note))
+        tar.addfile(extra)
+    return path
+
+
+def _link(name, kind, target="/etc/passwd"):
+    info = tarfile.TarInfo(name)
+    info.type = kind
+    info.linkname = target
+    return info
+
+
+@pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.CHRTYPE])
+def test_verify_raises_on_a_tampered_link_or_device_member(tmp_path, kind):
+    # Used to be skipped, so verify reported ok on an archive that restores a quietly
+    # incomplete tree. A tampered archive now fails the drill loudly.
+    arc = _tampered_archive(tmp_path / "jarvis-backup-tampered.tar.gz", _link("tokens/key", kind))
+    with pytest.raises(ValueError):
+        bk.verify_backup(str(arc))
+
+
+def test_restore_of_a_tampered_archive_writes_nothing(tmp_path):
+    arc = _tampered_archive(tmp_path / "jarvis-backup-tampered.tar.gz",
+                            _link("tokens/key", tarfile.SYMTYPE))
+    target = tmp_path / "restored"
+    with pytest.raises(ValueError):
+        bk.restore_backup(str(arc), str(target))
+    # validated before any write — not "everything up to the bad member"
+    assert not (target / "tokens" / "note.txt").exists()
+
+
+def test_cli_verify_and_restore_report_a_rejected_archive(tmp_path, monkeypatch, capsys):
+    # The operator's entry point: a clear refusal and a non-zero exit, not a traceback.
+    root = tmp_path / "live"
+    (root / "backups").mkdir(parents=True)
+    monkeypatch.setattr(bk, "data_root", lambda: root)
+    arc = _tampered_archive(root / "backups" / "jarvis-backup-tampered.tar.gz",
+                            _link("tokens/key", tarfile.SYMTYPE))
+    assert bk._main(["verify", arc.name]) == 1
+    assert "archive rejected" in capsys.readouterr().out
+    target = tmp_path / "restored"
+    assert bk._main(["restore", arc.name, str(target)]) == 1
+    assert "nothing restored" in capsys.readouterr().out
+    assert not (target / "tokens" / "note.txt").exists()
+
+
+def test_create_skips_symlinks_so_a_planted_link_cannot_pull_a_file_in(data_root, tmp_path):
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("not part of the data root", encoding="utf-8")
+    (data_root / "tokens" / "planted").symlink_to(outside)
+    res = bk.create_backup(source_root=str(data_root))
+    with tarfile.open(res["archive"], "r:gz") as tar:
+        names = tar.getnames()
+        assert all(m.isfile() or m.isdir() for m in tar.getmembers())
+    assert "tokens/planted" not in names
+    assert res["skipped_links"] == 1
+    # and a root with a link in it still produces a backup that passes its own drill
+    assert bk.verify_backup(res["archive"])["ok"] is True
+
+
+def test_backup_member_cap_is_enforced_and_configurable(data_root, monkeypatch):
+    res = bk.create_backup(source_root=str(data_root))   # 4 members: 2 DBs, note, manifest
+    monkeypatch.setenv("JARVIS_BACKUP_MAX_MEMBERS", "3")
+    with pytest.raises(ValueError, match="members"):
+        bk.verify_backup(res["archive"])
+    monkeypatch.setenv("JARVIS_BACKUP_MAX_MEMBERS", "10")
+    assert bk.verify_backup(res["archive"])["ok"] is True
+
+
+def test_backup_byte_cap_is_enforced_and_configurable(data_root, monkeypatch, tmp_path):
+    res = bk.create_backup(source_root=str(data_root))
+    monkeypatch.setenv("JARVIS_BACKUP_MAX_BYTES", "1024")      # the DBs alone are larger
+    with pytest.raises(ValueError, match="bytes"):
+        bk.verify_backup(res["archive"])
+    target = tmp_path / "restored"
+    with pytest.raises(ValueError, match="bytes"):
+        bk.restore_backup(res["archive"], str(target))
+    assert not target.exists() or not any(target.iterdir())
+
+
+def test_archive_is_gnu_format(data_root):
+    # Hermes picks GNU over PAX deliberately so macOS Archive Utility opens it.
+    import gzip
+    res = bk.create_backup(source_root=str(data_root))
+    with gzip.open(res["archive"], "rb") as fh:
+        header = fh.read(512)
+    assert header[257:265] == tarfile.GNU_MAGIC
+
+
+def _fsize_limit():
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - Windows
+        return None
+    return resource if hasattr(resource, "RLIMIT_FSIZE") else None
+
+
+@pytest.mark.skipif(_fsize_limit() is None, reason="needs RLIMIT_FSIZE")
+def test_encrypted_backup_interrupted_mid_write_leaves_no_archive(data_root, tmp_path):
+    """A backup that dies mid-write must not leave a truncated archive under a final name.
+
+    RLIMIT_FSIZE makes the write fail the way a full disk does: partway through. The
+    staged plaintext fits under the limit; the (larger) ciphertext does not.
+    """
+    import os
+    resource = _fsize_limit()
+    (data_root / "blob.bin").write_bytes(os.urandom(256 * 1024))
+    plain = bk.create_backup(source_root=str(data_root), out_dir=str(tmp_path / "probe-plain"),
+                             encrypt=False)
+    enc = bk.create_backup(source_root=str(data_root), out_dir=str(tmp_path / "probe-enc"),
+                           key=_BK_KEY)
+    if enc["bytes"] - plain["bytes"] < 4096:  # pragma: no cover - fallback cipher, no headroom
+        pytest.skip("the cipher adds too little size to split the staged tar from the ciphertext")
+    limit = (plain["bytes"] + enc["bytes"]) // 2
+    out = tmp_path / "out"
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (limit, hard))
+    try:
+        with pytest.raises(OSError):
+            bk.create_backup(source_root=str(data_root), out_dir=str(out), key=_BK_KEY)
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+    assert bk.list_backups(out_dir=str(out)) == []           # nothing listed, nothing pruned against
+    assert sorted(p.name for p in out.iterdir()) == []       # and no temp debris either
+
+
+@pytest.mark.skipif(_fsize_limit() is None, reason="needs RLIMIT_FSIZE")
+def test_plain_backup_interrupted_mid_write_leaves_no_archive(data_root, tmp_path):
+    import os
+    resource = _fsize_limit()
+    (data_root / "blob.bin").write_bytes(os.urandom(256 * 1024))
+    out = tmp_path / "out"
+    soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (128 * 1024, hard))
+    try:
+        with pytest.raises(OSError):
+            bk.create_backup(source_root=str(data_root), out_dir=str(out), encrypt=False)
+    finally:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+    assert bk.list_backups(out_dir=str(out)) == []
+    assert sorted(p.name for p in out.iterdir()) == []
+
+
+def test_create_sweeps_abandoned_temp_files_but_not_fresh_ones(data_root, tmp_path):
+    import os
+    import time as _time
+    out = tmp_path / "out"
+    out.mkdir()
+    stale = out / ".jarvis-backup-20260101T000000_000000Z_abcdef.tar.gz.tmp-deadbeef"
+    stale.write_bytes(b"half an archive from a killed process")
+    old = _time.time() - 2 * 3600
+    os.utime(stale, (old, old))
+    fresh = out / ".jarvis-backup-20260101T000001_000000Z_abcdef.tar.gz.tmp-cafef00d"
+    fresh.write_bytes(b"a concurrent backup still writing")
+    bk.create_backup(source_root=str(data_root), out_dir=str(out), encrypt=False)
+    assert not stale.exists()
+    assert fresh.exists()
+    assert len(bk.list_backups(out_dir=str(out))) == 1
+
+
+def test_restore_is_not_reachable_from_any_route_or_tool():
+    """Restore overwrites live data; it stays an operator CLI action (governance note).
+
+    If this ever fails, the new caller must make restore a file.write-class effect that
+    crosses the Action Kernel — not just call it.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    callers = []
+    for path in sorted((repo_root / "agents").rglob("*.py")):
+        rel = path.relative_to(repo_root).as_posix()
+        if rel == "agents/core/backup.py" or rel.startswith("agents/web/v2/"):
+            continue
+        if "restore_backup" in path.read_text(encoding="utf-8", errors="replace"):
+            callers.append(rel)
+    assert callers == []

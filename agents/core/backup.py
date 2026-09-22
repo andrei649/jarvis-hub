@@ -14,8 +14,16 @@ backup needs:
 * **A real restore drill.** ``verify_backup`` extracts the archive into a temp
   dir and runs ``PRAGMA integrity_check`` on every DB — so "we have backups" is
   provable, not assumed, without touching live data.
-* **No archive path-traversal.** Extraction validates every member resolves
-  *inside* the destination (Zip-Slip guard) and writes only regular files/dirs.
+* **No archive path-traversal, no quiet partial restore.** Extraction goes through
+  the shared ``agents.core.archive_safe`` module (H503): member names are normalised
+  (``\\`` folded, absolute / drive-lettered / ``..`` refused), only regular files and
+  dirs are written, and a symlink, hardlink or device member RAISES instead of being
+  skipped — validated before a byte is written, under a member-count and a
+  total-bytes cap (``JARVIS_BACKUP_MAX_MEMBERS`` / ``JARVIS_BACKUP_MAX_BYTES``).
+* **A failed backup never impersonates or destroys a good one.** The archive is
+  written to a sibling temp file and ``os.replace``d into place (GNU tar format, so
+  macOS Archive Utility opens it); the export walk skips symlinks, so a link planted
+  in the data root cannot pull an arbitrary file into the archive.
 
 CLI: ``python -m agents.core.backup create|list|verify|restore`` (the
 one-command story). Restore refuses to overwrite a non-empty target unless
@@ -29,7 +37,6 @@ import json
 import logging
 import os
 import secrets
-import shutil
 import sqlite3
 import tarfile
 import tempfile
@@ -39,6 +46,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
+from agents.core import archive_safe
+from agents.core.archive_safe import ArchiveLimits
+from agents.core.env_config import env_int
 from agents.core.paths import data_root
 from agents.core.secrets import SecretStore
 
@@ -48,6 +58,26 @@ BACKUP_VERSION = 1
 _ARCHIVE_PREFIX = "jarvis-backup-"
 _SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
 _ENC_SUFFIX = ".enc"  # an encrypted archive is "<name>.tar.gz.enc"
+
+# H503 bomb caps for unpacking a backup (verify drill + restore). Generous, because a
+# real data root holds audio, media and many small files and a false refusal on the
+# owner's own restore is its own failure; the byte budget is ALSO clamped to the free
+# space on the destination by archive_safe, which is what actually protects the disk.
+# Both are owner-tunable; a malformed or non-positive value keeps the default.
+BACKUP_MAX_MEMBERS_DEFAULT = 1_000_000
+BACKUP_MAX_BYTES_DEFAULT = 64 * 1024 ** 3
+
+# An atomic_write temp file older than this is debris from a killed backup, not one
+# still being written (a live one's mtime moves with every write).
+_ABANDONED_TEMP_SECONDS = 3600.0
+
+
+def backup_limits() -> ArchiveLimits:
+    """The member-count and uncompressed-bytes caps applied when a backup is unpacked."""
+    return ArchiveLimits(
+        max_members=env_int("JARVIS_BACKUP_MAX_MEMBERS", BACKUP_MAX_MEMBERS_DEFAULT, minimum=1),
+        max_bytes=env_int("JARVIS_BACKUP_MAX_BYTES", BACKUP_MAX_BYTES_DEFAULT, minimum=1),
+    )
 
 
 def _now_iso() -> str:
@@ -316,38 +346,86 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
                 "version": BACKUP_VERSION, "label": safe_label, "encrypted": do_encrypt,
                 "dbs": [], "file_count": 0}
 
+    _sweep_abandoned_temps(out)
+
     # Materialise the file list BEFORE opening the archive so the growing archive
-    # (written into out/) is never itself swept in.
-    files = sorted(p for p in src.rglob("*") if p.is_file())
+    # (written into out/) is never itself swept in. Symlinks are skipped, not archived
+    # and not followed (H503): a link planted in the data root must not pull an
+    # arbitrary file into an archive that may leave the machine.
+    files, manifest["skipped_links"] = archive_safe.collect_regular_files(src)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        # Stage the tar inside the temp dir (never plaintext in out/ when encrypting).
-        staged = tmp / "archive.tar.gz"
-        with tarfile.open(staged, "w:gz") as tar:
-            for path in files:
-                if _is_within(path, out):
-                    continue  # never back up the backups dir
-                if path.name.endswith(_SQLITE_SIDECARS):
-                    continue  # WAL/shm/journal — folded into the DB snapshot
-                rel = path.relative_to(src)
-                if path.suffix == ".db":
-                    snap = tmp / "snap" / rel
-                    _sqlite_consistent_copy(path, snap)
-                    tar.add(snap, arcname=str(rel))
-                    manifest["dbs"].append(str(rel))
-                else:
-                    tar.add(path, arcname=str(rel))
-                manifest["file_count"] += 1
-            mpath = tmp / "backup_manifest.json"
-            mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-            tar.add(mpath, arcname="backup_manifest.json")
-
         if do_encrypt:
-            archive.write_bytes(_backup_cipher(key).encrypt_bytes(staged.read_bytes()))
+            # Stage the tar inside the temp dir (never plaintext in out/), then write
+            # the ciphertext all-or-nothing.
+            staged = tmp / "archive.tar.gz"
+            with open(staged, "wb") as fh:
+                _write_tar(fh, src, out, files, tmp, manifest)
+            ciphertext = _backup_cipher(key).encrypt_bytes(staged.read_bytes())
+            with archive_safe.atomic_write(archive) as fh:
+                fh.write(ciphertext)
         else:
-            shutil.move(str(staged), str(archive))
+            # tarfile.open(archive, "w") would truncate the final name the instant it
+            # opened; stream into a sibling temp and os.replace it into place instead.
+            with archive_safe.atomic_write(archive) as fh:
+                _write_tar(fh, src, out, files, tmp, manifest)
 
     return {"archive": str(archive), "bytes": archive.stat().st_size, **manifest}
+
+
+def _regular_only(info: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
+    """tar.add filter: a path swapped for a link after the walk is dropped, not archived."""
+    return info if info.isreg() else None
+
+
+def _write_tar(fileobj, src: Path, out: Path, files: list[Path], tmp: Path,
+               manifest: dict) -> None:
+    """Write the gzip'd tar of *files* (+ the manifest) into *fileobj*.
+
+    GNU format rather than the PAX default, as Hermes does, so macOS Archive Utility
+    opens the archive; tarfile reads both, so older PAX backups still restore.
+    """
+    with tarfile.open(fileobj=fileobj, mode="w:gz", format=tarfile.GNU_FORMAT) as tar:
+        for path in files:
+            if _is_within(path, out):
+                continue  # never back up the backups dir
+            if path.name.endswith(_SQLITE_SIDECARS):
+                continue  # WAL/shm/journal — folded into the DB snapshot
+            rel = path.relative_to(src)
+            if path.suffix == ".db":
+                snap = tmp / "snap" / rel
+                _sqlite_consistent_copy(path, snap)
+                tar.add(snap, arcname=rel.as_posix(), filter=_regular_only)
+                manifest["dbs"].append(str(rel))
+            else:
+                tar.add(path, arcname=rel.as_posix(), filter=_regular_only)
+            manifest["file_count"] += 1
+        mpath = tmp / "backup_manifest.json"
+        mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        tar.add(mpath, arcname="backup_manifest.json")
+
+
+def _sweep_abandoned_temps(out: Path, *, now: Optional[float] = None) -> list[str]:
+    """Remove atomic-write temps a killed backup left behind; never a live one.
+
+    Writing into a sibling temp means a SIGKILL mid-backup leaves debris in ``out``
+    (the old staging lived in the system temp dir). It is never listed or restored —
+    the name starts with ``.`` — but it would hold disk forever, so it is swept once
+    it is clearly abandoned.
+    """
+    moment = time.time() if now is None else float(now)
+    removed: list[str] = []
+    for p in out.iterdir():
+        if not archive_safe.is_temp_name(p.name, _ARCHIVE_PREFIX):
+            continue
+        try:
+            if (p.is_file() and not p.is_symlink()
+                    and moment - p.stat().st_mtime > _ABANDONED_TEMP_SECONDS):
+                p.unlink()
+                removed.append(p.name)
+        except OSError:
+            logger.warning("could not sweep an abandoned backup temp file")
+    return removed
 
 
 # ── list ──────────────────────────────────────────────────────────
@@ -398,29 +476,8 @@ def resolve_backup(name: str, out_dir: Optional[str] = None) -> Optional[Path]:
 
 
 # ── safe extraction ───────────────────────────────────────────────
-def _safe_extract(tar: tarfile.TarFile, dest: Path) -> int:
-    """Extract regular files/dirs only, each validated to resolve inside dest.
-
-    Defeats Zip-Slip: a member whose resolved path escapes ``dest`` raises. Symlinks
-    and special files are skipped entirely (never written)."""
-    dest = dest.resolve()
-    count = 0
-    for m in tar.getmembers():
-        target = (dest / m.name).resolve()
-        if target != dest and dest not in target.parents:
-            raise ValueError(f"unsafe path in archive: {m.name!r}")
-        if m.isdir():
-            target.mkdir(parents=True, exist_ok=True)
-        elif m.isfile():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            extracted = tar.extractfile(m)
-            if extracted is None:
-                continue
-            with extracted as srcf, open(target, "wb") as outf:
-                shutil.copyfileobj(srcf, outf)
-            count += 1
-        # symlinks/devices/etc → skipped by design
-    return count
+# There is deliberately no backup-local extractor any more (H503): verify and restore
+# both call archive_safe.extract_tar, the same module the marketplace install uses.
 
 
 # ── verify (the restore drill) ────────────────────────────────────
@@ -439,7 +496,7 @@ def verify_backup(archive: str, key: Optional[str] = None) -> dict:
     with _readable_archive(arc, key) as tarpath, \
             tempfile.TemporaryDirectory() as tmp, tarfile.open(tarpath, "r:gz") as tar:
         tmpp = Path(tmp)
-        report["file_count"] = _safe_extract(tar, tmpp)
+        report["file_count"] = archive_safe.extract_tar(tar, tmpp, limits=backup_limits())
         mf = tmpp / "backup_manifest.json"
         if mf.exists():
             try:
@@ -472,7 +529,7 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
     with _readable_archive(arc, key) as tarpath, tarfile.open(tarpath, "r:gz") as tar:
-        count = _safe_extract(tar, target)
+        count = archive_safe.extract_tar(tar, target, limits=backup_limits())
     # Post-restore drill on the live target so a corrupt restore is caught now.
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in sorted(target.rglob("*.db"))}
     return {"restored_to": str(target), "file_count": count, "dbs": dbs,
@@ -504,14 +561,22 @@ def _main(argv=None) -> int:
         path = resolve_backup(args.name)
         if not path:
             print(f"no such backup: {args.name}"); return 2
-        rep = verify_backup(str(path))
+        try:
+            rep = verify_backup(str(path))
+        except archive_safe.ArchiveRejected as e:
+            print(f"archive rejected: {e}"); return 1
         print(json.dumps(rep, indent=2))
         return 0 if rep["ok"] else 1
     elif args.cmd == "restore":
         path = resolve_backup(args.name)
         if not path:
             print(f"no such backup: {args.name}"); return 2
-        print(json.dumps(restore_backup(str(path), args.target, force=args.force), indent=2))
+        try:
+            result = restore_backup(str(path), args.target, force=args.force)
+        except archive_safe.ArchiveRejected as e:
+            # Validated before the first write: nothing from this archive was restored.
+            print(f"archive rejected, nothing restored: {e}"); return 1
+        print(json.dumps(result, indent=2))
     return 0
 
 
