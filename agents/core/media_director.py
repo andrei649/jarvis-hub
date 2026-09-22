@@ -791,6 +791,11 @@ class MediaDirector:
         self._presence = presence
         self._presence_room = str(presence_room or "").strip()
 
+    @property
+    def local_roots(self) -> tuple[Path, ...]:
+        """The owner-configured roots ``local`` content must live under (read-only)."""
+        return tuple(self._local_roots)
+
     def driver_for(self, device: MediaDevice) -> MediaDriver:
         return self._drivers.get(device.kind, self._null)
 

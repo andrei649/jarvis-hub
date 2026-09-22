@@ -71,12 +71,21 @@ house (`agents/core/house/actuation.py:365`), media
 **End-to-end — `POST /api/media/present`:** the route builds a request-scoped
 facade whose authorizer is the bound kernel (`make_action_kernel`,
 `agents/core/routers/media_director.py:156`), registers
-`action:media.present` (`agents/core/media_director.py:1061`), then `perform()`:
+`action:media.present` (`agents/core/media_director.py:1066`), then `perform()`:
 missing required params → `refused` before any authorization
 (`capability_actions.py:139`); kernel DENY → `refused`, QUEUE → `queued` with an
 approval card, GRANT → handler runs (`capability_actions.py:175`). With either
 flag off the same POST returns `status: "disabled"` — a refusal, never a device
 command.
+
+**The model's `speak` tool (H313) takes the same facade.** Registered only while
+`JARVIS_MEDIA_DIRECTOR` is on, it is a gated ToolRPC tool (owner at the HUD or
+voice loop only — never inbound, guest or unattended turns): the call is an
+approval card naming the device, and only the accepted `toolrpc.speak` row
+synthesizes the clip (under `<first JARVIS_MEDIA_ROOTS>/.nerva-speak`, at most 16
+kept) and `perform()`s `action:media.present` in `announce` mode. With either flag
+off it refuses by name (`unified_action_api_disabled` / `action_kernel_disabled`);
+it never reaches a driver itself.
 
 **Risk delta vs OFF:** OFF, these surfaces are inert refusals. ON, house
 mutations / media playback / desktop steps can complete on a kernel GRANT
