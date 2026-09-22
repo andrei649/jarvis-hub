@@ -520,11 +520,13 @@ def _runnable(client: HubClient) -> dict:
     """The hub's strict route verdict — the model block of the first-run command center
     (onboarding._model_snapshot: the same select_backend a Jarvis turn makes, plus
     residency). Hermes's ``setup.runtime_check``. Read-only; never raises for a verdict
-    it could not read — that is a named reason too."""
+    it could not read — that is a named reason too. It runs after ``/status`` answered,
+    so a transport failure here (a timeout, a reset) is ``hub_unreachable`` for this line,
+    not "no hub": the rest of the status still prints."""
     try:
         center = client.get("/api/onboarding/command-center")
-    except HubUnavailable:
-        raise
+    except HubUnavailable as exc:
+        return {"ready": None, "reason": "hub_unreachable", "error": exc.reason}
     except HubError as exc:
         if exc.status in (401, 403):
             return {"ready": None, "reason": "needs_token"}
@@ -534,20 +536,29 @@ def _runnable(client: HubClient) -> dict:
     if not isinstance(model, dict):
         return {"ready": None, "reason": "malformed_reply"}
     ready = model.get("ready")
-    return {
+    verdict = {
         "ready": ready if isinstance(ready, bool) else None,
-        "reason": str(model.get("reason") or "unreported"),
-        "route": model.get("route"),
-        "provider": model.get("selected_provider") or model.get("active_provider"),
-        "model": model.get("selected_model") or model.get("active_model"),
+        "reason": _named(model.get("reason")) or "unreported",
+        "route": _named(model.get("route")),
+        "provider": _named(model.get("selected_provider")) or _named(model.get("active_provider")),
+        "model": _named(model.get("selected_model")) or _named(model.get("active_model")),
     }
+    if verdict["ready"] is True and not (verdict["route"] and verdict["provider"] and verdict["model"]):
+        # Same rule as the doctor's strict row: "yes" must say what resolves.
+        return {"ready": None, "reason": "malformed_reply",
+                "error": "ready without a named route/provider/model"}
+    return verdict
+
+
+def _named(value: Any) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _runnable_line(verdict: Mapping[str, Any]) -> str:
     reason = verdict.get("reason")
     if reason == "needs_token":
         return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
-    if reason in ("command_center_unavailable", "malformed_reply"):
+    if reason in ("command_center_unavailable", "malformed_reply", "hub_unreachable"):
         error = verdict.get("error")
         return f"unknown — {reason}" + (f" ({error})" if error else "")
     route = verdict.get("route")

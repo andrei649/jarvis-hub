@@ -84,6 +84,10 @@ _CLOUD_ROUTE_PROVIDERS = {
     "cloud-pro": "gemini",
 }
 _LOCAL_ROUTES = {"local", "local-deep", "local-fallback"}
+#: ``HybridRouter.select_backend`` rewrites every ``cloud*`` route to this one when the
+#: owner configured ``llm.compatible_provider`` (xai / openai-responses / openrouter /
+#: openai-compatible) — a Jarvis turn then runs on ``router._compatible_backend``.
+_COMPATIBLE_ROUTE = "cloud-compatible"
 
 
 def _clean_string(value) -> str | None:
@@ -135,6 +139,14 @@ def _selected_provider(llm_router, selected_backend, route: str) -> str | None:
     if route == "ollama-howard":
         expected = getattr(llm_router, "_ollama_backend", None)
         return "ollama" if expected is not None and expected is selected_backend else None
+    if route == _COMPATIBLE_ROUTE:
+        expected = getattr(llm_router, "_compatible_backend", None)
+        if expected is None or expected is not selected_backend:
+            return None
+        # The adapter's own provider id (the one job_selection matches a pin against).
+        return _canonical_provider(getattr(getattr(expected, "profile", None), "id", None)) or (
+            _COMPATIBLE_ROUTE
+        )
     return None
 
 
@@ -172,10 +184,12 @@ def _provider_residency_state(inventory: dict, provider: str | None) -> str:
 #: Why ``_model_snapshot`` reached its verdict — one named reason per outcome, so a
 #: terminal check (``scripts/doctor.py`` ``runtime_resolves``, ``nerva status``'s
 #: ``runnable:`` line) reports the same cause the HUD acts on, without re-deriving it.
-#: ready=True: ``resident`` (local pair proven resident) · ``cloud_selected``.
+#: ready=True: ``resident`` (local pair proven resident) · ``cloud_selected`` (the
+#: router chose a cloud route — Gemini, Claude or the owner's ``cloud-compatible``
+#: adapter — and handed back the very backend that route names).
 #: ready=False: ``route_unselected`` · ``provider_unresolved`` (the router handed back
-#: a backend that is not the one its route names — an indirect fallback) ·
-#: ``provider_offline`` · ``configured_not_resident``.
+#: a backend that is not the one its route names, or a route this check does not know —
+#: an indirect fallback) · ``provider_offline`` · ``configured_not_resident``.
 #: ready=None: ``router_unavailable`` · ``inventory_unavailable`` · ``residency_unknown``.
 MODEL_READINESS_REASONS = frozenset({
     "resident", "cloud_selected",
@@ -219,7 +233,9 @@ async def _model_snapshot() -> dict:
         }
 
     cloud_configured = bool(
-        getattr(llm_router, "_claude_backend", None) or getattr(llm_router, "_gemini_backend", None)
+        getattr(llm_router, "_claude_backend", None)
+        or getattr(llm_router, "_gemini_backend", None)
+        or getattr(llm_router, "_compatible_backend", None)
     )
     try:
         selected_backend, selected_model, route = llm_router.select_backend(
@@ -259,7 +275,9 @@ async def _model_snapshot() -> dict:
         ready, reason = False, "route_unselected"
     elif provider is None:
         ready, reason = False, "provider_unresolved"
-    elif provider in {"gemini", "claude"}:
+    elif route in _CLOUD_ROUTE_PROVIDERS or route == _COMPATIBLE_ROUTE:
+        # The router itself chose this cloud backend (policy, spend cap and fallback
+        # mode already applied) and handed back the very object its route names.
         ready, reason = True, "cloud_selected"
     elif not inventory_available:
         ready, reason = None, "inventory_unavailable"

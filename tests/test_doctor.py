@@ -1,15 +1,19 @@
 """scripts/doctor.py — the install check-up: every check reports a named reason.
 
 Hermetic: a fake urllib opener stands in for /readyz and the runtime probes, a temp
-root stands in for the checkout, and the smoke is a fake runner. No network, no server.
+root stands in for the checkout, and the smoke is a fake runner. No network, no server —
+except one test that binds an ephemeral loopback port to cut a reply off mid-body, the
+way only a real socket and the real urllib opener can.
 """
 
 import hashlib
+import http.client
 import io
 import json
 import subprocess
 import sys
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -42,6 +46,8 @@ def healthy_root(tmp_path, monkeypatch):
     venv_py.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "data"))
     monkeypatch.delenv("JARVIS_HOST", raising=False)
+    monkeypatch.delenv("JARVIS_PORT", raising=False)
+    monkeypatch.delenv("NERVA_HUB_URL", raising=False)
     monkeypatch.delenv("JARVIS_USER_TOKEN", raising=False)
     monkeypatch.delenv("JARVIS_ADMIN_TOKEN", raising=False)
     return tmp_path
@@ -53,6 +59,8 @@ class _Resp:
         self._body = body
 
     def read(self):
+        if isinstance(self._body, BaseException):  # a reply cut off mid-body
+            raise self._body
         return self._body
 
     def close(self):
@@ -78,9 +86,10 @@ def _model_block(**overrides):
     return block
 
 
-def _opener(*, readyz=200, ollama=True, command_center=None, seen=None):
+def _opener(*, readyz=200, ollama=True, command_center=None, seen=None, opens=None):
     """A fake urlopen. ``command_center`` is the JSON body served for the strict route
-    check, an int for an HTTP error status, or None for a runnable route."""
+    check, an int for an HTTP error status, an exception its ``read`` raises, or None for
+    a runnable route; ``opens`` is an exception the open itself raises."""
     body = {"model": _model_block()} if command_center is None else command_center
 
     def open_(url, timeout=None):
@@ -94,10 +103,13 @@ def _opener(*, readyz=200, ollama=True, command_center=None, seen=None):
                 raise urllib.error.HTTPError(target, readyz, "not ready", {}, None)
             return _Resp(200)
         if target.endswith("/api/onboarding/command-center"):
+            if opens is not None:
+                raise opens
             if isinstance(body, int):
                 raise urllib.error.HTTPError(target, body, "denied", {}, None)
-            raw = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
-            return _Resp(200, raw)
+            if isinstance(body, (bytes, BaseException)):
+                return _Resp(200, body)
+            return _Resp(200, json.dumps(body).encode("utf-8"))
         if "11434" in target and ollama:
             return _Resp(200, b"{}")
         raise urllib.error.URLError(ConnectionRefusedError(111, "refused"))
@@ -323,13 +335,85 @@ def test_runtime_resolves_is_a_read_that_carries_the_local_token_and_never_print
     (request,) = seen
     assert request.full_url == "http://127.0.0.1:8080/api/onboarding/command-center"
     assert request.get_method() == "GET" and request.data is None
+    # The route is user-guarded: the least-privileged credential that opens it is sent,
+    # never both — the admin token stays home when a user token is set.
     assert request.get_header("X-user-token") == "user-secret"
-    assert request.get_header("X-admin-token") == "admin-secret"
+    assert request.get_header("X-admin-token") is None
     assert "secret" not in check.reason + check.detail
+
+    seen.clear()
+    doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready,
+                                  env={"JARVIS_ADMIN_TOKEN": "admin-secret"})
+    assert seen[0].get_header("X-admin-token") == "admin-secret"
+    assert seen[0].get_header("X-user-token") is None
 
     seen.clear()
     doctor.check_runtime_resolves(_opener(seen=seen), readyz=ready, env={})
     assert seen[0].get_header("X-user-token") is None and seen[0].get_header("X-admin-token") is None
+
+
+@pytest.mark.parametrize("env", [
+    {},
+    {"JARVIS_PORT": "9000"},
+    {"JARVIS_HOST": "localhost", "JARVIS_PORT": "9001"},
+    {"JARVIS_HOST": "0.0.0.0", "JARVIS_PORT": "9002"},
+    {"JARVIS_HOST": "::", "JARVIS_PORT": "9003"},
+    {"JARVIS_HOST": "  ", "JARVIS_PORT": " "},
+    {"NERVA_HUB_URL": "http://127.0.0.1:7000/", "JARVIS_PORT": "9000"},
+])
+def test_doctor_reads_the_hub_nerva_status_reads(env):
+    """One address for both owner tools: the doctor derives the hub's base URL exactly as
+    ``nerva status`` does (agents/cli/client.hub_url — mirrored, so the doctor stays
+    stdlib-only and import-light)."""
+    from agents.cli.client import WILDCARD_HOSTS, hub_url
+
+    assert doctor.hub_url(env) == hub_url(env)
+    assert doctor.WILDCARD_HOSTS == WILDCARD_HOSTS
+
+
+def _hub_urls(seen):
+    """The requests that went to the hub (not the loopback runtime probes)."""
+    urls = [getattr(u, "full_url", u) for u in seen]
+    return [u for u in urls if u.endswith(("/readyz", "/api/onboarding/command-center"))]
+
+
+def test_doctor_sends_its_probes_and_token_to_the_configured_hub_not_a_fixed_port(healthy_root):
+    """The hub runs on JARVIS_PORT=9000 (8080 belongs to something else): /readyz and the
+    route read both go to :9000, so readyz vouches for the same hub the token goes to,
+    and nothing — least of all a credential — is sent to :8080."""
+    seen = []
+    env = {"JARVIS_PORT": "9000", "JARVIS_USER_TOKEN": "user-secret",
+           "JARVIS_HOME": str(healthy_root / "data")}
+    report = doctor.run_doctor(healthy_root, env=env, opener=_opener(seen=seen),
+                               version_info=(3, 12, 0, "final", 0))
+    assert _hub_urls(seen) == ["http://127.0.0.1:9000/readyz",
+                               "http://127.0.0.1:9000/api/onboarding/command-center"]
+    assert report.by_name()["runtime_resolves"].status == doctor.OK
+
+    seen.clear()
+    doctor.run_doctor(healthy_root, env={"NERVA_HUB_URL": "http://127.0.0.1:7000/"},
+                      opener=_opener(seen=seen), version_info=(3, 12, 0, "final", 0))
+    assert _hub_urls(seen) == ["http://127.0.0.1:7000/readyz",
+                               "http://127.0.0.1:7000/api/onboarding/command-center"]
+
+
+def test_a_hub_address_that_is_not_a_url_is_named_not_a_traceback(healthy_root):
+    fake = _opener()
+
+    def opener(url, timeout=None):
+        if "not-a-url" in getattr(url, "full_url", url):
+            return urllib.request.urlopen(url, timeout=timeout)  # ValueError before any I/O
+        return fake(url, timeout=timeout)
+
+    report = doctor.run_doctor(healthy_root, env={"NERVA_HUB_URL": "not-a-url"},
+                               opener=opener, version_info=(3, 12, 0, "final", 0))
+    by = report.by_name()
+    assert (by["readyz"].status, by["readyz"].reason) == (doctor.WARN, "hub_url_invalid")
+    assert (by["runtime_resolves"].status, by["runtime_resolves"].reason) == (
+        doctor.SKIP, "skipped:hub_url_invalid")
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    direct = doctor.check_runtime_resolves(readyz=ready, env={"NERVA_HUB_URL": "not-a-url"})
+    assert (direct.status, direct.reason) == (doctor.WARN, "hub_url_invalid")
 
 
 @pytest.mark.parametrize("command_center, reason", [
@@ -338,6 +422,13 @@ def test_runtime_resolves_is_a_read_that_carries_the_local_token_and_never_print
     (500, "command_center_status:500"),
     (b"not json", "malformed_reply"),
     ({"install": {}}, "malformed_reply"),
+    # a hub killed mid-reply: http.client raises, and it is not an OSError
+    (http.client.IncompleteRead(b'{"model": {"rea', 385), "hub_unreachable"),
+    # a strict check never turns green on a verdict that names nothing
+    ({"model": {"ready": True}}, "malformed_reply"),
+    ({"model": _model_block(route=None)}, "malformed_reply"),
+    ({"model": _model_block(selected_provider=None, active_provider=None)}, "malformed_reply"),
+    ({"model": _model_block(selected_model="", active_model=None)}, "malformed_reply"),
 ])
 def test_runtime_resolves_names_why_it_could_not_read_the_route(command_center, reason):
     ready = doctor.Check("readyz", doctor.OK, "ready")
@@ -347,11 +438,71 @@ def test_runtime_resolves_names_why_it_could_not_read_the_route(command_center, 
         assert "JARVIS_USER_TOKEN" in check.detail
 
 
+def test_runtime_resolves_names_a_listener_that_does_not_speak_http():
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    opener = _opener(opens=http.client.BadStatusLine("SSH-2.0-OpenSSH"))
+    check = doctor.check_runtime_resolves(opener, readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "hub_unreachable")
+    assert "BadStatusLine" in check.detail
+
+
+def test_runtime_resolves_ignores_a_resident_list_that_is_not_a_list():
+    stuck = {"model": _model_block(ready=False, reason="configured_not_resident",
+                                   active_provider=None, active_model=None, resident_models=3)}
+    ready = doctor.Check("readyz", doctor.OK, "ready")
+    check = doctor.check_runtime_resolves(_opener(command_center=stuck), readyz=ready, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "configured_not_resident")
+    assert "resident=" not in check.detail
+
+
+def test_runtime_resolves_survives_a_reply_cut_off_on_a_real_socket():
+    """The review's reproduction, kept as a test: a real listener promises 400 bytes, sends
+    15 and closes (a hub killed mid-reply). The real urllib opener raises IncompleteRead;
+    the row names it instead of the doctor dying with a traceback."""
+    import http.server
+    import threading
+
+    class Truncating(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 — the stdlib's handler name
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "400")
+            self.end_headers()
+            self.wfile.write(b'{"model": {"rea')
+            self.wfile.flush()
+            self.close_connection = True
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Truncating)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        ready = doctor.Check("readyz", doctor.OK, "ready")
+        check = doctor.check_runtime_resolves(readyz=ready, env={"JARVIS_PORT": str(port)})
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert (check.status, check.reason) == (doctor.WARN, "hub_unreachable")
+    assert "IncompleteRead" in check.detail
+
+
 def test_readyz_reasons():
     assert doctor.check_readyz(_opener(readyz=None)).reason == "server_not_running"
     not_ready = doctor.check_readyz(_opener(readyz=503))
     assert (not_ready.status, not_ready.reason) == (doctor.WARN, "readyz_status:503")
     assert doctor.check_readyz(_opener(readyz=200)).status == doctor.OK
+
+
+def test_readyz_names_a_listener_that_does_not_speak_http():
+    def opener(url, timeout=None):
+        raise http.client.BadStatusLine("SSH-2.0-OpenSSH")
+
+    check = doctor.check_readyz(opener, env={})
+    assert (check.status, check.reason) == (doctor.WARN, "readyz_bad_reply")
+    assert "BadStatusLine" in check.detail
 
 
 def test_smoke_runs_only_on_request_and_names_failures(healthy_root):

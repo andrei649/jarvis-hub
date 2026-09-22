@@ -140,6 +140,13 @@ def test_hub_url_prefers_the_explicit_override_then_the_hub_bind():
     assert hub_url({"NERVA_HUB_URL": "http://10.0.0.5:8080/"}) == "http://10.0.0.5:8080"
 
 
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "[::]"])
+def test_hub_url_reaches_a_wildcard_bound_hub_over_loopback(host):
+    """JARVIS_HOST=0.0.0.0 (docs/PHONE_ACCESS.md) is a bind address, not a destination:
+    Windows refuses to connect to it. Every interface includes loopback, so dial that."""
+    assert hub_url({"JARVIS_HOST": host, "JARVIS_PORT": "9000"}) == "http://127.0.0.1:9000"
+
+
 def test_client_sends_the_hub_credentials_as_the_hud_does():
     seen = {}
 
@@ -291,6 +298,30 @@ def test_status_runnable_line_says_when_it_needs_a_token_or_could_not_read():
     hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF})  # no such route: 404
     code, out, _err, _hub = _run(["status"], hub)
     assert code == EXIT_OK and "runnable:    unknown — command_center_unavailable (HTTP 404" in out
+
+    # /status already answered: a transport failure on the second read (a timeout, a
+    # reset) is a verdict it could not read, not "no hub" — the status still prints.
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF})
+    hub.routes["GET /api/onboarding/command-center"] = (
+        lambda body: (_ for _ in ()).throw(HubUnavailable("http://127.0.0.1:8080", "timed out")))
+    code, out, err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK and err == ""
+    assert "backend:" in out
+    assert "runnable:    unknown — hub_unreachable (no hub at http://127.0.0.1:8080 (timed out))" in out
+
+
+@pytest.mark.parametrize("model", [
+    {"ready": True, "route": None},
+    {"ready": True, "selected_provider": None, "active_provider": None},
+    {"ready": True, "selected_model": "", "active_model": None},
+])
+def test_status_never_says_runnable_for_a_verdict_that_names_nothing(model):
+    """Same rule as the doctor's strict row: `yes` needs the route, provider and model."""
+    hub = _FakeHub({"GET /status": STATUS, "GET /api/ops/estop": _ESTOP_OFF,
+                    "GET /api/onboarding/command-center": _command_center(**model)})
+    code, out, _err, _hub = _run(["status"], hub)
+    assert code == EXIT_OK
+    assert "runnable:    unknown — malformed_reply" in out and "runnable:    yes" not in out
 
 
 def test_status_json_carries_the_runnable_verdict():

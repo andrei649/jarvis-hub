@@ -434,6 +434,78 @@ def test_model_block_names_why_the_route_is_or_is_not_runnable(client, monkeypat
     verdicts = (cold, warm, stuck, offline, unknown, unverified, cloud, no_route, mismatch)
     assert {v["reason"] for v in verdicts} == onboarding.MODEL_READINESS_REASONS
 
+    # The compatible-adapter route is trusted only when the router handed back the very
+    # backend that route names — any other object is still an indirect fallback.
+    impostor = _FakeRouter(route="cloud-compatible", model="test-cloud-model", backend_name="none")
+    impostor._compatible_backend = object()
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=impostor), raising=False)
+    not_it = _get(client)["model"]
+    assert (not_it["ready"], not_it["reason"]) == (False, "provider_unresolved")
+    assert not_it["selected_provider"] is None
+
+
+def _real_router(monkeypatch, case):
+    """A real ``HybridRouter`` in the state ``detect()`` leaves for each configuration a
+    Jarvis turn can meet — no detection, no network, no generation. The strict verdict is
+    only "the same resolution a chat uses" if it is pinned against this router, not a
+    fake that speaks a smaller route vocabulary."""
+    from agents.core.llm import hybrid_router
+    from agents.core.llm.openrouter import OpenRouterBackend
+    from agents.core.llm.providers import DEFAULT_REGISTRY
+
+    router = hybrid_router.HybridRouter()
+    local = case in {"local", "compatible-always"}
+    router._local_available = local
+    router._backend = object() if local else None
+    router._backend_name = "lm-studio"
+    router._local_model = "test-local-model"
+    if case == "cloud-flash":
+        router._gemini_backend = object()
+        router._gemini_model = "test-cloud-model"
+        router._cloud_available = True
+    if case == "claude":
+        # the owner's registry puts Jarvis on the Claude policy (agents.yaml llm_policy)
+        monkeypatch.setattr(hybrid_router, "_registry_policies", lambda: {"jarvis": "claude"})
+        router._claude_backend = object()
+        router._claude_model = "test-cloud-model"
+        router._claude_available = True
+    if case.startswith("compatible"):
+        # llm.compatible_provider=openrouter with its key set: what detect() builds
+        router._compatible_backend = OpenRouterBackend(
+            api_key="test-key", client=object(), profile=DEFAULT_REGISTRY.get("openrouter"))
+        router._compatible_model = "test-cloud-model"
+        router._cloud_available = True
+        if case == "compatible-always":
+            router.set_cloud_fallback_mode("always")
+    return router
+
+
+@pytest.mark.parametrize("case, route, provider, model, reason", [
+    ("local", "local", "lm-studio", "test-local-model", "resident"),
+    ("cloud-flash", "cloud-flash", "gemini", "test-cloud-model", "cloud_selected"),
+    ("claude", "claude", "claude", "test-cloud-model", "cloud_selected"),
+    # llm.cloud_fallback=always with a local runtime up: every cloud* route is rewritten
+    ("compatible-always", "cloud-compatible", "openrouter", "test-cloud-model", "cloud_selected"),
+    # on-demand with no local runtime: the spill goes to the compatible adapter too
+    ("compatible-on-demand", "cloud-compatible", "openrouter", "test-cloud-model",
+     "cloud_selected"),
+])
+def test_the_strict_verdict_runs_the_real_router_for_every_route_a_chat_can_take(
+        client, monkeypatch, case, route, provider, model, reason):
+    from agents import web
+
+    router = _real_router(monkeypatch, case)
+    backend, chat_model, chat_route = router.select_backend(
+        "jarvis", "Hello Jarvis — first-run check.")
+    assert (chat_route, chat_model) == (route, model)  # what a Jarvis turn runs on
+
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=router), raising=False)
+    block = _get(client)["model"]
+    assert (block["route"], block["ready"], block["reason"]) == (route, True, reason)
+    assert (block["selected_provider"], block["selected_model"]) == (provider, model)
+    assert (block["active_provider"], block["active_model"]) == (provider, model)
+    assert block["cloud_configured"] is (case != "local")
+
 
 class _AppResponse:
     """What urllib's opener returns, backed by the in-process app (context manager too,

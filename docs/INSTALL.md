@@ -95,21 +95,32 @@ Changes nothing; one named reason per row. Required rows (`FAIL` → exit 1): `p
 `venv`, `locks_in_sync` (same rule as `scripts/lock_deps.sh --check`),
 `bind_is_loopback` (what `boot_guards.assert_safe_bind` would refuse),
 `data_root_writable`. Advisory rows (`warn`, never exit 1): `runtimes`
-(`no_local_runtime`), `readyz` (`server_not_running` / `readyz_status:503`),
+(`no_local_runtime`), `readyz` (`server_not_running` / `readyz_status:503` /
+`readyz_bad_reply` / `hub_url_invalid`),
 `runtime_resolves`, `smoke` (`skipped` unless `--smoke`). Paste the `--json` output into
 a bug report.
 
 `runtimes` only proves a model runtime answers on loopback. `runtime_resolves` is the
 strict check: it asks the running hub which route a Jarvis turn would take (the same
-`select_backend` call a chat makes) and whether that exact provider/model pair is
-loaded — `ok` reads `resolves:lm-studio/<model>`; otherwise it warns with the reason
-(`configured_not_resident`, `route_unselected`, `provider_unresolved`,
-`provider_offline`, `residency_unknown`, `inventory_unavailable`) and names the route,
-provider, model and what *is* resident. It needs the hub: with no ready hub it is
-`skip` (`skipped:hub_down` / `skipped:hub_not_ready`), never `ok`. When the hub has
-`JARVIS_USER_TOKEN` set, export it (or `JARVIS_ADMIN_TOKEN`) for the doctor too, or the
-row reads `needs_token`. The doctor never uploads anything: the diagnostics bundle
-(`GET /api/support/bundle`, admin) is built and kept on this machine.
+`select_backend` call a chat makes) and whether that route can run — a local
+provider/model pair must be loaded; a cloud route (Gemini, Claude, or the adapter set in
+`llm.compatible_provider`) counts when the router itself selected it. `ok` reads
+`resolves:<provider>/<model>` and names the route. Otherwise it warns with the hub's
+reason (`configured_not_resident`, `route_unselected`, `provider_unresolved`,
+`provider_offline`, `residency_unknown`, `inventory_unavailable`, `router_unavailable`)
+and names the route, provider, model and what *is* resident — or with why it could not
+read the verdict (`needs_token`, `hub_unreachable`, `malformed_reply`,
+`command_center_status:<code>`, `hub_url_invalid`). It needs the hub: with no ready hub it
+is `skip` (`skipped:hub_down` / `skipped:hub_not_ready` / `skipped:hub_url_invalid`),
+never `ok`.
+
+The doctor talks to the hub `nerva status` talks to: `NERVA_HUB_URL`, else
+`JARVIS_HOST`/`JARVIS_PORT` (default `http://127.0.0.1:8080`; a `0.0.0.0` bind is
+dialled over loopback). When the hub has `JARVIS_USER_TOKEN` set, export it for the doctor
+too (or `JARVIS_ADMIN_TOKEN` if you have only that), or the row reads `needs_token`. It
+sends one credential, the user token when both are set. The doctor never uploads
+anything: the diagnostics bundle (`GET /api/support/bundle`, admin) is built and kept on
+this machine.
 
 ## The `nerva` command
 
@@ -162,5 +173,11 @@ for the owner `/pause`, `/stop`, `/resume` and `/remind <when> | <message>`, wor
 | `lock_stale:requirements-beta.lock` | a checkout mid-edit: `./scripts/lock_deps.sh` (needs `uv`) or `git checkout -- requirements-beta.lock` |
 | `data_root_not_writable` | the folder in `JARVIS_HOME` (or `memory_logs/`) is not writable by your user |
 | `configured_not_resident` | the route's model (named in the row) is not loaded on that provider — load it in LM Studio / Ollama, or point the route at a model that is (`resident=` lists them) |
-| `route_unselected` / `provider_unresolved` | no route answers a Jarvis turn, or the router fell back to a backend its route does not name — check the model settings in Admin → settings |
+| `route_unselected` | no route answers a Jarvis turn: no local runtime is up and no cloud route is allowed (cloud fallback `never`, a spent daily cap, or no cloud key) — start LM Studio / Ollama or check the model settings in Admin → settings |
+| `provider_unresolved` | the router handed back a backend that is not the one its route names (an indirect fallback) — check the model settings in Admin → settings and restart the hub; if it persists, attach `python scripts/doctor.py --json` to a bug report |
 | `residency_unknown` / `inventory_unavailable` | the provider answered but could not say what is loaded — restart the model server, then re-run the doctor |
+| `router_unavailable` | the hub is up but its model router is not (still booting, or it failed to start) — wait a few seconds and re-run; else read the hub log |
+| `needs_token` | the hub has `JARVIS_USER_TOKEN` set: export it (or `JARVIS_ADMIN_TOKEN`) in the shell you run the doctor from |
+| `hub_unreachable` | the hub answered `/readyz` but the route read failed (timed out, reset, or cut off mid-reply; the row names which) — re-run; if it repeats, read the hub log |
+| `malformed_reply` / `command_center_status:<code>` | what answered is not a Nerva hub of this version — check `NERVA_HUB_URL` / `JARVIS_PORT` point at your hub |
+| `hub_url_invalid` | `NERVA_HUB_URL` is not a URL — set it like `http://127.0.0.1:8080`, or unset it |
