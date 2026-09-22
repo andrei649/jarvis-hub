@@ -556,10 +556,17 @@ poller of the second instance must not open a tab pointed at the first).
 7. **`INSTALL.bat` clones from a hardcoded repo URL** (`INSTALL.bat:21`,
    `https://github.com/andrei649/jarvis-hub.git`). If the repo is renamed as part of the Nerva rename
    (CLAUDE.md notes the rename is an owner task), the one-click Windows installer breaks silently.
-8. **`update.json` in the repo root is not an updater manifest.** It is leftover output from
-   `scripts/update_thirdparty.py` (see `.github/workflows/thirdparty-autoupdate.yml:83`) and names
-   `codebase-memory-mcp`. A tester could easily mistake it for Nerva's own update descriptor; no test
-   asserts it is not one.
+8. **`update.json` in the repo root is gone (removed 2026-09-22) — it was never an updater manifest.**
+   It was the JSON summary that `scripts/update_thirdparty.py --json` prints to stdout, which the
+   bump step of `.github/workflows/thirdparty-autoupdate.yml` used to `tee` into the checkout and
+   `peter-evans/create-pull-request` then committed next to the vendored change (#1127 brought it in
+   as the Superpowers 6.1.1 → 6.2.0 summary, #1183 rewrote it for 6.2.0 → 6.3.0; the earlier wording
+   of this item said it named `codebase-memory-mcp`, which neither committed version did). The workflow now writes that
+   summary to `$RUNNER_TEMP/update.json` and reads it back from there, so nothing in the tree produces
+   the file any more; `tests/test_update_thirdparty.py::test_workflow_keeps_its_update_artifact_out_of_the_tree`
+   pins both halves (every `update.json` reference in the workflow is `$RUNNER_TEMP`-anchored, and the
+   repo root carries no such file). An `update.json` in the root is a stray from a hand-run `tee`, not
+   Nerva's update descriptor — Nerva has none. Item number kept so cross-references hold.
 9. **`/api/cognition` synthesizes a placeholder from `INTENT_RULES` when nothing has been routed yet**
    (`agents/core/routers/ops.py:117-138`). It is labelled `source: "standby"` with `confidence: 1.0`,
    which is *almost* honest — but a confidence of 1.0 on a decision that never happened is exactly the

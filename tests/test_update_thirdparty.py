@@ -495,3 +495,22 @@ def test_workflow_uses_shared_policy_aware_selector():
 
     assert "drift.auto_update_candidates(rows)" in workflow
     assert 'if r.get("drift") == "DRIFT"]' not in workflow
+
+
+def test_workflow_keeps_its_update_artifact_out_of_the_tree():
+    """The bump step's JSON summary must never land in the checkout.
+
+    peter-evans/create-pull-request commits whatever the checkout holds, so a
+    ``tee update.json`` in the bump step is how a stray ``update.json`` reached
+    the repo root (#1127, rewritten by #1183). The summary now round-trips
+    through ``$RUNNER_TEMP`` and nothing in the tree produces the file.
+    """
+    workflow = (
+        repo_root / ".github" / "workflows" / "thirdparty-autoupdate.yml"
+    ).read_text(encoding="utf-8")
+
+    lines = [line for line in workflow.splitlines() if "update.json" in line]
+    assert lines, "the bump step should still round-trip its summary through update.json"
+    for line in lines:
+        assert "RUNNER_TEMP" in line, f"update.json written inside the checkout: {line.strip()}"
+    assert not (repo_root / "update.json").exists(), "stray update.json in the repo root"

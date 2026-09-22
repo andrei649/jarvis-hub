@@ -87,12 +87,18 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python scripts/update_thirdparty.py --name "${{ matrix.name }}" --json | tee update.json
+          # The JSON summary lives under $RUNNER_TEMP, never in the checkout:
+          # create-pull-request commits whatever the checkout holds, and a
+          # `tee` into the checkout is how a stray copy of this summary reached
+          # the repo root (#1127, rewritten by #1183).
+          python scripts/update_thirdparty.py --name "${{ matrix.name }}" --json | tee "$RUNNER_TEMP/update.json"
           # The update must leave the offline consistency check green.
           python scripts/check_thirdparty_drift.py --consistency
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
-          s = json.load(open("update.json"))
+          import os
+          from pathlib import Path
+          s = json.load(open(Path(os.environ["RUNNER_TEMP"]) / "update.json"))
           m = json.load(open(".github/third-party-manifest.json"))
           e = next(x for x in m["sources"] if x["name"] == s["name"])
           print(f"changed={'true' if s['changed'] else 'false'}")

@@ -132,10 +132,14 @@
   `permissions: pull-requests: write` already in the YAML is necessary but **not** sufficient —
   that repo/org toggle overrides it for `GITHUB_TOKEN`. Nothing in the repo is at fault and there
   is no code fix; this is why it is here and not in the backlog.
-  **Scale.** 8 of 11 runs have failed this way (2026-07-02 → 2026-09-03, latest
-  [33751779652](https://github.com/andrei649/jarvis-hub/actions/runs/33751779652)); the 3 "green"
+  **Scale.** 10 of 13 runs have failed this way (2026-07-02 → 2026-09-17, latest
+  [35220299176](https://github.com/andrei649/jarvis-hub/actions/runs/35220299176)); the 3 "green"
   runs are ones where nothing had drifted, so the `update` job was skipped entirely. The lane has
-  therefore never once delivered its output.
+  therefore never once delivered its output. Runs
+  [34473977772](https://github.com/andrei649/jarvis-hub/actions/runs/34473977772) (2026-09-10) and
+  [35220299176](https://github.com/andrei649/jarvis-hub/actions/runs/35220299176) (2026-09-17)
+  failed the same way, and the 2026-09-17 update (Superpowers 6.2.0 → 6.3.0) was delivered by hand
+  as PR #1183.
   **Note the side effect:** the update branches *are* on origin already — the work exists, only the
   PR is missing. After you tick the box the next scheduled run opens them.
   **If you would rather not flip the global toggle:** a fine-grained PAT with contents +
