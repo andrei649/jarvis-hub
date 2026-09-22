@@ -62,15 +62,31 @@ def server_config():
     (channels stopped, pooled clients closed) — here we cap how long a slow in-flight
     request may delay that shutdown so a `systemctl stop` / container SIGTERM can't
     hang indefinitely.
+
+    ``proxy_headers=False`` (H691): uvicorn's own proxy-header layer would rewrite the
+    client address and scheme from ``X-Forwarded-For`` / ``X-Forwarded-Proto`` for
+    every peer in its ``forwarded_allow_ips`` (loopback by default, anything via
+    ``FORWARDED_ALLOW_IPS``) before the app consults ``JARVIS_TRUSTED_PROXIES`` — a
+    second trust set nobody validates or logs. Off, the app sees the real socket
+    peer and ``agents/core/proxy_trust.py`` is the one place that decides whose
+    forwarding headers count. The choice is noted so the boot announce can say it.
     """
     import uvicorn
-    return uvicorn.Config(
+
+    from agents.core.proxy_trust import note_server_proxy_layer
+
+    config = uvicorn.Config(
         app,
         host=os.environ.get("JARVIS_HOST", "127.0.0.1"),
         port=env_int("JARVIS_PORT", 8080),
         log_level=os.environ.get("JARVIS_LOG_LEVEL", "info"),
         timeout_graceful_shutdown=env_int("JARVIS_SHUTDOWN_TIMEOUT", 10),
+        proxy_headers=False,
     )
+    note_server_proxy_layer(
+        proxy_headers=config.proxy_headers, forwarded_allow_ips=config.forwarded_allow_ips,
+    )
+    return config
 
 
 #: Exit codes for the pre-bind port probe (H042). Deliberately distinct from

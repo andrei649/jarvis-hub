@@ -20,8 +20,9 @@ from agents.core.host_policy import allowed_hosts, host_accepted
 from agents.core.proxy_trust import (
     announce_trusted_proxies,
     forwarded_client,
+    forwarded_proto,
     is_trusted_peer,
-    trusted_proxies,
+    resolve_trusted_proxies,
 )
 from agents.core.paths import data_path
 
@@ -113,9 +114,11 @@ def _admin_configured() -> bool:
 # headers count only when the socket peer sits inside it. TRUSTED_PROXY is kept
 # as an informational, read-only convenience ("is any proxy trusted at import
 # time?"); the functions below consult proxy_trust on every request, so tests
-# set the environment, not this name.
+# set the environment, not this name. It is read with the silent resolver (H691):
+# logging is not configured at import, so the trust set and its warnings are said
+# by the lifespan's announce_trusted_proxies(), not to bare stderr here.
 try:
-    TRUSTED_PROXY = bool(trusted_proxies())
+    TRUSTED_PROXY = bool(resolve_trusted_proxies())
 except ValueError:
     TRUSTED_PROXY = False  # malformed list — the boot guard refuses before serving
 
@@ -155,6 +158,39 @@ def _real_client_host(request: Request) -> str:
     except ValueError:
         _warn_malformed_proxy_list_once()
         return ""
+
+
+class _ForwardedProtoMiddleware:
+    """X-Forwarded-Proto from a listed proxy sets the request scheme (H691).
+
+    uvicorn's own proxy-header layer is switched off (serve.py), so this is where a
+    TLS-terminating proxy's ``X-Forwarded-Proto`` becomes ``request.url.scheme`` —
+    and ``request.base_url``, which the widget snippet and the MCP resource URL are
+    built from. Believed only from a peer inside JARVIS_TRUSTED_PROXIES
+    (``proxy_trust.forwarded_proto``); from anyone else, or with an ambiguous value,
+    the socket scheme stands. A malformed list fails closed and is said once. Pure
+    ASGI, so WebSocket scopes get ws/wss too; the scope is copied, not mutated.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            values = [value.decode("latin-1") for name, value in scope.get("headers") or ()
+                      if name == b"x-forwarded-proto"]
+            if values:
+                client = scope.get("client")
+                try:
+                    scheme = forwarded_proto(client[0] if client else "", values,
+                                             websocket=scope["type"] == "websocket")
+                except ValueError:
+                    _warn_malformed_proxy_list_once()
+                    scheme = ""
+                if scheme:
+                    scope = {**scope, "scheme": scheme}
+        await self.app(scope, receive, send)
+
 
 def _admin_credential_ok(supplied: str) -> bool:
     """True if *supplied* is a valid admin credential (AUD-6): a valid, unexpired
@@ -417,9 +453,10 @@ async def lifespan(application: FastAPI):
     # channel is wired — a refusal here is the same SystemExit the early pass raises.
     from core.boot_guards import assert_front_door
     assert_front_door()
-    # H691: say which proxies ended up trusted. The list was first resolved at
-    # import, before setup_logging() existed to hear it; the environment is now
-    # final (.env loaded, the list parse-checked), so say it once here.
+    # H691: say which proxies ended up trusted — Nerva's list with its warnings, and
+    # uvicorn's own proxy-header layer when it believes anyone. The import-time read
+    # is silent (setup_logging() did not exist yet); the environment is now final
+    # (.env loaded, both allowlists checked), so this is where it is said, once.
     announce_trusted_proxies()
 
     # Load MCP servers from settings DB
@@ -550,6 +587,9 @@ from core.web_base_path import configured_root_path, render_ui_html, RootPathRou
 
 app = FastAPI(root_path=configured_root_path(), title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
 app.add_middleware(RootPathRoutingMiddleware)
+# H691: the scheme a listed proxy states — just outside the root-path adapter, so
+# every route sees it; nothing between here and the router reads the scheme.
+app.add_middleware(_ForwardedProtoMiddleware)
 
 # CORS (HF-2): same-origin only by default — with no header the browser blocks
 # cross-origin reads, which is what we want. Set
@@ -645,7 +685,11 @@ async def _rate_limit(request: Request, call_next):
     """HF-2: throttle unauthenticated network clients (DoS / token brute-force)."""
     if RATE_LIMIT_PER_MIN > 0 and request.url.path not in _PROBE_PATHS:
         ip = _client_ip(request)
-        if ip not in _LOCALHOSTS and not _request_is_authed(request):
+        # The exemption follows the localhost gate's origin, not the bucket key (H691):
+        # an unlisted same-box proxy connects from 127.0.0.1 for every client it
+        # forwards, and a listed one whose chain vouches for nothing keys on its own
+        # address — neither is a local client, so neither is waved through.
+        if _real_client_host(request) not in _LOCALHOSTS and not _request_is_authed(request):
             if _rate_limited(ip, time.time()):
                 logger.warning("Rate limit exceeded for %s on %s",
                                log_safe(ip), log_safe(request.url.path))

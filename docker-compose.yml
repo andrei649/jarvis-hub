@@ -10,7 +10,7 @@ services:
         RUN pip install --no-cache-dir -r requirements-beta.txt
         COPY . .
         EXPOSE 8080
-        CMD ["python", "-m", "uvicorn", "agents.web:app", "--host", "0.0.0.0", "--port", "8080"]
+        CMD ["python", "-m", "uvicorn", "agents.web:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
     ports:
       - "8080:8080"
     env_file:
