@@ -187,3 +187,59 @@ def test_nested_package_layout_is_preserved(tmp_path):
     assert (installed / "pkg" / "SKILL.md").exists()
     assert (installed / "pkg" / "EXTERNAL_SOURCE").exists()
     assert (installed / "EXTERNAL_SOURCE").exists()
+
+
+def test_a_non_zip_upload_is_refused_as_a_rejection(tmp_path):
+    # The install-zip route maps ValueError to a 400 refusal; BadZipFile used to escape
+    # as a 500.
+    mk = _mk(tmp_path)
+    with pytest.raises(ValueError):
+        mk.install_from_zip(b"PK\x03\x04 not really a zip")
+    assert _entries(mk) == []
+
+
+def test_install_sweeps_staging_left_by_a_killed_install(tmp_path):
+    import os
+    import time
+    mk = _mk(tmp_path)
+    mk.skills_dir.mkdir(parents=True, exist_ok=True)
+    stale = mk.skills_dir / ".nerva-install-deadbeef"
+    (stale / "package").mkdir(parents=True)
+    (stale / "package" / "blob.bin").write_bytes(b"x" * 1000)
+    old = time.time() - 2 * 3600
+    os.utime(stale, (old, old))
+    fresh = mk.skills_dir / ".nerva-install-cafef00d"   # a concurrent install, still running
+    fresh.mkdir()
+    assert mk.install_from_zip(_pkg(("SKILL.md", "# Fine\n"))) is True
+    assert _entries(mk) == [".nerva-install-cafef00d", "fine"]
+
+
+def test_publish_never_packs_a_link_planted_after_signing(tmp_path, monkeypatch):
+    """sign_skill refuses a linked artifact, so this pins the publish walk on its own: a
+    link that appears after signing must not pull an outside file into the package."""
+    import sqlite3
+
+    from core.skills import marketplace as mkmod
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("private key material", encoding="utf-8")
+    real_sign = mkmod.signing.sign_skill
+
+    def _sign_then_plant(skill_dir):
+        line = real_sign(skill_dir)
+        (Path(skill_dir) / "planted.txt").symlink_to(outside)
+        (Path(skill_dir) / "planted_dir").symlink_to(tmp_path, target_is_directory=True)
+        return line
+
+    monkeypatch.setattr(mkmod.signing, "sign_skill", _sign_then_plant)
+    mk = _mk(tmp_path)
+    _publish(mk)
+    conn = sqlite3.connect(str(mk.db_path))
+    try:
+        (zip_data,) = conn.execute("SELECT package_zip FROM marketplace_skills").fetchone()
+    finally:
+        conn.close()
+    with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+        names = z.namelist()
+        payload = b"".join(z.read(n) for n in names)
+    assert sorted(names) == ["SKILL.md", "SKILL.sig", "main.py"]
+    assert b"private key material" not in payload

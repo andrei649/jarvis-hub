@@ -19,11 +19,18 @@ backup needs:
   (``\\`` folded, absolute / drive-lettered / ``..`` refused), only regular files and
   dirs are written, and a symlink, hardlink or device member RAISES instead of being
   skipped — validated before a byte is written, under a member-count and a
-  total-bytes cap (``JARVIS_BACKUP_MAX_MEMBERS`` / ``JARVIS_BACKUP_MAX_BYTES``).
+  total-bytes cap (``JARVIS_BACKUP_MAX_MEMBERS`` / ``JARVIS_BACKUP_MAX_BYTES``). The
+  manifest's ``file_count`` is checked against what the archive actually held, so a
+  shortened archive fails the drill instead of passing it.
 * **A failed backup never impersonates or destroys a good one.** The archive is
   written to a sibling temp file and ``os.replace``d into place (GNU tar format, so
   macOS Archive Utility opens it); the export walk skips symlinks, so a link planted
-  in the data root cannot pull an arbitrary file into the archive.
+  in the data root cannot pull an arbitrary file into the archive. Every other name is
+  archived as a regular member, hardlinked ones included; a path that stops being a
+  regular file mid-backup is listed in the manifest's ``dropped``, never counted.
+* **An in-place restore replaces, never writes through.** ``--force`` into the live
+  root unlinks a link or hardlinked name before writing the file, and credits the
+  files it overwrites against the free-space clamp.
 
 CLI: ``python -m agents.core.backup create|list|verify|restore`` (the
 one-command story). Restore refuses to overwrite a non-empty target unless
@@ -33,11 +40,13 @@ one-command story). Restore refuses to overwrite a non-empty target unless
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import logging
 import os
 import secrets
 import sqlite3
+import stat
 import tarfile
 import tempfile
 import time
@@ -58,6 +67,7 @@ BACKUP_VERSION = 1
 _ARCHIVE_PREFIX = "jarvis-backup-"
 _SQLITE_SIDECARS = ("-wal", "-shm", "-journal")
 _ENC_SUFFIX = ".enc"  # an encrypted archive is "<name>.tar.gz.enc"
+_MANIFEST_NAME = "backup_manifest.json"  # the last member of every archive create_backup writes
 
 # H503 bomb caps for unpacking a backup (verify drill + restore). Generous, because a
 # real data root holds audio, media and many small files and a false refusal on the
@@ -344,7 +354,7 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     safe_label = "".join(c for c in (label or "") if c.isalnum() or c in "-_ ")[:80]
     manifest = {"created_at": _now_iso(), "source_root": str(src),
                 "version": BACKUP_VERSION, "label": safe_label, "encrypted": do_encrypt,
-                "dbs": [], "file_count": 0}
+                "dbs": [], "file_count": 0, "dropped": []}
 
     _sweep_abandoned_temps(out)
 
@@ -373,9 +383,42 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     return {"archive": str(archive), "bytes": archive.stat().st_size, **manifest}
 
 
-def _regular_only(info: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
-    """tar.add filter: a path swapped for a link after the walk is dropped, not archived."""
-    return info if info.isreg() else None
+def _still_regular(path: Path) -> bool:
+    """True if *path* is (still) a regular file, judged without following a link."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except FileNotFoundError:
+        return False
+
+
+def _add_regular(tar: tarfile.TarFile, path: Path, arcname: str) -> bool:
+    """Archive *path* as a REGULAR member, stat'ed and read through one O_NOFOLLOW fd.
+
+    Returns False, archiving nothing, when *path* is no longer a regular file (it
+    vanished, or was swapped for a link, fifo or directory after the walk). Every name
+    becomes its own regular member: ``tar.add`` would turn the second name of a shared
+    inode into a hardlink member, which the extractor refuses (and the old regular-only
+    filter silently dropped while the manifest still counted it).
+    """
+    if not _still_regular(path):
+        return False
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_BINARY", 0))
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.EMLINK):  # became a link since the lstat
+            return False
+        raise
+    with os.fdopen(fd, "rb") as fh:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return False
+        tar.inodes.clear()  # no hardlink bookkeeping: each name is archived in full
+        info = tar.gettarinfo(arcname=arcname, fileobj=fh)
+        tar.addfile(info, fh)
+    return True
 
 
 def _write_tar(fileobj, src: Path, out: Path, files: list[Path], tmp: Path,
@@ -384,6 +427,9 @@ def _write_tar(fileobj, src: Path, out: Path, files: list[Path], tmp: Path,
 
     GNU format rather than the PAX default, as Hermes does, so macOS Archive Utility
     opens the archive; tarfile reads both, so older PAX backups still restore.
+    ``file_count`` counts only what was archived; a path that stopped being a regular
+    file between the walk and the archive is listed in ``dropped`` instead, so the
+    manifest never claims a file the archive does not hold (verify checks the two agree).
     """
     with tarfile.open(fileobj=fileobj, mode="w:gz", format=tarfile.GNU_FORMAT) as tar:
         for path in files:
@@ -392,17 +438,25 @@ def _write_tar(fileobj, src: Path, out: Path, files: list[Path], tmp: Path,
             if path.name.endswith(_SQLITE_SIDECARS):
                 continue  # WAL/shm/journal — folded into the DB snapshot
             rel = path.relative_to(src)
+            arcname = rel.as_posix()
             if path.suffix == ".db":
-                snap = tmp / "snap" / rel
-                _sqlite_consistent_copy(path, snap)
-                tar.add(snap, arcname=rel.as_posix(), filter=_regular_only)
-                manifest["dbs"].append(str(rel))
+                # sqlite3.connect follows a link, so check before snapshotting through it.
+                added = _still_regular(path)
+                if added:
+                    snap = tmp / "snap" / rel
+                    _sqlite_consistent_copy(path, snap)
+                    added = _add_regular(tar, snap, arcname)
+                if added:
+                    manifest["dbs"].append(str(rel))
             else:
-                tar.add(path, arcname=rel.as_posix(), filter=_regular_only)
-            manifest["file_count"] += 1
-        mpath = tmp / "backup_manifest.json"
+                added = _add_regular(tar, path, arcname)
+            if added:
+                manifest["file_count"] += 1
+            else:
+                manifest["dropped"].append(arcname)
+        mpath = tmp / _MANIFEST_NAME
         mpath.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        tar.add(mpath, arcname="backup_manifest.json")
+        _add_regular(tar, mpath, _MANIFEST_NAME)
 
 
 def _sweep_abandoned_temps(out: Path, *, now: Optional[float] = None) -> list[str]:
@@ -492,23 +546,52 @@ def verify_backup(archive: str, key: Optional[str] = None) -> dict:
     if not arc.exists():
         raise FileNotFoundError(f"backup not found: {arc}")
     report = {"archive": str(arc), "ok": True, "encrypted": _is_encrypted(arc.name),
-              "dbs": {}, "file_count": 0, "manifest": None}
-    with _readable_archive(arc, key) as tarpath, \
-            tempfile.TemporaryDirectory() as tmp, tarfile.open(tarpath, "r:gz") as tar:
+              "dbs": {}, "file_count": 0, "manifest": None, "problem": None}
+    with _readable_archive(arc, key) as tarpath, tempfile.TemporaryDirectory() as tmp:
         tmpp = Path(tmp)
-        report["file_count"] = archive_safe.extract_tar(tar, tmpp, limits=backup_limits())
-        mf = tmpp / "backup_manifest.json"
-        if mf.exists():
-            try:
-                report["manifest"] = json.loads(mf.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                report["manifest"] = None
+        written = archive_safe.extract_tar_path(tarpath, tmpp, limits=backup_limits(),
+                                                compression="gz")
+        report["file_count"] = len(written)
+        report["manifest"] = _read_manifest(tmpp, written)
+        report["problem"] = _manifest_problem(report["manifest"], written)
+        if report["problem"]:
+            report["ok"] = False
         for db in sorted(tmpp.rglob("*.db")):
             res = _integrity_check(db)
             report["dbs"][str(db.relative_to(tmpp))] = res
             if res != "ok":
                 report["ok"] = False
     return report
+
+
+def _read_manifest(root: Path, written: list[tuple[str, ...]]) -> Optional[dict]:
+    """The manifest THIS archive carried (never a stale one already in *root*), or None."""
+    if (_MANIFEST_NAME,) not in written:
+        return None
+    try:
+        manifest = json.loads((root / _MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def _manifest_problem(manifest: Optional[dict], written: list[tuple[str, ...]]) -> Optional[str]:
+    """Why the unpacked tree disagrees with what create_backup recorded, or None.
+
+    The manifest is the archive's last member and counts every file archived before it,
+    so a missing manifest or a lower count is a shortened archive — a tree that would
+    restore quietly incomplete while every member that IS there checks out.
+    """
+    if manifest is None:
+        return (f"the archive carries no readable {_MANIFEST_NAME}: it is incomplete "
+                f"or not a Nerva backup")
+    expected = manifest.get("file_count")
+    if not isinstance(expected, int) or isinstance(expected, bool):
+        return None  # nothing recorded to check against
+    held = sum(1 for parts in written if parts != (_MANIFEST_NAME,))
+    if held != expected:
+        return f"the archive holds {held} file(s) but its manifest counted {expected}"
+    return None
 
 
 # ── restore ───────────────────────────────────────────────────────
@@ -528,12 +611,15 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
         raise FileExistsError(
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
-    with _readable_archive(arc, key) as tarpath, tarfile.open(tarpath, "r:gz") as tar:
-        count = archive_safe.extract_tar(tar, target, limits=backup_limits())
-    # Post-restore drill on the live target so a corrupt restore is caught now.
+    with _readable_archive(arc, key) as tarpath:
+        written = archive_safe.extract_tar_path(tarpath, target, limits=backup_limits(),
+                                                compression="gz")
+    # Post-restore drill on the live target so a corrupt or shortened restore is caught now.
+    problem = _manifest_problem(_read_manifest(target, written), written)
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in sorted(target.rglob("*.db"))}
-    return {"restored_to": str(target), "file_count": count, "dbs": dbs,
-            "ok": all(v == "ok" for v in dbs.values())}
+    return {"restored_to": str(target), "file_count": len(written), "dbs": dbs,
+            "problem": problem,
+            "ok": problem is None and all(v == "ok" for v in dbs.values())}
 
 
 # ── CLI (one-command) ─────────────────────────────────────────────
@@ -574,9 +660,15 @@ def _main(argv=None) -> int:
         try:
             result = restore_backup(str(path), args.target, force=args.force)
         except archive_safe.ArchiveRejected as e:
-            # Validated before the first write: nothing from this archive was restored.
+            if e.partial:
+                # A read error after the first write: say so, never "nothing restored".
+                print(f"archive rejected partway through, the target holds a partial "
+                      f"restore: {e}. Restore a good backup over it before starting Nerva.")
+                return 1
+            # Refused in the pre-scan, before the first write: nothing was restored.
             print(f"archive rejected, nothing restored: {e}"); return 1
         print(json.dumps(result, indent=2))
+        return 0 if result["ok"] else 1
     return 0
 
 

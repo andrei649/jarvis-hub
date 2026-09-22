@@ -6,6 +6,7 @@ properties — consistent DB snapshots, integrity-checked drill, Zip-Slip-proof
 extraction, and that the backups dir isn't recursively swept into its own archive.
 """
 import base64
+import re
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -384,6 +385,224 @@ def test_create_sweeps_abandoned_temp_files_but_not_fresh_ones(data_root, tmp_pa
     assert len(bk.list_backups(out_dir=str(out))) == 1
 
 
+def test_hardlinked_files_keep_both_names_through_create_verify_restore(data_root, tmp_path):
+    # tarfile.add turns the second name of a shared inode into a LNKTYPE member; the
+    # regular-only filter then dropped it while file_count still counted it, verify said
+    # ok and restore omitted it. Every name is now archived as its own regular member.
+    import os
+    (data_root / "media").mkdir()
+    (data_root / "media" / "a.bin").write_bytes(b"shared inode payload")
+    os.link(data_root / "media" / "a.bin", data_root / "media" / "b.bin")
+    res = bk.create_backup(source_root=str(data_root))
+    with tarfile.open(res["archive"], "r:gz") as tar:
+        members = {m.name: m for m in tar.getmembers()}
+    assert members["media/a.bin"].isreg() and members["media/b.bin"].isreg()
+    assert res["file_count"] == 5 and res["dropped"] == []   # 2 DBs, note, a.bin, b.bin
+    assert bk.verify_backup(res["archive"])["ok"] is True
+    target = tmp_path / "restored"
+    bk.restore_backup(res["archive"], str(target))
+    assert (target / "media" / "a.bin").read_bytes() == b"shared inode payload"
+    assert (target / "media" / "b.bin").read_bytes() == b"shared inode payload"
+
+
+def test_a_path_that_stops_being_a_regular_file_after_the_walk_is_recorded_not_counted(
+        data_root, tmp_path, monkeypatch):
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("not part of the data root", encoding="utf-8")
+    real_walk = bk.archive_safe.collect_regular_files
+
+    def _walk_then_swap(root):
+        files, skipped = real_walk(root)
+        swapped = Path(root) / "tokens" / "note.txt"
+        swapped.unlink()
+        swapped.symlink_to(outside)              # replaced by a link between walk and archive
+        return files, skipped
+
+    monkeypatch.setattr(bk.archive_safe, "collect_regular_files", _walk_then_swap)
+    res = bk.create_backup(source_root=str(data_root))
+    assert res["dropped"] == ["tokens/note.txt"]
+    assert res["file_count"] == 2                        # the two DBs, not the dropped path
+    with tarfile.open(res["archive"], "r:gz") as tar:
+        assert "tokens/note.txt" not in tar.getnames()
+    assert bk.verify_backup(res["archive"])["ok"] is True  # the manifest agrees with the archive
+
+
+def test_verify_fails_when_the_archive_holds_fewer_files_than_its_manifest_counted(
+        data_root, tmp_path):
+    res = bk.create_backup(source_root=str(data_root))
+    stripped = tmp_path / "jarvis-backup-stripped.tar.gz"
+    with tarfile.open(res["archive"], "r:gz") as src, tarfile.open(stripped, "w:gz") as dst:
+        for member in src.getmembers():
+            if member.name != "tokens/note.txt":
+                dst.addfile(member, src.extractfile(member))
+    report = bk.verify_backup(str(stripped))
+    assert report["ok"] is False
+    assert "manifest counted 3" in report["problem"]
+
+
+def test_in_place_force_restore_fits_when_the_files_it_replaces_free_the_room(tmp_path,
+                                                                              monkeypatch):
+    """The documented operator recovery path: --force into the live root. The files it
+    overwrites free their own blocks, so a disk with less free space than the backup's
+    size can still be rolled back in place."""
+    import os
+    from collections import namedtuple
+
+    from agents.core import archive_safe
+    live = tmp_path / "live"
+    live.mkdir()
+    original = os.urandom(3 * 1024 * 1024)
+    (live / "media.bin").write_bytes(original)
+    res = bk.create_backup(source_root=str(live), out_dir=str(tmp_path / "bk"), encrypt=False)
+    (live / "media.bin").write_bytes(b"\0" * (3 * 1024 * 1024))    # the live copy drifted
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(archive_safe.shutil, "disk_usage",
+                        lambda _p: usage(64 << 30, (64 << 30) - (1 << 20), 1 << 20))
+    monkeypatch.setenv("JARVIS_BACKUP_MAX_BYTES", str(100 << 30))
+    out = bk.restore_backup(res["archive"], str(live), force=True)
+    assert (live / "media.bin").read_bytes() == original
+    assert out["file_count"] == 2                                   # media.bin + manifest
+    # The clamp still protects a disk the restore would really fill.
+    with pytest.raises(ValueError, match="free space"):
+        bk.restore_backup(res["archive"], str(tmp_path / "fresh"))
+    assert not (tmp_path / "fresh" / "media.bin").exists()
+
+
+def test_restore_refuses_a_type_conflict_in_the_target_before_writing(data_root, tmp_path):
+    res = bk.create_backup(source_root=str(data_root))
+    target = tmp_path / "live"
+    target.mkdir()
+    (target / "settings.db").write_text("live settings, must survive", encoding="utf-8")
+    (target / "tokens").write_text("a file where the archive has a directory", encoding="utf-8")
+    with pytest.raises(ValueError) as exc:
+        bk.restore_backup(res["archive"], str(target), force=True)
+    assert exc.value.partial is False
+    assert (target / "settings.db").read_text(encoding="utf-8") == "live settings, must survive"
+    assert not (target / "autonomy.db").exists()
+
+
+def test_cli_restore_says_when_a_restore_stopped_partway(data_root, tmp_path, monkeypatch,
+                                                          capsys):
+    monkeypatch.setattr(bk, "data_root", lambda: data_root)
+    res = bk.create_backup(source_root=str(data_root))
+    real = tarfile.TarFile.extractfile
+
+    def _flaky(self, member):
+        if getattr(member, "name", member) == "tokens/note.txt":
+            raise tarfile.ReadError("unexpected end of data")
+        return real(self, member)
+
+    monkeypatch.setattr(tarfile.TarFile, "extractfile", _flaky)
+    target = tmp_path / "restored"
+    assert bk._main(["restore", Path(res["archive"]).name, str(target)]) == 1
+    out = capsys.readouterr().out
+    assert "partial" in out and "nothing restored" not in out
+
+
+def test_cli_verify_reports_a_corrupt_archive_as_rejected(tmp_path, monkeypatch, capsys):
+    import gzip
+    root = tmp_path / "live"
+    (root / "backups").mkdir(parents=True)
+    monkeypatch.setattr(bk, "data_root", lambda: root)
+    arc = root / "backups" / "jarvis-backup-corrupt.tar.gz"
+    arc.write_bytes(gzip.compress(b"this is not a tar archive" * 100))
+    assert bk._main(["verify", arc.name]) == 1
+    assert "archive rejected" in capsys.readouterr().out
+    with pytest.raises(ValueError, match="corrupt"):
+        bk.verify_backup(str(arc))          # the admin route maps ValueError to a refusal
+
+
+def test_verify_refuses_a_tar_header_bomb_without_reading_it(tmp_path, monkeypatch):
+    """A PAX header declaring 48 MiB used to be read whole into memory before the
+    extractor saw a member, whatever the byte cap said."""
+    import gzip
+    import tracemalloc
+    monkeypatch.setenv("JARVIS_BACKUP_MAX_BYTES", str(1 << 20))
+    arc = tmp_path / "jarvis-backup-bomb.tar.gz"
+    info = tarfile.TarInfo("bomb")
+    info.type = tarfile.XHDTYPE
+    info.size = 48 * 1024 * 1024
+    with gzip.open(arc, "wb") as gz:
+        gz.write(info.tobuf(format=tarfile.USTAR_FORMAT))
+        for _ in range(48):
+            gz.write(b"0" * (1024 * 1024))
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValueError, match="header"):
+            bk.verify_backup(str(arc))
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024
+
+
+# Where a caller of restore could live: every product tree, Python or not.
+_RESTORE_SCAN_ROOTS = ("agents", "scripts", "skills", "services", "worldview", "desktop", "apps",
+                       "packaging", "deploy", "packages", "mobile", "rust")
+_RESTORE_SCAN_SUFFIXES = {".py", ".sh", ".ps1", ".bat", ".cmd", ".js", ".ts", ".mjs", ".cjs",
+                          ".rs"}
+_SKIP_PARTS = {"node_modules", "dist", "build", "target", ".venv", "venv", "__pycache__"}
+_CLI_RESTORE = re.compile(r"agents[./\\]core[./\\]backup[\"']?\s*,?\s*[\"']?restore\b")
+
+
+def _python_restore_reference(source: str) -> bool:
+    """A real (non-docstring, non-comment) reference to restore in Python *source*."""
+    import ast
+    tree = ast.parse(source)
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                docstrings.add(id(body[0].value))
+    strings = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "restore_backup":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "restore_backup":
+            return True
+        if isinstance(node, ast.alias) and node.name.split(".")[-1] == "restore_backup":
+            return True
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docstrings):
+            if "restore_backup" in node.value or _CLI_RESTORE.search(node.value):
+                return True
+            strings.append(node.value)
+    # a subprocess argv: [..., "-m", "agents.core.backup", "restore", ...]
+    return "agents.core.backup" in strings and "restore" in strings
+
+
+def _restore_callers(rel: str, text: str) -> bool:
+    if rel.endswith(".py"):
+        try:
+            return _python_restore_reference(text)
+        except SyntaxError:
+            pass
+    return "restore_backup" in text or bool(_CLI_RESTORE.search(text))
+
+
+@pytest.mark.parametrize("probe, rel", [
+    ("from agents.core.backup import restore_backup\n", "services/x.py"),
+    ("from agents.core import backup\ndef f(a, t):\n    backup.restore_backup(a, t)\n",
+     "scripts/x.py"),
+    ("import subprocess, sys\nsubprocess.run([sys.executable, '-m', 'agents.core.backup', "
+     "'restore', 'n', '/data', '--force'])\n", "agents/core/x.py"),
+    ("import os\nos.system('python -m agents.core.backup restore n /data --force')\n",
+     "agents/core/x.py"),
+    ("python -m agents.core.backup restore \"$1\" \"$DATA\" --force\n", "scripts/x.sh"),
+    ("spawn('python', ['-m', 'agents.core.backup', 'restore', name, dir])\n", "desktop/x.js"),
+])
+def test_the_restore_reachability_scan_catches_every_caller_shape(probe, rel):
+    assert _restore_callers(rel, probe), probe
+
+
+def test_the_restore_reachability_scan_ignores_docs_and_other_verbs():
+    doc = '"""Restore is an operator action (`python -m agents.core.backup\nrestore`)."""\n'
+    assert not _restore_callers("agents/core/routers/backup.py", doc)
+    assert not _restore_callers("agents/core/x.py",
+                                "from agents.core.backup import create_backup, prune_backups\n")
+
+
 def test_restore_is_not_reachable_from_any_route_or_tool():
     """Restore overwrites live data; it stays an operator CLI action (governance note).
 
@@ -392,10 +611,17 @@ def test_restore_is_not_reachable_from_any_route_or_tool():
     """
     repo_root = Path(__file__).resolve().parent.parent
     callers = []
-    for path in sorted((repo_root / "agents").rglob("*.py")):
-        rel = path.relative_to(repo_root).as_posix()
-        if rel == "agents/core/backup.py" or rel.startswith("agents/web/v2/"):
-            continue
-        if "restore_backup" in path.read_text(encoding="utf-8", errors="replace"):
-            callers.append(rel)
+    for top in _RESTORE_SCAN_ROOTS:
+        for path in sorted((repo_root / top).rglob("*")):
+            rel = path.relative_to(repo_root).as_posix()
+            if (path.suffix not in _RESTORE_SCAN_SUFFIXES or not path.is_file()
+                    or not _SKIP_PARTS.isdisjoint(path.relative_to(repo_root).parts)
+                    or rel == "agents/core/backup.py" or rel.startswith("agents/web/v2/")):
+                continue
+            if _restore_callers(rel, path.read_text(encoding="utf-8", errors="replace")):
+                callers.append(rel)
+    for path in sorted(repo_root.glob("*")):
+        if (path.suffix in _RESTORE_SCAN_SUFFIXES and path.is_file()
+                and _restore_callers(path.name, path.read_text(encoding="utf-8", errors="replace"))):
+            callers.append(path.name)
     assert callers == []

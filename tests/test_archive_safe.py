@@ -6,9 +6,9 @@ zip install), each correct against ``../`` and neither against the rest of the l
 These tests pin the shared module directly; the backup and marketplace suites pin that
 their entry points actually go through it.
 """
+import ast
 import io
 import os
-import re
 import stat
 import sys
 import tarfile
@@ -313,8 +313,354 @@ def test_collect_regular_files_skips_links(tmp_path):
     assert skipped == 2
 
 
+# ── existing content in the destination (an in-place --force restore) ──
+def _dir(name):
+    info = tarfile.TarInfo(name)
+    info.type = tarfile.DIRTYPE
+    return (info, None)
+
+
+def test_extract_replaces_a_link_at_the_final_component_instead_of_writing_through_it(tmp_path):
+    # dest/alias.txt -> dest/real.txt; the archive holds both as regular files. Writing
+    # alias.txt THROUGH the link used to clobber real.txt with alias.txt's content.
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "real.txt").write_text("REAL-original")
+    (dest / "alias.txt").symlink_to(dest / "real.txt")
+    asafe.extract_tar(_tar([_file("real.txt", b"REAL-from-backup"),
+                            _file("alias.txt", b"ALIAS-from-backup")]), dest, limits=_BIG)
+    assert (dest / "real.txt").read_bytes() == b"REAL-from-backup"
+    assert not (dest / "alias.txt").is_symlink()
+    assert (dest / "alias.txt").read_bytes() == b"ALIAS-from-backup"
+
+
+def test_extract_replaces_a_link_to_an_outside_file_without_touching_it(tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside, untouched")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "key").symlink_to(outside)
+    asafe.extract_tar(_tar([_file("key", b"from the archive")]), dest, limits=_BIG)
+    assert outside.read_text() == "outside, untouched"
+    assert not (dest / "key").is_symlink()
+    assert (dest / "key").read_bytes() == b"from the archive"
+
+
+def test_extract_does_not_write_through_a_hardlink_already_in_dest(tmp_path):
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "a.bin").write_bytes(b"shared inode")
+    os.link(dest / "a.bin", dest / "b.bin")
+    asafe.extract_tar(_tar([_file("a.bin", b"A"), _file("b.bin", b"B")]), dest, limits=_BIG)
+    assert (dest / "a.bin").read_bytes() == b"A"
+    assert (dest / "b.bin").read_bytes() == b"B"
+
+
+@pytest.mark.parametrize("existing, second", [
+    ("file", "tokens/note.txt"),       # a file where a directory is needed
+    ("file", "tokens/"),               # an explicit directory member over a file
+    ("dir", "tokens"),                 # a directory where a file goes
+    ("inroot-link", "tokens/note.txt"),  # a path that crosses a link already in dest
+])
+def test_extract_refuses_a_type_conflict_with_existing_content_before_writing(tmp_path, existing,
+                                                                             second):
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "first.txt").write_text("live, must survive a refused restore")
+    if existing == "file":
+        (dest / "tokens").write_text("a file")
+    elif existing == "dir":
+        (dest / "tokens").mkdir()
+    else:
+        (dest / "real").mkdir()
+        (dest / "tokens").symlink_to(dest / "real", target_is_directory=True)
+    member = _dir(second.rstrip("/")) if second.endswith("/") else _file(second)
+    with pytest.raises(ArchiveRejected) as exc:
+        asafe.extract_tar(_tar([_file("first.txt", b"from the archive"), member]), dest,
+                          limits=_BIG)
+    assert exc.value.partial is False                   # refused in the pre-scan
+    assert (dest / "first.txt").read_text() == "live, must survive a refused restore"
+    assert not (dest / "real" / "note.txt").exists()
+
+
+def test_free_space_clamp_credits_the_files_the_archive_replaces(tmp_path, monkeypatch):
+    # An in-place restore: the 3000 bytes being overwritten free their own blocks.
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(asafe.shutil, "disk_usage", lambda _p: usage(100_000, 99_000, 1000))
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "big.bin").write_bytes(b"o" * 3000)
+    asafe.extract_tar(_tar([_file("big.bin", b"n" * 3000)]), dest, limits=_BIG)
+    assert (dest / "big.bin").read_bytes() == b"n" * 3000
+    # ...but a NEW 3000-byte file still does not fit in 1000 bytes of free space
+    with pytest.raises(ArchiveRejected, match="free space"):
+        asafe.extract_tar(_tar([_file("other.bin", b"n" * 3000)]), dest, limits=_BIG)
+    assert not (dest / "other.bin").exists()
+
+
+def test_a_failure_while_writing_is_marked_partial(tmp_path, monkeypatch):
+    tar = _tar([_file("a.txt", b"a"), _file("b.txt", b"b")])
+    real = tar.extractfile
+    calls = []
+
+    def _broken(member):
+        calls.append(member.name)
+        if member.name == "b.txt":
+            raise tarfile.ReadError("unexpected end of data")
+        return real(member)
+
+    monkeypatch.setattr(tar, "extractfile", _broken)
+    with pytest.raises(ArchiveRejected, match="corrupt") as exc:
+        asafe.extract_tar(tar, tmp_path / "dest", limits=_BIG)
+    assert exc.value.partial is True                    # a.txt was already written
+    assert calls == ["a.txt", "b.txt"]
+
+
+# ── tar header payloads and corrupt streams ─────────────────────────
+def _gz_header_bomb(path: Path, kind: bytes, size: int) -> Path:
+    """A gzip'd tar whose first header declares a *size*-byte PAX / GNU long-name payload."""
+    import gzip
+    info = tarfile.TarInfo("bomb")
+    info.type = kind
+    info.size = size
+    with gzip.open(path, "wb") as gz:
+        gz.write(info.tobuf(format=tarfile.USTAR_FORMAT))
+        chunk = b"0" * (1024 * 1024)
+        for _ in range(size // len(chunk)):
+            gz.write(chunk)
+    return path
+
+
+@pytest.mark.parametrize("kind", [tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.GNUTYPE_LONGNAME,
+                                  tarfile.GNUTYPE_LONGLINK])
+def test_an_oversized_tar_header_payload_is_refused_before_it_is_read(tmp_path, kind):
+    import tracemalloc
+    arc = _gz_header_bomb(tmp_path / "bomb.tar.gz", kind, 48 * 1024 * 1024)
+    tracemalloc.start()
+    try:
+        with pytest.raises(ArchiveRejected, match="header"):
+            asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024, f"read {peak} bytes of a header into memory"
+    assert not (tmp_path / "dest").exists() or not any((tmp_path / "dest").iterdir())
+
+
+def test_the_tarfile_hooks_the_header_guard_relies_on_exist():
+    # _GuardedTarInfo overrides tarfile internals; a Python that renames them must fail
+    # here, loudly, rather than quietly dropping the header caps.
+    for name in ("_proc_member", "_proc_gnusparse_00", "_proc_gnusparse_01", "_proc_gnusparse_10"):
+        assert callable(getattr(tarfile.TarInfo, name, None)), name
+    assert issubclass(asafe._GuardedTarInfo, tarfile.TarInfo)
+
+
+def test_sparse_members_are_refused(tmp_path):
+    info = tarfile.TarInfo("holes.bin")
+    info.type = tarfile.GNUTYPE_SPARSE
+    raw = io.BytesIO(info.tobuf(format=tarfile.GNU_FORMAT) + b"\0" * 1024)
+    arc = tmp_path / "gnu-sparse.tar"
+    arc.write_bytes(raw.getvalue())
+    with pytest.raises(ArchiveRejected, match="sparse"):
+        asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG)
+
+    pax = io.BytesIO()
+    with tarfile.open(fileobj=pax, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        tar.addfile(tarfile.TarInfo("first.txt"), io.BytesIO(b""))
+        sparse = tarfile.TarInfo("ok.txt")
+        sparse.size = 1
+        sparse.pax_headers = {"GNU.sparse.major": "1", "GNU.sparse.minor": "0",
+                              "GNU.sparse.name": "holes.bin", "GNU.sparse.realsize": "10"}
+        tar.addfile(sparse, io.BytesIO(b"1"))
+    arc2 = tmp_path / "pax-sparse.tar"
+    arc2.write_bytes(pax.getvalue())
+    with pytest.raises(ArchiveRejected, match="sparse"):
+        asafe.extract_tar_path(arc2, tmp_path / "dest2", limits=_BIG)
+
+
+@pytest.mark.parametrize("damage", ["not-a-tar", "truncated", "bad-crc"])
+def test_a_corrupt_archive_is_rejected_not_crashed_on(tmp_path, damage):
+    import gzip
+    good = io.BytesIO()
+    with tarfile.open(fileobj=good, mode="w:gz") as tar:
+        for i in range(3):
+            data = os.urandom(20_000)
+            info = tarfile.TarInfo(f"f{i}.bin")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    raw = good.getvalue()
+    if damage == "not-a-tar":
+        raw = gzip.compress(b"this is not a tar archive" * 100)
+    elif damage == "truncated":
+        raw = raw[: len(raw) // 2]
+    else:  # flip the gzip trailer's CRC32: only a read to the end of the stream sees it
+        raw = raw[:-8] + bytes([raw[-8] ^ 0xFF]) + raw[-7:]
+    arc = tmp_path / "damaged.tar.gz"
+    arc.write_bytes(raw)
+    dest = tmp_path / "dest"
+    with pytest.raises(ArchiveRejected, match="corrupt") as exc:
+        asafe.extract_tar_path(arc, dest, limits=_BIG)
+    assert exc.value.partial is False
+    assert not dest.exists() or not any(dest.iterdir())
+
+
+def _three_member_tar() -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.GNU_FORMAT) as tar:
+        for name in ("a.txt", "b.txt", "c.txt"):
+            info = tarfile.TarInfo(name)
+            info.size = len(name)
+            tar.addfile(info, io.BytesIO(name.encode()))
+    return buf.getvalue()
+
+
+def test_a_corrupt_header_part_way_through_is_refused_not_taken_as_the_end(tmp_path):
+    # tarfile's default treats a bad header after the first as the end of the archive:
+    # a.txt would extract, b.txt and c.txt would silently not exist.
+    raw = bytearray(_three_member_tar())
+    raw[2 * 512 + 148] ^= 0xFF                 # b.txt's header checksum (a.txt: header + data)
+    dest = tmp_path / "dest"
+    with tarfile.open(fileobj=io.BytesIO(bytes(raw)), mode="r") as tar, \
+            pytest.raises(ArchiveRejected, match="corrupt"):
+        asafe.extract_tar(tar, dest, limits=_BIG)
+    assert not (dest / "a.txt").exists()
+
+
+def test_data_after_the_end_of_archive_marker_is_refused(tmp_path):
+    raw = _three_member_tar() + b"appended after the end-of-archive marker"
+    dest = tmp_path / "dest"
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as tar, \
+            pytest.raises(ArchiveRejected, match="corrupt"):
+        asafe.extract_tar(tar, dest, limits=_BIG)
+    assert not dest.exists() or not any(dest.iterdir())
+
+
+def test_ordinary_long_names_in_pax_and_gnu_headers_still_extract(tmp_path):
+    # Header payloads a real archive carries (a long or non-ASCII name) are nowhere near
+    # the cap; main-era backups are PAX, current ones GNU.
+    long_name = "media/" + "ț" * 60 + "/" + "a" * 120 + ".txt"   # every part under NAME_MAX
+    for fmt in (tarfile.PAX_FORMAT, tarfile.GNU_FORMAT):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w", format=fmt) as tar:
+            info = tarfile.TarInfo(long_name)
+            info.size = 2
+            tar.addfile(info, io.BytesIO(b"ok"))
+        arc = tmp_path / f"long-{fmt}.tar"
+        arc.write_bytes(buf.getvalue())
+        written = asafe.extract_tar_path(arc, tmp_path / f"dest-{fmt}", limits=_BIG)
+        assert written == [tuple(long_name.split("/"))]
+
+
+def test_header_payloads_are_capped_in_total_too(tmp_path, monkeypatch):
+    monkeypatch.setattr(asafe, "_MAX_HEADER_TOTAL", 2048)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        for i in range(6):
+            info = tarfile.TarInfo(f"{i}/" + "/".join(["n" * 100] * 4))  # a ~420-byte PAX record
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"x"))
+    arc = tmp_path / "many-headers.tar"
+    arc.write_bytes(buf.getvalue())
+    with pytest.raises(ArchiveRejected, match="in total"):
+        asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG)
+
+
+def test_a_member_name_the_destination_cannot_hold_is_a_refusal(tmp_path):
+    with pytest.raises(ArchiveRejected, match="too long"):
+        asafe.extract_tar(_tar([_file("ok.txt"), _file("n" * 300)]), tmp_path / "dest",
+                          limits=_BIG)
+    assert not (tmp_path / "dest" / "ok.txt").exists()
+
+
+def test_a_non_zip_upload_is_rejected_not_crashed_on(tmp_path):
+    with pytest.raises(ArchiveRejected, match="corrupt"):
+        asafe.extract_zip_bytes(b"PK\x03\x04 not really a zip", tmp_path / "dest", limits=_BIG)
+
+
+def test_extract_zip_bytes_reports_the_files_it_wrote_in_archive_order(tmp_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("pkg\\SKILL.md", "# S\n")
+        z.writestr("pkg/", "")
+        z.writestr("pkg/main.py", "x = 1\n")
+    names = asafe.extract_zip_bytes(buf.getvalue(), tmp_path / "dest", limits=_BIG)
+    assert names == [("pkg", "SKILL.md"), ("pkg", "main.py")]
+
+
 # ── consolidation: no second extractor ─────────────────────────────
-_EXTRACTOR = re.compile(r"\.extractall\(|\.extractfile\(|unpack_archive\(|\._extract_member\(")
+# Modules that may import tarfile / zipfile at all. Every one except archive_safe only
+# WRITES archives, and the scan below keeps it that way: an archive opened for reading,
+# or any extract-family call, outside archive_safe fails this suite.
+_ARCHIVE_IMPORTS_ALLOWED = {
+    "agents/core/archive_safe.py",
+    "agents/core/backup.py",                  # writes the backup tar
+    "agents/core/skills/marketplace.py",      # writes the published skill zip
+    "agents/core/routers/artifact_store.py",  # writes a download zip
+    "agents/core/media_export.py",            # writes a media bundle zip
+}
+_ARCHIVE_MODULES = {"tarfile", "zipfile"}
+_THIRD_PARTY_EXTRACTORS = {"py7zr", "rarfile", "patoolib", "libarchive", "pyunpack"}
+_ALWAYS_EXTRACTORS = {"extractall", "extractfile", "_extract_member", "_extract_one",
+                      "unpack_archive"}
+_ARCHIVE_OPENERS = {"tarfile.open", "TarFile.open", "tarfile.TarFile", "tarfile.TarFile.open",
+                    "TarFile", "zipfile.ZipFile", "ZipFile", "zipfile.PyZipFile", "PyZipFile"}
+_WRITE_MODES = ("w", "x", "a")
+
+
+def _call_name(func) -> str:
+    """Dotted name of a call target: ``tarfile.open``, ``ZipFile``, ``tar.extract``."""
+    parts = []
+    while isinstance(func, ast.Attribute):
+        parts.append(func.attr)
+        func = func.value
+    if isinstance(func, ast.Name):
+        parts.append(func.id)
+    return ".".join(reversed(parts))
+
+
+def _opens_for_reading(call: ast.Call) -> bool:
+    """A ``tarfile.open`` / ``ZipFile`` call whose mode is not provably a write mode."""
+    if _call_name(call.func) not in _ARCHIVE_OPENERS:
+        return False
+    mode = next((kw.value for kw in call.keywords if kw.arg == "mode"), None)
+    if mode is None and len(call.args) > 1:
+        mode = call.args[1]
+    if mode is None:
+        return True  # both default to reading
+    return not (isinstance(mode, ast.Constant) and isinstance(mode.value, str)
+                and mode.value.startswith(_WRITE_MODES))
+
+
+def _archive_offenders(rel: str, source: str) -> list[str]:
+    """Every way *source* could unpack an archive without going through archive_safe."""
+    tree = ast.parse(source)
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+            if node.module.endswith("archive_safe") or any(
+                    alias.name == "archive_safe" for alias in node.names):
+                imported.add("archive_safe")
+    # ``.extract(`` is a common method name (knowledge.extract, re matches); it only
+    # counts in a module that handles archives at all.
+    handles_archives = bool(imported & (_ARCHIVE_MODULES | {"archive_safe"}))
+    out = []
+    if imported & _ARCHIVE_MODULES and rel not in _ARCHIVE_IMPORTS_ALLOWED:
+        out.append(f"{rel}: imports {sorted(imported & _ARCHIVE_MODULES)} (go through archive_safe)")
+    for mod in sorted(imported & _THIRD_PARTY_EXTRACTORS):
+        out.append(f"{rel}: imports the third-party extractor {mod}")
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        last = name.rsplit(".", 1)[-1]
+        if last in _ALWAYS_EXTRACTORS or (last == "extract" and handles_archives):
+            out.append(f"{rel}:{node.lineno}: {name}(...)")
+        elif _opens_for_reading(node):
+            out.append(f"{rel}:{node.lineno}: {name}(...) opens an archive for reading")
+    return out
 
 
 _PRODUCT_ROOTS = ("agents", "scripts", "skills", "services", "worldview")
@@ -329,6 +675,30 @@ def _product_python():
                 yield path
 
 
+@pytest.mark.parametrize("probe", [
+    "import tarfile\ndef f(tar, m, d):\n    tar.extract(m, d)\n",
+    "import zipfile\ndef f(zf, n, d):\n    zf.extract(n, d)\n",
+    "from agents.core import archive_safe\ndef f(t, m, d):\n    t.extract(m, d)\n",
+    "import zipfile, io\ndef f(b, p):\n    with zipfile.ZipFile(io.BytesIO(b)) as z:\n"
+    "        open(p, 'wb').write(z.read('x'))\n",
+    "import tarfile\ndef f(p):\n    return tarfile.open(p, 'r:gz')\n",
+    "import shutil\ndef f(a, d):\n    shutil.unpack_archive(a, d)\n",
+    "import py7zr\n",
+])
+def test_the_extractor_guard_catches_every_unpacking_shape(probe):
+    assert _archive_offenders("agents/core/probe.py", probe), probe
+
+
+def test_the_extractor_guard_leaves_writers_and_unrelated_extract_alone():
+    writer = ("import zipfile, tarfile, io\n"
+              "def f(b, fo):\n"
+              "    with zipfile.ZipFile(b, 'w', zipfile.ZIP_DEFLATED) as z: z.writestr('a', 'b')\n"
+              "    with tarfile.open(fileobj=fo, mode='w:gz') as t: pass\n")
+    assert _archive_offenders("agents/core/backup.py", writer) == []
+    unrelated = "def f(self):\n    self.knowledge.extract(self.messages)\n"
+    assert _archive_offenders("agents/core/ingestion/pipeline.py", unrelated) == []
+
+
 def test_archive_safe_is_the_only_extractor_in_the_product():
     """A second transfer surface with its own extractor is how a weaker one ships."""
     offenders = []
@@ -336,8 +706,9 @@ def test_archive_safe_is_the_only_extractor_in_the_product():
         rel = path.relative_to(repo_root).as_posix()
         if rel == "agents/core/archive_safe.py" or rel.startswith("agents/web/v2/"):
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        for lineno, line in enumerate(text.splitlines(), 1):
-            if _EXTRACTOR.search(line):
-                offenders.append(f"{rel}:{lineno}: {line.strip()}")
+        source = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            offenders.extend(_archive_offenders(rel, source))
+        except SyntaxError:
+            continue  # not Python this interpreter parses (a template); nothing to run
     assert offenders == [], "archive extraction outside agents/core/archive_safe.py:\n" + "\n".join(offenders)

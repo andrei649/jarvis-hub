@@ -40,6 +40,8 @@ logger = logging.getLogger("jarvis.skills.marketplace")
 # clamps the byte budget to the free space on the skills volume.
 SKILL_PACKAGE_LIMITS = ArchiveLimits(max_members=5_000, max_bytes=256 * 1024 * 1024)
 _STAGING_PREFIX = ".nerva-install-"
+# A staging dir untouched for this long belongs to a killed install, not a running one.
+_ABANDONED_STAGING_SECONDS = 3600.0
 
 
 def _v1_moderation_columns(conn: sqlite3.Connection) -> None:
@@ -740,19 +742,39 @@ class SkillMarketplace:
             conn.close()
 
     @staticmethod
-    def _find_manifest(zip_file: "zipfile.ZipFile") -> str:
-        """The first file member whose last path part is ``SKILL.md`` (``\\`` folded)."""
-        for name in zip_file.namelist():
-            if name.replace("\\", "/").rsplit("/", 1)[-1] == "SKILL.md":
-                return name
+    def _find_manifest(written: "list[tuple[str, ...]]") -> "tuple[str, ...]":
+        """The first file written whose last path part is ``SKILL.md`` (archive order)."""
+        for parts in written:
+            if parts[-1] == "SKILL.md":
+                return parts
         raise ValueError("SKILL.md manifest file missing in ZIP package.")
+
+    def _sweep_abandoned_staging(self, *, now: Optional[float] = None) -> None:
+        """Remove staging dirs a killed install left in skills_dir; never a live one.
+
+        A SIGKILL between extract and rename leaves ``.nerva-install-*`` behind. The
+        loader ignores it (no top-level SKILL.md) but it would hold up to a package's
+        worth of disk forever, so it is swept once it is clearly abandoned.
+        """
+        moment = time.time() if now is None else float(now)
+        try:
+            candidates = list(self.skills_dir.glob(f"{_STAGING_PREFIX}*"))
+        except OSError:
+            return
+        for path in candidates:
+            try:
+                if (path.is_dir() and not path.is_symlink()
+                        and moment - path.stat().st_mtime > _ABANDONED_STAGING_SECONDS):
+                    shutil.rmtree(path)
+            except OSError:
+                logger.warning("could not sweep an abandoned skill install staging dir")
 
     def install_from_zip(self, zip_bytes: bytes) -> bool:
         """
         Extract a skill package (zip bytes) into the skills/ directory.
 
         Hardened (H12.12 → H503): the package is unpacked by the shared
-        ``archive_safe.extract_zip`` — names normalised (``\\`` folded; absolute,
+        ``archive_safe.extract_zip_bytes`` — names normalised (``\\`` folded; absolute,
         drive-lettered, ``..`` refused), symlink/device entries RAISE, member-count and
         byte caps (``SKILL_PACKAGE_LIMITS``) — into a private staging dir inside
         skills_dir. The signature gate (JARVIS_REQUIRE_SIGNED_SKILLS) and the
@@ -761,18 +783,18 @@ class SkillMarketplace:
         no longer deletes the version that was already installed. An accepted
         reinstall replaces the skill directory with exactly the package.
         """
-        zip_buffer = io.BytesIO(zip_bytes)
         # Staging lives INSIDE skills_dir so the final placement is a same-volume
         # rename. Its top level never holds a SKILL.md, so discovery ignores it.
         self.skills_dir.mkdir(parents=True, exist_ok=True)
+        self._sweep_abandoned_staging()
         staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=self.skills_dir))
         try:
             package = staging / "package"
-            with zipfile.ZipFile(zip_buffer, "r") as zip_file:
-                manifest_filename = self._find_manifest(zip_file)
-                archive_safe.extract_zip(zip_file, package, limits=SKILL_PACKAGE_LIMITS)
-
-            manifest_parts = archive_safe.normalize_member(manifest_filename)
+            # Bytes that are not a readable zip are an ArchiveRejected (a ValueError),
+            # so the install-zip route answers 400, not 500.
+            written = archive_safe.extract_zip_bytes(zip_bytes, package,
+                                                     limits=SKILL_PACKAGE_LIMITS)
+            manifest_parts = self._find_manifest(written)
             skill_md_content = package.joinpath(*manifest_parts).read_text(encoding="utf-8")
 
             skill_name = None
