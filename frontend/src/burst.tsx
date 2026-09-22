@@ -229,20 +229,22 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
       const live = c.firing > 0 || c.tasks > 0;
       const sway = calm ? 0 : Math.sin(t * 0.008 + ci) * 0.02;
       ctx.rotate(sway);
+      // Bolt Optimization: Set strokeStyle once per cluster rather than inside per-segment loop
+      ctx.strokeStyle = c.color;
       // branches: thinner and dimmer the deeper they go
       c.segs.forEach((sg: any) => {
         const pulse = live && !calm ? 0.5 + 0.5 * Math.sin(t * 0.05 - sg.ph * 0.4) : 0.4;
         ctx.globalAlpha = (live ? 0.20 + pulse * 0.34 : 0.12) * (1 - sg.d * 0.16) + e * 0.10;
-        ctx.strokeStyle = c.color;
         ctx.lineWidth = Math.max(0.3, sg.w * (live ? 1.0 : 0.7));
         ctx.beginPath(); ctx.moveTo(sg.x1, sg.y1); ctx.lineTo(sg.x2, sg.y2); ctx.stroke();
       });
+      // Bolt Optimization: Set fillStyle once per cluster rather than inside per-synapse node loop
+      ctx.fillStyle = c.color;
       // synapse nodes with a soft halo
       c.pts.forEach((p: any) => {
         const pulse = live && !calm ? 0.5 + 0.5 * Math.sin(t * 0.06 + p.ph) : 0.3;
         const r = 0.45 + (1 - p.d * 0.18) * (0.45 + pulse * 0.5);
         ctx.globalAlpha = 0.34 + pulse * 0.46;
-        ctx.fillStyle = c.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
         ctx.globalAlpha = (0.03 + pulse * 0.07) * (live ? 1 : 0.4);
         ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.4, 0, 7); ctx.fill();
@@ -318,14 +320,19 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     field.clusters.forEach((c: any) => {
-      const label = String(c.label || c.key).toUpperCase();
+      const label = c._label || (c._label = String(c.label || c.key).toUpperCase());
       const pct = c.nodes ? Math.round((c.firing / c.nodes) * 100) : 0;
       const sub = `${c.nodes} agent${c.nodes === 1 ? '' : 's'} · firing ${pct}%${c.tasks ? ' · ' + c.tasks + ' task' + (c.tasks === 1 ? '' : 's') : ''}`;
-      ctx.font = '700 10px "JetBrains Mono",monospace';
-      const tw = ctx.measureText(label).width;
-      ctx.font = '400 9px "JetBrains Mono",monospace';
-      const sw = ctx.measureText(sub).width;
-      const w = Math.max(tw, sw) + 22, h = 30;
+      // Bolt Optimization: Cache ctx.measureText results on cluster object c to avoid expensive browser text layout measurements every 60FPS frame
+      if (c._sub !== sub) {
+        c._sub = sub;
+        ctx.font = '700 10px "JetBrains Mono",monospace';
+        const tw = ctx.measureText(label).width;
+        ctx.font = '400 9px "JetBrains Mono",monospace';
+        const sw = ctx.measureText(sub).width;
+        c._w = Math.max(tw, sw) + 22;
+      }
+      const w = c._w, h = 30;
       // Anchor part-way out along the tree, then clamp into a safe band: the wall's
       // stat cards own the outer fifths and the top/bottom bars own the edges, so a
       // chip pinned to the outermost tip would land on top of them.

@@ -454,8 +454,12 @@ class Orchestrator:
         reg.add("widgets", ".widget", "WidgetStore", label="chat widget")                      # H10.1
         reg.add("consolidation", ".memory.consolidation", "ConsolidationEngine", label="consolidation")  # H14.3
         reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
+        # Spelled through the data root, not cwd-relative: the Telegram adapter's
+        # module default (`pairing.DEFAULT_PATH`) and the router both resolve there,
+        # and a relocated install (JARVIS_HOME) must not split the one store in two.
+        from .paths import data_path
         reg.add("sender_pairing", ".channels.pairing", "SenderPairing",
-                path="memory_logs/sender_pairing.json", label="sender pairing")                 # H12.19
+                path=data_path("sender_pairing.json"), label="sender pairing")              # H12.19
         reg.add("canvas", ".canvas", "CanvasStore",
                 path="memory_logs/canvas.json", label="agent canvas")                           # H12.18
         reg.add("action_approvals", ".autonomy.action_approvals", "ActionApprovalQueue",
