@@ -1237,3 +1237,83 @@ async def test_the_transport_refuses_a_path_spelled_catastrophe_before_spawn(roo
         "reason": "hardline_denied:power_cycle",
     }
     assert spawn.calls == [], "a catastrophic command reached the spawn seam"
+
+
+# ── H481: refusals PR #1177 cleared in the DANGEROUS direction ────────────────
+# These three shapes each RUN their catastrophe in /bin/sh, /bin/dash and
+# /bin/bash (verified with `echo RAN` stand-ins) yet returned None after #1177.
+# The floor's whole promise is that it holds regardless of approval, so a spelling
+# a shell executes must refuse.
+
+
+@pytest.mark.parametrize("command,expected", [
+    # `case` and `esac` here are ARGUMENTS to `echo`, not a case statement, and the
+    # `in` is a word inside a subshell. #1177's `_strip_case_labels` matched the
+    # `case … esac` span anyway and stripped the subshell's last command after the
+    # `in`, clearing the refusal. The reboot / mkfs / wipefs still run.
+    ("(echo case in; reboot); echo esac", "power_cycle"),
+    ("(echo case in; mkfs.ext4$IFS/dev/sda); echo esac", "mkfs"),
+    ("(echo case in; wipefs$IFS-a$IFS/dev/sda); echo esac", "wipefs"),
+    ("(echo case in; halt); echo esac", "power_cycle"),
+    # Structurally `case WORD in … esac`, so only the command-position check (the
+    # `case` here is an argument to `echo`, not a keyword) keeps the command the
+    # subshell runs after the `;`.
+    ("(echo case x in; reboot); echo esac", "power_cycle"),
+    ("echo case x in; reboot; echo esac", "power_cycle"),
+    ("(printf 'case x in'; mkfs.ext4 /dev/sda); echo esac", "mkfs"),
+])
+def test_a_case_word_outside_a_real_case_statement_does_not_strip_a_command(command, expected):
+    """`case`/`esac`/`in` as ordinary words must not turn the label strip on.
+
+    The strip fires only inside a real `case WORD in … esac` region (a `case`
+    keyword in command position). Reproduced against /bin/sh, /bin/dash and
+    /bin/bash first: all three execute the reboot/mkfs/wipefs in these shapes."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("case $1 in shutdown) echo bye ;; esac", None),
+    ("case $1 in wipe) rm -rf / ;; esac", "recursive_root_removal"),
+    ("case $1 in wipe) mkfs.ext4 /dev/sda ;; esac", "mkfs"),
+])
+def test_a_real_case_statement_still_strips_labels_but_keeps_the_body(command, expected):
+    """The legitimate false-positive fix, kept intact and made symmetric.
+
+    A `case` label is a pattern, so `shutdown)` must not refuse; the branch BODY
+    is a command position, so `rm -rf /` / `mkfs.ext4` inside it still refuse even
+    when the whole clause is on one line (the body then lands in one segment, so
+    the label is stripped from the segment source too, not only from `flat`)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    # The heredoc body reaches a shell through a pipe placed AFTER the `<<`.
+    ("cat <<EOF | sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | bash\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | sh\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    ("cat <<EOF | grep -v '^#' | sh\nwipefs -a /dev/sda\nEOF", "wipefs"),
+    # …or is written to a file that a shell then executes in the same command.
+    ("cat <<'EOF' >x.sh; sh x.sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >y.sh\nmkfs.ext4 /dev/sda\nEOF\nsh y.sh", "mkfs"),
+])
+def test_a_heredoc_body_a_shell_runs_after_the_redirection_is_a_script(command, expected):
+    """`_heredoc_feeds_a_shell` used to inspect only the stage LEFT of `<<`.
+
+    A body piped into a shell, or written to a file a shell later runs, is a
+    script — every line a statement. Reproduced against /bin/sh, /bin/dash and
+    /bin/bash first (cat's output is piped/redirected away, so a `RAN` on stdout
+    is the shell executing the body, not cat printing it)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # cat prints the body and the `; sh` is a SEPARATE statement reading the
+    # parent's stdin, not the heredoc — the body is never executed, so it is data.
+    "cat <<EOF; sh\nrm -rf /\nEOF",
+    # Written to a plain file no shell runs — the classic warning stays writable.
+    "cat > README.md <<'EOF'\nrm -rf / will destroy the box\nEOF",
+])
+def test_a_heredoc_no_shell_consumes_is_still_data(command):
+    """The keep-intact direction for the heredoc fix: a body a shell does not run
+    is data, so writing documentation that quotes `rm -rf /` must not refuse."""
+    assert hardline_match(command) is None
