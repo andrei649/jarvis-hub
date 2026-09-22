@@ -267,3 +267,10 @@ async def media_restore(device_id: str):
         title=f"restore {device_id}",
     )
     return nocache_json(_perform_payload(result))
+
+
+def get_director():
+    """The process-wide director these routes use — one device registry, one session
+    board. The ``speak`` tool (H313) presents through the same instance, so a device
+    the owner registered here is the device the tool can speak on."""
+    return _get_director()

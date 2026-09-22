@@ -717,6 +717,93 @@ def test_active_low_and_normal_urgency_refuse_without_consuming_budget(urgency):
     assert driver.calls == []
 
 
+# ── an announce is a one-shot notice, not a session that holds the device ────
+
+
+def _speaker_director(driver):
+    """tv-1 plays media and also takes announcements (a TV with a speaker)."""
+    registry = DeviceRegistry(path=None)
+    registry.register(MediaDevice(
+        id="tv-1", name="Living TV", kind="tv", room="living", supports=("play", "announce"),
+    ))
+    return MediaDirector(
+        registry=registry, sessions=SessionBoard(path=None), drivers={"tv": driver},
+        browser=GovernedBrowser(policy=BrowserPolicy(["93.184.216.34"])),
+    )
+
+
+def _announce(n: int, **overrides):
+    return _payload(
+        mode="announce",
+        content={"type": "url", "value": f"https://93.184.216.34/notice-{n}"},
+        **overrides,
+    )
+
+
+def test_a_second_normal_announce_is_not_refused_by_the_first():
+    driver = FakeDriver()
+    director = _speaker_director(driver)
+    budget = InterruptBudget(per_day=1)
+
+    first = director.present(_announce(1), interrupt_budget=budget)
+    second = director.present(_announce(2), interrupt_budget=budget)
+    third = director.present(_announce(3), interrupt_budget=budget)
+
+    assert first["ok"] is True and second["ok"] is True and third["ok"] is True, second
+    # Nothing of the owner's was cut into, so nothing was spent.
+    assert budget.remaining() == 1
+    assert driver.calls == ["play", "play", "play"]
+    session = director.sessions.get("tv-1")
+    assert session.mode == "announce"
+    assert session.content["value"].endswith("notice-3")
+    assert session.previous is None
+
+
+def test_an_announce_over_media_keeps_that_media_as_the_restore_point():
+    driver = FakeDriver()
+    director = _speaker_director(driver)
+    budget = InterruptBudget(per_day=3)
+    assert director.present(_payload())["ok"] is True
+
+    # Etiquette for the owner's media is unchanged: only high urgency cuts in, and it pays.
+    blocked = director.present(_announce(1))
+    assert blocked["ok"] is False and blocked["reason"] == "session_etiquette"
+    assert director.present(_announce(1, urgency="high"), interrupt_budget=budget)["ok"] is True
+    assert budget.remaining() == 2
+
+    # A second announcement, even at high urgency, cuts into nothing of the owner's.
+    assert director.present(_announce(2), interrupt_budget=budget)["ok"] is True
+    assert director.present(_announce(3, urgency="high"), interrupt_budget=budget)["ok"] is True
+    assert budget.remaining() == 2
+    previous = director.sessions.get("tv-1").previous
+    assert previous["content"]["value"] == "https://93.184.216.34/x"
+    assert previous["mode"] == "play" and previous["previous"] is None
+
+    # And restore brings back the media, never a replay of an announcement.
+    assert director.restore("tv-1") == {"ok": True, "restored": "previous_session"}
+    restored = director.sessions.get("tv-1")
+    assert restored.mode == "play"
+    assert restored.content["value"] == "https://93.184.216.34/x"
+
+
+def test_media_presented_after_an_announce_inherits_the_pre_announce_snapshot():
+    driver = FakeDriver()
+    director = _speaker_director(driver)
+    budget = InterruptBudget(per_day=1)
+    assert director.present(_announce(1))["ok"] is True
+
+    # The announcement is over once said: normal-urgency media may follow, at no cost,
+    # and restoring it goes back to what was there before the announcement (nothing).
+    followed = director.present(
+        _payload(content={"type": "url", "value": "https://93.184.216.34/film"}),
+        interrupt_budget=budget,
+    )
+    assert followed["ok"] is True
+    assert budget.remaining() == 1
+    session = director.sessions.get("tv-1")
+    assert session.mode == "play" and session.previous is None
+
+
 def test_session_memory_and_disk_do_not_diverge_under_concurrent_updates(tmp_path):
     path = tmp_path / "sessions.json"
     board = SessionBoard(path=path)

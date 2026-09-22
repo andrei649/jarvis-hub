@@ -61,6 +61,9 @@ _TRUSTED_TOOL_RPC_KINDS = frozenset({
     "toolrpc.terminal_run",
     "toolrpc.file_write",
     "toolrpc.file_delete",
+    # H313 — speaking into a room presents through the kernel-mediated
+    # media.present facade, only from the owner-accepted durable row.
+    "toolrpc.speak",
 })
 
 logger = logging.getLogger("jarvis.orchestrator")
@@ -442,6 +445,29 @@ class AutonomyCoordinator:
             input_schema=INPUT_SCHEMA, capability_id="tool:image_generate",
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
+        )
+        # H313 — the model may decide to say one thing aloud on one room's speaker.
+        # Default-off (registered only with the Media Director on) and gated like
+        # image_generate, with its own intake so the kernel sees the exact row the
+        # card becomes; the approved run presents the clip through
+        # CapabilityActionAPI("action:media.present", mode announce), so the kernel
+        # authorizes the effect and the tool itself never reaches a driver.
+        from .voice.speak_tool import register_speak_tool
+
+        def _media_director():
+            from .routers.media_director import get_director
+
+            return get_director()
+
+        register_speak_tool(
+            server,
+            director=_media_director,
+            approved_task=_APPROVED_TASK.get,
+            authorizer=action_kernel,
+            enqueue=self._governed_enqueue,
+            interrupt_budget=lambda: getattr(
+                getattr(self._orch, "autonomy", None), "budget", None),
+            audit=lambda: getattr(self._orch, "intent_log", None),
         )
 
         async def _rpc_echo(args):
@@ -1285,6 +1311,11 @@ class AutonomyCoordinator:
         )
         executor.register(
             "toolrpc.file_delete",
+            self._approved_desktop_tool_rpc_execute,
+        )
+        # H313 — an approved `speak` row takes the same trusted execution path.
+        executor.register(
+            "toolrpc.speak",
             self._approved_desktop_tool_rpc_execute,
         )
         executor.register(
