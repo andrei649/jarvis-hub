@@ -367,19 +367,35 @@ class HybridRouter(LLMRouter):
             from .providers import DEFAULT_REGISTRY
             profile = DEFAULT_REGISTRY.get(provider_id)
             key = env_str(profile.auth_env, "")
-            if key:
+            base_url = env_str(profile.base_url_env) or profile.default_base_url
+            # H368 — a base URL on a host that accepts another protocol only (an
+            # OPENAI_BASE_URL on api.anthropic.com, say) is refused here, where the
+            # route is built, as well as at the wire by the egress hook.
+            from .host_protocol import protocol_refusal
+            refusal = protocol_refusal(profile.id, base_url)
+            if key and refusal:
+                logger.error("Compatible provider %s refused: %s", profile.id, refusal)
+            elif key:
                 caps = set(profile.capabilities)
                 if self._admin_setting("compatible_reasoning_enabled", False):
                     caps.add("reasoning-effort")
                 if self._admin_setting("compatible_prompt_cache_key", False):
                     caps.add("prompt-cache-key")
                 profile = replace(profile, capabilities=frozenset(caps))
-                self._compatible_backend = OpenRouterBackend(
-                    api_key=key, base_url=env_str(profile.base_url_env) or profile.default_base_url,
-                    profile=profile, reasoning_effort=self._admin_setting("reasoning_effort", ""),
-                    effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
-                )
-                self._cloud_available = True
+                from .provider_routing import ProviderRoutingInvalid, provider_routing_from_settings
+                try:
+                    self._compatible_backend = OpenRouterBackend(
+                        api_key=key, base_url=base_url,
+                        profile=profile, reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                        effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
+                        # H583 — the owner's llm.openrouter_* rows; ignored for openai-compatible.
+                        provider_routing=provider_routing_from_settings(self._admin_setting),
+                    )
+                    self._cloud_available = True
+                except ProviderRoutingInvalid as exc:
+                    # Fail closed: a stored knob the settings validator would have
+                    # refused must not silently widen which providers may serve.
+                    logger.error("OpenRouter provider routing refused, compatible route disabled: %s", exc)
 
         # Claude model is admin-configurable (/admin → llm.claude_model).
         self._claude_model = self._admin_setting("claude_model", DEFAULT_CLAUDE_MODEL)
