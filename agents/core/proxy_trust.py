@@ -42,6 +42,17 @@ cannot be parsed never degrades to "trust nobody" silently at boot — the boot
 guard refuses to start and names the variable (never the value); at request time
 the caller treats the same error as "no trusted proxies", which is the closed
 posture.
+
+Why the resolved set is said out loud (H691). An operator who wrote a list
+should be able to read back what the box ended up trusting — after
+``strict=False`` folded a host address onto its network, after duplicates
+collapsed, or after the legacy flag quietly meant loopback. The default is
+"trust nothing", so every non-empty resolution is logged once at INFO, naming
+the source and the canonical networks. Those are ``ipaddress``'s spelling of the
+operator's own proxy addresses, not secrets and never the raw text; refusals and
+the wide-entry warnings keep naming positions only. The web app resolves the list
+at import, before logging is configured, so the lifespan calls
+:func:`announce_trusted_proxies` once logging and ``.env`` are both in place.
 """
 
 from __future__ import annotations
@@ -163,7 +174,56 @@ def trusted_proxies() -> tuple[IPv4Network | IPv6Network, ...]:
     else:
         networks = ()
     _memo_key, _memo_value = key, networks
+    _log_trust_set(key, networks)
     return networks
+
+
+def _trust_source(key: tuple[str | None, str | None]) -> str:
+    """Which variable a resolution came from: the list wins over the legacy flag."""
+    raw, _legacy = key
+    if raw and raw.strip():
+        return TRUSTED_PROXIES_ENV
+    return f"{LEGACY_FLAG_ENV} (deprecated, loopback only)"
+
+
+def _log_trust_set(
+    key: tuple[str | None, str | None], networks: tuple[IPv4Network | IPv6Network, ...],
+) -> None:
+    """Say, at INFO, which proxy networks ended up trusted — when any did.
+
+    Nothing is said for the default (an empty set): only a resolution that
+    differs from "trust nothing" is news. The networks are the canonical
+    ``ipaddress`` spelling, bounded by ``MAX_ENTRIES``; the raw value never
+    reaches the log.
+    """
+    if not networks:
+        return
+    logger.info(
+        "%s: trusting %d proxy network(s): %s",
+        _trust_source(key), len(networks), ", ".join(str(network) for network in networks),
+    )
+
+
+def announce_trusted_proxies() -> tuple[IPv4Network | IPv6Network, ...]:
+    """Say the trust set once the process can be heard; return it.
+
+    Called by the web lifespan after logging is configured and ``.env`` is
+    loaded. If the environment changed since the last resolution (a list that
+    lives only in ``.env``) this *is* the resolution and :func:`trusted_proxies`
+    says it; otherwise the set was resolved at import, before any handler
+    existed, and is said again here — exactly one line either way, none when
+    nothing is trusted. A malformed list returns ``()`` without raising: the
+    boot guard (:func:`assert_parseable_trusted_proxies`) owns that refusal, and
+    request-time callers already fail closed on it.
+    """
+    key = (env_str(TRUSTED_PROXIES_ENV), env_str(LEGACY_FLAG_ENV))
+    if key != _memo_key:
+        try:
+            return trusted_proxies()
+        except ValueError:
+            return ()
+    _log_trust_set(key, _memo_value)
+    return _memo_value
 
 
 def _warn_wide_entries(networks: tuple[IPv4Network | IPv6Network, ...]) -> None:

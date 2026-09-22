@@ -17,7 +17,12 @@ from typing import Literal, Optional
 from agents.core.env_config import env_flag, env_int, env_json_object, env_list, env_str
 from agents.core.cors_policy import normalize_cors_origins
 from agents.core.host_policy import allowed_hosts, host_accepted
-from agents.core.proxy_trust import forwarded_client, is_trusted_peer, trusted_proxies
+from agents.core.proxy_trust import (
+    announce_trusted_proxies,
+    forwarded_client,
+    is_trusted_peer,
+    trusted_proxies,
+)
 from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -412,6 +417,10 @@ async def lifespan(application: FastAPI):
     # channel is wired — a refusal here is the same SystemExit the early pass raises.
     from core.boot_guards import assert_front_door
     assert_front_door()
+    # H691: say which proxies ended up trusted. The list was first resolved at
+    # import, before setup_logging() existed to hear it; the environment is now
+    # final (.env loaded, the list parse-checked), so say it once here.
+    announce_trusted_proxies()
 
     # Load MCP servers from settings DB
     _load_mcp_config()

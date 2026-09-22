@@ -272,3 +272,107 @@ def test_ipv6_mapped_and_bracketed_peers_are_recognised(monkeypatch):
     assert proxy_trust.is_trusted_peer("10.0.0.1 ") is True
     for garbage in ("", "testclient", "localhost", "[10.0.0.1", "a" * 200):
         assert proxy_trust.is_trusted_peer(garbage) is False
+
+
+# ── the resolved trust set is said (H691) ────────────────────────────────────
+#
+# Hermes logs, at info, the trust set the operator ended up with whenever it
+# differs from the default. Nerva's default is "trust nothing", so any non-empty
+# resolution is said: once, naming the source and the canonical networks. The
+# canonical spelling is what ipaddress produced, never the raw text the operator
+# typed (refusals and the wide-entry warnings still never echo the value).
+
+def _trust_set_lines(caplog):
+    return [r for r in caplog.records
+            if r.name == "jarvis.proxy_trust" and r.levelno == logging.INFO
+            and "trusting" in r.getMessage()]
+
+
+def test_resolved_trust_set_is_logged_once_at_info_naming_source_and_networks(monkeypatch, caplog):
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "127.0.0.1, 10.0.0.5/32")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        assert len(proxy_trust.trusted_proxies()) == 2
+        assert len(proxy_trust.trusted_proxies()) == 2  # memo hit: nothing more said
+    lines = _trust_set_lines(caplog)
+    assert len(lines) == 1
+    message = lines[0].getMessage()
+    assert message.startswith("JARVIS_TRUSTED_PROXIES:")
+    assert "2 proxy network(s)" in message
+    assert "127.0.0.1/32, 10.0.0.5/32" in message  # canonical, in list order
+    # A changed value (a rotated .env) is a new resolution and is said again.
+    caplog.clear()
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "fd00::1, 10.1.2.3/24")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        proxy_trust.trusted_proxies()
+    lines = _trust_set_lines(caplog)
+    assert len(lines) == 1
+    assert "fd00::1/128, 10.1.2.0/24" in lines[0].getMessage()
+    assert "10.1.2.3/24" not in caplog.text  # never the operator's raw spelling
+
+
+def test_default_and_malformed_resolutions_say_no_trust_set(monkeypatch, caplog):
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        assert proxy_trust.trusted_proxies() == ()  # both unset: the default, nothing to say
+        monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "   ")
+        assert proxy_trust.trusted_proxies() == ()  # blank is the same as unset
+        monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.1, nonsense")
+        with pytest.raises(ValueError):
+            proxy_trust.trusted_proxies()  # refused, so nothing ended up trusted
+    assert _trust_set_lines(caplog) == []
+    assert "nonsense" not in caplog.text
+
+
+def test_legacy_flag_trust_set_names_loopback(monkeypatch, caplog):
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXY", "1")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        proxy_trust.trusted_proxies()
+        proxy_trust.trusted_proxies()
+    lines = _trust_set_lines(caplog)
+    assert len(lines) == 1
+    message = lines[0].getMessage()
+    assert message.startswith("JARVIS_TRUSTED_PROXY ")
+    assert "loopback only" in message
+    assert "127.0.0.0/8, ::1/128" in message
+    # The deprecation warning is still said alongside it, once.
+    assert sum("JARVIS_TRUSTED_PROXY is deprecated" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_announce_says_the_set_resolved_before_logging_was_configured(monkeypatch, caplog):
+    # web.py resolves the list at import, before the lifespan configures logging,
+    # so that first INFO line goes nowhere. The lifespan announces the set once
+    # logging and .env are both in place — exactly one line either way.
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.5")
+    proxy_trust.trusted_proxies()  # the import-time resolution
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        assert proxy_trust.announce_trusted_proxies() == (proxy_trust.ip_network("10.0.0.5/32"),)
+    lines = _trust_set_lines(caplog)
+    assert len(lines) == 1 and "10.0.0.5/32" in lines[0].getMessage()
+    # .env changed the value after import: the announce is the resolution, said once.
+    caplog.clear()
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.5, 10.0.0.6")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        proxy_trust.announce_trusted_proxies()
+    lines = _trust_set_lines(caplog)
+    assert len(lines) == 1 and "10.0.0.5/32, 10.0.0.6/32" in lines[0].getMessage()
+    # Nothing trusted → nothing announced.
+    caplog.clear()
+    monkeypatch.delenv("JARVIS_TRUSTED_PROXIES")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        assert proxy_trust.announce_trusted_proxies() == ()
+    assert _trust_set_lines(caplog) == []
+    # A malformed list is the boot guard's to refuse; the announce never raises and
+    # says nothing was trusted by it.
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "*")
+    with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
+        assert proxy_trust.announce_trusted_proxies() == ()
+    assert _trust_set_lines(caplog) == []
+
+
+def test_web_lifespan_announces_the_trust_set_after_logging_and_env_load():
+    import inspect
+
+    src = inspect.getsource(web.lifespan)
+    logging_up = src.index("setup_logging()")
+    late_guard = src.index("assert_front_door()")
+    announced = src.index("announce_trusted_proxies()")
+    assert logging_up < late_guard < announced

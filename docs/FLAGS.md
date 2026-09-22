@@ -437,9 +437,14 @@ all-trusted chain yields the hop the proxy saw, never a typed leftmost value. Un
 forwarding headers are ignored — a request that carries them fails the localhost gate
 closed and is rate-limited by its socket address. `*`, `/0` and more than 64 entries refuse
 boot naming the variable. Set in `.env` like everything else: the lifespan re-checks the
-list once `.env` is loaded. The old `JARVIS_TRUSTED_PROXY=1` is deprecated and
-now means *loopback only* (a same-box Caddy) with a one-time warning; it never widens past
-that.
+list once `.env` is loaded. Once it is loaded, the set the box ended up trusting is
+logged once at INFO under `jarvis.proxy_trust`, e.g.
+`JARVIS_TRUSTED_PROXIES: trusting 2 proxy network(s): 127.0.0.1/32, 10.0.0.5/32`. The line
+uses the canonical form, so `10.1.2.3/24` reads back as `10.1.2.0/24` and duplicates are
+folded. It is said again whenever the value changes, and never when nothing is trusted.
+The old `JARVIS_TRUSTED_PROXY=1` is deprecated and now means *loopback only* (a same-box
+Caddy) with a one-time warning, and its INFO line names `127.0.0.0/8, ::1/128`; it never
+widens past that.
 
 ### `JARVIS_ALLOWED_HOSTS`
 
