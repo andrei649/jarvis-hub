@@ -423,11 +423,13 @@ async def test_rescan_reports_renamed_and_linked_sources(home, tmp_path):
         skill_md.symlink_to(outside)
     except (OSError, NotImplementedError):
         pytest.skip("symlinks unavailable")
-    [row] = ni.rescan_imported(skills_dir, "hermes")
+    [row] = ni.rescan_imported(skills_dir, "hermes", home=home)
     assert row["status"] == "source_removed" and row["reason"] == "source_not_plain_file"
-    assert ni.rescan_imported(skills_dir, "openclaw") == []
+    assert ni.rescan_imported(skills_dir, "openclaw", home=home) == []
     with pytest.raises(ValueError):
         ni.rescan_imported(skills_dir, "cursor")
+    with pytest.raises(ValueError):  # a root names one install, so it needs its source
+        ni.rescan_imported(skills_dir, root=home / ".hermes")
 
 
 @pytest.mark.asyncio
@@ -555,7 +557,8 @@ async def test_skill_import_crosses_skill_install_and_a_denial_writes_nothing(ho
     assert payload["taint_source"] == "import:hermes"
     assert "Triage GitHub issues" not in json.dumps(payload)  # ids only, never the body
 
-    # The default CLI authorizer queues skills with a skill-specific reason.
+    # The queue-only leg keeps a skill-specific reason (the default routes skills to
+    # the real kernel instead: see the kill-switch tests below).
     assert ni.queue_only_authorizer(action).reason == "imported_skill_requires_owner_review"
     assert ni.queue_only_authorizer(None).reason == "imported_memory_requires_owner_approval"
 
@@ -841,6 +844,282 @@ async def test_persona_becomes_a_preview_never_a_soul(home, tmp_path):
     ]["reason"] == "preview_dir_unset"
 
 
+# ── H344 review: moved sources, refusal guards, trusted records ──────────
+
+
+async def _imported_then_changed(home, tmp_path):
+    """An imported github-issues whose source was then edited upstream."""
+    skills_dir = tmp_path / "skills"
+    importer = SkillImporter(str(skills_dir))
+    skill_dir = _hermes(home).skill_dirs[0]
+    assert (await importer.import_local_skill(skill_dir, "hermes"))["status"] == "imported"
+    _edit_source(skill_dir)
+    return importer, skill_dir, skills_dir / "github-issues"
+
+
+@pytest.mark.asyncio
+async def test_source_moved_within_the_install_is_followed_not_reported_removed(home, tmp_path):
+    """A Hermes category reorganisation moves a skill folder but keeps its declared
+    name: the re-run follows it to the new path (unchanged, then changed) instead
+    of reporting skipped/exists + source_removed forever, and --update refreshes it
+    and rewrites the recorded source_path."""
+    import shutil
+
+    skills_dir = tmp_path / "skills"
+    target = skills_dir / "github-issues"
+    loader, _store = _approval_loader(tmp_path)
+    await ni.ImportRunner(
+        _hermes(home), authorizer=RecordingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply()
+    old_md = _hermes(home).skill_dirs[0] / "SKILL.md"
+    moved_dir = home / ".hermes" / "skills" / "devops" / "github-issues"
+    moved_dir.parent.mkdir(parents=True)
+    shutil.move(str(old_md.parent), str(moved_dir))
+
+    async def plan():
+        return _rows(await ni.ImportRunner(
+            _hermes(home), skills_dir=skills_dir, sections=("skills",)
+        ).plan())
+
+    rows = await plan()
+    assert [(r["slug"], r["status"], r["reason"]) for r in rows] == [
+        ("github-issues", "unchanged", "source_moved")
+    ]
+    assert rows[0]["moved_from"] == str(old_md)
+    assert rows[0]["source_path"] == str(moved_dir / "SKILL.md")
+
+    new = _edit_source(moved_dir)
+    rows = await plan()
+    assert [(r["status"], r["reason"]) for r in rows] == [("changed", "source_moved")]
+    assert rows[0]["diff"]["lines_added"] == 1 and rows[0]["moved_from"] == str(old_md)
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+    auth = RecordingAuthorizer()
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), authorizer=auth, skills_dir=skills_dir, sections=("skills",),
+        update_skills=True, skill_backup_dir=tmp_path / "bk", approval_revoker=loader.revoke_approval,
+    ).apply())
+    assert [(r["status"], r["reason"]) for r in rows] == [("reimported", "")]
+    assert [a.payload["op"] for a in auth.actions] == ["reimport"]
+    assert (target / "SKILL.md").read_bytes() == new and (target / "PENDING_REVIEW").exists()
+    sidecar = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    assert sidecar["source_path"] == str(moved_dir / "SKILL.md")
+    assert [(r["status"], r["reason"]) for r in await plan()] == [("unchanged", "")]
+
+    # A second folder declaring the same name while the tracked source still exists
+    # is not a move: it stays a foreign skill that is never written over.
+    twin = home / ".hermes" / "skills" / "archive" / "github-issues"
+    shutil.copytree(moved_dir, twin)
+    (twin / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
+    assert sorted((r["status"], r["reason"]) for r in await plan()) == [
+        ("skipped", "exists"), ("unchanged", ""),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "control", ["PENDING_REVIEW", "SKILL.md", "SKILL.sig", "OWNER_APPROVED_IN_PROCESS"]
+)
+async def test_reimport_refuses_a_linked_control_file_and_never_writes_through_it(
+    home, tmp_path, control
+):
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("owner data\n", encoding="utf-8")
+    (target / control).unlink(missing_ok=True)
+    try:
+        (target / control).symlink_to(victim)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    revoked: list = []
+    result = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=tmp_path / "bk",
+        revoke_approval=revoked.append,
+    )
+    assert (result["status"], result["reason"]) == ("rejected", "target_not_plain")
+    assert victim.read_text(encoding="utf-8") == "owner data\n"
+    assert not (tmp_path / "bk").exists() and revoked == []
+
+
+@pytest.mark.asyncio
+async def test_reimport_refuses_a_control_directory_and_a_linked_manifest(home, tmp_path):
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    kwargs = {"overwrite": True, "backup_dir": tmp_path / "bk", "revoke_approval": lambda p: True}
+
+    (target / "PENDING_REVIEW").unlink()
+    (target / "PENDING_REVIEW").mkdir()
+    result = await importer.import_local_skill(skill_dir, "hermes", **kwargs)
+    assert (result["status"], result["reason"]) == ("rejected", "target_not_plain")
+    (target / "PENDING_REVIEW").rmdir()
+
+    # A linked manifest.json is not a record this importer wrote: the skill reads as
+    # foreign and is never re-imported (nor is anything written through the link).
+    sidecar = target / "manifest.json"
+    real = tmp_path / "real_manifest.json"
+    real.write_bytes(sidecar.read_bytes())
+    sidecar.unlink()
+    try:
+        sidecar.symlink_to(real)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    before = real.read_bytes()
+    result = await importer.import_local_skill(skill_dir, "hermes", **kwargs)
+    assert (result["status"], result["reason"]) == ("skipped", "exists_not_imported_from_source")
+    assert real.read_bytes() == before
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert not (tmp_path / "bk").exists()
+
+
+@pytest.mark.asyncio
+async def test_owner_edit_of_the_imported_copy_is_reported_and_kept_in_the_backup(home, tmp_path):
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    owner_edit = SKILL_MD + "- my own note\n"
+    (target / "SKILL.md").write_text(owner_edit, encoding="utf-8")
+
+    probe = await importer.import_local_skill(skill_dir, "hermes", dry_run=True)
+    assert probe["status"] == "changed" and probe["local_modified"] is True
+    assert any("my own note" in line for line in probe["diff"]["preview"])
+
+    result = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=tmp_path / "bk",
+        revoke_approval=lambda path: True,
+    )
+    assert result["status"] == "reimported" and result["local_modified"] is True
+    assert Path(result["backup_path"]).read_text(encoding="utf-8") == owner_edit
+
+
+@pytest.mark.asyncio
+async def test_reimport_with_an_unusable_backup_dir_writes_nothing(home, tmp_path):
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    (target / "SKILL.sig").write_text("old-signature", encoding="utf-8")
+    blocker = tmp_path / "bk"
+    blocker.write_text("a file where the backup folder should be", encoding="utf-8")
+    before = _snapshot(target)
+    revoked: list = []
+    result = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=blocker, revoke_approval=revoked.append
+    )
+    assert (result["status"], result["reason"]) == ("rejected", "backup_failed")
+    assert _snapshot(target) == before and revoked == []
+
+
+@pytest.mark.asyncio
+async def test_reimport_save_refusal_fails_closed_under_the_quarantine_marker(
+    home, tmp_path, monkeypatch
+):
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    (target / "PENDING_REVIEW").unlink()  # the owner had approved the old bytes
+    (target / "SKILL.sig").write_text("old-signature", encoding="utf-8")
+
+    async def refuse(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(importer, "_save_skill", refuse)
+    revoked: list = []
+    result = await importer.import_local_skill(
+        skill_dir, "hermes", overwrite=True, backup_dir=tmp_path / "bk",
+        revoke_approval=revoked.append,
+    )
+    assert (result["status"], result["reason"]) == ("rejected", "save_refused")
+    assert (target / "PENDING_REVIEW").exists() and not (target / "SKILL.sig").exists()
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert Path(result["backup_path"]).read_text(encoding="utf-8") == SKILL_MD
+    assert revoked == []
+
+
+@pytest.mark.asyncio
+async def test_reimport_refuses_a_target_outside_the_skills_tree(home, tmp_path):
+    import shutil
+
+    from agents.core.skills import importer as importer_mod
+
+    importer, skill_dir, target = await _imported_then_changed(home, tmp_path)
+    outside = tmp_path / "elsewhere" / "github-issues"
+    shutil.copytree(target, outside)
+    raw = (skill_dir / "SKILL.md").read_bytes()
+    result = await importer_mod._reimport_local_skill(
+        importer, outside, skill_dir / "SKILL.md", "hermes",
+        text=raw.decode("utf-8"), raw=raw, digest="b" * 64, flags=[], old_digest="a" * 64,
+        local_modified=False, backup_dir=tmp_path / "bk", revoke_approval=lambda p: True,
+    )
+    assert (result["status"], result["reason"]) == ("rejected", "target_outside_skills_dir")
+    assert (outside / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert not (tmp_path / "bk").exists()
+
+
+@pytest.mark.asyncio
+async def test_rescan_reports_an_oversized_or_undecodable_source_as_unreadable(home, tmp_path):
+    skills_dir = tmp_path / "skills"
+    await ni.ImportRunner(
+        _hermes(home), authorizer=RecordingAuthorizer(), skills_dir=skills_dir, sections=("skills",)
+    ).apply()
+    skill_md = _hermes(home).skill_dirs[0] / "SKILL.md"
+
+    skill_md.write_bytes(b"x" * (256 * 1024 + 1))
+    rows = _rows(await ni.ImportRunner(
+        _hermes(home), skills_dir=skills_dir, sections=("skills",)
+    ).plan())
+    assert [(r["status"], r["reason"]) for r in rows] == [("source_unreadable", "skill_md_too_large")]
+
+    skill_md.write_bytes(b"---\nname: \xff\xfe\n---\n")
+    [row] = ni.rescan_imported(skills_dir, "hermes", home=home)
+    assert (row["status"], row["reason"]) == ("source_unreadable", "skill_md_unreadable")
+    assert (skills_dir / "github-issues" / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+
+
+@pytest.mark.asyncio
+async def test_rescan_never_follows_a_record_outside_the_install(home, tmp_path):
+    """An in-tree manifest.json that names a file outside the source's install is
+    not trusted: the file is never opened and its frontmatter never surfaces."""
+    skills_dir = tmp_path / "skills"
+    innocent = skills_dir / "innocent"
+    innocent.mkdir(parents=True)
+    private = tmp_path / "private-notes" / "plan.md"
+    private.parent.mkdir()
+    private.write_text("---\nname: acquire-competitor-x\n---\n# secret\n", encoding="utf-8")
+
+    def forge(source_path: str) -> None:
+        (innocent / "manifest.json").write_text(json.dumps({
+            "source_install": "hermes", "source_path": source_path, "content_sha256": "a" * 64,
+        }), encoding="utf-8")
+
+    sneaky = str(home / ".hermes" / "skills" / ".." / ".." / "private-notes" / "plan.md")
+    # Not even probed for existence: a missing outside path is untrusted, not "removed".
+    absent = str(tmp_path / "elsewhere" / "SKILL.md")
+    for forged in (str(private), sneaky, absent):
+        forge(forged)
+        planned = _rows(await ni.ImportRunner(
+            _hermes(home), skills_dir=skills_dir, sections=("skills",)
+        ).plan())
+        for rows in (
+            ni.rescan_imported(skills_dir, "hermes", home=home),
+            ni.rescan_imported(skills_dir, "hermes"),  # default: the real ~/.hermes
+            [r for r in planned if r["slug"] == "innocent"],
+        ):
+            assert rows == [{
+                "slug": "innocent", "status": "source_untrusted",
+                "reason": "source_path_outside_install", "source_path": forged, "sha256": "a" * 64,
+            }]
+            assert "acquire-competitor-x" not in json.dumps(rows)
+
+    link = home / ".hermes" / "skills" / "linked-out.md"
+    try:
+        link.symlink_to(private)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    forge(str(link))
+    [row] = ni.rescan_imported(skills_dir, "hermes", home=home)
+    assert (row["status"], row["reason"]) == ("source_removed", "source_not_plain_file")
+    assert "new_slug" not in row
+
+    # A linked directory on the way: lexically inside, really outside — never read.
+    (home / ".hermes" / "skills" / "notes").symlink_to(private.parent, target_is_directory=True)
+    forge(str(home / ".hermes" / "skills" / "notes" / "plan.md"))
+    [row] = ni.rescan_imported(skills_dir, "hermes", home=home)
+    assert (row["status"], row["reason"]) == ("source_untrusted", "source_path_outside_install")
+    assert "acquire-competitor-x" not in json.dumps(row)
+
+
 # ── CLI ───────────────────────────────────────────────────────────
 
 
@@ -912,9 +1191,12 @@ def test_cli_update_reimports_changed_skills_only_with_apply(home, tmp_path, mon
     assert "1 unchanged" in capsys.readouterr().out
 
 
-def test_cli_reports_source_removed_when_the_whole_install_is_gone(home, tmp_path, capsys):
+def test_cli_reports_source_removed_when_the_whole_install_is_gone(
+    home, tmp_path, monkeypatch, capsys
+):
     import shutil
 
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "data"))  # a private kill switch
     skills_dir = tmp_path / "skills"
     base = ["--from", "hermes", "--home", str(home), "--only", "skills", "--skills-dir", str(skills_dir)]
     assert ni.main([*base, "--apply"]) == 0
@@ -927,6 +1209,118 @@ def test_cli_reports_source_removed_when_the_whole_install_is_gone(home, tmp_pat
     assert [(r["slug"], r["status"]) for r in rows] == [("github-issues", "source_removed")]
     assert report["source"]["source"] == "hermes"
     assert (skills_dir / "github-issues" / "SKILL.md").exists()
+
+
+def _kill_switch(data_home: Path):
+    from agents.core.security.capability import KillSwitch
+
+    return KillSwitch(data_home / "kill_switch.json")  # the hub's data_path("kill_switch.json")
+
+
+def test_cli_skill_writes_cross_the_real_kernel_and_honour_the_kill_switch(
+    home, tmp_path, monkeypatch, capsys
+):
+    """The shipped entry point binds the real Action Kernel for skill.install: a
+    persisted, engaged kill switch refuses the import AND the --update re-import
+    before a byte moves; with the switch off the ``external`` origin keeps the
+    decision at QUEUE, which lands the skill quarantined."""
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("JARVIS_HOME", str(data_home))
+    skills_dir = tmp_path / "skills"
+    target = skills_dir / "github-issues"
+    base = ["--from", "hermes", "--home", str(home), "--only", "skills", "--skills-dir", str(skills_dir)]
+
+    _kill_switch(data_home).engage(reason="owner halt")
+    assert ni.main([*base, "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "1 denied" in out and "kill-switch engaged" in out
+    assert not target.exists()
+
+    _kill_switch(data_home).disengage()
+    assert ni.main([*base, "--apply", "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)[0]["sections"]["skills"]
+    assert row["status"] == "imported" and row["kernel"] == "queue"
+    assert (target / "PENDING_REVIEW").exists()
+
+    _edit_source(_hermes(home).skill_dirs[0])
+    _kill_switch(data_home).engage(reason="owner halt")
+    assert ni.main([*base, "--apply", "--update", "--json"]) == 0
+    [row] = json.loads(capsys.readouterr().out)[0]["sections"]["skills"]
+    assert row["status"] == "denied" and "kill-switch engaged" in row["reason"]
+    assert (target / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
+    assert not (data_home / "imports" / "skill_backups").exists()
+
+    _kill_switch(data_home).disengage()
+    assert ni.main([*base, "--apply", "--update"]) == 0
+    assert "1 reimported" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_runner_default_authorizer_is_the_kernel_for_skills_and_queue_for_memory(
+    home, tmp_path, monkeypatch
+):
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("JARVIS_HOME", str(data_home))
+    skills_dir = tmp_path / "skills"
+    runner = ni.ImportRunner(
+        _hermes(home), skills_dir=skills_dir,
+        pending_store=ni.PendingMemoryStore(tmp_path / "m.db"), sections=("skills", "memory"),
+    )
+    _kill_switch(data_home).engage(reason="owner halt")
+    report = await runner.apply()
+    assert [r["status"] for r in _rows(report)] == ["denied"]
+    assert not (skills_dir / "github-issues").exists()
+    # kg.write keeps the queue-only leg: a queued proposal is not a graph write.
+    assert sorted({r["status"] for r in report["sections"]["memory"]}) == ["denied", "queued"]
+
+    # The kill switch is read per decision: disengaging it mid-life is honoured.
+    _kill_switch(data_home).disengage()
+    [row] = _rows(await runner.apply())
+    assert row["status"] == "imported" and row["kernel"] == "queue"
+
+
+def test_cli_relative_home_records_an_absolute_source_path(home, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "data"))
+    skills_dir = tmp_path / "skills"
+    base = ["--from", "hermes", "--only", "skills", "--skills-dir", str(skills_dir)]
+    monkeypatch.chdir(home.parent)
+    assert ni.main([*base, "--home", home.name, "--apply"]) == 0
+    capsys.readouterr()
+    sidecar = json.loads((skills_dir / "github-issues" / "manifest.json").read_text(encoding="utf-8"))
+    assert Path(sidecar["source_path"]).is_absolute()
+
+    monkeypatch.chdir("/")
+    assert ni.main([*base, "--home", str(home), "--json"]) == 0
+    [report] = json.loads(capsys.readouterr().out)
+    assert [(r["status"], r["reason"]) for r in report["sections"]["skills"]] == [("unchanged", "")]
+
+
+def test_cli_names_a_replaced_owner_edit_and_a_failed_revoke(home, tmp_path, monkeypatch, capsys):
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("JARVIS_HOME", str(data_home))
+    skills_dir = tmp_path / "skills"
+    target = skills_dir / "github-issues"
+    base = ["--from", "hermes", "--home", str(home), "--only", "skills", "--skills-dir", str(skills_dir)]
+    assert ni.main([*base, "--apply"]) == 0
+    capsys.readouterr()
+
+    (target / "SKILL.md").write_text(SKILL_MD + "- my own note\n", encoding="utf-8")
+    _edit_source(_hermes(home).skill_dirs[0])
+    registry = data_home / "security" / "skill_approvals.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text("{not json", encoding="utf-8")
+
+    assert ni.main([*base, "--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "1 changed" in out and "local edit" in out  # warned before --update
+
+    assert ni.main([*base, "--apply", "--update"]) == 0
+    out = capsys.readouterr().out
+    assert "1 reimported" in out
+    [backup] = list((data_home / "imports" / "skill_backups" / "github-issues").iterdir())
+    assert "local edit" in out and str(backup) in out
+    assert "could not be revoked" in out
+    assert backup.read_text(encoding="utf-8").endswith("- my own note\n")
 
 
 # ── BUG-13: live smoke lane (schedule-only CI, var-gated; skipped locally) ──

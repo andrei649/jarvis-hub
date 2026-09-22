@@ -609,6 +609,7 @@ class SkillImporter:
         expected_sha256: Optional[str] = None,
         backup_dir: Optional[Path] = None,
         revoke_approval: Optional[Callable[[Path], bool]] = None,
+        source_root: Optional[Path] = None,
     ) -> dict:
         """Copy one local ``SKILL.md`` (a Hermes/OpenClaw/Claude Code install) into
         the skills tree, **quarantined** — see ``_import_local_skill`` below.
@@ -629,6 +630,11 @@ class SkillImporter:
         edited in between is refused. ``injection_flags`` lists
         ``quarantine.detect_injection`` hits for the owner's review card; a hit
         does not block the import because the skill is quarantined either way.
+        ``source_root`` (the install root, e.g. ``~/.hermes``) lets a re-run follow
+        a skill whose folder moved inside that install: the recorded file is gone
+        and this one declares the same name, so it reads ``unchanged``/``changed``
+        with reason ``source_moved`` and ``moved_from``, and a re-import records
+        the new path. Without it a moved source reads ``skipped``/``exists``.
         A dry run touches nothing on disk.
         """
         return await _import_local_skill(
@@ -640,6 +646,7 @@ class SkillImporter:
             expected_sha256=expected_sha256,
             backup_dir=backup_dir,
             revoke_approval=revoke_approval,
+            source_root=source_root,
         )
 
     def list_imported(self) -> list[dict]:
@@ -795,12 +802,25 @@ def _scan_skill_dirs(skills_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(found))
 
 
+def _home_base(home: Optional[Path]) -> Path:
+    """*home* (default ``~``) as an absolute, resolved directory.
+
+    Resolved once, here: every path detection hands out — and so every
+    ``source_path`` an import records — is absolute, so a later re-run from another
+    working directory (or with ``--home`` spelled differently) still recognises the
+    same source file instead of misreporting it as removed. Only the base is
+    resolved; the install root and everything below it are still checked with
+    ``lstat`` semantics, so a linked install is refused exactly as before.
+    """
+    base = Path(home).expanduser() if home is not None else Path.home()
+    return base.resolve()
+
+
 def install_root(source: str, home: Optional[Path] = None) -> Path:
     """Where *source*'s install lives under *home* (default ``~``); it may not exist."""
     if source not in MIGRATION_SOURCES:
         raise ValueError(f"unknown migration source: {source!r}")
-    base = Path(home).expanduser() if home is not None else Path.home()
-    return base / _MIGRATION_LAYOUTS[source]["root"][0]
+    return _home_base(home) / _MIGRATION_LAYOUTS[source]["root"][0]
 
 
 def detect_sources(home: Optional[Path] = None, only: Optional[str] = None) -> list[DetectedSource]:
@@ -811,7 +831,7 @@ def detect_sources(home: Optional[Path] = None, only: Optional[str] = None) -> l
     to a single source name; an unknown name raises ``ValueError`` so a CLI typo
     cannot silently detect nothing.
     """
-    base = Path(home).expanduser() if home is not None else Path.home()
+    base = _home_base(home)
     if only is not None and only not in MIGRATION_SOURCES:
         raise ValueError(f"unknown migration source: {only!r}")
     detected: list[DetectedSource] = []
@@ -874,7 +894,53 @@ _REIMPORT_CONTROL_FILES: tuple[str, ...] = (
 
 
 def _same_path(a: str, b: str) -> bool:
-    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    try:
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+    except (OSError, ValueError):
+        return False
+
+
+def _lexically_inside(path, root) -> bool:
+    """*path*, normalised without touching the filesystem, lies under *root*."""
+    try:
+        lexical = Path(os.path.normcase(os.path.abspath(path)))
+        roots = {
+            Path(os.path.normcase(os.path.abspath(root))),
+            Path(os.path.normcase(os.path.realpath(root))),
+        }
+    except (OSError, ValueError):
+        return False
+    return any(lexical.is_relative_to(candidate) for candidate in roots)
+
+
+def _really_inside(path, root) -> bool:
+    """*path*, with every existing link resolved, still lies under *root*."""
+    try:
+        real = Path(os.path.normcase(os.path.realpath(path)))
+        return real.is_relative_to(Path(os.path.normcase(os.path.realpath(root))))
+    except (OSError, ValueError):
+        return False
+
+
+def _source_moved(record: dict, skill_md: Path, source_root: Optional[Path]) -> bool:
+    """The recorded source file is gone and *skill_md* is where it went.
+
+    A Hermes category reorganisation moves ``skills/github/x`` to
+    ``skills/devops/x`` and keeps the declared name. Both paths must lie inside the
+    same install (lexically and with links resolved) and the recorded path must no
+    longer exist at all: while it does, a second folder declaring the same name is
+    a different skill, never the tracked one.
+    """
+    if source_root is None:
+        return False
+    recorded = record["source_path"]
+    for path in (recorded, skill_md):
+        if not (_lexically_inside(path, source_root) and _really_inside(path, source_root)):
+            return False
+    try:
+        return not os.path.lexists(recorded)
+    except (OSError, ValueError):
+        return False
 
 
 def _read_import_record(target: Path) -> Optional[dict]:
@@ -923,19 +989,30 @@ def _diff_summary(old: bytes, new: bytes) -> dict:
 
 
 def _classify_existing(
-    target: Path, skill_md: Path, source: str, raw: bytes, digest: str
+    target: Path,
+    skill_md: Path,
+    source: str,
+    raw: bytes,
+    digest: str,
+    source_root: Optional[Path] = None,
 ) -> dict:
-    """``exists`` / ``unchanged`` / ``changed`` for an already-present *target*."""
+    """``exists`` / ``unchanged`` / ``changed`` for an already-present *target*.
+
+    A record naming another file of the same install that no longer exists is
+    followed to *skill_md* (``moved_from`` + reason ``source_moved``) when
+    *source_root* is given; see :func:`_source_moved`.
+    """
     record = _read_import_record(target)
-    if (
-        record is None
-        or record.get("source_install") != source
-        or not _same_path(record["source_path"], str(skill_md))
-    ):
+    if record is None or record.get("source_install") != source:
         return {"status": "exists"}
+    moved: dict = {}
+    if not _same_path(record["source_path"], str(skill_md)):
+        if not _source_moved(record, skill_md, source_root):
+            return {"status": "exists"}
+        moved = {"moved_from": record["source_path"], "source_path": str(skill_md)}
     old_digest = record["content_sha256"]
     if old_digest == digest:
-        return {"status": "unchanged"}
+        return {"status": "unchanged", **moved}
     current = target / "SKILL.md"
     try:
         local = current.read_bytes() if _is_plain_file(current) else b""
@@ -949,6 +1026,7 @@ def _classify_existing(
         # edit (the backup keeps it), so the report says so up front.
         "local_modified": hashlib.sha256(local).hexdigest() != old_digest,
         "diff": _diff_summary(local, raw),
+        **moved,
     }
 
 
@@ -988,6 +1066,8 @@ async def _reimport_local_skill(
     old_digest: str,
     backup_dir: Optional[Path],
     revoke_approval: Optional[Callable[[Path], bool]],
+    local_modified: bool = False,
+    moved_from: str = "",
 ) -> dict:
     slug = target.name
     info = {
@@ -995,7 +1075,12 @@ async def _reimport_local_skill(
         "old_sha256": old_digest,
         "new_sha256": digest,
         "injection_flags": flags,
+        # The owner had edited the imported copy: this re-import replaces that edit
+        # and the backup below is where it survives (the CLI names the path).
+        "local_modified": bool(local_modified),
     }
+    if moved_from:
+        info.update(moved_from=moved_from, source_path=str(skill_md))
     if backup_dir is None:
         return _local_skill_result(slug, "rejected", "backup_dir_unset", **info)
     if revoke_approval is None:
@@ -1081,10 +1166,13 @@ async def _import_local_skill(
     expected_sha256: Optional[str] = None,
     backup_dir: Optional[Path] = None,
     revoke_approval: Optional[Callable[[Path], bool]] = None,
+    source_root: Optional[Path] = None,
 ) -> dict:
     if source not in MIGRATION_SOURCES:
         return _local_skill_result(None, "rejected", "unknown_source")
-    skill_md = Path(skill_dir) / "SKILL.md"
+    # Absolute before anything is recorded: a relative skill_dir (or --home) would
+    # otherwise write a cwd-relative source_path that no later re-run can match.
+    skill_md = Path(os.path.abspath(skill_dir)) / "SKILL.md"
     if not _is_plain_file(skill_md):
         return _local_skill_result(None, "rejected", "skill_md_missing_or_not_plain_file")
     try:
@@ -1115,25 +1203,28 @@ async def _import_local_skill(
         )
     target = importer.skills_dir / slug
     if target.exists() or target.is_symlink():
-        state = _classify_existing(target, skill_md, source, raw, digest)
+        state = _classify_existing(target, skill_md, source, raw, digest, source_root)
         status = state.pop("status")
         if status == "exists":
             reason = "exists_not_imported_from_source" if overwrite else "exists"
             return _local_skill_result(
                 slug, "skipped", reason, sha256=digest, injection_flags=flags
             )
+        moved = "moved_from" in state
         if status == "unchanged":
             return _local_skill_result(
                 slug,
                 "unchanged",
-                "",
+                "source_moved" if moved else "",
                 sha256=digest,
                 injection_flags=flags,
                 quarantined=(target / "PENDING_REVIEW").exists(),
+                **state,
             )
         if dry_run or not overwrite:
+            reason = "source_moved" if moved else "source_changed"
             return _local_skill_result(
-                slug, "changed", "source_changed", sha256=digest, injection_flags=flags, **state
+                slug, "changed", reason, sha256=digest, injection_flags=flags, **state
             )
         return await _reimport_local_skill(
             importer,
@@ -1147,6 +1238,8 @@ async def _import_local_skill(
             old_digest=state["old_sha256"],
             backup_dir=backup_dir,
             revoke_approval=revoke_approval,
+            local_modified=state["local_modified"],
+            moved_from=state.get("moved_from", ""),
         )
     if dry_run:
         return _local_skill_result(
@@ -1177,7 +1270,13 @@ async def _import_local_skill(
     )
 
 
-def rescan_imported(skills_dir: Path, source: Optional[str] = None) -> list[dict]:
+def rescan_imported(
+    skills_dir: Path,
+    source: Optional[str] = None,
+    *,
+    home: Optional[Path] = None,
+    root: Optional[Path] = None,
+) -> list[dict]:
     """Imported skills whose recorded source is gone or now declares another name.
 
     Read-only (H344). Walks the direct children of *skills_dir* (bounded, never
@@ -1188,14 +1287,22 @@ def rescan_imported(skills_dir: Path, source: Optional[str] = None) -> list[dict
     when it can no longer be read within the import bound. A still-matching source
     yields no row: the per-skill re-detect covers it. Nothing is deleted: removing
     an imported skill stays the owner's decision.
+
+    A record is only followed inside its own install: *root* (one source's install
+    root, e.g. a ``DetectedSource.root``) or else ``install_root(source, home)``.
+    ``manifest.json`` lives in the skills tree, so a record naming a file anywhere
+    else — lexically, or once links are resolved — is reported ``source_untrusted``
+    and that file is never opened (its frontmatter never surfaces as ``new_slug``).
     """
     if source is not None and source not in MIGRATION_SOURCES:
         raise ValueError(f"unknown migration source: {source!r}")
-    root = Path(skills_dir)
-    if not _is_plain_dir(root):
+    if root is not None and source is None:
+        raise ValueError("root names one install: pass the source it belongs to")
+    base = Path(skills_dir)
+    if not _is_plain_dir(base):
         return []
     try:
-        children = sorted(root.iterdir())[:_MAX_RESCAN_DIRS]
+        children = sorted(base.iterdir())[:_MAX_RESCAN_DIRS]
     except OSError:
         return []
     rows: list[dict] = []
@@ -1203,8 +1310,16 @@ def rescan_imported(skills_dir: Path, source: Optional[str] = None) -> list[dict
         record = _read_import_record(target)
         if record is None or (source is not None and record["source_install"] != source):
             continue
+        trusted_root = root if root is not None else install_root(record["source_install"], home)
         source_path = Path(record["source_path"])
         info = {"source_path": str(source_path), "sha256": record["content_sha256"]}
+        if not _lexically_inside(source_path, trusted_root):
+            rows.append(
+                _local_skill_result(
+                    target.name, "source_untrusted", "source_path_outside_install", **info
+                )
+            )
+            continue
         try:
             linked = source_path.is_symlink()
             missing = not linked and not source_path.exists()
@@ -1219,6 +1334,14 @@ def rescan_imported(skills_dir: Path, source: Optional[str] = None) -> list[dict
         if not plain:
             rows.append(
                 _local_skill_result(target.name, "source_removed", "source_not_plain_file", **info)
+            )
+            continue
+        if not _really_inside(source_path, trusted_root):
+            # A linked directory on the way out of the install: never read through it.
+            rows.append(
+                _local_skill_result(
+                    target.name, "source_untrusted", "source_path_outside_install", **info
+                )
             )
             continue
         if not _is_plain_file(source_path):

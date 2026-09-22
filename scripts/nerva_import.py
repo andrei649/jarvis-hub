@@ -9,14 +9,17 @@ What each foreign artefact becomes (and what it never becomes):
 
 * **skills**   → copied into the skills tree **quarantined** (``PENDING_REVIEW``):
   registered for owner review, never exec'd in-process until approved (CDX-8).
-  Every write crosses the ``skill.install`` kernel kind through the same injected
-  authorizer as memory; a DENY writes nothing, and even a GRANT lands quarantined.
+  Every write crosses the ``skill.install`` kind of the real Action Kernel
+  (``kernel.authorize`` with the persisted kill switch, re-read per decision):
+  a DENY — an engaged kill switch — writes nothing, and the ``external`` origin
+  keeps even a policy GRANT at QUEUE, so every write lands quarantined.
   A re-run re-detects each imported skill against its recorded source file and
   digest: ``unchanged`` / ``changed`` (both digests + a bounded diff) /
-  ``source_removed``. ``--apply --update`` re-imports only the changed ones: the
-  current copy is backed up under ``data/imports/skill_backups``, the skill goes
-  back to ``PENDING_REVIEW`` and the owner's approval of the old bytes is revoked.
-  Import-once, never a live scan of a foreign directory (H344).
+  ``source_removed`` / ``source_renamed``, and follows a folder moved inside the
+  install (``source_moved``). ``--apply --update`` re-imports only the changed
+  ones: the current copy is backed up under ``data/imports/skill_backups``, the
+  skill goes back to ``PENDING_REVIEW`` and the owner's approval of the old bytes
+  is revoked. Import-once, never a live scan of a foreign directory (H344).
 * **persona**  (SOUL.md / USER.md / IDENTITY.md / CLAUDE.md) → a *preview* file under
   ``data/imports/<source>/persona_preview.md``. It never overwrites an agent's
   ``SOUL.local.md`` — adopting a persona stays an owner edit.
@@ -563,11 +566,50 @@ class QueueDecision:
 
 
 def queue_only_authorizer(action) -> QueueDecision:
-    """The default hook: never GRANTs. Every imported fact goes to the owner queue;
-    every imported skill lands quarantined for owner review."""
+    """The ``kg.write`` leg: never GRANTs. Every imported fact goes to the owner
+    queue (for memory QUEUE means *not written*). Skills never reach it by default:
+    :func:`kernel_import_authorizer` sends ``skill.install`` to the real kernel."""
     if getattr(action, "kind", None) == SKILL_INSTALL_KIND:
         return QueueDecision(reason="imported_skill_requires_owner_review")
     return QueueDecision()
+
+
+def kernel_import_authorizer(
+    *, kill_switch_path: Path | None = None, policy=None
+) -> Callable[[Any], Any]:
+    """The default authorizer, composed by action kind.
+
+    * ``skill.install`` → the real ``kernel.authorize``: for skills QUEUE *writes*
+      (quarantined), so the stub's constant QUEUE would let a halted system keep
+      rewriting the skills tree. The kill switch is loaded from disk on every
+      decision (``data_path("kill_switch.json")`` unless *kill_switch_path*), so a
+      halt engaged in the HUD while a long import runs stops the next write. The
+      policy (default :class:`AutonomyPolicy`) never DENYs and the ``external``
+      origin escalates a GRANT to QUEUE; both land the skill quarantined.
+    * everything else (``kg.write``) → :func:`queue_only_authorizer`: a queued
+      memory fact is a proposal in the owner's pending store, not a graph write.
+
+    No audit sink is bound: the hub's ``IntentLog`` is a hash-chained whole-file
+    JSON store that a second process appending to would fork. Each decision is on
+    its report row (``kernel`` / ``kernel_reason``) and in the kernel metrics.
+    """
+
+    def _authorize(action):
+        if getattr(action, "kind", None) != SKILL_INSTALL_KIND:
+            return queue_only_authorizer(action)
+        from agents.core.autonomy.policy import AutonomyPolicy
+        from agents.core.kernel import authorize
+        from agents.core.paths import data_path
+        from agents.core.security.capability import KillSwitch
+
+        path = kill_switch_path if kill_switch_path is not None else data_path("kill_switch.json")
+        return authorize(
+            action,
+            kill_switch=KillSwitch(path),
+            policy=policy if policy is not None else AutonomyPolicy(),
+        )
+
+    return _authorize
 
 
 def build_kernel_action(fact: MemoryFact):
@@ -605,14 +647,16 @@ def _verdict_of(decision) -> str:
 class ImportRunner:
     """Plan (dry run) or apply one detected source.
 
-    ``authorizer`` is the kernel seam: ``authorizer(Action) -> Decision``. It is
-    injected — the CLI passes :func:`queue_only_authorizer`; a HUD route can pass
-    the bound Action Kernel. ``kg_writer(fact)`` is only ever called after a GRANT.
-    Skill writes cross the same seam as ``skill.install``: GRANT or QUEUE both land
-    the skill quarantined (``PENDING_REVIEW`` is the owner-review queue for skills),
-    anything else writes nothing. ``update_skills`` re-imports skills whose source
-    changed since import; it needs ``skill_backup_dir`` and ``approval_revoker``
-    (``SkillLoader.revoke_approval``) or the importer refuses the re-import.
+    ``authorizer`` is the kernel seam: ``authorizer(Action) -> Decision``. The
+    default (and what the CLI binds) is :func:`kernel_import_authorizer`: the real
+    Action Kernel for ``skill.install``, queue-only for ``kg.write``; a HUD route
+    can pass its bound kernel. ``kg_writer(fact)`` is only ever called after a
+    GRANT. Skill writes cross the seam as ``skill.install``: GRANT or QUEUE both
+    land the skill quarantined (``PENDING_REVIEW`` is the owner-review queue for
+    skills), anything else writes nothing. ``update_skills`` re-imports skills
+    whose source changed since import (or moved inside the install); it needs
+    ``skill_backup_dir`` and ``approval_revoker`` (``path -> bool``, e.g.
+    ``SkillLoader.revoke_approval``) or the importer refuses the re-import.
     """
 
     def __init__(
@@ -635,7 +679,7 @@ class ImportRunner:
         if unknown:
             raise ValueError(f"unknown sections: {sorted(unknown)}")
         self.source = source
-        self.authorizer = authorizer or queue_only_authorizer
+        self.authorizer = authorizer or kernel_import_authorizer()
         self.secret_store = secret_store
         self.skills_dir = skills_dir
         self.kg_writer = kg_writer
@@ -675,7 +719,9 @@ class ImportRunner:
                 continue
             # Re-detect first, always read-only: would_import / unchanged / changed /
             # skipped / rejected. Only a write that is actually wanted is mediated.
-            probe = await importer.import_local_skill(skill_dir, self.source.source, dry_run=True)
+            probe = await importer.import_local_skill(
+                skill_dir, self.source.source, dry_run=True, source_root=self.source.root
+            )
             wanted = probe["status"] == "would_import" or (
                 probe["status"] == "changed" and self.update_skills
             )
@@ -684,7 +730,15 @@ class ImportRunner:
                 continue
             results.append(await self._install_skill(importer, skill_dir, probe))
         if importer is not None:
-            results.extend(rescan_imported(importer.skills_dir, self.source.source))
+            # A record already followed to its new folder is not "removed".
+            followed = {row["slug"] for row in results if row.get("moved_from")}
+            results.extend(
+                row
+                for row in rescan_imported(
+                    importer.skills_dir, self.source.source, root=self.source.root
+                )
+                if row["slug"] not in followed
+            )
         return results
 
     async def _install_skill(self, importer: SkillImporter, skill_dir: Path, probe: dict) -> dict:
@@ -718,6 +772,7 @@ class ImportRunner:
             expected_sha256=probe["sha256"],
             backup_dir=self.skill_backup_dir,
             revoke_approval=self.approval_revoker,
+            source_root=self.source.root,
         )
         result.update(kernel=verdict, kernel_reason=reason)
         return result
@@ -853,15 +908,84 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _approval_revoker() -> Callable[[Path], bool]:
-    """``SkillLoader.revoke_approval`` over the default approval registry: the seam
-    the marketplace uninstall route uses. Constructing the loader runs no discovery."""
-    from agents.core.skills.loader import SkillLoader
+    """Drop the owner's approval for a re-imported skill from the default registry.
 
-    return SkillLoader().revoke_approval
+    True means the registry now holds no approval for that path (one was removed,
+    or there was none); False means the registry could not be read or written. It
+    calls ``SkillApprovalStore.revoke`` directly because ``SkillLoader.revoke_approval``
+    folds "nothing to revoke" and "registry corrupt" into the same False, and the
+    owner is told only about the second. The re-imported skill is quarantined by its
+    ``PENDING_REVIEW`` marker either way.
+    """
+    from agents.core.skills.approval import SkillApprovalStore
+
+    store = SkillApprovalStore()
+
+    def _revoke(path: Path) -> bool:
+        try:
+            store.revoke(Path(path))
+        except Exception:
+            return False
+        return True
+
+    return _revoke
 
 
 def _count(rows, status: str) -> int:
     return sum(1 for row in (rows or []) if row.get("status") == status)
+
+
+def _skill_notes(rows, *, applied_update: bool) -> list[str]:
+    """What the counts alone would hide from the owner, one line each."""
+    rows = list(rows or [])
+    notes: list[str] = []
+    changed = [row for row in rows if row.get("status") == "changed"]
+    if changed and not applied_update:
+        notes.append(
+            f"  ({len(changed)} skill(s) changed at the source: see the diff with --json; "
+            "re-run with --apply --update to re-import them into quarantine)"
+        )
+        edited = [row["slug"] for row in changed if row.get("local_modified")]
+        if edited:
+            notes.append(
+                f"  (your local edit of {', '.join(edited)} would be replaced by --update; "
+                "the current copy is backed up first)"
+            )
+    moved = [row["slug"] for row in rows if row.get("moved_from")]
+    if moved:
+        notes.append(f"  (followed to a new folder inside the install: {', '.join(moved)})")
+    removed = _count(rows, "source_removed")
+    if removed:
+        notes.append(
+            f"  ({removed} imported skill(s) lost their source: the imported copies "
+            "stay until you remove them)"
+        )
+    untrusted = _count(rows, "source_untrusted")
+    if untrusted:
+        notes.append(
+            f"  ({untrusted} imported skill record(s) name a file outside the install: "
+            "not followed)"
+        )
+    denied = [row for row in rows if row.get("status") == "denied"]
+    if denied:
+        notes.append(
+            f"  ({len(denied)} skill write(s) refused at skill.install, nothing written: "
+            f"{denied[0].get('reason') or 'denied'})"
+        )
+    for row in rows:
+        if row.get("status") != "reimported":
+            continue
+        if row.get("local_modified"):
+            notes.append(
+                f"  ! {row['slug']}: your local edit of the imported copy was replaced; "
+                f"it is kept at {row.get('backup_path')}"
+            )
+        if row.get("approval_revoked") is False:
+            notes.append(
+                f"  ! {row['slug']}: the owner approval could not be revoked (the approval "
+                "registry is unreadable); the skill stays quarantined under PENDING_REVIEW"
+            )
+    return notes
 
 
 async def _main_async(args) -> int:
@@ -881,7 +1005,7 @@ async def _main_async(args) -> int:
         in_scope = MIGRATION_SOURCES if args.source == "all" else (args.source,)
         present = {item.source for item in detected}
         for name in in_scope:
-            if name not in present and rescan_imported(skills_dir, name):
+            if name not in present and rescan_imported(skills_dir, name, home=home):
                 detected.append(DetectedSource(source=name, root=install_root(name, home)))
     if not detected:
         print("✗ no Hermes / OpenClaw / Claude Code install detected")
@@ -902,7 +1026,10 @@ async def _main_async(args) -> int:
     for source in detected:
         runner = ImportRunner(
             source,
-            authorizer=queue_only_authorizer,
+            # skill.install → the real Action Kernel (kill switch honoured, per
+            # decision); kg.write → queue-only. Never the constant-QUEUE stub for
+            # skills: for them QUEUE is a write.
+            authorizer=kernel_import_authorizer(),
             secret_store=secret_store,
             skills_dir=skills_dir,
             pending_store=pending_store,
@@ -923,15 +1050,10 @@ async def _main_async(args) -> int:
         print(f"→ {report['source']['source']} at {report['source']['root']} [{mode}]")
         for section in sections:
             print(_summary_line(section, report["sections"].get(section)))
-        skills = report["sections"].get("skills")
-        changed = _count(skills, "changed")
-        if changed and not (args.apply and args.update):
-            print(f"  ({changed} skill(s) changed at the source: see the diff with --json; "
-                  "re-run with --apply --update to re-import them into quarantine)")
-        removed = _count(skills, "source_removed")
-        if removed:
-            print(f"  ({removed} imported skill(s) lost their source: the imported copies "
-                  "stay until you remove them)")
+        for line in _skill_notes(
+            report["sections"].get("skills"), applied_update=args.apply and args.update
+        ):
+            print(line)
     if not args.apply:
         print("  (nothing written — re-run with --apply; memory facts still queue for your approval)")
     return 0
