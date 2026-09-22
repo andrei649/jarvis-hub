@@ -454,7 +454,10 @@ async def test_one_sessions_commit_migrates_the_persona_every_session_reads(tmp_
 
     await b._history_for_prompt(10)
     assert agent.soul["content"] == "You are v2.\n"
-    lines = [r.getMessage() for r in caplog.records if "compaction boundary" in r.getMessage()]
+    # The orchestrator's line only: `jarvis.agent` writes its own "rebuilt at a compaction
+    # boundary" INFO line, captured too whenever an earlier test left the root at INFO.
+    lines = [r.getMessage() for r in caplog.records
+             if r.name == "jarvis.orchestrator" and "compaction boundary" in r.getMessage()]
     assert len(lines) == 1
     assert "session a" in lines[0] and "process-wide" in lines[0] and "foo: prompt rebuilt" in lines[0]
 
