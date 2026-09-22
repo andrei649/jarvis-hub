@@ -11,14 +11,14 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 116 | 16.6% |
-| Parțial | 360 | 51.6% |
+| Parțial | 358 | 51.4% |
 | Lipsă | 92 | 13.2% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 22 | 3.2% |
+| De reverificat | 24 | 3.4% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 116/590 = **19.7%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 108/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 106/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -33,7 +33,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | desktop | 54 | 6 | 35 | 7 | 6 | 0 |
 | tui | 25 | 1 | 13 | 2 | 9 | 0 |
 | config | 18 | 4 | 10 | 3 | 1 | 0 |
-| env | 28 | 2 | 19 | 2 | 5 | 0 |
+| env | 28 | 2 | 18 | 2 | 5 | 1 |
 | tools — the agent-callable surface | 32 | 7 | 19 | 3 | 2 | 1 |
 | skills | 33 | 6 | 13 | 6 | 8 | 0 |
 | providers | 27 | 4 | 11 | 3 | 7 | 2 |
@@ -45,7 +45,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | acp-mcp-dev | 33 | 3 | 13 | 11 | 6 | 0 |
 | docs-features | 48 | 8 | 26 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
-| delta | 42 | 1 | 27 | 5 | 5 | 4 |
+| delta | 42 | 1 | 26 | 5 | 5 | 5 |
 
 ## Actualizare
 
