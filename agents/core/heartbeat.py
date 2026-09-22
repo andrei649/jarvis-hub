@@ -1,9 +1,25 @@
 """
 heartbeat.py — Heartbeat scheduler for agents that need periodic self-triggers.
 
-Reads HEARTBEAT.md from each agent directory for cron expressions, and
-agents.yaml for interval-based heartbeats. Schedules agent routines
-using APScheduler with jitter and MIN_HEARTBEAT_INTERVAL guardrails.
+Two sources feed one schedule, and this is their precedence:
+
+1. The agent's ``HEARTBEAT.md`` — or its ``HEARTBEAT.local.md`` overlay, the user data
+   home first, then the repo-local copy — read by ``load_all``: a YAML front-matter
+   carrying the ``cadence`` (``cron:<5 fields>`` or ``interval:<seconds>``) and the
+   ``checklist`` that ``Agent.run_heartbeat`` executes.
+2. The ``heartbeat: "<interval>"`` field of ``agents/_system/agents.yaml``, read by
+   ``load_from_config``: a cadence-only fallback for an active agent that ships no
+   heartbeat file. It never replaces an entry ``load_all`` loaded — the file carries
+   the checklist and a time-of-day cadence an interval cannot express, and before this
+   rule every shipped heartbeat lost both at boot and ran as an empty interval job.
+
+An entry the injection scan refused (``_blocked``) is scheduled from neither source:
+the verdict on the file is not undone by the registry re-adding the same agent as an
+interval job. The orchestrator calls ``load_all`` then ``load_from_config``; the
+result is the same in either order.
+
+Schedules agent routines using APScheduler with jitter and MIN_HEARTBEAT_INTERVAL
+guardrails.
 """
 
 import datetime
@@ -208,7 +224,9 @@ class HeartbeatScheduler:
                     logger.info(f"Loaded heartbeat: {config['agent']} — {config.get('cadence', 'unknown')}")
                 elif agent_dir.name in self._blocked:
                     # Refused now: a config an earlier load admitted for this directory
-                    # must not outlive the file that earned it.
+                    # must not outlive the file that earned it. A refused file evicts
+                    # whatever another source put here first, so the verdict holds even
+                    # when load_from_config ran before load_all.
                     self._heartbeat_configs.pop(agent_dir.name, None)
 
     def _parse_heartbeat(self, path: Path) -> Optional[dict]:
@@ -315,7 +333,13 @@ class HeartbeatScheduler:
         return total
 
     def load_from_config(self, config):
-        """Load heartbeat intervals from JarvisConfig (agents.yaml)."""
+        """Fill in agents.yaml interval heartbeats for agents that have no heartbeat file.
+
+        The module docstring states the precedence: an agent already in
+        ``_heartbeat_configs`` keeps its file — cadence and checklist — and an agent in
+        ``_blocked`` gets nothing, so the scan's verdict is not undone by a second source
+        re-adding the same agent as an interval job.
+        """
         for agent_id, agent_cfg in config.agents.items():
             if agent_cfg.status != "active":
                 continue
@@ -333,6 +357,19 @@ class HeartbeatScheduler:
                 continue
             interval_str = agent_cfg.heartbeat if hasattr(agent_cfg, 'heartbeat') else None
             if not isinstance(interval_str, str) or interval_str == "no":
+                continue
+            if agent_id in self._blocked:
+                logger.warning(
+                    "Heartbeat %s: agents.yaml interval %s withheld — its HEARTBEAT file was refused",
+                    agent_id, interval_str,
+                )
+                continue
+            existing = self._heartbeat_configs.get(agent_id)
+            if existing is not None:
+                logger.info(
+                    "Heartbeat %s: keeping %s from its HEARTBEAT file over the agents.yaml interval %s",
+                    agent_id, existing.get("cadence", "unknown"), interval_str,
+                )
                 continue
             seconds = self._parse_interval(interval_str)
             seconds = self._coerce_interval(seconds)
@@ -384,6 +421,11 @@ class HeartbeatScheduler:
             install_scheduler_health(self.scheduler, jobs.store)
 
         for agent_id, config in self._heartbeat_configs.items():
+            if agent_id in self._blocked:
+                # Both loaders keep a refused agent out of _heartbeat_configs; this is
+                # the gate at the point where APScheduler is actually fed.
+                logger.warning("Heartbeat %s: not scheduled — its HEARTBEAT file was refused", agent_id)
+                continue
             cadence = config.get("cadence", "")
             if cadence.startswith("interval:"):
                 seconds = int(cadence.split(":")[1])
@@ -490,7 +532,10 @@ class HeartbeatScheduler:
         """Start a single heartbeat job."""
         if not self.scheduler or not self.scheduler.running:
             return False
-        
+
+        if agent_id in self._blocked:
+            logger.warning("Cannot resume heartbeat %s: its HEARTBEAT file was refused", agent_id)
+            return False
         config = self._heartbeat_configs.get(agent_id)
         if not config:
             return False

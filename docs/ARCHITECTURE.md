@@ -86,7 +86,7 @@ When on: embeds the query, runs fused recall (vector ⊕ graph), injects top-k a
 | `agents/core/agent.py` | Single agent runtime | `Agent`, `Agent.process`, `Agent.synthesize`, `Agent._load_soul` |
 | `agents/core/router.py` | Intent classifier | `IntentRouter.classify`, `Intent`, `INTENT_RULES` |
 | `agents/core/config.py` | YAML config loader | `JarvisConfig` |
-| `agents/core/heartbeat.py` | Scheduled agent heartbeats | `HeartbeatScheduler` |
+| `agents/core/heartbeat.py` | Scheduled agent heartbeats. Precedence: the agent's `HEARTBEAT.md` / `HEARTBEAT.local.md` (cadence + checklist) wins; the `heartbeat: "<interval>"` field of `agents.yaml` is a cadence-only fallback for an active agent with no heartbeat file and never overrides a loaded one; an agent whose file the injection scan refused is scheduled from neither source and `get_status()["blocked"]` names it | `HeartbeatScheduler` |
 | `agents/core/errors.py` | Typed error codes | `JarvisError`, `E_*` constants |
 | `agents/core/log.py` | Logging setup | `setup_logging`, `log_error` |
 | `agents/core/resilience.py` | Circuit breakers + retry | `resilient_call`, `get_metrics`, `_circuit_breakers` |
@@ -717,7 +717,7 @@ from git history into `*.local.md`).
      status: active
      tier: business          # command / business / tech / foundation
      channel: telegram        # voice / web-dashboard / telegram / log-only / local-only
-     heartbeat: "4h"          # interval or "no"
+     heartbeat: "4h"          # interval or "no" — the cadence only when the agent has no HEARTBEAT.md
      plugins: [gmail]
    ```
 3. Add router triggers in `agents/core/router.py:INTENT_RULES` if you want keyword routing.
