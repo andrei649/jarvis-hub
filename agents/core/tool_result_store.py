@@ -39,8 +39,17 @@ directory cannot grow without bound on a box nobody is watching.
 dropped part without running the tool again, so every notice carries the exact call —
 :func:`page_recipe`, ``file_read(path="…", offset=0, max_bytes=…)`` with the path
 filled in, plus the same arguments as data — and ``file_read`` pages from any byte
-offset and names the next one. Where the host has no ``file_read`` to offer, the
-notice says so instead of naming a call that would be refused. A *stream* spill
+offset and names the next one. Three things keep that call one ``file_read`` accepts:
+the path is the *resolved* one (the file tools compare a path lexically against
+resolved roots, so a symlinked data root would otherwise be refused), a spill is never
+named like a secret (:func:`_spill_name` — ``file_read`` refuses such names anywhere),
+and the owner's ``JARVIS_FILE_ROOTS`` cannot strand a spill outside the scope, because
+the coordinator hands ``file_read`` this directory as a read-only door for exact spill
+names. And the claim is checked, not assumed: the store's ``read_back`` probe is asked
+about the very path the recipe names — is ``file_read`` registered, offered to this
+turn, and able to open *this file*? Where it is not, the notice says the file is kept
+for the owner and cannot be paged from this turn instead of naming a call that would be
+refused. A *stream* spill
 (:meth:`ToolResultStore.open_stream`) also has a ceiling —
 :data:`DEFAULT_MAX_STREAM_BYTES`, then one explicit ``[... spill capped ...]`` marker
 and ``capped=True`` on the result — because agent-written code decides how much it
@@ -149,9 +158,60 @@ def page_recipe(path: str, *, page_bytes: int = DEFAULT_PAGE_BYTES, offset: int 
     }
 
 
+def default_root() -> Path:
+    """Where spills live unless a caller says otherwise: ``<data root>/workspace/tool_results``.
+
+    One function rather than a repeated join, because two parties must agree on it: the
+    store that writes here and the ``file_read`` that is handed this directory as a
+    read-only door (H661).
+    """
+    from .paths import data_path
+
+    return data_path("workspace", SPILL_DIRNAME)
+
+
+def is_reference(name: object) -> bool:
+    """True when *name* is shaped like a file this store writes (``<tool>-<hash>.json|txt``)."""
+    return isinstance(name, str) and _REFERENCE.fullmatch(name) is not None
+
+
+#: The prefix a spill falls back to when its tool's name would make it look like a secret.
+_NEUTRAL_PREFIX = "result"
+
+
 def _safe_tool_name(tool: str) -> str:
     name = _SAFE_NAME.sub("-", str(tool or "tool").lower()).strip("-") or "tool"
     return name[:48]
+
+
+def _spill_name(tool: str, digest: str, suffix: str) -> str:
+    """``<tool>-<hash>.<suffix>``, unless that name would look like a secret (H661).
+
+    ``file_read`` refuses a secret-looking *name* anywhere in its scope — a token such as
+    KEY, TOKEN, AUTH or WEBHOOK, or a prefix such as ``id_rsa`` — and bridged tools are
+    named by third parties (``mcp__stripe__list_webhook_endpoints``). A spill is Nerva's
+    own file; naming it after such a tool would lock it away from the very call its
+    notice names. The file tools' own predicate decides, so the two cannot drift.
+    """
+    name = f"{_safe_tool_name(tool)}-{digest[:16]}.{suffix}"
+    from .file_tools import looks_secret_name
+
+    if looks_secret_name(name):
+        return f"{_NEUTRAL_PREFIX}-{digest[:16]}.{suffix}"
+    return name
+
+
+def _landed_path(target: Path) -> str:
+    """The path a notice names: resolved, because that is how the file tools compare.
+
+    ``FileScope`` resolves its roots and then checks a requested path *lexically*, so a
+    data root reached through a symlink would be named in a spelling ``file_read``
+    refuses as outside its scope. Falls back to the path as written if resolution fails.
+    """
+    try:
+        return str(target.resolve())
+    except (OSError, RuntimeError):
+        return str(target)
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,10 +294,13 @@ class SpilledResult:
 
     ``original_bytes`` is what the tool produced; ``stored_bytes`` is the file's size,
     and the two differ only when ``capped`` — the stream ran past
-    :data:`DEFAULT_MAX_STREAM_BYTES` and the file ends in the marker instead. ``sha256``
-    is always the digest of the file on disk. ``readable`` says whether the host has a
-    ``file_read`` to page it with; a notice that names a call the model cannot make is
-    the same dead end as no notice.
+    :data:`DEFAULT_MAX_STREAM_BYTES` and the file ends in the marker instead.
+    ``kept_bytes`` is how much of the *stream* the file holds (the marker excluded), so
+    a notice can say where the stream's bytes stop without counting its own marker as
+    output. ``sha256`` is always the digest of the file on disk. ``readable`` says
+    whether ``file_read`` can page *this file* from the turn that gets the notice; a
+    notice that names a call the model cannot make is the same dead end as no notice.
+    ``path`` is resolved (see :func:`_landed_path`).
     """
 
     reference: str
@@ -247,16 +310,19 @@ class SpilledResult:
     stored_bytes: int | None = None
     capped: bool = False
     readable: bool = True
+    kept_bytes: int | None = None
 
     def __post_init__(self) -> None:
         if self.stored_bytes is None:
             object.__setattr__(self, "stored_bytes", self.original_bytes)
+        if self.kept_bytes is None:
+            object.__setattr__(self, "kept_bytes", self.stored_bytes)
 
     def as_dict(self) -> dict:
         return {"reference": self.reference, "path": self.path,
                 "original_bytes": self.original_bytes, "sha256": self.sha256,
-                "stored_bytes": self.stored_bytes, "capped": self.capped,
-                "readable": self.readable}
+                "stored_bytes": self.stored_bytes, "kept_bytes": self.kept_bytes,
+                "capped": self.capped, "readable": self.readable}
 
 
 class ToolResultStore:
@@ -271,7 +337,7 @@ class ToolResultStore:
         max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
         clock: Callable[[], float] = time.time,
         max_stream_bytes: int = DEFAULT_MAX_STREAM_BYTES,
-        read_back: Callable[[], bool] | None = None,
+        read_back: Callable[[str], bool] | None = None,
     ) -> None:
         self._root = Path(root) if root is not None else None
         self._retention = max(60.0, float(retention_seconds))
@@ -279,25 +345,29 @@ class ToolResultStore:
         self._max_total_bytes = max(1024, int(max_total_bytes))
         self._clock = clock
         self._max_stream_bytes = max(1, int(max_stream_bytes))
-        # H661. Whether a `file_read` exists to page a spill with. None means the
-        # caller did not say, which keeps the notice's recipe (the historical claim);
-        # the coordinator wires the live registry so the claim is checked, not assumed.
+        # H661. Whether `file_read` can page one spilled file, asked with that file's
+        # path. None means the caller did not say, which keeps the notice's recipe (the
+        # historical claim); the coordinator wires the live registry, the turn's offer
+        # and the live file scope, so the claim is checked per file, not assumed.
         self._read_back = read_back
 
     @property
     def max_stream_bytes(self) -> int:
         return self._max_stream_bytes
 
-    def readable(self) -> bool:
-        """True when the host offers the tool a notice would tell the model to call.
+    def readable(self, path: str) -> bool:
+        """True when the call a notice would name for *path* is one ``file_read`` takes.
 
-        A probe that raises counts as "no": naming a call on a guess is how a notice
-        sends the model into a refusal instead of to the bytes.
+        Registered is not reachable: an owner's ``JARVIS_FILE_ROOTS``, a symlinked data
+        root or a secret-looking name each make ``file_read`` refuse a file it is
+        registered to read, so the probe is asked about this path. A probe that raises
+        counts as "no": naming a call on a guess is how a notice sends the model into a
+        refusal instead of to the bytes.
         """
         if self._read_back is None:
             return True
         try:
-            return bool(self._read_back())
+            return bool(self._read_back(str(path)))
         except Exception:
             logger.warning("tool result read-back probe failed; not naming file_read",
                            exc_info=True)
@@ -306,9 +376,7 @@ class ToolResultStore:
     @property
     def root(self) -> Path:
         if self._root is None:
-            from .paths import data_path
-
-            self._root = data_path("workspace", SPILL_DIRNAME)
+            self._root = default_root()
         return self._root
 
     # ── writing ──────────────────────────────────────────────────────────────
@@ -323,7 +391,7 @@ class ToolResultStore:
         body = str(encoded or "")
         raw = body.encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
-        reference = f"{_safe_tool_name(tool)}-{digest[:16]}.json"
+        reference = _spill_name(tool, digest, "json")
         temporary = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -352,9 +420,10 @@ class ToolResultStore:
         # Sweep after the write, never before: the new file is the one the caller is
         # about to hand to the model, so it must survive its own retention pass.
         self.sweep(keep=reference)
-        return SpilledResult(reference=reference, path=str(target),
+        path = _landed_path(target)
+        return SpilledResult(reference=reference, path=path,
                              original_bytes=len(raw), sha256=digest,
-                             stored_bytes=len(raw), readable=self.readable())
+                             stored_bytes=len(raw), readable=self.readable(path))
 
     def open_stream(self, *, tool: str, suffix: str = "txt",
                     max_bytes: int | None = None) -> StreamSpill | None:
@@ -592,7 +661,7 @@ class StreamSpill:
             self._store._unlink(self._temporary)
             return None
         digest = self._digest.hexdigest()
-        reference = f"{_safe_tool_name(self._tool)}-{digest[:16]}.{self._suffix}"
+        reference = _spill_name(self._tool, digest, self._suffix)
         target = self._store.root / reference
         try:
             self._temporary.replace(target)
@@ -603,10 +672,11 @@ class StreamSpill:
             self._store._unlink(self._temporary)
             return None
         self._store.sweep(keep=reference)
-        return SpilledResult(reference=reference, path=str(target),
+        path = _landed_path(target)
+        return SpilledResult(reference=reference, path=path,
                              original_bytes=self._written, sha256=digest,
                              stored_bytes=stored, capped=self._capped,
-                             readable=self._store.readable())
+                             readable=self._store.readable(path), kept_bytes=self._kept)
 
 
 def preview_envelope(
@@ -623,8 +693,9 @@ def preview_envelope(
 
     The footer is an instruction the model can follow verbatim (H661): the exact
     ``file_read`` call, path filled in, as text in ``notice`` and as arguments in
-    ``read_with``. When the host has no ``file_read`` to offer, ``read_with`` is left
-    out and the notice says why, so the model is not sent into a refusal.
+    ``read_with``. When ``file_read`` cannot page this file from this turn — not
+    registered, not offered to the turn, or unable to open the path — ``read_with`` is
+    left out and the notice says so, so the model is not sent into a refusal.
     """
     body = str(encoded or "")
     kept = max(64, int(preview_chars))
@@ -642,9 +713,9 @@ def preview_envelope(
         notice = (
             f"This result was too large for the context window. The complete result "
             f"({spill.original_bytes} bytes) is on disk at {spill.path} for the owner; "
-            f"{READ_TOOL} is not available on this host, so this turn cannot page it. "
-            f"If the omitted part matters, ask for a narrower result rather than "
-            f"repeating the same call."
+            f"{READ_TOOL} is not available to this turn for that file, so it cannot be "
+            f"paged from here. If the omitted part matters, ask for a narrower result "
+            f"rather than repeating the same call."
         )
     payload: dict[str, object] = {
         "ok": bool(ok),
@@ -673,6 +744,6 @@ __all__ = [
     "PER_RESULT_FLOOR_BYTES", "PER_TURN_FLOOR_BYTES", "PINNED_THRESHOLDS",
     "PREVIEW_CHARS", "READ_TOOL", "SPILL_DIRNAME", "SpilledResult", "StreamSpill",
     "ToolResultStore",
-    "budget_for_context_window", "cap_lines", "page_recipe", "preview_envelope",
-    "threshold_for",
+    "budget_for_context_window", "cap_lines", "default_root", "is_reference",
+    "page_recipe", "preview_envelope", "threshold_for",
 ]

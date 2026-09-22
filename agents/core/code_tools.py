@@ -53,7 +53,7 @@ from .environments.output_limits import (
     truncate_text,
 )
 from .sandbox_invocation import bind
-from .tool_result_store import page_recipe
+from .tool_result_store import DEFAULT_PAGE_BYTES, page_recipe
 from .tool_rpc import ToolRPCValidationError, current_tool_actor
 
 logger = logging.getLogger("jarvis.code_tools")
@@ -187,14 +187,17 @@ _STREAM_TOOLS = {"STDOUT": "execute-code-stdout", "STDERR": "execute-code-stderr
 _READ_TOOL = "file_read"
 
 
-def _spill_notice(key: str, landed, recipe: Mapping[str, object] | None) -> str:
+def _spill_notice(key: str, landed, recipe: Mapping[str, object] | None, *,
+                  offered: bool = True) -> str:
     """Hermes' "FULL output saved to {path} — page it with read_file(…)", made exact.
 
     With a reader on offer, the notice *is* the call — path, offset and page size
-    filled in — and says how to continue. Without one it says so, because a call the
-    model would be refused sends it straight back to re-running the script, which is
-    the expensive thing the spill exists to avoid. A capped spill says where the file
-    stops, so the model does not page to the marker and take it for the end.
+    filled in — and says how to continue. Without one it says so, and why (not offered
+    to this turn, or unable to open that file), because a call the model would be
+    refused sends it straight back to re-running the script, which is the expensive
+    thing the spill exists to avoid. A capped spill says where the stream's bytes stop
+    — the kept bytes, not the file size, which includes the marker — so the model does
+    not page to the marker and take it for the end.
     """
     if recipe is not None:
         text = (
@@ -203,18 +206,31 @@ def _spill_notice(key: str, landed, recipe: Mapping[str, object] | None) -> str:
             f"a page has none, instead of running this again."
         )
     else:
+        why = ("is not offered to this turn" if not offered
+               else "cannot open that file from this turn")
         text = (
             f"FULL {key} ({landed.original_bytes} bytes) saved to {landed.path} for the "
-            f"owner; {_READ_TOOL} is not offered to this turn, so it cannot be paged from "
-            f"here. Do not run this again only to see the omitted part."
+            f"owner; {_READ_TOOL} {why}, so it cannot be paged from here. Do not run this "
+            f"again only to see the omitted part."
         )
     if landed.capped:
         text += (
-            f" The file stops after its first {landed.stored_bytes} bytes with a "
-            f"'[... spill capped ...]' marker; the end of the stream survives only in "
-            f"the tail shown in {key}."
+            f" The file keeps the first {landed.kept_bytes} bytes of the stream, then a "
+            f"'[... spill capped ...]' marker ({landed.stored_bytes} bytes on disk); the "
+            f"end of the stream survives only in the tail shown in {key}."
         )
     return text
+
+
+def _page_bytes(limit: int) -> int:
+    """The page a stream recipe proposes: the inline ceiling, but never above the floor.
+
+    ``file_read`` is pinned never to spill (it is how a spill is read back), so a page
+    enters the context whole. :data:`DEFAULT_PAGE_BYTES` is the smallest per-result
+    allowance any model gets; a bigger first page would put several results' worth
+    into one message on the smallest window. The model may still ask for more.
+    """
+    return max(1, min(int(limit), DEFAULT_PAGE_BYTES))
 
 
 def _stream_fields(label: str, capped: TruncatedText, spill, *,
@@ -227,10 +243,9 @@ def _stream_fields(label: str, capped: TruncatedText, spill, *,
     ``capped.truncated=False`` despite missing content.
 
     ``readable`` is whether this run's own offer includes ``file_read`` — the same
-    set the turn was shown — and the store's probe must agree too; only then does the
-    result carry ``<stream>_read_with``. ``page_bytes`` is the ceiling the inline copy
-    was held to, so a page of the file is never bigger than what this result already
-    showed.
+    set the turn was shown — and the store's probe must agree too (``file_read`` can
+    open *this* file); only then does the result carry ``<stream>_read_with``.
+    ``page_bytes`` is the inline ceiling; the recipe proposes :func:`_page_bytes` of it.
     """
     if spill is None:
         return {}
@@ -244,18 +259,19 @@ def _stream_fields(label: str, capped: TruncatedText, spill, *,
     key = label.lower()
     recipe = None
     if readable and landed.readable:
-        recipe = page_recipe(landed.path, page_bytes=page_bytes)
+        recipe = page_recipe(landed.path, page_bytes=_page_bytes(page_bytes))
     fields = {
         f"{key}_file": landed.path,
         f"{key}_reference": landed.reference,
         f"{key}_bytes": landed.original_bytes,
         f"{key}_sha256": landed.sha256,
-        f"{key}_notice": _spill_notice(key, landed, recipe),
+        f"{key}_notice": _spill_notice(key, landed, recipe, offered=readable),
     }
     if recipe is not None:
         fields[f"{key}_read_with"] = {"tool": recipe["tool"], "arguments": recipe["arguments"]}
     if landed.capped:
         fields[f"{key}_spill_capped"] = True
+        fields[f"{key}_kept_bytes"] = landed.kept_bytes
         fields[f"{key}_file_bytes"] = landed.stored_bytes
     return fields
 

@@ -149,13 +149,22 @@ async def test_a_document_pages_through_its_extracted_text(tmp_path, monkeypatch
 
 def test_the_schema_declares_offset_and_the_preflight_keeps_it():
     spec = FILE_TOOL_SPECS["file_read"]
-    assert spec["input_schema"]["properties"]["offset"] == {"type": "integer", "minimum": 0}
+    assert spec["input_schema"]["properties"]["offset"] == {
+        "type": "integer", "minimum": 0, "maximum": file_tools.MAX_OFFSET}
     assert "offset" in spec["description"] and "next_offset" in spec["description"]
     assert spec["preflight"]({"path": "x", "offset": 0}) == {"path": "x", "offset": 0}
     assert spec["preflight"]({"path": "x", "offset": 7})["offset"] == 7
+    top = file_tools.MAX_OFFSET
+    assert spec["preflight"]({"path": "x", "offset": top})["offset"] == top
 
 
-@pytest.mark.parametrize("bad", [True, False, -1, 1.5, "10", None])
+#: Offsets no file has: past the ceiling every JSON reader holds exactly, past what a
+#: seek can express (2**63), and absurd. Each one used to escape as a ValueError from
+#: ``seek`` (a ``tool_error`` with a traceback) or an ``io_error`` from the kernel.
+_ABSURD_OFFSETS = [2**63 - 1, 2**63, 10**30]
+
+
+@pytest.mark.parametrize("bad", [True, False, -1, 1.5, "10", None, *_ABSURD_OFFSETS])
 def test_a_bad_offset_is_refused_by_the_preflight(bad):
     with pytest.raises(ToolRPCValidationError) as info:
         FILE_TOOL_SPECS["file_read"]["preflight"]({"path": "x", "offset": bad})
@@ -163,13 +172,38 @@ def test_a_bad_offset_is_refused_by_the_preflight(bad):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bad", [True, -1, 1.5, "10"])
+@pytest.mark.parametrize("bad", [True, -1, 1.5, "10", *_ABSURD_OFFSETS])
 async def test_a_direct_caller_with_a_bad_offset_is_refused_not_read_from_zero(tmp_path, bad):
     """Silently reading from 0 would hand back the first page labelled as the one asked for."""
     root = _workspace(tmp_path)
     (root / "a.txt").write_text("hello", encoding="utf-8")
     out = await _tools(root, tmp_path).read_file({"path": "a.txt", "offset": bad})
     assert out == {"ok": False, "reason": "bad_offset"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("huge", _ABSURD_OFFSETS)
+async def test_an_absurd_offset_through_the_server_is_a_named_refusal(tmp_path, huge):
+    root = _workspace(tmp_path)
+    (root / "a.txt").write_text("hello", encoding="utf-8")
+    server = ToolRPCServer()
+    register_file_tools(server, _tools(root, tmp_path), enabled=True)
+
+    reply = await server.handle({"tool": "file_read", "args": {"path": "a.txt", "offset": huge}})
+
+    assert reply["ok"] is False and reply["reason"] == "bad_offset"
+
+
+@pytest.mark.asyncio
+async def test_the_largest_offset_is_an_empty_final_page_not_an_io_error(tmp_path):
+    """Past the end is answered without seeking there: the kernel's own file-size limit
+    (EINVAL on ext4 far below 2**63) is not the reader's business."""
+    root = _workspace(tmp_path)
+    (root / "a.txt").write_text("hello", encoding="utf-8")
+    out = await _tools(root, tmp_path).read_file({"path": "a.txt",
+                                                  "offset": file_tools.MAX_OFFSET})
+    assert out["ok"] is True and out["content"] == "" and out["bytes"] == 0
+    assert out["offset"] == file_tools.MAX_OFFSET and "next_offset" not in out
 
 
 @pytest.mark.asyncio
@@ -267,7 +301,7 @@ def test_the_preview_names_the_exact_read_call(tmp_path):
 
 
 def test_a_host_without_file_read_is_told_so_instead_of_handed_a_dead_call(tmp_path):
-    store = ToolResultStore(tmp_path / "spills", read_back=lambda: False)
+    store = ToolResultStore(tmp_path / "spills", read_back=lambda path: False)
     body = json.dumps({"ok": True, "filler": "y" * 40_000})
     spill = store.spill(body, tool="web_extract")
 
@@ -280,29 +314,66 @@ def test_a_host_without_file_read_is_told_so_instead_of_handed_a_dead_call(tmp_p
     assert "file_read is not available" in envelope["notice"]
 
 
-@pytest.mark.parametrize("file_tools_on", [True, False])
-def test_the_coordinator_names_file_read_only_while_the_registry_has_it(
-        tmp_path, monkeypatch, file_tools_on):
-    """`file_read` is behind JARVIS_FILE_TOOLS. The live store asks the live registry."""
-    from types import SimpleNamespace
+def test_the_probe_is_asked_about_the_very_path_the_recipe_names(tmp_path):
+    """Reach is a property of one path, not of a registry: the probe gets the path."""
+    asked: list[str] = []
 
-    from agents.core.autonomy_coordinator import AutonomyCoordinator
+    def probe(path):
+        asked.append(path)
+        return True
 
-    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(tmp_path))
-    if file_tools_on:
-        monkeypatch.setenv("JARVIS_FILE_TOOLS", "1")
-    else:
-        monkeypatch.delenv("JARVIS_FILE_TOOLS", raising=False)
-    orch = SimpleNamespace(agents={})
+    store = ToolResultStore(tmp_path / "spills", read_back=probe)
+    spill = store.spill("x" * 100, tool="echo")
+    stream = store.open_stream(tool="echo")
+    stream.write(b"abc")
+    landed = stream.close()
 
-    runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+    assert asked == [spill.path, landed.path]
 
-    assert orch.tool_rpc.allows("file_read") is file_tools_on
-    assert runtime._result_store.readable() is file_tools_on
+
+def test_a_spill_under_a_symlinked_root_names_the_real_path(tmp_path):
+    """The file tools check a path lexically against *resolved* roots, so a recipe that
+    carries the symlinked spelling is refused even though it names the same file."""
+    real = tmp_path / "real_spills"
+    real.mkdir()
+    link = tmp_path / "spills_link"
+    link.symlink_to(real, target_is_directory=True)
+    store = ToolResultStore(link)
+
+    spill = store.spill("x" * 100, tool="echo")
+    stream = store.open_stream(tool="echo")
+    stream.write(b"abc")
+    landed = stream.close()
+
+    assert spill.path == str(real.resolve() / spill.reference)
+    assert landed.path == str(real.resolve() / landed.reference)
+
+
+@pytest.mark.parametrize("tool", [
+    "mcp__stripe__list_webhook_endpoints", "rotate_api_key", "id_rsa_lookup",
+    "mcp__vault__read_secret", "refresh-token", "AUTH",
+])
+def test_a_spill_is_never_named_like_a_secret(tmp_path, tool):
+    """file_read refuses a secret-looking *name* anywhere inside the roots. A spill is
+    Nerva's own file; naming it after a tool called `…webhook…` must not lock it."""
+    store = ToolResultStore(tmp_path / "spills")
+    spill = store.spill("x" * 100, tool=tool)
+    stream = store.open_stream(tool=tool)
+    stream.write(b"abc")
+    landed = stream.close()
+
+    assert not file_tools.looks_secret_name(spill.reference)
+    assert not file_tools.looks_secret_name(landed.reference)
+    assert trs.is_reference(spill.reference) and trs.is_reference(landed.reference)
+
+
+def test_an_ordinary_tool_keeps_its_name_on_the_spill(tmp_path):
+    spill = ToolResultStore(tmp_path / "spills").spill("x" * 100, tool="web_extract")
+    assert spill.reference.startswith("web_extract-")
 
 
 def test_a_read_back_probe_that_raises_counts_as_unavailable(tmp_path):
-    def broken():
+    def broken(path):
         raise RuntimeError("registry gone")
 
     store = ToolResultStore(tmp_path / "spills", read_back=broken)
@@ -310,6 +381,294 @@ def test_a_read_back_probe_that_raises_counts_as_unavailable(tmp_path):
     stream = store.open_stream(tool="echo")
     stream.write(b"abc")
     assert stream.close().readable is False
+
+
+# ── file_read reaches Nerva's own spills, and nothing else new ───────────────
+
+def _spill_reader(tmp_path: Path) -> tuple[FileTools, Path, Path]:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    spills = tmp_path / "spills"
+    spills.mkdir()
+    tools = FileTools(FileScope([projects]), snapshots=SnapshotStore(tmp_path / "snaps"),
+                      max_bytes=1_000, spill_dirs=[spills])
+    return tools, projects, spills
+
+
+@pytest.mark.asyncio
+async def test_file_read_opens_a_spill_outside_the_owner_roots_by_its_exact_path(tmp_path):
+    """JARVIS_FILE_ROOTS replaces the default root, and with it the spill directory.
+    The owner narrowed the *workspace*; a spill is the turn's own output, named in the
+    turn's own result, so its exact path stays readable — read-only, name by name."""
+    tools, _projects, spills = _spill_reader(tmp_path)
+    spill = ToolResultStore(spills).spill("z" * 2_500, tool="web_extract")
+
+    pages, rebuilt = await _page_through(tools.read_file, spill.path, max_bytes=1_000)
+
+    assert rebuilt == "z" * 2_500 and len(pages) == 3
+    assert tools.reaches(spill.path) is True
+
+
+@pytest.mark.asyncio
+async def test_the_spill_door_admits_nothing_but_a_spill_file(tmp_path):
+    tools, projects, spills = _spill_reader(tmp_path)
+    (spills / "notes.md").write_text("owner notes", encoding="utf-8")
+    (spills / "sub").mkdir()
+    (spills / "sub" / "web_extract-0123456789abcdef.json").write_text("{}", encoding="utf-8")
+    secret = tmp_path / "api_key.txt"
+    secret.write_text("sk-live", encoding="utf-8")
+    (spills / "echo-fedcba9876543210.txt").symlink_to(secret)
+    ToolResultStore(spills).spill("z" * 100, tool="echo")
+
+    for path in (
+        str(spills / "notes.md"),                                   # not a spill name
+        str(spills / "sub" / "web_extract-0123456789abcdef.json"),  # not directly inside
+        str(spills / "echo-fedcba9876543210.txt"),                  # a symlink out
+        "spills/echo-fedcba9876543210.txt",                         # relative
+        str(spills / ".." / "api_key.txt"),                         # traversal
+    ):
+        out = await tools.read_file({"path": path})
+        assert out["ok"] is False, path
+        assert tools.reaches(path) is False, path
+    listing = await tools.list_dir({"path": str(spills)})
+    assert listing == {"ok": False, "reason": "outside_scope"}, "read by name, never listed"
+    search = await tools.search_files({"pattern": "z", "path": str(spills)})
+    assert search["ok"] is False
+    with pytest.raises(ToolRPCValidationError):
+        tools.preflight("file_write")({"path": str(next(spills.glob("echo-*.json"))),
+                                       "content": "x"})
+
+
+@pytest.mark.asyncio
+async def test_without_a_spill_directory_the_scope_is_unchanged(tmp_path):
+    tools = _tools(_workspace(tmp_path), tmp_path)
+    spill = ToolResultStore(tmp_path / "spills").spill("z" * 100, tool="echo")
+    assert (await tools.read_file({"path": spill.path})) == {"ok": False,
+                                                             "reason": "outside_scope"}
+    assert tools.reaches(spill.path) is False
+
+
+# ── the coordinator: the store and the reader it wires must agree ────────────
+
+def _wire_coordinator(monkeypatch, *, home: Path, roots: Path | None,
+                      file_tools_on: bool = True, agents: dict | None = None):
+    from types import SimpleNamespace
+
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
+
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    if roots is None:
+        monkeypatch.delenv("JARVIS_FILE_ROOTS", raising=False)
+    else:
+        monkeypatch.setenv("JARVIS_FILE_ROOTS", str(roots))
+    if file_tools_on:
+        monkeypatch.setenv("JARVIS_FILE_TOOLS", "1")
+    else:
+        monkeypatch.delenv("JARVIS_FILE_TOOLS", raising=False)
+    orch = SimpleNamespace(agents={}, config=SimpleNamespace(agents=agents or {}))
+    runtime = AutonomyCoordinator(orch)._wire_agent_tool_runtime()
+    return orch, runtime
+
+
+async def _follow(handle, read_with: dict) -> str:
+    """Make the call the result names, then each next_offset, through the live server."""
+    args = dict(read_with["arguments"])
+    pages: list[str] = []
+    while True:
+        reply = await handle({"tool": read_with["tool"], "args": dict(args)})
+        assert reply["ok"] is True, reply
+        page = reply["result"]
+        pages.append(page["content"])
+        if "next_offset" not in page:
+            return "".join(pages)
+        args["offset"] = page["next_offset"]
+        assert len(pages) < 1_000
+
+
+_BODY = json.dumps({"ok": True, "rows": "".join(f"row-{i:05d};" for i in range(4_000))})
+
+
+@pytest.mark.parametrize("file_tools_on", [True, False])
+def test_the_coordinator_names_file_read_only_while_the_registry_has_it(
+        tmp_path, monkeypatch, file_tools_on):
+    """`file_read` is behind JARVIS_FILE_TOOLS. The live store asks the live registry."""
+    orch, runtime = _wire_coordinator(monkeypatch, home=tmp_path / "home", roots=None,
+                                      file_tools_on=file_tools_on)
+
+    spill = runtime._result_store.spill(_BODY, tool="web_extract")
+
+    assert orch.tool_rpc.allows("file_read") is file_tools_on
+    assert spill.readable is file_tools_on
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup", ["default_roots", "owner_roots_elsewhere", "symlinked_home"])
+async def test_the_coordinator_recipe_is_followed_to_the_last_byte(tmp_path, monkeypatch, setup):
+    """The review's three live setups, joined end to end: the coordinator's store spills,
+    its envelope names a call, and the coordinator's own file_read answers that call.
+
+    ``owner_roots_elsewhere`` is the documented owner setup (a workspace under
+    JARVIS_FILE_ROOTS), which replaces the default root the spill directory lives in;
+    ``symlinked_home`` puts the data root behind a symlink the scope resolves away.
+    """
+    home, roots = tmp_path / "home", None
+    if setup == "owner_roots_elsewhere":
+        roots = tmp_path / "projects"
+        roots.mkdir()
+    elif setup == "symlinked_home":
+        real = tmp_path / "real_home"
+        real.mkdir()
+        home = tmp_path / "home_link"
+        home.symlink_to(real, target_is_directory=True)
+    orch, runtime = _wire_coordinator(monkeypatch, home=home, roots=roots)
+
+    spill = runtime._result_store.spill(_BODY, tool="web_extract")
+    envelope = json.loads(preview_envelope(_BODY, tool="web_extract", ok=True, reason=None,
+                                           spill=spill))
+
+    assert "read_with" in envelope, envelope["notice"]
+    assert await _follow(orch.tool_rpc.handle, envelope["read_with"]) == _BODY
+
+
+@pytest.mark.asyncio
+async def test_a_bridged_tool_with_a_secret_looking_name_can_be_paged_back(tmp_path, monkeypatch):
+    orch, runtime = _wire_coordinator(monkeypatch, home=tmp_path / "home", roots=None)
+    tool = "mcp__stripe__list_webhook_endpoints"
+
+    spill = runtime._result_store.spill(_BODY, tool=tool)
+    envelope = json.loads(preview_envelope(_BODY, tool=tool, ok=True, reason=None, spill=spill))
+
+    assert await _follow(orch.tool_rpc.handle, envelope["read_with"]) == _BODY
+
+
+def test_the_coordinator_probe_checks_reach_per_path_not_registration(tmp_path, monkeypatch):
+    """Registered is not reachable. A store whose files file_read cannot open — here one
+    rooted outside both the owner's roots and the spill directory — names no call."""
+    _orch, runtime = _wire_coordinator(monkeypatch, home=tmp_path / "home",
+                                       roots=tmp_path / "projects")
+    (tmp_path / "projects").mkdir()
+    probe = runtime._result_store._read_back
+    stray = ToolResultStore(tmp_path / "elsewhere", read_back=probe)
+
+    spill = stray.spill(_BODY, tool="web_extract")
+    envelope = json.loads(preview_envelope(_BODY, tool="web_extract", ok=True, reason=None,
+                                           spill=spill))
+
+    assert spill.readable is False
+    assert "read_with" not in envelope
+    assert "cannot be paged" in envelope["notice"] or "not available" in envelope["notice"]
+
+
+class _OneSpillBackend:
+    """Calls ``blob`` once and keeps what came back."""
+
+    supports_tools = True
+
+    def __init__(self) -> None:
+        self.seen: list[dict] = []
+
+    async def generate_tool_turn(self, **kwargs):
+        from agents.core.llm.tool_protocol import ToolCall, ToolTurn
+
+        tool_messages = [m for m in kwargs["messages"] if m.get("role") == "tool"]
+        if not tool_messages:
+            return ToolTurn(tool_calls=(ToolCall(id="call-1", name="blob", raw_arguments="{}",
+                                                 arguments={}),),
+                            finish_reason="tool_calls")
+        self.seen.append(json.loads(tool_messages[-1]["content"]))
+        return ToolTurn(content="done", finish_reason="stop")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("patterns, named", [
+    (["blob"], False),               # the agent's profile withholds file_read
+    (["blob", "file_*"], True),      # it offers it
+    (None, True),                    # unrestricted
+])
+async def test_a_spilled_result_names_file_read_only_to_a_turn_offered_it(
+        tmp_path, monkeypatch, patterns, named):
+    """The whole-result path, like execute_code, asks what *this turn* was offered: a
+    call the loop would refuse with tool_not_allowed is no recipe."""
+    from types import SimpleNamespace
+
+    from agents.core import agent_runtime
+
+    monkeypatch.setattr(
+        agent_runtime, "estimate_messages",
+        lambda messages: sum(len(str(m.get("content", ""))) for m in messages) // 4)
+    orch, runtime = _wire_coordinator(
+        monkeypatch, home=tmp_path / "home", roots=None,
+        agents={"nerva": SimpleNamespace(tools=patterns)})
+
+    async def blob(args):
+        return {"rows": "".join(f"row-{i:05d};" for i in range(40_000))}
+
+    orch.tool_rpc.register_tool("blob", blob, description="Return a large payload.",
+                                input_schema={"type": "object", "properties": {}})
+    backend = _OneSpillBackend()
+
+    answer = await runtime.run(agent_id="nerva", backend=backend, model="local-model",
+                               prompt="fetch a lot", system="You are Nerva.",
+                               max_tokens=256, temperature=0.2)
+
+    assert answer == "done"
+    [envelope] = backend.seen
+    assert envelope["spilled"] is True
+    assert ("read_with" in envelope) is named, envelope["notice"]
+    if named:
+        assert await _follow(orch.tool_rpc.handle, envelope["read_with"]) == \
+            Path(envelope["result_file"]).read_text(encoding="utf-8")
+    else:
+        assert "file_read(" not in envelope["notice"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_turns_each_get_their_own_offer(tmp_path, monkeypatch):
+    """The offer is noted in each run's own context: two agents sharing one runtime, run
+    at once, are told what *they* may call — not whichever turn resolved last."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from agents.core import agent_runtime
+
+    monkeypatch.setattr(
+        agent_runtime, "estimate_messages",
+        lambda messages: sum(len(str(m.get("content", ""))) for m in messages) // 4)
+    orch, runtime = _wire_coordinator(
+        monkeypatch, home=tmp_path / "home", roots=None,
+        agents={"reader": SimpleNamespace(tools=["blob", "file_read"]),
+                "narrow": SimpleNamespace(tools=["blob"])})
+
+    async def blob(args):
+        await asyncio.sleep(0.05)  # both turns resolve their offers before either spills
+        return {"rows": "".join(f"row-{i:05d};" for i in range(40_000))}
+
+    orch.tool_rpc.register_tool("blob", blob, description="Return a large payload.",
+                                input_schema={"type": "object", "properties": {}})
+    backends = {"reader": _OneSpillBackend(), "narrow": _OneSpillBackend()}
+
+    await asyncio.gather(*(
+        runtime.run(agent_id=agent, backend=backend, model="local-model", prompt="x",
+                    system="s", max_tokens=256, temperature=0.2)
+        for agent, backend in backends.items()))
+
+    assert "read_with" in backends["reader"].seen[0]
+    assert "read_with" not in backends["narrow"].seen[0]
+
+
+def test_a_synchronous_capability_check_leaves_no_offer_behind(tmp_path, monkeypatch):
+    """`can_run` resolves the same profile outside any turn. It must not leave a note
+    in the caller's context that a later spill there would read as this turn's offer."""
+    from types import SimpleNamespace
+
+    orch, runtime = _wire_coordinator(
+        monkeypatch, home=tmp_path / "home", roots=None,
+        agents={"narrow": SimpleNamespace(tools=["echo"])})
+    orch.get_setting = lambda key, default: True if key == "llm.tool_loop_enabled" else default
+
+    assert runtime.can_run(SimpleNamespace(supports_tools=True), agent_id="narrow") is True
+
+    assert runtime._result_store.spill(_BODY, tool="web_extract").readable is True
 
 
 # ── the loop the row is about ────────────────────────────────────────────────

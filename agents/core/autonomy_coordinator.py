@@ -42,6 +42,17 @@ _APPROVED_TASK: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_approved_task", default=None
 )
 
+# H661 — the tool names the profile offered the turn in flight. Written by the resolver
+# the tool loop calls at the top of each run, which happens inside that run's own copied
+# context (so concurrent turns never see each other's offer), and read by the spill
+# store's read-back probe: a spilled result's notice may name `file_read` only when this
+# turn was offered it — otherwise the model's call is refused with tool_not_allowed.
+# None outside a loop; then the registry decides, and execute_code adds its own run's
+# offer on top.
+_TURN_TOOL_OFFER: contextvars.ContextVar = contextvars.ContextVar(
+    "nerva_turn_tool_offer", default=None
+)
+
 # Gated ToolRPC tools whose approved tasks may reach trusted execution. Every
 # entry actuates only through its own governed rail (desktop kernel steps, target
 # policy plane, file scope + snapshot) after durable ask-tier approval.
@@ -747,14 +758,32 @@ class AutonomyCoordinator:
         # owner-approved durable task, and each write crosses the Action Kernel with
         # a snapshot already taken so the rollback contract is real.
         from .file_tools import FileTools, register_file_tools
+        from .tool_result_store import default_root as spill_root
 
-        register_file_tools(
-            server,
-            FileTools.from_env(
-                authorizer=action_kernel,
-                audit=getattr(self._orch, "intent_log", None),
-            ),
+        # H661 — `file_read` also gets the tool-result spill directory as a read-only
+        # door for exact spill names, so an owner's JARVIS_FILE_ROOTS cannot strand the
+        # file a spilled result's notice tells the model to page. Inert while the file
+        # tools are off: nothing is registered, and the probe below says no.
+        file_tools = FileTools.from_env(
+            authorizer=action_kernel,
+            audit=getattr(self._orch, "intent_log", None),
+            spill_dirs=(spill_root(),),
         )
+        register_file_tools(server, file_tools)
+
+        def _spill_readable(path: str) -> bool:
+            # H661 — a spill notice names `file_read(path=…)` only when that call would
+            # be answered: the tool is registered and not fenced off by a job toolset,
+            # the turn in flight was offered it, and the live scope (or the spill door)
+            # opens this very path. Registered alone is not reachable.
+            from .job_toolsets import allows
+
+            if not server.allows("file_read") or not allows("file_read"):
+                return False
+            offer = _TURN_TOOL_OFFER.get()
+            if offer is not None and "file_read" not in offer:
+                return False
+            return file_tools.reaches(path)
         # Hermes absorption 5a — the model can look things up and search its own memory.
         # What it reads is declared data: the two web tools are registered
         # untrusted_output, search_memory declares taint per hit, and the tool loop fences
@@ -822,15 +851,38 @@ class AutonomyCoordinator:
                 retention_seconds=float(
                     _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
                 max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
-                # H661 — the notice names `file_read` only while the registry has it
-                # (JARVIS_FILE_TOOLS); a call that would be refused is no recipe.
-                read_back=lambda: server.allows("file_read"),
+                # H661 — the notice names `file_read` only when it can page this file
+                # from this turn; a call that would be refused is no recipe.
+                read_back=_spill_readable,
             ),
         )
         # K3 — the operator surface reads and resets what K2 owns, so the manager has
         # to be reachable from a route. Bound even when it is None: "sessions are off"
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
+
+        tool_profile = ToolProfileResolver(
+            settings=_get_setting,
+            agent_patterns=_agent_tool_patterns,
+            principal=_turn_principal,
+        )
+
+        def _profile_and_note_offer(agent_id, tools):
+            # H661 — the same decision, unchanged, plus a note of what it offered in the
+            # turn's context, so a spilled result further down this turn names
+            # `file_read` only if the turn can call it (see _TURN_TOOL_OFFER). Noted
+            # only from inside a task — the loop always runs in one, in its own copied
+            # context — so a synchronous caller cannot leave an offer behind in a
+            # context that outlives it.
+            offered, decision = tool_profile(agent_id, tools)
+            try:
+                in_task = asyncio.current_task() is not None
+            except RuntimeError:
+                in_task = False
+            if in_task:
+                _TURN_TOOL_OFFER.set(
+                    frozenset(str(tool.get("name") or "") for tool in offered))
+            return offered, decision
 
         runtime = AgentToolRuntime(
             server,
@@ -849,7 +901,7 @@ class AutonomyCoordinator:
                 retention_seconds=float(
                     _get_setting("llm.tool_result_retention_seconds", 86400) or 86400),
                 max_files=int(_get_setting("llm.tool_result_max_files", 512) or 512),
-                read_back=lambda: server.allows("file_read"),
+                read_back=_spill_readable,
             ),
             result_thresholds=lambda: _get_setting("llm.tool_result_thresholds", {}) or {},
             # Left at 0 the window comes from the model the turn is running on.
@@ -859,11 +911,7 @@ class AutonomyCoordinator:
             # that means something else — and stay inert whenever it was unset.
             context_window_tokens=lambda: int(
                 _get_setting("llm.tool_result_context_window", 0) or 0),
-            tool_profile=ToolProfileResolver(
-                settings=_get_setting,
-                agent_patterns=_agent_tool_patterns,
-                principal=_turn_principal,
-            ),
+            tool_profile=_profile_and_note_offer,
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)

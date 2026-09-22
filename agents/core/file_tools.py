@@ -62,6 +62,11 @@ Governance (MOONSHOT §5):
   ``JARVIS_FILE_TOOLS`` is set. Roots come from ``JARVIS_FILE_ROOTS``
   (default ``data_path('workspace')``); the byte cap from
   ``JARVIS_FILE_MAX_BYTES`` (default 2 000 000).
+* H661 — ``file_read`` pages (``offset`` / ``next_offset``), and the coordinator may
+  hand it the tool-result spill directory as a read-only door (``spill_dirs``): an
+  exact, absolute spill-file path is readable even when ``JARVIS_FILE_ROOTS`` points
+  elsewhere, so the call a spilled result's notice names is one this tool accepts.
+  Nothing is listed, searched or written through that door (:meth:`FileTools._spill_file`).
 * Local-first, no new dependencies, no shell; blocking file I/O runs in
   ``asyncio.to_thread`` so the event loop stays free.
 
@@ -94,6 +99,7 @@ from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
 from agents.core.local_docs import DOC_EXTS, extract_text
 from agents.core.paths import data_path
+from agents.core.tool_result_store import is_reference as _is_spill_reference
 from agents.core.tool_rpc import ToolRPCValidationError
 
 logger = logging.getLogger("jarvis.file_tools")
@@ -106,6 +112,11 @@ ROOTS_ENV = "JARVIS_FILE_ROOTS"
 MAX_BYTES_ENV = "JARVIS_FILE_MAX_BYTES"
 DEFAULT_MAX_BYTES = 2_000_000
 MAX_PATH_CHARS = 4096
+#: The largest ``file_read`` offset (H661): the largest integer every JSON reader holds
+#: exactly, and far past any file. Above it an offset is refused as ``bad_offset``
+#: rather than reaching ``seek``, which raises ``ValueError`` past 2**63 and ``EINVAL``
+#: past the filesystem's own size limit — neither of which is the reader's business.
+MAX_OFFSET = 2**53 - 1
 MAX_LIST_ENTRIES = 2000
 # Hermes absorption 4h — a .pdf / .docx inside the roots is read as its text, through the
 # same optional parsers the local-docs indexer uses (pypdf, python-docx); without them the
@@ -565,6 +576,12 @@ def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> 
     return max(minimum, min(maximum, value))
 
 
+def _valid_offset(value: object) -> bool:
+    """An int in ``0..MAX_OFFSET`` — not a bool, not a float, not a string of digits."""
+    return (not isinstance(value, bool) and isinstance(value, int)
+            and 0 <= value <= MAX_OFFSET)
+
+
 class FileTools:
     """Scope-bound file handlers. ``authorizer`` is the injected kernel hook."""
 
@@ -577,6 +594,7 @@ class FileTools:
         authorizer: Callable[..., Any] | None = None,
         audit: Any = None,
         agent: str = "jarvis",
+        spill_dirs: Sequence[str | Path] = (),
     ) -> None:
         self.scope = scope if scope is not None else FileScope.from_env()
         self.snapshots = snapshots if snapshots is not None else SnapshotStore()
@@ -589,10 +607,88 @@ class FileTools:
         self._authorizer = authorizer
         self._audit = audit
         self.agent = agent
+        # H661 — directories of Nerva's own spilled tool results that `file_read` (and
+        # nothing else) may open *by exact spill name* even when the owner's roots do
+        # not contain them. Empty by default: only the coordinator, which writes the
+        # spills and hands their paths to the model, opens this door.
+        dirs: list[Path] = []
+        for raw in spill_dirs or ():
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            directory = Path(text).expanduser()
+            if not directory.is_absolute():
+                raise ValueError("spill directories must be absolute paths")
+            dirs.append(directory.resolve())
+        self._spill_dirs: tuple[Path, ...] = tuple(dict.fromkeys(dirs))
 
     @classmethod
-    def from_env(cls, *, authorizer: Callable[..., Any] | None = None, audit: Any = None) -> FileTools:
-        return cls(FileScope.from_env(), authorizer=authorizer, audit=audit)
+    def from_env(cls, *, authorizer: Callable[..., Any] | None = None, audit: Any = None,
+                 spill_dirs: Sequence[str | Path] = ()) -> FileTools:
+        return cls(FileScope.from_env(), authorizer=authorizer, audit=audit,
+                   spill_dirs=spill_dirs)
+
+    # ── what file_read may open ──────────────────────────────────────────────
+
+    def _spill_file(self, raw_path: object) -> Path | None:
+        """The spill file *raw_path* names, or ``None`` — the read-only door (H661).
+
+        A spilled result's notice names its file by absolute path; an owner who set
+        ``JARVIS_FILE_ROOTS`` has, without meaning to, moved that path outside the
+        scope, and the model is back to re-running the tool. So a path is admitted
+        here — for ``file_read`` only — when all of these hold, and refused otherwise:
+
+        * it is absolute and already normal (no ``..``, no symlinked spelling: the
+          path must equal its own resolution, which is what the store emits);
+        * its parent *is* one of the configured spill directories — never a child of
+          one, so nothing nested is reachable;
+        * its name has the store's reference shape (``<tool>-<hash>.json|txt``) and
+          does not look like a secret by the scope's own rule.
+
+        Nothing is listed or searched through this door and nothing is written: the
+        name is only known to a turn that was told it.
+        """
+        if not self._spill_dirs or not isinstance(raw_path, str) or not raw_path:
+            return None
+        if len(raw_path) > MAX_PATH_CHARS or "\x00" in raw_path or raw_path != raw_path.strip():
+            return None
+        candidate = Path(raw_path)
+        if not candidate.is_absolute() or str(candidate) != os.path.normpath(raw_path):
+            return None
+        name = candidate.name
+        if not _is_spill_reference(name) or looks_secret_name(name):
+            return None
+        if candidate.parent not in self._spill_dirs:
+            return None
+        try:
+            if candidate.resolve() != candidate:
+                return None
+        except (OSError, RuntimeError):
+            return None
+        return candidate
+
+    def _resolve_read(self, raw_path: object) -> Path:
+        """What ``file_read`` opens: the scope's answer, or a spill through the door.
+
+        The scope's refusal stands unless the door admits the path, so a secret name,
+        a symlink out of the roots or a traversal is refused exactly as before.
+        """
+        try:
+            return self.scope.resolve(raw_path)
+        except FileScopeError:
+            spill = self._spill_file(raw_path)
+            if spill is None:
+                raise
+            return spill
+
+    def reaches(self, raw_path: object) -> bool:
+        """True when ``file_read`` would open *raw_path* now — the probe a notice asks
+        before it names a call (H661). A refusal of any kind, or no file there, is no."""
+        try:
+            target = self._resolve_read(raw_path)
+            return target.is_file()
+        except (FileScopeError, OSError, ValueError):
+            return False
 
     # ── ungated ──────────────────────────────────────────────────────────────
 
@@ -602,16 +698,18 @@ class FileTools:
         A read that stops before the end says where the next page starts
         (``next_offset``), so a file bigger than one page — a spilled tool result is
         the case this exists for — is reachable to its last byte without re-running
-        whatever produced it. A bad ``offset`` is refused by name: reading from 0
-        instead would return the first page labelled as the one that was asked for.
+        whatever produced it. A bad ``offset`` — not an int, negative, or past
+        :data:`MAX_OFFSET` — is refused by name: reading from 0 instead would return
+        the first page labelled as the one that was asked for. An offset at or past
+        the end is an empty final page, answered without seeking there.
         """
         offset = args.get("offset")
         if offset is None:
             offset = 0
-        elif isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        elif not _valid_offset(offset):
             return {"ok": False, "reason": "bad_offset"}
         try:
-            target = self.scope.resolve(args.get("path"))
+            target = self._resolve_read(args.get("path"))
         except FileScopeError as exc:
             return {"ok": False, "reason": exc.reason}
         limit = _bounded_int(args.get("max_bytes"), self.max_bytes, minimum=1, maximum=self.max_bytes)
@@ -625,15 +723,17 @@ class FileTools:
             size = target.stat().st_size
             if not raw and target.suffix.lower() in DOCUMENT_SUFFIXES:
                 return _read_document(target, size, limit, offset)
-            with target.open("rb") as handle:
-                handle.seek(offset)
-                data = handle.read(limit)
+            data = b""
+            if offset < size:
+                with target.open("rb") as handle:
+                    handle.seek(offset)
+                    data = handle.read(limit)
             return {"ok": True, "path": str(target), **_page(data, offset=offset, total=size),
                     "size": size}
 
         try:
             result = await asyncio.to_thread(_read)
-        except OSError as exc:
+        except (OSError, ValueError, OverflowError) as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
         self._record("file.read", str(target), ok=result.get("ok") is True)
         return result
@@ -1034,8 +1134,11 @@ class FileTools:
             path = clean.get("path")
             if path is None and name in ("file_list", "file_search"):
                 return clean
+            # Only file_read has the spill door (H661); every other tool is held to
+            # the owner's roots exactly as before.
+            resolve = self._resolve_read if name == "file_read" else self.scope.resolve
             try:
-                self.scope.resolve(path)
+                resolve(path)
             except FileScopeError as exc:
                 raise ToolRPCValidationError(exc.reason) from None
             if name == "file_write" and len(clean["content"].encode("utf-8")) > self.max_bytes:
@@ -1261,7 +1364,7 @@ def _preflight_read(args: dict) -> Mapping:
         clean["raw"] = args["raw"]
     if "offset" in args:
         value = args["offset"]
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if not _valid_offset(value):
             raise ToolRPCValidationError("bad_offset")
         clean["offset"] = value
     return clean
@@ -1342,7 +1445,7 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "properties": {
                 "path": _PATH_SCHEMA,
                 "max_bytes": {"type": "integer", "minimum": 1},
-                "offset": {"type": "integer", "minimum": 0},
+                "offset": {"type": "integer", "minimum": 0, "maximum": MAX_OFFSET},
                 "raw": {"type": "boolean"},
             },
             "required": ["path"],
@@ -1500,7 +1603,7 @@ def register_file_tools(
 
 
 __all__ = [
-    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES",
+    "KIND", "FLAG", "ROOTS_ENV", "MAX_BYTES_ENV", "DEFAULT_MAX_BYTES", "MAX_OFFSET",
     "FILE_WRITE_CONTRACT", "FILE_TOOL_SPECS", "GATED_TOOL_KINDS",
     "FileScope", "FileScopeError", "FileTools", "Snapshot", "SnapshotStore",
     "SECRET_NAME_TOKENS", "looks_secret_name", "restore_snapshot", "register_file_tools",

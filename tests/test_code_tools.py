@@ -828,7 +828,7 @@ async def test_the_stdout_notice_is_a_call_that_pages_the_whole_stream_back(tmp_
     make as written and keep making from `next_offset` until it has every byte — without
     running the script a second time.
     """
-    from agents.core.tool_result_store import page_recipe
+    from agents.core.tool_result_store import DEFAULT_PAGE_BYTES, page_recipe
 
     server = _server_with_file_read(tmp_path)
     factory = _session_tool if session else _tool
@@ -839,8 +839,12 @@ async def test_the_stdout_notice_is_a_call_that_pages_the_whole_stream_back(tmp_
         if session:
             await tool._kernels.shutdown()
 
-    recipe = page_recipe(result["stdout_file"], page_bytes=result["output_limit"])
+    # A page is the smaller of the inline ceiling and the floor every model's per-result
+    # budget allows: file_read is never spilled, so the page it returns is taken whole.
+    assert result["output_limit"] > DEFAULT_PAGE_BYTES, "the default sandbox ceiling is larger"
+    recipe = page_recipe(result["stdout_file"], page_bytes=DEFAULT_PAGE_BYTES)
     assert result["stdout_read_with"] == {"tool": "file_read", "arguments": recipe["arguments"]}
+    assert recipe["arguments"]["max_bytes"] == DEFAULT_PAGE_BYTES
     assert recipe["call"] in result["stdout_notice"]
     assert "next_offset" in result["stdout_notice"]
     assert "whole or in parts" not in result["stdout_notice"]
@@ -885,8 +889,11 @@ async def test_a_runaway_stdout_spill_stops_at_its_ceiling_and_says_so(tmp_path)
     assert result["stdout_spill_capped"] is True
     assert result["stdout_bytes"] == 300_001, "what the script printed, not what was kept"
     assert result["stdout_file_bytes"] == len(raw)
+    assert result["stdout_kept_bytes"] == 100_000, "the stream's bytes, not the marker's"
     assert result["stdout_sha256"] == hashlib.sha256(raw).hexdigest()
     assert "spill capped" in result["stdout_notice"]
+    assert "keeps the first 100000 bytes" in result["stdout_notice"]
+    assert f"{len(raw)} bytes on disk" in result["stdout_notice"]
     assert result["ok"] is True, "a capped spill is a note, not a failed run"
 
 
@@ -896,3 +903,4 @@ async def test_a_spill_under_its_ceiling_carries_no_cap_flag(tmp_path):
                            result_store=_store(tmp_path))
     result = await _run(tool, "print('z' * 200000)")
     assert "stdout_spill_capped" not in result and "stdout_file_bytes" not in result
+    assert "stdout_kept_bytes" not in result
