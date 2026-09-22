@@ -242,7 +242,25 @@
   two shapes (a `case`-label strip reaching a subshell's last word; a heredoc body fed
   to a shell after the redirection) and adds a `./reboot.sh` false refusal (H481); the
   SOUL scan misses a payload it caught before #1177 (H506). No status moves;
-  `needs_review` 12 → 0.
+  `needs_review` 12 → 0. **Third pass (2026-09-22, #1179 drift):** #1179's persona-scan
+  and MCP-scope fixes moved `agent.py`, `quarantine.py`, `mcp/client.py` and four test
+  files under sixteen reviewed rows, so `main` carried `needs_review` 16. Same protocol —
+  each row re-read against the diff on its cited paths with its cited tests run (every
+  cited pytest file green; the three cited vitest files run by a skeptic), then an
+  independent skeptic told to break the verdict: nine rows re-stamped with their text
+  unchanged (H146, H298, H363, H364, H449, H551, H671, H673, H679 — #1179 touched none
+  of the mechanism they cite), seven rewritten from what the code does now (H270, H351,
+  H387, H497, H502, H554, H557), six of those corrected by their skeptic (H554 moved from
+  keep to rewrite: trust tiers and `readOnlyHint` gate calls, not the listing). Findings
+  recorded as open gaps rather than smoothed over: the catalog scan still advertises an
+  invisible character standing *in place of* a separator and `\w` admits four Hangul
+  fillers into `command` (H351); the wrap pass scans only the fully-normalised join, so a
+  wrapped `you are now`+U+200B phrase evades it (H387); Nerva runs two `SenderPairing`
+  objects over one store, so a redeemed Telegram deeplink can pair twice (H497); xAI is a
+  fifth unrepaired `input_schema` path (H557); Hermes' hijack names are members of the
+  outbound allowlists, so the write-side registry must be its own list (H270). No status
+  moves; `needs_review` 16 → 0; headline 119 → 123/697 — the four `equivalent` rows
+  #1179 had staled (H298, H551, H671, H679) count again, nothing new rose.
 
 ## Darwin feature absorption — 2026-09-09
 
