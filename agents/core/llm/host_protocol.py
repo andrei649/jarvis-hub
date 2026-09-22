@@ -70,11 +70,15 @@ _PATTERN_HOSTS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-class HostProtocolRefused(PermissionError):
+class HostProtocolRefused(Exception):
     """A backend tried to speak a protocol its target host does not accept.
 
     Raised from the egress request hook before the transport is touched, so neither
-    the body nor the credential in the auth header left the machine.
+    the body nor the credential in the auth header left the machine. Deliberately
+    neither an ``OSError`` nor an ``httpx.HTTPError``: a connection-failure handler
+    (``except OSError`` / ``except httpx.HTTPError``) must not read a refusal as
+    "backend down, try elsewhere". Backends that catch ``Exception`` degrade to their
+    usual error reply.
     """
 
 
@@ -83,6 +87,9 @@ def hostname_of(url: object) -> str:
 
     Accepts an ``httpx.URL``, a URL string, or a bare ``host[/path]`` (read as a
     network location, so ``proxy.test/api.openai.com/v1`` is ``proxy.test``).
+    Strings are parsed by ``httpx.URL`` — the parser the wire dials with — so an
+    IDNA dot equivalent (``api．anthropic．com``) folds to the host httpx would
+    actually connect to; ``urlsplit`` is only the fallback for text httpx rejects.
     """
     if isinstance(url, httpx.URL):
         host = url.host or ""
@@ -93,9 +100,12 @@ def hostname_of(url: object) -> str:
         if "://" not in text:
             text = "//" + text
         try:
-            host = urlsplit(text).hostname or ""
-        except ValueError:
-            return ""
+            host = httpx.URL(text).host or ""
+        except (httpx.InvalidURL, ValueError, TypeError):
+            try:
+                host = urlsplit(text).hostname or ""
+            except ValueError:
+                return ""
     return host.lower().rstrip(".")
 
 

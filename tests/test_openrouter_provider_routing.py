@@ -21,7 +21,8 @@ import httpx
 import pytest
 
 from agents.core import settings_db
-from agents.core.llm.openrouter import OpenRouterBackend
+from agents.core.llm.egress import llm_async_client
+from agents.core.llm.openrouter import OPENROUTER_BASE, OpenRouterBackend
 from agents.core.llm.provider_routing import (
     ProviderRoutingInvalid,
     build_provider_block,
@@ -63,6 +64,11 @@ class _Client:
 
     async def aclose(self):
         pass
+
+
+def _wire(handler, base_url=OPENROUTER_BASE):
+    """The real egress client (ledger hook and all) over an in-memory transport."""
+    return llm_async_client("openrouter", base_url=base_url, transport=httpx.MockTransport(handler))
 
 
 # ── the request body ────────────────────────────────────────────────────────
@@ -133,9 +139,7 @@ async def test_the_block_reaches_the_wire_through_the_real_client():
         seen.append(json.loads(request.content))
         return httpx.Response(200, json=_OK)
 
-    backend = OpenRouterBackend(api_key="k", provider_routing=_ALL_SIX)
-    backend.client._mounts = {}
-    backend.client._transport = httpx.MockTransport(handler)
+    backend = OpenRouterBackend(api_key="k", provider_routing=_ALL_SIX, client=_wire(handler))
     await backend.generate_tool_turn("acme/model-a", [{"role": "user", "content": "hi"}], [])
     await backend.aclose()
     assert seen[0]["provider"]["data_collection"] == "deny"
@@ -302,3 +306,129 @@ async def test_router_fails_closed_on_a_tampered_stored_value(monkeypatch, caplo
     assert router._compatible_backend is None
     assert "provider routing" in caplog.text.lower()
     await router.aclose()
+
+
+# ── live: an owner's change reaches the next request, not the next detect() ─
+
+
+async def _detect_from_db(monkeypatch, stored):
+    """HybridRouter.detect() against the real (temporary) settings DB — no stubbed reads."""
+    from unittest.mock import AsyncMock
+
+    from agents.core.llm.hybrid_router import HybridRouter
+    from agents.core.llm.router import LLMRouter
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    for name in ("OPENROUTER_BASE_URL", "OPENAI_BASE_URL", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(LLMRouter, "detect", AsyncMock())
+    monkeypatch.setattr(HybridRouter, "_check", AsyncMock(return_value=False))
+    settings_db.put_category("llm", {"compatible_provider": "openrouter",
+                                     "compatible_model": "acme/model-a", **stored})
+    router = HybridRouter()
+    await router.detect()
+    return router
+
+
+def _capture(backend):
+    """Re-point a router-built backend at an in-memory transport; return its bodies."""
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=_OK)
+
+    backend.client = _wire(handler)
+    return bodies
+
+
+@pytest.mark.asyncio
+async def test_router_builds_the_block_from_the_stored_rows(temp_settings, monkeypatch):
+    router = await _detect_from_db(monkeypatch, {"openrouter_sort": "throughput",
+                                                 "openrouter_order": ["anthropic"]})
+    backend = router._compatible_backend
+    bodies = _capture(backend)
+    await backend.generate("acme/model-a", "hi")
+    assert bodies[0]["provider"] == {"sort": "throughput", "order": ["anthropic"],
+                                     "data_collection": "deny"}
+    await router.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_settings_change_after_detect_reaches_the_next_request(temp_settings, monkeypatch):
+    """HUD PUT / `nerva config set` store the row; the live backend must send it next."""
+    router = await _detect_from_db(monkeypatch, {})
+    backend = router._compatible_backend
+    bodies = _capture(backend)
+    await backend.generate("acme/model-a", "before")
+    assert bodies[0]["provider"] == {"data_collection": "deny"}
+
+    change = {"openrouter_only": ["anthropic"], "openrouter_ignore": ["together"]}
+    assert settings_db.validate_category("llm", change) == []
+    settings_db.put_category("llm", change)
+    await backend.generate_tool_turn("acme/model-a", [{"role": "user", "content": "after"}], [])
+    assert bodies[1]["provider"] == {"only": ["anthropic"], "ignore": ["together"],
+                                     "data_collection": "deny"}
+
+    # Loosening applies on the next request too — and so does tightening back.
+    settings_db.put_category("llm", {"openrouter_data_collection": "allow"})
+    await backend.generate("acme/model-a", "loose")
+    assert bodies[2]["provider"]["data_collection"] == "allow"
+    settings_db.put_category("llm", {"openrouter_data_collection": "deny"})
+    await backend.generate("acme/model-a", "tight")
+    assert bodies[3]["provider"]["data_collection"] == "deny"
+    await router.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_tampered_row_after_detect_refuses_the_request(temp_settings, monkeypatch, caplog):
+    """Written around the validator while running: nothing is sent, never a wider route."""
+    router = await _detect_from_db(monkeypatch, {"openrouter_only": ["anthropic"]})
+    backend = router._compatible_backend
+    bodies = _capture(backend)
+    settings_db.put_category("llm", {"openrouter_only": ["anthropic", "not a slug"]})
+    out = await backend.generate("acme/model-a", "hi")
+    turn = await backend.generate_tool_turn("acme/model-a", [{"role": "user", "content": "hi"}], [])
+    assert bodies == []
+    assert out == "[OpenRouter error]" and turn.content == "[OpenRouter error]"
+    assert "llm.openrouter_" in caplog.text and "not a slug" in caplog.text
+    # Fixed through the validated path, the very next request flows again.
+    settings_db.put_category("llm", {"openrouter_only": ["anthropic"]})
+    await backend.generate("acme/model-a", "hi")
+    assert bodies[0]["provider"]["only"] == ["anthropic"]
+    await router.aclose()
+
+
+# ── a routing-caused refusal says which setting to look at ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_data_policy_404_names_the_setting_in_the_log(caplog):
+    policy = {"error": {"code": 404,
+                        "message": "No endpoints found matching your data policy\n(forged line)"}}
+    backend = OpenRouterBackend(api_key="k", provider_routing={"data_collection": "deny"},
+                                client=_wire(lambda request: httpx.Response(404, json=policy)))
+    out = await backend.generate("acme/model-a", "hi")
+    turn = await backend.generate_tool_turn("acme/model-a", [{"role": "user", "content": "hi"}], [])
+    await backend.aclose()
+    assert out == "[OpenRouter error]" and turn.content == "[OpenRouter error]"
+    hints = [r.getMessage() for r in caplog.records
+             if "llm.openrouter_data_collection" in r.getMessage()]
+    assert len(hints) == 2
+    assert "No endpoints found matching your data policy" in hints[0]
+    assert '"data_collection": "deny"' in hints[0]
+    assert "\n" not in hints[0]                        # the provider's text is log-safe
+
+
+@pytest.mark.asyncio
+async def test_no_routing_hint_without_a_block_or_for_an_auth_error(caplog):
+    bare = OpenRouterBackend(api_key="k", client=_wire(
+        lambda request: httpx.Response(404, json={"error": {"message": "no such model"}})))
+    await bare.generate("acme/model-a", "hi")
+    denied = OpenRouterBackend(api_key="k", provider_routing={"data_collection": "deny"}, client=_wire(
+        lambda request: httpx.Response(401, json={"error": {"message": "bad key"}})))
+    await denied.generate("acme/model-a", "hi")
+    await bare.aclose()
+    await denied.aclose()
+    assert "OpenRouter generate failed" in caplog.text
+    assert "llm.openrouter_" not in caplog.text

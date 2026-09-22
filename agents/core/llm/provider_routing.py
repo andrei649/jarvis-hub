@@ -22,10 +22,12 @@ OpenAI-compatible server does not know it — and falsy knobs are omitted so
 OpenRouter's own defaults apply to them.
 
 Pure module (no I/O, no httpx): ``settings_db`` imports the slug check from here to
-refuse a bad write with a 422, and ``OpenRouterBackend`` builds the object once at
-construction. An invalid value raises :class:`ProviderRoutingInvalid` instead of
-being dropped, because dropping an ``only`` or ``ignore`` entry would *widen* the
-set of providers the owner allowed.
+refuse a bad write with a 422, and ``OpenRouterBackend`` rebuilds the object from
+the settings rows before every request (and once at construction, to refuse a bad
+stored value up front), so an owner's change governs the next request. An invalid
+value raises :class:`ProviderRoutingInvalid` instead of being dropped, because
+dropping an ``only`` or ``ignore`` entry would *widen* the set of providers the
+owner allowed; the backend then sends nothing.
 """
 
 from __future__ import annotations

@@ -13,6 +13,7 @@ from typing import Any, Callable
 import httpx
 
 from .egress import llm_async_client
+from .host_protocol import HostProtocolRefused
 from .repetition_guard import is_repetition_dominated
 from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -716,6 +717,11 @@ class OllamaBackend(LLMBackend):
                         self._context_windows[model] = size
         except (ValueError, TypeError, AttributeError, httpx.HTTPError):
             pass
+        except HostProtocolRefused as exc:
+            # H368 — an ollama_url on a vendor host that mandates another protocol:
+            # nothing left (the egress ledger holds the refusal); degrade like any
+            # failed probe so compaction / route planning see "unknown", not a raise.
+            logger.warning("Ollama context probe refused: %s", exc)
         return self.context_window(model)
 
     def _context_options(self, model: str) -> dict:

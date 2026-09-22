@@ -388,13 +388,17 @@ class HybridRouter(LLMRouter):
                         api_key=key, base_url=base_url,
                         profile=profile, reasoning_effort=self._admin_setting("reasoning_effort", ""),
                         effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
-                        # H583 — the owner's llm.openrouter_* rows; ignored for openai-compatible.
-                        provider_routing=provider_routing_from_settings(self._admin_setting),
+                        # H583 — a reader of the owner's llm.openrouter_* rows, re-read
+                        # before every request so a HUD / `nerva config set` change
+                        # governs the next request, not the next detect(). Ignored for
+                        # openai-compatible.
+                        provider_routing=lambda: provider_routing_from_settings(self._admin_setting),
                     )
                     self._cloud_available = True
                 except ProviderRoutingInvalid as exc:
                     # Fail closed: a stored knob the settings validator would have
-                    # refused must not silently widen which providers may serve.
+                    # refused must not silently widen which providers may serve. (A
+                    # row tampered with after this point refuses each request instead.)
                     logger.error("OpenRouter provider routing refused, compatible route disabled: %s", exc)
 
         # Claude model is admin-configurable (/admin → llm.claude_model).

@@ -51,6 +51,12 @@ def _clean_monitor():
     (httpx.URL("https://api.openai.com/v1/chat/completions"), OPENAI),
     ("https://bedrock-runtime.us-east-1.amazonaws.com", BEDROCK_CONVERSE),
     ("https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com/model/x/converse", BEDROCK_CONVERSE),
+    # IDNA dot equivalents: httpx (the wire) folds them to "." — so must the table.
+    ("https://api．anthropic．com/v1", ANTHROPIC_MESSAGES),     # FULLWIDTH FULL STOP
+    ("https://api。anthropic。com/v1", ANTHROPIC_MESSAGES),     # IDEOGRAPHIC FULL STOP
+    ("https://api｡openai｡com/v1", OPENAI),                   # HALFWIDTH IDEOGRAPHIC FULL STOP
+    ("api．openai．com", OPENAI),                              # …bare, no scheme
+    ("https://api.anthropic.com。/v1", ANTHROPIC_MESSAGES),        # trailing ideographic dot
 ])
 def test_vendor_hosts_mandate_their_protocol(url, protocol):
     assert host_mandated_protocol(url) == protocol
@@ -99,14 +105,14 @@ def test_refusal_names_host_and_both_protocols():
 # ── the wire: next to the egress ledger ─────────────────────────────────────
 
 
-def _pin(client, seen):
-    client._mounts = {}
+def _client(backend, seen, **kwargs):
+    """The real egress client for *backend* over an in-memory transport that records."""
 
     def handler(request):
         seen.append(request)
         return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
-    client._transport = httpx.MockTransport(handler)
+    return llm_async_client(backend, transport=httpx.MockTransport(handler), **kwargs)
 
 
 @pytest.mark.asyncio
@@ -116,9 +122,10 @@ async def test_openai_protocol_aimed_at_anthropic_sends_nothing():
     from agents.core.llm.providers import DEFAULT_REGISTRY
 
     seen = []
-    backend = OpenRouterBackend(api_key="sk-secret", base_url="https://api.anthropic.com/v1",
-                                profile=DEFAULT_REGISTRY.get("openai-compatible"))
-    _pin(backend.client, seen)
+    base_url = "https://api.anthropic.com/v1"
+    backend = OpenRouterBackend(api_key="sk-secret", base_url=base_url,
+                                profile=DEFAULT_REGISTRY.get("openai-compatible"),
+                                client=_client("openrouter", seen, base_url=base_url))
     out = await backend.generate("m", "hi")
     turn = await backend.generate_tool_turn("m", [{"role": "user", "content": "hi"}], [])
     await backend.aclose()
@@ -133,8 +140,7 @@ async def test_openai_protocol_aimed_at_anthropic_sends_nothing():
 @pytest.mark.asyncio
 async def test_the_client_raises_before_dispatch():
     seen = []
-    client = llm_async_client("openrouter", base_url="https://api.anthropic.com/v1")
-    _pin(client, seen)
+    client = _client("openrouter", seen, base_url="https://api.anthropic.com/v1")
     with pytest.raises(HostProtocolRefused):
         await client.post("/chat/completions", json={}, headers={"Authorization": "Bearer sk-x"})
     await client.aclose()
@@ -144,11 +150,9 @@ async def test_the_client_raises_before_dispatch():
 @pytest.mark.asyncio
 async def test_matching_protocol_and_unmandated_hosts_still_flow():
     seen = []
-    ok = llm_async_client("openrouter", base_url="https://api.openai.com/v1")
-    _pin(ok, seen)
+    ok = _client("openrouter", seen, base_url="https://api.openai.com/v1")
     await ok.post("/chat/completions", json={})
-    lookalike = llm_async_client("anthropic", base_url="https://api.openai.com.attacker.test")
-    _pin(lookalike, seen)
+    lookalike = _client("anthropic", seen, base_url="https://api.openai.com.attacker.test")
     await lookalike.post("/v1/messages", json={})
     await ok.aclose()
     await lookalike.aclose()
@@ -159,14 +163,13 @@ async def test_matching_protocol_and_unmandated_hosts_still_flow():
 @pytest.mark.asyncio
 async def test_a_redirect_onto_a_vendor_host_is_checked_per_hop():
     seen = []
-    client = llm_async_client("ollama", base_url="http://localhost:11434", follow_redirects=True)
-    client._mounts = {}
 
     def handler(request):
         seen.append(request)
         return httpx.Response(302, headers={"location": "https://api.openai.com/v1/chat/completions"})
 
-    client._transport = httpx.MockTransport(handler)
+    client = llm_async_client("ollama", base_url="http://localhost:11434", follow_redirects=True,
+                              transport=httpx.MockTransport(handler))
     with pytest.raises(HostProtocolRefused):
         await client.post("/api/chat", json={})
     await client.aclose()
@@ -224,3 +227,40 @@ async def test_router_keeps_the_default_and_custom_endpoints(monkeypatch):
                                          "OPENAI_BASE_URL": "https://proxy.test/api.anthropic.com/v1"})
     assert router._compatible_backend is not None          # a custom endpoint, not the vendor
     await router.aclose()
+
+
+@pytest.mark.parametrize("dot", ["．", "。"])
+@pytest.mark.asyncio
+async def test_router_refuses_an_idna_dot_spelling_of_the_anthropic_host(monkeypatch, caplog, dot):
+    """detect() parses the host the way the wire does, so the refusal happens at build."""
+    router = await _detect(monkeypatch, {
+        "_provider": "openai-compatible", "OPENAI_API_KEY": "k",
+        "OPENAI_BASE_URL": f"https://api{dot}anthropic{dot}com/v1"})
+    assert router._compatible_backend is None
+    assert "api.anthropic.com" in caplog.text
+    await router.aclose()
+
+
+# ── a refusal degrades the way a failed request does ────────────────────────
+
+
+def test_a_refusal_is_not_a_transport_failure():
+    """No `except OSError` connection handler may read a refusal as 'backend down'."""
+    refusal = HostProtocolRefused("api.openai.com accepts only openai")
+    assert not isinstance(refusal, (OSError, httpx.HTTPError))
+
+
+@pytest.mark.asyncio
+async def test_ollama_context_probe_on_a_mandated_host_degrades_to_unknown(caplog):
+    """The compaction / route-planning probe gets None, as it does for any failed probe."""
+    from agents.core.llm.base import OllamaBackend
+
+    seen = []
+    backend = OllamaBackend(base_url="https://api.openai.com")
+    await backend.client.aclose()
+    backend.client = _client("ollama", seen, base_url="https://api.openai.com")
+    assert await backend.resolve_context_window("local-model") is None
+    await backend.aclose()
+    assert seen == []
+    assert "api.openai.com" in caplog.text
+    assert EGRESS_MONITOR.snapshot()["plugins"]["llm:ollama"]["blocked"] == 1
