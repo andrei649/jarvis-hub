@@ -497,20 +497,57 @@ def test_workflow_uses_shared_policy_aware_selector():
     assert 'if r.get("drift") == "DRIFT"]' not in workflow
 
 
+def _checkout_writes_of(workflow_text: str, name: str = "update.json") -> list[str]:
+    """Non-comment workflow lines that name ``name`` without a ``$RUNNER_TEMP`` anchor.
+
+    A full-line comment (first non-blank character ``#``) is free to mention the
+    file; only a command or expression that touches it outside the runner's
+    scratch directory can put it into the checkout.
+    """
+    return [
+        line.strip()
+        for line in workflow_text.splitlines()
+        if name in line and "RUNNER_TEMP" not in line and not line.lstrip().startswith("#")
+    ]
+
+
 def test_workflow_keeps_its_update_artifact_out_of_the_tree():
     """The bump step's JSON summary must never land in the checkout.
 
     peter-evans/create-pull-request commits whatever the checkout holds, so a
     ``tee update.json`` in the bump step is how a stray ``update.json`` reached
-    the repo root (#1127, rewritten by #1183). The summary now round-trips
-    through ``$RUNNER_TEMP`` and nothing in the tree produces the file.
+    the repo root (#686, rewritten by #942 and #1183). The summary now
+    round-trips through ``$RUNNER_TEMP`` and nothing in the tree produces the
+    file.
     """
     workflow = (
         repo_root / ".github" / "workflows" / "thirdparty-autoupdate.yml"
     ).read_text(encoding="utf-8")
 
-    lines = [line for line in workflow.splitlines() if "update.json" in line]
-    assert lines, "the bump step should still round-trip its summary through update.json"
-    for line in lines:
-        assert "RUNNER_TEMP" in line, f"update.json written inside the checkout: {line.strip()}"
+    # The two concrete sites: the summary is written under $RUNNER_TEMP ...
+    assert 'tee "$RUNNER_TEMP/' in workflow, "bump summary is not tee'd under $RUNNER_TEMP"
+    # ... and read back from there.
+    assert 'os.environ["RUNNER_TEMP"]' in workflow, "bump summary is not read back from $RUNNER_TEMP"
+    assert _checkout_writes_of(workflow) == [], "update.json written inside the checkout"
     assert not (repo_root / "update.json").exists(), "stray update.json in the repo root"
+
+
+def test_update_artifact_check_skips_comments_and_flags_checkout_writes():
+    """A comment may name the summary file; only a real write outside $RUNNER_TEMP fails.
+
+    The first cut of the pinning test rejected *any* workflow line containing
+    ``update.json``, so a legitimate comment turned the lane red.
+    """
+    step = (
+        "        run: |\n"
+        "          set -euo pipefail\n"
+        "          # update.json is the bump summary\n"
+        '          python scripts/update_thirdparty.py --json | tee "$RUNNER_TEMP/update.json"\n'
+        '          s = json.load(open(Path(os.environ["RUNNER_TEMP"]) / "update.json"))\n'
+    )
+    assert _checkout_writes_of(step) == []
+
+    regressed = step.replace('tee "$RUNNER_TEMP/update.json"', "tee update.json")
+    assert _checkout_writes_of(regressed) == [
+        "python scripts/update_thirdparty.py --json | tee update.json"
+    ]

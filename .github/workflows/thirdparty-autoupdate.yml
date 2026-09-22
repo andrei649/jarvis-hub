@@ -90,7 +90,7 @@ jobs:
           # The JSON summary lives under $RUNNER_TEMP, never in the checkout:
           # create-pull-request commits whatever the checkout holds, and a
           # `tee` into the checkout is how a stray copy of this summary reached
-          # the repo root (#1127, rewritten by #1183).
+          # the repo root (#686, rewritten by #942 and #1183).
           python scripts/update_thirdparty.py --name "${{ matrix.name }}" --json | tee "$RUNNER_TEMP/update.json"
           # The update must leave the offline consistency check green.
           python scripts/check_thirdparty_drift.py --consistency
