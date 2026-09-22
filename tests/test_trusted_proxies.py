@@ -346,7 +346,11 @@ def test_announce_says_the_set_resolved_before_logging_was_configured(monkeypatc
     # so that first INFO line goes nowhere. The lifespan announces the set once
     # logging and .env are both in place — exactly one line either way.
     monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.5")
-    proxy_trust.trusted_proxies()  # the import-time resolution
+    # The import-time resolution, unheard: an earlier test's lifespan may already
+    # have configured INFO logging in this process, so hold the logger above INFO.
+    with caplog.at_level(logging.WARNING, logger="jarvis.proxy_trust"):
+        proxy_trust.trusted_proxies()
+    caplog.clear()
     with caplog.at_level(logging.INFO, logger="jarvis.proxy_trust"):
         assert proxy_trust.announce_trusted_proxies() == (proxy_trust.ip_network("10.0.0.5/32"),)
     lines = _trust_set_lines(caplog)
