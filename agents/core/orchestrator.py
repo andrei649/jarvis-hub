@@ -1022,6 +1022,11 @@ class Orchestrator:
             logger.info(f"Session: {self.session_id}")
 
         self.load_runtime_settings()
+        # HEARTBEAT.md (and its .local.md overlay) wins: cadence + checklist. The
+        # agents.yaml interval only fills agents that ship no heartbeat file, and an
+        # agent whose file the injection scan refused is scheduled from neither source
+        # (see the heartbeat.py module docstring). The order below is the documented
+        # one, but the scheduler gives the same result either way.
         self.heartbeat_scheduler.load_all()
         self.heartbeat_scheduler.load_from_config(self.config)
 
