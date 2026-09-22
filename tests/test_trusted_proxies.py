@@ -579,6 +579,25 @@ def test_forwarded_proto_is_believed_only_from_a_listed_peer(monkeypatch):
     assert local.get(path, headers=https).json()["resource"].startswith("http://")
 
 
+def test_a_forwarded_scheme_keeps_the_route_label_in_the_golden_signals(monkeypatch):
+    # The router writes scope["route"] and the outer golden-signals middleware reads
+    # its label from the scope it passed down. Setting the forwarded scheme on a
+    # copy would count every request a listed proxy sends with X-Forwarded-Proto
+    # as "<unmatched>" — the whole same-box Caddy/nginx deployment.
+    from fastapi.testclient import TestClient
+
+    from agents.core.observability.http_metrics import HTTP_METRICS
+
+    path = "/.well-known/oauth-protected-resource"
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.5")
+    listed = TestClient(web.app, client=("10.0.0.5", 4321))
+    matched, unmatched = HTTP_METRICS.count("GET", path), HTTP_METRICS.count("GET", "<unmatched>")
+    reply = listed.get(path, headers={"X-Forwarded-Proto": "https"})
+    assert reply.json()["resource"].startswith("https://")
+    assert HTTP_METRICS.count("GET", path) - matched == 1
+    assert HTTP_METRICS.count("GET", "<unmatched>") == unmatched
+
+
 def test_forwarded_proto_helper_maps_to_the_scope_type(monkeypatch):
     monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "10.0.0.5")
     fp = proxy_trust.forwarded_proto

@@ -67,6 +67,8 @@ Governance (MOONSHOT §5):
   exact, absolute spill-file path is readable even when ``JARVIS_FILE_ROOTS`` points
   elsewhere, so the call a spilled result's notice names is one this tool accepts.
   Nothing is listed, searched or written through that door (:meth:`FileTools._spill_file`).
+  A page of a spill, by either route, declares ``tainted``: the loop fences it and
+  marks the turn as it did when the tool first answered (:meth:`FileTools._is_spill`).
 * Local-first, no new dependencies, no shell; blocking file I/O runs in
   ``asyncio.to_thread`` so the event loop stays free.
 
@@ -99,6 +101,7 @@ from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
 from agents.core.local_docs import DOC_EXTS, extract_text
 from agents.core.paths import data_path
+from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
 from agents.core.tool_rpc import ToolRPCValidationError
 
@@ -681,6 +684,20 @@ class FileTools:
                 raise
             return spill
 
+    def _is_spill(self, target: Path) -> bool:
+        """True when *target* is one of Nerva's spilled tool results (H661).
+
+        A spill is a tool's output parked on disk: paging it back must not launder it
+        into trusted ``file_read`` text. Its file name cannot say reliably which tool
+        wrote it (names are sanitised, a secret-looking one is replaced), so every
+        spill counts as third-party — in a configured spill directory, or in any
+        directory with the store's name, whether it was reached by the owner's roots
+        or through the door.
+        """
+        if not _is_spill_reference(target.name):
+            return False
+        return target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
+
     def reaches(self, raw_path: object) -> bool:
         """True when ``file_read`` would open *raw_path* now — the probe a notice asks
         before it names a call (H661). A refusal of any kind, or no file there, is no."""
@@ -701,7 +718,9 @@ class FileTools:
         whatever produced it. A bad ``offset`` — not an int, negative, or past
         :data:`MAX_OFFSET` — is refused by name: reading from 0 instead would return
         the first page labelled as the one that was asked for. An offset at or past
-        the end is an empty final page, answered without seeking there.
+        the end is an empty final page, answered without seeking there. A page of a
+        spilled tool result says ``tainted``, so the loop fences it and marks the turn
+        exactly as it did when the tool first answered (:meth:`_is_spill`).
         """
         offset = args.get("offset")
         if offset is None:
@@ -728,8 +747,11 @@ class FileTools:
                 with target.open("rb") as handle:
                     handle.seek(offset)
                     data = handle.read(limit)
-            return {"ok": True, "path": str(target), **_page(data, offset=offset, total=size),
+            page = {"ok": True, "path": str(target), **_page(data, offset=offset, total=size),
                     "size": size}
+            if self._is_spill(target):
+                page["tainted"] = True
+            return page
 
         try:
             result = await asyncio.to_thread(_read)

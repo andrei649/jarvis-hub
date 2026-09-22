@@ -36,6 +36,7 @@ from agents.core.file_tools import (
     SnapshotStore,
     register_file_tools,
 )
+from agents.core.security.quarantine import split_fenced_tool_result
 from agents.core.tool_result_store import ToolResultStore, preview_envelope
 from agents.core.tool_rpc import ToolRPCServer, ToolRPCValidationError
 
@@ -680,6 +681,7 @@ class _PagingBackend:
 
     def __init__(self) -> None:
         self.pages: list[str] = []
+        self.fenced: list[bool] = []
         self.turns = 0
 
     async def generate_tool_turn(self, **kwargs):
@@ -689,7 +691,10 @@ class _PagingBackend:
         tool_messages = [m for m in kwargs["messages"] if m.get("role") == "tool"]
         if not tool_messages:
             return self._call("blob", {"n": 1})
-        last = json.loads(tool_messages[-1]["content"])
+        content = tool_messages[-1]["content"]
+        fence = split_fenced_tool_result(content)
+        self.fenced.append(fence is not None)
+        last = json.loads(fence[1] if fence else content)
         if last.get("spilled"):
             recipe = last["read_with"]
             return self._call(recipe["tool"], recipe["arguments"])
@@ -749,3 +754,77 @@ async def test_the_loop_pages_a_spilled_result_back_without_running_the_tool_aga
     rebuilt = "".join(backend.pages)
     assert rebuilt == spilled.read_text(encoding="utf-8")
     assert json.loads(rebuilt)["result"]["blob"].endswith("row-03999;")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("through", ["spill_door", "owner_roots"])
+async def test_a_paged_spill_is_fenced_and_taints_the_turn(tmp_path, monkeypatch, through):
+    """A spill is a tool's output parked on disk. Paged back through ``file_read`` it
+    used to arrive as trusted file text — no fence, no turn taint — so third-party
+    output re-entered the turn clean (lot-1 verifier finding). Every page of a spill
+    now declares taint. The producing tool here is a *trusted* one with a clean
+    payload, so the fences and the raised origin can only come from the read-back.
+    """
+    from agents.core import agent_runtime
+    from agents.core.action_origin import current_action_origin
+    from agents.core.agent_runtime import AgentToolRuntime
+    from agents.core.security.taint import TAINTED_RECALL_ORIGIN
+
+    monkeypatch.setattr(
+        agent_runtime, "estimate_messages",
+        lambda messages: sum(len(str(m.get("content", ""))) for m in messages) // 4)
+    spill_root = tmp_path / "spills"
+    spill_root.mkdir()
+    server = ToolRPCServer()
+
+    async def blob(args):
+        return {"blob": "".join(f"row-{i:05d};" for i in range(4_000))}
+
+    server.register_tool("blob", blob, description="Return a large payload.",
+                         input_schema={"type": "object",
+                                       "properties": {"n": {"type": "integer"}}})
+    root = spill_root
+    if through == "spill_door":
+        root = tmp_path / "projects"
+        root.mkdir()
+    register_file_tools(server, FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"),
+                                          max_bytes=2_000_000, spill_dirs=(spill_root,)),
+                        enabled=True)
+    backend = _PagingBackend()
+    events: list[dict] = []
+    runtime = AgentToolRuntime(server, enabled=lambda: True, max_result_bytes=5_000,
+                               max_iterations=lambda: 40, result_store=ToolResultStore(spill_root))
+
+    answer = await runtime.run(agent_id="nerva", backend=backend, model="local-model",
+                               prompt="fetch a lot", system="You are Nerva.",
+                               max_tokens=256, temperature=0.2, event_sink=events.append)
+
+    assert answer == "done"
+    assert len(backend.pages) > 1
+    assert backend.fenced == [False] + [True] * len(backend.pages)
+    untrusted = [e for e in events if e["event"] == "tool_result_untrusted"]
+    assert len(untrusted) == len(backend.pages)
+    assert all(e["source"] == "file_read" and "declared_taint" in e["reasons"] for e in untrusted)
+    assert current_action_origin() == TAINTED_RECALL_ORIGIN
+
+
+@pytest.mark.asyncio
+async def test_a_page_of_a_spill_declares_taint_and_an_ordinary_file_does_not(tmp_path):
+    root = _workspace(tmp_path)
+    spills = tmp_path / "spills"
+    spills.mkdir()
+    (spills / "web-extract-0123456789abcdef.json").write_text('{"ok": true}', encoding="utf-8")
+    (root / "notes.json").write_text('{"ok": true}', encoding="utf-8")
+    store_named = root / trs.SPILL_DIRNAME
+    store_named.mkdir()
+    (store_named / "web-extract-fedcba9876543210.json").write_text('{"ok": true}', encoding="utf-8")
+    tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"),
+                      spill_dirs=(spills,))
+
+    door = await tools.read_file({"path": str(spills / "web-extract-0123456789abcdef.json")})
+    in_roots = await tools.read_file({"path": str(store_named / "web-extract-fedcba9876543210.json")})
+    ordinary = await tools.read_file({"path": str(root / "notes.json")})
+
+    assert door["ok"] is True and door["tainted"] is True
+    assert in_roots["ok"] is True and in_roots["tainted"] is True
+    assert ordinary["ok"] is True and "tainted" not in ordinary

@@ -169,7 +169,10 @@ class _ForwardedProtoMiddleware:
     built from. Believed only from a peer inside JARVIS_TRUSTED_PROXIES
     (``proxy_trust.forwarded_proto``); from anyone else, or with an ambiguous value,
     the socket scheme stands. A malformed list fails closed and is said once. Pure
-    ASGI, so WebSocket scopes get ws/wss too; the scope is copied, not mutated.
+    ASGI, so WebSocket scopes get ws/wss too. The scheme is set on the scope in
+    place, as uvicorn's layer does: the router writes ``scope["route"]`` into the
+    same dict, and the outer golden-signals middleware reads its route label from
+    it — a copy would leave every forwarded request counted as ``<unmatched>``.
     """
 
     def __init__(self, app):
@@ -188,7 +191,7 @@ class _ForwardedProtoMiddleware:
                     _warn_malformed_proxy_list_once()
                     scheme = ""
                 if scheme:
-                    scope = {**scope, "scheme": scheme}
+                    scope["scheme"] = scheme
         await self.app(scope, receive, send)
 
 
