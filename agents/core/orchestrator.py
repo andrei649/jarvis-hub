@@ -317,22 +317,32 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
 
 
 def _refresh_souls_at_boundary(orchestrator) -> list[str]:
-    """H672 — the compaction commit is the one safe migration point for a live session.
+    """H672 — a compaction commit is the safe migration point for the personas in force.
 
     Nerva re-resolves tools, skills and the plugin block every turn already; the
     one thing a running conversation never picked up was the persona — the
     system prompt — read once in ``Agent.__init__``. Each agent re-reads it here,
     through the same builder a restart uses (``Agent._read_soul``: same file
-    resolution, same H387 scan, same cap), gated on byte equality and failing
-    OPEN per agent: a builder that throws keeps that agent's last-good bytes and
-    never touches the others. Called from ``_history_for_prompt``'s ``publish()``
-    after the clock CAS, so a refused commit migrates nothing. A module function,
-    not a method: that path is exercised with bare stubs for ``self`` and must
-    keep working for an orchestrator that carries no agents at all. The note is a
-    log line, not a field on the lineage row (which stays
+    resolution, same H387 scan, same cap), behind a stat probe (an unchanged file
+    costs one ``os.stat``, not a read and a scan), gated on byte equality and
+    failing OPEN per agent: a builder that throws keeps that agent's last-good
+    bytes and never touches the others. Called from ``_history_for_prompt``'s
+    ``publish()`` after the clock CAS, so a refused commit migrates nothing.
+
+    Two things a reader should not assume. The walk is **process-wide**:
+    ``orchestrator.agents`` is every agent in the process, and ``agent.soul`` is
+    the one dict every session's system prompt is read from, so the session that
+    commits migrates the persona for all of them — a session that never compacts
+    still sees the new persona on its next turn because another one did. And once
+    a session is over budget the commit happens on **every** turn (the compressor
+    recomputes from the raw turns each call), which is why the probe exists.
+    A module function, not a method: that path is exercised with bare stubs for
+    ``self`` and must keep working for an orchestrator that carries no agents at
+    all. The note is a log line, not a field on the lineage row (which stays
     ``nerva.context-compaction.v1``), and it is written only when something
     moved: a note on every fold would train a reader to skip it, and this line
-    exists to be read on the day a persona changed and somebody asks when.
+    exists to be read on the day a persona changed and somebody asks when — so it
+    names the committing session and says the change is shared.
     """
     from .session_refresh import PromptRefresh, ToolRefresh, boundary_note
 
@@ -352,7 +362,8 @@ def _refresh_souls_at_boundary(orchestrator) -> list[str]:
             if note:
                 notes.append(f"{agent_id}: {note}")
     if notes:
-        logger.info("context compaction boundary (session %s) — %s",
+        logger.info("context compaction boundary committed by session %s — agents are "
+                    "process-wide, so every session sees this on its next turn — %s",
                     str(getattr(orchestrator, "session_id", "") or "")[:128], "; ".join(notes))
     return notes
 

@@ -30,6 +30,21 @@ The keep-prompt fast path is gated on **byte equality of the builder's output**,
 never on a dirty flag. A flag is a claim about the world that drifts from it;
 the bytes are the world. Anything that forgets to set a flag silently pins a
 session to a stale prompt forever, and that failure is invisible.
+
+**Where each half is wired in Nerva (the H672 wiring, after this module was
+parked).** Nerva has two compaction commits, and "the compaction commit" above
+means a different one for each half. The prompt half runs at the
+*conversation-level* commit — ``Orchestrator._history_for_prompt`` →
+``publish()``, after the clock CAS — through ``Agent.refresh_soul``, which puts
+an ``os.stat`` probe in front of ``refresh_prompt`` because that commit repeats
+on every turn once a session is over budget. The tool half runs at the
+*in-turn* fold — ``AgentToolRuntime._run_loop`` after ``_compact_context``
+committed a fold — through ``refresh_tools``. That is inside one user turn,
+between two model iterations, and it is deliberate: a fold is itself a
+transcript rebuild, and the governance clause wants a revocation to land before
+the loop ends. "Mid-turn is the wrong place" above therefore reads as *between
+two folds*: there the registry is not consulted at all, and the model's plan
+stands on the set it was given.
 """
 
 from __future__ import annotations

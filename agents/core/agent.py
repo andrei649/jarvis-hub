@@ -5,6 +5,7 @@ heartbeat, checkpointing, skill generation, and promotion/demotion tracking.
 
 import inspect
 import logging
+import os
 import time
 from typing import Optional
 
@@ -98,6 +99,32 @@ def _soul_max_chars() -> int:
     choice for the same reason: a nonsense value means the intent is unknown.
     """
     return env_int("JARVIS_SOUL_MAX_CHARS", _SOUL_MAX_CHARS_DEFAULT, minimum=1)
+
+
+# H672 — git's "racy" rule, borrowed. A signature captured while the file's own
+# mtime is this close to now is not trusted: an edit of the same size landing in the
+# same timestamp tick (ext3, HFS+ and FAT stamp whole seconds; Linux's coarse clock
+# a jiffy) would be invisible to a stat. Such a file is read and compared by bytes at
+# every boundary until it ages past the window; then the probe takes over.
+_SOUL_RACY_WINDOW_NS = 2_000_000_000
+
+
+def _soul_signature(path) -> "tuple | None":
+    """What the kernel says about the SOUL file, or ``None`` when that cannot be trusted.
+
+    ``(path, inode, size, mtime_ns, ctime_ns, cap)``: the resolved path (a new
+    ``SOUL.local.md`` overlay is a different file), the inode (an editor's
+    save-by-rename is a new one), the size and both timestamps, and the body cap the
+    builder would apply — everything the builder reads except the scan patterns,
+    which are code. Not a dirty flag: nothing in this process maintains it, so
+    nothing in this process can forget to. A file modified within
+    ``_SOUL_RACY_WINDOW_NS`` of now has no signature (see the rule above). Raises
+    ``FileNotFoundError`` exactly as the builder does.
+    """
+    st = os.stat(path)
+    if time.time_ns() - _SOUL_RACY_WINDOW_NS < st.st_mtime_ns:
+        return None
+    return (str(path), st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, _soul_max_chars())
 
 
 def _cap_soul_body(body: str, filename: str, limit: int) -> "tuple[str, bool]":
@@ -402,17 +429,22 @@ class Agent:
         self._checkpoint_manager = None
         self._load_soul()
 
-    def _read_soul(self, *, quiet: bool = False) -> dict:
+    def _read_soul(self, *, quiet: bool = False, path=None) -> dict:
         """Read, scan and cap the SOUL the model will be given — touching nothing on ``self``.
 
         The one builder behind both ``_load_soul`` (construction) and ``refresh_soul``
         (a compaction boundary, H672), so a refresh can never resolve a different
         file, skip the H387 scan or cap differently from a restart. A missing file
         raises ``FileNotFoundError``; the caller decides what "no persona" means for
-        it. ``quiet`` silences the guard's own log lines: a boundary probe that finds
-        the same bytes it already has must not re-announce a verdict every fold.
+        it. ``path`` is the file a caller already resolved (and stat-ed), so the probe
+        and the read cannot disagree on which SOUL is live. ``quiet`` silences the
+        guard's own log lines for a caller that will decide *after comparing* whether
+        the verdict is news — ``refresh_soul`` announces it through
+        ``_announce_soul_verdict`` only when the bytes moved, so the same flagged
+        persona is not re-announced at every fold, and a fresh one is announced
+        exactly as a restart announces it.
         """
-        soul_path = soul_path_for(self.id)
+        soul_path = soul_path_for(self.id) if path is None else path
         if not soul_path.exists():
             raise FileNotFoundError(str(soul_path))
         content = soul_path.read_text(encoding="utf-8")
@@ -428,22 +460,12 @@ class Agent:
         body, flags, blocked = _scan_soul_body(
             body, soul_path.name, _body_line_offset(content, body))
         truncated = False
-        if flags and not quiet:
-            logger.error(
-                "SOUL injection scan flagged %s for agent %s — %s; matched: %s",
-                soul_path, self.id,
-                "persona dropped" if blocked else "flagged lines quarantined",
-                ", ".join(flags),
-            )
         if not blocked:
-            limit = _soul_max_chars()
-            body, truncated = _cap_soul_body(body, soul_path.name, limit)
-            if truncated and not quiet:
-                logger.warning(
-                    "SOUL for agent %s exceeds the %d-char cap and was truncated: %s",
-                    self.id, limit, soul_path,
-                )
+            body, truncated = _cap_soul_body(body, soul_path.name, _soul_max_chars())
+        soul = {"content": body, "path": soul_path, "meta": meta,
+                "flags": flags, "truncated": truncated, "blocked": blocked}
         if not quiet:
+            self._announce_soul_verdict(soul)
             logger.info(f"Loaded SOUL for {self.id} ({len(content)} chars)")
         # ``meta`` (front-matter) is left as parsed: it is typed persona
         # config — trait floats, affect setpoints, tier/archetype labels —
@@ -452,13 +474,40 @@ class Agent:
         # verdict; GET /api/agents/{id}/soul reports the same three beside
         # the raw file so the HUD cannot show a persona the model is not
         # receiving without saying so.
-        return {"content": body, "path": soul_path, "meta": meta,
-                "flags": flags, "truncated": truncated, "blocked": blocked}
+        return soul
+
+    def _announce_soul_verdict(self, soul: dict) -> None:
+        """The guard's log lines for a SOUL the model is now being given.
+
+        One place for both moments a persona lands — construction and a compaction
+        boundary — so the boundary is never a quieter channel for the same security
+        event: H387 pins ERROR for a quarantined persona at load, and the one path
+        where a persona is rewritten under a *running* session is the attacker-shaped
+        case the scan exists for.
+        """
+        if soul["flags"]:
+            logger.error(
+                "SOUL injection scan flagged %s for agent %s — %s; matched: %s",
+                soul["path"], self.id,
+                "persona dropped" if soul["blocked"] else "flagged lines quarantined",
+                ", ".join(soul["flags"]),
+            )
+        if soul["truncated"]:
+            logger.warning(
+                "SOUL for agent %s exceeds the %d-char cap and was truncated: %s",
+                self.id, _soul_max_chars(), soul["path"],
+            )
 
     def _load_soul(self):
+        soul_path = soul_path_for(self.id)
         try:
-            self.soul = self._read_soul()
+            # Stat BEFORE the read: an edit landing between the two then moves the
+            # signature past what was read, and the next boundary re-reads. The
+            # other order would pin a stale body to a fresh signature.
+            self._soul_stamp = _soul_signature(soul_path)
+            self.soul = self._read_soul(path=soul_path)
         except FileNotFoundError:
+            self._soul_stamp = None
             logger.warning(f"SOUL.md not found for {self.id}")
 
     def refresh_soul(self):
@@ -468,29 +517,60 @@ class Agent:
         thing a running conversation never picked up was the persona, which is the
         system prompt (``orchestrator.py``: ``system_prompt = agent.soul["content"]``),
         read once in ``__init__``. The orchestrator calls this at the compaction
-        commit. The keep path is byte equality of the fresh body against the one in
-        force — never a dirty flag — and a builder that raises (file gone for the
-        instant of an editor's rename, a front-matter parser crash) keeps the
-        last-good ``self.soul`` untouched. A scan verdict is not a failure: a persona
-        that is now mostly injection is dropped exactly as a restart would drop it,
-        and the HUD's ``guard`` reports it. Returns the ``PromptRefresh`` so the
-        boundary can say what moved.
+        commit — which, once a session is over budget, is every turn, for every
+        agent in the process — so the cost of an unchanged persona has to be one
+        ``os.stat``: a file whose kernel signature (``_soul_signature``) matches the
+        one captured at the last read is kept without being read or scanned. Only a
+        file that moved — or one written within the last two seconds, whose
+        signature is not trusted — reaches the builder, where the keep path is byte
+        equality of the builder's whole output (body *and* front-matter) against
+        the dict in force, never a dirty flag. A builder that raises (a front-matter
+        parser crash) keeps the last-good ``self.soul`` untouched; so does a file
+        absent for the instant of an editor's save-by-rename, with a plain warning,
+        while an agent that had no persona and still has none is simply unchanged.
+        A scan verdict is not a failure: a persona that is now mostly injection is
+        dropped exactly as a restart would drop it, announced at the same ERROR a
+        restart uses (``_announce_soul_verdict``), and the HUD's ``guard`` reports
+        it. Returns the ``PromptRefresh`` so the boundary can say what moved.
         """
-        from .session_refresh import refresh_prompt
+        from .session_refresh import PromptRefresh, refresh_prompt
+
+        in_force = self.soul.get("content", "")
+        soul_path = soul_path_for(self.id)
+        try:
+            signature = _soul_signature(soul_path)
+        except FileNotFoundError:
+            if not self.soul:
+                return PromptRefresh(text=in_force, changed=False, reason="identical")
+            logger.warning(
+                "SOUL for agent %s is absent at a compaction boundary (%s); keeping the "
+                "last-good persona", self.id, soul_path,
+            )
+            return PromptRefresh(text=in_force, changed=False, reason="failed-open")
+        if signature is not None and signature == getattr(self, "_soul_stamp", None):
+            return PromptRefresh(text=in_force, changed=False, reason="identical")
 
         fresh: dict = {}
 
         def build() -> str:
-            fresh.update(self._read_soul(quiet=True))
+            fresh.update(self._read_soul(quiet=True, path=soul_path))
             return fresh["content"]
 
-        out = refresh_prompt(build, self.soul.get("content", ""))
+        out = refresh_prompt(build, in_force)
+        if out.reason == "failed-open":
+            return out
+        self._soul_stamp = signature
+        if out.kept and fresh.get("meta") != self.soul.get("meta"):
+            # Same body, different front-matter: the builder's output moved (typed
+            # persona config the HUD reports from ``soul["meta"]``), so it is adopted.
+            out = PromptRefresh(text=out.text, changed=True, reason="rebuilt")
         if out.changed:
             self.soul = fresh
+            self._announce_soul_verdict(fresh)
             logger.info(
                 "SOUL for agent %s rebuilt at a compaction boundary (%d chars; flags=%s, "
                 "blocked=%s, truncated=%s)",
-                self.id, len(out.text), fresh["flags"], fresh["blocked"], fresh["truncated"],
+                self.id, len(fresh["content"]), fresh["flags"], fresh["blocked"], fresh["truncated"],
             )
         return out
 
