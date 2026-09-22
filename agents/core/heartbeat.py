@@ -6,10 +6,14 @@ agents.yaml for interval-based heartbeats. Schedules agent routines
 using APScheduler with jitter and MIN_HEARTBEAT_INTERVAL guardrails.
 """
 
+import hashlib
 import logging
 import random
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+
+from .security.quarantine import detect_injection, detect_injection_normalized, strip_invisible
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -31,6 +35,86 @@ MIN_HEARTBEAT_INTERVAL = 3600
 JITTER_MIN = 15
 JITTER_MAX = 30
 
+# H506 (read side) — HEARTBEAT.md is the file in this repo that *literally* steers
+# future runs: what `_parse_heartbeat` returns becomes a cron job and, through
+# `Agent.run_heartbeat`, a checklist whose every item is keyword-routed to a skill and
+# echoed verbatim into the run summary. The write side already treats the name as an
+# always-ask class (file_tools.py); this is the same class on the way in, with the
+# block-and-mark semantics `agent.py::_scan_soul_body` uses for SOUL.md.
+#
+# What is scanned, precisely. ONLY the YAML front-matter is loaded — the prose body
+# after the second `---` is discarded by `_parse_heartbeat` and reaches no model, log
+# or scheduler, so it is outside this scan by construction (a loader that starts
+# reading it must route it through `scan_heartbeat_config`; the tripwire is
+# tests/test_instruction_files_read_side_scan.py). Within the front-matter every
+# string is scanned — keys and values, at any depth — because the whole mapping is
+# handed to the agent and no field is reserved for prose. One hit refuses the whole
+# entry: a heartbeat is one scheduled job with no "rest of the persona" to preserve,
+# so unlike the per-line SOUL quarantine the fail-closed answer is simply not to
+# schedule it. The reason is logged with the file's digest, never the payload, and
+# `get_status()["blocked"]` carries the verdict to the HUD and the runtime run-log.
+#
+# Each string is scanned as the union of itself and its normalised copies
+# (`detect_injection_normalized`): the patterns are literal, so an invisible character
+# inside a phrase or a respacing between its words defeats a raw scan, and a scan of
+# a stripped copy alone destroys the `you are now\b` match when the invisible
+# character was what supplied the boundary. A TAG-plane payload (U+E0000–U+E007F,
+# rendered as nothing) is decoded and scanned too, so it is named rather than merely
+# deleted. All of it is a no-op for every shipped HEARTBEAT.md, pinned by the same test.
+_INVISIBLE_TAG_FLAG = "invisible-unicode-tag"
+_SCAN_MAX_DEPTH = 8
+
+
+def _string_leaves(value: Any, depth: int = 0) -> Iterator[str]:
+    """Every string a parsed front-matter carries — keys and values, nested, bounded."""
+    if isinstance(value, str):
+        yield value
+    elif depth >= _SCAN_MAX_DEPTH:
+        return
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _string_leaves(key, depth + 1)
+            yield from _string_leaves(item, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _string_leaves(item, depth + 1)
+
+
+def _decode_invisible_tags(text: str) -> str:
+    """Map U+E0000–U+E007F back to the ASCII they encode (twin of agent.py's)."""
+    return "".join(chr(ord(ch) - 0xE0000) for ch in text if 0xE0000 <= ord(ch) <= 0xE007F)
+
+
+def _join_surrogates(text: str) -> str:
+    """UTF-16 surrogate pairs as the one character they spell — for SCANNING.
+
+    PyYAML decodes a ``"\\uDB40\\uDC70"`` escape into two lone surrogates rather than
+    U+E0070: code units no code-point range in `quarantine.py` matches, which a JSON
+    serialiser on the way to a model joins back into the invisible TAG character. A
+    surrogate that pairs with nothing becomes U+FFFD; ordinary text is unchanged.
+    """
+    return text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+
+
+def scan_heartbeat_config(config: Any) -> list[str]:
+    """Injection patterns found anywhere in a parsed HEARTBEAT front-matter (empty = clean)."""
+    flags: list[str] = []
+
+    def add(pattern: str) -> None:
+        if pattern not in flags:
+            flags.append(pattern)
+
+    for leaf in _string_leaves(config):
+        joined = _join_surrogates(leaf)
+        for text in ((leaf, joined) if joined != leaf else (leaf,)):
+            if strip_invisible(text) != text:
+                add(_INVISIBLE_TAG_FLAG)
+                for pattern in detect_injection(_decode_invisible_tags(text)):
+                    add(pattern)
+            for pattern in detect_injection_normalized(text):
+                add(pattern)
+    return flags
+
 
 class HeartbeatScheduler:
     def __init__(self, agents_dir: Optional[str] = None):
@@ -42,6 +126,9 @@ class HeartbeatScheduler:
         self.agents_dir = Path(agents_dir)
         self.scheduler: Optional[AsyncIOScheduler] = None
         self._heartbeat_configs: dict[str, dict] = {}
+        # H506: the entries the injection scan refused, keyed by the agent directory
+        # that carried the file — never in `_heartbeat_configs`, so never scheduled.
+        self._blocked: dict[str, dict] = {}
 
     def load_all(self):
         """Scan all agent directories for HEARTBEAT.md files."""
@@ -72,7 +159,13 @@ class HeartbeatScheduler:
                     logger.info(f"Loaded heartbeat: {config['agent']} — {config.get('cadence', 'unknown')}")
 
     def _parse_heartbeat(self, path: Path) -> Optional[dict]:
-        """Parse the YAML frontmatter from a HEARTBEAT.md file."""
+        """Parse the YAML frontmatter from a HEARTBEAT.md file.
+
+        Never returns a config the injection scan flagged: the parser is the one place
+        file bytes become a heartbeat config, so the scan sits here rather than in a
+        caller that could be bypassed. A refused file is recorded in ``_blocked`` under
+        the directory that carried it and reported by ``get_status()``.
+        """
         content = path.read_text(encoding="utf-8")
         if not content.startswith("---"):
             return None
@@ -80,10 +173,25 @@ class HeartbeatScheduler:
         _, frontmatter, _ = content.split("---", 2)
         import yaml
         try:
-            return yaml.safe_load(frontmatter)
+            config = yaml.safe_load(frontmatter)
         except yaml.YAMLError as e:
             logger.error(f"Failed to parse {path}: {e}")
             return None
+        flags = scan_heartbeat_config(config)
+        if flags:
+            # The bytes on disk, so the owner can match the log line with `sha256sum`.
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self._blocked[path.parent.name] = {
+                "agent_id": path.parent.name, "path": str(path),
+                "flags": flags, "digest": digest,
+            }
+            logger.error(
+                "HEARTBEAT injection scan refused %s for agent %s — not scheduled; "
+                "sha256 %s; matched: %s",
+                path, path.parent.name, digest, ", ".join(flags),
+            )
+            return None
+        return config
 
     def _cron_fires_per_day(self, parts: list[str]) -> float:
         """Estimate how many times a cron expression fires in a 24h period."""
@@ -265,10 +373,17 @@ class HeartbeatScheduler:
                 pass
 
     def get_status(self):
-        """Return status of all scheduled heartbeats."""
+        """Return status of all scheduled heartbeats.
+
+        ``blocked`` lists the HEARTBEAT files the injection scan refused at load — the
+        HUD must not show an agent as merely "stopped" when its schedule was in fact
+        quarantined. Same three-field shape in both branches, so a HUD or the runtime
+        run-log reading it sees the verdict whether or not the scheduler is up.
+        """
+        blocked = [dict(verdict) for verdict in self._blocked.values()]
         if not self.scheduler:
-            return {"scheduler_running": False, "heartbeats": []}
-        
+            return {"scheduler_running": False, "heartbeats": [], "blocked": blocked}
+
         heartbeats = []
         for job in self.scheduler.get_jobs():
             if job.id.startswith("heartbeat-"):
@@ -278,10 +393,11 @@ class HeartbeatScheduler:
                     "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
                     "trigger": str(job.trigger),
                 })
-        
+
         return {
             "scheduler_running": self.scheduler.running,
             "heartbeats": heartbeats,
+            "blocked": blocked,
         }
 
     def start_heartbeat(self, agent_id: str, orchestrator):
