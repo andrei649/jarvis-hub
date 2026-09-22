@@ -25,7 +25,7 @@ here spawns anything; the transport (``local_transport.py``) and the runner
    level above, so the whole expansion is linear in the input. The set is
    deliberately **not** exhaustive. ``_detection_variants`` lists the gaps this
    module knows about — a list of known gaps, not a proof that there are no
-   others, and the four reviews that produced the current list found twenty-two
+   others, and the five reviews that produced the current list found twenty-five
    it did not have.
 2. **TERMINAL_EXEC_CONTRACT** — the ``ContractTemplate`` for the kernel kind
    ``terminal.exec``: target/backend present, argv fingerprinted, cwd inside
@@ -287,7 +287,9 @@ def _heredoc_open(line: str) -> tuple[int, str] | None:
     switched off. So this is quote- and context-aware. ``<<`` inside quotes is
     text (`grep "<<<<<<< HEAD" src/x.py`, `echo "a<<b"`), ``<<`` inside
     ``$(( ))`` is the arithmetic shift operator (`echo $((1 << n))`), and ``<<<``
-    is a here-STRING, which has no body at all.
+    is a here-STRING, which has no body LINE — its WORD is the command's stdin on
+    the same line, screened separately by ``_herestring_scripts`` when a shell
+    runs that WORD as a script (`sh <<< reboot`), not here.
     """
     index = 0
     quote = ""
@@ -440,16 +442,27 @@ _STDIN_FILES = frozenset({"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"})
 # script operand: `bash -o pipefail <<EOF` reads its stdin.
 _SHELL_OPTIONS_WITH_ARGUMENT = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
 _WINDOWS_FILE_FLAG_RE = re.compile(r"[-/](?:f|fi|fil|file)")
+# The tokens that CLOSE a subshell or brace group, or separate its commands: a
+# stage that is `(sh)`, `( sh )`, `(exec sh)` or `{ sh; }` ends in one of these
+# once the leading `(`/`{` prefix is stripped. They are not the shell's command
+# or its script operand, so they are dropped from the tail before the stage is
+# read — otherwise `['sh', ')']` read as `sh` running a script named `)` and the
+# stdin verdict for `| (sh)` (which every shell runs) was never reached.
+_STAGE_CLOSERS = frozenset({")", "}", ";"})
 
 
 def _stage_words(stage: str) -> list[str]:
-    """The words of a pipeline stage, redirections dropped and the prefixes a
-    shell steps over (``(``, ``{``, ``!``, ``then``, ``do``, …) removed."""
+    """The words of a pipeline stage, redirections dropped, the prefixes a shell
+    steps over (``(``, ``{``, ``!``, ``then``, ``do``, …) removed from the front
+    and the closers a group ends in (``)``, ``}``, ``;``) removed from the tail."""
     words = _shell_words(_REDIRECTION_RE.sub(" ", stage))
     index = 0
     while index < len(words) and words[index] in _COMMAND_PREFIXES:
         index += 1
-    return words[index:]
+    end = len(words)
+    while end > index and words[end - 1] in _STAGE_CLOSERS:
+        end -= 1
+    return words[index:end]
 
 
 def _interpreter_call(words: Sequence[str]) -> tuple[str, str | None] | None:
@@ -541,6 +554,58 @@ def _payload_reads_stdin(text: str) -> bool:
     return False
 
 
+# The WORD of a ``<<<`` here-string, quoted or bare. A here-string sends WORD to
+# the command's stdin; ``<<`` and ``<<-`` are heredocs and are excluded by the
+# third ``<``.
+_HERESTRING_RE = re.compile(r"<<<\s*(\"[^\"]*\"|'[^']*'|[^\s;&|<>()`]+)")
+
+
+def _herestring_scripts(command: str) -> list[str]:
+    """WORDs of ``<<<`` here-strings a shell runs as a script, screened as commands.
+
+    A here-string feeds WORD to a command's standard input, and a shell that
+    reads its stdin as the script RUNS it — ``sh <<< reboot``, ``bash <<< reboot``,
+    ``bash -s <<< reboot`` all execute WORD (``sh``/``dash`` lack ``<<<``, but
+    bash is a supported target), and ``cat <<< reboot | sh`` carries the bytes
+    through a passthrough into one. ``_heredoc_open`` skips ``<<<`` because it has
+    no body LINE, so nothing modelled it; the WORD is returned here to be screened
+    in command position, exactly as a heredoc body would be.
+
+    Only fired when the here-string's own pipeline stage is a stdin-reading shell,
+    or a stage DOWNSTREAM of it in the same statement is: ``cat <<< reboot | cat``
+    only prints, so its WORD is data. The stage's own shell is read with the
+    here-string redirection already stripped (``_stage_words`` drops ``<<< WORD``),
+    so ``sh <<< reboot`` reads as the bare ``sh`` it is.
+    """
+    scripts: list[str] = []
+    for line in _unquoted_lines(command):
+        for _, piece in _statement_pieces(line):
+            stages = _pipe_stages(piece)
+            calls = [_interpreter_call(_stage_words(stage)) for _, stage in stages]
+            for index, (_, stage) in enumerate(stages):
+                matches = _HERESTRING_RE.findall(stage)
+                if not matches:
+                    continue
+                consumed = any(
+                    call is not None and call[0] in ("stdin", "eval")
+                    for call in calls[index:]
+                )
+                if not consumed:
+                    continue
+                for word in matches:
+                    # The OUTER shell removes the here-string WORD's quotes before
+                    # the bytes reach the inner shell, which parses them as a
+                    # command line: `sh <<< 'rm -rf /'` runs `rm -rf /`. So the
+                    # WORD is dequoted to its shell value, not screened with the
+                    # quotes still on (a single quoted token is not a command).
+                    try:
+                        dequoted = " ".join(shlex.split(word)) or word
+                    except ValueError:
+                        dequoted = word
+                    scripts.append(dequoted)
+    return scripts
+
+
 def _script_runs(text: str, depth: int = 0) -> set[str]:
     """Names (and basenames) of the files a shell READS AND EXECUTES in *text*.
 
@@ -570,20 +635,51 @@ def _script_runs(text: str, depth: int = 0) -> set[str]:
     return names | {_basename(name) for name in names}
 
 
+def _inside_process_substitution(text: str, position: int) -> bool:
+    """Is character *position* inside an unclosed ``<(``/``>(`` on *text*?
+
+    A process substitution ``<(cmd)`` runs ``cmd`` and exposes its output as a
+    file. A heredoc opened between the ``<(`` and its matching ``)`` belongs to
+    that inner command, so a shell running the substitution's file runs the body.
+    Not quote-aware: *text* is a single pipeline stage, and a ``<(`` inside quotes
+    is rare enough that reading it as a real one only ADDS a refusal.
+    """
+    depth = 0
+    index = 0
+    while index < position and index < len(text):
+        pair = text[index:index + 2]
+        if pair in ("<(", ">("):
+            depth += 1
+            index += 2
+            continue
+        if text[index] == ")" and depth:
+            depth -= 1
+        index += 1
+    return depth > 0
+
+
 def _heredoc_feeds_a_shell(line: str, offset: int, later: Callable[[], set[str]]) -> bool:
     """Does a shell EXECUTE the body of the heredoc opened at *offset* on *line*?
 
     ``cat <<EOF`` hands the body to a program that prints it; a shell that reads
     its stdin as a script runs it, every line a statement — so treating those
     lines as data was a hole straight through the floor. A shell reaches the body
-    three ways, all checked here:
+    four ways, all checked here:
 
     * The heredoc's own pipeline stage IS such a shell: ``bash <<EOF``,
       ``sh <<'EOF'``, ``bash -s <<EOF``, ``sudo bash <<EOF``, ``sh /dev/stdin
       <<EOF`` — or a shell whose ``-c`` line launches one (``bash -c sh <<EOF``).
+      A subshell or brace group as a pipe stage counts here too: ``| (sh)``,
+      ``| ( sh )``, ``| (exec sh)``, ``| { sh; }`` — ``_stage_words`` drops the
+      trailing ``)``/``}`` so the stage reads as the bare shell it is.
     * A stage DOWNSTREAM of it is: ``cat <<EOF | sh``, ``cat <<EOF | grep -v '^#'
       | sh``. #1177 read only the stage LEFT of ``<<`` and so missed these,
       although /bin/sh, dash and bash all run the body.
+    * The heredoc is opened INSIDE a ``<(...)`` process substitution the owning
+      stage's shell/``source`` runs: ``source <(cat <<EOF …)``, ``sh <(cat <<EOF
+      …)``, ``bash <(…)``, ``. <(…)`` execute the substitution's output — the
+      body — as a script (``_inside_process_substitution``; bash-only, and bash
+      is a supported target).
     * The body is written to a FILE — a ``>``/``>>`` target, quoted or not, or a
       ``tee`` operand, on the owning stage or downstream — that a shell then runs
       in the same command: ``cat <<'EOF' >x.sh; sh x.sh`` (same line) or ``cat
@@ -617,6 +713,20 @@ def _heredoc_feeds_a_shell(line: str, offset: int, later: Callable[[], set[str]]
     for index, (start, _) in enumerate(stages):
         if statement_start + start <= offset:
             first = index
+    # A heredoc opened INSIDE a process substitution ``<(...)`` whose fd is
+    # consumed by a shell or ``.``/``source`` on the OWNING stage: the
+    # substitution runs its inner command (``cat <<EOF``) and exposes the output —
+    # the body — as a file, and ``source <(...)``, ``. <(...)``, ``sh <(...)`` and
+    # ``bash <(...)`` execute that file as a script. bash runs these (``sh``/
+    # ``dash`` lack ``<(``), and bash is a supported target. The consumer sits
+    # BEFORE the ``<(`` on this line; a consumer piped in AFTER it (``cat <(...)
+    # | sh``) lands on a later line once the heredoc has a body and terminator,
+    # so it is not reached here and stays a disclosed gap.
+    first_start, first_stage = stages[first]
+    if _inside_process_substitution(first_stage, offset - statement_start - first_start):
+        call = _interpreter_call(_stage_words(first_stage))
+        if call is not None and call[0] == "file" and (call[1] or "").startswith("("):
+            return True
     downstream = [(stage, _stage_words(stage)) for _, stage in stages[first:]]
     for index, (_, words) in enumerate(downstream):
         call = _interpreter_call(words)
@@ -1150,18 +1260,29 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
     a heredoc opened inside a command substitution (``eval "$(cat <<EOF …)"``,
     which ``_heredoc_open`` reads as quoted text). ``_heredoc_feeds_a_shell``
     catches ``sh x.sh``, ``. x.sh``/``source x.sh``, the same behind ``(``/``{``/
-    ``then``, a ``tee`` or quoted target, ``cat x.sh | sh``, ``sh -c '. x.sh'`` and
-    the pipe forms — each pinned — and misses two more pipe shapes: ``xargs -I{}
-    sh -c '{}'`` (each line becomes the command line; an ``xargs``-reached shell
-    is read as taking arguments) and a ``;`` inside a ``( )`` group of a pipe
-    stage (``cat <<EOF | (cd /tmp; sh)``, split at the ``;`` like every ``;``).
+    ``then``, a ``tee`` or quoted target, ``cat x.sh | sh``, ``sh -c '. x.sh'``,
+    the pipe forms, a subshell or brace group as the final pipe stage
+    (``| (sh)``, ``| ( sh )``, ``| (exec sh)``, ``| { sh; }`` — the trailing
+    closer is dropped by ``_stage_words``) and a heredoc inside a ``<(...)`` a
+    leading shell/``source`` runs (``source <(cat <<EOF …)``, ``sh <(…)``,
+    ``bash <(…)``, ``. <(…)`` — modelled by ``_heredoc_feeds_a_shell`` and
+    ``_inside_process_substitution``) — each pinned — and misses two more pipe
+    shapes: ``xargs -I{} sh -c '{}'`` (each line becomes the command line; an
+    ``xargs``-reached shell is read as taking arguments) and a ``;`` inside a
+    ``( )`` group of a pipe stage (``cat <<EOF | (cd /tmp; sh)``, split at the
+    ``;`` by ``_statement_pieces`` before the subshell is seen), plus a ``<(...)``
+    consumed by a shell DOWNSTREAM on a later line (``cat <(cat <<EOF …) | sh``,
+    where the ``| sh`` follows the heredoc terminator). A ``<<<`` here-string fed
+    to a stdin-reading shell (``sh <<< reboot``, ``bash <<< 'rm -rf /'``,
+    ``cat <<< reboot | sh``) is screened separately by ``_herestring_scripts``,
+    which dequotes the WORD and hands it to the scan in command position.
 
     Nor is a ``case`` label with a leading ``(`` (``(shutdown) echo bye ;;``) or a
     ``case`` nested inside another one read as a label — both are refusals that
     are not commands, which is the direction that costs nothing but a false no.
 
     This list is what the module knows it misses, not a proof of completeness.
-    Four adversarial reviews of the list itself found twenty-two entries missing
+    Five adversarial reviews of the list itself found twenty-five entries missing
     from it — a decoy option between ``-c`` and the payload, a newline inside a
     payload, an assignment prefix, a brace group, a compound-command keyword
     position, a re-expansion budget filled with decoys, a path in front of the
@@ -1179,9 +1300,17 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
     shell UPSTREAM of the heredoc's stage, an ``xargs``-reached shell, a shell
     with its own script or ``-c`` line, a written file handed to a script as an
     ARGUMENT, and a compact ``;then case`` read as an argument — and two of its
-    new scans super-linear on prose; all fixed. Closed entries are closed rather
-    than listed; the point of recording it here is that the next entries are
-    found the same way, by somebody trying.
+    new scans super-linear on prose; all fixed. The fifth review found three more
+    cleared refusals, all closed here and each reproduced under /bin/sh, /bin/dash
+    and /bin/bash first: a subshell/brace group as the final pipe stage with no
+    internal ``;`` (``cat <<EOF | (sh)`` — the disclosure had said the machinery
+    missed only two pipe shapes and this was a third), a ``<<<`` here-string into
+    a stdin shell (``sh <<< reboot`` — the ``<<<`` note had said it "has no body
+    at all"), and a heredoc inside a ``<(...)`` a leading shell/``source`` runs
+    (``source <(cat <<EOF …)`` — process substitution was neither modelled nor
+    listed next to the ``$()`` entry). Closed entries are closed rather than
+    listed; the point of recording it here is that the next entries are found the
+    same way, by somebody trying.
     """
     yield command
     produced: list[str | Sequence[str]] = [command]
@@ -1214,6 +1343,15 @@ def _detection_variants(command: str | Sequence[str]) -> Iterator[str | Sequence
             continue
         seen.add(key)
         yield plain
+    # A ``<<<`` here-string fed to a stdin-reading shell is a script: its WORD is
+    # screened in command position, the same way a heredoc body is. Only string
+    # commands can carry a here-string; an argv never meets a shell.
+    if isinstance(command, str):
+        for script in _herestring_scripts(command):
+            if script in seen:
+                continue
+            seen.add(script)
+            yield script
 
 
 def _scan_one(command: str | Sequence[str]) -> str | None:

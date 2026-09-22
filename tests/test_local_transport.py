@@ -1505,3 +1505,111 @@ def test_a_shell_with_its_own_script_on_the_heredoc_stage_reads_the_body_as_data
     counted), and every shell prints the literal body for both — a false
     refusal cleared on purpose and reported as such, not an invariant kept."""
     assert hardline_match(command) is None
+
+
+# ── H481 second adversarial pass: three more cleared refusals ────────────────
+# A PATH-shim stand-in (`reboot` = `echo RAN-reboot`) run under /bin/sh, /bin/dash
+# and /bin/bash confirmed each shape below executes the heredoc/here-string body
+# before it was pinned. The stand-in is harmless; the SHAPE is one a shell runs.
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A subshell as the FINAL pipe stage with no internal `;`: the `(` opener is
+    # stripped as a command prefix and the trailing `)` used to be read as the
+    # shell's script operand (`['sh', ')']` -> file `)`), so the stdin verdict was
+    # never reached. All three shells run the body.
+    ("cat <<EOF | (sh)\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | ( sh )\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | (exec sh)\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | (sh)\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | (exec sh)\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    # A brace group whose only command is a stdin shell, same shape.
+    ("cat <<EOF | { sh; }\nreboot\nEOF", "power_cycle"),
+])
+def test_a_subshell_as_the_final_pipe_stage_still_runs_the_heredoc_body(command, expected):
+    """`| (sh)` / `| ( sh )` / `| (exec sh)` hand the heredoc body to a shell that
+    runs it — the stripped `(`/`)` used to leave `['sh', ')']`, read as `sh`
+    running a script named `)`. `_stage_words` now drops trailing pure closers,
+    so the stage falls through to the stdin verdict. Reproduced against /bin/sh,
+    /bin/dash and /bin/bash with an `echo RAN` stand-in."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A here-string sends WORD to the command's stdin; bash runs `sh <<< reboot`
+    # and `bash <<< reboot` as a script (sh/dash lack `<<<`, but bash is a
+    # supported target).
+    ("sh <<< reboot", "power_cycle"),
+    ("bash <<< reboot", "power_cycle"),
+    ("bash -s <<< reboot", "power_cycle"),
+    ("sh <<< 'rm -rf /'", "recursive_root_removal"),
+    ("bash <<< 'mkfs.ext4 /dev/sda'", "mkfs"),
+    # The here-string feeds a passthrough that pipes into a stdin shell.
+    ("cat <<< reboot | sh", "power_cycle"),
+])
+def test_a_here_string_into_a_stdin_shell_is_a_script(command, expected):
+    """`cmd <<< WORD` is a here-string: WORD is the command's standard input, and
+    for a shell that IS the script. `_heredoc_open` skips `<<<` (it has no body
+    line), so nothing modelled it — the WORD is now screened in command position
+    when a stdin shell consumes it. bash executes each of these (verified)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # No stdin shell consumes the here-string: `cat <<< reboot | cat` just prints,
+    # so the WORD is data, not a script.
+    "cat <<< reboot | cat",
+    "grep <<< reboot pattern",
+])
+def test_a_here_string_no_shell_runs_is_data(command):
+    """The keep-intact direction: a here-string fed to a non-shell (or a pipeline
+    with no stdin shell) is data. bash prints, never executes it."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A heredoc opened inside a process substitution `<(...)` whose fd is consumed
+    # by `source`/`.`/a shell on the SAME line: the substitution's output is the
+    # body, and source/sh/bash execute it. bash runs these (sh/dash lack `<(`).
+    ("source <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("sh <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("bash <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    (". <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("source <(cat <<EOF\nrm -rf /\nEOF\n)", "recursive_root_removal"),
+    ("sh <(cat <<EOF\nmkfs.ext4 /dev/sda\nEOF\n)", "mkfs"),
+])
+def test_a_heredoc_inside_a_process_substitution_a_shell_runs_is_a_script(command, expected):
+    """`source <(cat <<EOF …)` and `sh <(cat <<EOF …)` run the substitution's
+    output — the heredoc body — as a script. The `<(…)` was read as an ordinary
+    file operand, so the body stayed data. Reproduced against /bin/bash with an
+    `echo RAN` stand-in (sh/dash lack `<(`, but bash is a supported target)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # No shell/source consumes the process substitution: `cat <(…)` prints the
+    # substitution's output, it is not executed.
+    "cat <(cat <<EOF\nreboot\nEOF\n)",
+    "diff <(cat <<EOF\nreboot\nEOF\n) other",
+])
+def test_a_process_substitution_no_shell_runs_is_data(command):
+    """A `<(…)` handed to a non-shell is a filename read as data. bash prints it,
+    never executes it, so the body stays data."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command", [
+    # Still-disclosed gaps in these directions (each runs the body in a real
+    # shell and still returns None); pinned so closing one means updating the list.
+    # A `;` inside a `( )` group of a pipe stage: `_statement_pieces` splits at the
+    # `;` before the subshell is seen, so `(cd /tmp; sh)` is not modelled.
+    "cat <<EOF | (cd /tmp; sh)\nreboot\nEOF",
+    # `xargs -I{} sh -c '{}'`: each line becomes the command line.
+    "cat <<EOF | xargs -I{} sh -c '{}'\nreboot\nEOF",
+    # A process substitution consumed by a shell DOWNSTREAM, on a later line.
+    "cat <(cat <<EOF\nreboot\nEOF\n) | sh",
+])
+def test_disclosed_group_and_downstream_gaps_are_still_misses_and_that_is_the_pin(command):
+    """These execute the body in bash and still return None. They are listed in
+    `_detection_variants` as known gaps; this pins that the list stays honest."""
+    assert hardline_match(command) is None
