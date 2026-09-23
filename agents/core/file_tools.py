@@ -685,17 +685,15 @@ class FileTools:
             return spill
 
     def _is_spill(self, target: Path) -> bool:
-        """True when *target* is one of Nerva's spilled tool results (H661).
+        """True when *target* holds (part of) one of Nerva's spilled tool results (H661).
 
-        A spill is a tool's output parked on disk: paging it back must not launder it
-        into trusted ``file_read`` text. Its file name cannot say reliably which tool
-        wrote it (names are sanitised, a secret-looking one is replaced), so every
-        spill counts as third-party — in a configured spill directory, or in any
-        directory with the store's name, whether it was reached by the owner's roots
-        or through the door.
+        A spill is a tool's output parked on disk: reading or searching it must not
+        launder it into trusted file text. Its file name cannot say reliably which tool
+        wrote it (names are sanitised, a secret-looking one is replaced), so everything
+        in a spill directory counts as third-party — a finished spill, or a stream's
+        temp file a crash left behind — in a configured spill directory or in any
+        directory with the store's name, reached by the owner's roots or the door.
         """
-        if not _is_spill_reference(target.name):
-            return False
         return target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
 
     def reaches(self, raw_path: object) -> bool:
@@ -857,6 +855,7 @@ class FileTools:
             if not (target.is_file() or target.is_dir()):
                 return {"ok": False, "reason": "not_a_file"}
             matches: list[dict] = []
+            tainted = False
             counts = {
                 "files_scanned": 0, "files_matched": 0, "files_capped": 0, "hidden": 0,
                 "binary": 0, "large": 0, "symlink": 0,
@@ -901,9 +900,10 @@ class FileTools:
                         break
                 if per_file:
                     counts["files_matched"] += 1
+                    tainted = tainted or self._is_spill(file)
                 if stopped_by is not None:
                     break
-            return {
+            result = {
                 "ok": True,
                 "path": str(target),
                 "pattern": pattern,
@@ -922,6 +922,10 @@ class FileTools:
                 "truncated": stopped_by is not None,
                 "stopped_by": stopped_by,
             }
+            if tainted:
+                # A snippet of a spilled tool result is that tool's output (H661).
+                result["tainted"] = True
+            return result
 
         try:
             result = await asyncio.to_thread(_search)

@@ -828,3 +828,37 @@ async def test_a_page_of_a_spill_declares_taint_and_an_ordinary_file_does_not(tm
     assert door["ok"] is True and door["tainted"] is True
     assert in_roots["ok"] is True and in_roots["tainted"] is True
     assert ordinary["ok"] is True and "tainted" not in ordinary
+
+
+@pytest.mark.asyncio
+async def test_a_search_that_reaches_a_spill_declares_taint(tmp_path):
+    # file_search returns 200-char snippets of whatever it matched, with a pattern the
+    # model chooses: a match inside a spill is that tool's output, and says so.
+    root = _workspace(tmp_path)
+    spills = root / trs.SPILL_DIRNAME
+    spills.mkdir()
+    (spills / "web-extract-0123456789abcdef.json").write_text(
+        '{"ok": true, "result": {"page": "THIRD-PARTY text"}}', encoding="utf-8")
+    (root / "notes.txt").write_text("my own THIRD-PARTY notes", encoding="utf-8")
+    tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"))
+
+    everything = await tools.search_files({"pattern": "THIRD-PARTY", "path": str(root)})
+    own_only = await tools.search_files({"pattern": "THIRD-PARTY", "path": str(root),
+                                         "glob": "notes.txt"})
+
+    assert everything["ok"] is True and len(everything["matches"]) == 2
+    assert everything["tainted"] is True
+    assert own_only["ok"] is True and len(own_only["matches"]) == 1
+    assert "tainted" not in own_only
+
+
+@pytest.mark.asyncio
+async def test_a_stream_temp_file_left_in_the_spill_directory_is_tainted_too(tmp_path):
+    root = _workspace(tmp_path)
+    spills = root / trs.SPILL_DIRNAME
+    spills.mkdir()
+    (spills / "execute-code-0123456789abcdef.txt.part").write_text("partial stdout",
+                                                                    encoding="utf-8")
+    tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"))
+    page = await tools.read_file({"path": str(spills / "execute-code-0123456789abcdef.txt.part")})
+    assert page["ok"] is True and page["tainted"] is True

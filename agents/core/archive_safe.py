@@ -182,10 +182,12 @@ def _pathconf(dest: Path, name: str, default: int) -> int:
 class _Planner:
     """Accumulates validated entries; raises on the first unsafe one.
 
-    *last_wins* names top-level file members that may repeat: the last occurrence is
-    the one written and each earlier one is dropped unwritten (``superseded``). Every
-    other duplicate is refused. Only a caller that owns the name — the backup manifest,
-    which pre-fix backups of a restored root carry twice — passes one.
+    *last_wins* names top-level file members that may appear twice: the second is the
+    one written and the first is dropped unwritten (``superseded``). A third occurrence,
+    and every other duplicate, is refused. Only a caller that owns the name — the backup
+    manifest, which pre-fix backups of a restored root carry exactly twice — passes one.
+    A dropped member still counts against both bomb caps: the member count and the
+    declared bytes are what the archive *holds*, not what gets written.
     """
 
     def __init__(self, dest: Path, limits: ArchiveLimits,
@@ -205,17 +207,21 @@ class _Planner:
         self.reclaimable = 0  # bytes of existing files that members will replace
         self.budget, self.budget_reason = self.cap, "the configured bytes cap"
         self.entries: list[_Entry] = []
+        self.members = 0  # every member seen, a superseded one included
         self.declared = 0
         self._files: set[tuple[str, ...]] = set()
         self._dirs: set[tuple[str, ...]] = set()
         self._real_dirs: set[tuple[str, ...]] = set()  # verified directories already in dest
 
     def add(self, name: str, kind: str, size: int, ref: object) -> None:
-        if len(self.entries) >= self.limits.max_members:
+        if self.members >= self.limits.max_members:
             raise ArchiveRejected(
                 f"archive has more than {self.limits.max_members} members")
+        self.members += 1
         parts = normalize_member(name, allow_root=(kind == "dir"))
         if kind == "file" and parts in self.last_wins and parts in self._files:
+            if parts in self.superseded:
+                raise ArchiveRejected(f"duplicate file member: {_show(name)}")
             self._supersede(parts)
         else:
             self._check_length(parts, name)
@@ -231,11 +237,14 @@ class _Planner:
         self.entries.append(_Entry(parts, kind, max(0, int(size)), ref, name))
 
     def _supersede(self, parts: tuple[str, ...]) -> None:
-        """Drop the earlier file entry at *parts*; the member being added replaces it."""
+        """Drop the earlier file entry at *parts*; the member being added replaces it.
+
+        Its declared bytes stay counted (see the class docstring), and this runs at most
+        once per name, so the scan is bounded by one pass per owned name.
+        """
         for index, entry in enumerate(self.entries):
             if entry.kind == "file" and entry.parts == parts:
                 del self.entries[index]
-                self.declared -= entry.size
                 self.superseded.append(parts)
                 return
 

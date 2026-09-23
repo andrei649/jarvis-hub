@@ -770,3 +770,26 @@ def test_last_wins_never_lets_any_other_repeat_through(tmp_path, members):
     with pytest.raises(ArchiveRejected, match="duplicate"):
         asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG, last_wins=("m.json",))
     assert not (tmp_path / "dest").exists() or not any((tmp_path / "dest").iterdir())
+
+
+def test_an_owned_repeat_still_counts_against_both_bomb_caps(tmp_path):
+    # A dropped repeat is still a member the archive holds and bytes it declares: the
+    # caps measure the archive, not what is written, or last-wins would be a bypass.
+    many = _tar_file(tmp_path / "many.tar", [_file("m.json", b"x") for _ in range(2)]
+                     + [_file(f"f{i}", b"x") for i in range(4)])
+    with pytest.raises(ArchiveRejected, match="more than 5 members"):
+        asafe.extract_tar_path(many, tmp_path / "d1", limits=ArchiveLimits(5, 10_000),
+                               last_wins=("m.json",))
+    heavy = _tar_file(tmp_path / "heavy.tar", [_file("m.json", b"x" * 600),
+                                               _file("m.json", b"y" * 600)])
+    with pytest.raises(ArchiveRejected, match="expands past 1000"):
+        asafe.extract_tar_path(heavy, tmp_path / "d2", limits=ArchiveLimits(10, 1000),
+                               last_wins=("m.json",))
+
+
+def test_an_owned_name_may_repeat_once_never_twice(tmp_path):
+    arc = _tar_file(tmp_path / "a.tar", [_file("m.json", b"1"), _file("m.json", b"2"),
+                                         _file("m.json", b"3")])
+    with pytest.raises(ArchiveRejected, match="duplicate"):
+        asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG, last_wins=("m.json",))
+    assert not (tmp_path / "dest").exists() or not any((tmp_path / "dest").iterdir())
