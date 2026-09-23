@@ -1237,3 +1237,379 @@ async def test_the_transport_refuses_a_path_spelled_catastrophe_before_spawn(roo
         "reason": "hardline_denied:power_cycle",
     }
     assert spawn.calls == [], "a catastrophic command reached the spawn seam"
+
+
+# ── H481: refusals PR #1177 cleared in the DANGEROUS direction ────────────────
+# These three shapes each RUN their catastrophe in /bin/sh, /bin/dash and
+# /bin/bash (verified with `echo RAN` stand-ins) yet returned None after #1177.
+# The floor's whole promise is that it holds regardless of approval, so a spelling
+# a shell executes must refuse.
+
+
+@pytest.mark.parametrize("command,expected", [
+    # `case` and `esac` here are ARGUMENTS to `echo`, not a case statement, and the
+    # `in` is a word inside a subshell. #1177's `_strip_case_labels` matched the
+    # `case … esac` span anyway and stripped the subshell's last command after the
+    # `in`, clearing the refusal. The reboot / mkfs / wipefs still run.
+    ("(echo case in; reboot); echo esac", "power_cycle"),
+    ("(echo case in; mkfs.ext4$IFS/dev/sda); echo esac", "mkfs"),
+    ("(echo case in; wipefs$IFS-a$IFS/dev/sda); echo esac", "wipefs"),
+    ("(echo case in; halt); echo esac", "power_cycle"),
+    # Structurally `case WORD in … esac`, so only the command-position check (the
+    # `case` here is an argument to `echo`, not a keyword) keeps the command the
+    # subshell runs after the `;`.
+    ("(echo case x in; reboot); echo esac", "power_cycle"),
+    ("echo case x in; reboot; echo esac", "power_cycle"),
+    ("(printf 'case x in'; mkfs.ext4 /dev/sda); echo esac", "mkfs"),
+])
+def test_a_case_word_outside_a_real_case_statement_does_not_strip_a_command(command, expected):
+    """`case`/`esac`/`in` as ordinary words must not turn the label strip on.
+
+    The strip fires only inside a real `case WORD in … esac` region (a `case`
+    keyword in command position). Reproduced against /bin/sh, /bin/dash and
+    /bin/bash first: all three execute the reboot/mkfs/wipefs in these shapes."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("case $1 in shutdown) echo bye ;; esac", None),
+    ("case $1 in wipe) rm -rf / ;; esac", "recursive_root_removal"),
+    ("case $1 in wipe) mkfs.ext4 /dev/sda ;; esac", "mkfs"),
+])
+def test_a_real_case_statement_still_strips_labels_but_keeps_the_body(command, expected):
+    """The legitimate false-positive fix, kept intact and made symmetric.
+
+    A `case` label is a pattern, so `shutdown)` must not refuse; the branch BODY
+    is a command position, so `rm -rf /` / `mkfs.ext4` inside it still refuse even
+    when the whole clause is on one line (the body then lands in one segment, so
+    the label is stripped from the segment source too, not only from `flat`)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    # The heredoc body reaches a shell through a pipe placed AFTER the `<<`.
+    ("cat <<EOF | sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | bash\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | sh\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    ("cat <<EOF | grep -v '^#' | sh\nwipefs -a /dev/sda\nEOF", "wipefs"),
+    # …or is written to a file that a shell then executes in the same command.
+    ("cat <<'EOF' >x.sh; sh x.sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >y.sh\nmkfs.ext4 /dev/sda\nEOF\nsh y.sh", "mkfs"),
+])
+def test_a_heredoc_body_a_shell_runs_after_the_redirection_is_a_script(command, expected):
+    """`_heredoc_feeds_a_shell` used to inspect only the stage LEFT of `<<`.
+
+    A body piped into a shell, or written to a file a shell later runs, is a
+    script — every line a statement. Reproduced against /bin/sh, /bin/dash and
+    /bin/bash first (cat's output is piped/redirected away, so a `RAN` on stdout
+    is the shell executing the body, not cat printing it)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # cat prints the body and the `; sh` is a SEPARATE statement reading the
+    # parent's stdin, not the heredoc — the body is never executed, so it is data.
+    "cat <<EOF; sh\nrm -rf /\nEOF",
+    # Written to a plain file no shell runs — the classic warning stays writable.
+    "cat > README.md <<'EOF'\nrm -rf / will destroy the box\nEOF",
+])
+def test_a_heredoc_no_shell_consumes_is_still_data(command):
+    """The keep-intact direction for the heredoc fix: a body a shell does not run
+    is data, so writing documentation that quotes `rm -rf /` must not refuse."""
+    assert hardline_match(command) is None
+
+
+# ── H481 review round: the fixes above must not over-refuse, and must scale ──
+# An independent review of the two closures found the heredoc rewrite refusing
+# shapes no shell executes, the `case` command-position check skipping compact
+# `;then`/`;do` spellings, and both new mechanisms super-linear on ordinary text.
+# Every shape below was reproduced against /bin/sh, /bin/dash and /bin/bash with
+# harmless `echo RAN` stand-ins before it was pinned.
+
+
+@pytest.mark.parametrize("command", [
+    # A heredoc redirects only its OWN command's stdin. A shell in a stage
+    # UPSTREAM of that command never sees the body (all three shells print the
+    # literal body here), so it is data — refusing it was a refusal no approval
+    # can lift, for a harmless command.
+    "bash -c echo | cat <<EOF\nreboot\nEOF",
+    "time bash script.sh | cat <<EOF\nreboot\nEOF",
+    "sh -c 'echo hi' | cat <<EOF\nrm -rf /\nEOF",
+    "bash build.sh | grep -v '^#' <<EOF\nreboot\nEOF",
+    # `xargs sh -c …` hands the lines it reads to the shell as ARGUMENTS (`{}`,
+    # `$@`), never as its script: `printf 'reboot.log\n' | xargs -I{} sh -c
+    # 'echo would rm {}'` prints `would rm reboot.log`.
+    "cat <<EOF | xargs -I{} sh -c 'rm -f {}'\nreboot.log\nshutdown.log\nEOF",
+    "cat <<EOF | xargs sh -c 'rm -f \"$@\"' _\nreboot.log\nEOF",
+    # …and a BARE shell behind xargs gets each line as a file operand (`sh reboot`
+    # -> "cannot open reboot"), so the xargs rule matters even without `-c`.
+    "cat <<EOF | xargs sh\nreboot\nEOF",
+    # A shell that carries its own script — a FILE operand or a `-c` command
+    # line — reads its stdin as that script's data, not as statements.
+    "cat <<EOF | bash run.sh\nreboot\nEOF",
+    "cat <<EOF | sh -c cat\nreboot\nEOF",
+    # A heredoc-written data file handed to a shell-run script as an ARGUMENT is
+    # not executed by that shell: `bash run.sh x.yaml` with run.sh = `cat "$1"`
+    # prints the yaml. This is the exact config-file case the heredoc-as-data
+    # rule exists for.
+    "cat > x.yaml <<'EOF'\nshutdown: graceful\nEOF\nbash run.sh x.yaml",
+    "cat > notes.txt <<'EOF'\nReboot the box after upgrading.\nEOF\nbash -c 'cp notes.txt /srv/'",
+])
+def test_a_heredoc_body_no_shell_executes_is_data_even_next_to_a_shell(command):
+    """Only the heredoc's own stage and the stages DOWNSTREAM of it can run the
+    body, and only when that shell reads its stdin as the script. A shell
+    upstream, an `xargs`-reached shell, a shell with its own script, or a shell
+    that merely receives the written file as an argument is not a consumer."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    # Downstream stdin-reading shells still count, whatever options they carry.
+    ("cat <<EOF | bash -s\nreboot\nEOF", "power_cycle"),
+    ("bash -o pipefail <<EOF\nreboot\nEOF", "power_cycle"),
+    ("sh - <<EOF\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF 2>&1 | sh\nreboot\nEOF", "power_cycle"),
+])
+def test_a_downstream_stdin_reading_shell_still_runs_the_heredoc_body(command, expected):
+    """The narrowing above must not clear the pipe form it was written for: a
+    shell with `-s`, a bare `-`, an option that takes an argument, or a
+    stderr redirection on the heredoc's stage still reads the body as its
+    script (all three shells run it)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "if true;then case $1 in\nreboot) echo r ;;\nesac;fi",
+    "for x in a b;do case $x in\nreboot) echo r ;;\nesac;done",
+    "while read x;do case $x in\nhalt) echo h ;;\nesac;done < f",
+    'if [ -f x ];then case "$1" in\n  reboot) echo r ;;\n  *) echo other ;;\nesac;fi',
+])
+def test_a_case_after_a_compact_then_or_do_is_still_a_case_statement(command):
+    """`;then case` / `;do case` (no space after the `;`) is the common compact
+    spelling, and the `case` there is a keyword in command position exactly as
+    after `; then`. Reading the keyword as the tail of the word `true;then`
+    skipped the label strip and refused the label as a command — a refusal no
+    approval can lift, on a script all three shells run label-only."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A named shell reached through a subshell, a brace group or a compound
+    # keyword still runs the file the body was written to.
+    ("cat <<EOF >x.sh; (sh x.sh)\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >x.sh; { sh x.sh; }\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >x.sh; if true; then sh x.sh; fi\nrm -rf /\nEOF", "recursive_root_removal"),
+    # The file is read by an upstream stage and piped into a stdin-reading shell.
+    ("cat <<EOF >x.sh; cat x.sh | sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    # The shell's `-c` command line itself runs the file.
+    ("cat <<EOF >x.sh; sh -c \". x.sh\"\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >x.sh; bash -c 'sh ./x.sh'\nrm -rf /\nEOF", "recursive_root_removal"),
+    # The `.` / `source` builtins ARE the shell reading and executing the file.
+    ("cat > x.sh <<'EOF'\nrm -rf /\nEOF\n. x.sh", "recursive_root_removal"),
+    ("cat > x.sh <<'EOF'\nrm -rf /\nEOF\n. ./x.sh", "recursive_root_removal"),
+    ("cat > x.sh <<'EOF'\nrm -rf /\nEOF\nsource x.sh", "recursive_root_removal"),
+    # `tee` writes the body to its operand; a quoted redirect target is a target.
+    ("tee x.sh <<EOF; sh x.sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | tee x.sh >/dev/null; sh x.sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat > \"x.sh\" <<'EOF'\nrm -rf /\nEOF\nbash x.sh", "recursive_root_removal"),
+    ("cat <<EOF >\"x.sh\"; sh x.sh\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF >'x.sh'; sh x.sh\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+])
+def test_a_heredoc_file_a_shell_runs_by_any_named_spelling_is_a_script(command, expected):
+    """The file-exec branch used to catch only a bare `sh x.sh` right after the
+    redirection. Each of these runs the body in /bin/sh and /bin/bash (`source`
+    in bash), verified with `echo RAN` stand-ins, and each returned None."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # The file name reaches the shell through a variable.
+    "cat <<EOF >x.sh; for f in x.sh; do sh $f; done\nrm -rf /\nEOF",
+    # The file is run by the environment, not by an operand.
+    "cat > x.sh <<'EOF'\nrm -rf /\nEOF\nBASH_ENV=x.sh bash -c :",
+    # The heredoc is opened inside a command substitution `eval` consumes.
+    'eval "$(cat <<EOF\nrm -rf /\nEOF\n)"',
+    # A bare path in command position is not a named shell reading a file.
+    "cat <<EOF >x.sh; chmod +x x.sh; ./x.sh\nrm -rf /\nEOF",
+])
+def test_disclosed_heredoc_file_gaps_are_still_misses_and_that_is_the_pin(command):
+    """Each of these executes the body in a real shell and still returns None.
+    They are listed in `_detection_variants` as known gaps; this pins that the
+    list is honest, so closing one means removing it from the list too."""
+    assert hardline_match(command) is None
+
+
+def test_a_case_region_needs_a_word_before_in():
+    """The region opener is `case WORD in`, not any `case … esac` span. With no
+    WORD the text is not a case statement (no shell parses `case ;; reboot)`),
+    so nothing is stripped and the `reboot` after the `;;` stays a command —
+    a refusal on text no shell runs, which costs nothing but a false no."""
+    assert hardline_match("case ;; reboot) ;; esac") == "power_cycle"
+    assert hardline_match("case x in reboot) ;; esac") is None
+
+
+@pytest.mark.parametrize("label,command,limit_s", [
+    # `case` and `in` are ordinary English words and `esac` never appears in
+    # prose, so a commit message or echoed text hits this on every `case`.
+    ("case x in ×400, no esac", ("case x in " * 400)[:4000], 1.0),
+    ("prose with case/in", ("in the case of a failure we retry in place and log the case in detail " * 200)[:4000], 0.25),
+    ("argv of case-prose ×8", [("in the case of a failure we retry in place and log the case in detail " * 200)[:4000]] * 8, 2.0),
+    # A heredoc with a redirect target used to re-tokenise every later line for
+    # every heredoc: quadratic in the number of blocks.
+    ("cat <<E >x blocks, 4000 chars", ("cat <<E >x\nE\n" * 400)[:4000], 1.0),
+    ("cat <<E >x blocks in sh -c argv", ["sh", "-c", ("cat <<E >x\nE\n" * 400)[:4000]], 1.0),
+    ("cat <<E >x blocks, 8400 chars", "cat <<E >x\nE\n" * 700, 1.5),
+])
+def test_the_case_and_heredoc_scans_stay_linear_on_dense_input(label, command, limit_s):
+    """Wall-clock bounds with two orders of magnitude of headroom (each shape
+    takes 10–30 ms fixed and 0.5–5 s before the fix on the same machine). The
+    scan is synchronous on the event loop before every exec, so a super-linear
+    shape is both a regression and a trivial denial of service at the floor."""
+    import time
+    started = time.perf_counter()
+    assert hardline_match(command) is None
+    elapsed = time.perf_counter() - started
+    assert elapsed < limit_s, f"{label}: {elapsed:.2f}s"
+
+
+@pytest.mark.parametrize("command,expected", [
+    # The shell's `-c` command line launches something that executes ITS stdin,
+    # which is the heredoc: the inner shell inherits it.
+    ("bash -c sh <<EOF\nreboot\nEOF", "power_cycle"),
+    ("bash -c 'cat | sh' <<EOF\nreboot\nEOF", "power_cycle"),
+    ("sh -c 'eval \"$(cat)\"' <<EOF\nreboot\nEOF", "power_cycle"),
+    ("sh -c '. /dev/stdin' <<EOF\nreboot\nEOF", "power_cycle"),
+    # A script operand that IS the standard input.
+    ("sh /dev/stdin <<EOF\nreboot\nEOF", "power_cycle"),
+    # `eval` fed by a substitution in a DOWNSTREAM stage reads the piped body.
+    ("cat <<EOF | eval \"$(cat)\"\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF |& sh\nreboot\nEOF", "power_cycle"),
+])
+def test_a_shell_whose_command_line_runs_its_stdin_still_runs_the_heredoc_body(command, expected):
+    """Narrowing `-c`/file-operand shells to data must not clear these: each
+    hands the heredoc on to something that executes it, and all three shells
+    print RAN for the stand-in (bash alone parses `|&`)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    "sh -c cat <<EOF\nreboot\nEOF",
+    "bash run.sh <<EOF\nreboot\nEOF",
+    # On the heredoc's OWN stage the substitution expands before the redirection
+    # attaches, so `eval` never sees the body (every shell runs nothing here).
+    "eval \"$(cat)\" <<EOF\nreboot\nEOF",
+])
+def test_a_shell_with_its_own_script_on_the_heredoc_stage_reads_the_body_as_data(command):
+    """The one rule, applied to the owning stage too. `sh -c cat <<EOF` and
+    `bash run.sh <<EOF` were `power_cycle` on origin/main (any shell head
+    counted), and every shell prints the literal body for both — a false
+    refusal cleared on purpose and reported as such, not an invariant kept."""
+    assert hardline_match(command) is None
+
+
+# ── H481 second adversarial pass: three more cleared refusals ────────────────
+# A PATH-shim stand-in (`reboot` = `echo RAN-reboot`) run under /bin/sh, /bin/dash
+# and /bin/bash confirmed each shape below executes the heredoc/here-string body
+# before it was pinned. The stand-in is harmless; the SHAPE is one a shell runs.
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A subshell as the FINAL pipe stage with no internal `;`: the `(` opener is
+    # stripped as a command prefix and the trailing `)` used to be read as the
+    # shell's script operand (`['sh', ')']` -> file `)`), so the stdin verdict was
+    # never reached. All three shells run the body.
+    ("cat <<EOF | (sh)\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | ( sh )\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | (exec sh)\nreboot\nEOF", "power_cycle"),
+    ("cat <<EOF | (sh)\nrm -rf /\nEOF", "recursive_root_removal"),
+    ("cat <<EOF | (exec sh)\nmkfs.ext4 /dev/sda\nEOF", "mkfs"),
+    # A brace group whose only command is a stdin shell, same shape.
+    ("cat <<EOF | { sh; }\nreboot\nEOF", "power_cycle"),
+])
+def test_a_subshell_as_the_final_pipe_stage_still_runs_the_heredoc_body(command, expected):
+    """`| (sh)` / `| ( sh )` / `| (exec sh)` hand the heredoc body to a shell that
+    runs it — the stripped `(`/`)` used to leave `['sh', ')']`, read as `sh`
+    running a script named `)`. `_stage_words` now drops trailing pure closers,
+    so the stage falls through to the stdin verdict. Reproduced against /bin/sh,
+    /bin/dash and /bin/bash with an `echo RAN` stand-in."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A here-string sends WORD to the command's stdin; bash runs `sh <<< reboot`
+    # and `bash <<< reboot` as a script (sh/dash lack `<<<`, but bash is a
+    # supported target).
+    ("sh <<< reboot", "power_cycle"),
+    ("bash <<< reboot", "power_cycle"),
+    ("bash -s <<< reboot", "power_cycle"),
+    ("sh <<< 'rm -rf /'", "recursive_root_removal"),
+    ("bash <<< 'mkfs.ext4 /dev/sda'", "mkfs"),
+    # The here-string feeds a passthrough that pipes into a stdin shell.
+    ("cat <<< reboot | sh", "power_cycle"),
+])
+def test_a_here_string_into_a_stdin_shell_is_a_script(command, expected):
+    """`cmd <<< WORD` is a here-string: WORD is the command's standard input, and
+    for a shell that IS the script. `_heredoc_open` skips `<<<` (it has no body
+    line), so nothing modelled it — the WORD is now screened in command position
+    when a stdin shell consumes it. bash executes each of these (verified)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # No stdin shell consumes the here-string: `cat <<< reboot | cat` just prints,
+    # so the WORD is data, not a script.
+    "cat <<< reboot | cat",
+    "grep <<< reboot pattern",
+])
+def test_a_here_string_no_shell_runs_is_data(command):
+    """The keep-intact direction: a here-string fed to a non-shell (or a pipeline
+    with no stdin shell) is data. bash prints, never executes it."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command,expected", [
+    # A heredoc opened inside a process substitution `<(...)` whose fd is consumed
+    # by `source`/`.`/a shell on the SAME line: the substitution's output is the
+    # body, and source/sh/bash execute it. bash runs these (sh/dash lack `<(`).
+    ("source <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("sh <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("bash <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    (". <(cat <<EOF\nreboot\nEOF\n)", "power_cycle"),
+    ("source <(cat <<EOF\nrm -rf /\nEOF\n)", "recursive_root_removal"),
+    ("sh <(cat <<EOF\nmkfs.ext4 /dev/sda\nEOF\n)", "mkfs"),
+])
+def test_a_heredoc_inside_a_process_substitution_a_shell_runs_is_a_script(command, expected):
+    """`source <(cat <<EOF …)` and `sh <(cat <<EOF …)` run the substitution's
+    output — the heredoc body — as a script. The `<(…)` was read as an ordinary
+    file operand, so the body stayed data. Reproduced against /bin/bash with an
+    `echo RAN` stand-in (sh/dash lack `<(`, but bash is a supported target)."""
+    assert hardline_match(command) == expected
+
+
+@pytest.mark.parametrize("command", [
+    # No shell/source consumes the process substitution: `cat <(…)` prints the
+    # substitution's output, it is not executed.
+    "cat <(cat <<EOF\nreboot\nEOF\n)",
+    "diff <(cat <<EOF\nreboot\nEOF\n) other",
+])
+def test_a_process_substitution_no_shell_runs_is_data(command):
+    """A `<(…)` handed to a non-shell is a filename read as data. bash prints it,
+    never executes it, so the body stays data."""
+    assert hardline_match(command) is None
+
+
+@pytest.mark.parametrize("command", [
+    # Still-disclosed gaps in these directions (each runs the body in a real
+    # shell and still returns None); pinned so closing one means updating the list.
+    # A `;` inside a `( )` group of a pipe stage: `_statement_pieces` splits at the
+    # `;` before the subshell is seen, so `(cd /tmp; sh)` is not modelled.
+    "cat <<EOF | (cd /tmp; sh)\nreboot\nEOF",
+    # `xargs -I{} sh -c '{}'`: each line becomes the command line.
+    "cat <<EOF | xargs -I{} sh -c '{}'\nreboot\nEOF",
+    # A process substitution consumed by a shell DOWNSTREAM, on a later line.
+    "cat <(cat <<EOF\nreboot\nEOF\n) | sh",
+])
+def test_disclosed_group_and_downstream_gaps_are_still_misses_and_that_is_the_pin(command):
+    """These execute the body in bash and still return None. They are listed in
+    `_detection_variants` as known gaps; this pins that the list stays honest."""
+    assert hardline_match(command) is None
