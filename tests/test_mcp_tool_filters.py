@@ -107,3 +107,53 @@ def test_the_add_route_takes_filters_and_refuses_malformed_ones(api):
     assert "x" not in orch.mcp.servers
     row = client.get("/api/admin/mcp", headers=_HDR).json()["servers"][0]
     assert row["tools_allow"] == ["read_*"] and row["tools_deny"] == ["delete_*"]
+
+
+# ── the bounds fail closed on the deny side ──────────────────────────────────
+# A deny that does not fit the 64-pattern / 128-char bounds used to be dropped, which
+# made the tool it named visible again: the only filter direction where "cap a
+# pathological config" meant "widen what the model may call".
+
+_LONG = "z" * 129
+_MANY = [f"t{i}" for i in range(65)]
+
+
+@pytest.mark.parametrize("field", ["tools_allow", "tools_deny"])
+@pytest.mark.parametrize("patterns", [[_LONG], _MANY], ids=["129-chars", "65-entries"])
+def test_the_add_route_refuses_a_filter_over_the_bounds(api, field, patterns):
+    client, orch = api
+    resp = client.post("/api/admin/mcp", json={"name": "big", "command": "x", field: patterns},
+                       headers=_HDR)
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "invalid_tool_filter", "field": field}
+    assert "big" not in orch.mcp.servers
+
+
+def test_the_add_route_still_takes_a_filter_exactly_at_the_bounds(api):
+    client, orch = api
+    deny = ["d" * 128] + [f"t{i}" for i in range(63)]
+    resp = client.post("/api/admin/mcp", json={"name": "edge", "command": "x", "tools_deny": deny},
+                       headers=_HDR)
+    assert resp.status_code == 200
+    assert orch.mcp.servers["edge"].tools_deny == deny
+
+
+@pytest.mark.parametrize("deny", [[_LONG], _MANY, "delete_*"], ids=["129-chars", "65-entries", "not-a-list"])
+def test_a_deny_that_cannot_be_kept_hides_every_tool_instead(deny, caplog):
+    srv = MCPServer("a", command="x", tools_deny=deny)
+    assert srv.tools_allow == []                 # narrowed to nothing, never widened
+    for name in ("z" * 129, "t64", "delete_file", "read_file"):
+        assert srv.tool_visible(name) is False
+    assert any("tools_deny" in r.getMessage() for r in caplog.records)
+
+
+def test_a_hand_edited_config_with_an_over_bound_deny_loads_fail_closed():
+    manager = MCPManager()
+    manager.load_from_config([
+        {"name": "fs", "command": "x", "trust": "full", "tools_deny": ["q" * 200]},
+        {"name": "ok", "command": "y", "trust": "full", "tools_deny": ["delete_*"]},
+    ])
+    assert manager.servers["fs"].tools_allow == [] and not manager.servers["fs"].tool_visible("q" * 200)
+    assert not manager.servers["fs"].tool_visible("read_file")
+    assert manager.servers["ok"].tools_allow is None and manager.servers["ok"].tool_visible("read_file")
+    assert not manager.servers["ok"].tool_visible("delete_file")
