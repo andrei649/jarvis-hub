@@ -1141,11 +1141,14 @@ def register(skill):
           sidecar along with the edit);
         * a row that tries to talk to the model is dropped, scanned with the same
           ``quarantine.detect_injection`` that fences retrieved memory — over the row as
-          written *and* over a copy with every invisible character removed, so the scan
-          does not depend on which invisible character an attacker reached for.
+          written *and* over each copy ``quarantine._detection_variants`` derives from it
+          (invisible characters deleted, whitespace collapsed, invisible characters
+          replaced by a space, and every one of those again over the NFKC fold), unioned
+          rather than substituted, so the scan does not depend on which invisible
+          character an attacker reached for or where it was placed.
 
-        **What the injection gate is worth, plainly.** ``detect_injection`` is an
-        eleven-entry regex table of high-signal phrases. It costs a row to a description
+        **What the injection gate is worth, plainly.** ``detect_injection`` is a
+        ten-entry regex table of high-signal phrases. It costs a row to a description
         that says "ignore all previous instructions"; it does not cost a row to one that
         says the same thing in words the table does not list, and there is no shortage of
         those. It raises the floor on copied-in manifests and careless imports. It is not
@@ -1215,8 +1218,9 @@ def register(skill):
                 description = _catalog_text(description, chars)
                 rendered = f"{command} <{args}>" if args else command
                 # Scan the row as ``Agent.build_prompt`` will render it, so no field can be
-                # the one that is not looked at — and scan it BOTH as written and with
-                # every invisible character removed, because one of those inside a phrase
+                # the one that is not looked at — and scan it as written AND over every
+                # copy `_detection_variants` derives (see it for the full set), because
+                # an invisible character inside or instead of a separator in a phrase
                 # defeats `detect_injection` while reading to the model exactly like the
                 # phrase that does not. Union, not substitution: the strip DELETES
                 # characters, and a deletion destroys a match as easily as it reveals one
