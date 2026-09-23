@@ -1147,12 +1147,12 @@
       "id": "H130",
       "row_sha256": "12b92ce935449c13d67af9de6f1db53cf3be9b9cbe4c6e250a444388a96ddbbc",
       "status": "equivalent",
-      "summary": "Același bundle SPA funcționează la rădăcină sau sub un JARVIS_ROOT_PATH validat, cu reverse proxy care elimină prefixul. Bootstrap-ul serverului, navigarea și istoricul, API/SSE/streaming, chunk-urile lazy, fonturile, manifestul și service worker-ul folosesc prefixul; cache-urile PWA sunt separate per prefix. Paginile /map și /mission-control legate din SPA sunt adaptate. Teste prin aplicația reală și proxy HTTP verifică reload, shortcut-uri, cache offline, auth pe POST și lipsa cererilor la rădăcina greșită; coliziunile /v2 și /api au regresii. Contractul este pentru browser cu proxy prefix-stripping: wrapper-ul nativ cere prefix gol, /v1 și proxy-urile care păstrează prefixul nu sunt incluse. Fixture-ul dezactivează lifespan/provider startup; nu se pretinde deployment sau probă cu provider live.",
+      "summary": "Același bundle SPA funcționează la rădăcină sau sub un JARVIS_ROOT_PATH validat, cu reverse proxy care elimină prefixul. Bootstrap-ul serverului, navigarea și istoricul, API/SSE/streaming, chunk-urile lazy, fonturile, manifestul și service worker-ul folosesc prefixul; cache-urile PWA sunt separate per prefix. Paginile /map și /mission-control legate din SPA sunt adaptate. Teste prin aplicația reală și proxy HTTP verifică reload, shortcut-uri, cache offline, auth pe POST și lipsa cererilor la rădăcina greșită; coliziunile /v2 și /api au regresii. Sub prefix, /metrics păstrează eticheta de rută (middleware-ul de prefix întoarce scope[\"route\"] către golden-signals, la fiecare mesaj trimis și la eroare), iar căile nerutate rămân <unmatched>. Contractul este pentru browser cu proxy prefix-stripping: wrapper-ul nativ cere prefix gol, /v1 și proxy-urile care păstrează prefixul nu sunt incluse. Fixture-ul dezactivează lifespan/provider startup; nu se pretinde deployment sau probă cu provider live.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/web_base_path.py",
-          "sha256": "cebdbd01a6fa1a3617ccb6747dd0406442d95c653da409c3c996aa77bb703d0a"
+          "sha256": "b9a0380bb04ed78dab4db8ed8e4072dd96d32b9ea60859060d1014ee5800dc02"
         },
         {
           "path": "agents/web.py",
@@ -1216,7 +1216,7 @@
         },
         {
           "path": "tests/test_web_base_path.py",
-          "sha256": "241bcc2168595b48b9353d4640cf6ed713bf44f4d0f96e0a8d4c2b12d30fb6e5"
+          "sha256": "114ae02147333ba9d7e40b6c452a6f95947a8923735ff1c84bf21a863b453220"
         },
         {
           "path": "tests/test_web_asset_manifest_integrity.py",
