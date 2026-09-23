@@ -27,6 +27,14 @@ Residual (documented, not silently ignored): a bind host passed only as a raw
 uvicorn CLI flag (``--host 0.0.0.0`` without ``JARVIS_HOST``) is invisible to
 the app; the lifespan check covers the env-driven deployments (systemd/Docker
 templates use ``JARVIS_HOST``), and ``serve.py`` remains the canonical entry.
+
+uvicorn's own forwarding-header allowlist (H691) is read from every place it can
+be: ``FORWARDED_ALLOW_IPS``, ``UVICORN_FORWARDED_ALLOW_IPS``, and — when the process
+is uvicorn's CLI — ``--forwarded-allow-ips`` on its command line
+(``proxy_trust.assert_server_proxy_layer_within_trust``). A launcher that embeds
+uvicorn some other way (``uvicorn.run(app, forwarded_allow_ips=...)`` from a script,
+a gunicorn worker class) passes its value out of the app's sight; ``serve.py``
+switches the layer off.
 """
 
 from __future__ import annotations
@@ -307,9 +315,13 @@ def assert_front_door(environ: Mapping[str, str] | None = None) -> None:
     # puts them), so their parse check has the same blind spot as the front door
     # when it runs early: re-run it over the loaded environment.
     from agents.core.host_policy import assert_parseable_allowed_hosts
-    from agents.core.proxy_trust import assert_parseable_trusted_proxies
+    from agents.core.proxy_trust import (
+        assert_parseable_trusted_proxies,
+        assert_server_proxy_layer_within_trust,
+    )
 
     assert_parseable_trusted_proxies(env)
+    assert_server_proxy_layer_within_trust(env)
     assert_parseable_allowed_hosts(env)
     assert_guarded_channels(env)
 
@@ -335,9 +347,15 @@ def enforce_boot_posture() -> None:
     # allowed would otherwise debug a box that silently ignores what they wrote —
     # and the likely next move is a wildcard. (Hermes absorption 5b)
     from agents.core.host_policy import assert_parseable_allowed_hosts
-    from agents.core.proxy_trust import assert_parseable_trusted_proxies
+    from agents.core.proxy_trust import (
+        assert_parseable_trusted_proxies,
+        assert_server_proxy_layer_within_trust,
+    )
 
     assert_parseable_trusted_proxies()
+    # uvicorn's own forwarding-header allowlist must not trust more than that list
+    # (H691): it rewrites the client address before the app ever consults it.
+    assert_server_proxy_layer_within_trust()
     assert_parseable_allowed_hosts()
     assert_safe_bind(os.environ.get("JARVIS_HOST", "127.0.0.1"))
     # The front door (Hermes absorption 5b): a configured inbound channel must be

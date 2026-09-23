@@ -32,7 +32,9 @@ def _clean_env(monkeypatch):
                 "SLACK_BOT_TOKEN", "JARVIS_CHANNEL_PAIRING", "JARVIS_CHANNEL_OPEN",
                 # The two network-edge lists (Hermes absorption 5b) are parse-checked at
                 # boot too; a shell that exports one must not colour the "clean" cases.
-                "JARVIS_TRUSTED_PROXIES", "JARVIS_TRUSTED_PROXY", "JARVIS_ALLOWED_HOSTS"):
+                "JARVIS_TRUSTED_PROXIES", "JARVIS_TRUSTED_PROXY", "JARVIS_ALLOWED_HOSTS",
+                # uvicorn's own proxy-header allowlist is checked against the list (H691).
+                "FORWARDED_ALLOW_IPS", "UVICORN_FORWARDED_ALLOW_IPS"):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -143,6 +145,20 @@ def test_enforce_boot_posture_refuses_a_wildcard_allowed_host(monkeypatch):
     boot_guards.enforce_boot_posture()  # a bare host name is a valid list → boots
 
 
+def test_enforce_boot_posture_refuses_a_uvicorn_allow_list_wider_than_the_nerva_set(monkeypatch):
+    """H691: uvicorn's FORWARDED_ALLOW_IPS is a second forwarding-header allowlist that
+    runs before JARVIS_TRUSTED_PROXIES. A wildcard there (or any peer the Nerva list
+    does not name) must stop the boot from the composed entry, naming the variable."""
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("JARVIS_TRUSTED_PROXIES", "127.0.0.1")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    with pytest.raises(SystemExit) as excinfo:
+        boot_guards.enforce_boot_posture()
+    assert "FORWARDED_ALLOW_IPS" in str(excinfo.value)
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "127.0.0.1")
+    boot_guards.enforce_boot_posture()  # inside the Nerva set → boots
+
+
 def test_enforce_boot_posture_order_is_pinned():
     """Parse checks first (flags, then the two lists), then the bind, then the front
     door, then the hardened profile — so an unreadable value is refused before any
@@ -151,6 +167,7 @@ def test_enforce_boot_posture_order_is_pinned():
     documented = (
         "assert_parseable_posture_flags(",
         "assert_parseable_trusted_proxies(",
+        "assert_server_proxy_layer_within_trust(",
         "assert_parseable_allowed_hosts(",
         "assert_safe_bind(",
         "assert_guarded_channels(",
@@ -191,6 +208,10 @@ def test_front_door_late_pass_refuses_malformed_lists_too(monkeypatch):
     with pytest.raises(SystemExit) as refused:
         boot_guards.assert_front_door({"JARVIS_ALLOWED_HOSTS": "*"})
     assert "JARVIS_ALLOWED_HOSTS" in str(refused.value)
+    # uvicorn's own allowlist can live in .env too (H691): the late pass checks it.
+    with pytest.raises(SystemExit) as refused:
+        boot_guards.assert_front_door({"UVICORN_FORWARDED_ALLOW_IPS": "0.0.0.0/0"})
+    assert "UVICORN_FORWARDED_ALLOW_IPS" in str(refused.value) and "0.0.0.0/0" not in str(refused.value)
     assert boot_guards.assert_front_door({"JARVIS_TRUSTED_PROXIES": "127.0.0.1/32"}) is None
 
 

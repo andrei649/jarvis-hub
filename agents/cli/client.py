@@ -7,6 +7,7 @@ exactly what the HUD can do and nothing more. Stdlib only so it runs in a broken
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -34,13 +35,23 @@ class HubUnavailable(HubError):
         self.url = url
 
 
+#: Bind addresses that mean "every interface" — a hub bound there is dialled over
+#: loopback (connecting *to* 0.0.0.0 fails on Windows; ``http://:::8080`` is no URL).
+WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared against, never bound
+
+
 def hub_url(environ: Mapping[str, str] | None = None) -> str:
+    """The hub's base URL: ``NERVA_HUB_URL``, else the hub's own bind
+    (``JARVIS_HOST``/``JARVIS_PORT``). ``scripts/doctor.py`` mirrors this (stdlib-only,
+    import-light); ``tests/test_doctor.py`` pins the two equal."""
     env = os.environ if environ is None else environ
     explicit = (env.get("NERVA_HUB_URL") or "").strip()
     if explicit:
         return explicit.rstrip("/")
     host = (env.get("JARVIS_HOST") or "127.0.0.1").strip() or "127.0.0.1"
     port = (env.get("JARVIS_PORT") or "8080").strip() or "8080"
+    if host in WILDCARD_HOSTS:
+        host = "127.0.0.1"
     return f"http://{host}:{port}"
 
 
@@ -88,7 +99,9 @@ class HubClient:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raise HubError(exc.code, _error_reason(exc)) from None
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as exc:
+            # HTTPException: a reply cut off mid-body (IncompleteRead) or a garbled
+            # status line is the hub being unreachable, not a crash in the verb.
             raise HubUnavailable(self.base_url, str(getattr(exc, "reason", exc))) from None
         if not raw:
             return None

@@ -4,6 +4,14 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
 
+<<<<<<< HEAD
+**Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
+
+| Row | Name | Now | Est. h | Critic notes |
+|---|---|---|---:|---|
+| [H327](#h327) | SKILL.md frontmatter contract (agentskills.io-compatible) | partial | 4 |  |
+| [H428](#h428) | Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up | partial | 4 | [11](#critic-note-11), [12](#critic-note-12) |
+=======
 **In flight:** lot 1 (`heq/lot1-*` branches) — H691, H661, H344, H583 + H368, H242, H503, H313.
 
 | Row | Name | Now | Est. h | Critic notes |
@@ -16,16 +24,23 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H428](#h428) | Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up | partial | 4 | [11](#critic-note-11), [12](#critic-note-12) |
 | [H583](#h583) · lot 1 | Steer which upstream provider serves an OpenRouter request (provider routing) | missing | 4 | [9](#critic-note-9) |
 | [H661](#h661) · lot 1 | Oversized tool output is paged from a file instead of being thrown away | partial | 4 |  |
+>>>>>>> origin/main
 | [H687](#h687) | A recurring instruction runs once immediately, then on its cadence | partial | 4 | [15](#critic-note-15) |
 | [H165](#h165) | In-app documentation | missing | 5 |  |
 | [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
 | [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
+<<<<<<< HEAD
+=======
 | [H313](#h313) · lot 1 | Speak | partial | 5 | [22](#critic-note-22) |
+>>>>>>> origin/main
 | [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H433](#h433) | Retrieval query rewriting by a cheap auxiliary model | missing | 5 | [12](#critic-note-12) |
 | [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
+<<<<<<< HEAD
+=======
 | [H503](#h503) · lot 1 | Unpack an archive from another machine without letting it write outside the destination | partial | 5 |  |
+>>>>>>> origin/main
 | [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
 | [H666](#h666) | The agent's own task list nests subtasks under a parent | partial | 5 |  |
 | [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
@@ -102,6 +117,8 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
 
+<<<<<<< HEAD
+=======
 ## H691
 
 **Reverse-proxy trust is a validated, bounded allowlist rather than an on/off switch** (delta) — partial, ~1 h; lot 1, branch `heq/lot1-proxy-trust-log`.
@@ -118,6 +135,7 @@ Files: `scripts/doctor.py`, `agents/cli/nerva.py`, `agents/core/routers/onboardi
 
 Plan: In agents/cli/nerva.py cmd_status, also GET /api/onboarding/command-center and print a `runnable:` line from its model block: route, active_provider/active_model, and ready true/false/unknown with the reason, keeping the existing model line. In scripts/doctor.py, add an advisory `runtime_resolves` check (stdlib urllib, JARVIS_USER_TOKEN header when set) that runs only when check_readyz is ok. It reads the same model block: ok only when ready is true, WARN with named reasons route_unselected, configured_not_resident or residency_unknown, detail naming route/provider/model. When readyz is down it reports `skipped:hub_down` and does not pass. First red test, in tests/test_doctor.py: with a fake opener returning ready:false, runtime_resolves is WARN with reason configured_not_resident even though runtimes is found:ollama. Then test in tests/test_nerva_cli.py that the status output carries `runnable: no` for the same payload.
 
+>>>>>>> origin/main
 ## H327
 
 **SKILL.md frontmatter contract (agentskills.io-compatible)** (skills) — partial, ~4 h.
@@ -126,6 +144,8 @@ Files: `agents/core/skills/loader.py`, `agents/core/skills/importer.py`, `tests/
 
 Plan: In agents/core/skills/loader.py: decode with 'utf-8-sig' (or lstrip('﻿')) before _split_frontmatter. When yaml.safe_load raises, fall back to a naive `key: value` line parser instead of the heading dialect. In _manifest_from_frontmatter, cap name to 64 and description to 1024 chars. Add normalised list/str fields: platforms (lower-cased, mapped to macos/linux/windows), environments, setup, prerequisites, dependencies, required_environment_variables, required_credential_files, tags, homepage, related_skills, compatibility, triggers, and a `hermes` sub-dict with tags, category, upstream_skill, supersedes, session_platforms, requires_toolsets, requires_tools, fallback_for_toolsets, fallback_for_tools and config. String-or-list coercion goes through one helper. Add Skill properties (platforms, environments, required_env, hermes_meta) and include them in to_dict. Apply the same BOM strip in SkillImporter._extract_frontmatter. Parsed env-var names are metadata only; any value capture must go through secret_broker in the setup rows. Red-first tests in tests/test_skill_frontmatter_contract.py: a BOM-prefixed frontmatter keeps its name; platforms/required_environment_variables/metadata.hermes.category are present; name/description are capped; broken YAML still yields name/description through the naive fallback. The first test to go red: manifest['platforms'] == ['macos'].
 
+<<<<<<< HEAD
+=======
 ## H344
 
 **Reading skills from directories shared with other AI tools** (skills) — partial, ~4 h; lot 1, branch `heq/lot1-skill-import-rescan`. Critic notes: [25](#critic-note-25).
@@ -142,6 +162,7 @@ Files: `agents/core/llm/host_protocol.py`, `agents/core/llm/egress.py`, `agents/
 
 Plan: 1. Add agents/core/llm/host_protocol.py with host_mandated_protocol(url). It uses urllib.parse hostname, lower-cased with the trailing dot stripped, and matches exact hosts or label-anchored suffixes only, returning 'anthropic_messages', 'openai', 'bedrock_converse', 'gemini' or None. Add check_backend_host(backend_kind, url), which raises ProtocolHostMismatch when the host mandates a different protocol. 2. Enforce it in the llm_async_client request hook in agents/core/llm/egress.py, before the request leaves. Pass the backend kind into llm_async_client, raise, and record a ledger row with allowed=False and a reason. 3. Check it again when HybridRouter builds the compatible backend, so a mismatched OPENAI_BASE_URL/OPENROUTER_BASE_URL is refused at detect() with a logged reason. 4. Tests, red first in tests/test_host_mandated_protocol.py: api.openai.com.attacker.test is not 'openai'; https://proxy.test/api.openai.com/v1 maps to None; an openai-compatible backend aimed at https://api.anthropic.com/v1 sends zero requests (MockTransport sees none) and raises.
 
+>>>>>>> origin/main
 ## H428
 
 **Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up** (memory) — partial, ~4 h. Critic notes: [11](#critic-note-11), [12](#critic-note-12).
@@ -150,6 +171,8 @@ Files: `agents/core/memory/recall_gate.py`, `agents/core/orchestrator.py`, `test
 
 Plan: 1. Add agents/core/memory/recall_gate.py with TRIVIAL_RE and is_trivial_prompt(text). The anchored, case-insensitive regex matches: - empty or whitespace-only text - text starting with '/' - bare acknowledgements: ok|okay|k|kk|thanks|thank you|thx|ty|mersi|mulțumesc|merci|da|nu|bine|super|perfect|hi|hello|hey|salut|lgtm|cool|nice|great, with optional trailing punctuation/emoji. 'k8s', 'yolo' and 'ok, and what about X?' must not match. 2. In Orchestrator._recall_block (agents/core/orchestrator.py), return '' when is_trivial_prompt(text), with a debug log. 3. Wrap self.memory.recall(...) in asyncio.wait_for(timeout=float(get_setting('memory.recall_timeout_s', 8.0))). On TimeoutError log a warning and return ''. 4. Keep a per-session in-flight set so a turn whose previous recall thread is still alive skips recall and logs the skip. The first red test is new tests/test_recall_gate.py: with recall_enabled, _recall_block('ok') never calls memory.recall. A memory.recall stub that awaits asyncio.sleep(30) with timeout 0.2 returns '' in under 1 s. Add a parametrized table of trivial and non-trivial prompts.
 
+<<<<<<< HEAD
+=======
 ## H583
 
 **Steer which upstream provider serves an OpenRouter request (provider routing)** (docs-features) — missing, ~4 h; lot 1, branch `heq/lot1-llm-provider-routing`. Critic notes: [9](#critic-note-9).
@@ -166,6 +189,7 @@ Files: `agents/core/file_tools.py`, `agents/core/tool_result_store.py`, `agents/
 
 Plan: 1) file_read: add an integer 'offset' (minimum 0) to FILE_TOOL_SPECS['file_read'].input_schema and _preflight_read (reject bool, negative or non-int). In read_file, handle.seek(offset) before handle.read(limit), and return offset, next_offset (offset+bytes when size > offset+bytes) and truncated. Skip document extraction when offset>0, or refuse offset for .pdf/.docx. 2) Put an exact recipe in _SPILL_NOTICE (code_tools) and in the preview_envelope notice, e.g. "FULL output saved to {path} — page it with file_read(path=\"{path}\", offset=0, max_bytes=50000) and continue from next_offset", with the path filled in. 3) Add a max_bytes cap to StreamSpill (default 5_000_000). Past it, write stops, a trailing '\n[... spill capped at N bytes ...]\n' marker is appended once, and close() returns SpilledResult with capped=True, which _stream_fields surfaces as '<stream>_spill_capped'. Red-first tests: tests/test_file_tools.py reading a 3-chunk file with offset returns the middle chunk (fails today, offset ignored); tests/test_tool_result_store.py writing 6 MB into open_stream lands a file ≤ cap + marker with capped=True; tests/test_code_tools.py asserts the notice contains 'offset=' and the literal path.
 
+>>>>>>> origin/main
 ## H687
 
 **A recurring instruction runs once immediately, then on its cadence** (delta) — partial, ~4 h. Critic notes: [15](#critic-note-15).
@@ -198,6 +222,8 @@ Files: `agents/core/env_provenance.py`, `agents/core/plugin_manager.py`, `agents
 
 Plan: 1. Add agents/core/env_provenance.py with load_layered_env(repo_env, home_env, environ=os.environ). It records every key already in environ as 'process'. It then reads dotenv_values(repo_env) followed by dotenv_values(home_env), records 'repo_env' or 'user_env' only for keys not already present (the same first-wins semantics as override=False), and applies those values to environ. It keeps a module-level {key: layer} snapshot behind a provenance() accessor that returns names and layers only. 2. Replace the two load_dotenv calls in PluginManager.build with this function. 3. Add an admin-guarded GET /api/admin/env/sources in agents/core/routers/admin.py that returns [{key, layer}] plus a masked flag computed with the existing _SECRET_HINTS/mask_secret rule. Never return raw values. Regenerate the route/auth/openapi snapshots. 4. Add a non-required check_config to scripts/doctor.py that re-derives the same layers offline (os.environ vs the repo .env vs the data-home .env) for JARVIS_* and provider key names and prints key -> layer. Include it in --json. 5. First red test: tests/test_env_provenance.py::test_home_only_key_reports_user_env. A key present only in the home .env reports 'user_env'; a key in both files reports 'repo_env'; a monkeypatched shell key reports 'process'. No value string appears in provenance(), the route body or the doctor report.
 
+<<<<<<< HEAD
+=======
 ## H313
 
 **Speak** (tools — the agent-callable surface) — partial, ~5 h; lot 1, branch `heq/lot1-speak-tool`. Critic notes: [22](#critic-note-22).
@@ -206,6 +232,7 @@ Files: `agents/core/voice/speak_tool.py`, `agents/core/autonomy_coordinator.py`,
 
 Plan: Add agents/core/voice/speak_tool.py with register_speak_tool(server, tts_getter, director_getter, authorizer_getter). The tool is `speak`, with schema {text: string maxLength = spoken_reply.MAX_SPOKEN_CHARS, target: string maxLength 120 (device id, room or presence:auto), urgency: enum normal|high}, registered gated=True with capability_id tool:speak. The handler runs speakable(text), then TTSEngine.speak, and writes the audio under the director's local media root. It then calls CapabilityActionAPI.perform(`action:media.present`, {content:{kind:local,value:path}, target, mode:announce, urgency}, PerformContext(origin from the approved task)) through make_action_kernel, the same way routers/media_director._perform_media does, and never calls a driver directly. Return named refusals: media_director_disabled, tts_unavailable, unsupported_mode, and the kernel's deny reason. Register it in AutonomyCoordinator next to image_generate. Update tests/_snapshots/tool_profiles.json so speak appears only under operator/owner. First red test, in tests/test_speak_tool.py: `speak` is in the registry and gated. Follow with tests that the approved execution calls perform with media.present/announce, that a kernel deny produces no playback, that text over the cap is refused in preflight, and that an inbound/guest profile never offers it.
 
+>>>>>>> origin/main
 ## H315
 
 **Keep a visible checklist of what the agent is doing** (tools — the agent-callable surface) — missing, ~5 h. Critic notes: [22](#critic-note-22).
@@ -240,6 +267,8 @@ Files: `agents/core/learning/background_review.py`, `agents/core/orchestrator.py
 
 Plan: 1. Add a `focus: str = ''` parameter to BackgroundReviewer.run, rendered as a 'Focus for this review:' line in REVIEW_PROMPT, plus a run_on_demand() path. It bypasses the cadence gate, still spends the daily budget, and keeps the strict-local LLM. 2. Add Orchestrator.refine(session_id, focus). It refuses with a reason when the session has a turn in flight (add a per-session in-flight set maintained in process()). Otherwise it snapshots that session's history with memory.get_history(session_id, last_n=N, bounded chars) into a string, calls reviewer.run over the snapshot without touching the live session, and returns result['actions']. 3. Register SlashCommand('refine', usage='[focus]', tier=ADMIN) in agents/core/commands.py. This needs session_id on CommandContext. It replies with the listed memories added and the skill proposals pending approval; skill installs still cross skill.install approval. 4. Optionally add POST /api/learning/refine with the same contract. 5. Red-first test in tests/test_refine_command.py: '/refine deployment steps' currently returns an unknown-command reply; with it, a fake reviewer receives the snapshot and the focus, and the reply lists its actions. 6. Also test that the command refuses while the session is marked in flight, and that the focus text appears in the prompt (tests/test_background_review.py).
 
+<<<<<<< HEAD
+=======
 ## H503
 
 **Unpack an archive from another machine without letting it write outside the destination** (security) — partial, ~5 h; lot 1, branch `heq/lot1-archive-safe`.
@@ -248,6 +277,7 @@ Files: `agents/core/archive_safe.py`, `agents/core/backup.py`, `agents/core/skil
 
 Plan: 1. Create agents/core/archive_safe.py with: - `normalize_member(name) -> tuple[str, ...]`: replace '\\' with '/', then raise ArchiveRejected on empty names, a leading '/', a `^[A-Za-z]:` prefix, a UNC prefix, or any '..' or empty part; - `extract_tar(tar, dest, *, max_members=10000, max_bytes=2 GiB)` and `extract_zip(zf, dest, ...)`. Both resolve and check the target inside dest after normalization, create dirs, stream regular files with a running byte counter that raises past max_bytes, and raise ArchiveRejected on symlink, hardlink, device, fifo or zip entries whose external_attr marks a symlink; - `atomic_write(path)`, a context manager that writes path.with_name('.'+name+'.tmp-<rand>'), fsyncs, then os.replace()s. 2. Replace backup._safe_extract with extract_tar. 3. In SkillMarketplace.install_from_zip, replace _safe_targets+extractall with extract_zip, extracting into a temp dir then renaming into place, so a rejected package leaves nothing behind. 4. In create_backup, write both the encrypted bytes and the staged tar through atomic_write in `out`. Red-first tests: - a tar containing a symlink member makes verify_backup raise instead of reporting ok; - a zip with member '..\\evil' or 'C:/x' is rejected; - a tar whose summed sizes exceed max_bytes raises before writing past the cap; - a monkeypatched encrypt that raises mid-write leaves no archive in list_backups.
 
+>>>>>>> origin/main
 ## H586
 
 **Paste or attach a screenshot into the conversation (vision & image paste)** (docs-features) — partial, ~5 h.
@@ -936,7 +966,11 @@ H275 and H490 are the same safe-mode feature with separate estimates (7h and 10h
 
 ### Critic note 9
 
+<<<<<<< HEAD
+Rows: [H378](#h378), [H513](#h513), H583 (closed in lot 1).
+=======
 Rows: [H378](#h378), [H513](#h513), [H583](#h583).
+>>>>>>> origin/main
 
 H378 and H513 each add a data-training tier with incompatible vocabularies and acknowledgement stores. H378 has ProviderProfile.data_policy ('no-training'|'trains-on-inputs'|'unknown'), an acknowledge_training flag on the settings PUT and a consent SecurityEvent. H513 has ProviderProfile.data_handling ('local'|'no_training'|'may_train'|'unknown'), a security.data_training_ack list and POST /api/security/data-handling/ack audited as SETTINGS_CHANGE. H583's openrouter_data_collection (default deny) changes OpenRouter's effective tier, and neither spec reads it. H513 carries an owner_gate for the vendor-tier defaults; H378 needs the same vendor facts and has none.
 
@@ -1040,7 +1074,11 @@ Both rows add a `skill_view` ToolRPC tool. H318 puts it in agents/core/skills/to
 
 ### Critic note 22
 
+<<<<<<< HEAD
+Rows: [H309](#h309), H313 (closed in lot 1), [H314](#h314), [H315](#h315), [H318](#h318), [H340](#h340).
+=======
 Rows: [H309](#h309), [H313](#h313), [H314](#h314), [H315](#h315), [H318](#h318), [H340](#h340).
+>>>>>>> origin/main
 
 Six rows register new ToolRPC tools and each regenerates tests/_snapshots/tool_profiles.json, with inconsistent posture rules. H315 offers todo in every posture. H313 limits speak to operator/owner. H314 withholds memory from inbound/guest. H309 adds ui_point to the 'default tool profile', which would let an inbound Telegram sender post HUD canvas pointers. H318 and H340 leave skills_list/skill_view posture unspecified, so skill bodies would be exposed to inbound turns.
 
@@ -1064,7 +1102,11 @@ Three separate skill-disable stores all filter prompt_catalog and execute. H329 
 
 ### Critic note 25
 
+<<<<<<< HEAD
+Rows: [H334](#h334), [H696](#h696), H344 (closed in lot 1).
+=======
 Rows: [H334](#h334), [H696](#h696), [H344](#h344).
+>>>>>>> origin/main
 
 Both H334 and H696 re-pin the Hermes catalog to v2026.8.31, in conflicting formats: H334 regenerates hermes_pin_v1.json, H696 writes hermes_pin_v2.json (schema_version 2, tier, files). Both estimates (7h, 6h) include the re-pin work. H334 (route) and H344 (nerva_import CLI) each add a skill.install crossing for imports.
 

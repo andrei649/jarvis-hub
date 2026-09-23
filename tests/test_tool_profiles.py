@@ -40,6 +40,8 @@ def _live_registry(root: str) -> list[dict]:
 
     os.environ["JARVIS_FILE_TOOLS"] = "1"
     os.environ["JARVIS_FILE_ROOTS"] = root
+    # H313 — `speak` is registered only with the Media Director on.
+    os.environ["JARVIS_MEDIA_DIRECTOR"] = "1"
     orch = SimpleNamespace(
         agents={},
         get_setting=lambda key, default=None: SNAPSHOT_SETTINGS.get(key, default),
@@ -200,6 +202,7 @@ def test_resolver_reads_the_current_turn():
 def test_postures_over_the_live_registry_match_the_snapshot(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_FILE_TOOLS", "1")
     monkeypatch.setenv("JARVIS_FILE_ROOTS", str(tmp_path))
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
     resolved = _resolved(_live_registry(str(tmp_path)))
     snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert resolved == snap, (
@@ -207,7 +210,8 @@ def test_postures_over_the_live_registry_match_the_snapshot(tmp_path, monkeypatc
         "tests/_snapshots/tool_profiles.json with `python tests/test_tool_profiles.py --update`."
     )
     gated = {t["name"] for t in _live_registry(str(tmp_path)) if t["gated"]}
-    assert gated == {"desktop_run", "terminal_run", "osint_enrich", "file_write", "file_delete", "image_generate"}
+    assert gated == {"desktop_run", "terminal_run", "osint_enrich", "file_write", "file_delete",
+                     "image_generate", "speak"}
     for key, names in snap["postures"].items():
         if key != "operator/owner":
             assert not gated & set(names), f"{key} offers actuation by default: {names}"

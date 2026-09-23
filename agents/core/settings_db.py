@@ -9,6 +9,7 @@ import sqlite3
 import threading
 from typing import Any
 
+from agents.core.llm import provider_routing as _routing
 from agents.core.llm.model_config import (
     DEFAULT_CLAUDE_MODEL,
     RETIRED_CLAUDE_DEFAULT,
@@ -136,6 +137,16 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
     dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "openai-responses", "xai"]),
+    # H583 — which upstream provider may serve an OpenRouter request (sent as its
+    # `provider` object, to OpenRouter only). data_collection is a privacy control:
+    # seeded "deny" so a cloud turn never lands on a provider that stores or trains
+    # on prompts unless the owner opts in. Slug lists are validated on write.
+    dict(category="llm", key="openrouter_sort", value="", label="OpenRouter: rank upstream providers by (empty = OpenRouter's own balance)", kind="select", opts=["", *_routing.SORTS]),
+    dict(category="llm", key="openrouter_only", value=[], label="OpenRouter: only these upstream providers (slugs; empty = any)", kind="tags"),
+    dict(category="llm", key="openrouter_ignore", value=[], label="OpenRouter: never these upstream providers (slugs)", kind="tags"),
+    dict(category="llm", key="openrouter_order", value=[], label="OpenRouter: try these upstream providers first, the rest as fallbacks (slugs)", kind="tags"),
+    dict(category="llm", key="openrouter_require_parameters", value=False, label="OpenRouter: refuse upstream providers that would drop a request parameter (tools, temperature)", kind="toggle"),
+    dict(category="llm", key="openrouter_data_collection", value=_routing.DEFAULT_DATA_COLLECTION, label="OpenRouter: upstream providers that store or train on prompts (deny = never used)", kind="select", opts=list(_routing.DATA_COLLECTION)),
     dict(category="llm", key="responses_cache_retention", value="in_memory", label="OpenAI Responses GPT-4.1 cache retention", kind="select", opts=["in_memory", "24h"]),
     dict(category="llm", key="compatible_model", value="", label="Compatible provider model ID", kind="text"),
     dict(category="llm", key="compatible_prompt_cache_key", value=False, label="Compatible endpoint explicitly supports prompt_cache_key", kind="toggle"),
@@ -481,6 +492,10 @@ def get_category(cat: str) -> list[dict]:
 _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for d in DEFAULTS}
 
 
+# H583 — the OpenRouter provider-slug lists refuse anything that is not a slug.
+_ROUTING_SLUG_KEYS = frozenset(_routing.SETTINGS_KEYS[name] for name in _routing.SLUG_LISTS)
+
+
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
     if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
@@ -503,6 +518,10 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     elif kind == "tags":
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             return f"{key}: expected a list of strings (tags)"
+        if key in _ROUTING_SLUG_KEYS:
+            problem = _routing.slug_list_problem(key, value)
+            if problem:
+                return problem
     # 'json' and any unknown kind accept any JSON-serializable value.
     return None
 

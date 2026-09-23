@@ -6,7 +6,10 @@ Provides SQLite DB persistence, ZIP packaging/unpacking, and dynamic loader inte
 import io
 import json
 import logging
+import os
+import shutil
 import sqlite3
+import tempfile
 import threading
 import time
 import zipfile
@@ -14,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from agents.core import archive_safe
+from agents.core.archive_safe import ArchiveLimits
 from agents.core.automation_contracts import (
     ContractTemplate,
     contract_denial,
@@ -29,6 +34,14 @@ from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
 from .skill_history import SkillHistory
 
 logger = logging.getLogger("jarvis.skills.marketplace")
+
+# H503 bomb caps for an uploaded / registry skill package. A skill is code, a manifest
+# and a few assets; anything past these is not a skill package. archive_safe also
+# clamps the byte budget to the free space on the skills volume.
+SKILL_PACKAGE_LIMITS = ArchiveLimits(max_members=5_000, max_bytes=256 * 1024 * 1024)
+_STAGING_PREFIX = ".nerva-install-"
+# A staging dir untouched for this long belongs to a killed install, not a running one.
+_ABANDONED_STAGING_SECONDS = 3600.0
 
 
 def _v1_moderation_columns(conn: sqlite3.Connection) -> None:
@@ -350,13 +363,15 @@ class SkillMarketplace:
         # can verify (HMAC-keyed when JARVIS_SKILL_SIGNING_KEY is set). (H12.12)
         signature = signing.sign_skill(skill_path)
 
-        # Build Zip archive in memory (includes the freshly written SKILL.sig).
+        # Build Zip archive in memory (includes the freshly written SKILL.sig). The walk
+        # never follows or packs a link (H503): signing already refuses a linked
+        # artifact, and this keeps a link planted after signing from pulling an
+        # arbitrary file into a package that leaves the machine.
         zip_buffer = io.BytesIO()
+        files, _links = archive_safe.collect_regular_files(skill_path)
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for file_path in skill_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(skill_path)
-                    zip_file.write(file_path, arcname)
+            for file_path in files:
+                zip_file.write(file_path, file_path.relative_to(skill_path).as_posix())
 
         zip_data = zip_buffer.getvalue()
 
@@ -727,43 +742,62 @@ class SkillMarketplace:
             conn.close()
 
     @staticmethod
-    def _safe_targets(zip_file: "zipfile.ZipFile", target_dir: Path) -> None:
-        """Reject zip-slip / path-traversal entries before extraction (H12.12).
+    def _find_manifest(written: "list[tuple[str, ...]]") -> "tuple[str, ...]":
+        """The first file written whose last path part is ``SKILL.md`` (archive order)."""
+        for parts in written:
+            if parts[-1] == "SKILL.md":
+                return parts
+        raise ValueError("SKILL.md manifest file missing in ZIP package.")
 
-        ``ZipFile.extractall`` does not reliably stop ``../`` escapes, so a
-        malicious skill package could write outside the skills directory. Verify
-        every member resolves inside *target_dir* first, and fail closed if not.
+    def _sweep_abandoned_staging(self, *, now: Optional[float] = None) -> None:
+        """Remove staging dirs a killed install left in skills_dir; never a live one.
+
+        A SIGKILL between extract and rename leaves ``.nerva-install-*`` behind. The
+        loader ignores it (no top-level SKILL.md) but it would hold up to a package's
+        worth of disk forever, so it is swept once it is clearly abandoned.
         """
-        base = target_dir.resolve()
-        for member in zip_file.namelist():
-            dest = (base / member).resolve()
-            if dest != base and base not in dest.parents:
-                raise ValueError(f"Unsafe path in skill package (zip-slip blocked): {member}")
+        moment = time.time() if now is None else float(now)
+        try:
+            candidates = list(self.skills_dir.glob(f"{_STAGING_PREFIX}*"))
+        except OSError:
+            return
+        for path in candidates:
+            try:
+                if (path.is_dir() and not path.is_symlink()
+                        and moment - path.stat().st_mtime > _ABANDONED_STAGING_SECONDS):
+                    shutil.rmtree(path)
+            except OSError:
+                logger.warning("could not sweep an abandoned skill install staging dir")
 
     def install_from_zip(self, zip_bytes: bytes) -> bool:
         """
-        Extract files from zip_bytes into the skills/ directory.
+        Extract a skill package (zip bytes) into the skills/ directory.
 
-        Hardened (H12.12): path-traversal entries are rejected before extraction,
-        and when JARVIS_REQUIRE_SIGNED_SKILLS is set the extracted package must
-        carry a valid SKILL.sig (else it's removed and the install is refused).
+        Hardened (H12.12 → H503): the package is unpacked by the shared
+        ``archive_safe.extract_zip_bytes`` — names normalised (``\\`` folded; absolute,
+        drive-lettered, ``..`` refused), symlink/device entries RAISE, member-count and
+        byte caps (``SKILL_PACKAGE_LIMITS``) — into a private staging dir inside
+        skills_dir. The signature gate (JARVIS_REQUIRE_SIGNED_SKILLS) and the
+        provenance markers are applied there, and only then is the tree renamed into
+        place. So a rejected package leaves nothing behind, and a rejected *update*
+        no longer deletes the version that was already installed. An accepted
+        reinstall replaces the skill directory with exactly the package.
         """
-        zip_buffer = io.BytesIO(zip_bytes)
+        # Staging lives INSIDE skills_dir so the final placement is a same-volume
+        # rename. Its top level never holds a SKILL.md, so discovery ignores it.
+        self.skills_dir.mkdir(parents=True, exist_ok=True)
+        self._sweep_abandoned_staging()
+        staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=self.skills_dir))
+        try:
+            package = staging / "package"
+            # Bytes that are not a readable zip are an ArchiveRejected (a ValueError),
+            # so the install-zip route answers 400, not 500.
+            written = archive_safe.extract_zip_bytes(zip_bytes, package,
+                                                     limits=SKILL_PACKAGE_LIMITS)
+            manifest_parts = self._find_manifest(written)
+            skill_md_content = package.joinpath(*manifest_parts).read_text(encoding="utf-8")
 
-        skill_name = None
-        manifest_filename = None
-
-        with zipfile.ZipFile(zip_buffer, "r") as zip_file:
-            for name in zip_file.namelist():
-                if Path(name).name == "SKILL.md":
-                    manifest_filename = name
-                    break
-
-            if not manifest_filename:
-                raise ValueError("SKILL.md manifest file missing in ZIP package.")
-
-            skill_md_content = zip_file.read(manifest_filename).decode("utf-8")
-
+            skill_name = None
             for line in skill_md_content.split("\n"):
                 stripped = line.strip()
                 if stripped.startswith("# "):
@@ -771,39 +805,55 @@ class SkillMarketplace:
                     break
 
             if not skill_name:
-                skill_name = Path(manifest_filename).parent.name or "imported_skill"
+                skill_name = manifest_parts[-2] if len(manifest_parts) > 1 else "imported_skill"
 
             # skill_name is the untrusted '# ' heading of SKILL.md inside the zip.
-            # Validate the derived folder BEFORE mkdir/extract, or a heading like
-            # '# ..' / '# /etc/cron.d' relocates target_dir outside skills_dir and
-            # the zip-slip guard (which checks members against target_dir) passes.
+            # Validate the derived folder BEFORE anything is placed, or a heading like
+            # '# ..' / '# /etc/cron.d' relocates target_dir outside skills_dir.
             target_dir = self._safe_skill_dir(skill_name)
-            target_dir.mkdir(parents=True, exist_ok=True)
 
-            self._safe_targets(zip_file, target_dir)  # zip-slip guard
-            zip_buffer.seek(0)
-            zip_file.extractall(target_dir)
+            # Signature gate: SKILL.sig lives at the package root (manifest dir). The
+            # digest is over relative paths, so verifying the staged tree verifies
+            # exactly what will be placed.
+            staged_sig_dir = package.joinpath(*manifest_parts[:-1])
+            trusted, reason = signing.verify_skill(staged_sig_dir)
+            if signing.require_signed() and not trusted:
+                raise PermissionError(
+                    f"Skill '{skill_name}' rejected: {reason} (JARVIS_REQUIRE_SIGNED_SKILLS)."
+                )
 
-        # Signature gate: SKILL.sig lives at the package root (manifest dir).
-        sig_dir = target_dir / Path(manifest_filename).parent
-        trusted, reason = signing.verify_skill(sig_dir)
-        if signing.require_signed() and not trusted:
-            import shutil
-            shutil.rmtree(target_dir, ignore_errors=True)
-            raise PermissionError(
-                f"Skill '{skill_name}' rejected: {reason} (JARVIS_REQUIRE_SIGNED_SKILLS)."
-            )
+            # Marketplace content remains external after extraction. A package cannot
+            # self-grant the separate owner approval used for in-process execution.
+            # Written in staging, so the tree never appears in place without them.
+            for provenance_dir in {package, staged_sig_dir}:
+                (provenance_dir / OWNER_APPROVED_MARKER).unlink(missing_ok=True)
+                (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(
+                    "source=marketplace\n", encoding="utf-8"
+                )
 
-        # Marketplace content remains external after extraction. A package cannot
-        # self-grant the separate owner approval used for in-process execution.
-        provenance_dirs = {target_dir, sig_dir}
-        for provenance_dir in provenance_dirs:
-            (provenance_dir / OWNER_APPROVED_MARKER).unlink(missing_ok=True)
-            (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(
-                "source=marketplace\n", encoding="utf-8"
-            )
+            self._place(package, target_dir, staging)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
         # Avoid logging the package-derived name/path (log-injection); signature
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    @staticmethod
+    def _place(package: Path, target_dir: Path, staging: Path) -> None:
+        """Rename the validated *package* to *target_dir*, swapping out any old tree.
+
+        The previous install is moved aside (inside *staging*, removed by the caller)
+        only after the new tree is complete, and moved back if the final rename fails.
+        """
+        previous = None
+        if target_dir.exists() or target_dir.is_symlink():
+            previous = staging / "previous"
+            os.replace(target_dir, previous)
+        try:
+            os.replace(package, target_dir)
+        except BaseException:
+            if previous is not None:
+                os.replace(previous, target_dir)
+            raise

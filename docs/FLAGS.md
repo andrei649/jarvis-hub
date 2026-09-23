@@ -71,12 +71,32 @@ house (`agents/core/house/actuation.py:365`), media
 **End-to-end — `POST /api/media/present`:** the route builds a request-scoped
 facade whose authorizer is the bound kernel (`make_action_kernel`,
 `agents/core/routers/media_director.py:156`), registers
-`action:media.present` (`agents/core/media_director.py:1061`), then `perform()`:
+`action:media.present` (`agents/core/media_director.py:1092`), then `perform()`:
 missing required params → `refused` before any authorization
 (`capability_actions.py:139`); kernel DENY → `refused`, QUEUE → `queued` with an
 approval card, GRANT → handler runs (`capability_actions.py:175`). With either
 flag off the same POST returns `status: "disabled"` — a refusal, never a device
 command.
+
+**The model's `speak` tool (H313) takes the same facade.** Registered only while
+`JARVIS_MEDIA_DIRECTOR` is on, it is a gated ToolRPC tool (owner at the HUD or
+voice loop only — never inbound, guest or unattended turns): the call is an
+approval card naming the device, raised through the kernel as the exact
+`toolrpc.speak` row it becomes, and only that accepted row synthesizes the clip
+and `perform()`s `action:media.present` in `announce` mode; the kernel's `queue`
+on that present is honoured as the accepted row and logged as
+`speak.durably_approved`. No card is raised that could only be refused: with
+either flag off, no bound kernel, no media root, no speech backend, no driver
+for the device, or (for `presence:auto`) no configured presence room with a
+speaker, the call refuses by name (`unified_action_api_disabled`,
+`action_kernel_disabled`, `kernel_unavailable`, `media_root_unconfigured`,
+`tts_unavailable`, `no_media_driver`, `presence_room_unconfigured`). It never
+reaches a driver itself. Clips live under `<first JARVIS_MEDIA_ROOTS>/.nerva-speak`
+(owner-only files; the newest 16 are kept because an async driver may still be
+streaming one, and partial writes older than 5 minutes are removed). An
+`announce` session never holds its device: the next present there is not refused
+by etiquette and spends no interrupt budget, and what the announcement cut into
+stays the restore point.
 
 **Risk delta vs OFF:** OFF, these surfaces are inert refusals. ON, house
 mutations / media playback / desktop steps can complete on a kernel GRANT
@@ -433,13 +453,37 @@ stricter side of the mistake. On a home LAN you will never need it.
 be believed. An entry is the proxy's **own address**, never a range that also contains
 clients — a client inside a listed range can name any client it likes; an entry wider than
 /24 (v6: /64) is warned about at boot by position. The chain is walked right-to-left and an
-all-trusted chain yields the hop the proxy saw, never a typed leftmost value. Unset:
-forwarding headers are ignored — a request that carries them fails the localhost gate
-closed and is rate-limited by its socket address. `*`, `/0` and more than 64 entries refuse
-boot naming the variable. Set in `.env` like everything else: the lifespan re-checks the
-list once `.env` is loaded. The old `JARVIS_TRUSTED_PROXY=1` is deprecated and
-now means *loopback only* (a same-box Caddy) with a one-time warning; it never widens past
+all-trusted chain yields the hop the proxy saw, never a typed leftmost value. The same list
+decides `X-Forwarded-Proto`: from a listed peer, one `http`/`https` value becomes the request
+scheme (so the widget snippet and the MCP resource URL say `https://` behind a TLS proxy);
+from anyone else it is ignored. Unset: forwarding headers are ignored — not even loopback's
+are believed — a request that carries them fails the localhost gate closed, is
+rate-limited by its socket address, and is **not** localhost-exempt from the throttle even
+when that address is `127.0.0.1` (an unlisted same-box proxy is not a local client). `*`,
+`/0` and more than 64 entries refuse boot naming the variable. Set in `.env` like
+everything else: the lifespan re-checks the list once `.env` is loaded. Once it is loaded,
+the set the box ended up trusting is logged once at INFO under `jarvis.proxy_trust`, e.g.
+`JARVIS_TRUSTED_PROXIES: trusting 2 proxy network(s): 127.0.0.1/32, 10.0.0.5/32`, next to
+the warnings that belong with it (a wide entry, the legacy flag) — formatted, redacted and
+in the log file, never on bare stderr at import. The line uses the canonical form, so
+`10.1.2.3/24` reads back as `10.1.2.0/24` and duplicates are folded. It is said again
+whenever the value changes, and never when nothing is trusted. The old
+`JARVIS_TRUSTED_PROXY=1` is deprecated and now means *loopback only* (a same-box Caddy) with
+a one-time warning, and its INFO line names `127.0.0.0/8, ::1/128`; it never widens past
 that.
+
+**This is the only forwarding-header allowlist.** uvicorn has its own (`proxy_headers` +
+`forwarded_allow_ips`, loopback by default) that would rewrite the client address and
+scheme before this list is consulted. `serve.py` builds uvicorn with it switched off, and
+`docker-compose.yml` passes `--no-proxy-headers`. `FORWARDED_ALLOW_IPS`,
+`UVICORN_FORWARDED_ALLOW_IPS` and, on a `uvicorn` command line, `--forwarded-allow-ips` are
+checked at boot: an entry that is `*`, a `/0`, not an address, or a peer outside this list
+(and outside uvicorn's own loopback default) refuses boot naming the variable — list the
+proxy here instead. A raw `python -m uvicorn agents.web:app` without `--no-proxy-headers`
+still believes loopback's headers inside uvicorn, and the boot says so at INFO
+(`uvicorn proxy headers (uvicorn CLI): … believed from 127.0.0.1/32, ::1/128 …`). A
+launcher that embeds uvicorn some other way (`uvicorn.run(app, forwarded_allow_ips=…)`, a
+gunicorn worker) passes its value out of the app's sight — use `serve.py`.
 
 ### `JARVIS_ALLOWED_HOSTS`
 
@@ -570,7 +614,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
 | `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |
 | `JARVIS_CA_BUNDLE` | unset (`http_client.py`) | Extra CA roots for plugin egress (adds only; verification always on) | A root you add is trusted for every plugin fetch — point it at your own proxy's CA, nothing else | Unset + restart: back to certifi alone |
-| `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers believed only from these networks; XFF walked right-to-left | A listed peer can name any client address — list only proxies you run; a malformed list refuses boot | Unset + restart: headers ignored, fail closed |
+| `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
 | `llm.execute_code_sessions` *(runtime setting)* | off · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, crosses the Action Kernel, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Set `false` + restart: back to the K1 one-shot, kernels destroyed |

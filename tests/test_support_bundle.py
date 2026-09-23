@@ -62,3 +62,28 @@ def test_no_obviously_sensitive_keys_anywhere():
     blob = json.dumps(support_bundle.build_bundle()).lower()
     for bad in ("token", "secret", "password", "api_key", "authorization", "private_key"):
         assert bad not in blob
+
+
+def test_diagnostics_stay_local_there_is_no_upload_path():
+    """H242: Hermes's ``diagnostics.share_nous`` uploads a debug bundle to the vendor;
+    Nerva refused that path. The bundle is assembled in-process and served to the owner
+    over one admin GET — no network client in either module, no write verb on the route."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    network = {"urllib", "http", "httpx", "requests", "aiohttp", "socket", "ftplib", "smtplib"}
+    for rel in ("agents/core/support_bundle.py", "agents/core/routers/support.py"):
+        tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                imported.add(node.module.split(".")[0])
+        assert not imported & network, (rel, imported & network)
+
+    from agents.core.routers.support import router
+
+    verbs = {(method, route.path) for route in router.routes for method in route.methods}
+    assert verbs == {("GET", "/api/support/bundle")}
