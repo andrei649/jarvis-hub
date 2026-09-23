@@ -145,7 +145,7 @@ async def admin_mcp_add(req: MCPServerConfig):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust
+    from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust, tool_patterns_over_bounds
     # stdio is the only transport MCPServer.connect() actually speaks. Accepting
     # an "sse" config used to register + persist a server that could never
     # connect, so the admin list showed a permanently dead row. Reject it here,
@@ -164,8 +164,12 @@ async def admin_mcp_add(req: MCPServerConfig):
         )
     for field in ("tools_allow", "tools_deny"):
         patterns = getattr(req, field, None)
+        # Over the 64-pattern / 128-char bounds is refused, not trimmed: a trimmed
+        # filter differs from what was sent, and a trimmed deny shows the tool it named.
         if patterns is not None and (
-            not isinstance(patterns, list) or not all(isinstance(p, str) and p.strip() for p in patterns)
+            not isinstance(patterns, list)
+            or not all(isinstance(p, str) and p.strip() for p in patterns)
+            or tool_patterns_over_bounds(patterns)
         ):
             return JSONResponse({"error": "invalid_tool_filter", "field": field}, status_code=400)
     if req.name in orch.mcp.servers:

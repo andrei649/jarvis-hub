@@ -134,6 +134,25 @@ def _clean_tool_patterns(raw: object) -> list[str] | None:
     ]
     return out[:MAX_TOOL_PATTERNS]
 
+
+def tool_patterns_over_bounds(raw: object) -> int:
+    """How many usable patterns in *raw* the bounds would drop (0 when it fits).
+
+    A pattern past :data:`MAX_TOOL_PATTERN_CHARS` and every one past the
+    :data:`MAX_TOOL_PATTERNS`-th counts; a non-list counts as one, since it cannot
+    be kept at all. Blank and non-string entries are malformed, not over the
+    bounds, and are not counted (they are dropped as before). The add route refuses
+    any count above zero; :class:`MCPServer` uses it on the deny side, where a
+    dropped pattern would make the tool it named visible again.
+    """
+    if raw is None:
+        return 0
+    if not isinstance(raw, (list, tuple)):
+        return 1
+    usable = [item for item in raw if isinstance(item, str) and item.strip()]
+    too_long = sum(1 for item in usable if len(item) > MAX_TOOL_PATTERN_CHARS)
+    return too_long + max(0, len(usable) - too_long - MAX_TOOL_PATTERNS)
+
 #: Variables a stdio MCP subprocess may inherit under the baseline: process
 #: plumbing (path, home, locale, temp, terminal), platform essentials
 #: (Windows system dirs, XDG dirs, display/session buses), interpreter and
@@ -385,6 +404,18 @@ class MCPServer:
         # time, so a name the model or a caller remembers cannot go around the filter.
         self.tools_allow: list[str] | None = _clean_tool_patterns(tools_allow)
         self.tools_deny: list[str] = _clean_tool_patterns(tools_deny) or []
+        # Capping a deny list widens it: a dropped deny makes its tool visible again.
+        # So a deny that does not fit the bounds narrows the server to nothing, the
+        # module's rule for a filter it cannot honour (a malformed allow does the same).
+        # The add route refuses such a filter outright; this covers a hand-edited config.
+        dropped = tool_patterns_over_bounds(tools_deny)
+        if dropped:
+            self.tools_allow = []
+            logger.warning(
+                "MCP server %s: tools_deny does not fit the bounds (%d pattern(s) over %d "
+                "chars or past %d entries); every tool is hidden until the filter is fixed",
+                name, dropped, MAX_TOOL_PATTERN_CHARS, MAX_TOOL_PATTERNS,
+            )
         self.name = name
         self.transport = normalize_transport(transport)
         self.command = command
