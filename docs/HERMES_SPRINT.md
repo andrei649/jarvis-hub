@@ -479,3 +479,10 @@ Smaller findings fixed on the way: a component too long for the filesystem deep 
 **Open, recorded rather than hidden.** After this lot an announce never holds its device, so a normal-urgency present can cut into a long announcement sent through the media route. The fix is a time-bounded hold, recorded in H313's summary as a known limit. With `JARVIS_ROOT_PATH` set, every request is counted as `<unmatched>`, the same bug class as the H691 fix; it is pre-existing and belongs to its own row. `tests/test_tool_result_taint.py::test_recall_taint_survives_the_orchestrators_agent_gather` fails under Python 3.11 on main as well; CI runs 3.12, where it passes.
 =======
 >>>>>>> origin/main
+
+### 2026-09-23 — the merge train, and the ledger re-read it made necessary
+
+Eleven PRs landed on main in one pass: the stack #1202 → #1203 → #1204, #1190 (H481), #1192 (H506), #1193 (H672), the handoff doc #1200 and three dependency bumps (#1196 needed its hash-pinned locks regenerated; #1198 needed a re-run on current main). Each PR had re-read the rows its own diff drifted, but not the rows another PR's diff drifted: combined, the code of one moved the evidence the rows of another cite, so 51 rows fell to `needs_review`, on top of 13 left from #1179/#1187/#1188.
+
+All 64 were re-read against the diff since each row's hash last matched, on main pinned at 55d625f4 (pinned, not a moving branch, so every citation was checked against the exact commit it is stamped on). 26 kept, 38 rewritten — citations remapped on content, claims the merged work changed corrected; no status moved. **Headline 131/697; 131/590 = 22.2% of the accepted scope; `needs_review` 0.**
+
