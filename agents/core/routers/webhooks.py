@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel, Field
 
+from agents.core.action_origin import INBOUND_ACTION_ORIGIN, bind_action_origin, reset_action_origin
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -91,9 +92,26 @@ async def trigger_webhook(hook_id: str, request: Request):
         reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
         return nocache_json({"ok": True, "target": hook["target"], "response": reply})
 
-    # workflow target (best-effort — requires the workflow engine)
+    # workflow target (requires the workflow engine)
     engine = getattr(orch, "workflow_engine", None)
     if engine is None or not hasattr(engine, "run"):
         return nocache_json({"error": "workflow execution not available"}, status_code=501)
-    result = await engine.run(hook["target"], {"input": text})
-    return nocache_json({"ok": True, "target": hook["target"], "result": result})
+    from agents.core.routers.workflows import resolve_pipeline
+    try:
+        pipeline = resolve_pipeline(orch, hook["target"])
+    except Exception as exc:
+        return error_json(exc, 200, "invalid stored pipeline", extra={"ok": False, "target": hook["target"]})
+    if pipeline is None:
+        return nocache_json({"ok": False, "error": "workflow not found", "target": hook["target"]}, status_code=404)
+    # The text came from outside, so every step the workflow runs is an inbound turn.
+    # The engine runs its steps through handle_input on the ``workflow`` channel,
+    # which alone classifies as internal and trusted; bind_turn_action_origin never
+    # downgrades an inbound parent, so this binding is what the kernel sees.
+    origin_token = bind_action_origin(INBOUND_ACTION_ORIGIN)
+    try:
+        result = await engine.run(pipeline, initial_input=text)
+    except Exception as exc:
+        return error_json(exc, 200, "workflow run failed", extra={"ok": False, "target": hook["target"]})
+    finally:
+        reset_action_origin(origin_token)
+    return nocache_json({"ok": result.get("_ok", True), "target": hook["target"], "result": result})

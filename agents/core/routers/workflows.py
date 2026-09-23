@@ -34,6 +34,22 @@ def _wf_store():
     return sys.modules.get("agents.web")._wf_store()
 
 
+def resolve_pipeline(orch, pipeline_id: str):
+    """The pipeline *pipeline_id* names, or None when nothing does.
+
+    Same precedence as ``list_workflows``: a saved user workflow overrides a builtin
+    of the same id. Otherwise, after a restart — when user workflows aren't
+    re-registered — an id that shadows a builtin is listed as the user definition
+    but silently runs the builtin. A stored definition that does not parse raises;
+    callers name that failure rather than fall back to the builtin.
+    """
+    stored = _wf_store().get(pipeline_id)
+    if stored:
+        from core.workflows.pipeline import Pipeline as _Pipeline
+        return _Pipeline.from_dict(stored)
+    return orch.workflow_registry.get(pipeline_id)
+
+
 class GenerateStepBody(BaseModel):
     description: str = Field(..., max_length=2000)
 
@@ -75,21 +91,10 @@ async def run_workflow(body: WorkflowRunBody):
     orch = get_orch()
     if not orch or not hasattr(orch, "workflow_engine") or not orch.workflow_engine:
         return nocache_json({"ok": False, "error": "workflow engine not initialized"})
-    # Match list_workflows precedence (a saved user workflow overrides a builtin
-    # of the same id): consult the user store first, then the builtin registry.
-    # Otherwise, after a restart — when user workflows aren't re-registered — an
-    # id that shadows a builtin is listed as the user definition but silently
-    # runs the builtin.
-    pipeline = None
-    stored = _wf_store().get(body.pipeline_id)
-    if stored:
-        try:
-            from core.workflows.pipeline import Pipeline as _Pipeline
-            pipeline = _Pipeline.from_dict(stored)
-        except Exception as e:
-            return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
-    else:
-        pipeline = orch.workflow_registry.get(body.pipeline_id)
+    try:
+        pipeline = resolve_pipeline(orch, body.pipeline_id)
+    except Exception as e:
+        return error_json(e, 200, "invalid stored pipeline", extra={"ok": False})
     if not pipeline:
         raise HTTPException(status_code=404, detail=f"Pipeline '{body.pipeline_id}' not found")
     try:
