@@ -193,6 +193,21 @@ def test_client_maps_http_errors_and_unreachable_hubs():
         HubClient(opener=_down).get("/status")
     assert client_module.DEFAULT_HUB_URL == "http://127.0.0.1:8080"
 
+    class _CutOff:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            import http.client
+            raise http.client.IncompleteRead(b'{"version": "1.', 40)
+
+    # A reply cut off mid-body is the hub being unreachable, never a traceback.
+    with pytest.raises(HubUnavailable):
+        HubClient(opener=lambda request, timeout: _CutOff()).get("/status")
+
 
 # ── online verbs ─────────────────────────────────────────────────────────────
 

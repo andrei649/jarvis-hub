@@ -7,6 +7,7 @@ exactly what the HUD can do and nothing more. Stdlib only so it runs in a broken
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -98,7 +99,9 @@ class HubClient:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raise HubError(exc.code, _error_reason(exc)) from None
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as exc:
+            # HTTPException: a reply cut off mid-body (IncompleteRead) or a garbled
+            # status line is the hub being unreachable, not a crash in the verb.
             raise HubUnavailable(self.base_url, str(getattr(exc, "reason", exc))) from None
         if not raw:
             return None

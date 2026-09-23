@@ -312,6 +312,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | `agents/core/voice/pipeline.py` | Wake → STT → TTS coordinator | `VoicePipeline` |
 | `agents/core/voice/stt.py` | faster-whisper STT | `STTEngine` |
 | `agents/core/voice/tts.py` | TTS fallback chain (XTTS→ElevenLabs→Fish Audio→edge-tts→Kokoro); inline `[emotion]` tags pass through to Fish, stripped for other backends | `TTSEngine.speak`, `strip_emotion_tags` |
+| `agents/core/voice/speak_tool.py` | Model-callable `speak` (H313): TTS clip spooled under the owner's media root, announced on a room/device through `media.present` after durable approval | `SpeakTool`, `register_speak_tool` |
 | `agents/core/voice/wake_word.py` | openWakeWord detection | `WakeWordDetector` |
 | `agents/core/voice/wyoming.py` | Wyoming protocol, gated `voice.wyoming_enabled` (port 10700) | `WyomingServer` |
 

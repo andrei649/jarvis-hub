@@ -625,3 +625,59 @@ def test_restore_is_not_reachable_from_any_route_or_tool():
                 and _restore_callers(path.name, path.read_text(encoding="utf-8", errors="replace"))):
             callers.append(path.name)
     assert callers == []
+
+
+# ── lot-1 verification: a restored root backs up and restores again ──
+def _manifest_members(archive: str) -> int:
+    with tarfile.open(archive, "r:gz") as tar:
+        return sum(1 for name in tar.getnames() if name == "backup_manifest.json")
+
+
+def test_a_backup_of_a_restored_root_verifies_restores_and_carries_one_manifest(
+        data_root, tmp_path):
+    first = bk.create_backup(source_root=str(data_root), out_dir=str(tmp_path / "bk"),
+                             encrypt=False)
+    bk.restore_backup(first["archive"], str(data_root), force=True)   # the documented hot path
+    assert (data_root / "backup_manifest.json").is_file()             # a restore leaves it
+    second = bk.create_backup(source_root=str(data_root), out_dir=str(tmp_path / "bk"),
+                              encrypt=False)
+    assert _manifest_members(second["archive"]) == 1
+    assert bk.verify_backup(second["archive"])["ok"] is True
+    out = bk.restore_backup(second["archive"], str(tmp_path / "again"))
+    assert out["ok"] is True and out["problem"] is None
+    assert (tmp_path / "again" / "tokens" / "note.txt").read_text(encoding="utf-8") == "hello"
+
+
+def test_a_pre_fix_backup_with_two_manifests_still_verifies_and_restores(tmp_path):
+    # What every backup of a restored root looked like before the walk skipped the
+    # restored manifest: the stale one archived as a file and counted, then the real one.
+    import io
+    import json
+
+    arc = tmp_path / "jarvis-backup-legacy.tar.gz"
+    real = json.dumps({"version": 1, "file_count": 2}).encode()
+    with tarfile.open(arc, "w:gz") as tar:
+        for name, data in (("backup_manifest.json", b'{"version": 1, "file_count": 1}'),
+                           ("tokens/note.txt", b"hello"),
+                           ("backup_manifest.json", real)):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    report = bk.verify_backup(str(arc))
+    assert report["ok"] is True, report["problem"]
+    assert report["manifest"]["file_count"] == 2                   # the last one wins
+    out = bk.restore_backup(str(arc), str(tmp_path / "restored"))
+    assert out["ok"] is True
+    assert json.loads((tmp_path / "restored" / "backup_manifest.json").read_text()) == \
+        {"version": 1, "file_count": 2}
+
+
+def test_forget_me_backs_up_first_after_an_in_place_restore(data_root, tmp_path, monkeypatch):
+    from agents.core import data_purge
+
+    first = bk.create_backup(source_root=str(data_root), out_dir=str(tmp_path / "bk"),
+                             encrypt=False)
+    bk.restore_backup(first["archive"], str(data_root), force=True)
+    monkeypatch.setenv("JARVIS_BACKUP_DIR", str(tmp_path / "bk"))
+    result = data_purge.purge_data(str(data_root), backup_first=True)
+    assert result.get("backup"), result

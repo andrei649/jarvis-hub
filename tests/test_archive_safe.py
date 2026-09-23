@@ -712,3 +712,61 @@ def test_archive_safe_is_the_only_extractor_in_the_product():
         except SyntaxError:
             continue  # not Python this interpreter parses (a template); nothing to run
     assert offenders == [], "archive extraction outside agents/core/archive_safe.py:\n" + "\n".join(offenders)
+
+
+# ── lot-1 verification: names the filesystem refuses, repeats a caller owns ──
+def _tar_file(path: Path, members) -> Path:
+    with tarfile.open(path, "w") as tar:
+        for info, data in members:
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return path
+
+
+def test_an_over_long_component_deep_in_a_new_tree_is_refused_before_writing(tmp_path):
+    # The existing-path walk stops at the first missing directory, so a component too
+    # long for the filesystem under a NEW directory used to fail at write time — after
+    # the members before it had landed, as a bare OSError.
+    dest = tmp_path / "dest"
+    members = [_file("ok.txt", b"ok"), _file("newdir/" + "n" * 300 + "/f.txt", b"f")]
+    with pytest.raises(ArchiveRejected, match="too long") as exc:
+        asafe.extract_tar(_tar(members), dest, limits=_BIG)
+    assert exc.value.partial is False
+    assert not dest.exists() or not any(dest.iterdir())
+
+
+def test_a_write_the_destination_refuses_is_a_named_partial_refusal(tmp_path, monkeypatch):
+    real = asafe._write_capped
+
+    def _denied(src, target, written, budget, name):
+        if name == "b.txt":
+            raise PermissionError(13, "Permission denied")
+        return real(src, target, written, budget, name)
+
+    monkeypatch.setattr(asafe, "_write_capped", _denied)
+    with pytest.raises(ArchiveRejected, match="could not write") as exc:
+        asafe.extract_tar(_tar([_file("a.txt", b"a"), _file("b.txt", b"b")]),
+                          tmp_path / "dest", limits=_BIG)
+    assert exc.value.partial is True                    # a.txt was already written
+
+
+def test_a_repeated_member_the_caller_owns_is_written_once_last_wins(tmp_path):
+    arc = _tar_file(tmp_path / "a.tar", [_file("m.json", b"old"), _file("a.txt", b"a"),
+                                         _file("m.json", b"new")])
+    stale: list = []
+    written = asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG,
+                                     last_wins=("m.json",), superseded=stale)
+    assert written == [("a.txt",), ("m.json",)]
+    assert stale == [("m.json",)]
+    assert (tmp_path / "dest" / "m.json").read_bytes() == b"new"
+
+
+@pytest.mark.parametrize("members", [
+    [("a.txt", b"1"), ("a.txt", b"2")],                  # a repeat nobody owns
+    [("x/m.json", b"1"), ("x/m.json", b"2")],            # the owned name, but not top-level
+])
+def test_last_wins_never_lets_any_other_repeat_through(tmp_path, members):
+    arc = _tar_file(tmp_path / "a.tar", [_file(name, data) for name, data in members])
+    with pytest.raises(ArchiveRejected, match="duplicate"):
+        asafe.extract_tar_path(arc, tmp_path / "dest", limits=_BIG, last_wins=("m.json",))
+    assert not (tmp_path / "dest").exists() or not any((tmp_path / "dest").iterdir())

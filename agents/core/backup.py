@@ -439,6 +439,11 @@ def _write_tar(fileobj, src: Path, out: Path, files: list[Path], tmp: Path,
                 continue  # WAL/shm/journal — folded into the DB snapshot
             rel = path.relative_to(src)
             arcname = rel.as_posix()
+            if arcname == _MANIFEST_NAME:
+                # A restore leaves the archive's manifest in the data root. It is never
+                # data, and archiving it beside the manifest appended below gave every
+                # later backup two members of that name (restorable only by last-wins).
+                continue
             if path.suffix == ".db":
                 # sqlite3.connect follows a link, so check before snapshotting through it.
                 added = _still_regular(path)
@@ -549,11 +554,13 @@ def verify_backup(archive: str, key: Optional[str] = None) -> dict:
               "dbs": {}, "file_count": 0, "manifest": None, "problem": None}
     with _readable_archive(arc, key) as tarpath, tempfile.TemporaryDirectory() as tmp:
         tmpp = Path(tmp)
+        stale: list[tuple[str, ...]] = []
         written = archive_safe.extract_tar_path(tarpath, tmpp, limits=backup_limits(),
-                                                compression="gz")
+                                                compression="gz", last_wins=(_MANIFEST_NAME,),
+                                                superseded=stale)
         report["file_count"] = len(written)
         report["manifest"] = _read_manifest(tmpp, written)
-        report["problem"] = _manifest_problem(report["manifest"], written)
+        report["problem"] = _manifest_problem(report["manifest"], written, stale=len(stale))
         if report["problem"]:
             report["ok"] = False
         for db in sorted(tmpp.rglob("*.db")):
@@ -575,12 +582,16 @@ def _read_manifest(root: Path, written: list[tuple[str, ...]]) -> Optional[dict]
     return manifest if isinstance(manifest, dict) else None
 
 
-def _manifest_problem(manifest: Optional[dict], written: list[tuple[str, ...]]) -> Optional[str]:
+def _manifest_problem(manifest: Optional[dict], written: list[tuple[str, ...]],
+                      *, stale: int = 0) -> Optional[str]:
     """Why the unpacked tree disagrees with what create_backup recorded, or None.
 
     The manifest is the archive's last member and counts every file archived before it,
     so a missing manifest or a lower count is a shortened archive — a tree that would
-    restore quietly incomplete while every member that IS there checks out.
+    restore quietly incomplete while every member that IS there checks out. *stale* is
+    how many earlier manifest members the extractor dropped: a backup taken of a
+    restored root before the walk skipped the manifest archived the old one as a file
+    and counted it, so it counts here too (last one wins, as tarfile always resolved it).
     """
     if manifest is None:
         return (f"the archive carries no readable {_MANIFEST_NAME}: it is incomplete "
@@ -588,7 +599,7 @@ def _manifest_problem(manifest: Optional[dict], written: list[tuple[str, ...]]) 
     expected = manifest.get("file_count")
     if not isinstance(expected, int) or isinstance(expected, bool):
         return None  # nothing recorded to check against
-    held = sum(1 for parts in written if parts != (_MANIFEST_NAME,))
+    held = sum(1 for parts in written if parts != (_MANIFEST_NAME,)) + stale
     if held != expected:
         return f"the archive holds {held} file(s) but its manifest counted {expected}"
     return None
@@ -611,11 +622,13 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
         raise FileExistsError(
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
+    stale: list[tuple[str, ...]] = []
     with _readable_archive(arc, key) as tarpath:
         written = archive_safe.extract_tar_path(tarpath, target, limits=backup_limits(),
-                                                compression="gz")
+                                                compression="gz", last_wins=(_MANIFEST_NAME,),
+                                                superseded=stale)
     # Post-restore drill on the live target so a corrupt or shortened restore is caught now.
-    problem = _manifest_problem(_read_manifest(target, written), written)
+    problem = _manifest_problem(_read_manifest(target, written), written, stale=len(stale))
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in sorted(target.rglob("*.db"))}
     return {"restored_to": str(target), "file_count": len(written), "dbs": dbs,
             "problem": problem,

@@ -61,7 +61,7 @@ import stat
 import tarfile
 import zipfile
 import zlib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,12 +171,35 @@ def _freed_by_unlink(st: os.stat_result) -> int:
     return int(blocks) * 512 if blocks is not None else int(st.st_size)
 
 
-class _Planner:
-    """Accumulates validated entries; raises on the first unsafe one."""
+def _pathconf(dest: Path, name: str, default: int) -> int:
+    try:
+        value = os.pathconf(dest, name)
+    except (OSError, ValueError, AttributeError):
+        return default
+    return value if isinstance(value, int) and value > 0 else default
 
-    def __init__(self, dest: Path, limits: ArchiveLimits):
+
+class _Planner:
+    """Accumulates validated entries; raises on the first unsafe one.
+
+    *last_wins* names top-level file members that may repeat: the last occurrence is
+    the one written and each earlier one is dropped unwritten (``superseded``). Every
+    other duplicate is refused. Only a caller that owns the name — the backup manifest,
+    which pre-fix backups of a restored root carry twice — passes one.
+    """
+
+    def __init__(self, dest: Path, limits: ArchiveLimits,
+                 last_wins: Collection[str] = ()):
         self.root = dest
         self.limits = limits
+        self.last_wins = frozenset((name,) for name in last_wins)
+        self.superseded: list[tuple[str, ...]] = []
+        # What the destination's filesystem can name: a component or a whole path past
+        # these fails at write time, after earlier members landed, so the pre-scan
+        # refuses them while nothing has been written (ENAMETOOLONG deep in a new tree
+        # is never seen by the existing-path walk below).
+        self.name_max = _pathconf(dest, "PC_NAME_MAX", 255)
+        self.path_max = _pathconf(dest, "PC_PATH_MAX", 4096)
         self.cap = int(limits.max_bytes)
         self.free = _free_space(dest)
         self.reclaimable = 0  # bytes of existing files that members will replace
@@ -192,16 +215,35 @@ class _Planner:
             raise ArchiveRejected(
                 f"archive has more than {self.limits.max_members} members")
         parts = normalize_member(name, allow_root=(kind == "dir"))
-        self._check_conflicts(parts, kind, name)
-        if parts:
-            self._check_existing(parts, kind, name)
-            _contained(self.root, parts, kind, name)
+        if kind == "file" and parts in self.last_wins and parts in self._files:
+            self._supersede(parts)
+        else:
+            self._check_length(parts, name)
+            self._check_conflicts(parts, kind, name)
+            if parts:
+                self._check_existing(parts, kind, name)
+                _contained(self.root, parts, kind, name)
         if kind == "file":
             self.declared += max(0, int(size))
             if self.declared > self.cap:
                 raise ArchiveRejected(
                     f"archive expands past {self.cap} bytes (the configured bytes cap)")
         self.entries.append(_Entry(parts, kind, max(0, int(size)), ref, name))
+
+    def _supersede(self, parts: tuple[str, ...]) -> None:
+        """Drop the earlier file entry at *parts*; the member being added replaces it."""
+        for index, entry in enumerate(self.entries):
+            if entry.kind == "file" and entry.parts == parts:
+                del self.entries[index]
+                self.declared -= entry.size
+                self.superseded.append(parts)
+                return
+
+    def _check_length(self, parts: tuple[str, ...], name: str) -> None:
+        if any(len(os.fsencode(part)) > self.name_max for part in parts):
+            raise ArchiveRejected(f"member name too long for the destination: {_show(name)}")
+        if len(os.fsencode(str(self.root.joinpath(*parts)))) >= self.path_max:
+            raise ArchiveRejected(f"member path too long for the destination: {_show(name)}")
 
     def finish(self) -> None:
         """Settle the byte budget once every member (and every file it replaces) is known."""
@@ -387,6 +429,12 @@ def _extract_plan(plan: _Planner,
     except _CORRUPT as exc:
         raise ArchiveRejected(f"archive is corrupt or truncated: {exc}",
                               partial=progress.touched) from exc
+    except OSError as exc:
+        # The destination refused a write the pre-scan could not foresee (permissions,
+        # a full disk, a name the filesystem rejects): a named refusal that says whether
+        # anything landed, never a bare traceback.
+        raise ArchiveRejected(f"could not write the destination: {exc.strerror or exc}",
+                              partial=progress.touched) from exc
     return files
 
 
@@ -494,12 +542,13 @@ def extract_tar(tar: tarfile.TarFile, dest: Path, *,
     return len(_extract_tar(tar, dest, limits))
 
 
-def _extract_tar(tar: tarfile.TarFile, dest: Path,
-                 limits: ArchiveLimits) -> list[tuple[str, ...]]:
+def _extract_tar(tar: tarfile.TarFile, dest: Path, limits: ArchiveLimits,
+                 last_wins: Collection[str] = (),
+                 superseded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
     if not (isinstance(tar.tarinfo, type) and issubclass(tar.tarinfo, _GuardedTarInfo)):
         tar.tarinfo = _GuardedTarInfo  # guard every header read from here on
     root = _prepare_dest(dest)
-    plan = _Planner(root, limits)
+    plan = _Planner(root, limits, last_wins)
     try:
         for member in tar:  # lazy: TarFile iteration reads one header at a time
             plan.add(member.name, _tar_kind(member), member.size, member)
@@ -507,20 +556,26 @@ def _extract_tar(tar: tarfile.TarFile, dest: Path,
     except _CORRUPT as exc:
         raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
     plan.finish()
+    if superseded is not None:
+        superseded.extend(plan.superseded)
     return _extract_plan(plan, lambda entry: tar.extractfile(entry.ref))
 
 
 def extract_tar_path(path: Path, dest: Path, *, limits: ArchiveLimits = DEFAULT_LIMITS,
-                     compression: str = "*") -> list[tuple[str, ...]]:
+                     compression: str = "*", last_wins: Collection[str] = (),
+                     superseded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
     """Open the tar at *path* with every header guarded and extract it into *dest*.
 
     Returns the parts of each regular file written, in archive order. *compression* is
     the ``tarfile.open`` suffix (``"gz"``, or ``"*"`` to detect). A file that is not a
     readable archive raises :class:`ArchiveRejected`, like any other refusal.
+    *last_wins* names top-level files whose repeats are not refused: the last one is
+    written and the parts of each earlier one are appended to *superseded*
+    (:class:`_Planner`).
     """
     try:
         with tarfile.open(path, f"r:{compression}", tarinfo=_GuardedTarInfo) as tar:
-            return _extract_tar(tar, dest, limits)
+            return _extract_tar(tar, dest, limits, last_wins, superseded)
     except _CORRUPT as exc:  # raised while opening; _extract_tar maps its own
         raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
 

@@ -678,6 +678,28 @@ async def test_no_tts_backend_is_named_and_nothing_is_presented(media_env, durab
     assert media_env.driver.calls == []
 
 
+async def test_an_engine_that_produces_no_audio_is_named_and_nothing_is_presented(
+        media_env, durable, monkeypatch):
+    # The third named refusal: a backend is installed but the synthesis yields nothing.
+    async def silent(_text, _lang):
+        return None
+
+    monkeypatch.setattr(speak_tool, "default_speaker",
+                        lambda: SpokenReply(synthesize=silent, available=True, backend="test-tts"))
+    kernel = _Kernel(present_verdict=Verdict.GRANT)
+    rig = durable(kernel)
+    proposed = await rig.orch.tool_rpc.handle(
+        {"tool": "speak", "args": {"text": "Dinner is ready.", "target": "kitchen"}},
+        actor="jarvis",
+    )
+    kernel.kinds.clear()
+    done = await _approve_and_run(rig, proposed["task_id"])
+    assert done.result["reason"] == "tts_failed"
+    assert "media.present" not in kernel.kinds
+    assert media_env.driver.calls == []
+    assert _clips(media_env.root) == []
+
+
 async def test_no_owner_media_root_is_named(media_env, durable, monkeypatch):
     kernel = _Kernel(present_verdict=Verdict.GRANT)
     rig = durable(kernel)
