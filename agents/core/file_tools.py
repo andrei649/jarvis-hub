@@ -689,10 +689,12 @@ class FileTools:
 
         A spill is a tool's output parked on disk: reading or searching it must not
         launder it into trusted file text. Its file name cannot say reliably which tool
-        wrote it (names are sanitised, a secret-looking one is replaced), so everything
-        in a spill directory counts as third-party — a finished spill, or a stream's
-        temp file a crash left behind — in a configured spill directory or in any
-        directory with the store's name, reached by the owner's roots or the door.
+        wrote it (names are sanitised, a secret-looking one is replaced), so every file
+        directly in a spill directory counts as third-party — a finished spill, or a
+        stream's temp file a crash left behind — in a configured spill directory or in
+        any directory with the store's name, reached by the owner's roots or the door.
+        The store writes nothing nested and no document types there, so a subfolder or
+        a document read through the extractor is not covered (and not reachable today).
         """
         return target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
 
