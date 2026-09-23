@@ -5,8 +5,6 @@
   "autonomous_default": true,
   "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous and the mandatory automated proof set plus every other reported check have completed successfully. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
   "protected_paths": [
-    "selfdev-policy.json",
-    "scripts/selfdev_policy.py",
     ".github/workflows/**",
     ".github/actions/**",
     ".github/CODEOWNERS",
