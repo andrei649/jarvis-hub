@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "499890dd1041e70703e779b2747ceb2dc75a459f",
-  "assessed_at": "2026-09-24T12:43:04Z",
+  "base_sha": "27665419c789dfb3187cc4c9a2d08c3dc4a27816",
+  "assessed_at": "2026-09-24T12:47:17Z",
   "reviews": [
     {
       "id": "H001",
@@ -442,11 +442,11 @@
       "row_sha256": "8a5b5673d2277756f7f2b075ce42c12806c7ea99151a0450f910a8f522a79758",
       "status": "partial",
       "summary": "A message that arrives while a turn runs on the same session waits for that session's turn lease (`Orchestrator.turn_lease`, agents/core/orchestrator.py:1506, taken by `_channel_turn` at agents/core/orchestrator.py:1464 and by the web /chat path at agents/web.py:1150). After `_TURN_LEASE_MAX_WAIT_SECONDS` (180 s, agents/core/orchestrator.py:251) it gets the single busy string `TURN_BUSY_REPLY` (agents/core/orchestrator.py:253) and no second turn starts on that transcript (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118). `/pause` and `/stop` are owner-only (ADMIN tier) slash commands that engage the e-stop (agents/core/commands.py:318, agents/core/commands.py:319). They say plainly that work already in flight finishes (agents/core/commands.py:227, tests/test_slash_commands.py:124).",
-      "remaining": "No busy-input semantics. A mid-turn message cannot redirect or interrupt the running turn. There is no explicit FIFO `/queue`, no `/steer` into the running turn and no configurable mode between these with downgrades. `/stop` is not a hard kill: it engages the e-stop but does not cancel the running turn or unlock the session. It is also dispatched inside `handle_input` (agents/core/orchestrator.py:1749), so it waits behind the same lease. While a turn holds the lease past the wait bound, `/stop` itself is answered with `TURN_BUSY_REPLY` (named at agents/core/orchestrator.py:2964). There is one busy string, not a set of acks saying whether a message was queued, steered or interrupted. None of the protective demotions exist (running subagent, in-flight compression, photo burst, very fast follow-up merged as the same intent). The lease is the only slot reservation; there is no pending-agent sentinel. `SlashCommand` (agents/core/commands.py:61) carries no `busy_policy`.",
+      "remaining": "No busy-input semantics. A mid-turn message cannot redirect or interrupt the running turn. There is no explicit FIFO `/queue`, no `/steer` into the running turn and no configurable mode between these with downgrades. `/stop` is not a hard kill: it engages the e-stop but does not cancel the running turn or unlock the session. It is also dispatched inside `handle_input` (agents/core/orchestrator.py:1749), so it waits behind the same lease. While a turn holds the lease past the wait bound, `/stop` itself is answered with `TURN_BUSY_REPLY` (named at agents/core/orchestrator.py:2992). There is one busy string, not a set of acks saying whether a message was queued, steered or interrupted. None of the protective demotions exist (running subagent, in-flight compression, photo burst, very fast follow-up merged as the same intent). The lease is the only slot reservation; there is no pending-agent sentinel. `SlashCommand` (agents/core/commands.py:61) carries no `busy_policy`.",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/commands.py",
@@ -471,11 +471,11 @@
       "row_sha256": "ec64075ea64d379a130a6d03fe73c4865c2b7f3886d90e3284377c0e55c88718",
       "status": "partial",
       "summary": "Turns are serialized per resolved session. `Orchestrator.turn_lease` (agents/core/orchestrator.py:1506) holds one asyncio.Lock per key, and `_lease_key` (agents/core/orchestrator.py:1496) follows `_resolve_session`'s order, so the lease names the session the turn will actually use rather than the routing key. It is taken by channel turns (agents/core/orchestrator.py:1464) and the web /chat path (agents/web.py:1150), and it is re-entrant within one turn. After 180 s a waiting message is answered `TURN_BUSY_REPLY` instead of starting (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118, tests/test_turn_lease.py:104). The lease table is capped at 1024 entries and prunes unlocked locks when full (agents/core/orchestrator.py:1525, tests/test_turn_lease.py:163). The `_active_session` ContextVar (agents/core/orchestrator.py:283) keeps concurrent turns from reading or writing each other's session (tests/test_concurrent_session_isolation.py:93).",
-      "remaining": "No run generation lets a late callback from an abandoned turn detect that it no longer owns the session. The only compare-and-set is the checkpoint-clock commit of a compaction (agents/core/orchestrator.py:3244), and it guards a summary, not turn ownership. There is no active-session slot claimed before the first await and no `max_concurrent_sessions` cap: turns on different sessions run concurrently without bound (tests/test_turn_lease.py:88). No watchdog evicts a session whose turn is wedged: its lease stays held until the turn ends, and later messages only get the busy reply. There is no eviction of an in-memory slot whose durable routing row ended, and no single per-session `SessionState` object with explicit lifetimes. There is no per-session warm agent cache and no memory-pressure eviction. Agents are process-wide: every session shares `orchestrator.agents`, which the compaction-boundary persona refresh walks as a whole (agents/core/orchestrator.py:360).",
+      "remaining": "No run generation lets a late callback from an abandoned turn detect that it no longer owns the session. The only compare-and-set is the checkpoint-clock commit of a compaction (agents/core/orchestrator.py:3272), and it guards a summary, not turn ownership. There is no active-session slot claimed before the first await and no `max_concurrent_sessions` cap: turns on different sessions run concurrently without bound (tests/test_turn_lease.py:88). No watchdog evicts a session whose turn is wedged: its lease stays held until the turn ends, and later messages only get the busy reply. There is no eviction of an in-memory slot whose durable routing row ended, and no single per-session `SessionState` object with explicit lifetimes. There is no per-session warm agent cache and no memory-pressure eviction. Agents are process-wide: every session shares `orchestrator.agents`, which the compaction-boundary persona refresh walks as a whole (agents/core/orchestrator.py:360).",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/commands.py",
@@ -512,7 +512,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/conversation_clock.py",
@@ -594,7 +594,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -875,7 +875,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -991,7 +991,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -1045,7 +1045,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_turn_lease.py",
@@ -1253,7 +1253,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/web.py",
@@ -1668,7 +1668,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1797,7 +1797,7 @@
       "id": "H156",
       "row_sha256": "eb2ba54183f6a6ec85a8aad0651bf8a100fde466e4849249556bf579a2bd7d37",
       "status": "partial",
-      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2669) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:346, agents/core/routers/admin.py:373, agents/core/routers/admin.py:421), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:329) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3255). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
+      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2669) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:346, agents/core/routers/admin.py:373, agents/core/routers/admin.py:421), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:329) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3283). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
       "remaining": "(1) No write path to the live persona. Nothing writes a committed or rolled-back version into the SOUL.local.md that `soul_path_for` resolves. A commit in PromptsPanel still changes nothing the agent says until someone edits the file by hand. The H672 refresh reads only that file, never the version store. It fires only when a session's context compaction commits, so it is not a reload the editor can trigger; with no compaction, the edit still waits for a restart. (2) The version store is not seeded from the on-disk SOUL, so its history is empty for any persona never committed through the panel. (3) The commit and rollback routes write no audit event, but the governance requires SOUL edits in the audit log. (4) No description editor and no Auto-generate. `PUT /api/admin/agents/{agent_id}` (agents/core/routers/admin.py:448) only stores display overrides in an in-memory dict, and nothing drafts a description with a model for the owner to accept. (5) The Dossier has no Edit action that opens the current SOUL in the versioned editor.",
       "evidence": [
         {
@@ -1810,7 +1810,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/soul_versioning.py",
@@ -1867,7 +1867,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -1908,7 +1908,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/routers/dashboard.py",
@@ -2180,7 +2180,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/kernel/registry.py",
@@ -2745,7 +2745,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         }
       ]
     },
@@ -2753,7 +2753,7 @@
       "id": "H259",
       "row_sha256": "fe7e13a56d1a94f8bc70f5a4b1eb9d4fb9fc6a631154ae6bdf90d7b93aad0598",
       "status": "partial",
-      "summary": "Only the unsafe form of reset exists. POST /api/admin/settings/reseed (agents/core/routers/admin.py:127-130) calls init_db(force=True). That runs DELETE FROM settings and re-seeds every category (agents/core/settings_db.py:410-414): global, immediate, admin-token only, with no preview, no approval and no undo. tests/test_admin_settings_mutations.py checks only that reseed returns ok and requires a token. Per-category writes go through PUT /api/admin/settings/{category}, which validates with validate_category and audits only the key names (agents/core/routers/admin.py:110). The HUD SettingsPanel (frontend/src/gap.tsx:2635) edits and saves categories through that route, but has no reset, defaults, export or import control. settings.db is deliberately left out of the owner data export (agents/core/data_export.py:39) and only travels inside the full data-root backup.",
+      "summary": "Only the unsafe form of reset exists. POST /api/admin/settings/reseed (agents/core/routers/admin.py:127-130) calls init_db(force=True). That runs DELETE FROM settings and re-seeds every category (agents/core/settings_db.py:413-417): global, immediate, admin-token only, with no preview, no approval and no undo. tests/test_admin_settings_mutations.py checks only that reseed returns ok and requires a token. Per-category writes go through PUT /api/admin/settings/{category}, which validates with validate_category and audits only the key names (agents/core/routers/admin.py:110). The HUD SettingsPanel (frontend/src/gap.tsx:2635) edits and saves categories through that route, but has no reset, defaults, export or import control. settings.db is deliberately left out of the owner data export (agents/core/data_export.py:39) and only travels inside the full data-root backup.",
       "remaining": "Nothing gives the UI the defaults: there is no GET /api/admin/settings/defaults or other accessor, so the HUD cannot mark keys that differ from their defaults. There is no per-category reset and no preview diff against defaults. Reset still wipes every category at once and does not go through the approval queue's irreversible tier. There is no JSON export of the configuration. There is no import that stages values for review before Save (validated by validate_category, with secret values never exported in clear).",
       "evidence": [
         {
@@ -2762,7 +2762,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -2782,7 +2782,7 @@
       "id": "H262",
       "row_sha256": "afc55c8d78962d266c325019e467c51a3254f9a9807796c051565ff9072ac8ce",
       "status": "partial",
-      "summary": "The TTL-deletion half is in place. The retention settings are off by default, and a TTL of 0 means keep forever (agents/core/settings_db.py:348-349, plus audit, ingestion and artifact TTLs). run_retention (agents/core/retention.py:148) deletes session transcript files by last activity and prunes the audit chain through AuditLogger.prune_before, which re-anchors the Merkle chain (agents/core/security/audit.py:336). It also prunes Howard ingestion roots and unpinned binary artifacts. schedule_retention registers a daily 03:30 cron (agents/core/scheduler_service.py:181), and run_retention_purge (agents/core/scheduler_service.py:462) does nothing unless retention.enabled is set. tests/test_retention.py covers old-vs-new pruning, the TTL-0 no-op, chain verifiability after a prune and the default-off settings.",
+      "summary": "The TTL-deletion half is in place. The retention settings are off by default, and a TTL of 0 means keep forever (agents/core/settings_db.py:351-352, plus audit, ingestion and artifact TTLs). run_retention (agents/core/retention.py:148) deletes session transcript files by last activity and prunes the audit chain through AuditLogger.prune_before, which re-anchors the Merkle chain (agents/core/security/audit.py:336). It also prunes Howard ingestion roots and unpinned binary artifacts. schedule_retention registers a daily 03:30 cron (agents/core/scheduler_service.py:181), and run_retention_purge (agents/core/scheduler_service.py:462) does nothing unless retention.enabled is set. tests/test_retention.py covers old-vs-new pruning, the TTL-0 no-op, chain verifiability after a prune and the default-off settings.",
       "remaining": "There is no reversible archive tier: purge_old_conversations unlinks files directly (agents/core/retention.py:76), with no soft-hide stage, no restore and no exemption for pinned sessions. Nothing runs VACUUM after a prune: prune_before issues DELETE FROM security_events (agents/core/security/audit.py:367) and commits, so the audit database file never shrinks. There is no vacuum_after_prune or min_vacuum_interval setting; the only VACUUM is on the forget path (agents/core/data_purge.py:242). There is no persisted last-run marker and no min-interval gate shared across processes; the sweep is a fixed daily cron in each scheduler process. Changes to retention TTLs or the enabled flag are ordinary admin PUT /api/admin/settings/retention writes. The governance field requires them to go through the irreversible approval tier instead.",
       "evidence": [
         {
@@ -2799,7 +2799,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/data_purge.py",
@@ -2832,7 +2832,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         }
       ]
     },
@@ -2840,7 +2840,7 @@
       "id": "H270",
       "row_sha256": "4dd0333449b8b2a88a0076d65ff72ef9ef28f309cfbf9368bed8f9550d6946ef",
       "status": "partial",
-      "summary": "H270 stays PARTIAL; the triage's \"already equivalent\" does not survive contact with the code, and this re-read retires three claims the row had carried since before H502 (#1174 moved the hash while the text stood still) plus one the text was about to inherit. Hermes' contract has two halves and Nerva has only one of them. Outbound (what a child inherits) is genuinely stronger than Hermes and is tested: scrub_child_env (agents/core/environments/__init__.py:172-210) is default-deny with SAFE_ENV_PREFIXES (:17-33) plus the three-name JARVIS_CHILD_ALLOWED_ENV (:47-51), covered by tests/test_environment_primitives.py:62,90; STDIO_ENV_ALLOWLIST (agents/core/mcp/client.py:161-173) with stdio_env_baseline (:245-280) drops a credential-shaped name even when it is on the static list (:275, _SECRET_LIKE :174-176), covered by tests/test_mcp_transports.py:351 — and since H502 the baseline is the DEFAULT, not an opt-in: stdio_env_baseline_enabled() returns env_flag(STDIO_ENV_BASELINE_FLAG, True) (:179-190; flag :90 \"Default ON\"), docs/FLAGS.md says \"on by default since H502\" (its MCP defaults block, the JARVIS_MCP_STDIO_ENV_BASELINE entry and the flag table row), and tests/test_mcp_transports.py:386-421 pins unset-flag → OPENAI_API_KEY withheld and =0 → full inherit (the row previously cited :395-399 as pinning the opposite; that was the pre-#1174 test, which at 45be62bd read \"Flag off (default): historical behaviour — inherit everything\"). The outbound allowlist's one deliberate exception is the owner's own: a name listed in JARVIS_MCP_STDIO_ALLOWED_ENV passes even when credential-shaped (:256-260, :272-274; tests :449-503) — owner-declared and host-wide, not an inbound gate. What #1179 changed here is disclosure, not policy: the module docstring (:17-39) now names the filesystem as a second recovery route for a same-UID child (cwd defaults to the hub's, so open(\".env\") reaches the file the keys came from), cwd_secret_files (:215-242) reports a readable .env/.env.local in the child's cwd, and _merged_env (:561-572) logs a WARNING \"withholding is undercut\" (:567) beside the INFO count, filenames only — pinned by tests :830-853 and :854-890. None of it touches a name policy, a writer or the override path, so it moves nothing for this row. The fail-closed tool-filter bounds change (56903ac1) is likewise off-subject: it added tool_patterns_over_bounds (agents/core/mcp/client.py:138-154), a deny-bounds block in MCPServer.__init__ (:407-418) and a bounds refusal for tools_allow/tools_deny in admin_mcp_add (agents/core/routers/mcp.py:167-173); none of it reads or writes an env name, and MCPServerConfig still has no env field, so only line numbers moved (client.py +19 from the new helper on and +31 from that __init__ block on; routers/mcp.py +4 from the filter check on). Inbound (what a surface may persist) does not exist as a policy at all: no ENV_VAR_NAME/ENV_WRITE/WRITE_DENYLIST/writable_env symbol anywhere in agents/, scripts/, tests/ or frontend/src/, and no `config.write` kind in agents/core/capability_actions.py. A correction the row must carry, because it shapes the deliverable: Hermes' hijack names are NOT all absent from the code. LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, PYTHONHOME, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND and PAGER appear nowhere outside the research docs, but PATH and SHELL (client.py:162), NODE_PATH (:171) and PATH, SHELL, PYTHONPATH (environments/__init__.py:18, :27, :30) are MEMBERS of the two outbound allowlists — deliberately, because a child needs them as plumbing — and EDITOR is exercised at tests/test_nerva_import.py:165 with tests/test_nerva_import.py:825 pinning that collect_tokens keeps only ANTHROPIC_API_KEY. So the two allowlists the rationale points at as the pattern to reuse admit precisely the names Hermes forbids on write; the inbound registry has to be its own list, and \"run overrides through the same name policy\" is not by itself a fix, since that policy passes PATH/NODE_PATH/PYTHONPATH untouched. Confirmed there is still no env writer to gate: no os.environ assignment in agents/ except the reality harness's JARVIS_STRICT_EGRESS toggle (agents/core/observability/reality_harness.py:685,714; scripts/qa_audit_probes.py and scripts/install_smoke.py set os.environ only as probe/smoke harnesses); no set_key/dotenv write; agents/core/paths.py:130-134 only copies .env.example verbatim; GET /api/admin/env (agents/core/routers/admin.py:167-179) is read-only and mask-redacted and is the only /api/admin/env route; the HUD states it in its own copy (frontend/src/panels/workflows-advanced.tsx:48 \"There is NO route to change either\"). Nerva's actual config writer is settings_db.put_category (agents/core/settings_db.py:554-586), which UPSERTs only DEFAULTS-declared keys and skips the rest (agents/core/settings_db.py:570-580), behind validate_category (agents/core/settings_db.py:532-551) and the 422 at agents/core/routers/admin.py:111-117 — the right shape, but over settings keys, not env names. Three things are nevertheless still owed, so this is not equivalence. (1) The row's own deliverable — a declared-names allowlist at the write boundary, depends_on \"the key registry\" — is unbuilt, and the rationale defers rather than excludes it (\"the moment the config writer lands, this must land with it\"). (2) The MCP env boundary is unrefused: MCPServerConfig (agents/core/routers/mcp.py:128-139) has no env field and sets no model_config, so pydantic's default extra=\"ignore\" SILENTLY DROPS an `env` body key rather than refusing it — reproduced at HEAD both on the model (model_config {} and env absent from model_dump) and end to end through TestClient: POST /api/admin/mcp with {\"env\": {\"LD_PRELOAD\": \"/tmp/evil.so\"}} → 200 {\"ok\": true}, the stored MCPServer.env is {} and to_config() carries no env — and POST builds the MCPServer without one (:177-189). The non-round-trip half IS now pinned — test_per_server_env_has_no_owner_reachable_config_surface (tests/test_mcp_transports.py:507-522, from #1174) asserts \"env\" not in MCPServerConfig.model_fields, to_config (agents/core/mcp/client.py:798-812) exports no env and load_from_config (:814-849) ignores one — but no test asserts the route REFUSES an env body, and the field it would fill is live: MCPServer.env (:424) → _merged_env (:531-577) → create_subprocess_exec(env=…) (:453-460). Reachability today: the HUD only GETs /api/admin/mcp (frontend/src/api/live.ts:397; no add form, nothing sends env) and no CLI or script adds servers, so the raw API is the only path. (3) Per-server overrides still bypass the allowlist in both branches: stdio_env_baseline applies them unfiltered after the allowlist loop (:278-279; docstring :253 \"Explicit per-server overrides always win\"), and the legacy branch — reachable only under JARVIS_MCP_STDIO_ENV_BASELINE=0 since H502 — does merged = os.environ.copy(); merged.update(self.env) unfiltered (:575-576). Latent, not live: the only production caller passing an override is Nerva's own WorldView writer with an in-repo secret plus the WORLDVIEW_HOST_ENV names set on the host (agents/core/mcp/worldview_write.py:222-227, :49-56), and the admin route cannot pass one. Also checked and cleared: scripts/nerva_import.py IS a setup-flow writer that persists foreign env-var names verbatim (docstring scripts/nerva_import.py:31-32, .env lines scripts/nerva_import.py:357-358, JSON walk scripts/nerva_import.py:371, settings.json env block scripts/nerva_import.py:389-393, SecretStore write scripts/nerva_import.py:1022), but _SECRET_NAME_RE (scripts/nerva_import.py:85) is applied on every path and admits only credential-shaped names — tests/test_nerva_import.py:165 with tests/test_nerva_import.py:825 is the one existing test that exercises a hijack-shaped name (EDITOR) at an import boundary and pins it dropped — and SecretStore (agents/core/secrets.py) never exports a name to a process env (it reads only JARVIS_SECRET_KEY, :111). HEQ lot 1 moved two cited files without touching this row's subject: settings_db.py gained the H583 openrouter_* llm rows and a slug check inside _validate_value (settings keys, not env names; put_category and validate_category are unchanged), and scripts/nerva_import.py gained H344's skill.install mediation and --update re-import for skills, while its token path (the .env/JSON/settings.json readers and _SECRET_NAME_RE) is unchanged. Tests re-run on the lot-1 head: 55 passed, 0 failed across the four cited files (test_environment_primitives 6, test_mcp_transports 33 — two of them #1179's, test_mcp_admin 8, test_settings_integrity 8), and tests/test_nerva_import.py 44 passed, 1 skipped; none exercises an env-var write boundary.",
+      "summary": "H270 stays PARTIAL; the triage's \"already equivalent\" does not survive contact with the code, and this re-read retires three claims the row had carried since before H502 (#1174 moved the hash while the text stood still) plus one the text was about to inherit. Hermes' contract has two halves and Nerva has only one of them. Outbound (what a child inherits) is genuinely stronger than Hermes and is tested: scrub_child_env (agents/core/environments/__init__.py:172-210) is default-deny with SAFE_ENV_PREFIXES (:17-33) plus the three-name JARVIS_CHILD_ALLOWED_ENV (:47-51), covered by tests/test_environment_primitives.py:62,90; STDIO_ENV_ALLOWLIST (agents/core/mcp/client.py:161-173) with stdio_env_baseline (:245-280) drops a credential-shaped name even when it is on the static list (:275, _SECRET_LIKE :174-176), covered by tests/test_mcp_transports.py:351 — and since H502 the baseline is the DEFAULT, not an opt-in: stdio_env_baseline_enabled() returns env_flag(STDIO_ENV_BASELINE_FLAG, True) (:179-190; flag :90 \"Default ON\"), docs/FLAGS.md says \"on by default since H502\" (its MCP defaults block, the JARVIS_MCP_STDIO_ENV_BASELINE entry and the flag table row), and tests/test_mcp_transports.py:386-421 pins unset-flag → OPENAI_API_KEY withheld and =0 → full inherit (the row previously cited :395-399 as pinning the opposite; that was the pre-#1174 test, which at 45be62bd read \"Flag off (default): historical behaviour — inherit everything\"). The outbound allowlist's one deliberate exception is the owner's own: a name listed in JARVIS_MCP_STDIO_ALLOWED_ENV passes even when credential-shaped (:256-260, :272-274; tests :449-503) — owner-declared and host-wide, not an inbound gate. What #1179 changed here is disclosure, not policy: the module docstring (:17-39) now names the filesystem as a second recovery route for a same-UID child (cwd defaults to the hub's, so open(\".env\") reaches the file the keys came from), cwd_secret_files (:215-242) reports a readable .env/.env.local in the child's cwd, and _merged_env (:561-572) logs a WARNING \"withholding is undercut\" (:567) beside the INFO count, filenames only — pinned by tests :830-853 and :854-890. None of it touches a name policy, a writer or the override path, so it moves nothing for this row. The fail-closed tool-filter bounds change (56903ac1) is likewise off-subject: it added tool_patterns_over_bounds (agents/core/mcp/client.py:138-154), a deny-bounds block in MCPServer.__init__ (:407-418) and a bounds refusal for tools_allow/tools_deny in admin_mcp_add (agents/core/routers/mcp.py:167-173); none of it reads or writes an env name, and MCPServerConfig still has no env field, so only line numbers moved (client.py +19 from the new helper on and +31 from that __init__ block on; routers/mcp.py +4 from the filter check on). Inbound (what a surface may persist) does not exist as a policy at all: no ENV_VAR_NAME/ENV_WRITE/WRITE_DENYLIST/writable_env symbol anywhere in agents/, scripts/, tests/ or frontend/src/, and no `config.write` kind in agents/core/capability_actions.py. A correction the row must carry, because it shapes the deliverable: Hermes' hijack names are NOT all absent from the code. LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, PYTHONHOME, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND and PAGER appear nowhere outside the research docs, but PATH and SHELL (client.py:162), NODE_PATH (:171) and PATH, SHELL, PYTHONPATH (environments/__init__.py:18, :27, :30) are MEMBERS of the two outbound allowlists — deliberately, because a child needs them as plumbing — and EDITOR is exercised at tests/test_nerva_import.py:165 with tests/test_nerva_import.py:825 pinning that collect_tokens keeps only ANTHROPIC_API_KEY. So the two allowlists the rationale points at as the pattern to reuse admit precisely the names Hermes forbids on write; the inbound registry has to be its own list, and \"run overrides through the same name policy\" is not by itself a fix, since that policy passes PATH/NODE_PATH/PYTHONPATH untouched. Confirmed there is still no env writer to gate: no os.environ assignment in agents/ except the reality harness's JARVIS_STRICT_EGRESS toggle (agents/core/observability/reality_harness.py:685,714; scripts/qa_audit_probes.py and scripts/install_smoke.py set os.environ only as probe/smoke harnesses); no set_key/dotenv write; agents/core/paths.py:130-134 only copies .env.example verbatim; GET /api/admin/env (agents/core/routers/admin.py:167-179) is read-only and mask-redacted and is the only /api/admin/env route; the HUD states it in its own copy (frontend/src/panels/workflows-advanced.tsx:48 \"There is NO route to change either\"). Nerva's actual config writer is settings_db.put_category (agents/core/settings_db.py:557-589), which UPSERTs only DEFAULTS-declared keys and skips the rest (agents/core/settings_db.py:573-583), behind validate_category (agents/core/settings_db.py:535-554) and the 422 at agents/core/routers/admin.py:111-117 — the right shape, but over settings keys, not env names. Three things are nevertheless still owed, so this is not equivalence. (1) The row's own deliverable — a declared-names allowlist at the write boundary, depends_on \"the key registry\" — is unbuilt, and the rationale defers rather than excludes it (\"the moment the config writer lands, this must land with it\"). (2) The MCP env boundary is unrefused: MCPServerConfig (agents/core/routers/mcp.py:128-139) has no env field and sets no model_config, so pydantic's default extra=\"ignore\" SILENTLY DROPS an `env` body key rather than refusing it — reproduced at HEAD both on the model (model_config {} and env absent from model_dump) and end to end through TestClient: POST /api/admin/mcp with {\"env\": {\"LD_PRELOAD\": \"/tmp/evil.so\"}} → 200 {\"ok\": true}, the stored MCPServer.env is {} and to_config() carries no env — and POST builds the MCPServer without one (:177-189). The non-round-trip half IS now pinned — test_per_server_env_has_no_owner_reachable_config_surface (tests/test_mcp_transports.py:507-522, from #1174) asserts \"env\" not in MCPServerConfig.model_fields, to_config (agents/core/mcp/client.py:798-812) exports no env and load_from_config (:814-849) ignores one — but no test asserts the route REFUSES an env body, and the field it would fill is live: MCPServer.env (:424) → _merged_env (:531-577) → create_subprocess_exec(env=…) (:453-460). Reachability today: the HUD only GETs /api/admin/mcp (frontend/src/api/live.ts:397; no add form, nothing sends env) and no CLI or script adds servers, so the raw API is the only path. (3) Per-server overrides still bypass the allowlist in both branches: stdio_env_baseline applies them unfiltered after the allowlist loop (:278-279; docstring :253 \"Explicit per-server overrides always win\"), and the legacy branch — reachable only under JARVIS_MCP_STDIO_ENV_BASELINE=0 since H502 — does merged = os.environ.copy(); merged.update(self.env) unfiltered (:575-576). Latent, not live: the only production caller passing an override is Nerva's own WorldView writer with an in-repo secret plus the WORLDVIEW_HOST_ENV names set on the host (agents/core/mcp/worldview_write.py:222-227, :49-56), and the admin route cannot pass one. Also checked and cleared: scripts/nerva_import.py IS a setup-flow writer that persists foreign env-var names verbatim (docstring scripts/nerva_import.py:31-32, .env lines scripts/nerva_import.py:357-358, JSON walk scripts/nerva_import.py:371, settings.json env block scripts/nerva_import.py:389-393, SecretStore write scripts/nerva_import.py:1022), but _SECRET_NAME_RE (scripts/nerva_import.py:85) is applied on every path and admits only credential-shaped names — tests/test_nerva_import.py:165 with tests/test_nerva_import.py:825 is the one existing test that exercises a hijack-shaped name (EDITOR) at an import boundary and pins it dropped — and SecretStore (agents/core/secrets.py) never exports a name to a process env (it reads only JARVIS_SECRET_KEY, :111). HEQ lot 1 moved two cited files without touching this row's subject: settings_db.py gained the H583 openrouter_* llm rows and a slug check inside _validate_value (settings keys, not env names; put_category and validate_category are unchanged), and scripts/nerva_import.py gained H344's skill.install mediation and --update re-import for skills, while its token path (the .env/JSON/settings.json readers and _SECRET_NAME_RE) is unchanged. Tests re-run on the lot-1 head: 55 passed, 0 failed across the four cited files (test_environment_primitives 6, test_mcp_transports 33 — two of them #1179's, test_mcp_admin 8, test_settings_integrity 8), and tests/test_nerva_import.py 44 passed, 1 skipped; none exercises an env-var write boundary.",
       "remaining": "Nerva has no write-side policy for environment-variable names — the row's deliverable (a declared-names allowlist, depends_on \"the key registry\") does not exist, and the row defers it rather than excluding it. #1179 changed nothing on this row's subject: its client.py change is an outbound disclosure (cwd_secret_files :215-242 and the \"withholding is undercut\" WARNING in _merged_env :561-572), not a name policy or a writer. Neither did the fail-closed tool-filter bounds change (56903ac1: tool_patterns_over_bounds, a deny-bounds block in MCPServer.__init__ and a tools_allow/tools_deny bounds refusal in admin_mcp_add) — it touches no env name, writer or override path and only moved line numbers. H502 (#1174) did change item 3 and half of item 2, and that is folded in here. Three items owed, two shippable today against real surfaces:\n\n1. THE REGISTRY (the row's core item, blocked on its stated dependency). No ENV_VAR_NAME allowlist/denylist exists anywhere (grep for ENV_VAR_NAME/ENV_WRITE/WRITE_DENYLIST/writable_env across agents/, scripts/, tests/, frontend/src/ is empty at HEAD) and no `config.write` capability kind exists in agents/core/capability_actions.py. Of Hermes' hijack names, LD_PRELOAD, LD_LIBRARY_PATH, DYLD_*, PYTHONHOME, PYTHONSTARTUP, NODE_OPTIONS, GIT_SSH_COMMAND and PAGER are named nowhere in code or tests — but PATH, SHELL (agents/core/mcp/client.py:162), NODE_PATH (:171) and PATH, SHELL, PYTHONPATH (agents/core/environments/__init__.py:18, :27, :30) ARE named, as members of the two OUTBOUND allowlists, and EDITOR is exercised at tests/test_nerva_import.py:165 (pinned dropped at tests/test_nerva_import.py:825). Design consequence: the outbound lists cannot double as the write-side registry — they deliberately admit the plumbing names Hermes forbids on write — so the registry is a separate, inbound-only list. When any env/config writer lands, that allowlist must land in the SAME PR, refusing an undeclared name before authorization — the shape of agents/core/capability_actions.py:139-143 refusing missing_inputs before the authorizer at :151-152.\n\n2. THE MCP `env` BOUNDARY IS UNREFUSED (shippable now; the \"untested\" half closed with #1174). MCPServerConfig (agents/core/routers/mcp.py:128-139) sets no `model_config`, so pydantic's default extra=\"ignore\" makes `POST /api/admin/mcp {\"env\": {\"LD_PRELOAD\": \"/tmp/evil.so\"}}` return 200 and silently drop the key instead of refusing it — reproduced end to end at HEAD through TestClient (200 {\"ok\": true}; stored MCPServer.env == {}; to_config() has no env key). The field it would populate is live — MCPServer.env (agents/core/mcp/client.py:424) → _merged_env (:531-577) → create_subprocess_exec(env=…) (:453-460). Already pinned by tests/test_mcp_transports.py:507-522: `env` is not a MCPServerConfig field, to_config (:798-812) does not export it and load_from_config (:814-849) does not read it. Reachability: the HUD only GETs /api/admin/mcp (frontend/src/api/live.ts:397) and no CLI adds servers, so the raw admin API is the only path today. Still owed: `extra=\"forbid\"` (or an explicit named refusal) on MCPServerConfig, plus a test asserting the route refuses an `env` body rather than swallowing it — and the same refusal must cover the hijack names above on the day `env` becomes operator-settable.\n\n3. PER-SERVER `env` BYPASSES THE ALLOWLIST IN BOTH BRANCHES. stdio_env_baseline applies overrides unfiltered after the allowlist loop (agents/core/mcp/client.py:278-279; docstring :253 \"Explicit per-server overrides always win\"), and the legacy branch does `merged = os.environ.copy(); merged.update(self.env)` with no filter (:575-576). The \"decide whether the baseline should become the default\" half of this item is DONE: since H502 the baseline is on unless JARVIS_MCP_STDIO_ENV_BASELINE=0 (:179-190; docs/FLAGS.md \"on by default since H502\") and tests/test_mcp_transports.py:386-421 pins both directions, so the legacy branch is now the explicit escape hatch rather than the shipped path. Owed: gate per-server overrides on the item-1 write-side registry (NOT merely on STDIO_ENV_ALLOWLIST + _SECRET_LIKE — that policy passes PATH, SHELL, NODE_PATH and would pass an operator-supplied PATH/NODE_PATH override untouched), or make the bypass an explicitly reviewed, audited exception. Severity, checked directly rather than inferred: LATENT. `MCPServerConfig` has no `env` field, the admin route constructs MCPServer without one (agents/core/routers/mcp.py:177-189), and the only production caller passing an override is Nerva's own WorldView writer with an in-repo secret plus the WORLDVIEW_HOST_ENV names (agents/core/mcp/worldview_write.py:222-227, :49-56). No untrusted input reaches the override loop, so this is a boundary to close before `env` becomes operator-settable, not a live hole. The outbound allowlist's one intentional exception — a name the owner lists in JARVIS_MCP_STDIO_ALLOWED_ENV passes even when credential-shaped (:256-260, :272-274; tests :449-503) — is owner-declared and host-wide, and is not this row's write boundary.",
       "evidence": [
         {
@@ -2861,7 +2861,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "scripts/nerva_import.py",
@@ -2954,7 +2954,7 @@
       "id": "H275",
       "row_sha256": "aff2a4fa6dd456d07b37cdb5b29a29509d517ab11755f23c72f7992c2498ad93",
       "status": "missing",
-      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:65).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:466).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:949). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:563).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:329) at each compaction commit (agents/core/orchestrator.py:3255), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
+      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:65).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:466).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:949). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:563).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:329) at each compaction commit (agents/core/orchestrator.py:3283), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
       "remaining": "The whole feature is missing. It needs:\n1. A single boot flag (e.g. JARVIS_SAFE_MODE=1 plus a serve.py/`nerva` switch that sets it) that skips data-home and generated skills (bundled tree only), skips persisted MCP servers without erasing their saved config, skips owner-activated plugins/extensions, and ignores SOUL.local.md/HEARTBEAT.local.md overlays in favour of the shipped templates, both at construction and at the H672 compaction-boundary refresh (refresh_soul), so a safe-mode session cannot pick an overlay back up mid-conversation.\n2. A visible indicator that safe mode is on (status/readyz field and a HUD banner).\n3. A fail-closed guarantee that safe mode only removes capability: no kernel mediation, approval floor, plugin gate or egress policy relaxes.\n4. Tests for each skipped layer and for the no-relaxation property.",
       "evidence": [
         {
@@ -2967,7 +2967,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/skills/loader.py",
@@ -3045,7 +3045,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "deploy/systemd/jarvis-hub.service",
@@ -3082,7 +3082,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         }
       ]
     },
@@ -3188,7 +3188,7 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:312, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:241, validated at :504; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:315, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:244, validated at :507; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
       "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1107-1163, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1379-1412) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:33-48) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1117-1120). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:508-511). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
@@ -3233,7 +3233,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/scheduler_service.py",
@@ -3388,7 +3388,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -3765,7 +3765,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/mcp/route_tools.py",
@@ -3863,7 +3863,7 @@
       "id": "H318",
       "row_sha256": "ce66881c44936de4458650fb8aa7fa5f47279507c2a598faaf67ba7fd8d12124",
       "status": "partial",
-      "summary": "The governed skill system is intact: loader, proposals, approval, signing, marketplace, curator and usage. Listing is covered by injection, not by a tool. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) builds bounded rows (skill, command, description, at most 20) gated on signature and injection, and Orchestrator._prompt_context (agents/core/orchestrator.py:2731) adds them to every agent prompt unless llm.skills_in_prompt is off. Authoring reaches the governed pipeline only through the post-turn BackgroundReviewer, which is off by default. A new skill goes through SkillLoader.generate_skill quarantine (_dispatch_new_skill, agents/core/learning/background_review.py:284). A patch lands as a pending SkillProposalStore proposal plus an approval request (_dispatch_patch, agents/core/learning/background_review.py:298) and never touches the live skill. The model is offered no tool to list or read skills: the registry (tests/_snapshots/tool_profiles.json) has no skills_list or skill_view, and GET /skills (agents/core/routers/skills.py:29) is an HTTP route.",
+      "summary": "The governed skill system is intact: loader, proposals, approval, signing, marketplace, curator and usage. Listing is covered by injection, not by a tool. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) builds bounded rows (skill, command, description, at most 20) gated on signature and injection, and Orchestrator._prompt_context (agents/core/orchestrator.py:2759) adds them to every agent prompt unless llm.skills_in_prompt is off. Authoring reaches the governed pipeline only through the post-turn BackgroundReviewer, which is off by default. A new skill goes through SkillLoader.generate_skill quarantine (_dispatch_new_skill, agents/core/learning/background_review.py:284). A patch lands as a pending SkillProposalStore proposal plus an approval request (_dispatch_patch, agents/core/learning/background_review.py:298) and never touches the live skill. The model is offered no tool to list or read skills: the registry (tests/_snapshots/tool_profiles.json) has no skills_list or skill_view, and GET /skills (agents/core/routers/skills.py:29) is an HTTP route.",
       "remaining": "There is no `skill_view`. During a turn the model can see only a skill's one-line catalog row; it cannot read the full SKILL.md or any linked reference, template or script file. There is no queryable `skills_list` tool either: the injected catalog is capped at 20 command rows. The accepted adaptation needs both as ungated read-only ToolRPC tools. They must apply prompt_catalog's trust gates (no sandboxed, quarantined or signature-mismatched skills; injection scan with taint), be bounded, and be confined to the skill's directory. An in-turn authoring request should route into SkillProposalStore or generate_skill quarantine (propose, never write SKILL.md).",
       "evidence": [
         {
@@ -3872,7 +3872,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/learning/background_review.py",
@@ -3983,7 +3983,7 @@
       "id": "H329",
       "row_sha256": "21b762d5bf9cb26ccb4beac0360b3681f0c4f4b8621064025c03815b7da0f94c",
       "status": "missing",
-      "summary": "There is no reversible per-skill off switch. The skills router (agents/core/routers/skills.py) exposes list, import, marketplace install/review/rollback/uninstall and pending/approve routes but no enable/disable. The settings skills category (agents/core/settings_db.py:285 onward) holds only auto_generate, sandbox_enabled, max_skills and import_source. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) and parse_command consult no disabled list, and no HUD control or CLI toggles a skill. The only ways to take a skill away are destructive. POST /api/skills/marketplace/uninstall (agents/core/routers/skills.py:515) calls SkillMarketplace.uninstall_skill (agents/core/skills/marketplace.py:640), which deletes the directory; the route then revokes the owner approval bound to that path (agents/core/routers/skills.py:556-559). The curator's move is _archive_skill (agents/core/skills/curator.py:115). permission.grant is registered as a kernel-mediated kind (agents/core/kernel/registry.py:110), but no skill re-enable path exists to use it. HEQ lot 1 (H503) changed only how a package is installed: install_from_zip now extracts through the capped archive_safe module into a staging directory and renames it into place, so a rejected update no longer deletes the installed version. It adds no disabled state.",
+      "summary": "There is no reversible per-skill off switch. The skills router (agents/core/routers/skills.py) exposes list, import, marketplace install/review/rollback/uninstall and pending/approve routes but no enable/disable. The settings skills category (agents/core/settings_db.py:288 onward) holds only auto_generate, sandbox_enabled, max_skills and import_source. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) and parse_command consult no disabled list, and no HUD control or CLI toggles a skill. The only ways to take a skill away are destructive. POST /api/skills/marketplace/uninstall (agents/core/routers/skills.py:515) calls SkillMarketplace.uninstall_skill (agents/core/skills/marketplace.py:640), which deletes the directory; the route then revokes the owner approval bound to that path (agents/core/routers/skills.py:556-559). The curator's move is _archive_skill (agents/core/skills/curator.py:115). permission.grant is registered as a kernel-mediated kind (agents/core/kernel/registry.py:110), but no skill re-enable path exists to use it. HEQ lot 1 (H503) changed only how a package is installed: install_from_zip now extracts through the capped archive_safe module into a staging directory and renames it into place, so a rejected update no longer deletes the installed version. It adds no disabled state.",
       "remaining": "Missing: a persisted global skills.disabled list and a per-surface skills.platform_disabled list; hiding disabled skills from prompt_catalog and refusing explicit invocation with a named reason; an essential-skills floor that cannot be disabled; admin routes plus a HUD per-skill and per-category toggle; an audited direct write for disable; re-enable routed through permission.grant so the audit carries an approver; tests proving usage history, signature and approval survive a disable/enable cycle.",
       "evidence": [
         {
@@ -3992,7 +3992,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/skills/loader.py",
@@ -4299,11 +4299,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
@@ -4440,11 +4440,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -4615,7 +4615,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -4861,7 +4861,7 @@
       "id": "H396",
       "row_sha256": "763dc96cf8172d031098611b5bd1dc3c84957702549d3aa9fe59a9078e2453e3",
       "status": "partial",
-      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:74-76), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:79), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:80-81), _FAILURE_REPLY (agents/core/agent_runtime.py:99), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:645-653). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:535). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:511, agents/core/agent_runtime.py:530). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:204-205) and `nerva tools` (agents/cli/nerva.py:727). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3472, agents/core/orchestrator.py:3474) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2304). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:311), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1238). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
+      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:74-76), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:79), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:80-81), _FAILURE_REPLY (agents/core/agent_runtime.py:99), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:645-653). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:535). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:511, agents/core/agent_runtime.py:530). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:204-205) and `nerva tools` (agents/cli/nerva.py:727). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3500, agents/core/orchestrator.py:3502) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2304). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:311), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1238). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
       "remaining": "(1) A typed turn exit-reason vocabulary (completed, approval_required, deadline, context_budget, tools_withdrawn, window_invalid, repeated_call, failing_tool, iteration_limit, no_tools, no_capability, agent_timeout), returned with the reply from AgentToolRuntime.run and carried to ChatResponse and the SSE end event. (2) One diagnostic log line per turn naming the reason: INFO normally, WARNING when the loop stopped with a tool result the model never answered. (3) A consolidated user-facing completion explainer that the HUD renders from that reason, replacing the fixed strings. (4) The file-mutation footer: file_write/file_delete calls that failed this turn and were never superseded by a later success on the same path, appended to the reply so the model cannot claim every file was edited. (5) A per-turn accounting line (tool calls, failures, tokens) and cumulative output tokens shown in the HUD.",
       "evidence": [
         {
@@ -4882,7 +4882,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/web.py",
@@ -4936,7 +4936,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -5075,7 +5075,7 @@
       "id": "H416",
       "row_sha256": "c0d5a3625cdb3959ada7e5ca5d061ad00fe2787c12b37da82b35fc8c8167318c",
       "status": "partial",
-      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:468). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:645-653). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:2940) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3446). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:331-335), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1186), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:145), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
+      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:468). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:645-653). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:2968) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3474). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:331-335), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1186), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:145), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
       "remaining": "(1) One deadline/budget primitive that extends iteration_budget.py, as the 2026-08-28 delta doc chose: a wall-clock deadline plus an iteration count, remaining and fraction-spent readings, and a timeout resolver per call kind. The orchestrator turn, the tool loop, tool calls, ToolRPC and plugin gathering derive their timeouts from it instead of their own constants. (2) An 80%-spent wrap-up nudge, injected once into the tool-loop transcript, asking the model to deliver from what it has. (3) The exhaustion protocol: tell the model exactly once, grant one final tool-less call, and force a summary from the transcript if that call yields no text, instead of returning the fixed safety-limit string. (4) Deadline and budget stops reported through the H396 exit-reason vocabulary.",
       "evidence": [
         {
@@ -5088,7 +5088,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -5137,7 +5137,7 @@
       "id": "H425",
       "row_sha256": "a8b11916b6ae9169691c139182508a6e627a760e0613699cdfd2ce3c8af5bdb6",
       "status": "partial",
-      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:553), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:187) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:289).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:567). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:2885, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
+      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:553), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:187) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:289).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:567). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:2913, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
       "remaining": "Add a memory.forget kind at the irreversible tier. POST /api/memory/decay/forget must return the transitive dependent list as a preview and queue an approval card carrying that list instead of deleting on the spot. The cascade runs only from the approved task and writes an audit row with the removed ids. KgPanel and MemoryHygienePanel show the preview and the pending state. The executed cascade must also retract the records the ids name (at least LivingMemory.forget for turn ids), not only the decay tracker's activation entries.",
       "evidence": [
         {
@@ -5158,7 +5158,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/cognition/memory.py",
@@ -5186,7 +5186,7 @@
       "id": "H427",
       "row_sha256": "18c182802a8899f4c56187f7fce8d6c19961b80909cff40dfd95d47f121aea8b",
       "status": "missing",
-      "summary": "No pre-compression checkpoint exists. ContextCompressor.compact() (agents/core/context_compressor.py:400) drops older images, then summarises the middle through compress() (:496, :519). It records a lineage_row() (:277) that carries the summary hash. Its only production caller, Orchestrator._history_for_prompt (agents/core/orchestrator.py:3232), commits the result through the conversation-clock CAS in publish() (:3240-3244). After a committed compaction, publish() now also calls _refresh_souls_at_boundary (agents/core/orchestrator.py:3255, defined at :329). That call re-reads agent personas and does nothing with the evicted turns.\n\nNothing mines the turns about to be summarised away before the summary replaces them. There is no checkpoint provider interface, no checkpoint-required setting, no fail-closed path that keeps the uncompressed transcript, and no audit row for a checkpoint or an abort. A grep for pre_compress|require_checkpoint|checkpoint_required over agents/ finds only an unrelated ComfyUI error string.\n\nCompaction only rewrites the prompt history; the raw turns stay in the conversation store. Extraction happens per turn at record time (_record_living_memory_after_turn, _record_interactions). But nothing at the compaction boundary checks that extraction landed for the evicted turns, which is the interlock this row accepts.",
+      "summary": "No pre-compression checkpoint exists. ContextCompressor.compact() (agents/core/context_compressor.py:400) drops older images, then summarises the middle through compress() (:496, :519). It records a lineage_row() (:277) that carries the summary hash. Its only production caller, Orchestrator._history_for_prompt (agents/core/orchestrator.py:3260), commits the result through the conversation-clock CAS in publish() (:3268-3272). After a committed compaction, publish() now also calls _refresh_souls_at_boundary (agents/core/orchestrator.py:3283, defined at :329). That call re-reads agent personas and does nothing with the evicted turns.\n\nNothing mines the turns about to be summarised away before the summary replaces them. There is no checkpoint provider interface, no checkpoint-required setting, no fail-closed path that keeps the uncompressed transcript, and no audit row for a checkpoint or an abort. A grep for pre_compress|require_checkpoint|checkpoint_required over agents/ finds only an unrelated ComfyUI error string.\n\nCompaction only rewrites the prompt history; the raw turns stay in the conversation store. Extraction happens per turn at record time (_record_living_memory_after_turn, _record_interactions). But nothing at the compaction boundary checks that extraction landed for the evicted turns, which is the interlock this row accepts.",
       "remaining": "Add the following at the compaction boundary:\n- a versioned pre-compress checkpoint hook on ContextCompressor.compact, called with exactly the turns about to be summarised and before compress()\n- a synchronous provider that durably writes their extraction (episodes/consolidation or LivingMemory)\n- a memory.compression_checkpoint_required setting\n- a fail-closed path: when a required checkpoint raises or no provider succeeds, keep the uncompressed transcript, or refuse the turn if the prompt would exceed the window\n- an audit row on every checkpoint and every abort.",
       "evidence": [
         {
@@ -5195,7 +5195,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_context_compaction_policy.py",
@@ -5211,7 +5211,7 @@
       "id": "H428",
       "row_sha256": "e2f9ee5c1349d87f367691075598c5a900ef20194747f1063b514740b24a2451",
       "status": "equivalent",
-      "summary": "Orchestrator._recall_block (agents/core/orchestrator.py:2586), reached from the streaming path (agents/core/orchestrator.py:1994) and the parallel path (agents/core/orchestrator.py:3390), now gates, bounds and hands off the pre-turn recall the way Hermes' memory prefetch does. (1) Triviality gate: agents/core/memory/recall_gate.py holds one is_trivial_prompt (agents/core/memory/recall_gate.py:43), true for empty input, a leading '/', and a bare acknowledgement or greeting followed only by punctuation, symbols or emoji — the Hermes list (yes, ok, thanks, hi, lgtm, done, go ahead, k …) plus Romanian (da, nu, mersi, mulțumesc with either comma or cedilla ț, bine, gata, super, salut …) in _ACKS (agents/core/memory/recall_gate.py:19); k8s, yolo, note and \"ok, and what about X?\" do not match, and anything over 40 characters is never trivial. _recall_block returns '' before any embedding when it matches (agents/core/orchestrator.py:2600). (2) Hard timeout: the whole retrieval step — the job-model-pin check, the query embedding, the fused vector ⊕ graph search and the living-memory rerank — is one coroutine, _recall_hits (agents/core/orchestrator.py:2530), that _bounded_recall_hits (agents/core/orchestrator.py:2541) awaits for at most memory.recall_timeout_s, seeded at 8 s like Hermes' _EXTERNAL_PREFETCH_TIMEOUT_S (agents/core/settings_db.py:223) and validated by _recall_timeout_s (agents/core/orchestrator.py:2521: a non-number, bool or non-positive value reads as 8, anything else is clamped to 0.1–60 s). On expiry the turn gets an empty block and a WARNING (agents/core/orchestrator.py:2573). A future query rewrite (H433) belongs inside _recall_hits, so the one bound covers it too (critic note 12). (3) Skip while stuck: a timed-out recall cannot be killed — the embedding and the search run on worker threads under the memory manager's lock — so it is kept as the straggler, and until it finishes every later recall is skipped with an INFO line instead of queueing another round-trip behind the same hung backend (agents/core/orchestrator.py:2555), as Hermes skips a provider whose previous prefetch is still alive. The straggler is global, not per session, because the lock it holds is. (4) Late results are not wasted: a straggler that finished cleanly within 10 minutes hands its hits to a retry of the same question, which gets them without a new query; any other turn discards them (_recall_handoff, agents/core/orchestrator.py:2577). Together with the existing query-embedding LRU and disk cache (agents/core/ingestion/embedder.py:63, tests/test_recall_cache.py) that is the warm-up half: Hermes' queue_prefetch is a per-provider hook that its retrieval-style providers leave a no-op (byterover documents \"prefetch() runs synchronously at turn start\"; holographic, mem0 and supermemory do not implement it) and only its user-model providers use to pre-fetch query-independent context. A backend error still degrades to an empty block, and an unretrieved straggler exception is consumed (_consume_task_exception, agents/core/orchestrator.py:92). tests/test_recall_gate.py pins it red-first (66 cases: the trivial and non-trivial tables, the seeded setting, no backend call for a trivial prompt, a 30 s backend returning '' in under a second, the skip while the straggler runs, the same-question handoff, no injection into an unrelated turn, errors, setting validation, recall still off by default), and the existing recall, taint and settings suites pass.",
+      "summary": "Orchestrator._recall_block (agents/core/orchestrator.py:2614), reached from the streaming path (agents/core/orchestrator.py:1994) and the parallel path (agents/core/orchestrator.py:3418), now gates, bounds and hands off the pre-turn recall the way Hermes' memory prefetch does. (1) Triviality gate: agents/core/memory/recall_gate.py holds one is_trivial_prompt (agents/core/memory/recall_gate.py:43), true for empty input, a leading '/', and a bare acknowledgement or greeting followed only by punctuation, symbols or emoji — the Hermes list (yes, ok, thanks, hi, lgtm, done, go ahead, k …) plus Romanian (da, nu, mersi, mulțumesc with either comma or cedilla ț, bine, gata, super, salut …) in _ACKS (agents/core/memory/recall_gate.py:19); k8s, yolo, note and \"ok, and what about X?\" do not match, and anything over 40 characters is never trivial. _recall_block returns '' before any embedding when it matches (agents/core/orchestrator.py:2628). (2) Hard timeout: the whole retrieval step — the job-model-pin check, the query embedding, the fused vector ⊕ graph search and the living-memory rerank — is one coroutine, _recall_hits (agents/core/orchestrator.py:2530), that _bounded_recall_hits (agents/core/orchestrator.py:2569) awaits for at most memory.recall_timeout_s, seeded at 8 s like Hermes' _EXTERNAL_PREFETCH_TIMEOUT_S (agents/core/settings_db.py:223) and validated by _recall_timeout_s (agents/core/orchestrator.py:2521: a non-number, bool or non-positive value reads as 8, anything else is clamped to 0.1–60 s). On expiry the turn gets an empty block and a WARNING (agents/core/orchestrator.py:2601). A future query rewrite (H433) belongs inside _recall_hits, so the one bound covers it too (critic note 12). (3) Skip while stuck: a timed-out recall cannot be killed — the embedding and the search run on worker threads under the memory manager's lock — so it is kept as the straggler, and until it finishes every later recall is skipped with an INFO line instead of queueing another round-trip behind the same hung backend (agents/core/orchestrator.py:2583), as Hermes skips a provider whose previous prefetch is still alive. The straggler is global, not per session, because the lock it holds is. (4) Late results are not wasted: a straggler that finished cleanly within 10 minutes hands its hits to a retry of the same question, which gets them without a new query; any other turn discards them (_recall_handoff, agents/core/orchestrator.py:2605). Together with the existing query-embedding LRU and disk cache (agents/core/ingestion/embedder.py:63, tests/test_recall_cache.py) that is the warm-up half: Hermes' queue_prefetch is a per-provider hook that its retrieval-style providers leave a no-op (byterover documents \"prefetch() runs synchronously at turn start\"; holographic, mem0 and supermemory do not implement it) and only its user-model providers use to pre-fetch query-independent context. A backend error still degrades to an empty block, and an unretrieved straggler exception is consumed (_consume_task_exception, agents/core/orchestrator.py:92). tests/test_recall_gate.py pins it red-first (66 cases: the trivial and non-trivial tables, the seeded setting, no backend call for a trivial prompt, a 30 s backend returning '' in under a second, the skip while the straggler runs, the same-question handoff, no injection into an unrelated turn, errors, setting validation, recall still off by default), and the existing recall, taint and settings suites pass.",
       "remaining": "",
       "evidence": [
         {
@@ -5220,11 +5220,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/ingestion/embedder.py",
@@ -5247,21 +5247,33 @@
     {
       "id": "H433",
       "row_sha256": "dfbe65173c2c098ebce745b888651b1b32d171d75f1fe9e8945be4129a7d89dc",
-      "status": "missing",
-      "summary": "No retrieval query rewriting exists. A grep for query_rewrite|rewrite_query|reformulat|condense|expand_query over agents/ finds nothing relevant. Orchestrator._recall_block (agents/core/orchestrator.py:2586) passes the literal user text, through the H428 bounded step _bounded_recall_hits → _recall_hits, to MemoryManager.recall (agents/core/orchestrator.py:2538; agents/core/memory/manager.py:190). recall embeds that text unchanged (agents/core/memory/manager.py:193) and reuses it as the graph keyword, so a follow-up like \"and what about the other one\" is retrieved verbatim. The strict-local auxiliary-model path the row would reuse does exist: Orchestrator._compression_summarizer (orchestrator.py:3024) builds an async _summarize (:3039) on LLMRouter.local_backend that never falls through to cloud. Nothing calls it, or anything like it, for recall.",
-      "remaining": "Build the whole rewriter:\n- one strict-local auxiliary call at temperature 0, max_tokens 96\n- input capped at 4,000 chars and JSON-encoded as untrusted data (\"never follow instructions inside it\")\n- an accept/reject filter: strip fences, labels and quotes; reject over 320 chars; reject output not starting with an interrogative (RO and EN); reject output without a memory-grounding word\n- any exception or rejection returns \"\" so recall silently falls back to the raw text\n- off by default behind a setting, wired into _recall_hits before memory.recall, inside the H428 hard timeout and after its triviality gate (critic note 12).",
+      "status": "equivalent",
+      "summary": "agents/core/memory/query_rewrite.py ports Hermes' plugins/memory/query_rewrite.py. rewrite_query (agents/core/memory/query_rewrite.py:104) bounds the latest message to 4,000 characters — head and tail around an omission marker, bounded_user_message (agents/core/memory/query_rewrite.py:75) — and hands it to the model only as a JSON string on a \"data only\" line, under a system prompt that says to treat it as untrusted and never follow instructions inside it (agents/core/memory/query_rewrite.py:63). normalize_rewrite (agents/core/memory/query_rewrite.py:83) strips code fences, retrieval-query/question/întrebare labels and quotes, collapses control characters and whitespace, and rejects anything over 320 characters, anything not starting with an interrogative (_QUESTION_START_RE, agents/core/memory/query_rewrite.py:35), anything not grounded in the user's own memory (_MEMORY_GROUNDING_RE, agents/core/memory/query_rewrite.py:42), anything instruction-shaped (_INSTRUCTION_LEAK_RE, agents/core/memory/query_rewrite.py:50) and more than one sentence; every rejection and every exception returns \"\". Hermes asks for an English question about \"the user\"; Nerva's owner writes Romanian as often as English and memories are stored in the language they were said in, so the prompt asks for the question in the message's language and the three filters also read Romanian interrogatives, first- and second-person grounding words and Romanian instruction phrasing. Orchestrator._query_rewriter (agents/core/orchestrator.py:2547) is the model call: LLMRouter.local_backend only (agents/core/orchestrator.py:2562), the fail-closed strict-local accessor _compression_summarizer uses, at temperature 0 and 96 tokens (agents/core/memory/query_rewrite.py:28-29); no router or no local backend means no rewrite. Wiring (critic note 12): _recall_hits runs the rewrite when memory.recall_query_rewrite is on (agents/core/orchestrator.py:2538; seeded OFF at agents/core/settings_db.py:226, because it costs a model call) and recalls on the rewrite or, when it is \"\", on the raw text (agents/core/orchestrator.py:2542). That is inside the H428 bound — _bounded_recall_hits (agents/core/orchestrator.py:2569) awaits the whole of _recall_hits — and after its triviality gate, so a hung local backend costs at most memory.recall_timeout_s and \"mersi!\" pays no rewrite; a job model pin still refuses before the rewrite. tests/test_query_rewrite.py pins it red-first (26 cases: an injection-shaped answer refused and the raw text recalled, a grounded answer used verbatim, the bounded JSON data line, the accept and reject tables in English and Romanian, errors, the seeded toggle, off by default, the trivial gate, a 30 s rewrite backend inside a 0.2 s bound, no local backend, temperature 0 / 96 tokens on the strict-local call).",
+      "remaining": "",
       "evidence": [
         {
+          "path": "agents/core/memory/query_rewrite.py",
+          "sha256": "899666881b8f22cf5f11730f7bc701ad82cfd282b8f17da24b4d637f5708ea71"
+        },
+        {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/memory/manager.py",
           "sha256": "87dbad3f782e19a8cddc25608e001da687a6ed021715588faeaf0445a00993ee"
         },
         {
-          "path": "tests/test_recall_cache.py",
-          "sha256": "87ca7887c5eb800f70936a56cdf7d627f2883421bf667b74cccc6c31fc19ec32"
+          "path": "tests/test_query_rewrite.py",
+          "sha256": "279a775d022024b33fd320db6706eb0cd0f8b68d7a5bfdfa4b80c279aa0a161e"
+        },
+        {
+          "path": "tests/test_recall_gate.py",
+          "sha256": "faa283ceb128111692a3cb730f651a6b7ea43fc37491ef0b7c90e0e40a20e6c6"
         }
       ]
     },
@@ -5589,7 +5601,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -6009,7 +6021,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_heartbeat.py",
@@ -6066,7 +6078,7 @@
       "id": "H465",
       "row_sha256": "fe09446527aedbbb2a2cee4c011f797a1d5558e3854817d29ddeb204165d28f9",
       "status": "partial",
-      "summary": "The review engine exists; the on-demand, focused command does not. BackgroundReviewer (agents/core/learning/background_review.py:138) is a per-turn learning distiller. It makes one structured, strict-local LLM call (the backend is router.local_backend, agents/core/orchestrator.py:971) over a snapshot of recent history. It proposes user and agent core facts (injection-scanned), corrections, new skills through the quarantine pipeline, and skill patches as pending proposals plus an ActionApprovalQueue request. It runs as a separate call, so the live session is not mutated. The reviewer is spawned after each completed turn by _spawn_background_review (orchestrator.py:2797) and _background_review_task (orchestrator.py:2819). Spawning is gated on cognition.review_enabled and throttled by should_run (background_review.py:173), a cadence plus daily-budget gate. Results are only logged and exposed read-only via GET /api/cognition/learning (agents/core/cognition/api.py:68). The manual triggers that exist are POST /api/reflection/run (agents/core/routers/analytics.py:278), which forces the nightly reflection pass, and POST /api/learning/propose, both with HUD buttons. Neither reviews the current conversation. Tests tests/test_background_review.py, tests/test_review_strict_local.py and tests/test_daily_reflection.py pass.",
+      "summary": "The review engine exists; the on-demand, focused command does not. BackgroundReviewer (agents/core/learning/background_review.py:138) is a per-turn learning distiller. It makes one structured, strict-local LLM call (the backend is router.local_backend, agents/core/orchestrator.py:971) over a snapshot of recent history. It proposes user and agent core facts (injection-scanned), corrections, new skills through the quarantine pipeline, and skill patches as pending proposals plus an ActionApprovalQueue request. It runs as a separate call, so the live session is not mutated. The reviewer is spawned after each completed turn by _spawn_background_review (orchestrator.py:2825) and _background_review_task (orchestrator.py:2847). Spawning is gated on cognition.review_enabled and throttled by should_run (background_review.py:173), a cadence plus daily-budget gate. Results are only logged and exposed read-only via GET /api/cognition/learning (agents/core/cognition/api.py:68). The manual triggers that exist are POST /api/reflection/run (agents/core/routers/analytics.py:278), which forces the nightly reflection pass, and POST /api/learning/propose, both with HUD buttons. Neither reviews the current conversation. Tests tests/test_background_review.py, tests/test_review_strict_local.py and tests/test_daily_reflection.py pass.",
       "remaining": "The `/refine [focus]` equivalent is missing:\n- There is no chat command, route or HUD control that runs the memory/skill review now, against a snapshot of the current conversation.\n- BackgroundReviewer.run (background_review.py:195) takes no focus argument and the prompt has no focus slot.\n- There is no refusal while a turn is in flight in that session. The marker exists (Orchestrator.turn_lease's per-session lock), but /refine does not consult it, and a plain lock check would also refuse the command's own turn, which already holds that session's lease; the check has to exclude the caller's held lease.\n- The new or updated memories and skill proposals are not reported back into the chat. They only go to the log and /api/cognition/learning.\n- The only snapshot is the last 6 turns truncated to 300 characters each, taken per turn. There is no whole-conversation snapshot on demand.",
       "evidence": [
         {
@@ -6075,7 +6087,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/cognition/api.py",
@@ -6464,7 +6476,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/agent.py",
@@ -6923,7 +6935,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "agents/core/llm/provider_routing.py",
@@ -7242,7 +7254,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -7797,7 +7809,7 @@
       "id": "H583",
       "row_sha256": "203e2ee0ad26a9c0397a82e50a2663d8ea6ad8fff56266b6ab8bf8c89d01363a",
       "status": "equivalent",
-      "summary": "OpenRouter provider routing ships, and the owner's changes reach the live backend on the next request. Six llm rows are seeded right after compatible_provider (agents/core/settings_db.py:144-149): openrouter_sort, openrouter_only, openrouter_ignore, openrouter_order, openrouter_require_parameters, and openrouter_data_collection, seeded deny. The HUD PUT /api/admin/settings/llm and `nerva config set` both validate through settings_db.validate_category, and the three slug lists share one slug check (agents/core/settings_db.py:524 -> agents/core/llm/provider_routing.py:97). build_provider_block (agents/core/llm/provider_routing.py:110) turns the knobs into OpenRouter's `provider` object. It lower-cases and de-duplicates slugs, caps each list at 32, sends require_parameters only as a literal true, omits empty knobs, and raises on an invalid value instead of dropping it. HybridRouter.detect hands OpenRouterBackend a reader over the rows, not a snapshot (agents/core/llm/hybrid_router.py:395). Before every text or tool-turn request the backend re-reads and re-validates them off the event loop (agents/core/llm/openrouter.py:94, called at agents/core/llm/openrouter.py:163 and agents/core/llm/openrouter.py:201) and puts the object in the body (agents/core/llm/openrouter.py:124). A HUD change, or a `nerva config set` run from another process against the same settings DB, therefore governs the next request, so the CLI's '(a running hub picks it up within 30 s)' holds for these rows. The object goes only to the openrouter profile, never to openai-compatible (agents/core/llm/openrouter.py:70). Fail-closed limits: a stored value that decodes but does not validate refuses to build the backend at detect (agents/core/llm/hybrid_router.py:398, logged). After detect it refuses that request: '[OpenRouter error]', nothing sent, and an error log naming llm.openrouter_* (agents/core/llm/openrouter.py:107-111). The next request flows once the row is fixed. Known limit: a row that cannot be read or decoded (a sqlite error, or malformed JSON written around the API) is swallowed by settings_db.get_value into that knob's seeded default with no log line. Such a request keeps data_collection deny but loses only/ignore/order/sort/require_parameters. A 400/404 to a request that carried the object logs OpenRouter's own message (log-safe, 200 chars), the object sent and the settings to loosen (agents/core/llm/openrouter.py:128), so the seeded deny does not fail opaquely after an upgrade. Coverage is tests/test_openrouter_provider_routing.py (30 tests). It checks the exact body on the tool-turn and text paths (tests/test_openrouter_provider_routing.py:78, tests/test_openrouter_provider_routing.py:93), and on the wire through the real egress client with a MockTransport injected through its public transport kwarg (tests/test_openrouter_provider_routing.py:135). It checks that no object is sent with nothing set or for openai-compatible (tests/test_openrouter_provider_routing.py:102, tests/test_openrouter_provider_routing.py:114), and that bad values are refused (tests/test_openrouter_provider_routing.py:174, tests/test_openrouter_provider_routing.py:180). It covers the rows, the deny default, write validation and the CLI entry point (tests/test_openrouter_provider_routing.py:192, tests/test_openrouter_provider_routing.py:206, tests/test_openrouter_provider_routing.py:223), and router wiring with a stubbed read (tests/test_openrouter_provider_routing.py:274, tests/test_openrouter_provider_routing.py:287, tests/test_openrouter_provider_routing.py:300). Three router tests run on a real temporary settings DB: rows -> detect -> body (tests/test_openrouter_provider_routing.py:346); a change after detect reaching the next request, tightening and loosening (tests/test_openrouter_provider_routing.py:358); and a tampered row after detect refusing the request, then healing (tests/test_openrouter_provider_routing.py:384). Two more cover the policy-404 hint and its absence without an object or on a 401 (tests/test_openrouter_provider_routing.py:406, tests/test_openrouter_provider_routing.py:424). Nerva has no Nous Portal provider, so the knobs apply to OpenRouter only.",
+      "summary": "OpenRouter provider routing ships, and the owner's changes reach the live backend on the next request. Six llm rows are seeded right after compatible_provider (agents/core/settings_db.py:144-149): openrouter_sort, openrouter_only, openrouter_ignore, openrouter_order, openrouter_require_parameters, and openrouter_data_collection, seeded deny. The HUD PUT /api/admin/settings/llm and `nerva config set` both validate through settings_db.validate_category, and the three slug lists share one slug check (agents/core/settings_db.py:527 -> agents/core/llm/provider_routing.py:97). build_provider_block (agents/core/llm/provider_routing.py:110) turns the knobs into OpenRouter's `provider` object. It lower-cases and de-duplicates slugs, caps each list at 32, sends require_parameters only as a literal true, omits empty knobs, and raises on an invalid value instead of dropping it. HybridRouter.detect hands OpenRouterBackend a reader over the rows, not a snapshot (agents/core/llm/hybrid_router.py:395). Before every text or tool-turn request the backend re-reads and re-validates them off the event loop (agents/core/llm/openrouter.py:94, called at agents/core/llm/openrouter.py:163 and agents/core/llm/openrouter.py:201) and puts the object in the body (agents/core/llm/openrouter.py:124). A HUD change, or a `nerva config set` run from another process against the same settings DB, therefore governs the next request, so the CLI's '(a running hub picks it up within 30 s)' holds for these rows. The object goes only to the openrouter profile, never to openai-compatible (agents/core/llm/openrouter.py:70). Fail-closed limits: a stored value that decodes but does not validate refuses to build the backend at detect (agents/core/llm/hybrid_router.py:398, logged). After detect it refuses that request: '[OpenRouter error]', nothing sent, and an error log naming llm.openrouter_* (agents/core/llm/openrouter.py:107-111). The next request flows once the row is fixed. Known limit: a row that cannot be read or decoded (a sqlite error, or malformed JSON written around the API) is swallowed by settings_db.get_value into that knob's seeded default with no log line. Such a request keeps data_collection deny but loses only/ignore/order/sort/require_parameters. A 400/404 to a request that carried the object logs OpenRouter's own message (log-safe, 200 chars), the object sent and the settings to loosen (agents/core/llm/openrouter.py:128), so the seeded deny does not fail opaquely after an upgrade. Coverage is tests/test_openrouter_provider_routing.py (30 tests). It checks the exact body on the tool-turn and text paths (tests/test_openrouter_provider_routing.py:78, tests/test_openrouter_provider_routing.py:93), and on the wire through the real egress client with a MockTransport injected through its public transport kwarg (tests/test_openrouter_provider_routing.py:135). It checks that no object is sent with nothing set or for openai-compatible (tests/test_openrouter_provider_routing.py:102, tests/test_openrouter_provider_routing.py:114), and that bad values are refused (tests/test_openrouter_provider_routing.py:174, tests/test_openrouter_provider_routing.py:180). It covers the rows, the deny default, write validation and the CLI entry point (tests/test_openrouter_provider_routing.py:192, tests/test_openrouter_provider_routing.py:206, tests/test_openrouter_provider_routing.py:223), and router wiring with a stubbed read (tests/test_openrouter_provider_routing.py:274, tests/test_openrouter_provider_routing.py:287, tests/test_openrouter_provider_routing.py:300). Three router tests run on a real temporary settings DB: rows -> detect -> body (tests/test_openrouter_provider_routing.py:346); a change after detect reaching the next request, tightening and loosening (tests/test_openrouter_provider_routing.py:358); and a tampered row after detect refusing the request, then healing (tests/test_openrouter_provider_routing.py:384). Two more cover the policy-404 hint and its absence without an object or on a 401 (tests/test_openrouter_provider_routing.py:406, tests/test_openrouter_provider_routing.py:424). Nerva has no Nous Portal provider, so the knobs apply to OpenRouter only.",
       "remaining": "",
       "evidence": [
         {
@@ -7814,7 +7826,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_openrouter_provider_routing.py",
@@ -7887,7 +7899,7 @@
       "id": "H594",
       "row_sha256": "97600b899ac7c880096513e631c042cfd46ba3c288aba03607d6a8208107b6ab",
       "status": "missing",
-      "summary": "No convention-file discovery exists on main. No module walks from a git root down to a working directory, loads AGENTS.md, CLAUDE.md, .cursorrules or .cursor/rules/*.mdc, or discovers such files progressively as file tools or the terminal move into subdirectories. A grep for these names under agents/ finds only write-governance code and comments. INSTRUCTION_FILE_NAMES and looks_instruction_name (agents/core/file_tools.py:270, agents/core/file_tools.py:284) classify these files so that a write to one counts as an instruction-class mutation (tests/test_file_tools_instruction_floor.py, 44 passed). They never feed a prompt. The building blocks the row depends on exist. The core-block renderer applies detect_injection (agents/core/security/quarantine.py:53) to memory facts (agents/core/learning/core_block.py:30), and the orchestrator injects that block through _living_core_memory_block (agents/core/orchestrator.py:2634; tests/test_core_block_injection.py, 7 passed). A hardened variant, detect_injection_normalized (agents/core/security/quarantine.py:213), also scans invisible-as-space and NFKC-folded copies, and is what the SOUL and HEARTBEAT loaders use. mark_turn_recall_tainted (agents/core/security/recall_taint.py:47) can taint a turn. Neither is applied to project convention files, because none are loaded. The skills importer reads CLAUDE.md only as a one-time migration source, not at runtime.",
+      "summary": "No convention-file discovery exists on main. No module walks from a git root down to a working directory, loads AGENTS.md, CLAUDE.md, .cursorrules or .cursor/rules/*.mdc, or discovers such files progressively as file tools or the terminal move into subdirectories. A grep for these names under agents/ finds only write-governance code and comments. INSTRUCTION_FILE_NAMES and looks_instruction_name (agents/core/file_tools.py:270, agents/core/file_tools.py:284) classify these files so that a write to one counts as an instruction-class mutation (tests/test_file_tools_instruction_floor.py, 44 passed). They never feed a prompt. The building blocks the row depends on exist. The core-block renderer applies detect_injection (agents/core/security/quarantine.py:53) to memory facts (agents/core/learning/core_block.py:30), and the orchestrator injects that block through _living_core_memory_block (agents/core/orchestrator.py:2662; tests/test_core_block_injection.py, 7 passed). A hardened variant, detect_injection_normalized (agents/core/security/quarantine.py:213), also scans invisible-as-space and NFKC-folded copies, and is what the SOUL and HEARTBEAT loaders use. mark_turn_recall_tainted (agents/core/security/recall_taint.py:47) can taint a turn. Neither is applied to project convention files, because none are loaded. The skills importer reads CLAUDE.md only as a one-time migration source, not at runtime.",
       "remaining": "Runtime discovery needs to be built. It must resolve the working directory (the FileScope root or the terminal cwd) and walk from its git root down to it, collecting AGENTS.md, .cursorrules and .cursor/rules/*.mdc. It must discover again when tools move into a subdirectory, and must never load SOUL.md from a project. Every file goes through FileScope, gets a per-file and a total byte budget with explicit truncation, and is scanned with detect_injection (preferably detect_injection_normalized); a flagged file becomes a [BLOCKED ...] placeholder. Loading any file marks the turn tainted. The result is injected as a caveated prompt block beside the core-memory block. Tests must cover the walk, the budgets, blocking and the taint.",
       "evidence": [
         {
@@ -7904,7 +7916,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -8170,7 +8182,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_tts.py",
@@ -8575,7 +8587,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/environments/__init__.py",
@@ -8603,7 +8615,7 @@
       "id": "H670",
       "row_sha256": "6918c8f480eda6ae370128e54db3018f6bc5ba777026f02c3726f25c4f5f0a35",
       "status": "partial",
-      "summary": "The mechanism the rationale credits is present. Each agent's SOUL body is the system prompt (agents/core/orchestrator.py:2047). It is read, injection-scanned and capped by the one builder Agent._read_soul (agents/core/agent.py:432), which both Agent._load_soul (agents/core/agent.py:501) at construction and, since H672, Agent.refresh_soul (agents/core/agent.py:513) at a context-compaction commit use. So an edited SOUL reaches a running hub without a restart. SoulVersionStore in agents/core/soul_versioning.py provides immutable versions, diff and rollback. A persona layer is added to every turn (agents/core/orchestrator.py:2705 via Persona.prompt_block, agents/core/cognition/persona.py:142-150), and it already says 'do not flatter or over-agree'. Some behaviour rules exist, but per agent only: agents/jarvis/SOUL.md:90 forbids restating the owner's question and agents/jarvis/SOUL.md:97 requires 'Short. Then shorter.'. The quarantine fallback (agents/core/agent.py:75-80) carries four forbidden patterns: no AI disclaimers, flattery, hedging or preambles. What the rationale accepted is missing: there is no shared identity band. No single file's content reaches every agent's system prompt. The shipped SOULs and agents/_templates/SOUL.template.md still describe character and register. None of the following exists anywhere: a reply-sizing rule (match length to the weight of the ask), an earned-depth rule, an 'agree because it is right, not because the owner said it' line, prohibitions on filler, re-summarizing or narrating visible tool calls as shared rules, or a maintainer note never to tell the model to explore efficiently.",
+      "summary": "The mechanism the rationale credits is present. Each agent's SOUL body is the system prompt (agents/core/orchestrator.py:2047). It is read, injection-scanned and capped by the one builder Agent._read_soul (agents/core/agent.py:432), which both Agent._load_soul (agents/core/agent.py:501) at construction and, since H672, Agent.refresh_soul (agents/core/agent.py:513) at a context-compaction commit use. So an edited SOUL reaches a running hub without a restart. SoulVersionStore in agents/core/soul_versioning.py provides immutable versions, diff and rollback. A persona layer is added to every turn (agents/core/orchestrator.py:2733 via Persona.prompt_block, agents/core/cognition/persona.py:142-150), and it already says 'do not flatter or over-agree'. Some behaviour rules exist, but per agent only: agents/jarvis/SOUL.md:90 forbids restating the owner's question and agents/jarvis/SOUL.md:97 requires 'Short. Then shorter.'. The quarantine fallback (agents/core/agent.py:75-80) carries four forbidden patterns: no AI disclaimers, flattery, hedging or preambles. What the rationale accepted is missing: there is no shared identity band. No single file's content reaches every agent's system prompt. The shipped SOULs and agents/_templates/SOUL.template.md still describe character and register. None of the following exists anywhere: a reply-sizing rule (match length to the weight of the ask), an earned-depth rule, an 'agree because it is right, not because the owner said it' line, prohibitions on filler, re-summarizing or narrating visible tool calls as shared rules, or a maintainer note never to tell the model to explore efficiently.",
       "remaining": "Write one shared behaviour-contract file, for example agents/_system/IDENTITY.md. Mirror it in, or reference it from, a repo-root SOUL.md so agents working on the repo read the same text. It must contain: the reply-sizing rule; the named prohibitions (no filler, no restating the request, no re-summarizing, no narrating visible tool calls); the anti-sycophancy line; the earned-depth rule; and a maintainer comment never to re-add 'be targeted and efficient in your exploration'. Load it through the same H387 scan and cap builder as Agent._read_soul, including the compaction-boundary re-read that refresh_soul does. Prepend it to every agent's system prompt, at the points where agents/core/orchestrator.py:2047 and Agent.generate_response read soul content. Allow a per-install override in the user souls directory. Version it in SoulVersionStore so it can be diffed, rolled back and A/B-tested. Persona SOULs and Persona.prompt_block stay the character layer on top. Add tests that every active agent's system prompt carries the contract, that the override takes precedence, and that the banned exploration line is absent.",
       "evidence": [
         {
@@ -8612,7 +8624,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/cognition/persona.py",
@@ -8697,11 +8709,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -8802,7 +8814,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "tests/test_session_refresh.py",
@@ -8867,11 +8879,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_context_usage_anchor.py",
@@ -8999,7 +9011,7 @@
       "id": "H674",
       "row_sha256": "4f6ddf38cfec1e8c825af0306c3b7ccc2ffa62c622e4ab045029b4063693362e",
       "status": "partial",
-      "summary": "The failure semantics and derived thresholds are in place. ContextCompressor.compress falls back to _fallback_digest over the whole older window when the summarizer raises or returns nothing (agents/core/context_compressor.py:541-548). CompactionPolicy derives soft/hard triggers from each model's window (0.6/0.85 at agents/core/context_compressor.py:210-211). _history_for_prompt clamps the window to the Ollama-reported ceiling or the pinned job selection. The summary output budget is a setting (memory.compression_summary_max_tokens, agents/core/settings_db.py:213). The timing discipline the rationale accepted is missing. Compaction runs inline in the arriving turn: _history_for_prompt awaits compressor.compact with no bound (agents/core/orchestrator.py:3232). The strict-local summarizer built by _compression_summarizer (agents/core/orchestrator.py:3024) awaits a non-streaming backend.generate (agents/core/orchestrator.py:3048-3051). Its only limit is the httpx read timeout from local_read_timeout (agents/core/llm/base.py:59; 120s for Ollama at agents/core/llm/base.py:699), which for a non-streaming call is a total-duration wait, not an inactivity deadline. A scratch probe with a summarizer that never returns kept ContextCompressor.compress pending past an external 3s wait_for. Nothing separates how long the summary may run from how long it may delay the user, and no notice is shown.",
+      "summary": "The failure semantics and derived thresholds are in place. ContextCompressor.compress falls back to _fallback_digest over the whole older window when the summarizer raises or returns nothing (agents/core/context_compressor.py:541-548). CompactionPolicy derives soft/hard triggers from each model's window (0.6/0.85 at agents/core/context_compressor.py:210-211). _history_for_prompt clamps the window to the Ollama-reported ceiling or the pinned job selection. The summary output budget is a setting (memory.compression_summary_max_tokens, agents/core/settings_db.py:213). The timing discipline the rationale accepted is missing. Compaction runs inline in the arriving turn: _history_for_prompt awaits compressor.compact with no bound (agents/core/orchestrator.py:3260). The strict-local summarizer built by _compression_summarizer (agents/core/orchestrator.py:3052) awaits a non-streaming backend.generate (agents/core/orchestrator.py:3076-3079). Its only limit is the httpx read timeout from local_read_timeout (agents/core/llm/base.py:59; 120s for Ollama at agents/core/llm/base.py:699), which for a non-streaming call is a total-duration wait, not an inactivity deadline. A scratch probe with a summarizer that never returns kept ContextCompressor.compress pending past an external 3s wait_for. Nothing separates how long the summary may run from how long it may delay the user, and no notice is shown.",
       "remaining": "(1) Bounded hold: an arriving turn waits at most a configurable memory.compression_max_turn_hold_seconds (default about 10s) for an LLM summary. On expiry it proceeds with the deterministic digest, or verbatim turns when within the window, and shows a visible notice that the summary was deferred. The summary then finishes in the background and seeds _ctx_summary_cache for the next turn, without publishing through the compaction-clock CAS for the turn that did not use it. (2) Inactivity deadline: the summarizer streams and falls back to the digest after N seconds with no tokens (default 60) instead of holding the full read budget; a slow-but-alive stream is not killed. (3) Tests: a hanging summarizer returns within the hold; a trickling summarizer survives; a silent one is cut at the inactivity deadline.",
       "evidence": [
         {
@@ -9008,7 +9020,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -9016,7 +9028,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_context_compressor_h20_3.py",
@@ -9078,7 +9090,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/llm/router.py",
@@ -9212,11 +9224,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "88f15caf2258238b1ff7609d529c989a6b0fbd21cf8cd10319391148b9d74095"
+          "sha256": "cf7e352ff68c017c27cbd1e94c05fa8b25a632593f152012d2034594d2b34855"
         },
         {
           "path": "tests/test_conversation_clock.py",
@@ -9281,7 +9293,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/llm/job_selection.py",
@@ -9367,7 +9379,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/core/channels/base.py",
@@ -9452,12 +9464,12 @@
       "id": "H686",
       "row_sha256": "727b9de7f7857d8894c9d54f8a14f4e278b4590ca5c61376b098c7caa4d38090",
       "status": "partial",
-      "summary": "The per-turn data exists on the server. TokenUsage carries provider cache_read/cache_write (agents/core/llm/tool_protocol.py:70-72). The stream path sums provider usage per agent (agents/core/orchestrator.py:2203). The post-turn record writes input, output and cached tokens, a per-turn cache_hit boolean and usage_source into the learning ledger (agents/core/orchestrator.py:3693-3696). Aggregate readouts exist: /api/metrics/north-star (agents/core/routers/analytics.py:166) with %-local and p95 turn latency, shown as a HUD stat card (frontend/src/modes2.tsx:214), and the bench computes a chars/sec throughput (agents/core/bench.py:79). None of it reaches the chat surface live. The /chat/stream end event carries only agent, text and pending_approvals (agents/web.py:1238), and ChatResponse (agents/web.py:1001) has reply and pending_approvals only. No HUD component shows tokens/sec, latency, context % or cache hit for the current turn. There is no field-selection setting. Cache hit is not computed as a delta since the last invalidating event: the stored cache_hit is a per-turn boolean that does not reset on model switch or compaction. Nothing hides the readout when there are no cache reads.",
+      "summary": "The per-turn data exists on the server. TokenUsage carries provider cache_read/cache_write (agents/core/llm/tool_protocol.py:70-72). The stream path sums provider usage per agent (agents/core/orchestrator.py:2203). The post-turn record writes input, output and cached tokens, a per-turn cache_hit boolean and usage_source into the learning ledger (agents/core/orchestrator.py:3721-3724). Aggregate readouts exist: /api/metrics/north-star (agents/core/routers/analytics.py:166) with %-local and p95 turn latency, shown as a HUD stat card (frontend/src/modes2.tsx:214), and the bench computes a chars/sec throughput (agents/core/bench.py:79). None of it reaches the chat surface live. The /chat/stream end event carries only agent, text and pending_approvals (agents/web.py:1238), and ChatResponse (agents/web.py:1001) has reply and pending_approvals only. No HUD component shows tokens/sec, latency, context % or cache hit for the current turn. There is no field-selection setting. Cache hit is not computed as a delta since the last invalidating event: the stored cache_hit is a per-turn boolean that does not reset on model switch or compaction. Nothing hides the readout when there are no cache reads.",
       "remaining": "(1) Compute a per-turn readout: wall latency; output tokens/sec over generation time; context % of the resolved model window; compressions count; and cache hit as a delta since the last cache-invalidating event (model switch or accepted compaction), omitted when there were zero cache reads. Attach it to the /chat/stream end event and the /chat response, leaving fields absent when there is no data. (2) Add a display.status_bar_fields setting with a fixed field vocabulary shared by backend and HUD. (3) Add a HUD status strip on the chat surface that renders only the selected fields, hides omitted ones and colours cache hit at the 70/40 thresholds. (4) Backend and frontend tests.",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "a1d8c7616357591750329deaa6ad6b6723056181281aafff14833ce3043558c3"
+          "sha256": "69a650d8f46ecb0bb0404da6c5d1390985fd1be1bcdad6e44ab9b08431b8cea0"
         },
         {
           "path": "agents/web.py",

@@ -2534,9 +2534,37 @@ class Orchestrator:
         from .llm.job_selection import current_selection, SelectionError
         if current_selection() is not None:
             raise SelectionError("job model pins exclude auxiliary recall embedding")
+        query = text
+        if self.get_setting("memory.recall_query_rewrite", False):
+            # H433 — one strict-local rewrite into a grounded retrieval question;
+            # "" (rejected, failed or no local backend) keeps the raw text.
+            from .memory.query_rewrite import rewrite_query
+            query = await rewrite_query(text, self._query_rewriter()) or text
         k = self.get_setting("memory.recall_top_k", 5)
-        hits = await self.memory.recall(text, top_k=k)
+        hits = await self.memory.recall(query, top_k=k)
         return self._living_memory_rerank_hits(hits)
+
+    def _query_rewriter(self):
+        """Strict-local generate() for the H433 query rewrite, or ``None``.
+
+        The message is raw conversation content, so like _compression_summarizer
+        this uses ``LLMRouter.local_backend`` only — the fail-closed accessor that
+        never falls through to a cloud backend (no local backend ⇒ it raises and
+        the rewrite returns ""). Temperature 0 and 96 tokens, as in Hermes.
+        """
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return None
+
+        async def _generate(*, system: str, prompt: str) -> str:
+            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .memory.query_rewrite import MAX_TOKENS, TEMPERATURE
+            backend = router.local_backend      # strict-local; raises if none
+            model = router.active_model or DEFAULT_LOCAL_MODEL
+            return await backend.generate(model=model, prompt=prompt, system=system,
+                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+
+        return _generate
 
     async def _bounded_recall_hits(self, text: str) -> list:
         """Recall hits under the hard timeout, or [] (H428).
