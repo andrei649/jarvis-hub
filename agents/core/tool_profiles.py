@@ -30,19 +30,22 @@ approval-bound) are the actuation class:
 operator / owner   every registered tool
 operator / guest   ungated tools only
 inbound / owner    ungated tools; gated ones too when ``llm.inbound_actuation`` is on
-inbound / guest    the names in ``llm.guest_tools`` (default ``echo``, ``time``), never gated
+inbound / guest    the names in ``llm.guest_tools`` (default ``echo``, ``time``, ``todo``), never
+                   gated
 internal / system  ungated tools; gated ones too when ``llm.internal_actuation`` is on
 =================  ======================================================================
 
-One class of tool is offered in every posture: the **session-local** tools
-(:data:`SESSION_LOCAL_TOOLS`, today ``todo``, H315), whose only effect is the calling
-session's own state — the owner can read it, labelled with the session and the posture
-that wrote it, and nothing acts on it. Withholding them from a guest protects nothing and
-leaves the guest's turn without a plan. Ungated only: a gated tool of the same name falls
-back to the rows above. The rule for every tool the Hermes rows add (critic note 22): a
-tool that acts on the owner's HUD, memory or skills (a canvas pointer, a memory write, a
-skill body) is not session-local, so it stays off inbound/guest unless the owner names it
-in ``llm.guest_tools``; ``speak`` is gated and follows the gated rows of the table.
+The **session-scoped** tools (:data:`SESSION_SCOPED_TOOLS`, today ``todo``, H315) keep
+state per session. A turn that binds no session of its own runs on the shared default
+session, the HUD's, so what they keep there is the owner's. On it, only an owner's turn
+is offered them. A guest, a household member or a job there gets nothing (the resolver's
+``shared_session``), and the tool refuses a call anyway. On a session of its own, a turn
+is offered them by the rows above: ``todo`` is ungated, and it reaches an inbound guest
+through the default ``llm.guest_tools``, so an owner who empties that list keeps guests
+off the tool loop entirely. The rule for every tool the Hermes rows add (critic note 22):
+a tool that acts on the owner's HUD, memory or skills (a canvas pointer, a memory write, a
+skill body) stays off inbound/guest unless the owner names it in ``llm.guest_tools``;
+``speak`` is gated and follows the gated rows of the table.
 
 A per-agent ``tools:`` list in ``agents.yaml`` (names or glob patterns; ``"*"`` = all)
 narrows the posture further and never widens it. The resolved sets are snapshot-tested in
@@ -76,7 +79,7 @@ PRINCIPAL_SYSTEM = "system"
 GUEST_TOOLS_SETTING = "llm.guest_tools"
 INBOUND_ACTUATION_SETTING = "llm.inbound_actuation"
 INTERNAL_ACTUATION_SETTING = "llm.internal_actuation"
-DEFAULT_GUEST_TOOLS: tuple[str, ...] = ("echo", "time")
+DEFAULT_GUEST_TOOLS: tuple[str, ...] = ("echo", "time", "todo")
 
 # Every posture the resolver can produce, in snapshot order.
 POSTURES: tuple[tuple[str, str], ...] = (
@@ -88,10 +91,9 @@ POSTURES: tuple[tuple[str, str], ...] = (
 )
 
 _UNBOUND_CHANNELS = frozenset({"", "unknown"})
-_SURFACES = frozenset({SURFACE_OPERATOR, SURFACE_INBOUND, SURFACE_INTERNAL})
-#: Tools whose only effect is the calling session's own state (H315). Offered in every
-#: posture, ungated only — see the module docstring for why and for what never qualifies.
-SESSION_LOCAL_TOOLS: frozenset[str] = frozenset({"todo"})
+#: Tools that keep state per session (H315). On the shared default session that state is
+#: the owner's, so there they are offered to an owner's turn only (see the docstring).
+SESSION_SCOPED_TOOLS: frozenset[str] = frozenset({"todo"})
 MAX_AGENT_PATTERNS = 64
 MAX_PATTERN_CHARS = 64
 
@@ -155,7 +157,8 @@ def _flag(settings: Callable[[str, Any], Any], key: str) -> bool:
 
 
 def guest_tool_names(settings: Callable[[str, Any], Any]) -> tuple[str, ...]:
-    """The bounded, string-only allowlist a guest may be offered (default ``echo``, ``time``)."""
+    """The bounded, string-only allowlist a guest may be offered (default ``echo``, ``time``,
+    ``todo``)."""
     try:
         raw = settings(GUEST_TOOLS_SETTING, list(DEFAULT_GUEST_TOOLS))
     except Exception:
@@ -175,8 +178,6 @@ def _posture_allows(
 ) -> bool:
     gated = bool(tool.get("gated"))
     name = str(tool.get("name") or "")
-    if not gated and name in SESSION_LOCAL_TOOLS and posture.surface in _SURFACES:
-        return True
     if posture.surface == SURFACE_OPERATOR:
         if posture.principal == PRINCIPAL_OWNER:
             return True
@@ -209,17 +210,24 @@ def resolve_tools(
     posture: ToolPosture,
     agent_patterns: Sequence[str] | None = None,
     settings: Callable[[str, Any], Any] = lambda key, default: default,
+    shared_session: bool = False,
 ) -> tuple[list[Mapping[str, Any]], list[str]]:
     """Split *tools* (ToolRPC metadata rows) into the ones this posture offers and the
-    names it withholds. The agent's own patterns can only narrow the posture."""
+    names it withholds. The agent's own patterns can only narrow the posture.
+    ``shared_session`` says the turn runs on the shared default session: there the
+    session-scoped tools are the owner's, so a turn that is not the owner's is not offered
+    them."""
     from .job_toolsets import allows
     guest_names = guest_tool_names(settings)
     patterns = _clean_patterns(agent_patterns)
+    owners_only = shared_session and posture.principal != PRINCIPAL_OWNER
     offered: list[Mapping[str, Any]] = []
     withheld: list[str] = []
     for tool in tools:
         name = str(tool.get("name") or "")
         allowed = allows(name) and _posture_allows(posture, tool, settings, guest_names)
+        if allowed and owners_only and name in SESSION_SCOPED_TOOLS:
+            allowed = False
         if allowed and patterns is not None:
             allowed = any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
         if allowed:
@@ -233,7 +241,9 @@ class ToolProfileResolver:
     """The hook the tool runtime calls with ``(agent_id, tools)`` before offering tools.
 
     ``principal`` and ``origin`` are read per call so the posture is the *current* turn's;
-    ``agent_patterns`` maps an agent id to its ``tools:`` list (``None`` = unrestricted).
+    ``agent_patterns`` maps an agent id to its ``tools:`` list (``None`` = unrestricted);
+    ``shared_session`` says whether the turn runs on the shared default session (read per
+    call; a getter that fails counts as yes).
     """
 
     def __init__(
@@ -243,11 +253,13 @@ class ToolProfileResolver:
         agent_patterns: Callable[[str], Sequence[str] | None] = lambda agent_id: None,
         principal: Callable[[], Any] = lambda: None,
         origin: Callable[[], str] = current_action_origin,
+        shared_session: Callable[[], bool] = lambda: False,
     ) -> None:
         self._settings = settings
         self._agent_patterns = agent_patterns
         self._principal = principal
         self._origin = origin
+        self._shared_session = shared_session
 
     def posture(self) -> ToolPosture:
         try:
@@ -268,8 +280,13 @@ class ToolProfileResolver:
             patterns = self._agent_patterns(agent_id)
         except Exception:
             patterns = ()
+        try:
+            shared = bool(self._shared_session())
+        except Exception:
+            shared = True
         offered, withheld = resolve_tools(
             tools, posture=posture, agent_patterns=patterns, settings=self._settings,
+            shared_session=shared,
         )
         return offered, ProfileDecision(
             surface=posture.surface,
@@ -282,7 +299,7 @@ class ToolProfileResolver:
 __all__ = [
     "DEFAULT_GUEST_TOOLS", "GUEST_TOOLS_SETTING", "INBOUND_ACTUATION_SETTING",
     "INTERNAL_ACTUATION_SETTING", "POSTURES", "PRINCIPAL_GUEST", "PRINCIPAL_OWNER",
-    "PRINCIPAL_SYSTEM", "ProfileDecision", "SESSION_LOCAL_TOOLS", "SURFACE_INBOUND",
+    "PRINCIPAL_SYSTEM", "ProfileDecision", "SESSION_SCOPED_TOOLS", "SURFACE_INBOUND",
     "SURFACE_INTERNAL", "SURFACE_OPERATOR", "ToolPosture", "ToolProfileResolver", "classify_turn",
     "guest_tool_names", "resolve_tools",
 ]

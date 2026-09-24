@@ -887,20 +887,30 @@ class AutonomyCoordinator:
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
+        def _on_shared_session() -> bool:
+            # H315 review — a turn with no session of its own runs on the HUD's shared
+            # session; what a session-scoped tool keeps there is the owner's. A double
+            # without the probe counts as shared (fail closed).
+            probe = getattr(self._orch, "on_shared_session", None)
+            return True if not callable(probe) else bool(probe())
+
         tool_profile = ToolProfileResolver(
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
+            shared_session=_on_shared_session,
         )
         # H315 — the model keeps a checklist of the turn's work and re-reads it on every
-        # call. Ungated: its only effect is the session's own list, which the owner reads
-        # next to the approval queue, labelled with the posture of the turn that wrote it.
+        # call. Ungated: it writes the session's own list, which the owner reads next to
+        # the approval queue with each item's posture and taint. On the shared session
+        # only an owner's turn keeps one.
         from .todo_tool import register_todo_tool
 
         register_todo_tool(
             server,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
             posture=lambda: tool_profile.posture().key,
+            shared_session=_on_shared_session,
         )
 
         def _profile_and_note_offer(agent_id, tools):

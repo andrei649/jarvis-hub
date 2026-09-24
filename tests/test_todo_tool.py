@@ -10,9 +10,11 @@ model-maintained plan at all. Now:
   reads it. Every call returns the whole list and its counts.
 - It is bounded (50 items, 200 characters, at most one item in progress) and every
   refusal is named.
-- It is ungated (its only effect is on the session's own list), offered in every
-  posture a guest's included, and the tool loop never replaces its result with a
-  "same as call N" stub: the model re-reads the list every time.
+- It is ungated and writes only the session's own list. It is offered to every
+  posture, a guest's through the guest allowlist, except that on the owner's shared
+  session only an owner's turn keeps a list (tests/test_h315b_todo_review.py). The tool
+  loop never replaces its result with a "same as call N" stub: the model re-reads the
+  list every time.
 - The owner sees the plan: a `todo_updated` tool event (ids and statuses, never the
   text), GET /sessions/todo and /sessions/{id}/todo, `nerva todo`, and the Decision
   Inbox. A memory purge forgets every plan.
@@ -225,7 +227,7 @@ async def test_a_refusal_comes_back_named(tool):
 
 
 @pytest.mark.asyncio
-async def test_a_write_leaves_a_tool_event_with_ids_and_statuses_never_the_text(tool):
+async def test_a_write_leaves_a_tool_event_with_statuses_never_the_text(tool):
     server, _store, _session, _name = tool
     TOOL_EVENTS.clear()
     args = {"todos": _items(("secret plan text", "in_progress"), ("second", "pending"))}
@@ -233,9 +235,9 @@ async def test_a_write_leaves_a_tool_event_with_ids_and_statuses_never_the_text(
     events = [e for e in TOOL_EVENTS.snapshot() if e.get("event") == "todo_updated"]
     assert len(events) == 1
     event = events[0]
-    assert event["session"] == "turn-session" and event["ids"] == ["1", "2"]
+    assert event["session"] == "turn-session" and "ids" not in event          # an id is free text too
     assert event["statuses"] == ["in_progress", "pending"] and event["total"] == 2
-    assert event["current"] == "1" and event["merge"] is False
+    assert event["current"] == 1 and event["merge"] is False                 # a position, not an id
     assert "secret plan text" not in json.dumps(TOOL_EVENTS.snapshot())
     await _call(server, {})
     assert len([e for e in TOOL_EVENTS.snapshot() if e.get("event") == "todo_updated"]) == 1   # a read is no update
@@ -329,16 +331,26 @@ def test_the_coordinator_registers_todo_on_the_live_tool_server(hub):
     import asyncio
 
     from agents.core.app_state import get_orch
+    from agents.core.commands import Principal
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
 
     _client, store = hub
     orch = get_orch()
     names = {row["name"]: row for row in orch.tool_rpc.tools()}
     assert "todo" in names and names["todo"]["gated"] is False
-    reply = asyncio.run(orch.tool_rpc.handle({"tool": "todo", "args": {"todos": _items(("live", "pending"))}}))
+
+    async def owner_turn():
+        token = bind_turn_principal(Principal(channel="web", admin=True))
+        try:
+            return await orch.tool_rpc.handle({"tool": "todo", "args": {"todos": _items(("live", "pending"))}})
+        finally:
+            reset_turn_principal(token)
+
+    reply = asyncio.run(owner_turn())
     assert reply["result"]["ok"] is True
     plan = store.read(str(orch.session_id))                 # the live store, the turn's session
     assert [t["content"] for t in plan["todos"]] == ["live"]
-    assert plan["posture"] == "internal/system"              # no principal bound: an unattended turn
+    assert plan["posture"] == "operator/owner"               # the owner's HUD turn
 
 
 def test_the_routes_read_one_plan_and_the_recent_ones(hub):

@@ -782,6 +782,22 @@ class Orchestrator:
         else:
             _active_session.set(value)
 
+    def on_shared_session(self) -> bool:
+        """H315 review: True when this turn runs on the shared default session (the HUD's)
+        rather than on one of its own.
+
+        A turn gets a session of its own from an explicit session id or from a channel's
+        own conversation (``channel_handler``). A turn that binds neither falls back to the
+        shared default, and so does a caller outside any turn: a widget visitor with no
+        client id, a webhook, a job, a subagent, a direct tool call. Naming the default's
+        id explicitly is still the shared session. Whatever is kept per session there is
+        the owner's.
+        """
+        value = _active_session.get()
+        if value is _SESSION_UNSET or value is None:
+            return True
+        return value == self._session_id_default
+
     def _ensure_context_cache(self) -> None:
         """Create the cache only from the auth pool produced by detection."""
         gemini_pool = getattr(self.llm_router, "_gemini_pool", None)

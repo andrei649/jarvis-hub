@@ -73,6 +73,16 @@ HEADER = {
 
 READ_METHODS = {"GET", "HEAD"}
 
+#: A templated read route whose honest answer for an unknown id is not the generic 404.
+EXPECT_OVERRIDES = {
+    # H315 review: a plan is work in flight, not a record, so an unknown session has none.
+    "GET /sessions/{session_id}/todo": (
+        "**200** with the plan for a live id · **200** with an empty list for an unknown one "
+        "(no plan is kept for it) · **400** for an id that is not a session id — never a "
+        "fabricated plan"
+    ),
+}
+
 
 def group_of(path: str) -> str:
     parts = [p for p in path.split("/") if p]
@@ -90,7 +100,9 @@ def probe(method: str, path: str, tier: str) -> tuple[str, str]:
     if method in READ_METHODS:
         return (
             f"`GET $B{path}` with a real id from this group's list route",
-            "**200** for a live id · **404** for a bogus one — never a fabricated record",
+            EXPECT_OVERRIDES.get(
+                f"{method} {path}",
+                "**200** for a live id · **404** for a bogus one — never a fabricated record"),
         )
     return (
         f"mutating — needs a body; exercise it in §{OWNER.get(group_of(path), '—')}",

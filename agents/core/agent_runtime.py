@@ -115,7 +115,10 @@ _DUPLICATE_NOTICE = (
 # H315 — tools whose answer IS the thing the model must re-read. `todo` restates the whole
 # plan on every call so the model reads its own checklist again; a "same as call N" stub
 # would point it at an older copy many messages up (possibly compacted by then), which is
-# exactly the re-reading the tool exists to force.
+# exactly the re-reading the tool exists to force. For the same reason such a call is not
+# counted by the repeat detector or against a per-tool cap: a plan read between two steps
+# is the tool doing its job, not a loop, and ending the turn for it lost the answer. The
+# loop's iteration limit still bounds a turn that does nothing else.
 _ALWAYS_RESTATED = frozenset({"todo"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
@@ -829,6 +832,8 @@ class AgentToolRuntime:
         if limit <= 0:
             return repeated, None
         for call in calls:
+            if call.name in _ALWAYS_RESTATED:
+                continue
             key = _call_key(call)
             count = seen.get(key, 0) + 1
             seen[key] = count
@@ -855,6 +860,8 @@ class AgentToolRuntime:
         limit = self._per_tool_cap()
         capped: dict[str, int] = {}
         for call in calls:
+            if call.name in _ALWAYS_RESTATED:
+                continue
             count = counts.get(call.name, 0) + 1
             counts[call.name] = count
             if limit > 0 and count > limit:

@@ -2068,7 +2068,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "capability_id": "tool:time",
         },
         {
-            # H315 — the model's own checklist: ungated, session-local.
+            # H315 — the model's own checklist: ungated, session-scoped.
             "name": "todo",
             "gated": False,
             "description": TODO_DESCRIPTION,

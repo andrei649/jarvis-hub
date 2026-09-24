@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { DecisionInboxPanel } from '../gap';
-import { ITEMS_SHOWN, PLANS_SHOWN, openPlans } from '../panels/plans';
+import { ITEMS_SHOWN, PLANS_SHOWN, itemTags, openPlans, planAge } from '../panels/plans';
 
 const item = (id, content, status) => ({ id: String(id), content, status });
 const plan = (session_id, todos, extra = {}) => ({ session_id, todos, agent: 'nerva', posture: 'operator/owner', ...extra });
@@ -43,11 +43,61 @@ describe('Decision Inbox — plans in flight (H315)', () => {
     expect(screen.queryByText('guest turn')).toBeNull();
   });
 
-  it('says when a plan was written during a guest turn', async () => {
-    route([plan('telegram-42', [item(1, 'reply to the question', 'in_progress')], { posture: 'inbound/guest' })]);
+  it('tags each item with whose turn wrote its text and whether that text is untrusted', async () => {
+    const by = (id, content, writer, extra = {}) => ({ ...item(id, content, 'pending'), by: writer, ...extra });
+    route([plan('telegram-42', [
+      by(1, 'from a guest', 'inbound/guest'),
+      by(2, 'from the household', 'operator/guest'),
+      by(3, 'from a job', 'internal/system'),
+      by(4, 'from a page', 'operator/owner', { tainted: true, status: 'in_progress' }),
+      by(5, 'mine at the hud', 'operator/owner'),
+      by(6, 'mine on telegram', 'inbound/owner'),
+    ], { posture: 'inbound/owner' })]);
     render(<DecisionInboxPanel />);
-    await screen.findByText('reply to the question');
-    expect(screen.getByText('guest turn')).toBeTruthy();
+    const line = async (text) => (await screen.findByText(text, { exact: false })).closest('li').textContent;
+    expect(await line('from a guest')).toContain('guest turn');
+    expect(await line('from the household')).toContain('household turn');
+    expect(await line('from the household')).not.toContain('guest turn');
+    expect(await line('from a job')).toContain('background turn');
+    expect(await line('from a page')).toContain('untrusted source');
+    for (const mine of ['mine at the hud', 'mine on telegram']) {
+      const text = await line(mine);
+      expect(text).not.toMatch(/turn|untrusted/);
+    }
+    expect(itemTags({ by: 'inbound/guest', tainted: true })).toEqual(['guest turn', 'untrusted source']);
+    expect(itemTags({ by: 'operator/owner', tainted: 'yes' })).toEqual([]);   // only a real true
+  });
+
+  it('says how long ago each plan was written', async () => {
+    const now = Date.now() / 1000;
+    route([plan('old', [item(1, 'stale step', 'pending')], { updated_at: now - 3 * 86400 }),
+      plan('new', [item(1, 'fresh step', 'pending')], { updated_at: now - 5 })]);
+    render(<DecisionInboxPanel />);
+    await screen.findByText('stale step');
+    const text = screen.getByTestId('plans-in-flight').textContent;
+    expect(text).toContain('0/1 done · updated 3 d ago');
+    expect(text).toContain('0/1 done · updated just now');
+    expect(planAge(undefined)).toBe('');
+    expect(planAge(1000, 1000 * 1000 + 600 * 1000)).toBe('10 min ago');
+    expect(planAge(0, 5 * 3600 * 1000)).toBe('5 h ago');
+  });
+
+  it('strikes cancelled items through, names the agent and labels the section', async () => {
+    route([plan('web-1', [item(1, 'dropped step', 'cancelled'), item(2, 'open step', 'pending')], { agent: 'friday' })]);
+    render(<DecisionInboxPanel />);
+    const dropped = await screen.findByText('dropped step');
+    expect(dropped.closest('li').style.textDecoration).toBe('line-through');
+    expect(screen.getByText('open step').closest('li').style.textDecoration).toBe('');
+    expect(screen.getByText('friday')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'plans in flight' })).toBeTruthy();
+  });
+
+  it('draws nothing at all when no plan has open work', async () => {
+    route([plan('finished', [item(1, 'all done', 'completed')])]);
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/sessions/todo'))).toBe(true));
+    await waitFor(() => expect(screen.queryByText(/PLANS IN FLIGHT/)).toBeNull());
+    expect(screen.queryByTestId('plans-in-flight')).toBeNull();
   });
 
   it('shows only plans with open work, a few of them, and a few items each', async () => {
@@ -67,10 +117,11 @@ describe('Decision Inbox — plans in flight (H315)', () => {
     expect(screen.queryByText('open 2')).toBeNull();
   });
 
-  it('says a failed read failed instead of drawing no plans', async () => {
+  it('says a failed read failed, and why, instead of drawing no plans', async () => {
     route([], { plansStatus: 503 });
     render(<DecisionInboxPanel />);
-    await screen.findByText(/plans unavailable/);
+    const note = await screen.findByText(/plans unavailable/);
+    expect(note.textContent).toMatch(/plans unavailable · .*503/);
     expect(screen.queryByTestId('plans-in-flight')).toBeNull();
   });
 

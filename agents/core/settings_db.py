@@ -164,7 +164,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap)", kind="number"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
-    dict(category="llm",     key="guest_tools", value=["echo", "time"],              label="Tools offered to a guest on an inbound channel (never a gated one)", kind="tags"),
+    dict(category="llm",     key="guest_tools", value=["echo", "time", "todo"],      label="Tools offered to a guest on an inbound channel (never a gated one)", kind="tags"),
     dict(category="llm",     key="inbound_actuation", value=False,                  label="Offer gated (approval-bound) tools to the owner on inbound channels", kind="toggle"),
     dict(category="llm",     key="internal_actuation", value=False,                 label="Offer gated (approval-bound) tools to unattended turns (heartbeats, jobs)", kind="toggle"),
     dict(category="llm",     key="model_pull_max_gb", value=20,                    label="Local model pull size cap (GB) — a governed Ollama pull whose layers exceed it is refused", kind="number"),

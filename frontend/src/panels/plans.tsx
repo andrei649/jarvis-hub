@@ -7,9 +7,12 @@
 
    Only plans with work still open are shown (a plan whose items are all completed or
    cancelled is history, readable with `nerva todo`), at most PLANS_SHOWN of them and
-   ITEMS_SHOWN items each. A plan written during a guest's turn (a household member, a
-   Telegram sender) says so: its text was steered by someone other than the owner.
-   A failed read says it failed; it is never drawn as "no plans". */
+   ITEMS_SHOWN items each, with how long ago each was written: a plan abandoned days ago
+   does not look live. Each item says who wrote its text when it was not the owner (a
+   guest's, a household member's or a background turn) and whether that text came from
+   an untrusted source (the H315 review: tags are per item, so a merge by the owner
+   cannot relabel a guest's text). A failed read says it failed; it is never drawn as
+   "no plans". */
 import React from 'react';
 import { Row, Tag, arr, mono } from '../panel-kit';
 
@@ -22,8 +25,30 @@ const WORDS: Record<string, string> = {
   pending: 'to do', in_progress: 'in progress', completed: 'done', cancelled: 'cancelled',
 };
 
-type Item = { id?: string; content?: string; status?: string };
-type Plan = { session_id?: string; agent?: string; posture?: string; todos?: Item[] };
+type Item = { id?: string; content?: string; status?: string; by?: string; tainted?: boolean };
+type Plan = { session_id?: string; agent?: string; posture?: string; updated_at?: number; todos?: Item[] };
+const WRITERS: Record<string, string> = { guest: 'guest turn', system: 'background turn' };
+
+/** What the owner should know about an item's text: whose turn wrote it when it was not
+    the owner's (operator/guest is a household member) and whether it is untrusted. */
+export function itemTags(item: Item): string[] {
+  const [surface, principal] = String(item?.by || '').split('/');
+  const tags: string[] = [];
+  if (principal === 'guest' && surface === 'operator') tags.push('household turn');
+  else if (principal && WRITERS[principal]) tags.push(WRITERS[principal]);
+  if (item?.tainted === true) tags.push('untrusted source');
+  return tags;
+}
+
+/** "just now", "12 min ago", "5 h ago", "3 d ago"; empty when the hub sent no time. */
+export function planAge(updated: unknown, now: number = Date.now()): string {
+  if (typeof updated !== 'number' || !Number.isFinite(updated)) return '';
+  const seconds = Math.max(0, Math.round(now / 1000 - updated));
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
+  return `${Math.floor(seconds / 86400)} d ago`;
+}
 
 /** Plans with at least one open item, most recent first, capped. */
 export function openPlans(reply: any): Plan[] {
@@ -46,14 +71,15 @@ export function PlansInFlight({ reply, error }: { reply: any; error?: string | n
       {plans.map((plan, i) => {
         const items = arr(plan.todos) as Item[];
         const done = items.filter((item) => item.status === 'completed').length;
-        const guest = String(plan.posture || '').endsWith('/guest');
+        const age = planAge(plan.updated_at);
         return (
           <div key={plan.session_id || i}>
             <Row>
               <span style={{ ...mono, color: 'var(--accent-light)' }}>{plan.session_id || 'session'}</span>
               {plan.agent && <Tag>{plan.agent}</Tag>}
-              {guest && <Tag c="var(--amber)">guest turn</Tag>}
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{done}/{items.length} done</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+                {done}/{items.length} done{age ? ` · updated ${age}` : ''}
+              </span>
             </Row>
             <ul style={{ listStyle: 'none', margin: '2px 0 6px 10px', padding: 0, fontSize: 11 }}>
               {items.slice(0, ITEMS_SHOWN).map((item, k) => (
@@ -66,6 +92,9 @@ export function PlansInFlight({ reply, error }: { reply: any; error?: string | n
                     {MARKS[String(item.status)] || '?'}
                   </span>
                   {String(item.content ?? '')}
+                  {itemTags(item).map((tag) => (
+                    <React.Fragment key={tag}>{' '}<Tag c="var(--amber)">{tag}</Tag></React.Fragment>
+                  ))}
                 </li>
               ))}
               {items.length > ITEMS_SHOWN && <li style={{ color: 'var(--ink-2)' }}>… {items.length - ITEMS_SHOWN} more</li>}

@@ -11,24 +11,45 @@ the operator's planners are all written by someone else.
 * items are ``{id, content, status}``, status one of :data:`STATUSES`;
 * a call with ``todos`` replaces the list; with ``merge=true`` it updates items by id
   (only the fields sent) and appends new ones; a call with no ``todos`` reads it;
-* every call answers with the whole list and its counts, and the tool loop never swaps
-  that answer for a "same as call N" stub (``agent_runtime._ALWAYS_RESTATED``);
+* every call answers with the whole list and its counts. The tool loop never swaps that
+  answer for a "same as call N" stub and never counts it as a repeat or against a
+  per-tool cap (``agent_runtime._ALWAYS_RESTATED``). It never cuts it either: the list is
+  bounded below any result budget (:data:`MAX_PLAN_BYTES`) and pinned whole in
+  ``tool_result_store.PINNED_THRESHOLDS``;
 * it is bounded — :data:`MAX_ITEMS` items, :data:`MAX_CONTENT` characters of one printable
-  line each, at most one item in progress, :data:`MAX_SESSIONS` plans kept — and every
-  refusal is a named reason with a sentence the model can act on. A refused call changes
-  nothing.
+  line each, :data:`MAX_PLAN_BYTES` in all, at most one item in progress,
+  :data:`MAX_SESSIONS` plans kept — and every refusal is a named reason with a sentence
+  the model can act on. A refused call changes nothing.
 
-Ungated and offered in every posture (``tool_profiles.SESSION_LOCAL_TOOLS``): its only
-effect is the calling session's own list. The owner sees the plan — the point of the
-row: intent before the approval card. A write leaves a ``todo_updated`` event in the
-tool trail (ids and statuses, never the text), the plans are read back through
-``GET /sessions/todo`` and ``/sessions/{id}/todo``, ``nerva todo`` and the Decision
-Inbox, and a memory purge forgets every one of them. In memory on purpose: a plan is
-the state of work in flight, not a record, and it resets with the process.
+Whose plan it is (the H315 review). A turn that binds no session of its own runs on the
+shared default session, the HUD's, and so do a widget visitor, a webhook, a job and a
+subagent. The plan kept there is the owner's: a turn on it that is not the owner's is
+refused ``todo_shared_session`` and is never read the plan, and the tool is not offered
+to it (``tool_profiles.SESSION_SCOPED_TOOLS``). A turn on a session of its own (a chat of
+its own, an explicit session) keeps its own plan, whoever it is.
+
+Where its text came from. Each item records the posture of the turn that wrote its text
+(``by``) and whether that turn was untrusted (``tainted``: an inbound channel, or a turn
+that had already read untrusted content). A call that answers with a tainted item says
+so, and the loop fences the answer as DATA and raises the reading turn's taint. A plan
+therefore cannot carry an injected instruction into a later, clean turn as the tool's own
+words.
+
+The tool is offered like any ungated tool, and to an inbound guest through
+``llm.guest_tools`` (default echo, time and todo). The owner sees the plan, which is the
+point of the row: intent before the approval card. A write leaves a ``todo_updated``
+event in the tool trail (positions and statuses, never ids or text). The plans are read
+back through ``GET /sessions/todo`` and ``/sessions/{id}/todo``, ``nerva todo`` and the
+Decision Inbox, and a memory purge forgets every one of them.
+
+It is kept in memory on purpose: a plan is the state of work in flight, not a record,
+and it resets with the process. A turn already running when a purge starts can still
+write its plan afterwards, just as it still saves its reply.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -47,9 +68,22 @@ MAX_CONTENT = 200
 MAX_ID = 64
 MAX_SESSION_ID = 128
 MAX_SESSIONS = 256
+#: The whole list, as the tool answers it (JSON, UTF-8), fits under the smallest
+#: per-result budget the loop gives a tool (8,000 bytes), with room for the envelope.
+MAX_PLAN_BYTES = 7_000
 #: A raw string this many times over its cap is refused before it is cleaned, so a
 #: runaway argument costs a length check, not a character walk.
 _RAW_SLACK = 4
+#: A character keeps at most this many combining marks; the rest of a stack is dropped.
+_MAX_MARKS = 3
+#: Letters and symbols that render as nothing: the Hangul fillers and the braille blank.
+_BLANK = frozenset("ᅟᅠㅤﾠ⠀")
+_ARG_FIELDS = frozenset({"todos", "merge"})
+_ITEM_FIELDS = frozenset({"id", "content", "status"})
+SHARED_SESSION_DETAIL = (
+    "this turn runs on the owner's shared conversation, where only the owner's own turns "
+    "keep a list: plan in your reply instead"
+)
 
 INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -74,12 +108,13 @@ INPUT_SCHEMA: dict[str, Any] = {
 }
 
 DESCRIPTION = (
-    "Your checklist for this conversation. Call it with no arguments to read the list. "
-    "Send todos to replace the list, or todos with merge=true to update items by id (only "
-    "the fields you send) and add new ones. An item is {id, content, status}; status is "
-    "pending, in_progress, completed or cancelled, and only one item may be in_progress. "
-    "Every call returns the whole list. Plan multi-step work here, keep it current as you "
-    "go, and re-read it before the next step. The owner can see this list."
+    "Your checklist for this conversation. Send todos to replace the list, or todos with "
+    "merge=true to update items by id (only the fields you send) and add new ones; call it "
+    "with no arguments to read it. An item is {id, content, status}; status is pending, "
+    "in_progress, completed or cancelled, and only one item may be in_progress. Every call "
+    "returns the whole list, so an update is also a read. Plan multi-step work here and keep "
+    "it current: mark the item you start in_progress and mark it completed when it is done. "
+    "The owner can see this list."
 )
 
 
@@ -95,17 +130,33 @@ class TodoError(ValueError):
 # ── cleaning ─────────────────────────────────────────────────────────────────
 
 def _one_line(value: str) -> str:
-    """Printable, one line. Control and format characters go — a zero-width joiner, a
+    """Printable, one line, NFC. Control and format characters go (a zero-width joiner, a
     bidi override or an invisible tag would make what the owner reads differ from what
-    was written — and every run of whitespace becomes one space."""
-    out = []
-    for char in value:
-        category = unicodedata.category(char)
-        if char.isspace() or category in ("Zl", "Zp"):
-            out.append(" ")
-        elif category[0] != "C":
-            out.append(char)
+    was written), every run of whitespace becomes one space, and a character keeps at
+    most :data:`_MAX_MARKS` combining marks. NFC comes after the drop, so "e", a joiner
+    and an accent end up as the same "é" as the precomposed one."""
+    kept = "".join(
+        " " if char.isspace() else char
+        for char in value
+        if char.isspace() or unicodedata.category(char)[0] != "C"
+    )
+    out: list[str] = []
+    marks = 0
+    for char in unicodedata.normalize("NFC", kept):
+        if unicodedata.category(char) in ("Mn", "Me"):
+            marks += 1
+            if marks > _MAX_MARKS:
+                continue
+        else:
+            marks = 0
+        out.append(char)
     return " ".join("".join(out).split())
+
+
+def _visible(text: str) -> bool:
+    """Something a reader would see: a letter, digit, punctuation or symbol that is not
+    one of the characters that render blank. Combining marks alone are not."""
+    return any(unicodedata.category(char)[0] in "LNPS" and char not in _BLANK for char in text)
 
 
 def _clean_id(raw: Any) -> str:
@@ -114,7 +165,7 @@ def _clean_id(raw: Any) -> str:
     if not isinstance(raw, str) or len(raw) > MAX_ID * _RAW_SLACK:
         raise TodoError("todo_bad_id", f"every item needs an id: text of 1 to {MAX_ID} characters")
     clean = _one_line(raw)
-    if not clean or len(clean) > MAX_ID:
+    if not _visible(clean) or len(clean) > MAX_ID:
         raise TodoError("todo_bad_id", f"every item needs an id: text of 1 to {MAX_ID} characters")
     return clean
 
@@ -125,11 +176,14 @@ def _clean_content(raw: Any, item_id: str) -> str:
     if not isinstance(raw, str):
         raise TodoError("todo_content_required", f"item {item_id!r}: content is text")
     if len(raw) > MAX_CONTENT * _RAW_SLACK:
-        raise TodoError("todo_content_too_long",
-                        f"item {item_id!r}: content is one line of at most {MAX_CONTENT} characters")
+        raise TodoError(
+            "todo_content_too_long",
+            f"item {item_id!r}: content is one line of at most {MAX_CONTENT} characters, and this "
+            f"one is {len(raw):,} characters before cleaning",
+        )
     clean = _one_line(raw)
-    if not clean:
-        raise TodoError("todo_content_required", f"item {item_id!r}: content cannot be empty")
+    if not _visible(clean):
+        raise TodoError("todo_content_required", f"item {item_id!r}: content cannot be blank")
     if len(clean) > MAX_CONTENT:
         raise TodoError("todo_content_too_long",
                         f"item {item_id!r}: content is one line of at most {MAX_CONTENT} characters")
@@ -151,10 +205,21 @@ def counts(todos: list[Mapping[str, Any]]) -> dict[str, int]:
     return out
 
 
+def model_items(todos: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The items as the tool answers them: what the model wrote, nothing it did not."""
+    return [{"id": item["id"], "content": item["content"], "status": item["status"]} for item in todos]
+
+
+def plan_bytes(todos: list[Mapping[str, Any]]) -> int:
+    """The size of a list as the tool answers it, the way the loop measures a result."""
+    return len(json.dumps(model_items(todos), ensure_ascii=False).encode("utf-8"))
+
+
 # ── the store ────────────────────────────────────────────────────────────────
 
 class TodoStore:
-    """One list per session, least recently written dropped past ``max_sessions``."""
+    """One list per session. Past ``max_sessions`` the plan the agent least recently
+    wrote or read is dropped."""
 
     def __init__(self, max_sessions: int = MAX_SESSIONS) -> None:
         self._plans: OrderedDict[str, dict[str, Any]] = OrderedDict()
@@ -179,9 +244,13 @@ class TodoStore:
             "posture": (plan or {}).get("posture", ""),
         }
 
-    def read(self, session_id: str) -> dict[str, Any]:
+    def read(self, session_id: str, *, touch: bool = False) -> dict[str, Any]:
+        """The session's plan. ``touch`` (the agent's own read) keeps it from being the
+        one dropped next; the owner's reads do not."""
         with self._lock:
             plan = self._plans.get(session_id) if isinstance(session_id, str) else None
+            if touch and plan is not None:
+                self._plans.move_to_end(session_id)
             return self._view(str(session_id or ""), plan)
 
     def write(
@@ -192,18 +261,22 @@ class TodoStore:
         *,
         agent: str = "",
         posture: str = "",
+        tainted: bool = False,
     ) -> dict[str, Any]:
         """Replace or merge, then answer with the whole list. Nothing is half-applied:
-        the new list is built on a copy and stored only when every item passed."""
+        the new list is built on a copy and stored only when every item passed. An item
+        whose text this call sets records ``posture`` and ``tainted`` as its own; an empty
+        list is no plan, and its slot is freed."""
         sid = self._session(session_id)
         if todos is None:
-            return self.read(sid)
+            return self.read(sid, touch=True)
         if not isinstance(merge, bool):
             raise TodoError("todo_bad_merge", "merge is true or false")
         if not isinstance(todos, list):
             raise TodoError("todo_bad_list", "todos is a list of {id, content, status} items")
         if len(todos) > MAX_ITEMS:
             raise TodoError("todo_too_many", f"a list holds at most {MAX_ITEMS} items")
+        by = str(posture or "")[:32]
         with self._lock:
             current = self._plans.get(sid)
             items = [dict(item) for item in current["todos"]] if merge and current else []
@@ -212,6 +285,10 @@ class TodoStore:
             for raw in todos:
                 if not isinstance(raw, Mapping):
                     raise TodoError("todo_bad_item", "each item is an object {id, content, status}")
+                unknown = sorted(str(key) for key in raw if key not in _ITEM_FIELDS)
+                if unknown:
+                    raise TodoError("todo_unknown_field",
+                                    f"an item has id, content and status only, not {unknown[0]!r}")
                 item_id = _clean_id(raw.get("id"))
                 if item_id in seen:
                     raise TodoError("todo_duplicate_id", f"id {item_id!r} appears twice in one call")
@@ -223,12 +300,16 @@ class TodoStore:
                         "id": item_id,
                         "content": _clean_content(raw.get("content"), item_id),
                         "status": _clean_status("pending" if status is None else status, item_id),
+                        "by": by,
+                        "tainted": bool(tainted),
                     }
                     items.append(item)
                     by_id[item_id] = item
                     continue
                 if raw.get("content") is not None:
                     target["content"] = _clean_content(raw.get("content"), item_id)
+                    target["by"] = by
+                    target["tainted"] = bool(tainted)
                 if raw.get("status") is not None:
                     target["status"] = _clean_status(raw.get("status"), item_id)
             if len(items) > MAX_ITEMS:
@@ -239,8 +320,18 @@ class TodoStore:
                     "only one item can be in_progress at a time: mark the current one "
                     "completed (or back to pending) first",
                 )
+            size = plan_bytes(items)
+            if size > MAX_PLAN_BYTES:
+                raise TodoError(
+                    "todo_plan_too_long",
+                    f"the whole list is at most {MAX_PLAN_BYTES:,} bytes and this one would be "
+                    f"{size:,}: shorten the items or drop the finished ones",
+                )
+            if not items:
+                self._plans.pop(sid, None)
+                return self._view(sid, None)
             plan = {"todos": items, "updated_at": time.time(),
-                    "agent": str(agent or "")[:64], "posture": str(posture or "")[:32]}
+                    "agent": str(agent or "")[:64], "posture": by}
             self._plans[sid] = plan
             self._plans.move_to_end(sid)
             while len(self._plans) > self._max:
@@ -248,7 +339,7 @@ class TodoStore:
             return self._view(sid, plan)
 
     def recent(self, limit: int = 20) -> list[dict[str, Any]]:
-        """The plans, most recently written first."""
+        """The plans, most recently written or read by the agent first."""
         bound = max(1, min(int(limit), self._max))
         with self._lock:
             rows = list(self._plans.items())[-bound:]
@@ -269,25 +360,31 @@ TODOS = TodoStore()
 # ── the tool ─────────────────────────────────────────────────────────────────
 
 def _record_event(view: Mapping[str, Any], *, merge: bool) -> None:
-    """A write leaves a trail row the owner can read: which items and where they stand,
-    never what they say. ``TOOL_EVENTS`` cuts the lists to its own bound; ``total`` and
-    ``current`` carry what that cut would hide."""
+    """A write leaves a trail row the owner can read: where the items stand, never what
+    they say or what the model called them (an id is free text too). ``TOOL_EVENTS``
+    cuts the lists to its own bound; ``total`` and ``current`` (the position of the item
+    in progress) carry what that cut would hide."""
     from agents.core.observability.tool_events import TOOL_EVENTS
     from agents.core.tool_rpc import current_tool_actor
 
     todos = view["todos"]
-    current = next((item["id"] for item in todos if item["status"] == "in_progress"), None)
+    current = next((pos for pos, item in enumerate(todos, 1) if item["status"] == "in_progress"), None)
     TOOL_EVENTS.record({
         "event": "todo_updated",
         "tool": TOOL_NAME,
         "agent_id": current_tool_actor(),
         "session": view["session_id"],
         "merge": merge,
-        "ids": [item["id"] for item in todos],
         "statuses": [item["status"] for item in todos],
         "current": current,
         "total": len(todos),
     })
+
+
+def _turn_origin() -> str:
+    from agents.core.action_origin import current_action_origin
+
+    return current_action_origin()
 
 
 def register_todo_tool(
@@ -296,17 +393,51 @@ def register_todo_tool(
     session_id: Callable[[], str],
     store: TodoStore | None = None,
     posture: Callable[[], str] | None = None,
+    shared_session: Callable[[], bool] | None = None,
+    origin: Callable[[], str] = _turn_origin,
 ) -> str:
-    """Expose ``todo`` on a ToolRPC server (ungated). ``session_id`` and ``posture`` are
-    read per call, so the list is always the turn in flight's own; with no ``store`` the
-    call reads :data:`TODOS` at call time, the one the routes serve."""
+    """Expose ``todo`` on a ToolRPC server (ungated). Every getter is read per call, so
+    the list is always the turn in flight's own: ``session_id`` names it, ``posture``
+    says whose turn it is, ``shared_session`` whether the turn is on the owner's shared
+    session (a getter that fails counts as yes), and ``origin`` whether the turn is
+    untrusted (a getter that fails counts as untrusted). With no ``store`` the call reads
+    :data:`TODOS` at call time, the one the routes serve."""
+    from agents.core.security.taint import is_untrusted_source
 
     def _target() -> TodoStore:
         return store if store is not None else TODOS
 
+    def _shared() -> bool:
+        if shared_session is None:
+            return False
+        try:
+            return bool(shared_session())
+        except Exception:
+            logger.warning("todo: the shared-session flag failed; counted as shared", exc_info=True)
+            return True
+
+    def _untrusted() -> bool:
+        try:
+            return is_untrusted_source(origin())
+        except Exception:
+            logger.warning("todo: the turn origin failed; counted as untrusted", exc_info=True)
+            return True
+
     async def _handle(args: dict) -> dict:
         from agents.core.tool_rpc import current_tool_actor
 
+        unknown = sorted(str(key) for key in args if key not in _ARG_FIELDS)
+        if unknown:
+            return {"ok": False, "reason": "todo_unknown_field",
+                    "detail": f"todo takes todos and merge only, not {unknown[0]!r}"}
+        where = ""
+        if posture is not None:
+            try:
+                where = str(posture() or "")
+            except Exception:
+                where = ""
+        if _shared() and not where.endswith("/owner"):
+            return {"ok": False, "reason": "todo_shared_session", "detail": SHARED_SESSION_DETAIL}
         try:
             sid = session_id()
         except Exception:
@@ -315,19 +446,17 @@ def register_todo_tool(
         todos = args.get("todos")
         merge = args.get("merge")
         merge = False if merge is None else merge   # an explicit null is "not sent"
-        where = ""
-        if posture is not None:
-            try:
-                where = str(posture() or "")
-            except Exception:
-                where = ""
         try:
-            view = _target().write(sid, todos, merge, agent=current_tool_actor(), posture=where)
+            view = _target().write(sid, todos, merge, agent=current_tool_actor(), posture=where,
+                                   tainted=_untrusted())
         except TodoError as exc:
             return {"ok": False, "reason": exc.reason, "detail": exc.detail}
         if todos is not None:
             _record_event(view, merge=merge is True)
-        return {"ok": True, "todos": view["todos"], "counts": view["counts"]}
+        reply: dict[str, Any] = {"ok": True, "todos": model_items(view["todos"]), "counts": view["counts"]}
+        if any(item.get("tainted") for item in view["todos"]):
+            reply["tainted"] = True   # the loop fences it as DATA and taints the reading turn
+        return reply
 
     server.register_tool(
         TOOL_NAME,
@@ -342,6 +471,6 @@ def register_todo_tool(
 
 __all__ = [
     "CAPABILITY_ID", "DESCRIPTION", "INPUT_SCHEMA", "MAX_CONTENT", "MAX_ID", "MAX_ITEMS",
-    "MAX_SESSIONS", "STATUSES", "TODOS", "TOOL_NAME", "TodoError", "TodoStore", "counts",
-    "register_todo_tool",
+    "MAX_PLAN_BYTES", "MAX_SESSIONS", "SHARED_SESSION_DETAIL", "STATUSES", "TODOS", "TOOL_NAME",
+    "TodoError", "TodoStore", "counts", "model_items", "plan_bytes", "register_todo_tool",
 ]

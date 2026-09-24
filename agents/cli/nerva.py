@@ -1158,6 +1158,31 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
 _TODO_MARKS = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]", "cancelled": "[-]"}
 
 
+#: Who wrote an item's text, when it was not the owner (the posture's principal).
+_TODO_WRITERS = {"guest": "guest turn", "system": "background turn"}
+
+
+def _todo_tags(item: dict) -> list[str]:
+    """What the owner should know about an item's text: a guest's or a household
+    member's turn wrote it (``operator/guest`` reads as a household turn), a background
+    turn did, or it came from an untrusted source."""
+    by = str(item.get("by") or "")
+    surface, _, principal = by.partition("/")
+    tags = []
+    if principal == "guest" and surface == "operator":
+        tags.append("household turn")
+    elif principal in _TODO_WRITERS:
+        tags.append(_TODO_WRITERS[principal])
+    if item.get("tainted") is True:
+        tags.append("untrusted source")
+    return tags
+
+
+def _plan_shape_ok(plan) -> bool:
+    return isinstance(plan, dict) and isinstance(plan.get("todos"), list) and all(
+        isinstance(item, dict) for item in plan["todos"])
+
+
 def _print_plan(ctx: Context, plan: dict) -> None:
     todos = plan.get("todos") or []
     done = sum(1 for item in todos if item.get("status") == "completed")
@@ -1170,7 +1195,8 @@ def _print_plan(ctx: Context, plan: dict) -> None:
     ctx.say("  ·  ".join(head))
     for item in todos:
         mark = _TODO_MARKS.get(str(item.get("status")), "[?]")
-        ctx.say(f"  {mark} {item.get('content', '')}")
+        tags = _todo_tags(item)
+        ctx.say(f"  {mark} {item.get('content', '')}" + (f"  ({', '.join(tags)})" if tags else ""))
 
 
 def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1186,7 +1212,10 @@ def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
         if not is_valid_session_id(ns.session):
             ctx.err.write(f"not a session id: {ns.session!r} (letters, digits, _ and -)\n")
             return EXIT_USAGE
-        plan = ctx.client().get(f"/sessions/{ns.session}/todo") or {}
+        plan = ctx.client().get(f"/sessions/{ns.session}/todo")
+        if not _plan_shape_ok(plan):
+            ctx.err.write("unexpected reply from the hub: no plan in it\n")
+            return EXIT_FAILED
         if ns.json:
             ctx.dump(plan)
         elif not plan.get("todos"):
@@ -1194,11 +1223,14 @@ def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             _print_plan(ctx, plan)
         return EXIT_OK
-    reply = ctx.client().get("/sessions/todo") or {}
+    reply = ctx.client().get("/sessions/todo")
+    plans = reply.get("plans") if isinstance(reply, dict) else None
+    if not isinstance(plans, list) or not all(_plan_shape_ok(plan) for plan in plans):
+        ctx.err.write("unexpected reply from the hub: no list of plans in it\n")
+        return EXIT_FAILED
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
-    plans = reply.get("plans") or []
     if not plans:
         ctx.say("no plans yet — the agent writes one when it works through a multi-step task")
         return EXIT_OK

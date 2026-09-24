@@ -14,6 +14,30 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H315 adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found three majors, all fixed:
+  - **Whose plan.** `todo` keyed on `orch.session_id`, which falls back to the shared default session, the HUD's. A widget visitor, a webhook, a job, a subagent and a direct `POST /api/toolrpc/call` read and replaced the owner's plan. Now the shared session's plan is the owner's: `Orchestrator.on_shared_session` says when a turn runs on it, the offer withholds the tool there from anyone but the owner (`tool_profiles.SESSION_SCOPED_TOOLS`), and the tool refuses them `todo_shared_session` without reading the plan to them. A turn on a session of its own keeps its own plan.
+  - **Taint carry.** A plan carried injected text into a later, clean turn with no fence. Now each item records the posture of the turn that wrote its text and whether that turn was untrusted, and an answer with a tainted item is declared `tainted`, so the loop fences it as DATA and taints the reading turn.
+  - **The repeat detector.** It ended a turn that followed the tool's own "re-read it before the next step" advice. `todo` is no longer counted as a repeat or against a per-tool cap, and the advice now asks for progress updates instead.
+
+  Minors and nits:
+  - the posture is kept per item, so a merge does not relabel a guest's text;
+  - the whole list is capped at 7,000 bytes and pinned whole in `tool_result_store`, so it is never cut;
+  - unknown fields are refused (`todo_unknown_field`);
+  - `todo` now reaches an inbound guest through the default `llm.guest_tools` (echo, time, todo), so an empty list keeps a guest off the tool loop;
+  - the trail carries positions, never ids;
+  - text is NFC with at most three combining marks, and blank-rendering text is no content;
+  - the agent's own reads keep its plan from being dropped, and an empty replace frees the slot;
+  - the capability registry calls it reversible session state;
+  - `nerva todo` exits 1 on a malformed reply and tags each item;
+  - the Decision Inbox tags each item (guest, household or background turn; untrusted source) and says how old a plan is;
+  - API-497 expects 200 with an empty list for an unknown id (a per-route override in `scripts/gen_api_sweep.py`);
+  - the parity entry that changed nothing is gone.
+
+  The first round's record also needs correcting: it said three stale line lists in H456 were corrected; there were two stale cites in one list.
+
+  49 mutants of the new guards (37 backend, 5 CLI, 7 HUD): 45 caught at once, and tests were added for the other four, which now catch them. Records: H315 rewritten; H456 and H298 corrected; 123 drifted rows re-read and re-stamped (H427's, H456's and H477's shorthand and comma cites by hand); build-queue note and critic note 22 updated; test manual GOV-240/241 and new GOV-244/245. Tests: backend 13,911 → 13,967; vitest 1,407 → 1,410.
 - 2026-09-24 H153 second adversarial review round (stays equivalent after the fixes, #1207).
 
   The review found two majors:
