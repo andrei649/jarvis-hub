@@ -2539,11 +2539,23 @@ class Orchestrator:
         query = text
         if self.get_setting("memory.recall_query_rewrite", False):
             # H433 — one strict-local rewrite into a grounded retrieval question;
-            # "" (rejected, failed or no local backend) keeps the raw text.
+            # "" (rejected, failed or no local backend) keeps the raw text. It gets
+            # half the recall bound of its own (Hermes gives it its own 8 s): past it
+            # the model call is cancelled and recall runs on the raw text, still
+            # inside the bound, instead of the whole recall becoming a straggler.
             from .memory.query_rewrite import rewrite_query
-            query = await rewrite_query(text, self._query_rewriter()) or text
+            budget = self._recall_timeout_s() / 2
+            try:
+                query = await asyncio.wait_for(rewrite_query(text, self._query_rewriter()), budget) or text
+            except TimeoutError:
+                logger.info("recall query rewrite timed out after %.1fs; recalling on the raw text", budget)
         k = self.get_setting("memory.recall_top_k", 5)
-        return await self.memory.recall(query, top_k=k)
+        if query != text:
+            # The rewrite is the embedding query only. The graph leg matches entity
+            # names by substring, which a whole question never is, so it keeps the raw
+            # text (Hermes, too, keeps the raw message for its context fetch).
+            return await self.memory.recall(query, top_k=k, keyword=text)
+        return await self.memory.recall(text, top_k=k)
 
     def _query_rewriter(self):
         """Strict-local generate() for the H433 query rewrite, or ``None``.
@@ -2558,10 +2570,17 @@ class Orchestrator:
             return None
 
         async def _generate(*, system: str, prompt: str) -> str:
+            from .llm.job_selection import SelectionError, current_selection
             from .llm.model_config import DEFAULT_LOCAL_MODEL
             from .memory.query_rewrite import MAX_TOKENS, TEMPERATURE
+            if current_selection() is not None:  # as _compression_summarizer does, for any caller
+                raise SelectionError("job model pins exclude the auxiliary recall rewrite")
             backend = router.local_backend      # strict-local; raises if none
             model = router.active_model or DEFAULT_LOCAL_MODEL
+            if "qwen3" in model.lower():
+                # Qwen3 (the default local model) thinks before it answers and would
+                # spend the 96 tokens on that; its documented switch turns it off.
+                prompt = f"{prompt}\n/no_think"
             return await backend.generate(model=model, prompt=prompt, system=system,
                                           max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
 
