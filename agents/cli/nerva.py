@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -212,6 +213,10 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--reason", default="")
         if name == "status":
             sub.add_argument("--request", help="durable manual-run receipt id")
+
+    todo = verbs.add_parser("todo", help="the checklists the agent keeps while it works")
+    todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
+    todo.add_argument("--json", action="store_true")
 
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
@@ -1149,6 +1154,59 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+#: How `nerva todo` draws a status — the same four Hermes uses.
+_TODO_MARKS = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]", "cancelled": "[-]"}
+
+
+def _print_plan(ctx: Context, plan: dict) -> None:
+    todos = plan.get("todos") or []
+    done = sum(1 for item in todos if item.get("status") == "completed")
+    head = [str(plan.get("session_id") or "?")]
+    head += [str(plan[key]) for key in ("agent", "posture") if plan.get(key)]
+    stamp = plan.get("updated_at")
+    if isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
+        head.append("updated " + time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp)))
+    head.append(f"{done}/{len(todos)} done")
+    ctx.say("  ·  ".join(head))
+    for item in todos:
+        mark = _TODO_MARKS.get(str(item.get("status")), "[?]")
+        ctx.say(f"  {mark} {item.get('content', '')}")
+
+
+def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
+    """H315 — what the agent has planned and where it stands, read-only.
+
+    The plans are the ones the model keeps with its `todo` tool; the owner reads them
+    here, in the Decision Inbox, and in the tool trail (`nerva tools`), before any
+    approval card they lead to appears.
+    """
+    if ns.session is not None:
+        from agents.core.validation import is_valid_session_id
+
+        if not is_valid_session_id(ns.session):
+            ctx.err.write(f"not a session id: {ns.session!r} (letters, digits, _ and -)\n")
+            return EXIT_USAGE
+        plan = ctx.client().get(f"/sessions/{ns.session}/todo") or {}
+        if ns.json:
+            ctx.dump(plan)
+        elif not plan.get("todos"):
+            ctx.say(f"no plan for {ns.session}")
+        else:
+            _print_plan(ctx, plan)
+        return EXIT_OK
+    reply = ctx.client().get("/sessions/todo") or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    plans = reply.get("plans") or []
+    if not plans:
+        ctx.say("no plans yet — the agent writes one when it works through a multi-step task")
+        return EXIT_OK
+    for plan in plans:
+        _print_plan(ctx, plan)
+    return EXIT_OK
+
+
 #: Replies that are NOT an answer. The hub returns each of these as a normal HTTP 200
 #: ``{"reply": …}``, so a caller that only looks at the status code cannot tell a refused
 #: turn from a real one — and a script would treat "Internal error." as the model's
@@ -1932,6 +1990,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "estop": cmd_estop,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
+    "todo": cmd_todo,
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,

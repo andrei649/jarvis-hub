@@ -14,6 +14,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
+import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2964,7 +2965,8 @@ export function OnboardingPanel() {
 /* HUD-v3 B1 — the DECISION INBOX (the product north-star). The frontend READ /tasks (the
    autonomy queue, drawn as a network fan) but had NO control to resolve a blocked
    decision. This is it: the blocked queue (GET /autonomy/tasks?status=blocked) with
-   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin). */
+   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin).
+   H315 — under them, the plans the agent is working through (GET /sessions/todo). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   useEffect(() => {
@@ -2974,6 +2976,7 @@ export function DecisionInboxPanel() {
   const pending = arr(d, 'tasks');
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
+  const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
@@ -3006,7 +3009,7 @@ export function DecisionInboxPanel() {
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
-      onReload={() => { reload(); interrupts.reload(); }}>
+      onReload={() => { reload(); interrupts.reload(); plans.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
       {pending.slice(0, 10).map((t, i) => (
@@ -3063,6 +3066,7 @@ export function DecisionInboxPanel() {
         </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+      <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );
 }

@@ -1874,6 +1874,8 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
+    from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
+    from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
     assert orch.tool_rpc.tools() == [
         {
             "name": "desktop_plan",
@@ -2064,6 +2066,14 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                  "additionalProperties": False,
              },
             "capability_id": "tool:time",
+        },
+        {
+            # H315 — the model's own checklist: ungated, session-local.
+            "name": "todo",
+            "gated": False,
+            "description": TODO_DESCRIPTION,
+            "input_schema": TODO_SCHEMA,
+            "capability_id": "tool:todo",
         },
         {
             "name": "web_extract",

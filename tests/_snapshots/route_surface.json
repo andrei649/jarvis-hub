@@ -264,6 +264,8 @@
   "GET /security",
   "GET /security/status",
   "GET /sessions",
+  "GET /sessions/todo",
+  "GET /sessions/{session_id}/todo",
   "GET /skills",
   "GET /skills/imported",
   "GET /status",

@@ -6,7 +6,7 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 77 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 76 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
@@ -14,7 +14,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
 | [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
@@ -92,14 +91,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
 
-## H315
-
-**Keep a visible checklist of what the agent is doing** (tools — the agent-callable surface) — missing, ~5 h. Critic notes: [22](#critic-note-22).
-
-Files: `agents/core/todo_tool.py`, `agents/core/autonomy_coordinator.py`, `agents/core/agent_runtime.py`, `agents/core/routers/sessions.py`, `agents/cli/nerva.py`, `tests/_snapshots/tool_profiles.json`, `tests/test_todo_tool.py`
-
-Plan: Add agents/core/todo_tool.py containing a bounded in-memory TodoStore keyed by session id (at most 50 items, content at most 200 chars, a status enum, at most one in_progress) and register_todo_tool(server, session_id_getter, events). The tool is `todo`, with schema {todos: array of {id, content, status}, merge: boolean}. It replaces the list or merges by id, always returns the full current list plus counts, and records a `todo_updated` event in TOOL_EVENTS with ids and statuses only. Register it ungated in AutonomyCoordinator. In AgentToolRuntime._prepare_result, exempt `todo` from the identical-result stub so every call returns the list. Add GET /api/sessions/{id}/todo (user_guard) and a `nerva todo` verb that read the same store. Update the tool_profiles snapshot so todo is offered in every posture, since it has no external effect. First red test, in tests/test_todo_tool.py: `todo` is registered and returns the full list after a merge. Then test the caps and named refusals, that a second identical call still returns the list and not a stub, that sessions are isolated, and that the route returns the same list.
-
 ## H318
 
 **List, read and author the agent's own skills** (tools — the agent-callable surface) — partial, ~5 h. Critic notes: [21](#critic-note-21), [22](#critic-note-22).
@@ -129,6 +120,8 @@ Plan: In agents/cli/nerva.py, add `nerva chat --image PATH` (repeatable, at most
 ## H666
 
 **The agent's own task list nests subtasks under a parent** (delta) — partial, ~5 h.
+
+**Since H315 (#1207):** Nerva now has the `todo` tool this row's Hermes original extends (agents/core/todo_tool.py). Hermes puts `parent` on the todo item (an id of another item, so merge-by-id keeps working). Build it there first: validate the parent in TodoStore.write, and render the same defensive tree in `nerva todo` and the Decision Inbox's plans. The mission-step plan below is the same tree applied to missions.
 
 Files: `agents/core/autonomy/missions.py`, `agents/core/routers/missions.py`, `frontend/src/panels/mission-canvas.tsx`, `frontend/src/panels/mission-canvas.test.tsx`, `tests/test_missions.py`
 
@@ -904,11 +897,13 @@ Both rows add a `skill_view` ToolRPC tool. H318 puts it in agents/core/skills/to
 
 ### Critic note 22
 
-Rows: [H309](#h309), H313 (closed in lot 1), [H314](#h314), [H315](#h315), [H318](#h318), [H340](#h340).
+Rows: [H309](#h309), H313 (closed in lot 1), [H314](#h314), H315 (closed in #1207), [H318](#h318), [H340](#h340).
 
 Six rows register new ToolRPC tools and each regenerates tests/_snapshots/tool_profiles.json, with inconsistent posture rules. H315 offers todo in every posture. H313 limits speak to operator/owner. H314 withholds memory from inbound/guest. H309 adds ui_point to the 'default tool profile', which would let an inbound Telegram sender post HUD canvas pointers. H318 and H340 leave skills_list/skill_view posture unspecified, so skill bodies would be exposed to inbound turns.
 
 **Fix.** Decide one posture table for all six tools in agents/core/tool_profiles.py (at least ui_point, skills_list and skill_view withheld from inbound/guest), write it into each gap_spec, and regenerate the snapshot once.
+
+**Done in #1207 (2026-09-24), in part:** H315 wrote the rule into agents/core/tool_profiles.py. `todo` is session-local (`SESSION_LOCAL_TOOLS`): its only effect is the calling session's own list, so it is offered in every posture, ungated only. Any tool that acts on the owner's HUD, memory or skills (ui_point, a memory write, skills_list, skill_view) is not session-local and stays off inbound/guest unless the owner names it in `llm.guest_tools`. `speak` is gated and follows the gated rows. H309, H314, H318 and H340 should follow this rule when they are built, and each regenerates the snapshot.
 
 ### Critic note 23
 

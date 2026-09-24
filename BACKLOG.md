@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H315 the agent keeps a visible checklist of what it is doing (missing → equivalent, #1207).
+
+  - **The tool:** `agents/core/todo_tool.py` registers an ungated `todo` ToolRPC tool: items `{id, content, status}` with Hermes' four statuses. A call replaces the list, merges by id with merge=true, or reads it with no todos, and always answers with the whole list and its counts.
+  - **Bounds:** 50 items, 200 characters of one printable line (zero-width and bidi characters dropped), at most one item in progress, 256 plans in memory. Eleven named refusals, and a refused call changes nothing.
+  - **The loop:** it never swaps the answer for a "same as call N" stub, so the model re-reads its current plan. `tool_profiles` offers it in every posture as a session-local tool, ungated only, and its docstring now states the posture rule for the other new tools (critic note 22).
+  - **The owner's view:** a `todo_updated` tool event (ids and statuses, never the text); user-guarded, no-store `GET /sessions/todo` and `/sessions/{id}/todo`; `nerva todo [SESSION]`; a "plans in flight" section under the Decision Inbox's decisions, which tags a plan written during a guest turn. A forget clears every plan.
+  - **Records:** 60 mutants, all caught. 104 rows citing the touched files were checked against the diff and re-stamped; every moved citation was verified to land on the same line of code. H456 gains `todo` in its tool enumeration and three of its stale line lists were corrected. H666's "no todo tool" was rewritten, and its plan now points at the todo item's `parent`.
+  - **Also fixed:** `scripts/status_sync.py` could not count the vitest suite since vitest 5 (the JSON report goes to a file); it now names the file and reads it.
+  - **Tests:** backend 13,811 → 13,848; vitest 1,389 → 1,394.
 - 2026-09-24 H273 adversarial review round (stays equivalent after the fixes, #1207).
 
   The review found four majors, and 12 of its 12 natural mutants survived:

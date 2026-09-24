@@ -4,6 +4,10 @@ Covers the `/sessions` surface: list recent sessions and resume a session by id.
 Both are user-guarded. The orchestrator (which owns `checkpoints` + `memory`) is
 resolved at request time via `get_orch()` (late binding to `web.orch`), matching
 the other extracted routers. Behavior is unchanged from the inline versions.
+
+H315 adds the agent's own plans: `GET /sessions/todo` (the most recently updated
+ones) and `GET /sessions/{id}/todo` (one session's), both user-guarded and never
+cached — a plan is work in flight and a stale copy misstates it.
 """
 
 from uuid import UUID
@@ -26,6 +30,30 @@ async def get_sessions():
         return JSONResponse({"error": "not initialized"}, status_code=503)
     sessions = orch.checkpoints.get_sessions(limit=20)
     return {"sessions": sessions}
+
+
+_NO_STORE = {"Cache-Control": "no-store"}
+#: How many plans the recent list returns — the Decision Inbox shows a few, `nerva todo`
+#: prints them all.
+RECENT_PLANS = 20
+
+
+@router.get("/sessions/todo", dependencies=[Depends(user_guard)])
+async def get_recent_plans():
+    """H315 — the checklists the agent keeps, most recently updated first."""
+    from agents.core import todo_tool
+
+    return JSONResponse({"plans": todo_tool.TODOS.recent(RECENT_PLANS)}, headers=_NO_STORE)
+
+
+@router.get("/sessions/{session_id}/todo", dependencies=[Depends(user_guard)])
+async def get_session_plan(session_id: str):
+    """H315 — one session's checklist; a session with none answers an empty list."""
+    if not is_valid_session_id(session_id):
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    from agents.core import todo_tool
+
+    return JSONResponse(todo_tool.TODOS.read(session_id), headers=_NO_STORE)
 
 
 @router.post("/sessions/resume", dependencies=[Depends(user_guard)])

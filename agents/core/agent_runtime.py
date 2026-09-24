@@ -112,6 +112,11 @@ _DUPLICATE_NOTICE = (
     "This result is byte-identical to the result of call {call_id} earlier this turn and "
     "was not repeated; refer to that result."
 )
+# H315 — tools whose answer IS the thing the model must re-read. `todo` restates the whole
+# plan on every call so the model reads its own checklist again; a "same as call N" stub
+# would point it at an older copy many messages up (possibly compacted by then), which is
+# exactly the re-reading the tool exists to force.
+_ALWAYS_RESTATED = frozenset({"todo"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -911,6 +916,8 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
     ) -> str:
         """A successful result already in the transcript becomes a reference stub."""
+        if call.name in _ALWAYS_RESTATED:
+            return content
         if _is_failed_result(result) or len(content.encode("utf-8")) < self._duplicate_stub_bytes:
             return content
         prior = seen.get(content)

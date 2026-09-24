@@ -892,6 +892,16 @@ class AutonomyCoordinator:
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
         )
+        # H315 — the model keeps a checklist of the turn's work and re-reads it on every
+        # call. Ungated: its only effect is the session's own list, which the owner reads
+        # next to the approval queue, labelled with the posture of the turn that wrote it.
+        from .todo_tool import register_todo_tool
+
+        register_todo_tool(
+            server,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+        )
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the

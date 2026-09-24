@@ -477,6 +477,10 @@ MACHINE_FACING: dict[str, str] = {
     "/sessions/continue":
         "explicit owner CLI creation via `nerva sessions continue`; the returned child is "
         "addressed by `nerva chat --session` without changing the HUD default session",
+    # H315. The HUD reads the recent list (/sessions/todo, the Decision Inbox); one
+    # session's plan is read by `nerva todo SESSION`. Declared here because _has_caller
+    # matches this route on the sibling literal "/sessions/todo", which is not a caller.
+    "/sessions/{session_id}/todo": "`nerva todo SESSION` reads one session's plan",
     "/.well-known/agent-card": "agent discovery, fetched by other agents",
     "/.well-known/oauth-protected-resource": "OAuth resource metadata, fetched by clients",
     "/api/a2a/card": "agent-to-agent discovery",

@@ -538,6 +538,16 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             cleared.append("cognition_memory")
         except Exception as exc:
             _note_failure("cognition_memory", exc)
+    # H315: the agent's checklists are process-wide and carry conversation text
+    # ("book the flight for Ana"), so a forget drops every one of them. Named in
+    # `cleared` only when there was a plan to drop.
+    try:
+        from agents.core.todo_tool import TODOS
+
+        if TODOS.clear():
+            cleared.append("todo_plans")
+    except Exception as exc:
+        _note_failure("todo_plans", exc)
     # H20: drop the frozen core-block prompt snapshot — a purge is exactly the
     # case where snapshot staleness is unacceptable (forgotten facts must not
     # keep being injected until the session/day cache key rolls).
