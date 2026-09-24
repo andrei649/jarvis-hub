@@ -6,7 +6,7 @@
       "repo": "obra/superpowers",
       "kind": "vendored",
       "path": ".claude/plugins/superpowers/",
-      "pinned_version": "6.3.0",
+      "pinned_version": "6.4.1",
       "license": "LICENSES/superpowers-MIT.txt",
       "version_source": {
         "file": ".claude/plugins/superpowers/.claude-plugin/plugin.json",
