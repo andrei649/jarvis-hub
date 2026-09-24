@@ -316,17 +316,29 @@ async def memory_consolidate_preview(q: str = "", top_k: int = Query(20, ge=1, l
 
 
 async def _vector_remove(memory, record_id: str) -> bool:
-    """Remove one vector record through the manager's lock (off-loop: Qdrant is httpx)."""
+    """Remove one vector record under the manager's store lock (off-loop: Qdrant is httpx).
+
+    The store lock, not the conversation lock (H428): a slow Qdrant remove must not
+    stall every session's turn, and removes stay serialised with vector writes.
+    """
     vectors = getattr(memory, "vectors", None)
     if vectors is None or not hasattr(vectors, "remove"):
         return False
-    lock = getattr(memory, "_lock", None)
+    lock = getattr(memory, "_store_lock", None) or getattr(memory, "_lock", None)
     if isinstance(lock, asyncio.Lock):
         async with lock:
             await asyncio.to_thread(vectors.remove, record_id)
     else:
         await asyncio.to_thread(vectors.remove, record_id)
     return True
+
+
+def _recall_forget(orch) -> None:
+    """A memory was deleted: cached recall results (warm context, a late handoff) must not
+    bring it back (H428)."""
+    invalidate = getattr(orch, "_recall_purged", None)
+    if callable(invalidate):
+        invalidate()
 
 
 async def _persist_consolidation(memory, plan: list[dict], existing: list[dict]) -> dict:
@@ -410,6 +422,10 @@ async def memory_consolidate_apply(req: Request):
                     "persistence": "dry_run"})
     else:
         out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing))
+        # Any UPDATE/DELETE may have removed a vector, even one that then failed to
+        # re-embed: cached recall results must not serve the old text again (H428).
+        if any(op.get("op") in (UPDATE, DELETE) for op in plan):
+            _recall_forget(orch)
     return nocache_json(out)
 
 
@@ -661,6 +677,7 @@ async def kg_delete_entity(name: str, req: Request = None):
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not await _kg_call(g.delete_entity, name):
         return JSONResponse({"error": "not found"}, status_code=404)
+    _recall_forget(get_orch())
     return nocache_json({"ok": True, "deleted": name})
 
 
@@ -716,6 +733,7 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
     if not await _kg_call(g.delete_relation, source, relation, target):
         return JSONResponse({"error": "not found"}, status_code=404)
+    _recall_forget(get_orch())
     return nocache_json({"ok": True})
 
 

@@ -36,6 +36,7 @@ is now enforced by ``tests/test_forget_export_purge_parity.py``.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
 import json
 import logging
@@ -447,29 +448,45 @@ async def clear_live_memory(orch) -> tuple[list[str], list[str]]:
 
     mem = getattr(orch, "memory", None)
     # H428 — a turn embedding still queued, or a recall still running, from before
-    # the forget must never be stored or served after it.
-    if mem is not None and hasattr(mem, "discard_pending_embeddings"):
-        mem.discard_pending_embeddings()
-    if hasattr(orch, "_recall_purged"):
-        orch._recall_purged()
+    # the forget must never be stored or served after it. Done before the wipe and
+    # again after it (_forget_in_flight below): a recall or embedding that started
+    # in between read or carries pre-wipe data too.
+    _forget_in_flight(orch, mem)
     if mem is not None and hasattr(mem, "clear"):
         try:
             await mem.clear()
             cleared.append("conversation")
         except Exception as exc:
             _note_failure("conversation", exc)
-        # No hasattr guard: the ABCs guarantee clear() exists. If one of these is a
-        # duck-typed double without it, the AttributeError is a real defect and is
-        # reported as a failure rather than skipped.
-        for attr in ("graph", "vectors"):
-            store = getattr(mem, attr, None)
-            if store is None:
-                continue
+        # The vector store and the graph are wiped under the manager's store lock,
+        # so a write already past its generation check cannot land after the wipe.
+        # A search stuck on a dead backend holds that lock: after a bounded wait the
+        # wipe goes ahead without it rather than never.
+        store_lock = getattr(mem, "_store_lock", None)
+        locked = False
+        if isinstance(store_lock, asyncio.Lock):
             try:
-                store.clear()
-                cleared.append(attr)
-            except Exception as exc:
-                _note_failure(attr, exc)
+                await asyncio.wait_for(store_lock.acquire(), timeout=STORE_LOCK_WAIT_S)
+                locked = True
+            except TimeoutError:
+                logger.warning("clear_live_memory: the store lock stayed busy for %ss; wiping without it",
+                               STORE_LOCK_WAIT_S)
+        try:
+            # No hasattr guard: the ABCs guarantee clear() exists. If one of these is a
+            # duck-typed double without it, the AttributeError is a real defect and is
+            # reported as a failure rather than skipped.
+            for attr in ("graph", "vectors"):
+                store = getattr(mem, attr, None)
+                if store is None:
+                    continue
+                try:
+                    store.clear()
+                    cleared.append(attr)
+                except Exception as exc:
+                    _note_failure(attr, exc)
+        finally:
+            if locked:
+                store_lock.release()
     for attr in ("entities", "decay"):
         store = getattr(orch, attr, None)
         if store is not None and hasattr(store, "clear"):
@@ -521,7 +538,19 @@ async def clear_live_memory(orch) -> tuple[list[str], list[str]]:
             cleared.append("ingestion_archive")
     except Exception as exc:
         _note_failure("ingestion_archive", exc)
+    _forget_in_flight(orch, mem)
     return cleared, failed
+
+
+STORE_LOCK_WAIT_S = 10.0
+
+
+def _forget_in_flight(orch, mem) -> None:
+    """Queued turn embeddings are dropped and cached recall results invalidated (H428)."""
+    if mem is not None and hasattr(mem, "discard_pending_embeddings"):
+        mem.discard_pending_embeddings()
+    if hasattr(orch, "_recall_purged"):
+        orch._recall_purged()
 
 
 def _json_entries(path: Path) -> int:

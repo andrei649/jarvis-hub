@@ -41,6 +41,24 @@ async def main():
             break
         response = await orch.handle_input(text)
         print(f"\n{response}\n")
+        await _flush_embeddings(orch)
+    await _flush_embeddings(orch, exiting=True)
+
+
+async def _flush_embeddings(orch, timeout: float = 30.0, *, exiting: bool = False) -> None:
+    """Let this turn's background turn embeddings land (H428).
+
+    input() blocks the event loop, so queued writes would otherwise wait for the
+    next turn, or be lost when the REPL exits. The reply is already on screen.
+    """
+    flush = getattr(getattr(orch, "memory", None), "flush_embeddings", None)
+    if flush is None:
+        return
+    try:
+        await asyncio.wait_for(flush(), timeout=timeout)
+    except TimeoutError:
+        print("(long-term memory did not finish writing; the last turns may not be remembered)" if exiting
+              else "(long-term memory is still being written; it continues after your next message)")
 
 
 if __name__ == "__main__":

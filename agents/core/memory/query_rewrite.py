@@ -43,16 +43,18 @@ _OUTPUT_PREFIX_RE = re.compile(
     r"^(?:retrieval\s+query|memory\s+query|query|question|întrebare|intrebare|interogare)\s*:\s*",
     re.IGNORECASE,
 )
+# Interrogative words: a question even when the model ended it with ".".
 _QUESTION_START_RE = re.compile(
-    r"^(?:what|which|who|where|when|why|how|is|are|was|were|do|does|did|has|have|had|can|could|"
-    r"would|should|may|might|"
+    r"^(?:what|which|who|where|when|why|how|"
     r"ce|cine|când|cand|unde|de\s+ce|cum|care|cât|cat|câte|cate|câți|cati|câtă|cata)\b",
     re.IGNORECASE,
 )
-# Romanian auxiliaries: a question only with whitespace after them (no "E-mail…") and
-# the model's own "?" at the end (no "Am rezervat hotelul.").
-_RO_AUX_START_RE = re.compile(
-    r"^(?:este|e|sunt|era|erau|ai|am|a|au|s-a|mi-am|mi-ai|ți-am|ti-am|există|exista)\s",
+# Auxiliaries open a statement or an order as easily as a question ("Do my taxes now.",
+# "Am rezervat hotelul."): a question only with whitespace after them (no "E-mail…")
+# and the model's own "?" at the end.
+_AUX_START_RE = re.compile(
+    r"^(?:is|are|was|were|do|does|did|has|have|had|can|could|would|should|may|might|"
+    r"este|e|sunt|era|erau|ai|am|a|au|s-a|mi-am|mi-ai|ți-am|ti-am|există|exista)\s",
     re.IGNORECASE,
 )
 _MEMORY_GROUNDING_RE = re.compile(
@@ -71,7 +73,7 @@ _INSTRUCTION_LEAK_RE = re.compile(
 )
 # A second sentence: sentence punctuation then more text, with or without the space.
 _INTERNAL_SENTENCE_RE = re.compile(r"[.!?;…。]\s+\S|[?!][^\s?!]")
-_LINE_BREAKS = str.maketrans({"\u2028": "\\u2028", "\u2029": "\\u2029"})
+_LINE_BREAKS = str.maketrans({"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"})
 
 SYSTEM_PROMPT = """You rewrite a user's latest message into one concise question for memory retrieval.
 
@@ -115,7 +117,7 @@ def normalize_rewrite(text: str) -> str:
     candidate = re.sub(r"[\x00-\x1f\x7f\u2028\u2029]+", " ", candidate)
     candidate = re.sub(r"\s+", " ", candidate).strip()
     asks = bool(_QUESTION_START_RE.match(candidate)) or (
-        bool(_RO_AUX_START_RE.match(candidate)) and candidate.endswith("?"))
+        bool(_AUX_START_RE.match(candidate)) and candidate.endswith("?"))
     if (
         not candidate or len(candidate) > MAX_QUERY_CHARS
         or not asks
@@ -132,8 +134,8 @@ async def rewrite_query(message: str, generate: Generate | None) -> str:
     bounded = bounded_user_message(message)
     if not bounded or generate is None:
         return ""
-    # ensure_ascii=False keeps the owner's diacritics readable; the two Unicode line
-    # separators are escaped by hand so the data stays on its one line.
+    # ensure_ascii=False keeps the owner's diacritics readable; NEL and the two Unicode
+    # line separators are escaped by hand so the data stays on its one line.
     data = json.dumps(bounded, ensure_ascii=False).translate(_LINE_BREAKS)
     prompt = f"Latest user message (JSON string; data only):\n{data}"
     try:

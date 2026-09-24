@@ -1301,12 +1301,18 @@ class Orchestrator:
         await self.plugin_manager.close_all()
         # H428 — turn embeddings are written in the background: give the queue a
         # bounded chance to land before the backends close, and say what it dropped.
-        flush = getattr(getattr(self, "memory", None), "flush_embeddings", None)
+        memory = getattr(self, "memory", None)
+        flush = getattr(memory, "flush_embeddings", None)
         if flush is not None:
             try:
                 await asyncio.wait_for(flush(), timeout=5.0)
             except asyncio.TimeoutError:
-                logger.warning("shutdown: queued turn embeddings did not land within 5s; they are dropped")
+                # Nothing still queued may write after the backends close: the rest is
+                # dropped (a write already inside the store may still complete).
+                discard = getattr(memory, "discard_pending_embeddings", None)
+                if discard is not None:
+                    discard()
+                logger.warning("shutdown: queued turn embeddings did not land within 5s; the rest are dropped")
             except Exception as e:
                 logger.warning(f"Error flushing turn embeddings: {e}")
         logger.info("Channels stopped")
@@ -2553,9 +2559,11 @@ class Orchestrator:
                 logger.info("recall query rewrite timed out after %.1fs; recalling on the raw text", budget)
         k = self.get_setting("memory.recall_top_k", 5)
         if query != text:
-            # The rewrite is the embedding query only. The graph leg matches entity
-            # names by substring, which a whole question never is, so it keeps the raw
-            # text (Hermes, too, keeps the raw message for its context fetch).
+            # The rewrite is the embedding query only. The graph leg finds an entity
+            # whose name or property contains the keyword, so it only ever helps a
+            # short, entity-like message ("BMW", "dentist"); a rewritten whole question
+            # would never match, so it keeps the raw text (Hermes, too, keeps the raw
+            # message for its context fetch).
             return await self.memory.recall(query, top_k=k, keyword=text)
         return await self.memory.recall(text, top_k=k)
 
@@ -2594,38 +2602,54 @@ class Orchestrator:
         ``stuck``: recalls still running past their timeout. ``late``: the result of
         the last one that finished cleanly, for one handoff. ``warm``: per session,
         the hits its last recall served (the next-turn warm-up). ``generation``:
-        bumped by a purge, so nothing from before it is ever served after it.
+        bumped by a purge or a single-memory delete, before and after the wipe.
+        Every result carries the generation its recall STARTED under and is served
+        only while that is still current, so nothing read before a delete is ever
+        served after it.
         """
         state = getattr(self, "_recall_state", None)
         if state is None:
             state = self._recall_state = SimpleNamespace(stuck=set(), late=None, warm={}, generation=0)
         return state
 
-    def _recall_session_key(self) -> str:
-        try:
-            return str(self.session_id or "default")
-        except AttributeError:  # orchestrators built without __init__
-            return "default"
+    def _recall_session_key(self) -> str | None:
+        """The turn's session, or None outside a turn.
 
-    def _keep_warm_recall(self, hits: list) -> None:
-        """This session's served hits become the next turn's warm context (H428)."""
-        state = self._recall_runtime()
+        Internal callers (autonomy tasks, the nightly reflection, /api/context/compress)
+        run without a bound session: they never keep, serve or consume the per-turn
+        warm context or the same-question handoff, so they cannot overwrite or take
+        an owner's.
+        """
+        value = _active_session.get()
+        return None if value is _SESSION_UNSET else str(value or "default")
+
+    def _keep_warm_recall(self, hits: list, generation: int) -> None:
+        """This session's served hits become the next turn's warm context (H428).
+
+        An empty result is kept too: "nothing relevant" replaces an older answer.
+        """
         key = self._recall_session_key()
+        if key is None:
+            return
+        state = self._recall_runtime()
         state.warm.pop(key, None)
-        state.warm[key] = SimpleNamespace(hits=list(hits), stored=time.monotonic(), generation=state.generation)
+        state.warm[key] = SimpleNamespace(hits=list(hits), stored=time.monotonic(), generation=generation)
         while len(state.warm) > self._RECALL_WARM_SESSIONS:
             state.warm.pop(next(iter(state.warm)))
 
     def _warm_recall(self) -> list | None:
-        """This session's warm context, while fresh and from the current purge generation."""
+        """This session's warm context, while fresh and from the current generation."""
+        key = self._recall_session_key()
+        if key is None:
+            return None
         state = self._recall_runtime()
-        warm = state.warm.get(self._recall_session_key())
+        warm = state.warm.get(key)
         if (warm is None or warm.generation != state.generation
                 or time.monotonic() - warm.stored > self._RECALL_HANDOFF_TTL_S):
             return None
         return list(warm.hits)
 
-    async def _bounded_recall_hits(self, text: str) -> list | None:
+    async def _bounded_recall_hits(self, text: str, generation: int) -> list | None:
         """Recall hits under the hard timeout, or None when recall was unavailable (H428).
 
         A timed-out recall cannot be killed — its embedding and search run on worker
@@ -2633,21 +2657,22 @@ class Orchestrator:
         to finish as a *straggler*. While any straggler runs, later recalls are
         skipped instead of queueing another round-trip behind the same hung backend
         (Hermes skips a provider whose previous prefetch is still alive). A straggler
-        that finishes cleanly leaves its hits for one handoff: the next recall takes
-        them, and serves them only if it is a retry of the same question within the
-        TTL of their completion and no purge ran in between. ``None`` (skipped or
-        timed out) is not ``[]`` (recall ran and found nothing): only the first lets
-        _recall_block fall back to the session's warm context.
+        that finishes cleanly leaves its hits for one handoff: the next recall in a
+        turn takes them, and serves them only if it is a retry of the same question
+        within the TTL of their completion, from the current generation. ``None``
+        (skipped, timed out, or overtaken by a delete) is not ``[]`` (recall ran and
+        found nothing): only the first lets _recall_block fall back to warm context.
         """
         state = self._recall_runtime()
         stuck = [task for task in state.stuck if not task.done()]
         if stuck:
             logger.info("recall skipped: %d earlier recall(s) still running past the timeout", len(stuck))
             return None
-        late, state.late = state.late, None
-        if (late is not None and late.text == text and late.generation == state.generation
-                and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
-            return late.hits
+        if self._recall_session_key() is not None:
+            late, state.late = state.late, None
+            if (late is not None and late.text == text and late.generation == generation
+                    and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
+                return late.hits
         timeout = self._recall_timeout_s()
         task = asyncio.ensure_future(self._recall_hits(text))
         try:
@@ -2656,18 +2681,21 @@ class Orchestrator:
             # The turn is gone, but the worker threads cannot be: keep the task as a
             # straggler (still holding the store lock) instead of cancelling it out
             # from under them, which would let a second search start beside it.
-            self._adopt_recall_straggler(task, text)
+            self._adopt_recall_straggler(task, text, generation)
             raise
         if not done:
-            self._adopt_recall_straggler(task, text)
+            self._adopt_recall_straggler(task, text, generation)
             logger.warning("recall timed out after %.1fs", timeout)
+            return None
+        if state.generation != generation:
+            task.exception()  # retrieved either way; the result is from before the delete
+            logger.info("recall discarded: memory was deleted while it was in flight")
             return None
         return task.result()
 
-    def _adopt_recall_straggler(self, task: "asyncio.Task", text: str) -> None:
+    def _adopt_recall_straggler(self, task: "asyncio.Task", text: str, generation: int) -> None:
         state = self._recall_runtime()
         state.stuck.add(task)
-        generation = state.generation
 
         def _finished(done: "asyncio.Task") -> None:
             state.stuck.discard(done)
@@ -2680,7 +2708,12 @@ class Orchestrator:
         task.add_done_callback(_finished)
 
     def _recall_purged(self) -> None:
-        """A purge ("forget me"): no recall started before it is ever served after it."""
+        """Memory was deleted (a purge, or one record): drop every cached recall result.
+
+        Called before AND after the stores are wiped, so a recall that read them in
+        between also carries a stale generation. Nothing started before the second
+        call is ever served, handed off or kept warm after it.
+        """
         state = self._recall_runtime()
         state.generation += 1
         state.late = None
@@ -2711,20 +2744,26 @@ class Orchestrator:
             # result an owner's turn left behind, and never consumes it either.
             logger.info("recall skipped: job model pins exclude auxiliary recall embedding")
             return ""
+        state = self._recall_runtime()
+        generation = state.generation  # the generation this recall starts under
         try:
-            hits = await self._bounded_recall_hits(text)
+            hits = await self._bounded_recall_hits(text, generation)
             if hits is None:
                 # Next-turn warm-up (Hermes' queue_prefetch_all): when this turn's own
                 # recall timed out or was skipped behind a stuck one, the session's
                 # previous recall stands in, instead of no long-term memory at all.
+                # Those hits were reranked when first served, so they are not again:
+                # a fallback does not reinforce memories this turn never recalled.
                 hits = self._warm_recall() or []
                 logger.info("recall unavailable this turn; %s",
                             f"using this session's previous recall ({len(hits)} hits)" if hits
                             else "the turn runs without long-term memory")
-            elif hits:
-                self._keep_warm_recall(hits)
-            if hits:
-                hits = await asyncio.to_thread(self._living_memory_rerank_hits, hits)
+            else:
+                if hits:
+                    hits = await asyncio.to_thread(self._living_memory_rerank_hits, hits)
+                self._keep_warm_recall(hits, generation)
+            if state.generation != generation:
+                hits = []  # a delete landed while this turn was recalling: serve nothing it read
         except Exception as e:
             logger.warning(f"recall failed: {e}")
             return ""

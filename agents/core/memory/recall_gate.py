@@ -10,7 +10,8 @@ Nerva differs from Hermes in four ways:
 - Its owner writes Romanian as often as English, so the list carries both, with
   internal commas read as spaces ("ok, mersi").
 - Trailing emoji count as punctuation, and an emoji-only reaction ("👍", "🙏") is an
-  acknowledgement too, unless it asks something ("🦷?", "📅❓").
+  acknowledgement too, unless it asks something ("🦷?", "📅❓"). Punctuation alone
+  ("?", "…?") is trivial: there is nothing to search for.
 - Slash commands are dispatched before recall ever runs, so only a command-shaped
   text counts as one. A path such as "/etc/hosts changed, why?" is a question.
 - Text is compared after NFC normalisation with invisible format characters
@@ -77,6 +78,8 @@ def is_trivial_prompt(text: str | None) -> bool:
         end -= 1
     core = " ".join(stripped[start:end].translate(_FOLD).casefold().split())
     if core == "":
-        # Emoji or punctuation alone: a reaction, unless it asks something.
-        return not any(ch in _QUESTION_MARKS for ch in stripped)
+        # Punctuation alone ("?", "…?") is trivial. An emoji is a reaction ("👍"), unless
+        # it comes with a question mark ("🦷?", "📅❓"): then it asks about something.
+        has_symbol = any(unicodedata.category(ch)[0] == "S" for ch in stripped)
+        return not (has_symbol and any(ch in _QUESTION_MARKS for ch in stripped))
     return core in _ACKS

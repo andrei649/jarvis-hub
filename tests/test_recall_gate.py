@@ -36,6 +36,7 @@ from agents.core.memory.recall_gate import is_trivial_prompt
     "bine", "super 👍", "perfect", "salut", "gata", "👍", "ok 🙏", "...",
     # review round: NFD, a zero-width space, internal commas, a leading ¿, more Romanian acks
     unicodedata.normalize("NFD", "mulțumesc"), "ok\u200b", "ok, mersi", "mersi frumos", "¿ok?",
+    "?", "??", "…?",  # punctuation alone: nothing to search for
 ])
 def test_trivial_prompts_skip_recall(text):
     assert is_trivial_prompt(text) is True
@@ -70,6 +71,15 @@ class _Memory:
         self.calls.append(text)
         await asyncio.sleep(self.delay)
         return list(self.hits)
+
+
+def _turn(orch, session="owner"):
+    """Bind the turn's session the way _resolve_session does. Async tests only: each runs
+    in its own task context, so the binding cannot leak into another test."""
+    from agents.core.orchestrator import _active_session
+
+    _active_session.set(session)
+    return orch
 
 
 def _stuck(orch):
@@ -136,7 +146,7 @@ async def test_a_turn_skips_recall_while_the_timed_out_one_is_still_running(capl
 
 async def test_a_late_result_is_handed_to_a_retry_of_the_same_question():
     memory = _Memory(delay=0.3, hits=[_hit()])
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.1})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     assert await orch._recall_block("when is the dentist?") == ""
     await asyncio.sleep(0.4)  # the straggler finishes in the background
     block = await orch._recall_block("when is the dentist?")
@@ -146,7 +156,7 @@ async def test_a_late_result_is_handed_to_a_retry_of_the_same_question():
 
 async def test_a_late_result_is_not_injected_into_an_unrelated_turn():
     memory = _Memory(delay=0.3, hits=[_hit()])
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.1})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     await orch._recall_block("when is the dentist?")
     await asyncio.sleep(0.4)
     memory.delay, memory.hits = 0.0, []
@@ -243,11 +253,19 @@ async def test_a_hung_search_blocks_neither_the_reply_nor_other_sessions(monkeyp
             await asyncio.wait({task})
 
 
+class _ByTextEmbedder(_HashEmbedder):
+    """The first turn embeds slowly, the second fast: only the queue keeps them in order."""
+
+    def embed(self, text):
+        time.sleep(0.4 if "espresso" in text and "noted" not in text else 0.05)
+        return super().embed(text)
+
+
 async def test_a_slow_turn_embedding_never_blocks_the_turn():
     from agents.core.memory.manager import MemoryManager
 
     mm = MemoryManager()
-    mm._embedder = _SlowEmbedder(0.5)
+    mm._embedder = _ByTextEmbedder()
     mm.embed_turns = True
     sid = await mm.new_session()
     started = time.monotonic()
@@ -282,7 +300,7 @@ async def test_a_purge_drops_the_late_result_and_anything_still_running():
     from agents.core import data_purge
 
     memory = _Memory(delay=0.3, hits=[_hit("my PIN is 1234")])
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.1})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     assert await orch._recall_block("what is my PIN?") == ""   # times out; the straggler runs on
     await data_purge.clear_live_memory(orch)                    # "forget me" while it runs
     await asyncio.sleep(0.4)
@@ -295,7 +313,7 @@ async def test_a_pinned_job_turn_neither_receives_nor_consumes_a_late_result():
     from agents.core.llm.job_selection import selection_scope
 
     memory = _Memory(delay=0.3, hits=[_hit()])
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.1})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     await orch._recall_block("when is the dentist?")
     await asyncio.sleep(0.4)
     with selection_scope({"model": "pinned-model"}):
@@ -335,7 +353,7 @@ async def test_the_handoff_ttl_counts_from_completion(monkeypatch):
 
     monkeypatch.setattr(Orchestrator, "_RECALL_HANDOFF_TTL_S", 0.2)
     memory = _Memory(delay=0.5, hits=[_hit()])
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.1})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
     await orch._recall_block("when is the dentist?")
     await asyncio.sleep(0.5)  # finished just now: older than the TTL since the timeout, fresh since completion
     assert "Tuesday" in await orch._recall_block("when is the dentist?")
@@ -349,7 +367,7 @@ async def test_a_straggler_that_fails_leaves_nothing_behind(caplog):
             raise RuntimeError("neo4j went away")
 
     memory = _Failing()
-    orch = _orch(memory, **{"memory.recall_timeout_s": 0.05})
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.05}))
     await orch._recall_block("when is the dentist?")
     await asyncio.sleep(0.3)
     memory.calls.clear()
@@ -388,8 +406,7 @@ async def test_the_rerank_runs_after_the_bound_and_off_the_event_loop(monkeypatc
 
 
 def _in_session(orch, session):
-    orch._session_id_default = session
-    return orch
+    return _turn(orch, session)
 
 
 async def test_a_timed_out_turn_falls_back_to_this_sessions_previous_recall(caplog):
@@ -456,3 +473,334 @@ async def test_trivial_and_pinned_turns_get_no_warm_context():
     with selection_scope({"model": "pinned-model"}):
         assert await orch._recall_block("and what time was it?") == ""
     assert memory.calls == ["when is the dentist?"]
+
+
+
+# ── re-review round: the generation a recall starts under ─────────────────────
+
+
+async def test_a_purge_inside_the_bound_discards_what_the_recall_read():
+    from agents.core import data_purge
+
+    memory = _Memory(delay=0.3, hits=[_hit("my PIN is 1234")])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 2.0}))
+    turn = asyncio.ensure_future(orch._recall_block("what is my PIN?"))
+    await asyncio.sleep(0.1)
+    await data_purge.clear_live_memory(orch)       # "forget me" while the search runs
+    assert await turn == ""                        # it finished inside the bound, but read pre-purge data
+    memory.delay, memory.hits = 30, []
+    assert await orch._recall_block("and the other card?") == ""   # and nothing was kept warm
+    _release(orch)
+
+
+async def test_a_purge_between_start_and_timeout_leaves_no_handoff():
+    from agents.core import data_purge
+
+    memory = _Memory(delay=0.5, hits=[_hit("my PIN is 1234")])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.3}))
+    turn = asyncio.ensure_future(orch._recall_block("what is my PIN?"))
+    await asyncio.sleep(0.1)
+    await data_purge.clear_live_memory(orch)       # before the timeout adopts the straggler
+    assert await turn == ""
+    await asyncio.sleep(0.5)                       # the straggler finishes after the purge
+    memory.delay, memory.hits = 0.0, []
+    assert await orch._recall_block("what is my PIN?") == ""
+    assert memory.calls == ["what is my PIN?", "what is my PIN?"]  # a fresh query, no handoff
+
+
+async def test_an_empty_recall_replaces_the_warm_context():
+    memory = _Memory(hits=[_hit()])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.2}))
+    await orch._recall_block("when is the dentist?")
+    memory.hits = []
+    assert await orch._recall_block("what is the weather tomorrow?") == ""
+    memory.delay = 30
+    assert await orch._recall_block("and the day after?") == ""   # not the dentist from two turns ago
+    _release(orch)
+
+
+async def test_a_single_memory_delete_drops_cached_recall_results():
+    from agents.core.routers.memory_kg import _recall_forget
+
+    memory = _Memory(hits=[_hit()])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.2}))
+    await orch._recall_block("when is the dentist?")
+    _recall_forget(orch)                           # what DELETE /api/kg/entities/{name} now does
+    memory.delay = 30
+    assert await orch._recall_block("and what time was it?") == ""
+    _release(orch)
+
+
+async def test_internal_callers_neither_keep_nor_take_turn_state():
+    from agents.core.orchestrator import _SESSION_UNSET, _active_session
+
+    memory = _Memory(delay=0.3, hits=[_hit()])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.1}))
+    await orch._recall_block("when is the dentist?")      # an owner's turn times out
+    await asyncio.sleep(0.4)                               # its late result is waiting
+    _active_session.set(_SESSION_UNSET)                    # an autonomy task: no bound session
+    memory.delay, memory.hits = 0.0, []
+    assert await orch._recall_block("when is the dentist?") == ""
+    assert orch._recall_state.late is not None             # not consumed by the background caller
+    assert orch._recall_state.warm == {}                   # and nothing kept warm for it
+    _turn(orch)
+    assert "Tuesday" in await orch._recall_block("when is the dentist?")  # the owner's retry gets it
+
+
+async def test_the_purge_waits_for_a_write_already_in_the_store():
+    from agents.core import data_purge
+    from agents.core.memory.manager import MemoryManager
+
+    mm = MemoryManager()
+    real_add = mm.vectors.add
+
+    def slow_add(record_id, vector, metadata=None):
+        time.sleep(0.3)
+        real_add(record_id, vector, metadata)
+
+    mm.vectors.add = slow_add
+    write = asyncio.ensure_future(mm.store_embedding("mem-1", [0.1] * 768, {"text": "my PIN is 1234"}))
+    await asyncio.sleep(0.05)                      # the write holds the store lock, inside vectors.add
+
+    class _Orch:
+        memory = mm
+
+    await data_purge.clear_live_memory(_Orch())
+    await write
+    assert len(mm.vectors) == 0                    # the wipe came after the write, not before
+
+
+async def test_a_single_vector_remove_does_not_hold_the_conversation_lock():
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.routers.memory_kg import _vector_remove
+
+    mm = MemoryManager()
+    mm._embedder = _HashEmbedder()
+    await mm.remember("forget this", record_id="mem-x")
+    async with mm._lock:                           # a turn is saving its reply
+        assert await asyncio.wait_for(_vector_remove(mm, "mem-x"), 0.5) is True
+    assert len(mm.vectors) == 0
+
+
+async def test_the_cli_waits_for_this_turns_embeddings():
+    import agents.run as run
+
+    class _Memory:
+        flushed = 0
+
+        async def flush_embeddings(self):
+            _Memory.flushed += 1
+
+    await run._flush_embeddings(type("Orch", (), {"memory": _Memory()})())
+    assert _Memory.flushed == 1
+
+
+async def test_the_cli_says_on_exit_that_unwritten_turns_may_be_lost(capsys):
+    import agents.run as run
+
+    class _Memory:
+        async def flush_embeddings(self):
+            await asyncio.sleep(1)
+
+    await run._flush_embeddings(type("Orch", (), {"memory": _Memory()})(), timeout=0.01, exiting=True)
+    assert "may not be remembered" in capsys.readouterr().out
+
+
+async def test_shutdown_drops_what_did_not_land_in_time(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core.orchestrator import Orchestrator
+
+    real_wait_for = asyncio.wait_for
+    monkeypatch.setattr(asyncio, "wait_for", lambda aw, timeout: real_wait_for(aw, 0.01))
+
+    class _Memory:
+        discarded = 0
+
+        async def flush_embeddings(self):
+            await asyncio.sleep(1)
+
+        def discard_pending_embeddings(self):
+            _Memory.discarded += 1
+
+    async def _noop(*a, **k):
+        return None
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.channel_manager = SimpleNamespace(stop_all=_noop)
+    orch.heartbeat_scheduler = SimpleNamespace(stop=lambda: None)
+    orch.plugin_manager = SimpleNamespace(close_all=_noop)
+    orch._settings_watcher_task = orch._autonomy_task = orch._learning_task = None
+    orch.oracle_bridge = None
+    orch.memory = _Memory()
+    await orch.stop_channels()
+    assert _Memory.discarded == 1
+
+
+async def test_the_cli_flushes_after_every_reply_and_on_exit(monkeypatch):
+    import builtins
+    from types import SimpleNamespace
+
+    import agents.run as run
+
+    events = []
+
+    class _Memory:
+        async def flush_embeddings(self):
+            events.append("flush")
+
+    class _Orch:
+        def __init__(self, _config):
+            self.memory = _Memory()
+            self.llm_router = SimpleNamespace(name="stub")
+            self.agents, self.skills = {}, SimpleNamespace(skills={})
+            self.checkpoints = SimpleNamespace(info=lambda: {})
+
+        async def load_agents(self):
+            return None
+
+        async def handle_input(self, text):
+            events.append(f"turn:{text}")
+            return "ok"
+
+    lines = iter(["hello", "exit"])
+
+    def _input(_prompt=""):
+        events.append("input")
+        return next(lines)
+
+    monkeypatch.setattr(run, "JarvisConfig", lambda: None)
+    monkeypatch.setattr(run, "Orchestrator", _Orch)
+    monkeypatch.setattr(builtins, "input", _input)
+    await run.main()
+    # The turn's embeddings land before input() blocks the loop again, and once more on exit.
+    assert events == ["input", "turn:hello", "flush", "input", "flush"]
+
+
+# ── re-review round: every guard pinned on its own ────────────────────────────
+
+
+class _SlowClearMemory(_Memory):
+    """A recall backend whose conversation clear takes a while (a real purge awaits it)."""
+
+    clear_s = 0.4
+
+    async def clear(self):
+        await asyncio.sleep(self.clear_s)
+
+
+async def test_a_recall_that_finishes_during_the_purge_is_not_served():
+    from agents.core import data_purge
+
+    memory = _SlowClearMemory(delay=0.2, hits=[_hit("my PIN is 1234")])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 2.0}))
+    turn = asyncio.ensure_future(orch._recall_block("what is my PIN?"))
+    await asyncio.sleep(0.05)
+    purge = asyncio.ensure_future(data_purge.clear_live_memory(orch))
+    assert await turn == ""                        # it finished mid-purge, before the wipe
+    await purge
+
+
+async def test_a_recall_started_during_the_purge_is_not_kept_after_it():
+    from agents.core import data_purge
+
+    memory = _SlowClearMemory(hits=[_hit("my PIN is 1234")])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.2}))
+    purge = asyncio.ensure_future(data_purge.clear_live_memory(orch))
+    await asyncio.sleep(0.1)                       # the purge is clearing, the stores are not wiped yet
+    await orch._recall_block("what is my PIN?")    # reads what is about to be wiped
+    await purge
+    memory.delay = 30
+    assert await orch._recall_block("and the other card?") == ""   # its warm context is gone
+    _release(orch)
+
+
+async def test_a_delete_after_the_search_returned_skips_the_rerank():
+    memory = _Memory(delay=0.2, hits=[_hit()])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 2.0}))
+    reranked = []
+    orch._living_memory_rerank_hits = lambda hits: reranked.append(hits) or hits
+    turn = asyncio.ensure_future(orch._recall_block("when is the dentist?"))
+    await asyncio.sleep(0.05)
+    orch._recall_purged()                          # a delete lands while the search runs
+    assert await turn == ""
+    assert reranked == []                          # deleted memories are not reinforced
+
+
+async def test_a_delete_during_the_rerank_serves_and_keeps_nothing():
+    memory = _Memory(hits=[_hit()])
+    orch = _turn(_orch(memory, **{"memory.recall_timeout_s": 0.2}))
+
+    def rerank_then_delete(hits):
+        orch._recall_purged()                      # the delete lands while the rerank runs
+        return hits
+
+    orch._living_memory_rerank_hits = rerank_then_delete
+    assert await orch._recall_block("when is the dentist?") == ""
+    memory.delay = 30
+    assert await orch._recall_block("and what time was it?") == ""  # not kept warm either
+    _release(orch)
+
+
+async def test_the_kg_delete_routes_drop_cached_recall_results(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core.memory.graph import InMemoryGraph
+    from agents.core.routers import memory_kg
+
+    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+    graph = InMemoryGraph()
+    graph.add_entity("Dentist", "place")
+    graph.add_entity("Owner", "person")
+    graph.add_relation("Owner", "VISITS", "Dentist")
+    purged = []
+    orch = SimpleNamespace(memory=SimpleNamespace(graph=graph), _recall_purged=lambda: purged.append(1))
+    monkeypatch.setattr(memory_kg, "get_orch", lambda: orch)
+
+    assert (await memory_kg.kg_delete_relation("Owner", "VISITS", "Dentist")).status_code == 200
+    assert purged == [1]
+    assert (await memory_kg.kg_delete_entity("Dentist")).status_code == 200
+    assert purged == [1, 1]
+    assert (await memory_kg.kg_delete_entity("Dentist")).status_code == 404
+    assert purged == [1, 1]                        # nothing was deleted: nothing to drop
+
+
+async def test_a_consolidation_that_removes_a_memory_drops_cached_recall_results(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core.memory.consolidation import ADD, UPDATE, ConsolidationEngine
+    from agents.core.routers import _component, memory_kg
+
+    class _Vectors:
+        def remove(self, record_id):
+            return None
+
+    class _Mem:
+        vectors = _Vectors()
+
+        async def remember(self, text, record_id=None, metadata=None):
+            if record_id:
+                raise RuntimeError("the embedder died after the old vector was removed")
+            return "mem-new"
+
+    purged = []
+    orch = SimpleNamespace(memory=_Mem(), consolidation=ConsolidationEngine(),
+                           _recall_purged=lambda: purged.append(1))
+    monkeypatch.setattr(memory_kg, "get_orch", lambda: orch)
+    monkeypatch.setattr(_component, "get_orch", lambda: orch)
+    existing = [{"id": "mem-1", "key": "city", "text": "User lives in Bucharest", "persistable": True}]
+
+    class _Req:
+        def __init__(self, body):
+            self._body = body
+
+        async def json(self):
+            return self._body
+
+    add = [{"op": ADD, "text": "User works as an architect"}]
+    update = [{"op": UPDATE, "target_id": "mem-1", "text": "User lives in Cluj"}]
+    await memory_kg.memory_consolidate_apply(_Req({"plan": add, "existing": existing}))
+    await memory_kg.memory_consolidate_apply(_Req({"plan": update, "existing": existing, "dry_run": True}))
+    assert purged == []                            # an ADD or a dry run removes nothing
+    await memory_kg.memory_consolidate_apply(_Req({"plan": update, "existing": existing}))
+    assert purged == [1]                           # the old text was removed, even though the re-add failed
