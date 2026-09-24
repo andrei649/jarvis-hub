@@ -460,7 +460,6 @@ The critic's 32 notes are the part to read before building: 60 of the 93 plans o
 
 The eleven rows #1187 and #1188 drifted and no open PR re-stamps (H068, H071, H104, H108, H130, H135, H139, H477, H510, H523, H683) were re-read against `git diff 3a7a039a origin/main`: five kept, six rewritten. H130, H135 and H523 are `equivalent` and count again. Headline **116 → 119 / 697**; `needs_review` 24 → 13, the thirteen #1192 and #1193 re-stamp when they land.
 
-<<<<<<< HEAD
 ### 2026-09-23 — HEQ build lot 1: eight rows closed with code, each verified on the integrated head
 
 The eight cheapest rows of the [build queue](hermes/build-queue.md) — H691, H661, H344, H583, H368, H242, H503, H313 — were built as seven groups, each red-first in its own worktree and each reviewed by an independent adversarial agent. Every first review refused equivalence; the builders fixed what was found. The groups were then merged onto the records (#1202) and the webhook fix (#1203), and a separate verifier per group re-ran every blocking and major finding on that integrated head, hunted what the fix round introduced, ran the neighbouring suites under both interpreters and killed one mutation.
@@ -477,8 +476,6 @@ Smaller findings fixed on the way: a component too long for the filesystem deep 
 **Records.** The lot drifted 105 reviewed rows. 104 were re-read by read-only agents against the lot's diff (52 kept, 52 rewritten — citations remapped on content and claims the lot changed corrected; no status moved), and H686, which the drift list had missed, was re-read by hand. Because readers worked while fixes were being pushed, each row's citations were remapped from the commit its reader actually saw (chosen per row by the reader's run window and checked on content where two commits fit). **Headline 119 → 127/697; 127/590 = 21.5% of the accepted scope.** The 13 `needs_review` rows are pre-existing on main (evidence moved by #1179/#1187/#1188) and are left for a re-read, not re-stamped.
 
 **Open, recorded rather than hidden.** After this lot an announce never holds its device, so a normal-urgency present can cut into a long announcement sent through the media route. The fix is a time-bounded hold, recorded in H313's summary as a known limit. With `JARVIS_ROOT_PATH` set, every request is counted as `<unmatched>`, the same bug class as the H691 fix; it is pre-existing and belongs to its own row. `tests/test_tool_result_taint.py::test_recall_taint_survives_the_orchestrators_agent_gather` fails under Python 3.11 on main as well; CI runs 3.12, where it passes.
-=======
->>>>>>> origin/main
 
 ### 2026-09-23 — the merge train, and the ledger re-read it made necessary
 
