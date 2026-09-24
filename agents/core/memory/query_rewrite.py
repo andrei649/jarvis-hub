@@ -71,8 +71,10 @@ _INSTRUCTION_LEAK_RE = re.compile(
     r"\b(?:urmeaz[aă]|ascult[aă])\b|\binstruc[tț]iun|\bprompt(?:ul)?\s+de\s+sistem\b",
     re.IGNORECASE,
 )
-# A second sentence: sentence punctuation then more text, with or without the space.
-_INTERNAL_SENTENCE_RE = re.compile(r"[.!?;…。]\s+\S|[?!][^\s?!]")
+# A second sentence: sentence punctuation, a space, then more text; or "?", "!" or ";"
+# straight into more text ("?Now", ";also"). A "." or "…" with no space stays inside
+# the question ("the 3.5 kg bag", "the…project").
+_INTERNAL_SENTENCE_RE = re.compile(r"[.!?;…。]\s+\S|[?!;][^\s?!]")
 _LINE_BREAKS = str.maketrans({"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"})
 
 SYSTEM_PROMPT = """You rewrite a user's latest message into one concise question for memory retrieval.

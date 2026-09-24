@@ -229,9 +229,14 @@ class MemoryManager:
 
     async def remember(self, text: str, record_id: str = None, metadata: dict = None) -> Optional[str]:
         """Embed `text` and store it in the vector store for later recall.
-        Returns the record id, or None if it could not be embedded/stored."""
+        Returns the record id, or None if it could not be embedded/stored.
+
+        Like a turn embedding it carries the purge generation it started under
+        (H428): a purge that runs while it is being embedded wins."""
+        generation = self._embed_generation
         vec = await self.embed(text)
-        return await self._store_remembered(text, vec, record_id=record_id, metadata=metadata)
+        return await self._store_remembered(text, vec, record_id=record_id, metadata=metadata,
+                                            generation=generation)
 
     async def _store_remembered(self, text: str, vec: Optional[list[float]], *, record_id: str = None,
                                 metadata: dict = None, generation: int | None = None) -> Optional[str]:
@@ -269,6 +274,16 @@ class MemoryManager:
             if generation is not None and generation != self._embed_generation:
                 return False
             await asyncio.to_thread(self.vectors.add, record_id, vector, metadata)
+            if generation is not None and generation != self._embed_generation:
+                # A purge gave up waiting for this lock (a backend slower than its
+                # bounded wait) and wiped while the write was still inside the store:
+                # take the record back out. The lock is still held, so no search saw it.
+                try:
+                    await asyncio.to_thread(self.vectors.remove, record_id)
+                except Exception:
+                    logger.error("a write that landed after a purge could not be removed (%s)",
+                                 record_id, exc_info=True)
+                return False
             return True
 
     async def search_similar(self, query: list[float], k: int = 5) -> list[dict]:

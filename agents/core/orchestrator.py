@@ -2599,26 +2599,29 @@ class Orchestrator:
     def _recall_runtime(self) -> SimpleNamespace:
         """Recall bookkeeping (lazy, so orchestrators built without __init__ work too).
 
-        ``stuck``: recalls still running past their timeout. ``late``: the result of
-        the last one that finished cleanly, for one handoff. ``warm``: per session,
-        the hits its last recall served (the next-turn warm-up). ``generation``:
-        bumped by a purge or a single-memory delete, before and after the wipe.
-        Every result carries the generation its recall STARTED under and is served
-        only while that is still current, so nothing read before a delete is ever
-        served after it.
+        ``stuck``: recalls still running past their timeout. ``late``: per session,
+        the result of its last straggler that finished cleanly, for one handoff.
+        ``warm``: per session, the hits its last recall served (the next-turn
+        warm-up). ``generation``: bumped by a purge or a single-memory delete, before
+        and after the wipe. Every result carries the generation its recall STARTED
+        under and is served, handed off or kept warm only while that is still
+        current, so nothing read before a delete is ever served after it.
+        ``erasing``: a purge is between its two bumps, and recall serves nothing.
         """
         state = getattr(self, "_recall_state", None)
         if state is None:
-            state = self._recall_state = SimpleNamespace(stuck=set(), late=None, warm={}, generation=0)
+            state = self._recall_state = SimpleNamespace(stuck=set(), late={}, warm={}, generation=0,
+                                                         erasing=0)
         return state
 
     def _recall_session_key(self) -> str | None:
         """The turn's session, or None outside a turn.
 
-        Internal callers (autonomy tasks, the nightly reflection, /api/context/compress)
-        run without a bound session: they never keep, serve or consume the per-turn
-        warm context or the same-question handoff, so they cannot overwrite or take
-        an owner's.
+        Callers outside any turn (the autonomy worker, the nightly reflection,
+        /api/context/compress) have no bound session: they never keep, serve or
+        consume the per-turn warm context or the same-question handoff, and their
+        stragglers leave no handoff, so they cannot overwrite or take an owner's.
+        Work delegated inside a turn shares that turn's session.
         """
         value = _active_session.get()
         return None if value is _SESSION_UNSET else str(value or "default")
@@ -2629,9 +2632,9 @@ class Orchestrator:
         An empty result is kept too: "nothing relevant" replaces an older answer.
         """
         key = self._recall_session_key()
-        if key is None:
-            return
         state = self._recall_runtime()
+        if key is None or generation != state.generation:
+            return  # outside a turn, or read before a delete: nothing to keep
         state.warm.pop(key, None)
         state.warm[key] = SimpleNamespace(hits=list(hits), stored=time.monotonic(), generation=generation)
         while len(state.warm) > self._RECALL_WARM_SESSIONS:
@@ -2668,8 +2671,9 @@ class Orchestrator:
         if stuck:
             logger.info("recall skipped: %d earlier recall(s) still running past the timeout", len(stuck))
             return None
-        if self._recall_session_key() is not None:
-            late, state.late = state.late, None
+        key = self._recall_session_key()
+        if key is not None:
+            late = state.late.pop(key, None)
             if (late is not None and late.text == text and late.generation == generation
                     and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
                 return late.hits
@@ -2696,28 +2700,38 @@ class Orchestrator:
     def _adopt_recall_straggler(self, task: "asyncio.Task", text: str, generation: int) -> None:
         state = self._recall_runtime()
         state.stuck.add(task)
+        key = self._recall_session_key()  # the handoff belongs to the turn's session
 
         def _finished(done: "asyncio.Task") -> None:
             state.stuck.discard(done)
             # exception() also marks a failure as retrieved: it stays a quiet empty block.
-            if done.cancelled() or done.exception() is not None or generation != state.generation:
+            if (done.cancelled() or done.exception() is not None or generation != state.generation
+                    or key is None):
                 return
-            state.late = SimpleNamespace(text=text, hits=done.result(), finished=time.monotonic(),
-                                         generation=generation)
+            state.late.pop(key, None)
+            state.late[key] = SimpleNamespace(text=text, hits=done.result(), finished=time.monotonic(),
+                                              generation=generation)
+            while len(state.late) > self._RECALL_WARM_SESSIONS:
+                state.late.pop(next(iter(state.late)))
 
         task.add_done_callback(_finished)
 
-    def _recall_purged(self) -> None:
+    def _recall_purged(self, *, erasing: bool | None = None) -> None:
         """Memory was deleted (a purge, or one record): drop every cached recall result.
 
-        Called before AND after the stores are wiped, so a recall that read them in
-        between also carries a stale generation. Nothing started before the second
-        call is ever served, handed off or kept warm after it.
+        A purge calls it before the stores are wiped (``erasing=True``) and again
+        after (``erasing=False``), so a recall that read them in between also carries
+        a stale generation; in between, recall serves nothing at all. Nothing
+        started before the last call is ever served, handed off or kept warm after it.
         """
         state = self._recall_runtime()
         state.generation += 1
-        state.late = None
+        state.late.clear()
         state.warm.clear()
+        if erasing is True:
+            state.erasing += 1
+        elif erasing is False:
+            state.erasing = max(0, state.erasing - 1)
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
@@ -2745,6 +2759,10 @@ class Orchestrator:
             logger.info("recall skipped: job model pins exclude auxiliary recall embedding")
             return ""
         state = self._recall_runtime()
+        if state.erasing:
+            # A purge is wiping the stores: what they still hold is about to go.
+            logger.info("recall skipped: memory is being erased")
+            return ""
         generation = state.generation  # the generation this recall starts under
         try:
             hits = await self._bounded_recall_hits(text, generation)

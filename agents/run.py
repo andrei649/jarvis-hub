@@ -5,7 +5,9 @@ skills, checkpointing, and starts an interactive REPL.
 """
 
 import asyncio
+import contextlib
 import sys
+import threading
 from pathlib import Path
 
 if __package__ in {None, ""}:
@@ -34,31 +36,47 @@ async def main():
 
     while True:
         try:
-            text = input("> ")
-        except (EOFError, KeyboardInterrupt):
+            text = await _prompt("> ")
+        except asyncio.CancelledError:  # Ctrl-C while waiting for input
             break
-        if text.strip().lower() in ("exit", "quit"):
+        if text is None or text.strip().lower() in ("exit", "quit"):
             break
         response = await orch.handle_input(text)
         print(f"\n{response}\n")
-        await _flush_embeddings(orch)
-    await _flush_embeddings(orch, exiting=True)
+    await _flush_embeddings(orch)
 
 
-async def _flush_embeddings(orch, timeout: float = 30.0, *, exiting: bool = False) -> None:
-    """Let this turn's background turn embeddings land (H428).
+async def _prompt(text: str) -> str | None:
+    """input() on a daemon thread; None at the end of input (H428).
 
-    input() blocks the event loop, so queued writes would otherwise wait for the
-    next turn, or be lost when the REPL exits. The reply is already on screen.
+    A plain input() would block the event loop, and with it every background turn
+    embedding, until the next message. A daemon thread never holds the process
+    open on exit, where an executor thread blocked in input() would.
     """
+    loop = asyncio.get_running_loop()
+    line = loop.create_future()
+
+    def read() -> None:
+        try:
+            value = input(text)
+        except (EOFError, KeyboardInterrupt):
+            value = None
+        with contextlib.suppress(RuntimeError):  # the REPL already exited
+            loop.call_soon_threadsafe(lambda: line.done() or line.set_result(value))
+
+    threading.Thread(target=read, name="repl-input", daemon=True).start()
+    return await line
+
+
+async def _flush_embeddings(orch, timeout: float = 30.0) -> None:
+    """Let the last turns' background embeddings land before the REPL exits (H428)."""
     flush = getattr(getattr(orch, "memory", None), "flush_embeddings", None)
     if flush is None:
         return
     try:
         await asyncio.wait_for(flush(), timeout=timeout)
     except TimeoutError:
-        print("(long-term memory did not finish writing; the last turns may not be remembered)" if exiting
-              else "(long-term memory is still being written; it continues after your next message)")
+        print("(long-term memory did not finish writing; the last turns may not be remembered)")
 
 
 if __name__ == "__main__":

@@ -341,7 +341,8 @@ def _recall_forget(orch) -> None:
         invalidate()
 
 
-async def _persist_consolidation(memory, plan: list[dict], existing: list[dict]) -> dict:
+async def _persist_consolidation(memory, plan: list[dict], existing: list[dict], *,
+                                 on_removed=None) -> dict:
     """Write an applied plan back to the live vector store, honestly.
 
     ADD → ``remember``; UPDATE → remove + ``remember`` under the same id (a plain
@@ -370,7 +371,13 @@ async def _persist_consolidation(memory, plan: list[dict], existing: list[dict])
                 if not by_id.get(target, {}).get("persistable", False):
                     skipped.append({"index": idx, "op": kind, "reason": "not_vector_backed"})
                     continue
-                if not await _vector_remove(memory, target):
+                removed = None  # unknown until the call returns: a cancelled call may still remove
+                try:
+                    removed = await _vector_remove(memory, target)
+                finally:
+                    if removed is not False and on_removed is not None:
+                        on_removed()  # H428: the old text must not come back from a cached recall
+                if not removed:
                     skipped.append({"index": idx, "op": kind, "reason": "no_vector_store"})
                     continue
                 if kind == DELETE:
@@ -421,11 +428,10 @@ async def memory_consolidate_apply(req: Request):
         out.update({"persisted": {ADD: 0, UPDATE: 0, DELETE: 0}, "skipped": [],
                     "persistence": "dry_run"})
     else:
-        out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing))
-        # Any UPDATE/DELETE may have removed a vector, even one that then failed to
-        # re-embed: cached recall results must not serve the old text again (H428).
-        if any(op.get("op") in (UPDATE, DELETE) for op in plan):
-            _recall_forget(orch)
+        # A removed vector, even one whose re-embedding then failed, drops the cached
+        # recall results (H428); a plan whose rows were all skipped removes nothing.
+        out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing,
+                                                on_removed=lambda: _recall_forget(orch)))
     return nocache_json(out)
 
 
@@ -654,7 +660,14 @@ async def kg_upsert_entity(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    existed = await _kg_call(g.get_entity, name) is not None
+    try:
+        ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    finally:
+        if existed:
+            # An edit replaces the entity's properties: a fact edited out must not
+            # come back from a cached recall result (H428).
+            _recall_forget(get_orch())
     return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
@@ -675,9 +688,14 @@ async def kg_delete_entity(name: str, req: Request = None):
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await _kg_call(g.delete_entity, name):
+    deleted = None  # unknown until the call returns: a cancelled call may still delete
+    try:
+        deleted = await _kg_call(g.delete_entity, name)
+    finally:
+        if deleted is not False:
+            _recall_forget(get_orch())
+    if not deleted:
         return JSONResponse({"error": "not found"}, status_code=404)
-    _recall_forget(get_orch())
     return nocache_json({"ok": True, "deleted": name})
 
 
@@ -731,9 +749,14 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await _kg_call(g.delete_relation, source, relation, target):
+    deleted = None  # unknown until the call returns: a cancelled call may still delete
+    try:
+        deleted = await _kg_call(g.delete_relation, source, relation, target)
+    finally:
+        if deleted is not False:
+            _recall_forget(get_orch())
+    if not deleted:
         return JSONResponse({"error": "not found"}, status_code=404)
-    _recall_forget(get_orch())
     return nocache_json({"ok": True})
 
 
