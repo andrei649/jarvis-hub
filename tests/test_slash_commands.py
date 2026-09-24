@@ -295,7 +295,8 @@ class _Runner:
 
     def arm(self, **kwargs):
         # H687 — a reminder queues no first run, so the receipt is None.
-        return self.create(**kwargs), None
+        job = self.create(**kwargs)
+        return job, None, f"{job.schedule_text} ({job.cron}), on its cadence"
 
 
 @pytest.mark.asyncio

@@ -347,7 +347,7 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "first_run"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'enabled_toolsets' in options:
@@ -368,8 +368,6 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         url_screen(options['monitor_url'])
     if 'no_agent' in options and type(options['no_agent']) is not bool:
         raise ValueError('no_agent must be true or false')
-    if 'first_run' in options and type(options['first_run']) is not bool:
-        raise ValueError('first_run must be true or false')
     if options.get('no_agent') and not options.get('script'):
         raise ValueError('no_agent requires a script')
     if options.get('monitor_script') and (options.get('script') or options.get('no_agent')):
@@ -397,32 +395,79 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
     return json.loads(json.dumps(options))
 
 
-def wants_first_run(job) -> bool:
-    """Whether a newly created job fires once now, before its first cron slot (H687).
+FIRST_RUN_SLOT_MARGIN_S = 120
 
-    Hermes starts a new loop at the next poll ("First wakeup fires now, then on the
-    cadence above"). Here an agent-instruction job — ask, brief or task, or a script
-    or monitor source — does too. A reminder stays on its cadence: "every weekday at
-    7 | stand-up" delivered the moment it is armed is noise, not a first run. A
-    repeat-limited job does not either, because the first run would spend one of its
-    few attempts and could leave the slot the owner scheduled unserved (critic note
-    15). ``options.first_run`` overrides both ways.
+
+def is_interval_cron(cron: str) -> bool:
+    """A clock-free cadence — every N minutes, hourly, every N hours — not a calendar slot.
+
+    No day-of-month, month or weekday restriction, and an hour field that is ``*`` or a
+    step. "every weekday at 8:00" or "every day at 7" pins a time of day: that is a
+    calendar schedule.
     """
-    options = job.options or {}
-    explicit = options.get("first_run")
-    if explicit is not None:
-        return explicit is True
-    if options.get("repeat"):
+    fields = (cron or "").split()
+    if len(fields) != 5 or fields[2:] != ["*", "*", "*"]:
         return False
-    if options.get("script") or options.get("monitor_script") or options.get("monitor_url"):
-        return True
-    return (job.action or {}).get("type") in ("ask", "brief", "task")
+    return fields[1] == "*" or fields[1].startswith("*/")
 
 
-def arm_confirmation(job, first_run: dict | None) -> str:
+def first_run_decision(job, *, explicit: bool | None = None, quiet: bool = False,
+                       seconds_to_slot: float | None = None) -> tuple[bool, str]:
+    """Whether a new job fires once now, before its first slot, and why (H687).
+
+    Hermes' ``/loop`` is an interval, and its first wakeup fires at once
+    (LoopManager.set: next_due_at=now); a Hermes cron job waits for its first
+    computed run. So by default only an agent-instruction job — ask, brief or task,
+    or a script or monitor source — on an interval cadence fires at creation.
+    - A calendar schedule waits: a morning brief armed in the evening must not
+      deliver now, and a weekday job armed on Saturday must not run on Saturday.
+    - A reminder waits: '/remind every weekday at 7 | stand-up' delivered the moment
+      it is armed is noise.
+    - A repeat-limited job waits: the first run would spend one of its few attempts
+      and could leave the slot the owner scheduled unserved (critic note 15).
+    - Nothing fires during quiet hours: the output would be held and delivered after
+      the next fresh run's.
+    - Nothing fires when the first slot is under two minutes away: the slot is the
+      first run, and firing now would run it twice.
+    ``explicit`` (the create call's ``first_run``) overrides all of these.
+    """
+    if not job.runnable:
+        return False, "not runnable"
+    if explicit is not None:
+        return bool(explicit), "asked" if explicit else "opted out"
+    options = job.options or {}
+    if options.get("repeat"):
+        return False, "repeat-limited"
+    source = options.get("script") or options.get("monitor_script") or options.get("monitor_url")
+    if not source and (job.action or {}).get("type") not in ("ask", "brief", "task"):
+        return False, "reminder"
+    if not is_interval_cron(job.cron):
+        return False, "calendar"
+    if quiet:
+        return False, "quiet hours"
+    if seconds_to_slot is not None and seconds_to_slot < FIRST_RUN_SLOT_MARGIN_S:
+        return False, "slot"
+    return True, "interval"
+
+
+_FIRST_RUN_NOTES = {
+    "quiet hours": " (quiet hours now, so no first run)",
+    "slot": " (its first slot is under two minutes away)",
+}
+
+
+def arm_confirmation(job, first_run: dict | None, *, why: str = "", scheduler_alive: bool = True) -> str:
     """The one wording every creation surface uses for what happens next."""
     cadence = f"{job.schedule_text} ({job.cron})"
-    return f"first run now, then {cadence}" if first_run else f"{cadence}, on its cadence"
+    if first_run:
+        text = f"first run now, then {cadence}"
+    elif why.startswith("not queued"):
+        text = f"first run {why}; {cadence}, on its cadence"
+    else:
+        text = f"{cadence}, on its cadence{_FIRST_RUN_NOTES.get(why, '')}"
+    if not scheduler_alive:
+        text += " — the scheduler is not running, so nothing fires until it is"
+    return text
 
 
 # ── blueprints ───────────────────────────────────────────────────────────────
@@ -1070,13 +1115,15 @@ class JobRunner:
     def create(self, **kwargs: Any) -> Job:
         return self.arm(**kwargs)[0]
 
-    def arm(self, **kwargs: Any) -> tuple[Job, dict | None]:
-        """Create, schedule and — when wants_first_run says so — queue a first run now.
+    def arm(self, *, first_run: bool | None = None, **kwargs: Any) -> tuple[Job, dict | None, str]:
+        """Create and schedule a job and, when first_run_decision agrees, queue a first run now.
 
-        The first run is an ordinary manual request (request_run), drained by
-        _fire_once under the shared job gate, so the emergency stop, pause,
-        validation, repeat reservation and quiet-hours hold all apply to it exactly
-        as to the owner's '▶ now'. Returns the job and that request's receipt.
+        The first run is a dispatch request of origin 'first_run', drained by _fire_once
+        under the shared job gate like a cron slot. The emergency stop, pause (pausing
+        cancels it; the drain re-checks), validation, the repeat reservation and the
+        quiet-hours hold all apply. ``first_run`` is a creation-time choice, never a
+        stored option. Returns the job, the request's receipt (None when none was
+        queued) and the confirmation every surface prints.
         """
         self._toolset_names(kwargs.get('options'))
         binding = self.media.prepare(kwargs.get("action") or {}, kwargs.get("options"))
@@ -1085,8 +1132,31 @@ class JobRunner:
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         self.register(job)
-        first_run = self.request_run(job.id) if job.runnable and wants_first_run(job) else None
-        return job, first_run
+        fire, why = first_run_decision(job, explicit=first_run, quiet=self.quiet_hours(),
+                                       seconds_to_slot=self.seconds_to_next_slot(job))
+        receipt = None
+        if fire:
+            try:
+                receipt = self.store.dispatch.enqueue(job.id, origin="first_run")
+                self.register_manual()
+            except (ValueError, sqlite3.Error) as exc:
+                # The job is armed either way; a refused first run must not read as a
+                # refused job (a retry would arm a duplicate).
+                logger.warning("job %s: first run not queued: %s", job.id, exc)
+                receipt, why = None, f"not queued ({exc})"
+        return job, receipt, arm_confirmation(job, receipt, why=why, scheduler_alive=self.scheduler_alive())
+
+    def seconds_to_next_slot(self, job: Job, now: datetime | None = None) -> float | None:
+        """Seconds until the job's next cron slot in the scheduler's timezone, or None."""
+        from apscheduler.triggers.cron import CronTrigger
+
+        try:
+            timezone = self.scheduler_timezone()
+            current = (now or datetime.now(UTC)).astimezone(timezone)
+            due = CronTrigger(**cron_kwargs(job.cron), timezone=timezone).get_next_fire_time(None, current)
+        except Exception:
+            return None
+        return None if due is None else (due - current).total_seconds()
 
     def edit(self, job_id: str, **fields: Any) -> Job:
         """Apply an owner's edit and make the scheduler agree with it.
@@ -1114,11 +1184,18 @@ class JobRunner:
             self.register(job)
         else:
             self.unregister(job_id)
+        # H687 — a first run still queued was promised for the job as armed; after an
+        # edit it runs the edited job instead of being dropped by the identity check.
+        if self.store.dispatch.cancel_queued(job_id, origin="first_run",
+                                             reason="configuration changed before the first run") and job.runnable:
+            self.store.dispatch.enqueue(job_id, origin="first_run")
+            self.register_manual()
         return job
 
     def pause(self, job_id: str, reason: str) -> Job:
         job = self.store.pause(job_id, reason)
         self.unregister(job_id)
+        self.store.dispatch.cancel_queued(job_id, origin="first_run", reason="job paused before its first run")
         return job
 
     def resume(self, job_id: str) -> Job:

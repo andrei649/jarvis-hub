@@ -171,6 +171,9 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_create.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
+    jobs_create.add_argument("--first-run", dest="first_run", action=argparse.BooleanOptionalAction, default=None,
+                             help="fire once now whatever the schedule (--no-first-run: never); by default only an "
+                                  "interval job fires at once")
     jobs_create.add_argument("--json", action="store_true")
     jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
@@ -1032,6 +1035,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
                 body["name"] = ns.name
             if ns.when:
                 body["schedule_text"] = ns.when
+            if ns.first_run is not None:
+                body["first_run"] = ns.first_run
         except ValueError as exc:
             ctx.err.write(f"{exc}\n")
             return EXIT_USAGE

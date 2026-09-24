@@ -9998,6 +9998,8 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             } | null;
+            /** First Run */
+            first_run?: boolean | null;
         };
         /**
          * JobEditBody

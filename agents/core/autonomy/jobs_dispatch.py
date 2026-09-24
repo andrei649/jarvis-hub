@@ -9,6 +9,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 
 ACTIVE = ("queued", "running", "waiting")
+ORIGINS = ("manual", "first_run")
 
 
 def identity(job):
@@ -28,6 +29,14 @@ class ManualDispatch:
             store._conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS job_request_active ON job_requests(job_id) WHERE status IN ('queued','running','waiting')"
             )
+            # H687 — who asked: 'manual' (the owner's ▶ now, which runs even a paused
+            # job) or 'first_run' (queued at creation, which obeys pause like a cron
+            # slot). Rows written before the column existed were all manual.
+            columns = {row[1] for row in store._conn.execute("PRAGMA table_info(job_requests)")}
+            if "origin" not in columns:
+                store._conn.execute(
+                    "ALTER TABLE job_requests ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'"
+                )
             store._conn.commit()
 
     @contextmanager
@@ -47,7 +56,9 @@ class ManualDispatch:
                 return
             yield True
 
-    def enqueue(self, job_id):
+    def enqueue(self, job_id, *, origin="manual"):
+        if origin not in ORIGINS:
+            raise ValueError(f"unknown request origin {origin!r}")
         # Resolve an already-finished approval before coalescing another click.
         for row in self.outstanding():
             if row["job_id"] == job_id and row["status"] == "waiting":
@@ -63,11 +74,14 @@ class ManualDispatch:
             if row is None:
                 raise KeyError(job_id)
             existing = s._conn.execute(
-                "SELECT id FROM job_requests WHERE job_id=? AND status IN ('queued','running','waiting')",
+                "SELECT id, status, origin FROM job_requests WHERE job_id=? AND status IN ('queued','running','waiting')",
                 (job_id,),
             ).fetchone()
             if existing:
                 request_id = existing["id"]
+                if origin == "manual" and existing["origin"] != "manual" and existing["status"] == "queued":
+                    # The owner's ▶ now folds into a queued first run and makes it theirs.
+                    s._conn.execute("UPDATE job_requests SET origin='manual' WHERE id=?", (request_id,))
             else:
                 count = s._conn.execute(
                     "SELECT COUNT(*) FROM job_requests WHERE status IN ('queued','running','waiting')"
@@ -76,16 +90,27 @@ class ManualDispatch:
                     raise ValueError("manual request capacity reached; wait for queued work")
                 request_id = uuid.uuid4().hex
                 s._conn.execute(
-                    "INSERT INTO job_requests(id,job_id,status,created_at,fingerprint) VALUES(?,?,?,?,?)",
+                    "INSERT INTO job_requests(id,job_id,status,created_at,fingerprint,origin) VALUES(?,?,?,?,?,?)",
                     (
                         request_id,
                         job_id,
                         "queued",
                         datetime.now(UTC).isoformat(),
                         identity(s._row_to_job(row)),
+                        origin,
                     ),
                 )
         return self.get(request_id)
+
+    def cancel_queued(self, job_id, *, origin, reason):
+        """Cancel the job's not-yet-claimed request of ``origin``; how many were cancelled."""
+        s = self.store
+        with s._lock, s._conn:
+            cursor = s._conn.execute(
+                "UPDATE job_requests SET status='cancelled', reason=? WHERE job_id=? AND status='queued' AND origin=?",
+                (reason, job_id, origin),
+            )
+            return cursor.rowcount
 
     def get(self, request_id):
         s = self.store
@@ -135,7 +160,7 @@ class ManualDispatch:
             )
 
     def claim(self, request_id):
-        """Caller must hold the shared execution gate throughout the firing."""
+        """The claimed request's origin, or False. Hold the shared execution gate throughout the firing."""
         s = self.store
         with s._lock, s._conn:
             s._conn.execute("BEGIN IMMEDIATE")
@@ -152,7 +177,7 @@ class ManualDispatch:
                 )
                 return False
             s._conn.execute("UPDATE job_requests SET status='running' WHERE id=?", (request_id,))
-            return True
+            return row["origin"] or "manual"
 
     async def drain(self, runner):
         for row in self.outstanding():
@@ -176,10 +201,12 @@ class ManualDispatch:
                         "unknown",
                         reason="execution interrupted after claim; not replayed",
                     )
-                elif self.claim(row["id"]):
+                elif origin := self.claim(row["id"]):
                     try:
+                        # A first run obeys pause like a cron slot; only the owner's own
+                        # ▶ now runs a paused job (H687).
                         run = await runner._fire_once(
-                            row["job_id"], force=True, expected_identity=row["fingerprint"]
+                            row["job_id"], force=origin == "manual", expected_identity=row["fingerprint"]
                         )
                     except BaseException as exc:
                         self.state(
