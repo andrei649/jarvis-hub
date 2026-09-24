@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "0ad6f8c19a9decbc8077777b221ff44b773d6840",
-  "assessed_at": "2026-09-24T14:00:57Z",
+  "base_sha": "d58651286112efea175662dc0be3e900f9dd71a9",
+  "assessed_at": "2026-09-24T14:25:57Z",
   "reviews": [
     {
       "id": "H001",
@@ -454,7 +454,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -483,7 +483,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -1095,7 +1095,7 @@
         },
         {
           "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+          "sha256": "261fcd37d278cb2e215fa361b60992621b8ca7743c5bf3634a1b0b821dd1782f"
         },
         {
           "path": "frontend/src/app.tsx",
@@ -1107,7 +1107,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/route-boundary.tsx",
@@ -1135,7 +1135,7 @@
         },
         {
           "path": "frontend/src/styles.css",
-          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
+          "sha256": "2ca7c8158ed9ef564816f22a60e9c01febe3d71ff3a9caeee95dd52477106be4"
         },
         {
           "path": "docs/superpowers/plans/2026-09-15-hud-grid-width.md",
@@ -1156,7 +1156,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/routers/swarm.py",
@@ -1257,7 +1257,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "frontend/src/appearance.ts",
@@ -1297,7 +1297,7 @@
         },
         {
           "path": "frontend/src/styles.css",
-          "sha256": "cb9b516f2eb1da37a54a38ccd8eadb4589a0c35e9c7d393bca86ae9255492144"
+          "sha256": "2ca7c8158ed9ef564816f22a60e9c01febe3d71ff3a9caeee95dd52477106be4"
         },
         {
           "path": "frontend/e2e/appearance-fonts.spec.ts",
@@ -1474,7 +1474,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "frontend/src/composer-images.tsx",
@@ -1494,7 +1494,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f9a9fb659d6c1ec1e81583e82e66254e5c8035617d11e3b44440ff0bb4739a1b"
+          "sha256": "797a34b305692e7aaa0860136b51589538e03e42acb1abce52ec3a55427af21e"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -1543,7 +1543,7 @@
         },
         {
           "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+          "sha256": "261fcd37d278cb2e215fa361b60992621b8ca7743c5bf3634a1b0b821dd1782f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -1620,7 +1620,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f9a9fb659d6c1ec1e81583e82e66254e5c8035617d11e3b44440ff0bb4739a1b"
+          "sha256": "797a34b305692e7aaa0860136b51589538e03e42acb1abce52ec3a55427af21e"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -1797,7 +1797,7 @@
       "id": "H156",
       "row_sha256": "eb2ba54183f6a6ec85a8aad0651bf8a100fde466e4849249556bf579a2bd7d37",
       "status": "partial",
-      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2669) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:346, agents/core/routers/admin.py:373, agents/core/routers/admin.py:421), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:320) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3378). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
+      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2678) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:346, agents/core/routers/admin.py:373, agents/core/routers/admin.py:421), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:320) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3378). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
       "remaining": "(1) No write path to the live persona. Nothing writes a committed or rolled-back version into the SOUL.local.md that `soul_path_for` resolves. A commit in PromptsPanel still changes nothing the agent says until someone edits the file by hand. The H672 refresh reads only that file, never the version store. It fires only when a session's context compaction commits, so it is not a reload the editor can trigger; with no compaction, the edit still waits for a restart. (2) The version store is not seeded from the on-disk SOUL, so its history is empty for any persona never committed through the panel. (3) The commit and rollback routes write no audit event, but the governance requires SOUL edits in the audit log. (4) No description editor and no Auto-generate. `PUT /api/admin/agents/{agent_id}` (agents/core/routers/admin.py:448) only stores display overrides in an in-memory dict, and nothing drafts a description with a model for the owner to accept. (5) The Dossier has no Edit action that opens the current SOUL in the versioned editor.",
       "evidence": [
         {
@@ -1826,7 +1826,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/modes.tsx",
@@ -1858,7 +1858,7 @@
       "id": "H157",
       "row_sha256": "7bbe9cbeb4202b13b9682d10e5489933218f6982252a1146751e2275a36e596a",
       "status": "partial",
-      "summary": "The backend is as strong as the row says. `GET /api/admin/settings` (agents/core/routers/admin.py:73) returns every category, alongside per-category GET/PUT. The PUT (agents/core/routers/admin.py:110) runs `validate_category` and answers 422 before any write, and `_audit_settings_change` records only the changed key names. `POST /api/admin/settings/reseed` (agents/core/routers/admin.py:127) reseeds everything. The v2 console `SettingsPanel` (frontend/src/gap.tsx:2635) reads that route and shows all 160 declared keys in their 19 categories. Among them are the six `llm.openrouter_*` upstream-routing keys HEQ lot 1 added for H583, whose slug lists `_validate_value` refuses when they are not slugs. Its widgets are typed by `settingsField` (frontend/src/gap.tsx:2625), and dirty edits are saved in one batch. The standalone /admin app's `GlobalConfigPage` (agents/web/static/admin.js:447) has a search box, but it filters a hand-curated SECTIONS table of 61 keys, not the whole schema. Its only reset is the global reseed (agents/web/static/admin.js:1477). `nerva config list|get|set|check` (`cmd_config`, agents/cli/nerva.py:662) edits single keys offline with the same validation.",
+      "summary": "The backend is as strong as the row says. `GET /api/admin/settings` (agents/core/routers/admin.py:73) returns every category, alongside per-category GET/PUT. The PUT (agents/core/routers/admin.py:110) runs `validate_category` and answers 422 before any write, and `_audit_settings_change` records only the changed key names. `POST /api/admin/settings/reseed` (agents/core/routers/admin.py:127) reseeds everything. The v2 console `SettingsPanel` (frontend/src/gap.tsx:2638) reads that route and shows all 160 declared keys in their 19 categories. Among them are the six `llm.openrouter_*` upstream-routing keys HEQ lot 1 added for H583, whose slug lists `_validate_value` refuses when they are not slugs. Its widgets are typed by `settingsField` (frontend/src/gap.tsx:2628), and dirty edits are saved in one batch. The standalone /admin app's `GlobalConfigPage` (agents/web/static/admin.js:447) has a search box, but it filters a hand-curated SECTIONS table of 61 keys, not the whole schema. Its only reset is the global reseed (agents/web/static/admin.js:1477). `nerva config list|get|set|check` (`cmd_config`, agents/cli/nerva.py:662) edits single keys offline with the same validation.",
       "remaining": "(1) No cross-key search over every setting: SettingsPanel has no filter, and the /admin search reaches only the 61 keys in its SECTIONS table, not all 160. The six new `llm.openrouter_*` keys, for example, are reachable only from SettingsPanel and `nerva config`. (2) No export of the configuration as JSON for moving it to another box; secret-kind values would need masking or exclusion. (3) No import: no route takes a JSON document, runs every key through `validate_category` first, and then does an all-or-nothing write with an audit row. (4) No per-category reset: only the global `/api/admin/settings/reseed` exists, and it writes no audit row either.",
       "evidence": [
         {
@@ -1871,7 +1871,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "agents/web/static/admin.js",
@@ -1916,7 +1916,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "frontend/src/api/loaders.ts",
@@ -1943,41 +1943,49 @@
     {
       "id": "H165",
       "row_sha256": "f9bb205821aee3031dc9b6dc132cb52ba62db38d813906794cbf41bbb0aa590e",
-      "status": "missing",
-      "summary": "No in-app documentation exists. The route snapshot tests/_snapshots/route_surface.json lists 502 routes and none serves product documentation. The only help-like endpoint is GET /api/quickbar/help (agents/core/routers/quickbar.py:59), which returns the quickbar command menu. The Local Docs and Note Docs panels in CONSOLE_PANELS (frontend/src/console-routes.ts:11) index the owner's own files and notes, not product docs. No file under frontend/src, mobile/src or desktop references USER_GUIDE.md, FLAGS.md, PRIVACY.md or CAMERA_PRIVACY.md. There is no Documentation console entry and no open-in-new-tab affordance. The material exists only as repo files (docs/USER_GUIDE.md, docs/FLAGS.md, docs/PRIVACY.md, docs/CAMERA_PRIVACY.md), which the Dockerfile copies into the image but nothing serves.",
-      "remaining": "Every part of the requirement is missing: (1) a read-only route serving a fixed allowlist of shipped docs (at least USER_GUIDE, FLAGS, PRIVACY, CAMERA_PRIVACY); (2) a Documentation page in the HUD console that renders them through a Markdown renderer with no innerHTML path (FLAGS.md depends on tables and code spans); (3) an 'open documentation in a new tab' affordance; (4) per the row rationale, a link from the posture/flag surfaces to the relevant FLAGS.md section so the owner sees a flag's cost when flipping it.",
+      "status": "equivalent",
+      "summary": "Built on this branch. Hermes has a Documentation page inside its dashboard with an \"open in a new tab\" affordance. Nerva's written material (the user guide, FLAGS.md on what each posture flag costs, and the privacy and camera-privacy notes) was only in the repository. The Dockerfile copied it into the image, but nothing served it.\n\n(1) The route. agents/core/routers/help_docs.py is registered in agents/web.py (agents/web.py:1398) and user-guarded on the router (agents/core/routers/help_docs.py:27).\n- GET /api/help/docs (agents/core/routers/help_docs.py:103) lists the allowlist: slug, title, whether the file shipped, and each document's sections.\n- GET /api/help/docs/{slug} (agents/core/routers/help_docs.py:113) returns the Markdown text, capped at MAX_DOC_CHARS with a truncated flag (agents/core/routers/help_docs.py:121).\n- The allowlist is the fixed DOCS table (agents/core/routers/help_docs.py:31): user-guide, flags, privacy, camera-privacy. A slug is only ever a key into it, never joined into a path, so an unknown slug, '../' or encoded traversal is 404.\n- A file must be a regular file under the install root; a symlink is refused (agents/core/routers/help_docs.py:85). A file missing from an install reads as \"not available\", not an error.\n- Responses are no-store.\n\n(2) The page. DocsPanel (frontend/src/panels/docs.tsx:37) is registered in the console's Start group (frontend/src/console-routes.ts:6), in PANEL_COMPONENTS (frontend/src/gap.tsx:4765) and in the desktop app's route allowlist (desktop/src-tauri/hud-routes.json:49).\n- It lists the documents, disabling one not shipped, and renders the chosen one through the new shared Markdown component (frontend/src/markdown.tsx:98).\n- That component emits React elements only (no innerHTML path): headings with anchors, code fences, pipe tables, lists, quotes and rules, plus bold, italic, inline code and links. A link renders only for http(s) or a same-origin path, in a new tab with rel=noopener noreferrer (safeHref, frontend/src/markdown.tsx:25). Raw HTML in a document stays literal text. There is no regex lookbehind, so older Safari can parse the bundle.\n\n(3) Open in a new tab. Every document is a standalone deep link, /v2/console/docs?doc=<slug>[#section] (docHref, frontend/src/panels/docs.tsx:15). The panel offers it as \"open in a new tab ↗\" with rel=noopener noreferrer (frontend/src/panels/docs.tsx:67), and a #section is scrolled into view (frontend/src/panels/docs.tsx:49).\n\n(4) The flag's cost where it is flipped, per the row rationale.\n- Each document's sections carry the names their headings document. The hub computes them with heading_anchor (agents/core/routers/help_docs.py:44), which one shared fixture pins character for character to the renderer's headingAnchor (frontend/src/markdown.tsx:94).\n- The Settings panel links every setting FLAGS.md documents to its section with a \"cost ↗\" beside the toggle (sectionIndex, frontend/src/panels/docs.tsx:20; frontend/src/gap.tsx:2641, frontend/src/gap.tsx:2666).\n- The security posture panel links to the flags document (frontend/src/gap.tsx:1008).\n\nThe route/auth/OpenAPI snapshots, the HUD parity rules, the API sweep chapter and frontend/src/api/schema.gen.ts are regenerated.\n\nTests:\n- tests/test_help_docs_route.py, 25 cases:\n  - the list and each allowlisted document (tests/test_help_docs_route.py:35, tests/test_help_docs_route.py:49);\n  - seven off-list and traversal URLs, all 404 (tests/test_help_docs_route.py:67);\n  - the guard (tests/test_help_docs_route.py:71);\n  - a missing file, the cap and a symlink (tests/test_help_docs_route.py:80, tests/test_help_docs_route.py:88, tests/test_help_docs_route.py:94);\n  - the shared anchor fixture and the section index (tests/test_help_docs_route.py:109, tests/test_help_docs_route.py:114, tests/test_help_docs_route.py:122).\n- frontend/src/test/markdown.test.tsx: structure, snake_case kept as text, hostile HTML inert, safe links only, no raw-HTML sink and no lookbehind in the source, the same anchor fixture, heading ids.\n- frontend/src/test/docs-panel.test.tsx: registration, rendering, switching and truncation, deep links to a doc and to a section, and the Settings cost link.\nAll 1,346 vitest cases pass, as do tsc, the e2e typecheck and the build.",
+      "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/routers/quickbar.py",
-          "sha256": "3a4f02969ddb1e43b2f7a3ddc9b5244706ee6dd6d0bc4019abece11a757f5cb3"
+          "path": "agents/core/routers/help_docs.py",
+          "sha256": "091ff432a9a073b2189c4cdb071e4974c5d46461fb7000fb6b3d4c64ddfbf85d"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
+        },
+        {
+          "path": "frontend/src/markdown.tsx",
+          "sha256": "a7b1d71afbb8118f9527c7b4540a56dc93ecd759e9f47a5dd17d3f088c2fe822"
+        },
+        {
+          "path": "frontend/src/panels/docs.tsx",
+          "sha256": "42e103231115b142798ad1be6160ba6ff23e28e18692a5bb313025a00fdb195c"
         },
         {
           "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+          "sha256": "261fcd37d278cb2e215fa361b60992621b8ca7743c5bf3634a1b0b821dd1782f"
         },
         {
-          "path": "docs/USER_GUIDE.md",
-          "sha256": "42c18caf1053544977717f12f745bf11bd09f491b4e1571650d10afbdcd6edaf"
+          "path": "frontend/src/gap.tsx",
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
-          "path": "docs/FLAGS.md",
-          "sha256": "37a11c371a96924fd03e035135e482559a66856c26fc7d2d0fbde3302eae49a9"
+          "path": "desktop/src-tauri/hud-routes.json",
+          "sha256": "0f83a6d2965c083229ef62eb346274ce178f77277c9c9d1859993cc2a73a88ce"
         },
         {
-          "path": "docs/PRIVACY.md",
-          "sha256": "948d91bc213f38462015413263ec70876eba6dc946e117fd5d02ea3c781573aa"
+          "path": "tests/test_help_docs_route.py",
+          "sha256": "1f4448a574d1ee5fc79bed1cd6d47b7e1cc48098008bebb6c9d4d7ee67e8f073"
         },
         {
-          "path": "docs/CAMERA_PRIVACY.md",
-          "sha256": "3f7be25dfad140b805b67056029aabe0ac62d5e1416f45fc70750eed1fdff0ce"
+          "path": "frontend/src/test/markdown.test.tsx",
+          "sha256": "70771297f31c86f2c3819a73e4007e87cee34a1615a59ddadb64dd2aca6c65a0"
         },
         {
-          "path": "tests/_snapshots/route_surface.json",
-          "sha256": "94f6dfeef1646d3eea7dbc72ebe1d469916280c6e889e19e1c20f65a86c506b6"
-        },
-        {
-          "path": "tests/test_route_parity_guard.py",
-          "sha256": "38b7f8a5f508a8ee3a02d83c7218020e0b804a160fae84ab6c6f124257e8cba2"
+          "path": "frontend/src/test/docs-panel.test.tsx",
+          "sha256": "b61bf1699b45a2b3de69eea7a95ba8e759909039da25957d8a1674ac0d2efefa"
         }
       ]
     },
@@ -1985,8 +1993,8 @@
       "id": "H168",
       "row_sha256": "a2ce34a44a342668aa72ff16dd543e217698db9ed9ff8b700b776270a80ddd06",
       "status": "partial",
-      "summary": "Markdown rendering and destructive confirmation are each implemented in several places, with no shared primitive for either. Chat bubbles in Conversation (frontend/src/cockpit.tsx:75, cockpit.tsx:91) and the shell drawer (frontend/src/shell.tsx:143) render agent text through renderRich (cockpit.tsx:120-124), which handles only **bold**. Lists, code fences, tables, headings and links show as raw characters. frontend/src/artifacts.tsx has a separate MarkdownBody that renders only React text nodes (artifacts.tsx:73-102: headings, bold, inline code, bullet lists; raw HTML stays literal, pinned by frontend/src/test/artifacts.test.tsx:79). It is private to canvas artifacts and has no code fences, ordered lists, tables or links. Destructive confirmation is hand-rolled per panel: forget-me requires a typed FORGET (frontend/src/gap.tsx:3139, gap.tsx:3174); acquisition purge a typed phrase (gap.tsx:3947); trust-ops rotation a typed scope (frontend/src/panels/trust-ops.tsx:215); marketplace removal an arm/confirm pair (frontend/src/panels/marketplace-admin.tsx:203); the ESTOP pause a two-step button (frontend/src/modes3.tsx:166). KillSwitchPanel's HALT ALL/disengage toggle (gap.tsx:754) fires on one click through the plain Btn (frontend/src/panel-kit.tsx:89). No component maps a confirmation level to the kernel's RiskTier (agents/core/autonomy/policy.py:26-31).",
-      "remaining": "(1) A single shared safe Markdown component: React nodes only, no innerHTML/iframe/script, links limited to http(s)/same-origin with rel=noopener. It must cover bullet and ordered lists, code fences, inline code, headings, bold/italic and tables, and replace renderRich in the chat bubbles and shell drawer as well as MarkdownBody in artifacts.tsx. (2) A single confirm primitive whose severity tiers mirror RiskTier: reversible gets a one-click or two-step confirm, irreversible/money a typed confirmation. It must replace the hand-rolled confirmations in KillSwitchPanel (including disengage), forget-me, acquisition purge, marketplace removal, trust-ops rotation and the ESTOP pause, so the UI and the approval queue describe risk the same way.",
+      "summary": "Destructive confirmation is implemented in several places with no shared primitive. Markdown now has one shared component, frontend/src/markdown.tsx (built for H165: React nodes only; headings with anchors, fences, pipe tables, bullet and ordered lists, quotes, rules, bold/italic/inline code, and links only for http(s) or same-origin paths with rel=noopener; pinned by frontend/src/test/markdown.test.tsx). Only the Documentation panel uses it so far. Chat bubbles in Conversation (frontend/src/cockpit.tsx:75, cockpit.tsx:91) and the shell drawer (frontend/src/shell.tsx:143) render agent text through renderRich (cockpit.tsx:120-124), which handles only **bold**. Lists, code fences, tables, headings and links show as raw characters. frontend/src/artifacts.tsx has a separate MarkdownBody that renders only React text nodes (artifacts.tsx:73-102: headings, bold, inline code, bullet lists; raw HTML stays literal, pinned by frontend/src/test/artifacts.test.tsx:79). It is private to canvas artifacts and has no code fences, ordered lists, tables or links. Destructive confirmation is hand-rolled per panel: forget-me requires a typed FORGET (frontend/src/gap.tsx:3148, gap.tsx:3183); acquisition purge a typed phrase (gap.tsx:3956); trust-ops rotation a typed scope (frontend/src/panels/trust-ops.tsx:215); marketplace removal an arm/confirm pair (frontend/src/panels/marketplace-admin.tsx:203); the ESTOP pause a two-step button (frontend/src/modes3.tsx:166). KillSwitchPanel's HALT ALL/disengage toggle (gap.tsx:755) fires on one click through the plain Btn (frontend/src/panel-kit.tsx:89). No component maps a confirmation level to the kernel's RiskTier (agents/core/autonomy/policy.py:26-31).",
+      "remaining": "(1) Adopt the shared Markdown component (frontend/src/markdown.tsx, which already covers the required syntax safely) in the chat bubbles and the shell drawer in place of renderRich, and in artifacts.tsx in place of MarkdownBody, keeping the artifacts' 4,000-character bound. (2) A single confirm primitive whose severity tiers mirror RiskTier: reversible gets a one-click or two-step confirm, irreversible/money a typed confirmation. It must replace the hand-rolled confirmations in KillSwitchPanel (including disengage), forget-me, acquisition purge, marketplace removal, trust-ops rotation and the ESTOP pause, so the UI and the approval queue describe risk the same way.",
       "evidence": [
         {
           "path": "frontend/src/cockpit.tsx",
@@ -2006,7 +2014,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/modes3.tsx",
@@ -2031,6 +2039,14 @@
         {
           "path": "frontend/src/test/kill-switch-refusal.test.tsx",
           "sha256": "2ab97e12a94929d180955f5d6f0aa5ab7bac3be9fdd4ad20c414f6cff837603f"
+        },
+        {
+          "path": "frontend/src/markdown.tsx",
+          "sha256": "a7b1d71afbb8118f9527c7b4540a56dc93ecd759e9f47a5dd17d3f088c2fe822"
+        },
+        {
+          "path": "frontend/src/test/markdown.test.tsx",
+          "sha256": "70771297f31c86f2c3819a73e4007e87cee34a1615a59ddadb64dd2aca6c65a0"
         }
       ]
     },
@@ -2072,7 +2088,7 @@
       "id": "H174",
       "row_sha256": "8a257dd1c804b093164422dbdf845de3da9a8a3b97c7677773877bb056fa621a",
       "status": "partial",
-      "summary": "The uninstall model exists and is sound. plan_uninstall (agents/core/uninstall.py:50) is a side-effect-free probe reporting which UNINSTALL_TARGETS exist, and as what kind. run_uninstall (agents/core/uninstall.py:65) removes only those targets and reports what it could not remove. Data erasure is a separate opt-in that runs purge_data backup-first before any target is removed. The CLI _main (agents/core/uninstall.py:127) refuses without --confirm (agents/core/uninstall.py:134). uninstall.sh and UNINSTALL.bat wrap the module. tests/test_uninstall.py checks the targets against install.sh/INSTALL.bat, plan reporting (tests/test_uninstall.py:75), idempotence and purge ordering. The data half is already reachable in-app: BackupPanel's typed FORGET reveal (frontend/src/gap.tsx:3145) calls POST /api/admin/forget (agents/core/routers/backup.py:99), which requires {confirm: 'FORGET'}. The row's kernel gate would plug into agents/core/kernel/registry.py, which has no uninstall action today.",
+      "summary": "The uninstall model exists and is sound. plan_uninstall (agents/core/uninstall.py:50) is a side-effect-free probe reporting which UNINSTALL_TARGETS exist, and as what kind. run_uninstall (agents/core/uninstall.py:65) removes only those targets and reports what it could not remove. Data erasure is a separate opt-in that runs purge_data backup-first before any target is removed. The CLI _main (agents/core/uninstall.py:127) refuses without --confirm (agents/core/uninstall.py:134). uninstall.sh and UNINSTALL.bat wrap the module. tests/test_uninstall.py checks the targets against install.sh/INSTALL.bat, plan reporting (tests/test_uninstall.py:75), idempotence and purge ordering. The data half is already reachable in-app: BackupPanel's typed FORGET reveal (frontend/src/gap.tsx:3154) calls POST /api/admin/forget (agents/core/routers/backup.py:99), which requires {confirm: 'FORGET'}. The row's kernel gate would plug into agents/core/kernel/registry.py, which has no uninstall action today.",
       "remaining": "There is no uninstall from inside the app.\n- plan_uninstall has no caller outside tests: no --gui-summary flag, no admin route serving the pre-flight summary, and no HUD Danger-zone panel rendering it.\n- No route or HUD control runs the software-only or software+data removal.\n- The run must cross the kernel at the irreversible tier (approval queue floor) with a typed confirmation.\n- It must be executed by a detached cleanup that waits for the hub process to exit before deleting the .venv the hub runs from.",
       "evidence": [
         {
@@ -2093,7 +2109,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "agents/core/kernel/registry.py",
@@ -2266,7 +2282,7 @@
       "id": "H204",
       "row_sha256": "584435ff5f5192135c60864bb09bd088060eed9581b77071335eb91ee6d34a14",
       "status": "partial",
-      "summary": "The installed-tree and registry surfaces are wired end to end. GET /skills (agents/core/routers/skills.py:29) and the admin-guarded marketplace routes (list, history, rollback, publish, install, install-zip, review, uninstall, pending, approve; agents/core/routers/skills.py:355-580) each have a HUD caller. The console panels are all registered in frontend/src/console-routes.ts: SKILLS MARKETPLACE (review + rollback, frontend/src/gap.tsx:1759), Marketplace Admin (frontend/src/panels/marketplace-admin.tsx: publish, install-zip and uninstall keyed by folder name, which avoids the manifest-title trap), Skills Import, Skill History, Pending Skills and the Security Skills Map. Per-skill usage counters (use_count, last_used_at) are tracked in agents/core/skills/usage.py:34. SkillCurator (agents/core/skills/curator.py:35) archives stale agent-created, unpinned skills on its own schedule. Per-agent scoping exists only as author-declared manifest `agents:` filtering in SkillLoader.prompt_catalog (agents/core/skills/loader.py:1246-1247) and the static agents.yaml `tools:` list (agents/core/tool_profiles.py:37). test_skills_api.py, test_skill_lifecycle_curator.py and test_skill_approval_revoke.py: 37 pass.",
+      "summary": "The installed-tree and registry surfaces are wired end to end. GET /skills (agents/core/routers/skills.py:29) and the admin-guarded marketplace routes (list, history, rollback, publish, install, install-zip, review, uninstall, pending, approve; agents/core/routers/skills.py:355-580) each have a HUD caller. The console panels are all registered in frontend/src/console-routes.ts: SKILLS MARKETPLACE (review + rollback, frontend/src/gap.tsx:1762), Marketplace Admin (frontend/src/panels/marketplace-admin.tsx: publish, install-zip and uninstall keyed by folder name, which avoids the manifest-title trap), Skills Import, Skill History, Pending Skills and the Security Skills Map. Per-skill usage counters (use_count, last_used_at) are tracked in agents/core/skills/usage.py:34. SkillCurator (agents/core/skills/curator.py:35) archives stale agent-created, unpinned skills on its own schedule. Per-agent scoping exists only as author-declared manifest `agents:` filtering in SkillLoader.prompt_catalog (agents/core/skills/loader.py:1246-1247) and the static agents.yaml `tools:` list (agents/core/tool_profiles.py:37). test_skills_api.py, test_skill_lifecycle_curator.py and test_skill_approval_revoke.py: 37 pass.",
       "remaining": "Both gaps the rationale accepts are absent. (1) Per-agent skill enable/disable as a capability grant: the permission ledger's SURFACES (agents/core/permission_ledger.py:69) has no skill surface. No route or HUD control enables or disables a skill for an agent, there is no All master switch, and neither SkillLoader.prompt_catalog nor SkillLoader.execute (agents/core/skills/loader.py:499) consults an owner-set grant. The manifest `agents:` field is author-controlled and only un-advertises. (2) A 'Disable unused' sweep: usage.py records use_count and last_used_at, but no owner-triggered route or control disables idle skills. The curator acts only on agent-created skills, on its own schedule, and never on imported or bundled ones. The profile-scope selector waits on the profile export/import row.",
       "evidence": [
         {
@@ -2279,11 +2295,11 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+          "sha256": "261fcd37d278cb2e215fa361b60992621b8ca7743c5bf3634a1b0b821dd1782f"
         },
         {
           "path": "agents/core/skills/usage.py",
@@ -2365,7 +2381,7 @@
       "id": "H218",
       "row_sha256": "34336f83bb8b10a69e3e76c66f71bb9dc461a3302e0fb9b3862ca0c1c4c7d363",
       "status": "missing",
-      "summary": "Sessions can only be listed and resumed. GET /sessions (agents/core/routers/sessions.py:22-28) returns CheckpointManager.get_sessions (agents/core/checkpoint.py:341), a plain `SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?` with no archived column or filter. The HUD SessionsPanel (frontend/src/gap.tsx:2369) shows the 12 newest sessions with a resume button; `nerva sessions` and the mobile client read the same list. Deletion exists only for the whole install: POST /api/admin/forget (agents/core/routers/backup.py:99) runs a backup-first purge through agents/core/data_purge.py, and the TTL retention sweep (schedule_retention, agents/core/scheduler_service.py:171, over agents/core/retention.py) prunes transcripts past their TTL. test_retention.py, test_data_purge.py and test_session_continuation.py: 66 pass.",
+      "summary": "Sessions can only be listed and resumed. GET /sessions (agents/core/routers/sessions.py:22-28) returns CheckpointManager.get_sessions (agents/core/checkpoint.py:341), a plain `SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?` with no archived column or filter. The HUD SessionsPanel (frontend/src/gap.tsx:2372) shows the 12 newest sessions with a resume button; `nerva sessions` and the mobile client read the same list. Deletion exists only for the whole install: POST /api/admin/forget (agents/core/routers/backup.py:99) runs a backup-first purge through agents/core/data_purge.py, and the TTL retention sweep (schedule_retention, agents/core/scheduler_service.py:171, over agents/core/retention.py) prunes transcripts past their TTL. test_retention.py, test_data_purge.py and test_session_continuation.py: 66 pass.",
       "remaining": "No archive tier exists. Missing: an archived flag on sessions; archive/unarchive routes; an Archived Chats view with per-row Unarchive and Delete permanently; a per-session permanent delete routed through data_purge's backup-first path and the irreversible approval bucket (today only the install-wide /api/admin/forget exists); an 'auto-archive stale chats' setting with a scheduler job; and a default project directory setting.",
       "evidence": [
         {
@@ -2378,7 +2394,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "agents/core/routers/backup.py",
@@ -2415,7 +2431,7 @@
       "row_sha256": "765d4e507aa22a50b7bde5a3972b342c301ef50855453885062b79b414c92f93",
       "status": "partial",
       "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:281). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:431, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
-      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1853-1860), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1305).",
+      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1856-1863), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1305).",
       "evidence": [
         {
           "path": "agents/core/cost_tracker.py",
@@ -2431,7 +2447,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/app.tsx",
@@ -2447,7 +2463,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_h10_16_apm.py",
@@ -2553,7 +2569,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "tests/test_system_map.py",
@@ -2618,7 +2634,7 @@
       "id": "H243",
       "row_sha256": "36fa8665278f6af976ac648ed620600e3d9dedf4f3d499208615703e569aaad1",
       "status": "partial",
-      "summary": "The local half is admin-guarded and working. `GET /api/models/local` (agents/core/routers/models_llm.py:103) lists LM Studio/Ollama models and marks the active one. `POST /api/models/local/switch` (agents/core/routers/models_llm.py:363) switches models, and `POST /api/llm/load` / `unload` (agents/core/routers/models_llm.py:472, agents/core/routers/models_llm.py:500) load and unload them. The HUD reaches all of this through `LMStudioPanel` (frontend/src/gap.tsx:2379). The cloud side is read-only. `GET /api/llm/auth-profiles` (agents/core/routers/models_llm.py:427) returns masked Anthropic/Gemini pool status, rendered by `AuthProfilesPanel` (frontend/src/gap.tsx:2592). HybridRouter builds those pools only from environment variables (agents/core/llm/hybrid_router.py:327, via `AuthProfilePool.from_env` at agents/core/llm/auth_rotation.py:86). The shared command catalog the row depends on exists: `GET /api/commands` (agents/core/routers/commands.py:29) with name/description/tier/usage, and `GET /api/quickbar/help` (agents/core/routers/quickbar.py:59). Both are consumed by `QuickbarPanel` (frontend/src/panels/quickbar.tsx:98), which lists commands but does not complete a partial line. Path completion is conditional in the rationale on a terminal client shipping. `nerva` has only the one-shot `nerva chat` and no interactive composer, so path completion is not owed yet.",
+      "summary": "The local half is admin-guarded and working. `GET /api/models/local` (agents/core/routers/models_llm.py:103) lists LM Studio/Ollama models and marks the active one. `POST /api/models/local/switch` (agents/core/routers/models_llm.py:363) switches models, and `POST /api/llm/load` / `unload` (agents/core/routers/models_llm.py:472, agents/core/routers/models_llm.py:500) load and unload them. The HUD reaches all of this through `LMStudioPanel` (frontend/src/gap.tsx:2382). The cloud side is read-only. `GET /api/llm/auth-profiles` (agents/core/routers/models_llm.py:427) returns masked Anthropic/Gemini pool status, rendered by `AuthProfilesPanel` (frontend/src/gap.tsx:2595). HybridRouter builds those pools only from environment variables (agents/core/llm/hybrid_router.py:327, via `AuthProfilePool.from_env` at agents/core/llm/auth_rotation.py:86). The shared command catalog the row depends on exists: `GET /api/commands` (agents/core/routers/commands.py:29) with name/description/tier/usage, and `GET /api/quickbar/help` (agents/core/routers/quickbar.py:59). Both are consumed by `QuickbarPanel` (frontend/src/panels/quickbar.tsx:98), which lists commands but does not complete a partial line. Path completion is conditional in the rationale on a terminal client shipping. `nerva` has only the one-shot `nerva chat` and no interactive composer, so path completion is not owed yet.",
       "remaining": "(1) No provider options: no route returns models grouped by provider (cloud and local) with cost hints, and cost_tracker's price table is not shown per model. (2) No save-key: no admin route writes a provider API key to the secret store and returns the refreshed model list. The pools read env vars only, so a key saved at runtime would never reach the router without a pool rebuild. (3) No disconnect: no route removes a provider's credential and rebuilds its pool, so there is no single place to revoke a provider. No audit event exists for either write. `/api/secrets/broker` (agents/core/routers/secrets.py:29, agents/core/routers/secrets.py:56) stores action-time `{{secret:NAME}}` values, not the router's provider keys. (4) No slash completion: neither the chat composer nor QuickbarPanel completes command names or their `usage` arguments from `/api/commands` as the user types.",
       "evidence": [
         {
@@ -2647,7 +2663,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/panels/quickbar.tsx",
@@ -2696,7 +2712,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/routers/voice.py",
@@ -2753,7 +2769,7 @@
       "id": "H259",
       "row_sha256": "fe7e13a56d1a94f8bc70f5a4b1eb9d4fb9fc6a631154ae6bdf90d7b93aad0598",
       "status": "partial",
-      "summary": "Only the unsafe form of reset exists. POST /api/admin/settings/reseed (agents/core/routers/admin.py:127-130) calls init_db(force=True). That runs DELETE FROM settings and re-seeds every category (agents/core/settings_db.py:414-418): global, immediate, admin-token only, with no preview, no approval and no undo. tests/test_admin_settings_mutations.py checks only that reseed returns ok and requires a token. Per-category writes go through PUT /api/admin/settings/{category}, which validates with validate_category and audits only the key names (agents/core/routers/admin.py:110). The HUD SettingsPanel (frontend/src/gap.tsx:2635) edits and saves categories through that route, but has no reset, defaults, export or import control. settings.db is deliberately left out of the owner data export (agents/core/data_export.py:39) and only travels inside the full data-root backup.",
+      "summary": "Only the unsafe form of reset exists. POST /api/admin/settings/reseed (agents/core/routers/admin.py:127-130) calls init_db(force=True). That runs DELETE FROM settings and re-seeds every category (agents/core/settings_db.py:414-418): global, immediate, admin-token only, with no preview, no approval and no undo. tests/test_admin_settings_mutations.py checks only that reseed returns ok and requires a token. Per-category writes go through PUT /api/admin/settings/{category}, which validates with validate_category and audits only the key names (agents/core/routers/admin.py:110). The HUD SettingsPanel (frontend/src/gap.tsx:2638) edits and saves categories through that route, but has no reset, defaults, export or import control. settings.db is deliberately left out of the owner data export (agents/core/data_export.py:39) and only travels inside the full data-root backup.",
       "remaining": "Nothing gives the UI the defaults: there is no GET /api/admin/settings/defaults or other accessor, so the HUD cannot mark keys that differ from their defaults. There is no per-category reset and no preview diff against defaults. Reset still wipes every category at once and does not go through the approval queue's irreversible tier. There is no JSON export of the configuration. There is no import that stages values for review before Save (validated by validate_category, with secret values never exported in clear).",
       "evidence": [
         {
@@ -2766,7 +2782,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "agents/core/data_export.py",
@@ -2963,7 +2979,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -3548,7 +3564,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -4492,7 +4508,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_invocation_reasoning.py",
@@ -4886,7 +4902,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_tool_loop_repeats.py",
@@ -5014,7 +5030,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "scripts/coordinator.py",
@@ -5038,7 +5054,7 @@
       "id": "H413",
       "row_sha256": "8bd59b96a60f2a4ade11e5743bb7451c03a0ba9deb0155ce507a89c10c67a0fe",
       "status": "missing",
-      "summary": "No titling code exists. Sessions are rows in the checkpoint sessions table (agents/core/checkpoint.py:66-74), whose summary column is never written. update_session (agents/core/checkpoint.py:322) accepts a summary, but its only caller passes turn_count alone (agents/core/memory/manager.py:128), and session_continuation inserts rows without one. GET /sessions (agents/core/routers/sessions.py:22-28) returns the rows unchanged. The HUD SESSIONS card renders the raw session id (frontend/src/gap.tsx:2374). The mobile resume modal falls back to the id whenever summary is empty (mobile/src/components/SessionsModal.tsx:80), which is always. There is no instant first-words title, no background title upgrade and no naming prompt.",
+      "summary": "No titling code exists. Sessions are rows in the checkpoint sessions table (agents/core/checkpoint.py:66-74), whose summary column is never written. update_session (agents/core/checkpoint.py:322) accepts a summary, but its only caller passes turn_count alone (agents/core/memory/manager.py:128), and session_continuation inserts rows without one. GET /sessions (agents/core/routers/sessions.py:22-28) returns the rows unchanged. The HUD SESSIONS card renders the raw session id (frontend/src/gap.tsx:2377). The mobile resume modal falls back to the id whenever summary is empty (mobile/src/components/SessionsModal.tsx:80), which is always. There is no instant first-words title, no background title upgrade and no naming prompt.",
       "remaining": "(1) Stage one: at the first user turn of a session, persist an instant title taken from the user's own first words (bounded and sanitized). (2) Stage two: once per session, fire a background call on the strict-local auxiliary rail (never a cloud backend) with a prompt that tells the model to name the session rather than answer it, and replace the instant title on success. (3) Return the title from GET /sessions and render it on every human-facing session list: the HUD sessions card and the mobile resume modal.",
       "evidence": [
         {
@@ -5055,7 +5071,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "mobile/src/components/SessionsModal.tsx",
@@ -5137,7 +5153,7 @@
       "id": "H425",
       "row_sha256": "a8b11916b6ae9169691c139182508a6e627a760e0613699cdfd2ce3c8af5bdb6",
       "status": "partial",
-      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:553), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:187) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:289).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:567). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:3008, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
+      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:553), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:188) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:290).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:567). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:3008, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
       "remaining": "Add a memory.forget kind at the irreversible tier. POST /api/memory/decay/forget must return the transitive dependent list as a preview and queue an approval card carrying that list instead of deleting on the spot. The cascade runs only from the approved task and writes an audit row with the removed ids. KgPanel and MemoryHygienePanel show the preview and the pending state. The executed cascade must also retract the records the ids name (at least LivingMemory.forget for turn ids), not only the decay tracker's activation entries.",
       "evidence": [
         {
@@ -5166,7 +5182,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "tests/test_h14_4_decay_forgetting.py",
@@ -5344,7 +5360,7 @@
       "id": "H440",
       "row_sha256": "bf1110516d45262722fbd9d762e4d284f62fd6da632d675f87e63353cba3aa9b",
       "status": "partial",
-      "summary": "Continuation lineage exists in an explicit form. POST /sessions/continue (agents/core/routers/sessions.py:68, admin-guarded) is called by `nerva sessions continue` (agents/cli/nerva.py:1125) and runs ContinuationStore.create (agents/core/session_continuation.py:184, via create_continuation :344). create inserts a new sessions row and a session_continuations row carrying parent_id, root_id and a hashed immutable seed (:43-45), after verifying the ancestry chain. tests/test_session_continuation.py covers this with 50 passing tests.\n\nNothing names sessions:\n- The sessions table has only a summary column (agents/core/checkpoint.py:72), and no caller writes it. The only update_session call (agents/core/memory/manager.py:128) passes turn_count alone.\n- There is no deterministic first-message title, no small-model upgrade constrained by a {\"title\"} JSON schema, and no human-title field or never-overwrite rule.\n- Continuations get no `base #N` titles and are not hidden from pickers: GET /sessions (agents/core/routers/sessions.py:22, :27) returns raw rows from get_sessions (checkpoint.py:341).\n- Nothing resolves a name to the newest member of a lineage.\nThe HUD SessionsPanel lists raw ids (frontend/src/gap.tsx:2374). The mobile SessionsModal would show summary but always falls back to the id (mobile/src/components/SessionsModal.tsx:80).",
+      "summary": "Continuation lineage exists in an explicit form. POST /sessions/continue (agents/core/routers/sessions.py:68, admin-guarded) is called by `nerva sessions continue` (agents/cli/nerva.py:1125) and runs ContinuationStore.create (agents/core/session_continuation.py:184, via create_continuation :344). create inserts a new sessions row and a session_continuations row carrying parent_id, root_id and a hashed immutable seed (:43-45), after verifying the ancestry chain. tests/test_session_continuation.py covers this with 50 passing tests.\n\nNothing names sessions:\n- The sessions table has only a summary column (agents/core/checkpoint.py:72), and no caller writes it. The only update_session call (agents/core/memory/manager.py:128) passes turn_count alone.\n- There is no deterministic first-message title, no small-model upgrade constrained by a {\"title\"} JSON schema, and no human-title field or never-overwrite rule.\n- Continuations get no `base #N` titles and are not hidden from pickers: GET /sessions (agents/core/routers/sessions.py:22, :27) returns raw rows from get_sessions (checkpoint.py:341).\n- Nothing resolves a name to the newest member of a lineage.\nThe HUD SessionsPanel lists raw ids (frontend/src/gap.tsx:2377). The mobile SessionsModal would show summary but always falls back to the id (mobile/src/components/SessionsModal.tsx:80).",
       "remaining": "Build two-stage automatic titles:\n- a deterministic derive_title() from the first user message (at most 48 chars, cut on a word boundary), written before the model is called\n- one strict-local auxiliary call constrained by a {\"title\": string} JSON schema with additionalProperties false and input capped at 1,000 chars; it upgrades the title once and never overwrites a human-set title.\nAlso needed:\n- title storage with provenance, plus a rename route\n- `base #2`, `base #3` titles for continuations\n- continuations hidden from GET /sessions, the HUD SessionsPanel and the mobile SessionsModal\n- resume by title resolving to the newest lineage member\n- titles shown in the HUD and on mobile.",
       "evidence": [
         {
@@ -5369,7 +5385,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "mobile/src/components/SessionsModal.tsx",
@@ -5385,7 +5401,7 @@
       "id": "H441",
       "row_sha256": "69ff8f2c2f54e232b60f154dde5168e63bf3565c2cd881f7bff60a3ac91c7fa2",
       "status": "partial",
-      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:31) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:51-52). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2374) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:314, build_default_registry) offers /sessions (agents/core/commands.py:318), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
+      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:31) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:51-52). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2377) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:314, build_default_registry) offers /sessions (agents/core/commands.py:318), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
       "remaining": "There is no bounded local recap renderer: nothing formats the last N exchanges with truncated turns and tool calls collapsed to a count. The resume response carries no recap field. There is no /recap command in agents/core/commands.py, so Telegram and other chat channels cannot ask for one. The HUD SessionsPanel shows nothing after a resume and has no recap control. Tool calls are not recorded on turns, so the collapsed '[k tool calls: …]' line cannot be produced from today's turn list. No test asserts that a recap is produced without any model call.",
       "evidence": [
         {
@@ -5406,7 +5422,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "mobile/src/components/SessionsModal.tsx",
@@ -5541,7 +5557,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "f9a9fb659d6c1ec1e81583e82e66254e5c8035617d11e3b44440ff0bb4739a1b"
+          "sha256": "797a34b305692e7aaa0860136b51589538e03e42acb1abce52ec3a55427af21e"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -5956,7 +5972,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/cli/nerva.py",
@@ -6234,7 +6250,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_capability_registry.py",
@@ -6258,7 +6274,7 @@
         },
         {
           "path": "tests/test_hud_v2_parity.py",
-          "sha256": "f541529cd115b70758b185e49a1075fd366e9088b38595c6cb9e97755982b1dd"
+          "sha256": "a88d7705f3e0109344c97cbb61e6877f65388df0eb9baf8cf83b800c390b754e"
         },
         {
           "path": "tests/test_endpoints.py",
@@ -6266,7 +6282,7 @@
         },
         {
           "path": "tests/_snapshots/route_auth.json",
-          "sha256": "5b2bed6714529bec4ab4179b9cf3e91d6dd3668699e280a01511f7cd771357cd"
+          "sha256": "706f7f782315338d03284b7d86a234f6e7b04132d4ad0d71e4a95e35624ce6cf"
         }
       ]
     },
@@ -6274,7 +6290,7 @@
       "id": "H478",
       "row_sha256": "16f7244459dd95d488ecf00d4d25e27135c6614e7ce9becf2c4931eac29701b9",
       "status": "partial",
-      "summary": "The inbound half exists with the governed posture. A2ARegistry (agents/core/a2a.py) allowlists peers and returns each peer's HMAC secret only once (add_peer / list_peers / remove_peer). receive_task (agents/core/a2a.py:224) checks the signature over the raw body in constant time, runs the a2a.inbound contract and parks every verified task in a bounded pending inbox. decide (agents/core/a2a.py:262) only flips the status ('Approval does NOT execute it'); test_decide_is_terminal_and_does_not_execute pins this. In agents/core/routers/a2a.py, POST /api/a2a/task stays off unless JARVIS_A2A_ENABLED is set, and peer CRUD and inbox decide are admin-guarded. Both have HUD callers: peer add/remove at frontend/src/gap.tsx:1643 and inbox approve/reject at frontend/src/gap.tsx:1739. NodeMesh.dispatch (agents/core/node_mesh.py:134, POST /api/nodes/{id}/dispatch in agents/core/routers/mesh.py) is kernel-mediated (agents/core/kernel/registry.py:34). It only enqueues an ask-tier task for a node client, and none exists.",
+      "summary": "The inbound half exists with the governed posture. A2ARegistry (agents/core/a2a.py) allowlists peers and returns each peer's HMAC secret only once (add_peer / list_peers / remove_peer). receive_task (agents/core/a2a.py:224) checks the signature over the raw body in constant time, runs the a2a.inbound contract and parks every verified task in a bounded pending inbox. decide (agents/core/a2a.py:262) only flips the status ('Approval does NOT execute it'); test_decide_is_terminal_and_does_not_execute pins this. In agents/core/routers/a2a.py, POST /api/a2a/task stays off unless JARVIS_A2A_ENABLED is set, and peer CRUD and inbox decide are admin-guarded. Both have HUD callers: peer add/remove at frontend/src/gap.tsx:1646 and inbox approve/reject at frontend/src/gap.tsx:1742. NodeMesh.dispatch (agents/core/node_mesh.py:134, POST /api/nodes/{id}/dispatch in agents/core/routers/mesh.py) is kernel-mediated (agents/core/kernel/registry.py:34). It only enqueues an ask-tier task for a node client, and none exists.",
       "remaining": "Nothing sends outbound. Peer records store no endpoint, and no code signs a task and POSTs it to another machine's /api/a2a/task, so this box has no `peer dm` equivalent. An approved inbound task has no execution path: decide only changes the status, no turn runs and no reply reaches the sender. The accepted async handle is missing: there is no start/status/stop for an approved remote turn and no peer-authenticated status/result poll. Without them the sender cannot collect a result without holding a connection open. The row depends on H476 (Runs API), which is itself partial. Any execution must stay behind owner approval and node.dispatch/kernel mediation, and no peer-side grant may skip the pending inbox.",
       "evidence": [
         {
@@ -6287,7 +6303,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "agents/core/node_mesh.py",
@@ -6423,7 +6439,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "tests/test_h10_18_action_approvals.py",
@@ -6534,7 +6550,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/persistence/json_store.py",
@@ -6789,7 +6805,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/proxy_trust.py",
@@ -6846,7 +6862,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/security/token_store.py",
@@ -6874,7 +6890,7 @@
       "id": "H513",
       "row_sha256": "d74009083bea038b56e826ef9709e28602cadac7223713d3119ddf4977d4b3b6",
       "status": "partial",
-      "summary": "Two of the three accepted parts exist. Surface scoping: agents/core/tool_profiles.py resolves the offered tool set per agent × surface × principal in one module (classify_turn at agents/core/tool_profiles.py:105, resolve_tools at agents/core/tool_profiles.py:190). A call outside the profile is refused before execution (agents/core/tool_rpc.py:309), and tests/test_tool_profiles.py pins the resolved sets in a snapshot. Install posture: requirements-beta.lock is hash-pinned and gated in sync by .github/workflows/lockfile.yml, with no runtime installs; docs/FLAGS.md states the risk delta of each flag. The data-handling part, which the row named as the gap worth closing, is still mostly absent. The lot added one narrow control. `llm.openrouter_data_collection` (agents/core/settings_db.py:150), seeded `deny` (agents/core/llm/provider_routing.py:41), is sent as OpenRouter's `provider.data_collection`, asking OpenRouter to route only to upstreams that do not store or train on prompts. HybridRouter hands OpenRouterBackend a reader that re-reads it before every request (agents/core/llm/hybrid_router.py:395), only the openrouter profile carries it (agents/core/llm/openrouter.py:70), and it is written only through the admin-guarded, audited PUT /api/admin/settings/{category} (agents/core/routers/admin.py:110). tests/test_openrouter_provider_routing.py pins the `deny` default and the wire object. It is not a provider tier. ProviderProfile (agents/core/llm/providers/__init__.py:28) carries auth, capabilities, fallback models and reasoning vocabulary but no data-handling or training tier. HybridRouter.select_backend (agents/core/llm/hybrid_router.py:498) routes to Gemini, Claude or a non-OpenRouter compatible provider without consulting one. Switching the OpenRouter knob to `allow` is taken silently. GET /api/security/posture (agents/core/routers/security.py:282) and the HUD PosturePanel (frontend/src/gap.tsx:967) report secrets, signing, sandbox, hardened and product posture only. No acknowledgement setting and no warning exist.",
+      "summary": "Two of the three accepted parts exist. Surface scoping: agents/core/tool_profiles.py resolves the offered tool set per agent × surface × principal in one module (classify_turn at agents/core/tool_profiles.py:105, resolve_tools at agents/core/tool_profiles.py:190). A call outside the profile is refused before execution (agents/core/tool_rpc.py:309), and tests/test_tool_profiles.py pins the resolved sets in a snapshot. Install posture: requirements-beta.lock is hash-pinned and gated in sync by .github/workflows/lockfile.yml, with no runtime installs; docs/FLAGS.md states the risk delta of each flag. The data-handling part, which the row named as the gap worth closing, is still mostly absent. The lot added one narrow control. `llm.openrouter_data_collection` (agents/core/settings_db.py:150), seeded `deny` (agents/core/llm/provider_routing.py:41), is sent as OpenRouter's `provider.data_collection`, asking OpenRouter to route only to upstreams that do not store or train on prompts. HybridRouter hands OpenRouterBackend a reader that re-reads it before every request (agents/core/llm/hybrid_router.py:395), only the openrouter profile carries it (agents/core/llm/openrouter.py:70), and it is written only through the admin-guarded, audited PUT /api/admin/settings/{category} (agents/core/routers/admin.py:110). tests/test_openrouter_provider_routing.py pins the `deny` default and the wire object. It is not a provider tier. ProviderProfile (agents/core/llm/providers/__init__.py:28) carries auth, capabilities, fallback models and reasoning vocabulary but no data-handling or training tier. HybridRouter.select_backend (agents/core/llm/hybrid_router.py:498) routes to Gemini, Claude or a non-OpenRouter compatible provider without consulting one. Switching the OpenRouter knob to `allow` is taken silently. GET /api/security/posture (agents/core/routers/security.py:282) and the HUD PosturePanel (frontend/src/gap.tsx:968) report secrets, signing, sandbox, hardened and product posture only. No acknowledgement setting and no warning exist.",
       "remaining": "Missing: a per-provider data-handling tier (for example no_training / may_train / unknown) on the provider metadata, covering the direct Gemini and Claude routes and the openai-compatible, openai-responses and xai providers that `llm.openrouter_data_collection` does not reach; a warning emitted every time a turn is routed to a may_train or unknown provider, including an OpenRouter turn under `data_collection=allow`; a durable per-provider acknowledgement written only through an admin_guard settings route. Following Hermes, the acknowledgement removes the stop on unattended runs but never the warning. The tiers, the OpenRouter `data_collection` value and the acknowledgement state are also missing from /api/security/posture and PosturePanel.",
       "evidence": [
         {
@@ -6899,7 +6915,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "requirements-beta.lock",
@@ -6972,7 +6988,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -7105,7 +7121,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -7785,7 +7801,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "tests/test_file_tools.py",
@@ -7826,7 +7842,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "partial",
-      "summary": "The HUD half of the accepted adaptation is delivered. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:238). App.submit sends an image draft to runVision (frontend/src/app.tsx:372, frontend/src/app.tsx:347). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:191, registered at agents/web.py:1396). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:28). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:212). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:301), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, which were not run here because frontend node_modules is absent.",
+      "summary": "The HUD half of the accepted adaptation is delivered. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:238). App.submit sends an image draft to runVision (frontend/src/app.tsx:372, frontend/src/app.tsx:347). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:191, registered at agents/web.py:1400). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:28). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:212). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:301), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, which were not run here because frontend node_modules is absent.",
       "remaining": "The terminal image path in the accepted adaptation is missing. The `nerva chat` verb (agents/cli/nerva.py:224) has no image argument and does not read the clipboard, so a terminal user cannot attach a screenshot file or a pasted image to /api/vlm/composer/describe.",
       "evidence": [
         {
@@ -7855,7 +7871,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/cli/nerva.py",
@@ -7985,7 +8001,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -8017,7 +8033,7 @@
       "id": "H596",
       "row_sha256": "59be52e22937634845fba4738d42197cb172388ac560a6119f0f10ee2f2c2755",
       "status": "partial",
-      "summary": "The pool mechanism is wired end to end. AuthProfilePool (agents/core/llm/auth_rotation.py) holds several keys per provider, read from *_API_KEYS with a *_API_KEY fallback (from_env, agents/core/llm/auth_rotation.py:86). hybrid_router builds Gemini and Anthropic pools (agents/core/llm/hybrid_router.py:327). ClaudeBackend and GeminiBackend fail over to the next key on a rotatable status (agents/core/llm/anthropic.py:116, agents/core/llm/gemini.py:201). report_failure (agents/core/llm/auth_rotation.py:159) applies an exponential cooldown from 30 s to 15 min. Pool health is exposed. status() (agents/core/llm/auth_rotation.py:178) returns masked per-profile failures and health through the admin-guarded GET /api/llm/auth-profiles (agents/core/routers/models_llm.py:427). AuthProfilesPanel (frontend/src/gap.tsx:2592) renders it, under the console route at frontend/src/console-routes.ts:114. tests/test_h12_20_auth_rotation.py (18 passed) and tests/test_route_guard_contracts.py::test_llm_auth_profiles_requires_admin (passed) cover the pool and the guard.",
+      "summary": "The pool mechanism is wired end to end. AuthProfilePool (agents/core/llm/auth_rotation.py) holds several keys per provider, read from *_API_KEYS with a *_API_KEY fallback (from_env, agents/core/llm/auth_rotation.py:86). hybrid_router builds Gemini and Anthropic pools (agents/core/llm/hybrid_router.py:327). ClaudeBackend and GeminiBackend fail over to the next key on a rotatable status (agents/core/llm/anthropic.py:116, agents/core/llm/gemini.py:201). report_failure (agents/core/llm/auth_rotation.py:159) applies an exponential cooldown from 30 s to 15 min. Pool health is exposed. status() (agents/core/llm/auth_rotation.py:178) returns masked per-profile failures and health through the admin-guarded GET /api/llm/auth-profiles (agents/core/routers/models_llm.py:427). AuthProfilesPanel (frontend/src/gap.tsx:2595) renders it, under the console route at frontend/src/console-routes.ts:115. tests/test_h12_20_auth_rotation.py (18 passed) and tests/test_route_guard_contracts.py::test_llm_auth_profiles_requires_admin (passed) cover the pool and the guard.",
       "remaining": "The accepted branches are missing. _ROTATABLE_STATUS (agents/core/llm/auth_rotation.py:28) is {401, 403, 429}, so a 402 billing failure neither rotates nor gets the long (1 h) cooldown. No OAuth credential type exists, and a 401 has no refresh-then-rotate step. Keys resolve only from os.environ in from_env; VaultResolver (agents/core/secrets_vault.py:16) is never consulted for LLM keys. The owner also cannot see partial degradation. AuthProfilesPanel shows one healthy/failing tag per provider, derived from the pool-level healthy count, so a pool with some keys cooling still reads green. The API returns per-profile cooldown, but the panel does not render it.",
       "evidence": [
         {
@@ -8042,11 +8058,11 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/console-routes.ts",
-          "sha256": "6062261fb77db0b71b71d21cfc577b566d088d559da236342c5944124ca6036c"
+          "sha256": "261fcd37d278cb2e215fa361b60992621b8ca7743c5bf3634a1b0b821dd1782f"
         },
         {
           "path": "agents/core/secrets_vault.py",
@@ -8448,7 +8464,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "d7dafdeb7bb5f9d457506679edd76d46e7f2aa96970e66bee7267025484f1bab"
+          "sha256": "59078d2eee73e9b5521c6b83c8ffcdc49f5cc5dc202c2456a35e10b39f66eb72"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -8765,7 +8781,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/cli/nerva.py",
@@ -9074,7 +9090,7 @@
       "evidence": [
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -9461,7 +9477,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/llm/tool_protocol.py",
@@ -9604,7 +9620,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "e5b652685a33b72e5d0ce72820514166655b5d64424b2feb3783cd2205bdab85"
+          "sha256": "d2bcae6edecb9a1b0e8eee358b0d819fa558661c269f6c2e75042d5e7a9ae1f5"
         },
         {
           "path": "agents/core/boot_guards.py",

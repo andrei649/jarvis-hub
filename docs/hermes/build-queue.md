@@ -6,13 +6,12 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 81 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 80 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H165](#h165) | In-app documentation | missing | 5 |  |
 | [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
 | [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
 | [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
@@ -93,14 +92,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H165
-
-**In-app documentation** (web) — missing, ~5 h.
-
-Files: `agents/core/routers/help_docs.py`, `agents/web.py`, `frontend/src/panels/docs.tsx`, `frontend/src/console-routes.ts`, `frontend/src/gap.tsx`, `frontend/src/api/schema.gen.ts`, `tests/test_help_docs_route.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/test/docs-panel.test.tsx`
-
-Plan: 1. Add agents/core/routers/help_docs.py with GET /api/help/docs, returning [{slug,title}], and GET /api/help/docs/{slug}, returning {slug,title,markdown}. Use a hard-coded slug-to-file allowlist (user-guide -> docs/USER_GUIDE.md, flags -> docs/FLAGS.md, privacy -> docs/PRIVACY.md, camera-privacy -> docs/CAMERA_PRIVACY.md) resolved from the repo root. Never join the slug into a path; an unknown slug returns 404. Apply user_guard and nocache_json. 2. Register the router and regenerate the route/auth/openapi snapshots and schema.gen.ts. 3. Add frontend/src/panels/docs.tsx (DocsPanel): a doc picker, rendering through the shared safe Markdown renderer from H168 extended with tables and code fences, plus an anchor with target=_blank rel='noopener noreferrer' to a standalone deep link of the same doc. Add a CONSOLE_PANELS entry {id:'docs', label:'Documentation', group:'Start', component:'DocsPanel'} and a 'what flipping costs' link from PosturePanel to the flags doc. 4. Tests to write red-first: tests/test_help_docs_route.py (each allowlisted doc served, '../', encoded traversal and unknown slugs return 404, the guard applies) and frontend/src/test/docs-panel.test.tsx (headings/tables render, hostile '<script>'/'<iframe>' in the markdown stays literal text, the new-tab link carries rel=noopener).
 
 ## H200
 

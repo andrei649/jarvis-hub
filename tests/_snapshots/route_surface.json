@@ -104,6 +104,8 @@
   "GET /api/eval/datasets/{name}/runs",
   "GET /api/feedback/summary",
   "GET /api/health/components",
+  "GET /api/help/docs",
+  "GET /api/help/docs/{slug}",
   "GET /api/host/probe",
   "GET /api/house/state",
   "GET /api/ingestion/provenance",

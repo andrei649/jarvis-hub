@@ -85,6 +85,7 @@ RULES = [
         "cockpit",
     ),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
+    ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)

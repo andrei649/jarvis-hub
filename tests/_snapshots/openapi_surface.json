@@ -104,6 +104,8 @@
   "GET /api/eval/datasets/{name}/runs": "list_dataset_runs_api_eval_datasets__name__runs_get",
   "GET /api/feedback/summary": "feedback_summary_api_feedback_summary_get",
   "GET /api/health/components": "component_health_api_health_components_get",
+  "GET /api/help/docs": "help_docs_list_api_help_docs_get",
+  "GET /api/help/docs/{slug}": "help_docs_read_api_help_docs__slug__get",
   "GET /api/host/probe": "host_probe_api_host_probe_get",
   "GET /api/house/state": "house_state_api_house_state_get",
   "GET /api/ingestion/provenance": "ingestion_provenance_api_ingestion_provenance_get",

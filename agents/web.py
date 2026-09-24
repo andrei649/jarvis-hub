@@ -1392,6 +1392,10 @@ app.include_router(_onboarding_router)
 from agents.core.routers.preferences import router as _preferences_router  # noqa: E402
 
 app.include_router(_preferences_router)
+# H165 — the owner's docs, read-only from an allowlist; user-guarded on the router.
+from agents.core.routers.help_docs import router as _help_docs_router  # noqa: E402
+
+app.include_router(_help_docs_router)
 from agents.core.routers.composer_vision import router as _composer_vision_router
 app.include_router(_composer_vision_router)
 app.include_router(_feedback_router)

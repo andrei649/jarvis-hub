@@ -12,6 +12,7 @@ import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionF
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
+import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -1003,6 +1004,8 @@ export function PosturePanel() {
           </Row>
         </>
       )}
+      {/* H165 — each switch above has a price; the flags doc names it. */}
+      <Row><a href={docHref('flags')} style={mono}>what flipping a flag costs ↗</a></Row>
     </Card>
   );
 }
@@ -2632,8 +2635,10 @@ function settingsField(it, val, on) {
     default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
   }
 }
-function SettingsPanel() {
+export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
+  // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
+  const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
   const cats = d && typeof d === 'object' ? d : {};
@@ -2656,6 +2661,10 @@ function SettingsPanel() {
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
+              {costs[`${cat}.${it.key}`] && (
+                <a href={docHref('flags', costs[`${cat}.${it.key}`])} target="_blank" rel="noopener noreferrer"
+                  style={{ ...mono, fontSize: 9.5 }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
+              )}
               <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>
             </Row>
           ))}
@@ -4753,6 +4762,7 @@ const PANEL_COMPONENTS = {
   CommandCenterPanel,
   TodayReceiptPanel,
   ModelSetupPanel,
+  DocsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
   HousePanel,

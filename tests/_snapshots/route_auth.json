@@ -104,6 +104,8 @@
   "GET /api/eval/datasets/{name}/runs": "open",
   "GET /api/feedback/summary": "admin",
   "GET /api/health/components": "open",
+  "GET /api/help/docs": "user",
+  "GET /api/help/docs/{slug}": "user",
   "GET /api/host/probe": "user",
   "GET /api/house/state": "user",
   "GET /api/ingestion/provenance": "admin",

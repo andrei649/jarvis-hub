@@ -842,3 +842,18 @@ input { font-family: inherit; }
 .hud-root[data-font="system-serif"] { --font-ui: Georgia, "Times New Roman", serif; }
 .hud-root[data-font="system-mono"] { --font-ui: ui-monospace, "SFMono-Regular", Consolas, monospace; }
 .hud-root[data-font="jetbrains-mono"] { --font-ui: "JetBrains Mono", ui-monospace, monospace; }
+/* H165 — documents rendered by the shared Markdown renderer (frontend/src/markdown.tsx) */
+.md { font-size:12.5px; line-height:1.55; color:var(--ink); overflow-wrap:anywhere; min-width:0; }
+.md .md-h { color:var(--accent-light); font-weight:600; margin:10px 0 4px; line-height:1.3; }
+.md h1.md-h { font-size:16px; } .md h2.md-h { font-size:14.5px; } .md h3.md-h { font-size:13.5px; }
+.md h4.md-h, .md h5.md-h, .md h6.md-h { font-size:12.5px; }
+.md p { margin:5px 0; } .md ul, .md ol { margin:4px 0; padding-left:20px; } .md li { margin:2px 0; }
+.md code { font-family:var(--font-mono); font-size:11px; background:var(--void); border:1px solid var(--panel-line); border-radius:3px; padding:0 4px; }
+.md pre { background:var(--void); border:1px solid var(--panel-line); border-radius:var(--radius); padding:8px 10px; overflow:auto; }
+.md pre code { border:0; padding:0; background:none; white-space:pre; }
+.md table { border-collapse:collapse; margin:6px 0; display:block; overflow-x:auto; max-width:100%; }
+.md th, .md td { border:1px solid var(--panel-line); padding:3px 7px; text-align:left; vertical-align:top; }
+.md th { color:var(--ink-2); font-weight:600; }
+.md blockquote { margin:6px 0; padding-left:10px; border-left:2px solid var(--panel-line); color:var(--ink-2); }
+.md hr { border:0; border-top:1px solid var(--panel-line); margin:10px 0; }
+.md a { color:var(--accent-light); }
