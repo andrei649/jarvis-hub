@@ -79,7 +79,7 @@ def _hub(tmp_path, monkeypatch, *, quiet=False, scheduler=True):
     sched = _Scheduler() if scheduler else None
     orch.jobs = JobRunner(store, orch=orch, scheduler=lambda: sched, quiet=lambda: quiet)
     # Far from any slot unless a test says otherwise.
-    monkeypatch.setattr(JobRunner, "seconds_to_next_slot", lambda self, job, now=None: 3600.0)
+    monkeypatch.setattr(JobRunner, "slot_timing", lambda self, job, now=None: (3600.0, 7200.0))
     return orch, telegram, stopped, store
 
 
@@ -250,10 +250,10 @@ def test_quiet_hours_hold_back_the_first_run(tmp_path, monkeypatch):
 
 def test_no_first_run_right_before_the_first_slot(tmp_path, monkeypatch):
     orch, _tg, _stop, store = _hub(tmp_path, monkeypatch)
-    monkeypatch.setattr(JobRunner, "seconds_to_next_slot", lambda self, job, now=None: 30.0)
+    monkeypatch.setattr(JobRunner, "slot_timing", lambda self, job, now=None: (30.0, 7200.0))
     try:
         _job, receipt, confirmation = orch.jobs.arm(**ASK_EVERY_2H)
-        assert receipt is None and "under two minutes" in confirmation
+        assert receipt is None and "its first slot is near" in confirmation
     finally:
         store.close()
 
@@ -263,7 +263,9 @@ def test_without_a_scheduler_the_reply_says_nothing_fires_yet(tmp_path, monkeypa
     try:
         _job, receipt, confirmation = orch.jobs.arm(**ASK_EVERY_2H)
         assert receipt["status"] == "queued"
-        assert confirmation.endswith("the scheduler is not running, so nothing fires until it is")
+        # Queued, not "now": nothing drains it until the scheduler runs.
+        assert confirmation == ("first run queued, then every 2 hours (0 */2 * * *)"
+                                " — the scheduler is not running, so nothing fires until it is")
     finally:
         store.close()
 
@@ -293,6 +295,13 @@ def test_the_remind_command_says_it_waits_for_its_cadence(hub):
 @pytest.mark.parametrize("cron,expected", [
     ("*/30 * * * *", True), ("0 * * * *", True), ("0 */2 * * *", True),
     ("0 7 * * *", False), ("0 8 * * 1-5", False), ("*/10 9-17 * * *", False), ("0 9 1 * *", False),
+    # re-review round: what a cron fires decides, not how it is written
+    ("0 0-23/2 * * *", True), ("0 0,12 * * *", True), ("* * * * *", True), ("0,30 * * * *", True),
+    ("15 */6 * * *", True),
+    ("*/5 */2 * * *", False),   # every 5 minutes, but only in even hours
+    ("0 9,21 * * *", False),    # two times of day
+    ("0 */24 * * *", False),    # daily at midnight
+    ("0,1,2 * * * *", False), ("0 7 * * * *", False), ("x * * * *", False),
 ])
 def test_what_counts_as_an_interval(cron, expected):
     assert is_interval_cron(cron) is expected
@@ -314,6 +323,13 @@ def _job(action, options=None, cron="0 */2 * * *"):
     (_job({"type": "ask"}), {"quiet": True}, (False, "quiet hours")),
     (_job({"type": "ask"}), {"seconds_to_slot": 119.0}, (False, "slot")),
     (_job({"type": "ask"}), {"seconds_to_slot": 121.0}, (True, "interval")),
+    # re-review round: the margin grows with the cadence (a quarter of it, two minutes at least)
+    (_job({"type": "ask"}, cron="0 */12 * * *"), {"seconds_to_slot": 45 * 60, "slot_gap": 12 * 3600}, (False, "slot")),
+    (_job({"type": "ask"}, cron="0 */12 * * *"), {"seconds_to_slot": 3 * 3600 + 1, "slot_gap": 12 * 3600},
+     (True, "interval")),
+    (_job({"type": "ask"}), {"seconds_to_slot": 180.0, "slot_gap": 7200.0}, (False, "slot")),
+    (_job({"type": "ask"}, cron="*/5 * * * *"), {"seconds_to_slot": 130.0, "slot_gap": 300.0}, (True, "interval")),
+    (_job({"type": "ask"}, cron="*/5 * * * *"), {"seconds_to_slot": 100.0, "slot_gap": 300.0}, (False, "slot")),
     (_job({"type": "ask"}, {"repeat": 3}), {"explicit": True}, (True, "asked")),
     (_job({"type": "remind"}, cron="0 7 * * *"), {"explicit": True, "quiet": True}, (True, "asked")),
     (_job({"type": "ask"}), {"explicit": False}, (False, "opted out")),
@@ -330,6 +346,8 @@ def test_the_first_run_confirmation_wording():
     assert arm_confirmation(job, None) == "every 2 hours (0 */2 * * *), on its cadence"
     assert arm_confirmation(job, None, why="not queued (full)") == (
         "first run not queued (full); every 2 hours (0 */2 * * *), on its cadence")
+    assert arm_confirmation(job, None, why="slot") == (
+        "every 2 hours (0 */2 * * *), on its cadence (its first slot is near, so that slot is the first run)")
 
 
 def test_the_cli_passes_the_first_run_choice(monkeypatch):
@@ -340,3 +358,172 @@ def test_the_cli_passes_the_first_run_choice(monkeypatch):
                                        "confirmation": "every 2 hours (0 */2 * * *), on its cadence"}})
     code, _out, _err, hub = _run(["jobs", "create", "--blueprint", "inbox_watch", "--no-first-run"], hub)
     assert code == 0 and hub.calls[-1][2]["first_run"] is False
+
+
+def test_the_cli_asks_for_a_first_run(monkeypatch):
+    from tests.test_nerva_cli import _FakeHub, _run
+
+    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every day at 7:00", "cron": "0 7 * * *"}
+    hub = _FakeHub({"POST /api/jobs": {"ok": True, "job": job, "first_run": {"status": "queued"},
+                                       "confirmation": "first run now, then every day at 7:00 (0 7 * * *)"}})
+    code, out, _err, hub = _run(["jobs", "create", "--blueprint", "morning_brief", "--first-run"], hub)
+    assert code == 0 and hub.calls[-1][2]["first_run"] is True and "first run now" in out
+    code, _out, _err, hub = _run(["jobs", "create", "--blueprint", "morning_brief"], hub)
+    assert "first_run" not in hub.calls[-1][2]              # absent: the hub's policy decides
+
+
+# ── re-review round: the policy holds when the first run comes to run ──────────
+
+
+def _request(client, job_id, request_id):
+    return client.get(f"/api/jobs/{job_id}/requests/{request_id}", headers=ADMIN).json()["request"]
+
+
+@pytest.mark.parametrize("patch,why", [
+    ({"schedule_text": "every weekday at 8:00"}, "calendar"),
+    ({"options": {"repeat": 1}}, "repeat-limited"),
+    ({"action": {"type": "remind", "message": "summarise my inbox"}}, "reminder"),
+])
+def test_an_edit_the_policy_would_not_fire_drops_the_queued_first_run(hub, patch, why):
+    client, orch, telegram, _stop = hub
+    created = _create(client, **ASK_EVERY_2H)
+    job_id = created["job"]["id"]
+    assert client.patch(f"/api/jobs/{job_id}", json=patch, headers=ADMIN).status_code == 200
+    asyncio.run(orch.jobs.drain_manual())
+    assert _runs(client, job_id) == [] and telegram.sent == []
+    assert orch.jobs.store.get(job_id).attempts == 0
+    requests = [r for r in orch.jobs.store.dispatch.outstanding() if r["job_id"] == job_id]
+    assert requests == []                                   # nothing left to fire later either
+    reasons = [row["reason"] for row in orch.jobs.store._conn.execute(
+        "SELECT reason FROM job_requests WHERE job_id=?", (job_id,))]
+    assert any(why in reason for reason in reasons), reasons
+
+
+def test_quiet_hours_that_begin_before_the_drain_drop_the_first_run(tmp_path, monkeypatch):
+    orch, telegram, _stop, store = _hub(tmp_path, monkeypatch)
+    try:
+        job, receipt, _confirmation = orch.jobs.arm(**ASK_EVERY_2H)
+        assert receipt["status"] == "queued"
+        orch.jobs._quiet = lambda: True                     # quiet hours began meanwhile
+        asyncio.run(orch.jobs.drain_manual())
+        assert store.runs(job.id) == [] and telegram.sent == []
+        assert store.dispatch.get(receipt["id"])["status"] == "cancelled"
+        assert "quiet hours" in store.dispatch.get(receipt["id"])["reason"]
+    finally:
+        store.close()
+
+
+def test_a_first_run_drained_right_before_its_slot_is_dropped(tmp_path, monkeypatch):
+    orch, _tg, _stop, store = _hub(tmp_path, monkeypatch)
+    try:
+        job, receipt, _confirmation = orch.jobs.arm(**ASK_EVERY_2H)
+        assert receipt["status"] == "queued"                # the scheduler was down; now the slot is near
+        monkeypatch.setattr(JobRunner, "slot_timing", lambda self, job, now=None: (30.0, 7200.0))
+        asyncio.run(orch.jobs.drain_manual())
+        assert store.runs(job.id) == []
+        assert "slot" in store.dispatch.get(receipt["id"])["reason"]
+    finally:
+        store.close()
+
+
+def test_an_asked_first_run_is_not_second_guessed_when_it_runs(hub, monkeypatch):
+    client, orch, telegram, _stop = hub
+    created = _create(client, name="water", schedule_text="every day at 10",
+                      action={"type": "remind", "message": "water"}, first_run=True)
+    assert created["first_run"]["origin"] == "first_run_asked"
+    monkeypatch.setattr(JobRunner, "slot_timing", lambda self, job, now=None: (30.0, 86400.0))
+    asyncio.run(orch.jobs.drain_manual())
+    assert telegram.sent == [("water", 5)]
+
+
+def test_an_asked_first_run_survives_an_edit(hub):
+    client, orch, telegram, _stop = hub
+    created = _create(client, name="water", schedule_text="every day at 10",
+                      action={"type": "remind", "message": "water"}, first_run=True)
+    job_id = created["job"]["id"]
+    client.patch(f"/api/jobs/{job_id}", json={"action": {"type": "remind", "message": "tea"}}, headers=ADMIN)
+    queued = [r for r in orch.jobs.store.dispatch.outstanding() if r["job_id"] == job_id]
+    assert [r["origin"] for r in queued] == ["first_run_asked"] and queued[0]["id"] != created["first_run"]["id"]
+    asyncio.run(orch.jobs.drain_manual())
+    assert telegram.sent == [("tea", 5)]                    # the edited job, still asked for
+
+
+def test_pausing_cancels_an_asked_first_run_too(hub):
+    client, orch, telegram, _stop = hub
+    created = _create(client, name="water", schedule_text="every day at 10",
+                      action={"type": "remind", "message": "water"}, first_run=True)
+    job_id = created["job"]["id"]
+    client.post(f"/api/jobs/{job_id}/pause", json={"reason": "not today"}, headers=ADMIN)
+    asyncio.run(orch.jobs.drain_manual())
+    assert telegram.sent == []
+    assert _request(client, job_id, created["first_run"]["id"])["reason"] == "job paused before its first run"
+
+
+def test_a_long_cadence_armed_near_its_slot_waits_for_it(tmp_path, monkeypatch):
+    orch, _tg, _stop, store = _hub(tmp_path, monkeypatch)
+    monkeypatch.setattr(JobRunner, "slot_timing", lambda self, job, now=None: (45 * 60.0, 12 * 3600.0))
+    try:
+        _job, receipt, confirmation = orch.jobs.arm(name="digest", schedule_text="every 12 hours",
+                                                    action={"type": "ask", "prompt": "summarise my inbox"})
+        assert receipt is None and "its first slot is near" in confirmation   # not twice within the hour
+    finally:
+        store.close()
+
+
+def test_a_rename_leaves_the_queued_first_run_as_it_is(hub):
+    client, orch, _tg, _stop = hub
+    created = _create(client, **ASK_EVERY_2H)
+    job_id = created["job"]["id"]
+    assert client.patch(f"/api/jobs/{job_id}", json={"name": "inbox digest"}, headers=ADMIN).status_code == 200
+    assert _request(client, job_id, created["first_run"]["id"])["status"] == "queued"
+    asyncio.run(orch.jobs.drain_manual())
+    assert len(_runs(client, job_id)) == 1
+
+
+def test_an_edit_whose_requeue_is_refused_still_saves(hub, monkeypatch):
+    client, orch, _tg, _stop = hub
+    created = _create(client, **ASK_EVERY_2H)
+    job_id = created["job"]["id"]
+
+    def full(job_id, *, origin="manual"):
+        raise ValueError("manual request capacity reached; wait for queued work")
+
+    monkeypatch.setattr(orch.jobs.store.dispatch, "enqueue", full)
+    edited = client.patch(f"/api/jobs/{job_id}", json={"action": {"type": "ask", "prompt": "summarise my calendar"}},
+                          headers=ADMIN)
+    assert edited.status_code == 200, edited.text
+    assert orch.jobs.store.get(job_id).action["prompt"] == "summarise my calendar"
+    assert _request(client, job_id, created["first_run"]["id"])["status"] == "cancelled"
+
+
+def test_a_database_error_on_the_first_run_still_arms_the_job(hub, monkeypatch):
+    import sqlite3
+
+    client, orch, _tg, _stop = hub
+
+    def locked(job_id, *, origin="manual"):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(orch.jobs.store.dispatch, "enqueue", locked)
+    created = _create(client, **ASK_EVERY_2H)
+    assert created["first_run"] is None
+    assert created["confirmation"].startswith("first run not queued (database is locked)")
+    assert [j.id for j in orch.jobs.store.list()] == [created["job"]["id"]]
+
+
+@pytest.mark.parametrize("cron,now,expected", [
+    ("0 */2 * * *", "2026-09-24T13:57:00+00:00", (180.0, 7200.0)),
+    ("0 */12 * * *", "2026-09-24T11:15:00+00:00", (45 * 60.0, 12 * 3600.0)),
+    ("*/5 * * * *", "2026-09-24T11:16:30+00:00", (210.0, 300.0)),
+    ("0 8 * * 1-5", "2026-09-25T09:00:00+00:00", (3 * 86400 - 3600.0, 86400.0)),   # Friday → Monday, Tuesday
+])
+def test_the_slot_timing_reads_the_real_cron(tmp_path, cron, now, expected):
+    from datetime import datetime
+
+    sched = _Scheduler()
+    sched.timezone = "UTC"
+    runner = JobRunner(JobStore(tmp_path / "jobs.db"), orch=None, scheduler=lambda: sched, quiet=lambda: False)
+    job = SimpleNamespace(cron=cron)
+    assert runner.slot_timing(job, now=datetime.fromisoformat(now)) == expected
+    assert runner.slot_timing(SimpleNamespace(cron="not a cron")) is None
+    runner.store.close()

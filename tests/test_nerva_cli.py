@@ -1222,11 +1222,12 @@ def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monke
 
 def test_jobs_create_prints_whether_a_first_run_was_queued():
     # H687 — the hub's confirmation names the first run (or the wait for the cadence).
-    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every weekday at 8:00", "cron": "0 8 * * 1-5"}
-    queued = _FakeHub({"POST /api/jobs": {"ok": True, "job": job, "first_run": {"status": "queued"},
-                                          "confirmation": "first run now, then every weekday at 8:00 (0 8 * * 1-5)"}})
+    interval = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every 2 hours", "cron": "0 */2 * * *"}
+    queued = _FakeHub({"POST /api/jobs": {"ok": True, "job": interval, "first_run": {"status": "queued"},
+                                          "confirmation": "first run now, then every 2 hours (0 */2 * * *)"}})
     code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], queued)
-    assert code == EXIT_OK and "first run now, then every weekday at 8:00 (0 8 * * 1-5)" in out
+    assert code == EXIT_OK and "first run now, then every 2 hours (0 */2 * * *)" in out
+    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every weekday at 8:00", "cron": "0 8 * * 1-5"}
     # An older hub without the field still prints the schedule, as before.
     older = _FakeHub({"POST /api/jobs": {"ok": True, "job": job}})
     code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], older)

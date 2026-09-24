@@ -9,7 +9,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 
 ACTIVE = ("queued", "running", "waiting")
-ORIGINS = ("manual", "first_run")
+ORIGINS = ("manual", "first_run", "first_run_asked")
 
 
 def identity(job):
@@ -30,8 +30,10 @@ class ManualDispatch:
                 "CREATE UNIQUE INDEX IF NOT EXISTS job_request_active ON job_requests(job_id) WHERE status IN ('queued','running','waiting')"
             )
             # H687 — who asked: 'manual' (the owner's ▶ now, which runs even a paused
-            # job) or 'first_run' (queued at creation, which obeys pause like a cron
-            # slot). Rows written before the column existed were all manual.
+            # job), 'first_run' (queued at creation by the first-run policy, which the
+            # drain checks again) or 'first_run_asked' (the create call asked for it).
+            # Both first runs obey pause like a cron slot. Rows written before the
+            # column existed were all manual.
             columns = {row[1] for row in store._conn.execute("PRAGMA table_info(job_requests)")}
             if "origin" not in columns:
                 store._conn.execute(
@@ -103,12 +105,15 @@ class ManualDispatch:
         return self.get(request_id)
 
     def cancel_queued(self, job_id, *, origin, reason):
-        """Cancel the job's not-yet-claimed request of ``origin``; how many were cancelled."""
+        """Cancel the job's not-yet-claimed request of ``origin`` (one, or a tuple of
+        them); how many were cancelled."""
+        origins = (origin,) if isinstance(origin, str) else tuple(origin)
         s = self.store
         with s._lock, s._conn:
             cursor = s._conn.execute(
-                "UPDATE job_requests SET status='cancelled', reason=? WHERE job_id=? AND status='queued' AND origin=?",
-                (reason, job_id, origin),
+                "UPDATE job_requests SET status='cancelled', reason=? WHERE job_id=? AND status='queued' "
+                f"AND origin IN ({','.join('?' * len(origins))})",
+                (reason, job_id, *origins),
             )
             return cursor.rowcount
 
@@ -202,6 +207,14 @@ class ManualDispatch:
                         reason="execution interrupted after claim; not replayed",
                     )
                 elif origin := self.claim(row["id"]):
+                    # A policy first run is checked again when it comes to run (H687):
+                    # the job may have changed, or quiet hours or its first slot come.
+                    due = getattr(runner, "first_run_due", None)
+                    if origin == "first_run" and due is not None:
+                        still, why = due(row["job_id"])
+                        if not still:
+                            self.state(row["id"], "cancelled", reason=f"first run no longer due: {why}")
+                            continue
                     try:
                         # A first run obeys pause like a cron slot; only the owner's own
                         # ▶ now runs a paused job (H687).

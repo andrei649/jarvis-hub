@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "890e80b6fc7f421dea2f70542831e8674ec726a3",
-  "assessed_at": "2026-09-24T14:54:06Z",
+  "base_sha": "ccdd7161ab94d10c80ef34728449ee8f6f43564b",
+  "assessed_at": "2026-09-24T15:13:41Z",
   "reviews": [
     {
       "id": "H001",
@@ -18,7 +18,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -47,7 +47,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/turn_approvals.py",
@@ -72,7 +72,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -101,7 +101,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -118,7 +118,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -135,7 +135,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "scripts/doctor.py",
@@ -160,7 +160,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -189,7 +189,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -210,7 +210,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -235,7 +235,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -252,7 +252,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -366,7 +366,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -383,7 +383,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -408,7 +408,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -549,7 +549,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -672,7 +672,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -1012,7 +1012,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -1547,7 +1547,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_log_redaction.py",
@@ -1564,7 +1564,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -1596,7 +1596,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -1640,7 +1640,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
-          "sha256": "719a28e394ad692b8939565e5ac0108f5ebe2e7e049bae623eba772d08775854"
+          "sha256": "569b6819e1e925ee09fca8a7828c198dda9b41d281a4a1634c8a487549f06c15"
         },
         {
           "path": "tests/test_job_dispatch.py",
@@ -2221,7 +2221,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -2533,7 +2533,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/routers/mesh.py",
@@ -2618,7 +2618,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_first_run_command_center.py",
@@ -2757,7 +2757,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2844,7 +2844,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3094,7 +3094,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3204,8 +3204,8 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:316, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:197-203), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:42-57 via jobs.py:1215-1223); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 148-153; jobs.py:1235-1239); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1244-1249, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:245, validated at :508; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1225-1281, 1209-1230, 1351-1412) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:583-586), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1469-1524). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
-      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1225-1281, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1497-1530) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:42-57) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1117-1120). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:583-586). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:316, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:202-208), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1312-1320); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 178-182; jobs.py:1330-1334); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1340-1344, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:245, validated at :508; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1322-1378, 1424-1445, 1447-1486, 1566-1592) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:639-642), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1566-1621). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1322-1378, 1424-1445, 1447-1486, 1566-1592) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1594-1627) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:44-59) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1117-1120). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:639-642). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
           "path": "agents/core/autonomy/queue.py",
@@ -3221,11 +3221,11 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
-          "sha256": "719a28e394ad692b8939565e5ac0108f5ebe2e7e049bae623eba772d08775854"
+          "sha256": "569b6819e1e925ee09fca8a7828c198dda9b41d281a4a1634c8a487549f06c15"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -5509,7 +5509,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -5541,7 +5541,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -5585,7 +5585,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
-          "sha256": "719a28e394ad692b8939565e5ac0108f5ebe2e7e049bae623eba772d08775854"
+          "sha256": "569b6819e1e925ee09fca8a7828c198dda9b41d281a4a1634c8a487549f06c15"
         },
         {
           "path": "tests/test_job_dispatch.py",
@@ -5689,8 +5689,8 @@
       "id": "H450",
       "row_sha256": "dfd92874050486e9e3edbf496dd5dc6727e7f0cc18b5adda8505189638ab3ac3",
       "status": "partial",
-      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:219) takes a raw five-field cron (jobs.py:224) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:627), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:254, registered at commands.py:323), `nerva jobs create --when` (agents/cli/nerva.py:171), POST /api/jobs (agents/core/routers/jobs.py:93) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:386-388). Job.runnable honours the count (jobs.py:119) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1142). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:906). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
-      "remaining": "Four accepted schedule families are missing. (1) One-shot delays: `in 30m` / `in 2 hours` are refused, and there is no run-at/date trigger in the job store; every job is a cron. (2) ISO timestamps anchored to the configured timezone are missing. Worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` are silently armed as a DAILY recurring cron `0 9 * * *`, because _parse_time takes the HH:MM and a bare time falls through to daily (nl_schedule.py:96-97). (3) Compact intervals and bare durations as recurring schedules (`every 2h`, `every 30m`, `2h`) are missing. (4) There is no single repeat normaliser that coerces `forever|once|1x|N`: options.repeat only accepts an integer or null. (5) When the one-shot family lands, it must stay out of H687's automatic first run: first_run_decision (agents/core/autonomy/jobs.py:414) fires an agent-instruction job on an interval cadence at creation; a run-at job is no interval, but it needs its own refusal and a test, because one fired early would spend its only run and skip the slot the owner asked for.",
+      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:219) takes a raw five-field cron (jobs.py:224) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:683), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:254, registered at commands.py:323), `nerva jobs create --when` (agents/cli/nerva.py:171), POST /api/jobs (agents/core/routers/jobs.py:93) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:386-388). Job.runnable honours the count (jobs.py:119) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1201). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:962). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
+      "remaining": "Four accepted schedule families are missing. (1) One-shot delays: `in 30m` / `in 2 hours` are refused, and there is no run-at/date trigger in the job store; every job is a cron. (2) ISO timestamps anchored to the configured timezone are missing. Worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` are silently armed as a DAILY recurring cron `0 9 * * *`, because _parse_time takes the HH:MM and a bare time falls through to daily (nl_schedule.py:96-97). (3) Compact intervals and bare durations as recurring schedules (`every 2h`, `every 30m`, `2h`) are missing. (4) There is no single repeat normaliser that coerces `forever|once|1x|N`: options.repeat only accepts an integer or null. (5) When the one-shot family lands, it must stay out of H687's automatic first run: first_run_decision (agents/core/autonomy/jobs.py:494) fires an agent-instruction job on an interval cadence at creation; a run-at job is no interval, but it needs its own refusal and a test, because one fired early would spend its only run and skip the slot the owner asked for.",
       "evidence": [
         {
           "path": "agents/core/autonomy/nl_schedule.py",
@@ -5698,7 +5698,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/commands.py",
@@ -5743,7 +5743,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -5768,7 +5768,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -5793,7 +5793,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -5874,7 +5874,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -5899,7 +5899,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -5919,8 +5919,8 @@
       "id": "H456",
       "row_sha256": "d1c6513baf1d4189c5db66a1b381789cdcf2d75fbbea1fcfca7811eede3fbf08",
       "status": "partial",
-      "summary": "H456 re-read against 55d625f. The 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale, but the row stays partial.\n\nThe enabled_toolsets half of the contract is shipped and well built. agents/core/job_toolsets.py holds:\n- an immutable CATALOG (:7-11: basic/files/terminal);\n- a strict `validate()` that refuses unknown, non-list or duplicate ids (:14-21);\n- `resolve()`, which refuses a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37);\n- `toolset_scope()` (:63-79), whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime, so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults. Intersect-never-union is enforced.\n\nIt is enforced at three boundaries, not one:\n- the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208);\n- the runtime filter before and after the profile (agents/core/agent_runtime.py:248-257), re-applied at the in-turn compaction boundary by `_resolve_offer` (H672);\n- RPC intake, ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`).\n\nStore boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create and edit both re-resolve it (:1128, :1173). Fire time: jobs.py:1360-1362 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:178,185,958-964) and the HUD (frontend/src/panels/job-builder.tsx:35-49). PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328).\n\nHermes' two removal rules are met structurally. Every register_tool on the production server was enumerated: agents/core/autonomy_coordinator.py:442-774 (image_generate, H313's `speak` at :455-471, desktop_run, terminal_run, desktop_plan, operator_plan, osint_enrich, echo, time) and :778-860 (session_search, file_*, web_search/web_extract, search_memory, execute_code). None creates a job, and no `schedule.create` kernel capability exists. None is a messaging/clarify tool that needs a live human. The new `speak` announces into a room, but it is registered only with JARVIS_MEDIA_DIRECTOR on and is gated (ask-tier card, trusted execution only from an owner-accepted row), so it is never offered off the owner posture.\n\nVerified green at 55d625f: 27 cases in tests/test_job_toolsets.py and 28 in tests/test_job_model_pins.py. The HUD cases in frontend/src/panels/job-toolsets.test.tsx were not re-run in this pass.\n\nWhat keeps the row open is the contract's second half: a job cannot pin reasoning effort.\n- Selection carries only model/provider (agents/core/llm/job_selection.py:21-25).\n- validate_options rejects any unknown option (jobs.py:350), so the pin cannot be stored; neither jobs.py nor job_selection.py mentions reasoning at 55d625f.\n- _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,389,418-419.\n- The closed-lifetime transport machinery already exists (agents/core/llm/request_context.py:44-72), but only the live chat path enters it (agents/web.py:1149, :1202).\n\nSecondary gap: the bound can be expressed over only 8 of the ~18 tools the server can register. A job that needs web_search, execute_code or search_memory must run unbounded on the default net, a residual that docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
-      "remaining": "(1) The per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented:\n- `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), and `validate_pins` (:35-43) never sees an effort.\n- `validate_options` rejects any option outside the known ten (agents/core/autonomy/jobs.py:350), so the pin cannot reach the store.\n- `JobRunner._ask` (jobs.py:1360-1362) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`. A job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :389, :418-419.\n\nThe transport half already exists and is clamped: agents/core/llm/request_context.py:44-72; agents/core/llm/anthropic.py:81-86 with per-model overrides; agents/core/llm/gemini.py:134; agents/core/llm/xai.py:73; agents/core/llm/provider_request.py:46 and :54. Only the live chat path enters it (agents/web.py:1149, :1202). Work owed:\n- accept `reasoning` in validate_pins/validate_options against LADDER;\n- enter `reasoning_scope(...)` in `_ask` beside the other two scopes;\n- expose it on the CLI/HUD/doctor like the model and provider pins;\n- test it in tests/test_job_model_pins.py.\n\n(2) The bound can be expressed over only 8 of the ~18 tools the production server can register. CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run. These belong to no group: web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich, image_generate and (with the Media Director on) speak, registered at agents/core/autonomy_coordinator.py:442-774 and :778-860. A job that needs any of them must leave `enabled_toolsets` unset and run on the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\"), and doctor reports the upper bound, not the effective offers.\n\n(3) Minor: Hermes' middle precedence tier has no equivalent. That tier is a per-platform `cron` tools config that sets defaults for every scheduled job. Here, only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
+      "summary": "H456 re-read against 55d625f. The 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale, but the row stays partial.\n\nThe enabled_toolsets half of the contract is shipped and well built. agents/core/job_toolsets.py holds:\n- an immutable CATALOG (:7-11: basic/files/terminal);\n- a strict `validate()` that refuses unknown, non-list or duplicate ids (:14-21);\n- `resolve()`, which refuses a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37);\n- `toolset_scope()` (:63-79), whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime, so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults. Intersect-never-union is enforced.\n\nIt is enforced at three boundaries, not one:\n- the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208);\n- the runtime filter before and after the profile (agents/core/agent_runtime.py:248-257), re-applied at the in-turn compaction boundary by `_resolve_offer` (H672);\n- RPC intake, ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`).\n\nStore boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create and edit both re-resolve it (:1186, :1255). Fire time: jobs.py:1457-1459 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:178,185,958-964) and the HUD (frontend/src/panels/job-builder.tsx:35-49). PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328).\n\nHermes' two removal rules are met structurally. Every register_tool on the production server was enumerated: agents/core/autonomy_coordinator.py:442-774 (image_generate, H313's `speak` at :455-471, desktop_run, terminal_run, desktop_plan, operator_plan, osint_enrich, echo, time) and :778-860 (session_search, file_*, web_search/web_extract, search_memory, execute_code). None creates a job, and no `schedule.create` kernel capability exists. None is a messaging/clarify tool that needs a live human. The new `speak` announces into a room, but it is registered only with JARVIS_MEDIA_DIRECTOR on and is gated (ask-tier card, trusted execution only from an owner-accepted row), so it is never offered off the owner posture.\n\nVerified green at 55d625f: 27 cases in tests/test_job_toolsets.py and 28 in tests/test_job_model_pins.py. The HUD cases in frontend/src/panels/job-toolsets.test.tsx were not re-run in this pass.\n\nWhat keeps the row open is the contract's second half: a job cannot pin reasoning effort.\n- Selection carries only model/provider (agents/core/llm/job_selection.py:21-25).\n- validate_options rejects any unknown option (jobs.py:350), so the pin cannot be stored; neither jobs.py nor job_selection.py mentions reasoning at 55d625f.\n- _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,389,418-419.\n- The closed-lifetime transport machinery already exists (agents/core/llm/request_context.py:44-72), but only the live chat path enters it (agents/web.py:1149, :1202).\n\nSecondary gap: the bound can be expressed over only 8 of the ~18 tools the server can register. A job that needs web_search, execute_code or search_memory must run unbounded on the default net, a residual that docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
+      "remaining": "(1) The per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented:\n- `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), and `validate_pins` (:35-43) never sees an effort.\n- `validate_options` rejects any option outside the known ten (agents/core/autonomy/jobs.py:350), so the pin cannot reach the store.\n- `JobRunner._ask` (jobs.py:1457-1459) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`. A job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :389, :418-419.\n\nThe transport half already exists and is clamped: agents/core/llm/request_context.py:44-72; agents/core/llm/anthropic.py:81-86 with per-model overrides; agents/core/llm/gemini.py:134; agents/core/llm/xai.py:73; agents/core/llm/provider_request.py:46 and :54. Only the live chat path enters it (agents/web.py:1149, :1202). Work owed:\n- accept `reasoning` in validate_pins/validate_options against LADDER;\n- enter `reasoning_scope(...)` in `_ask` beside the other two scopes;\n- expose it on the CLI/HUD/doctor like the model and provider pins;\n- test it in tests/test_job_model_pins.py.\n\n(2) The bound can be expressed over only 8 of the ~18 tools the production server can register. CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run. These belong to no group: web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich, image_generate and (with the Media Director on) speak, registered at agents/core/autonomy_coordinator.py:442-774 and :778-860. A job that needs any of them must leave `enabled_toolsets` unset and run on the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\"), and doctor reports the upper bound, not the effective offers.\n\n(3) Minor: Hermes' middle precedence tier has no equivalent. That tier is a per-platform `cron` tools config that sets defaults for every scheduled job. Here, only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
       "evidence": [
         {
           "path": "agents/core/job_toolsets.py",
@@ -5932,7 +5932,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -6012,7 +6012,7 @@
       "id": "H461",
       "row_sha256": "d44e344dc3c48655f51eac58a2b57d69e8a2128eab056c741a20b0b40c4b5542",
       "status": "partial",
-      "summary": "The pieces around the feature exist, but nothing binds a standing instruction to a conversation. HeartbeatScheduler (agents/core/heartbeat.py:180) schedules per-agent routines from HEARTBEAT.md or agents.yaml, with MIN_HEARTBEAT_INTERVAL 3600 s (agents/core/heartbeat.py:52) and 15–30 s jitter. Since H506 it also refuses a HEARTBEAT front-matter that its injection scan flags. Admin routes /heartbeat/{agent_id}/start|stop|run (agents/core/routers/heartbeat.py:27) and the HUD HeartbeatPanel drive it. Owner-armed jobs accept plain-words schedules, can be paused, resumed and deleted, and include an `ask` action that sends a prompt to an agent. That prompt goes through a one-shot Orchestrator.process call on channel 'job' (agents/core/autonomy/jobs.py:1368), and the reply goes to the owner's channel, not into the originating chat's history. The only chat slash commands are /help, /status, /sessions, /pause, /stop, /resume, /jobs, /remind and /voice. CommandContext (agents/core/commands.py:50) carries no explicit session id, but its principal is a Principal with channel and chat (agents/core/commands.py:37-46), and ctx.orch.session_id already resolves to the bound channel session because the channel handler sets the active session before handle_input dispatches a command. Turns are serialized per session: Orchestrator.turn_lease (agents/core/orchestrator.py:1513) keeps a per-session asyncio.Lock table with a re-entrant held set. But nothing records an idle boundary or consults that lease before firing a heartbeat. Existing heartbeat and jobs tests pass (tests/test_heartbeat.py, tests/test_heartbeat_actions.py, tests/test_owner_jobs.py).",
+      "summary": "The pieces around the feature exist, but nothing binds a standing instruction to a conversation. HeartbeatScheduler (agents/core/heartbeat.py:180) schedules per-agent routines from HEARTBEAT.md or agents.yaml, with MIN_HEARTBEAT_INTERVAL 3600 s (agents/core/heartbeat.py:52) and 15–30 s jitter. Since H506 it also refuses a HEARTBEAT front-matter that its injection scan flags. Admin routes /heartbeat/{agent_id}/start|stop|run (agents/core/routers/heartbeat.py:27) and the HUD HeartbeatPanel drive it. Owner-armed jobs accept plain-words schedules, can be paused, resumed and deleted, and include an `ask` action that sends a prompt to an agent. That prompt goes through a one-shot Orchestrator.process call on channel 'job' (agents/core/autonomy/jobs.py:1465), and the reply goes to the owner's channel, not into the originating chat's history. The only chat slash commands are /help, /status, /sessions, /pause, /stop, /resume, /jobs, /remind and /voice. CommandContext (agents/core/commands.py:50) carries no explicit session id, but its principal is a Principal with channel and chat (agents/core/commands.py:37-46), and ctx.orch.session_id already resolves to the bound channel session because the channel handler sets the active session before handle_input dispatches a command. Turns are serialized per session: Orchestrator.turn_lease (agents/core/orchestrator.py:1513) keeps a per-session asyncio.Lock table with a re-entrant held set. But nothing records an idle boundary or consults that lease before firing a heartbeat. Existing heartbeat and jobs tests pass (tests/test_heartbeat.py, tests/test_heartbeat_actions.py, tests/test_owner_jobs.py).",
       "remaining": "Every accepted part is missing:\n- No `/heartbeat every <interval> <prompt>` entry point, and no pause/resume/clear/status for it.\n- No per-session persistence binding a standing prompt to a session_id and originating channel/chat.\n- No idle-only firing: turn_lease serializes turns but no heartbeat consults it, and no idle boundary is recorded (row H460's idle-boundary rule, also missing).\n- No fire record written before the injected turn runs, so a long turn could double-fire.\n- No coalescing of missed ticks with the anchor reset to now.\n- No floor specific to this lane.\n- No 'any DB failure degrades to no heartbeat' guard.\n- No injection of the prompt as a user turn into that conversation's history, where its effects would cross the kernel normally.",
       "evidence": [
         {
@@ -6025,7 +6025,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/commands.py",
@@ -6360,7 +6360,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -6398,7 +6398,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         }
       ]
     },
@@ -7258,7 +7258,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/channels/telegram.py",
@@ -8272,7 +8272,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -9069,7 +9069,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -9288,7 +9288,7 @@
       "id": "H681",
       "row_sha256": "ceea59bea96a9445bcf5c755764b3327929687a08d127539bbfe782e1b981363",
       "status": "partial",
-      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1428-1431) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1362) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1624-1629). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
+      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1428-1431) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1459) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1624-1629). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
       "remaining": "(1) Per-child API settings: accept model/provider, plus bounded request overrides such as max_tokens/temperature/extra_body deep-merged one level, on SubAgentManager.spawn, on the /api/subagents/spawn body and through a default autonomy.subagent_model setting. Apply them in _subagent_runner through selection_scope with documented precedence: explicit, then setting, then parent. (2) Failure honesty: a child whose provider call failed (empty output, degraded reply or error marker) is recorded as failed with the error class, not done. (3) Batch report: a batch spawn surface whose result emits one notice when every child failed with a model-not-found phrase AND the configured subagent model name. The notice names the model, the setting that controls it and whether a fallback exists. A failure naming a model that is not the configured one must not trigger it. (4) Tests for all three.",
       "evidence": [
         {
@@ -9313,7 +9313,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "tests/test_subagents_h20_6.py",
@@ -9346,7 +9346,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/commands.py",
@@ -9412,7 +9412,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -9444,7 +9444,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -9525,16 +9525,16 @@
       "id": "H687",
       "row_sha256": "2de11ca878088fadad4274ae450dd68ad2f84531b03f1f961f89cafa9549984a",
       "status": "equivalent",
-      "summary": "Built on this branch and reworked after review. A recurring instruction now runs once when it is created, then on its cadence, with Hermes' split kept:\n- Hermes' /loop is an interval. LoopManager.set() starts it with next_due_at=now (hermes_cli/loops.py:466), and the reply says the first wakeup fires now.\n- A Hermes cron job waits for its first computed run.\n\nNerva applies the /loop behaviour to its cron-style jobs where the schedule is an interval. Before this change, a new Nerva job always waited for its first slot, and every confirmation named only the schedule.\n\nEvery creation surface goes through JobRunner.arm (agents/core/autonomy/jobs.py:1118):\n- POST /api/jobs (agents/core/routers/jobs.py:109);\n- the /remind slash command (agents/core/commands.py:263);\n- `nerva jobs create`, which posts to that route and prints the hub's confirmation (agents/cli/nerva.py:1049);\n- the HUD arm and JobCreateDialog notes (armNote, frontend/src/panels/jobs.tsx:29, used at frontend/src/panels/jobs.tsx:142 and frontend/src/panels/jobs.tsx:299).\nJobRunner.create is a thin wrapper around it (agents/core/autonomy/jobs.py:1115).\n\nfirst_run_decision (agents/core/autonomy/jobs.py:414) decides what fires at creation. By default only an agent-instruction job does (ask, brief or task, or a script or monitor source), and only on an interval cadence: is_interval_cron (agents/core/autonomy/jobs.py:401) means no weekday, day or month restriction and a `*` or stepped hour. These wait for their first slot:\n- a calendar schedule (a 07:00 morning brief armed in the evening, a weekday job armed on Saturday);\n- a reminder;\n- a repeat-limited job, whose early run would spend one of its few attempts (critic note 15);\n- anything armed during quiet hours, whose output would be held and delivered after the next fresh run's;\n- anything armed under two minutes before its first slot (seconds_to_next_slot, agents/core/autonomy/jobs.py:1149), which would otherwise run twice.\n\nThe create call's `first_run` (StrictBool, agents/core/routers/jobs.py:34; `--first-run/--no-first-run`, agents/cli/nerva.py:174) overrides the default either way. It is a creation-time choice, never a stored option: validate_options refuses it, so PATCH cannot store it and no rollback trips on it.\n\nThe first run is a dispatch request of origin 'first_run' (agents/core/autonomy/jobs.py:1140; the column and ORIGINS are at agents/core/autonomy/jobs_dispatch.py:12 and agents/core/autonomy/jobs_dispatch.py:38). The drain runs it with force=False (agents/core/autonomy/jobs_dispatch.py:209), so _fire_once (agents/core/autonomy/jobs.py:1225) applies:\n- the pause check (agents/core/autonomy/jobs.py:1238);\n- the emergency stop (agents/core/autonomy/jobs.py:1246);\n- option and action validation;\n- the repeat reservation (agents/core/autonomy/jobs.py:1257; for scripts, agents/core/autonomy/jobs_scripts.py:123-124);\n- the quiet-hours hold on delivery (agents/core/autonomy/jobs.py:1487-1494; for scripts, agents/core/autonomy/jobs_scripts.py:433-435).\nOnly the owner's own ▶ now runs a paused job. When ▶ now folds into a queued first run, it makes that request manual (agents/core/autonomy/jobs_dispatch.py:82).\n\nPausing cancels a not-yet-claimed first run (cancel_queued, agents/core/autonomy/jobs_dispatch.py:105, called at agents/core/autonomy/jobs.py:1198). An edit before the drain re-queues it for the edited job instead of letting the identity check drop it silently (agents/core/autonomy/jobs.py:1189-1191).\n\nIf the enqueue is refused (the queue is at capacity, or the database is locked), the answer is still 201 with first_run null and 'first run not queued (…)', because the job is armed and a retry would duplicate it.\n\nPOST /api/jobs returns the receipt as first_run, or null, plus one confirmation built by arm_confirmation (agents/core/autonomy/jobs.py:459):\n- 'first run now, then <schedule> (<cron>)';\n- '<schedule> (<cron>), on its cadence', with the quiet-hours or near-slot reason when that was the cause;\n- a note that nothing fires while the scheduler is not running.\n/remind, the CLI and the HUD print it.\n\nTests:\n- tests/test_job_first_run.py, 41 cases:\n  - an interval ask job is queued and drained into one run before any slot (tests/test_job_first_run.py:109);\n  - a calendar schedule waits (tests/test_job_first_run.py:123);\n  - the emergency stop (tests/test_job_first_run.py:133);\n  - pause cancels the first run, and one that slips past the pause is still skipped (tests/test_job_first_run.py:143, tests/test_job_first_run.py:155);\n  - ▶ now keeps its force (tests/test_job_first_run.py:164);\n  - an edit re-queues (tests/test_job_first_run.py:176);\n  - first_run is a creation choice, never stored (tests/test_job_first_run.py:210);\n  - a refused enqueue (tests/test_job_first_run.py:229);\n  - quiet hours, the near slot and no scheduler (tests/test_job_first_run.py:242, tests/test_job_first_run.py:251, tests/test_job_first_run.py:261);\n  - an interval script job submits its first run (tests/test_job_first_run.py:271);\n  - the interval table and the decision table (tests/test_job_first_run.py:297, tests/test_job_first_run.py:323);\n  - the CLI flag (tests/test_job_first_run.py:335).\n- tests/test_nerva_cli.py:1223 and tests/test_slash_commands.py:317.\n- frontend/src/test/jobs-first-run.test.ts (armNote).\n- tests/test_jobs_routes.py: a new reminder still sends nothing until /run, and the script job's /run is again a fresh manual request.\n674 job, dispatch, command, CLI and API-surface tests pass.\n\nScope note: one-shot run_at jobs do not exist yet (H450). The H450 row says they must stay out of the first run.",
+      "summary": "Built on this branch and reworked after two reviews. A recurring instruction now runs once when it is created, then on its cadence, with Hermes' split kept:\n- Hermes' /loop is an interval. LoopManager.set() starts it with next_due_at=now (hermes_cli/loops.py:466), and the reply says the first wakeup fires now.\n- A Hermes cron job waits for its first computed run.\n\nNerva applies the /loop behaviour to its cron-style jobs where the schedule is an interval. Before this change, a new Nerva job always waited for its first slot, and every confirmation named only the schedule.\n\nEvery creation surface goes through JobRunner.arm (agents/core/autonomy/jobs.py:1174):\n- POST /api/jobs (agents/core/routers/jobs.py:109);\n- the /remind slash command (agents/core/commands.py:263);\n- `nerva jobs create`, which posts to that route and prints the hub's confirmation (agents/cli/nerva.py:1039);\n- the HUD arm and JobCreateDialog notes (armNote, frontend/src/panels/jobs.tsx:29, used at frontend/src/panels/jobs.tsx:142 and frontend/src/panels/jobs.tsx:299).\nJobRunner.create is a thin wrapper around it (agents/core/autonomy/jobs.py:1172).\n\nfirst_run_policy (agents/core/autonomy/jobs.py:459) decides what runs before its first slot. Only an agent-instruction job does (ask, brief or task, or a script or monitor source), and only on an interval cadence. is_interval_cron (agents/core/autonomy/jobs.py:433) reads what the cron fires on, not how it is written: every hour with one minute or the minutes of a `*/N`, or one minute in the hours of a `*/N`, with no weekday, day or month restriction. So '0 0-23/2' and '0 0,12' count as '0 */2' and '0 */12', while two times of day ('0 9,21') and '*/5 */2' (only in even hours) are calendar schedules. These wait for their first slot:\n- a calendar schedule (a 07:00 morning brief armed in the evening, a weekday job armed on Saturday);\n- a reminder;\n- a repeat-limited job, whose early run would spend one of its few attempts (critic note 15);\n- anything during quiet hours, whose output would be held and delivered after the next fresh run's;\n- anything whose first slot is near (first_run_margin, agents/core/autonomy/jobs.py:454): nearer than two minutes or than a quarter of the cadence (agents/core/autonomy/jobs.py:401-402), read from the real cron in the scheduler's timezone (slot_timing, agents/core/autonomy/jobs.py:1208). \"every 12 hours\" armed 45 minutes before its noon slot waits for it instead of running twice within the hour.\n\nfirst_run_decision (agents/core/autonomy/jobs.py:494) applies it at creation. A paused or disabled job never fires, and the create call's `first_run` (StrictBool, agents/core/routers/jobs.py:34; `--first-run/--no-first-run`, agents/cli/nerva.py:174) overrides the policy either way. It is a creation-time choice, never a stored option: validate_options refuses it, so PATCH cannot store it and no rollback trips on it.\n\nThe first run is a dispatch request drained by _fire_once (agents/core/autonomy/jobs.py:1322) under the shared job gate (agents/core/autonomy/jobs.py:1199; ORIGINS and the column at agents/core/autonomy/jobs_dispatch.py:12 and agents/core/autonomy/jobs_dispatch.py:40). Its origin is 'first_run' when the policy chose it and 'first_run_asked' when the create call asked for it.\n- The request is durable, so the drain checks a policy first run against first_run_policy again when it comes to run (first_run_due, agents/core/autonomy/jobs.py:1225; agents/core/autonomy/jobs_dispatch.py:213). By then the job may have been edited into a calendar schedule, a reminder or a repeat-limited job, quiet hours may have begun, or a scheduler that was down may have left its first slot near. The request is then cancelled and names the reason. An asked first run is not second-guessed.\n- The drain runs both with force=False (agents/core/autonomy/jobs_dispatch.py:222), so _fire_once applies the pause check (agents/core/autonomy/jobs.py:1335), the emergency stop (agents/core/autonomy/jobs.py:1340), option and action validation, the repeat reservation (agents/core/autonomy/jobs.py:1354; for scripts, agents/core/autonomy/jobs_scripts.py:123-124) and the quiet-hours hold on delivery (agents/core/autonomy/jobs.py:1584; for scripts, agents/core/autonomy/jobs_scripts.py:433-435).\n- Only the owner's own ▶ now runs a paused job. When ▶ now folds into a queued first run, it makes that request manual (agents/core/autonomy/jobs_dispatch.py:86).\n- Pausing cancels a not-yet-claimed first run of either origin (cancel_queued, agents/core/autonomy/jobs_dispatch.py:107, called at agents/core/autonomy/jobs.py:1294).\n- An edit that changes what runs (action or options) queues the first run again for the edited job, keeping its origin, instead of letting the claim's identity check drop it (agents/core/autonomy/jobs.py:1273; _requeue_first_run, agents/core/autonomy/jobs.py:1277). A rename or a new schedule leaves it queued. Either way a policy first run meets the policy again at the drain. If the queue refuses the new request, the edit is still saved and says why in the log.\n\nIf the enqueue is refused at creation (the queue is at capacity, or the database is locked), the answer is still 201 with first_run null and 'first run not queued (…)', because the job is armed and a retry would duplicate it.\n\nPOST /api/jobs returns the receipt as first_run, or null, plus one confirmation built by arm_confirmation (agents/core/autonomy/jobs.py:514):\n- 'first run now, then <schedule> (<cron>)', or 'first run queued, then …' with a note that nothing fires while the scheduler is not running (agents/core/autonomy/jobs.py:519);\n- '<schedule> (<cron>), on its cadence', with the quiet-hours or near-slot reason when that was the cause.\n/remind, the CLI and the HUD print it.\n\nTests:\n- tests/test_job_first_run.py, 74 cases (41 before the second review). 28 of them fail on ccdd7161, with its fixture pointed at that commit's slot helper:\n  - an interval ask job is queued and drained into one run before any slot (tests/test_job_first_run.py:109);\n  - a calendar schedule waits (tests/test_job_first_run.py:123);\n  - the emergency stop (tests/test_job_first_run.py:133);\n  - pause cancels the first run, and one that slips past the pause is still skipped (tests/test_job_first_run.py:143, tests/test_job_first_run.py:155), an asked one too (tests/test_job_first_run.py:451);\n  - ▶ now keeps its force (tests/test_job_first_run.py:164);\n  - edits: one to the action runs the edited job (tests/test_job_first_run.py:176), one the policy would not fire drops it (tests/test_job_first_run.py:387), an asked one survives (tests/test_job_first_run.py:439), a rename leaves it alone (tests/test_job_first_run.py:473), and a refused re-queue still saves (tests/test_job_first_run.py:483);\n  - at the drain: quiet hours that began (tests/test_job_first_run.py:402), a slot now near (tests/test_job_first_run.py:416), and an asked first run that runs anyway (tests/test_job_first_run.py:429);\n  - first_run is a creation choice, never stored (tests/test_job_first_run.py:210);\n  - a refused enqueue and a locked database (tests/test_job_first_run.py:229, tests/test_job_first_run.py:499);\n  - quiet hours, the near slot, a long cadence near its slot and no scheduler (tests/test_job_first_run.py:242, tests/test_job_first_run.py:251, tests/test_job_first_run.py:462, tests/test_job_first_run.py:261);\n  - an interval script job submits its first run (tests/test_job_first_run.py:273);\n  - the interval table, the decision table and the slot timing on the real cron (tests/test_job_first_run.py:306, tests/test_job_first_run.py:339, tests/test_job_first_run.py:520);\n  - both CLI flags (tests/test_job_first_run.py:353, tests/test_job_first_run.py:363).\n- tests/test_nerva_cli.py:1223 and tests/test_slash_commands.py:317.\n- frontend/src/test/jobs-first-run.test.ts (armNote).\n- tests/test_jobs_routes.py: a new reminder still sends nothing until /run, and the script job's /run is again a fresh manual request.\nEvery guard added in the second review was mutated out one at a time, and a test failed each time. 656 job, dispatch, command, CLI and schedule tests pass.\n\nScope note: one-shot run_at jobs do not exist yet (H450). The H450 row says they must stay out of the first run. A known pre-existing gap outside this row: parse_schedule drops a window or day qualifier after an interval (\"every 30 minutes between 9 and 17\" becomes '*/30 * * * *'), so such a job runs all day and counts as an interval.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "1c01554055f887a8514997ab63a44cbd81135a31b3197ea055312fa40068db26"
+          "sha256": "8644c27f6e6dbd91b1de5ab607a478b63bbe3472b1802c316e4de1bde5e88981"
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
-          "sha256": "719a28e394ad692b8939565e5ac0108f5ebe2e7e049bae623eba772d08775854"
+          "sha256": "569b6819e1e925ee09fca8a7828c198dda9b41d281a4a1634c8a487549f06c15"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -9558,11 +9558,11 @@
         },
         {
           "path": "tests/test_job_first_run.py",
-          "sha256": "6703db3b5dc4beb680bf98dff8dce4061cb2491339d298dbf91ed484541f015f"
+          "sha256": "3437b05deeb4be0d60c04cf55d24df6e31ccd7fc73fa5b65979bee1db54577fb"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+          "sha256": "1e88000e02c6012a450d32ca5733cebd7424c602e66fc15a44b115790363587c"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -9570,7 +9570,7 @@
         },
         {
           "path": "frontend/src/test/jobs-first-run.test.ts",
-          "sha256": "30138247ddfa89d72b683bb41dea084b228f4e1578634e71ce53dec638837336"
+          "sha256": "ade4969410939336fc0f7fc173c2e7bc4865c0257f11c6ae7b8e99cb9cf1061f"
         },
         {
           "path": "tests/test_jobs_routes.py",
