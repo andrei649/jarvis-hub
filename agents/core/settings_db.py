@@ -247,6 +247,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
+    # webhooks — H153: the platform-level receiver switch. Off, every inbound delivery
+    # is refused with 503 before its body is read; hooks keep their credentials.
+    dict(category="webhooks", key="receiver_enabled", value=True, label="Inbound webhook receiver (off: every delivery is refused; hooks keep their credentials)", kind="toggle"),
     # plugins (one per plugin, enabled toggle)
     dict(category="plugins", key="weather",          value=True,                  label="Weather",            kind="toggle"),
     dict(category="plugins", key="news",             value=True,                  label="News",               kind="toggle"),

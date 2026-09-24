@@ -3,6 +3,10 @@
 H153/H200: a hook can be switched off without losing its token (PATCH), and
 creating, switching and deleting one each write an audit row that names the hook,
 its target and whether it is signed, never its token or signing secret.
+
+H153 (the rest of a Hermes subscription): a hook's event list and prompt template,
+set on create or by PATCH, and the receiver switch (setting
+``webhooks.receiver_enabled``) that refuses every delivery at once.
 """
 
 import asyncio
@@ -10,8 +14,10 @@ import json
 import logging
 import time
 
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Request, Depends
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
 
 from agents.core.action_origin import INBOUND_ACTION_ORIGIN, bind_action_origin, reset_action_origin
 from agents.core.web_helpers import nocache_json, error_json
@@ -33,15 +39,44 @@ def _get_webhook_store():
     return _webhook_store
 
 
+def _event_name(value: str) -> str:
+    from agents.core.webhooks import MAX_EVENT_NAME
+
+    name = value.strip()
+    if not name or len(name) > MAX_EVENT_NAME or not name.isprintable():
+        raise ValueError(f"an event name is 1 to {MAX_EVENT_NAME} printable characters")
+    return name
+
+
+EventName = Annotated[StrictStr, AfterValidator(_event_name)]
+EventList = Annotated[list[EventName], Field(max_length=32)]
+PromptTemplate = Annotated[StrictStr, Field(max_length=2_000)]
+
+
 class WebhookCreateBody(BaseModel):
     target: str = Field(..., max_length=128)
     target_type: str = Field("agent", pattern="^(agent|workflow)$")
     name: str = Field("", max_length=128)
     signed: bool = False   # H16.4 — require an HMAC X-Signature-256 on triggers
+    events: EventList = Field(default_factory=list)   # H153 — empty: every event
+    prompt: PromptTemplate = ""                        # H153 — empty: the payload's text
 
 
-class WebhookSwitchBody(BaseModel):
-    enabled: StrictBool
+class WebhookUpdateBody(BaseModel):
+    """H153 — what PATCH may change; at least one field, and none of them null."""
+    model_config = ConfigDict(extra="forbid")
+    enabled: Optional[StrictBool] = None
+    events: Optional[EventList] = None
+    prompt: Optional[PromptTemplate] = None
+
+    @model_validator(mode="after")
+    def _a_real_change(self):
+        if not self.model_fields_set:
+            raise ValueError("nothing to change")
+        for name in self.model_fields_set:
+            if getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 def _printable(value, limit: int = 128) -> str:
@@ -65,7 +100,10 @@ async def _audit_webhook(action: str, record: dict) -> None:
     from agents.core.security.types import SecurityEvent, SecurityEventType
 
     target = f"{record.get('target_type')}:{record.get('target')}"
+    events = json.dumps(record.get("events") or [], ensure_ascii=False)
+    prompt = record.get("prompt") if isinstance(record.get("prompt"), str) else ""
     preview = (f"webhook {action}: id={_printable(record.get('id'))} target={_quoted(target)} "
+               f"events={events} prompt={len(prompt)} chars "
                f"signed={bool(record.get('signed'))} enabled={_get_webhook_store().is_enabled(record)}")
     try:
         await asyncio.to_thread(audit.log, SecurityEvent(
@@ -92,7 +130,8 @@ async def list_webhooks():
 async def create_webhook(body: WebhookCreateBody):
     """Create an inbound webhook; the token is returned ONCE."""
     try:
-        rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed)
+        rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed,
+                                          events=body.events, prompt=body.prompt)
     except ValueError as exc:
         return error_json(exc, 400, "invalid webhook target")
     await _audit_webhook("create", rec)
@@ -100,13 +139,17 @@ async def create_webhook(body: WebhookCreateBody):
 
 
 @router.patch("/api/webhooks/{hook_id}", dependencies=[Depends(admin_guard)])
-async def switch_webhook(hook_id: str, body: WebhookSwitchBody):
-    """Switch a hook on or off (H153). It keeps its token; a disabled hook refuses
-    every delivery after authentication."""
-    rec = _get_webhook_store().set_enabled(hook_id, body.enabled)
+async def update_webhook(hook_id: str, body: WebhookUpdateBody):
+    """Switch a hook on or off, or change its event list or prompt template (H153).
+    It keeps its token; a disabled hook refuses every delivery after authentication."""
+    changes = {name: getattr(body, name) for name in body.model_fields_set}
+    rec = _get_webhook_store().update(hook_id, **changes)
     if rec is None:
         return nocache_json({"error": "webhook not found"}, status_code=404)
-    await _audit_webhook("enable" if body.enabled else "disable", rec)
+    if set(changes) == {"enabled"}:
+        await _audit_webhook("enable" if body.enabled else "disable", rec)
+    else:
+        await _audit_webhook("update", rec)
     return nocache_json({"ok": True, "webhook": rec})
 
 
@@ -122,12 +165,34 @@ async def delete_webhook(hook_id: str):
     return nocache_json({"ok": True})
 
 
+def _receiver_enabled() -> bool:
+    """H153 — the platform-level switch (setting ``webhooks.receiver_enabled``, on by
+    default). Only a stored false turns it off: a settings store that cannot be read
+    leaves every hook to its own switch."""
+    from agents.core import settings_db
+
+    return settings_db.get_value("webhooks", "receiver_enabled", True) is not False
+
+
+def _receiver_off():
+    return nocache_json({"error": "the webhook receiver is off"}, status_code=503)
+
+
+def _skipped(store, hook_id: str, event: str, reason: str):
+    store.mark_skipped(hook_id, event)
+    return nocache_json({"ok": True, "skipped": reason}, status_code=202)
+
+
 @router.post("/api/webhooks/{hook_id}")
 async def trigger_webhook(hook_id: str, request: Request):
     """Token-authenticated trigger → runs the configured agent/workflow."""
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
+    # H153 — the receiver switch is read before the body (a flood costs nothing to
+    # refuse) and again after authentication (a switch that lands mid-body).
+    if not _receiver_enabled():
+        return _receiver_off()
     store = _get_webhook_store()
     hook = store.get(hook_id)
     if hook is None:
@@ -150,6 +215,8 @@ async def trigger_webhook(hook_id: str, request: Request):
     live = store.get(hook_id)
     if live is None:
         return nocache_json({"error": "webhook not found"}, status_code=404)
+    if not _receiver_enabled():
+        return _receiver_off()
     if not store.is_enabled(live):
         return nocache_json({"error": "webhook disabled"}, status_code=403)
 
@@ -158,8 +225,20 @@ async def trigger_webhook(hook_id: str, request: Request):
     except Exception:
         payload = raw.decode("utf-8", "replace")
 
-    from agents.core.webhooks import extract_input
-    text = extract_input(payload)
+    # H153 — the event list and the prompt template, both from the live record. A
+    # delivery the list turns away is answered 202 (the sender does not retry), is
+    # never run and is counted as skipped, not as a call.
+    from agents.core.webhooks import delivery_event, event_subscribed, extract_input, render_prompt
+    event = delivery_event(request.headers, payload)
+    events = store.stored_events(live)
+    if events is None:
+        return _skipped(store, hook_id, event, "the hook's event list is unreadable")
+    if events and not event:
+        return _skipped(store, hook_id, event, "the delivery names no event")
+    if events and not event_subscribed(events, event):
+        return _skipped(store, hook_id, event, f"event '{event}' is not subscribed")
+    template = live.get("prompt") if isinstance(live.get("prompt"), str) else ""
+    text = render_prompt(template, payload, event) if template else extract_input(payload)
     store.mark_called(hook_id)
 
     if hook["target_type"] == "agent":

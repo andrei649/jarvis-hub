@@ -5,11 +5,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup, act } from '@testing-library/react';
-import { WebhooksPanel, triggerUrl } from '../panels/webhooks';
+import { WebhooksPanel, parseEvents, triggerUrl } from '../panels/webhooks';
 import { CONSOLE_PANELS } from '../console-routes';
 
 let hooks;
 let calls;
+let receiverSetting;   // null: the settings route answers 404
 
 function reply(status, body) {
   return { ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -21,11 +22,17 @@ beforeEach(() => {
   hooks = [{ id: 'hk1', name: 'ci', target: 'jarvis', target_type: 'agent', signed: false, enabled: true,
              token_hint: 'AbCd…', calls: 3, last_called: 1790000000, created_at: 1780000000 }];
   calls = [];
+  receiverSetting = null;
   global.fetch = vi.fn(async (url, init = {}) => {
     const u = String(url);
     const method = init.method || 'GET';
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ method, url: u, body, admin: (init.headers || {})['X-Admin-Token'] });
+    if (u.endsWith('/api/admin/settings/webhooks')) {
+      if (method === 'PUT') { receiverSetting = body.values.receiver_enabled; return reply(200, { ok: true, updated: 1 }); }
+      return receiverSetting === null ? reply(404, { error: 'unknown category: webhooks' })
+        : reply(200, { webhooks: [{ key: 'receiver_enabled', value: receiverSetting, kind: 'toggle', source: 'set' }] });
+    }
     if (method === 'GET' && u.endsWith('/api/webhooks')) return reply(200, { webhooks: hooks });
     if (method === 'POST' && u.endsWith('/api/webhooks')) {
       if (body.target === 'refuse-me') return reply(400, { error: 'invalid webhook target' });
@@ -39,8 +46,8 @@ beforeEach(() => {
     const known = hooks.find((h) => h.id === id);
     if (method === 'PATCH') {
       if (!known) return reply(404, { error: 'webhook not found' });
-      hooks = hooks.map((h) => (h.id === id ? { ...h, enabled: body.enabled } : h));
-      return reply(200, { ok: true, webhook: { ...known, enabled: body.enabled } });
+      hooks = hooks.map((h) => (h.id === id ? { ...h, ...body } : h));
+      return reply(200, { ok: true, webhook: { ...known, ...body } });
     }
     if (method === 'DELETE') {
       if (!known) return reply(404, { ok: false, error: 'webhook not found' });
@@ -52,6 +59,8 @@ beforeEach(() => {
 });
 
 const sent = (method) => calls.filter((c) => c.method === method);
+// reads of the hook list only: the panel also reads the receiver setting
+const listReads = () => calls.filter((c) => c.method === 'GET' && c.url.endsWith('/api/webhooks'));
 
 describe('WebhooksPanel', () => {
   it('is registered in the console Interop group', () => {
@@ -62,7 +71,7 @@ describe('WebhooksPanel', () => {
   it('lists hooks with the admin credential and never shows a secret from the list', async () => {
     const { container } = render(<WebhooksPanel />);
     await waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
-    expect(sent('GET')[0].admin).toBe('admin-secret');
+    expect(listReads()[0].admin).toBe('admin-secret');
     expect(container.textContent).toContain('agent:jarvis');
     expect(container.textContent).toContain('token AbCd…');
     fireEvent.click(screen.getByText('ci'));
@@ -81,7 +90,7 @@ describe('WebhooksPanel', () => {
       body: { name: '', target: 'friday', target_type: 'agent', signed: false } });
     expect(container.textContent).toContain(triggerUrl('hk2'));
     expect(container.textContent).toContain('X-Webhook-Token');
-    await waitFor(() => expect(sent('GET').length).toBe(2));   // the list reloaded, without the token
+    await waitFor(() => expect(listReads().length).toBe(2));   // the list reloaded, without the token
     fireEvent.click(screen.getByText('I have saved it'));
     expect(screen.queryByTestId('webhook-secret')).toBeNull();
     expect(container.textContent).not.toContain('tok-ONE-TIME');
@@ -145,7 +154,7 @@ describe('WebhooksPanel after review', () => {
   const second = { id: 'hk3', name: 'deploy', target: 'triage', target_type: 'workflow', signed: true, enabled: false,
                    token_hint: 'WxYz…', calls: 0, last_called: null, created_at: 1770000000 };
   const ready = async () => { await waitFor(() => expect(screen.getByText('ci')).toBeTruthy()); };
-  const gets = () => sent('GET').length;
+  const gets = () => listReads().length;
   afterEach(() => {
     vi.restoreAllMocks();
     delete navigator.clipboard;
@@ -325,5 +334,99 @@ describe('triggerUrl', () => {
 
   it('never throws while rendering an id no URL can carry', () => {
     expect(() => triggerUrl('\ud800')).not.toThrow();
+  });
+});
+
+/* H153 — the rest of a Hermes subscription: the receiver switch, and each hook's
+   event list and prompt template. */
+describe('WebhooksPanel subscriptions', () => {
+  const ready = async () => { await waitFor(() => expect(screen.getByText('ci')).toBeTruthy()); };
+
+  it('switches the receiver through the audited settings route and says when it is off', async () => {
+    receiverSetting = true;
+    render(<WebhooksPanel />);
+    await ready();
+    const toggle = await screen.findByRole('button', { name: 'switch the receiver off' });
+    expect(screen.queryByTestId('receiver-off')).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(sent('PUT')).toHaveLength(1));
+    expect(sent('PUT')[0]).toMatchObject({ admin: 'admin-secret', body: { values: { receiver_enabled: false } } });
+    expect(sent('PUT')[0].url).toContain('/api/admin/settings/webhooks');
+    await waitFor(() => expect(screen.getByTestId('receiver-off').textContent).toContain('every delivery is refused'));
+    fireEvent.click(screen.getByRole('button', { name: 'switch the receiver on' }));
+    await waitFor(() => expect(screen.queryByTestId('receiver-off')).toBeNull());
+    expect(sent('PUT')[1].body).toEqual({ values: { receiver_enabled: true } });
+  });
+
+  it('never guesses the receiver: unread, it cannot be switched', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByText('not read')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'switch the receiver off' }).disabled).toBe(true);
+    expect(screen.queryByTestId('receiver-off')).toBeNull();
+  });
+
+  it('creates a hook with an event list and a prompt template', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.change(screen.getByLabelText('events'), { target: { value: ' push, issues ,, ' } });
+    fireEvent.change(screen.getByLabelText('prompt template'), { target: { value: 'New {event} by {sender.login}' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toMatchObject({ target: 'friday', events: ['push', 'issues'], prompt: 'New {event} by {sender.login}' });
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    expect(screen.getByLabelText('events').value).toBe('');
+    expect(screen.getByLabelText('prompt template').value).toBe('');
+  });
+
+  it('changes a hook’s events and template in its detail pane, with the admin credential', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    const events = screen.getByLabelText('events for ci');
+    expect(events.value).toBe('');
+    fireEvent.change(events, { target: { value: 'push' } });
+    fireEvent.change(screen.getByLabelText('prompt template for ci'), { target: { value: '{event}!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save the events and template of ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0]).toMatchObject({ admin: 'admin-secret', body: { events: ['push'], prompt: '{event}!' } });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci saved'));
+    await waitFor(() => expect(listReads()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByText('1 event')).toBeTruthy());
+    expect(screen.getByLabelText('events for ci').value).toBe('push');
+  });
+
+  it('refreshes the editor when the hook changed elsewhere', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByLabelText('events for ci').value).toBe('');
+    hooks = [{ ...hooks[0], events: ['issues'], prompt: 'from the CLI' }];
+    fireEvent.click(screen.getByText('↻'));
+    await waitFor(() => expect(screen.getByLabelText('events for ci').value).toBe('issues'));
+    expect(screen.getByLabelText('prompt template for ci').value).toBe('from the CLI');
+  });
+
+  it('shows what the event list turned away', async () => {
+    hooks = [{ ...hooks[0], events: ['push'], prompt: '{event}', skipped: 3, last_skipped_event: 'ping' }];
+    const { container } = render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(container.textContent).toContain('3 skipped · last skipped: ping');
+    expect(container.textContent).toContain('events: push');
+    expect(container.textContent).toContain('a prompt template');
+  });
+
+  it('flags an event list the hub could not read', async () => {
+    hooks = [{ ...hooks[0], events: [], events_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByText('event list unreadable')).toBeTruthy();
+  });
+
+  it('parses a comma-separated event list', () => {
+    expect(parseEvents(' push, issues ,, Merge Request Hook ')).toEqual(['push', 'issues', 'Merge Request Hook']);
+    expect(parseEvents('')).toEqual([]);
   });
 });

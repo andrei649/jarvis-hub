@@ -868,11 +868,11 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Switch Webhook
-         * @description Switch a hook on or off (H153). It keeps its token; a disabled hook refuses
-         *     every delivery after authentication.
+         * Update Webhook
+         * @description Switch a hook on or off, or change its event list or prompt template (H153).
+         *     It keeps its token; a disabled hook refuses every delivery after authentication.
          */
-        patch: operations["switch_webhook_api_webhooks__hook_id__patch"];
+        patch: operations["update_webhook_api_webhooks__hook_id__patch"];
         trace?: never;
     };
     "/.well-known/agent-card": {
@@ -10848,11 +10848,25 @@ export interface components {
              * @default false
              */
             signed: boolean;
+            /** Events */
+            events?: string[];
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
         };
-        /** WebhookSwitchBody */
-        WebhookSwitchBody: {
+        /**
+         * WebhookUpdateBody
+         * @description H153 — what PATCH may change; at least one field, and none of them null.
+         */
+        WebhookUpdateBody: {
             /** Enabled */
-            enabled: boolean;
+            enabled?: boolean | null;
+            /** Events */
+            events?: string[] | null;
+            /** Prompt */
+            prompt?: string | null;
         };
         /** WorkflowRunBody */
         WorkflowRunBody: {
@@ -12311,7 +12325,7 @@ export interface operations {
             };
         };
     };
-    switch_webhook_api_webhooks__hook_id__patch: {
+    update_webhook_api_webhooks__hook_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -12322,7 +12336,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WebhookSwitchBody"];
+                "application/json": components["schemas"]["WebhookUpdateBody"];
             };
         };
         responses: {
