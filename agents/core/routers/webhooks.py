@@ -14,7 +14,7 @@ import json
 import logging
 import time
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
@@ -65,9 +65,9 @@ class WebhookCreateBody(BaseModel):
 class WebhookUpdateBody(BaseModel):
     """H153 — what PATCH may change; at least one field, and none of them null."""
     model_config = ConfigDict(extra="forbid")
-    enabled: Optional[StrictBool] = None
-    events: Optional[EventList] = None
-    prompt: Optional[PromptTemplate] = None
+    enabled: StrictBool | None = None
+    events: EventList | None = None
+    prompt: PromptTemplate | None = None
 
     @model_validator(mode="after")
     def _a_real_change(self):
