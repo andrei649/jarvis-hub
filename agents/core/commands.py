@@ -260,7 +260,7 @@ def _remind(ctx: CommandContext) -> str:
     if not sep or not when or not message:
         return "Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes"
     try:
-        job = runner.create(
+        job, first_run = runner.arm(
             name=message[:60],
             schedule_text=when,
             action={"type": "remind", "message": message},
@@ -268,7 +268,9 @@ def _remind(ctx: CommandContext) -> str:
         )
     except ValueError as exc:
         return f"Could not arm that: {exc}"
-    return f"Armed {job.id}: {job.schedule_text} ({job.cron}) — {message}. /jobs lists it; the HUD or `nerva jobs` can pause or delete it."
+    from .autonomy.jobs import arm_confirmation
+    return (f"Armed {job.id}: {arm_confirmation(job, first_run)} — {message}. "
+            "/jobs lists it; the HUD or `nerva jobs` can pause or delete it.")
 
 
 def _voice(ctx: CommandContext) -> str:

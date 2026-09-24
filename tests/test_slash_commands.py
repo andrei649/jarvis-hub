@@ -293,6 +293,10 @@ class _Runner:
         job = SimpleNamespace(id="job1", schedule_text=kwargs["schedule_text"], cron="0 7 * * 1-5", name=kwargs["name"])
         return job
 
+    def arm(self, **kwargs):
+        # H687 — a reminder queues no first run, so the receipt is None.
+        return self.create(**kwargs), None
+
 
 @pytest.mark.asyncio
 async def test_jobs_lists_the_owners_jobs_and_the_scheduler_state():

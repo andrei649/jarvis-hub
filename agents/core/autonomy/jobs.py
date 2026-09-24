@@ -347,7 +347,7 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "first_run"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'enabled_toolsets' in options:
@@ -368,6 +368,8 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         url_screen(options['monitor_url'])
     if 'no_agent' in options and type(options['no_agent']) is not bool:
         raise ValueError('no_agent must be true or false')
+    if 'first_run' in options and type(options['first_run']) is not bool:
+        raise ValueError('first_run must be true or false')
     if options.get('no_agent') and not options.get('script'):
         raise ValueError('no_agent requires a script')
     if options.get('monitor_script') and (options.get('script') or options.get('no_agent')):
@@ -393,6 +395,34 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         ) or len(set(targets)) != len(targets):
             raise ValueError("deliver must list up to 8 unique configured channel names")
     return json.loads(json.dumps(options))
+
+
+def wants_first_run(job) -> bool:
+    """Whether a newly created job fires once now, before its first cron slot (H687).
+
+    Hermes starts a new loop at the next poll ("First wakeup fires now, then on the
+    cadence above"). Here an agent-instruction job — ask, brief or task, or a script
+    or monitor source — does too. A reminder stays on its cadence: "every weekday at
+    7 | stand-up" delivered the moment it is armed is noise, not a first run. A
+    repeat-limited job does not either, because the first run would spend one of its
+    few attempts and could leave the slot the owner scheduled unserved (critic note
+    15). ``options.first_run`` overrides both ways.
+    """
+    options = job.options or {}
+    explicit = options.get("first_run")
+    if explicit is not None:
+        return explicit is True
+    if options.get("repeat"):
+        return False
+    if options.get("script") or options.get("monitor_script") or options.get("monitor_url"):
+        return True
+    return (job.action or {}).get("type") in ("ask", "brief", "task")
+
+
+def arm_confirmation(job, first_run: dict | None) -> str:
+    """The one wording every creation surface uses for what happens next."""
+    cadence = f"{job.schedule_text} ({job.cron})"
+    return f"first run now, then {cadence}" if first_run else f"{cadence}, on its cadence"
 
 
 # ── blueprints ───────────────────────────────────────────────────────────────
@@ -1038,6 +1068,16 @@ class JobRunner:
         return resolve((options or {}).get('enabled_toolsets'), getattr(self._orch, 'tool_rpc', None))
 
     def create(self, **kwargs: Any) -> Job:
+        return self.arm(**kwargs)[0]
+
+    def arm(self, **kwargs: Any) -> tuple[Job, dict | None]:
+        """Create, schedule and — when wants_first_run says so — queue a first run now.
+
+        The first run is an ordinary manual request (request_run), drained by
+        _fire_once under the shared job gate, so the emergency stop, pause,
+        validation, repeat reservation and quiet-hours hold all apply to it exactly
+        as to the owner's '▶ now'. Returns the job and that request's receipt.
+        """
         self._toolset_names(kwargs.get('options'))
         binding = self.media.prepare(kwargs.get("action") or {}, kwargs.get("options"))
         job = self.store.create(**kwargs)
@@ -1045,7 +1085,8 @@ class JobRunner:
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             self.register_scripts()
         self.register(job)
-        return job
+        first_run = self.request_run(job.id) if job.runnable and wants_first_run(job) else None
+        return job, first_run
 
     def edit(self, job_id: str, **fields: Any) -> Job:
         """Apply an owner's edit and make the scheduler agree with it.

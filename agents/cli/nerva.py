@@ -1040,7 +1040,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.dump(reply)
             return EXIT_OK
         job = reply.get("job") or {}
-        ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
+        # H687 — the hub says whether a first run was queued now or the job waits.
+        when = reply.get("confirmation") or f"{job.get('schedule_text')} ({job.get('cron')})"
+        ctx.say(f"armed {job.get('id')}  {when}  {job.get('name')}")
         return EXIT_OK
     if ns.action == "edit":
         if ns.media_id and not ns.action_json:

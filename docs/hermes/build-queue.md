@@ -6,11 +6,10 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H428, H433 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 82 rows remain.
+**Closed in #1207** (2026-09-24): H327, H428, H433, H687 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 81 rows remain.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H687](#h687) | A recurring instruction runs once immediately, then on its cadence | partial | 4 | [15](#critic-note-15) |
 | [H165](#h165) | In-app documentation | missing | 5 |  |
 | [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
 | [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
@@ -92,14 +91,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H687
-
-**A recurring instruction runs once immediately, then on its cadence** (delta) — partial, ~4 h. Critic notes: [15](#critic-note-15).
-
-Files: `agents/core/autonomy/jobs.py`, `agents/core/routers/jobs.py`, `agents/core/commands.py`, `agents/cli/nerva.py`, `frontend/src/panels/jobs.tsx`, `frontend/src/panels/job-create-dialog.tsx`, `tests/test_jobs_routes.py`, `tests/test_owner_jobs.py`
-
-Plan: 1. In JobRunner.create (agents/core/autonomy/jobs.py), after self.register(job), call self.request_run(job.id) when the job is runnable and it is an agent-instruction job (action type ask/task/brief, or options.script / monitor_*). Reminders (type remind) stay cadence-only unless options.first_run is true. Add 'first_run' (bool) to the allowed keys in validate_options, so that first_run:false opts out and first_run:true opts a reminder in. The run must go through the existing dispatch receipt → _fire_once gate: no new execution path, and no bypass of estop, pause, reserve_attempt, quiet-hours hold or interrupt budget. 2. Return the receipt alongside the job. jobs_create in agents/core/routers/jobs.py adds 'first_run': {id, status} to the 201 body. 3. Update the confirmations: commands._remind reply, nerva.py `jobs create` output and the jobs.tsx arm/JobCreateDialog note read 'first run fires now, then <schedule> (<cron>)', or '…on its cadence' when no first run was queued. 4. Red tests first, in tests/test_jobs_routes.py: - POST /api/jobs with the morning_brief (or ask_agent) blueprint → body.first_run.status == 'queued'. After asyncio.run(orch.jobs.drain_manual()), GET /api/jobs/{id}/runs holds exactly one run, recorded before any cron slot. - With the estop engaged, that drained run is recorded 'skipped' with 'emergency stop engaged'. - The reminder blueprint and first_run:false record no run and send nothing. - A frontend test asserts the arm note contains 'first run'.
 
 ## H165
 
@@ -887,7 +878,7 @@ H667's gap_spec wires prune_exec_cache into run_retention. SchedulerService.run_
 
 ### Critic note 15
 
-Rows: [H687](#h687), [H450](#h450), [H461](#h461).
+Rows: H687 (closed in #1207), [H450](#h450), [H461](#h461).
 
 H687 queues an immediate first run through request_run and _fire_once. _fire_once calls store.reserve_attempt, which consumes options.repeat (agents/core/autonomy/jobs.py _fire_once, 'repeat limit exhausted'). H450 adds one-shot run_at jobs and normalize_repeat, which maps 'once'/'1x' to 1. Combined, a new repeat=1 or one-shot job fires immediately, spends its only attempt, and its scheduled slot is skipped. Separately, H461's red test uses '/heartbeat every 10m', but H450 shows resolve_schedule refuses compact intervals ('every 30m') today, so H461 depends on H450's interval family and does not declare it.
 

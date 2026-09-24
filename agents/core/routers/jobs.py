@@ -89,7 +89,7 @@ async def jobs_blueprints():
 
 @router.post("/api/jobs", dependencies=[Depends(admin_guard)])
 async def jobs_create(body: JobCreateBody):
-    from agents.core.autonomy.jobs import instantiate_blueprint
+    from agents.core.autonomy.jobs import arm_confirmation, instantiate_blueprint
 
     runner = _runner()
     if runner is None:
@@ -103,10 +103,13 @@ async def jobs_create(body: JobCreateBody):
             if not body.name or not body.schedule_text or body.action is None:
                 return _refused("name, schedule_text and action are required (or a blueprint)")
             name, schedule_text, action = body.name, body.schedule_text, body.action
-        job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint, options=body.options)
+        job, first_run = runner.arm(name=name, schedule_text=schedule_text, action=action,
+                                    blueprint=body.blueprint, options=body.options)
     except ValueError as exc:
         return _refused(str(exc))
-    return nocache_json({"ok": True, "job": _job_view(runner, job)}, status_code=201)
+    # H687 — the first-run receipt (queued now) or null when the job waits for its cadence.
+    return nocache_json({"ok": True, "job": _job_view(runner, job), "first_run": first_run,
+                         "confirmation": arm_confirmation(job, first_run)}, status_code=201)
 
 
 @router.get("/api/jobs/doctor", dependencies=[Depends(admin_guard)])

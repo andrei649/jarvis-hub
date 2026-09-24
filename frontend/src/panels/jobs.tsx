@@ -25,6 +25,14 @@ import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 
+/** H687 — what happens next, as the hub reports it: a first run now, or the wait for the cadence. */
+export function armNote(reply: any): string {
+  const job = reply?.job || {};
+  const cadence = `${job.schedule_text || ''} (${job.cron || ''})`;
+  if (typeof reply?.confirmation === 'string' && reply.confirmation) return `armed · ${reply.confirmation}`;
+  return reply?.first_run ? `armed · first run now, then ${cadence}` : `armed · ${cadence}, on its cadence`;
+}
+
 const JOBS_PATH = '/api/jobs';
 const BLUEPRINTS_PATH = '/api/jobs/blueprints';
 
@@ -131,7 +139,7 @@ export function JobsPanel() {
     // Governed effect on the owner's behalf: MUST carry onErr so a 422 (a schedule that fires
     // too often, a blueprint missing its message) is printed, not swallowed.
     actA(JOBS_PATH, { blueprint: chosen.id, params: p, ...(Object.keys(options).length ? {options} : {}) },
-      (r: any) => { setNote(`armed · ${r?.job?.schedule_text || ''} (${r?.job?.cron || ''})`); setMessage(''); setPrompt(''); reload(); },
+      (r: any) => { setNote(armNote(r)); setMessage(''); setPrompt(''); reload(); },
       (err: any) => setNote(`refused · ${refusalReason(err, 'could not arm the job')}`));
   };
 
@@ -288,7 +296,7 @@ export function JobsPanel() {
           </div>
         )}
         <button className="tool-btn" onClick={()=>{setNote(null);setCustom(true);}}>custom job</button>
-        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(`armed · ${r?.job?.schedule_text}`);setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
+        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(armNote(r));setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
         {note && !custom && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
       </div>
     </Card>

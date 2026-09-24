@@ -1218,3 +1218,16 @@ def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monke
     assert code == EXIT_UNAVAILABLE
     assert out == "" and "did not complete (RuntimeError)" in err and "nothing is claimed" in err
     assert "site-packages vanished" not in err                 # the message is not reflected
+
+
+def test_jobs_create_prints_whether_a_first_run_was_queued():
+    # H687 — the hub's confirmation names the first run (or the wait for the cadence).
+    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every weekday at 8:00", "cron": "0 8 * * 1-5"}
+    queued = _FakeHub({"POST /api/jobs": {"ok": True, "job": job, "first_run": {"status": "queued"},
+                                          "confirmation": "first run now, then every weekday at 8:00 (0 8 * * 1-5)"}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], queued)
+    assert code == EXIT_OK and "first run now, then every weekday at 8:00 (0 8 * * 1-5)" in out
+    # An older hub without the field still prints the schedule, as before.
+    older = _FakeHub({"POST /api/jobs": {"ok": True, "job": job}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], older)
+    assert code == EXIT_OK and "every weekday at 8:00 (0 8 * * 1-5)" in out

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "27665419c789dfb3187cc4c9a2d08c3dc4a27816",
-  "assessed_at": "2026-09-24T12:47:17Z",
+  "base_sha": "3430a46da71a272710e7c1871e0ac31d67634c45",
+  "assessed_at": "2026-09-24T13:11:09Z",
   "reviews": [
     {
       "id": "H001",
@@ -14,19 +14,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -39,7 +39,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_oneshot.py",
@@ -47,7 +47,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/turn_approvals.py",
@@ -68,11 +68,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "tests/test_cli_fish_completion.py",
@@ -97,11 +97,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -114,11 +114,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -131,11 +131,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "scripts/doctor.py",
@@ -156,11 +156,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -181,7 +181,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -189,7 +189,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -206,11 +206,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -227,7 +227,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_dep_audit.py",
@@ -235,7 +235,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -248,11 +248,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -324,7 +324,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_desktop_setup.py",
@@ -345,7 +345,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_prompt_size.py",
@@ -362,11 +362,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -379,19 +379,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -404,19 +404,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -441,7 +441,7 @@
       "id": "H060",
       "row_sha256": "8a5b5673d2277756f7f2b075ce42c12806c7ea99151a0450f910a8f522a79758",
       "status": "partial",
-      "summary": "A message that arrives while a turn runs on the same session waits for that session's turn lease (`Orchestrator.turn_lease`, agents/core/orchestrator.py:1506, taken by `_channel_turn` at agents/core/orchestrator.py:1464 and by the web /chat path at agents/web.py:1150). After `_TURN_LEASE_MAX_WAIT_SECONDS` (180 s, agents/core/orchestrator.py:251) it gets the single busy string `TURN_BUSY_REPLY` (agents/core/orchestrator.py:253) and no second turn starts on that transcript (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118). `/pause` and `/stop` are owner-only (ADMIN tier) slash commands that engage the e-stop (agents/core/commands.py:318, agents/core/commands.py:319). They say plainly that work already in flight finishes (agents/core/commands.py:227, tests/test_slash_commands.py:124).",
+      "summary": "A message that arrives while a turn runs on the same session waits for that session's turn lease (`Orchestrator.turn_lease`, agents/core/orchestrator.py:1506, taken by `_channel_turn` at agents/core/orchestrator.py:1464 and by the web /chat path at agents/web.py:1150). After `_TURN_LEASE_MAX_WAIT_SECONDS` (180 s, agents/core/orchestrator.py:251) it gets the single busy string `TURN_BUSY_REPLY` (agents/core/orchestrator.py:253) and no second turn starts on that transcript (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118). `/pause` and `/stop` are owner-only (ADMIN tier) slash commands that engage the e-stop (agents/core/commands.py:320, agents/core/commands.py:321). They say plainly that work already in flight finishes (agents/core/commands.py:227, tests/test_slash_commands.py:124).",
       "remaining": "No busy-input semantics. A mid-turn message cannot redirect or interrupt the running turn. There is no explicit FIFO `/queue`, no `/steer` into the running turn and no configurable mode between these with downgrades. `/stop` is not a hard kill: it engages the e-stop but does not cancel the running turn or unlock the session. It is also dispatched inside `handle_input` (agents/core/orchestrator.py:1749), so it waits behind the same lease. While a turn holds the lease past the wait bound, `/stop` itself is answered with `TURN_BUSY_REPLY` (named at agents/core/orchestrator.py:2992). There is one busy string, not a set of acks saying whether a message was queued, steered or interrupted. None of the protective demotions exist (running subagent, in-flight compression, photo burst, very fast follow-up merged as the same intent). The lease is the only slot reservation; there is no pending-agent sentinel. `SlashCommand` (agents/core/commands.py:61) carries no `busy_policy`.",
       "evidence": [
         {
@@ -450,7 +450,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/web.py",
@@ -458,7 +458,7 @@
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         },
         {
           "path": "tests/test_turn_lease.py",
@@ -479,7 +479,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/web.py",
@@ -487,7 +487,7 @@
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         },
         {
           "path": "tests/test_turn_lease.py",
@@ -545,19 +545,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -602,7 +602,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/core/autonomy/inbox.py",
@@ -639,7 +639,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_inbound_voice_read.py",
@@ -668,19 +668,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -1012,11 +1012,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -1535,7 +1535,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -1547,7 +1547,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "tests/test_log_redaction.py",
@@ -1564,7 +1564,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -1572,15 +1572,15 @@
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -1596,7 +1596,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -1879,7 +1879,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_admin_settings_mutations.py",
@@ -2205,11 +2205,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -2221,11 +2221,11 @@
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         }
       ]
     },
@@ -2415,7 +2415,7 @@
       "row_sha256": "765d4e507aa22a50b7bde5a3972b342c301ef50855453885062b79b414c92f93",
       "status": "partial",
       "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:281). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:431, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
-      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1853-1860), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1298).",
+      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1853-1860), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1300).",
       "evidence": [
         {
           "path": "agents/core/cost_tracker.py",
@@ -2443,7 +2443,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "agents/web.py",
@@ -2508,16 +2508,16 @@
       "id": "H227",
       "row_sha256": "4f9c0d30c2a5fab5c2b3f64fa932518a530579ad6d97986c602f974fc939d0b3",
       "status": "partial",
-      "summary": "The data exists behind several separate routes, but there is no single inspector and no view of the resolved system prompt on any surface. The terminal client agents/cli/nerva.py offers three related verbs. `nerva status` (cmd_status, agents/cli/nerva.py:575) prints version, backend, and the model with its /status inventory word, where a legacy `ready` is now shown as `resident`. It also prints a `runnable:` line with the hub's strict route verdict: route → provider/model plus a named reason, read from GET /api/onboarding/command-center by `_runnable` (agents/cli/nerva.py:519). It then prints busy agents, channels and e-stop. `nerva tools` (cmd_tools, agents/cli/nerva.py:727) shows the recent tool-event trail, not the available toolset. `nerva prompt-size` (cmd_prompt_size, agents/cli/nerva.py:1818) shows the offline per-component prompt cost. GET /api/toolrpc/tools (agents/core/routers/mesh.py:170) and /sandbox/status list registered ToolRPC tools. GET /skills (agents/core/routers/skills.py:29) lists skills, GET /api/admin/mcp (agents/core/routers/mcp.py:51) lists MCP servers, and GET /api/system-map (agents/core/routers/system_map.py:387) serves the component map. Each HUD panel in frontend/src/gap.tsx reads one of these on its own.",
+      "summary": "The data exists behind several separate routes, but there is no single inspector and no view of the resolved system prompt on any surface. The terminal client agents/cli/nerva.py offers three related verbs. `nerva status` (cmd_status, agents/cli/nerva.py:575) prints version, backend, and the model with its /status inventory word, where a legacy `ready` is now shown as `resident`. It also prints a `runnable:` line with the hub's strict route verdict: route → provider/model plus a named reason, read from GET /api/onboarding/command-center by `_runnable` (agents/cli/nerva.py:519). It then prints busy agents, channels and e-stop. `nerva tools` (cmd_tools, agents/cli/nerva.py:727) shows the recent tool-event trail, not the available toolset. `nerva prompt-size` (cmd_prompt_size, agents/cli/nerva.py:1820) shows the offline per-component prompt cost. GET /api/toolrpc/tools (agents/core/routers/mesh.py:170) and /sandbox/status list registered ToolRPC tools. GET /skills (agents/core/routers/skills.py:29) lists skills, GET /api/admin/mcp (agents/core/routers/mcp.py:51) lists MCP servers, and GET /api/system-map (agents/core/routers/system_map.py:387) serves the component map. Each HUD panel in frontend/src/gap.tsx reads one of these on its own.",
       "remaining": "No inspector payload or view exists. Nothing composes these into one read-only payload: model, agent state and context usage; the tools the tool profile actually offers this principal and agent (ToolProfileResolver output, not the raw registry); the advertised skills catalog; the MCP servers with transport and connection status; and the resolved system prompt (Agent.build_prompt with the core-memory, skills and runtime-state blocks). `nerva status --json` now joins /status, e-stop and the runnable verdict, but only on the client side and with no context usage, tools, skills, MCP servers or prompt. The resolved system prompt appears on no surface. The terminal client has no verb that shows tools, skills, MCP servers or the prompt, and the HUD has no panel reading a shared payload, so nothing guarantees the two surfaces agree.",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/routers/mesh.py",
@@ -2578,7 +2578,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "agents/cli/client.py",
@@ -2602,7 +2602,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "tests/test_first_run_command_center.py",
@@ -2737,11 +2737,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2824,11 +2824,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -2934,7 +2934,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/api/live.ts",
@@ -3074,11 +3074,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3188,8 +3188,8 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:315, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1097-1105); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1117-1121); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1126-1131, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:244, validated at :507; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1107-1163, 1209-1230, 1351-1412) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:508-511), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1351-1406). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
-      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1107-1163, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1379-1412) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:33-48) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1117-1120). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:508-511). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:315, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:617). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:172-178), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:33-48 via jobs.py:1138-1146); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:14-17, 148-153; jobs.py:1158-1162); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1167-1172, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:244, validated at :507; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1148-1204, 1209-1230, 1351-1412) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1117-1120). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:538-541), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1392-1447). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1148-1204, 1209-1230, 1351-1412) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1420-1453) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:33-48) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1117-1120). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:538-541). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
           "path": "agents/core/autonomy/queue.py",
@@ -3205,7 +3205,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_dispatch.py",
@@ -4488,7 +4488,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "agents/web.py",
@@ -4878,7 +4878,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -5356,7 +5356,7 @@
       "id": "H440",
       "row_sha256": "bf1110516d45262722fbd9d762e4d284f62fd6da632d675f87e63353cba3aa9b",
       "status": "partial",
-      "summary": "Continuation lineage exists in an explicit form. POST /sessions/continue (agents/core/routers/sessions.py:68, admin-guarded) is called by `nerva sessions continue` (agents/cli/nerva.py:1118) and runs ContinuationStore.create (agents/core/session_continuation.py:184, via create_continuation :344). create inserts a new sessions row and a session_continuations row carrying parent_id, root_id and a hashed immutable seed (:43-45), after verifying the ancestry chain. tests/test_session_continuation.py covers this with 50 passing tests.\n\nNothing names sessions:\n- The sessions table has only a summary column (agents/core/checkpoint.py:72), and no caller writes it. The only update_session call (agents/core/memory/manager.py:116) passes turn_count alone.\n- There is no deterministic first-message title, no small-model upgrade constrained by a {\"title\"} JSON schema, and no human-title field or never-overwrite rule.\n- Continuations get no `base #N` titles and are not hidden from pickers: GET /sessions (agents/core/routers/sessions.py:22, :27) returns raw rows from get_sessions (checkpoint.py:341).\n- Nothing resolves a name to the newest member of a lineage.\nThe HUD SessionsPanel lists raw ids (frontend/src/gap.tsx:2374). The mobile SessionsModal would show summary but always falls back to the id (mobile/src/components/SessionsModal.tsx:80).",
+      "summary": "Continuation lineage exists in an explicit form. POST /sessions/continue (agents/core/routers/sessions.py:68, admin-guarded) is called by `nerva sessions continue` (agents/cli/nerva.py:1120) and runs ContinuationStore.create (agents/core/session_continuation.py:184, via create_continuation :344). create inserts a new sessions row and a session_continuations row carrying parent_id, root_id and a hashed immutable seed (:43-45), after verifying the ancestry chain. tests/test_session_continuation.py covers this with 50 passing tests.\n\nNothing names sessions:\n- The sessions table has only a summary column (agents/core/checkpoint.py:72), and no caller writes it. The only update_session call (agents/core/memory/manager.py:116) passes turn_count alone.\n- There is no deterministic first-message title, no small-model upgrade constrained by a {\"title\"} JSON schema, and no human-title field or never-overwrite rule.\n- Continuations get no `base #N` titles and are not hidden from pickers: GET /sessions (agents/core/routers/sessions.py:22, :27) returns raw rows from get_sessions (checkpoint.py:341).\n- Nothing resolves a name to the newest member of a lineage.\nThe HUD SessionsPanel lists raw ids (frontend/src/gap.tsx:2374). The mobile SessionsModal would show summary but always falls back to the id (mobile/src/components/SessionsModal.tsx:80).",
       "remaining": "Build two-stage automatic titles:\n- a deterministic derive_title() from the first user message (at most 48 chars, cut on a word boundary), written before the model is called\n- one strict-local auxiliary call constrained by a {\"title\": string} JSON schema with additionalProperties false and input capped at 1,000 chars; it upgrades the title once and never overwrites a human-set title.\nAlso needed:\n- title storage with provenance, plus a rename route\n- `base #2`, `base #3` titles for continuations\n- continuations hidden from GET /sessions, the HUD SessionsPanel and the mobile SessionsModal\n- resume by title resolving to the newest lineage member\n- titles shown in the HUD and on mobile.",
       "evidence": [
         {
@@ -5377,7 +5377,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -5397,7 +5397,7 @@
       "id": "H441",
       "row_sha256": "69ff8f2c2f54e232b60f154dde5168e63bf3565c2cd881f7bff60a3ac91c7fa2",
       "status": "partial",
-      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:31) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:51-52). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2374) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:313, build_default_registry) offers /sessions (agents/core/commands.py:317), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
+      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:31) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:51-52). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2374) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:315, build_default_registry) offers /sessions (agents/core/commands.py:319), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
       "remaining": "There is no bounded local recap renderer: nothing formats the last N exchanges with truncated turns and tool calls collapsed to a count. The resume response carries no recap field. There is no /recap command in agents/core/commands.py, so Telegram and other chat channels cannot ask for one. The HUD SessionsPanel shows nothing after a resume and has no recap control. Tool calls are not recorded on turns, so the collapsed '[k tool calls: …]' line cannot be produced from today's turn list. No test asserts that a recap is produced without any model call.",
       "evidence": [
         {
@@ -5406,7 +5406,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/core/memory/timeline.py",
@@ -5434,7 +5434,7 @@
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -5497,7 +5497,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_blueprints.py",
@@ -5505,15 +5505,15 @@
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -5529,7 +5529,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -5677,8 +5677,8 @@
       "id": "H450",
       "row_sha256": "dfd92874050486e9e3edbf496dd5dc6727e7f0cc18b5adda8505189638ab3ac3",
       "status": "partial",
-      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:219) takes a raw five-field cron (jobs.py:224) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:627), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:254, registered at commands.py:322), `nerva jobs create --when` (agents/cli/nerva.py:171), POST /api/jobs (agents/core/routers/jobs.py:90) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:386-388). Job.runnable honours the count (jobs.py:119) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1142). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:906). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
-      "remaining": "Four accepted schedule families are missing. (1) One-shot delays: `in 30m` / `in 2 hours` are refused, and there is no run-at/date trigger in the job store; every job is a cron. (2) ISO timestamps anchored to the configured timezone are missing. Worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` are silently armed as a DAILY recurring cron `0 9 * * *`, because _parse_time takes the HH:MM and a bare time falls through to daily (nl_schedule.py:96-97). (3) Compact intervals and bare durations as recurring schedules (`every 2h`, `every 30m`, `2h`) are missing. (4) There is no single repeat normaliser that coerces `forever|once|1x|N`: options.repeat only accepts an integer or null.",
+      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:219) takes a raw five-field cron (jobs.py:224) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:627), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:254, registered at commands.py:324), `nerva jobs create --when` (agents/cli/nerva.py:171), POST /api/jobs (agents/core/routers/jobs.py:90) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:386-388). Job.runnable honours the count (jobs.py:119) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1142). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:906). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
+      "remaining": "Four accepted schedule families are missing. (1) One-shot delays: `in 30m` / `in 2 hours` are refused, and there is no run-at/date trigger in the job store; every job is a cron. (2) ISO timestamps anchored to the configured timezone are missing. Worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` are silently armed as a DAILY recurring cron `0 9 * * *`, because _parse_time takes the HH:MM and a bare time falls through to daily (nl_schedule.py:96-97). (3) Compact intervals and bare durations as recurring schedules (`every 2h`, `every 30m`, `2h`) are missing. (4) There is no single repeat normaliser that coerces `forever|once|1x|N`: options.repeat only accepts an integer or null. (5) When the one-shot family lands, it must stay out of H687's automatic first run: wants_first_run (agents/core/autonomy/jobs.py:400) fires ask/brief/task jobs at creation, and a run-at job fired early would spend its only run and skip the slot the owner asked for.",
       "evidence": [
         {
           "path": "agents/core/autonomy/nl_schedule.py",
@@ -5686,19 +5686,19 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -5731,11 +5731,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -5756,11 +5756,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -5781,7 +5781,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -5862,11 +5862,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -5887,11 +5887,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -5907,8 +5907,8 @@
       "id": "H456",
       "row_sha256": "d1c6513baf1d4189c5db66a1b381789cdcf2d75fbbea1fcfca7811eede3fbf08",
       "status": "partial",
-      "summary": "H456 re-read against 55d625f. The 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale, but the row stays partial.\n\nThe enabled_toolsets half of the contract is shipped and well built. agents/core/job_toolsets.py holds:\n- an immutable CATALOG (:7-11: basic/files/terminal);\n- a strict `validate()` that refuses unknown, non-list or duplicate ids (:14-21);\n- `resolve()`, which refuses a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37);\n- `toolset_scope()` (:63-79), whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime, so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults. Intersect-never-union is enforced.\n\nIt is enforced at three boundaries, not one:\n- the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208);\n- the runtime filter before and after the profile (agents/core/agent_runtime.py:248-257), re-applied at the in-turn compaction boundary by `_resolve_offer` (H672);\n- RPC intake, ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`).\n\nStore boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create and edit both re-resolve it (:1041, :1062). Fire time: jobs.py:1242-1244 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:175,185,958-964) and the HUD (frontend/src/panels/job-builder.tsx:35-49). PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328).\n\nHermes' two removal rules are met structurally. Every register_tool on the production server was enumerated: agents/core/autonomy_coordinator.py:442-774 (image_generate, H313's `speak` at :455-471, desktop_run, terminal_run, desktop_plan, operator_plan, osint_enrich, echo, time) and :778-860 (session_search, file_*, web_search/web_extract, search_memory, execute_code). None creates a job, and no `schedule.create` kernel capability exists. None is a messaging/clarify tool that needs a live human. The new `speak` announces into a room, but it is registered only with JARVIS_MEDIA_DIRECTOR on and is gated (ask-tier card, trusted execution only from an owner-accepted row), so it is never offered off the owner posture.\n\nVerified green at 55d625f: 27 cases in tests/test_job_toolsets.py and 28 in tests/test_job_model_pins.py. The HUD cases in frontend/src/panels/job-toolsets.test.tsx were not re-run in this pass.\n\nWhat keeps the row open is the contract's second half: a job cannot pin reasoning effort.\n- Selection carries only model/provider (agents/core/llm/job_selection.py:21-25).\n- validate_options rejects any unknown option (jobs.py:350), so the pin cannot be stored; neither jobs.py nor job_selection.py mentions reasoning at 55d625f.\n- _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,389,418-419.\n- The closed-lifetime transport machinery already exists (agents/core/llm/request_context.py:44-72), but only the live chat path enters it (agents/web.py:1149, :1202).\n\nSecondary gap: the bound can be expressed over only 8 of the ~18 tools the server can register. A job that needs web_search, execute_code or search_memory must run unbounded on the default net, a residual that docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
-      "remaining": "(1) The per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented:\n- `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), and `validate_pins` (:35-43) never sees an effort.\n- `validate_options` rejects any option outside the known ten (agents/core/autonomy/jobs.py:350), so the pin cannot reach the store.\n- `JobRunner._ask` (jobs.py:1242-1244) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`. A job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :389, :418-419.\n\nThe transport half already exists and is clamped: agents/core/llm/request_context.py:44-72; agents/core/llm/anthropic.py:81-86 with per-model overrides; agents/core/llm/gemini.py:134; agents/core/llm/xai.py:73; agents/core/llm/provider_request.py:46 and :54. Only the live chat path enters it (agents/web.py:1149, :1202). Work owed:\n- accept `reasoning` in validate_pins/validate_options against LADDER;\n- enter `reasoning_scope(...)` in `_ask` beside the other two scopes;\n- expose it on the CLI/HUD/doctor like the model and provider pins;\n- test it in tests/test_job_model_pins.py.\n\n(2) The bound can be expressed over only 8 of the ~18 tools the production server can register. CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run. These belong to no group: web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich, image_generate and (with the Media Director on) speak, registered at agents/core/autonomy_coordinator.py:442-774 and :778-860. A job that needs any of them must leave `enabled_toolsets` unset and run on the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\"), and doctor reports the upper bound, not the effective offers.\n\n(3) Minor: Hermes' middle precedence tier has no equivalent. That tier is a per-platform `cron` tools config that sets defaults for every scheduled job. Here, only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
+      "summary": "H456 re-read against 55d625f. The 2026-09-07 evidence (\"no per-item toolset allowlist\") is stale, but the row stays partial.\n\nThe enabled_toolsets half of the contract is shipped and well built. agents/core/job_toolsets.py holds:\n- an immutable CATALOG (:7-11: basic/files/terminal);\n- a strict `validate()` that refuses unknown, non-list or duplicate ids (:14-21);\n- `resolve()`, which refuses a group whose members are not all registered ('enabled_toolsets contains an unavailable toolset', :30-37);\n- `toolset_scope()` (:63-79), whose nested frame is `parent.names.intersection(names)` (:72) with a shared _Lifetime, so a closed parent raises 'job toolset scope expired' (:66-67) instead of falling back to defaults. Intersect-never-union is enforced.\n\nIt is enforced at three boundaries, not one:\n- the offering boundary (agents/core/tool_profiles.py:199,206 `allowed = allows(name) and _posture_allows(...)`, narrowed again by agents.yaml patterns at :207-208);\n- the runtime filter before and after the profile (agents/core/agent_runtime.py:248-257), re-applied at the in-turn compaction boundary by `_resolve_offer` (H672);\n- RPC intake, ahead of preflight and handler (agents/core/tool_rpc.py:302-304, reason `job_toolset_not_allowed`).\n\nStore boundary: agents/core/autonomy/jobs.py:350 lists the option, :353-357 validates it and refuses it with `no_agent`, validate_action:297-298 refuses it on non-`ask` actions, and create and edit both re-resolve it (:1081, :1103). Fire time: jobs.py:1283-1285 `with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options)`. Doctor reports the catalog, each job's `toolset_upper_bound` and a `toolsets_unavailable` problem (agents/core/autonomy/jobs_health.py:51-55, :113). Reachable from the CLI (`--toolsets default|none|<ids>`, agents/cli/nerva.py:175,185,958-964) and the HUD (frontend/src/panels/job-builder.tsx:35-49). PATCH /api/jobs/{id} refuses an unavailable toolset with 422 (tests/test_job_toolsets.py:327-328).\n\nHermes' two removal rules are met structurally. Every register_tool on the production server was enumerated: agents/core/autonomy_coordinator.py:442-774 (image_generate, H313's `speak` at :455-471, desktop_run, terminal_run, desktop_plan, operator_plan, osint_enrich, echo, time) and :778-860 (session_search, file_*, web_search/web_extract, search_memory, execute_code). None creates a job, and no `schedule.create` kernel capability exists. None is a messaging/clarify tool that needs a live human. The new `speak` announces into a room, but it is registered only with JARVIS_MEDIA_DIRECTOR on and is gated (ask-tier card, trusted execution only from an owner-accepted row), so it is never offered off the owner posture.\n\nVerified green at 55d625f: 27 cases in tests/test_job_toolsets.py and 28 in tests/test_job_model_pins.py. The HUD cases in frontend/src/panels/job-toolsets.test.tsx were not re-run in this pass.\n\nWhat keeps the row open is the contract's second half: a job cannot pin reasoning effort.\n- Selection carries only model/provider (agents/core/llm/job_selection.py:21-25).\n- validate_options rejects any unknown option (jobs.py:350), so the pin cannot be stored; neither jobs.py nor job_selection.py mentions reasoning at 55d625f.\n- _ask never enters `reasoning_scope`, so every scheduled run inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read in agents/core/llm/hybrid_router.py:338,351,389,418-419.\n- The closed-lifetime transport machinery already exists (agents/core/llm/request_context.py:44-72), but only the live chat path enters it (agents/web.py:1149, :1202).\n\nSecondary gap: the bound can be expressed over only 8 of the ~18 tools the server can register. A job that needs web_search, execute_code or search_memory must run unbounded on the default net, a residual that docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names itself.",
+      "remaining": "(1) The per-job reasoning-effort pin (Hermes' `.cron-reasoning`, rolled into this row) is not implemented:\n- `Selection` carries only model/provider (agents/core/llm/job_selection.py:21-25), and `validate_pins` (:35-43) never sees an effort.\n- `validate_options` rejects any option outside the known eleven (agents/core/autonomy/jobs.py:350), so the pin cannot reach the store.\n- `JobRunner._ask` (jobs.py:1283-1285) enters `toolset_scope` + `selection_scope` but never `reasoning_scope`. A job therefore always inherits the global `llm.reasoning_effort` / `reasoning_effort_overrides` read at agents/core/llm/hybrid_router.py:338, :351, :389, :418-419.\n\nThe transport half already exists and is clamped: agents/core/llm/request_context.py:44-72; agents/core/llm/anthropic.py:81-86 with per-model overrides; agents/core/llm/gemini.py:134; agents/core/llm/xai.py:73; agents/core/llm/provider_request.py:46 and :54. Only the live chat path enters it (agents/web.py:1149, :1202). Work owed:\n- accept `reasoning` in validate_pins/validate_options against LADDER;\n- enter `reasoning_scope(...)` in `_ask` beside the other two scopes;\n- expose it on the CLI/HUD/doctor like the model and provider pins;\n- test it in tests/test_job_model_pins.py.\n\n(2) The bound can be expressed over only 8 of the ~18 tools the production server can register. CATALOG (agents/core/job_toolsets.py:7-11) covers echo/time, the five file tools and terminal_run. These belong to no group: web_search, web_extract, search_memory, session_search, execute_code, desktop_plan, desktop_run, operator_plan, osint_enrich, image_generate and (with the Media Director on) speak, registered at agents/core/autonomy_coordinator.py:442-774 and :778-860. A job that needs any of them must leave `enabled_toolsets` unset and run on the full default net. docs/superpowers/plans/2026-09-15-job-toolsets.md:44 names this residual itself (\"does not claim ... arbitrary plugin/delegation/code-runner groups\"), and doctor reports the upper bound, not the effective offers.\n\n(3) Minor: Hermes' middle precedence tier has no equivalent. That tier is a per-platform `cron` tools config that sets defaults for every scheduled job. Here, only the per-job list, the internal posture (`llm.internal_actuation`) and the agent's agents.yaml `tools:` patterns narrow an unattended run.",
       "evidence": [
         {
           "path": "agents/core/job_toolsets.py",
@@ -5920,7 +5920,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -5972,7 +5972,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -6000,7 +6000,7 @@
       "id": "H461",
       "row_sha256": "d44e344dc3c48655f51eac58a2b57d69e8a2128eab056c741a20b0b40c4b5542",
       "status": "partial",
-      "summary": "The pieces around the feature exist, but nothing binds a standing instruction to a conversation. HeartbeatScheduler (agents/core/heartbeat.py:180) schedules per-agent routines from HEARTBEAT.md or agents.yaml, with MIN_HEARTBEAT_INTERVAL 3600 s (agents/core/heartbeat.py:52) and 15–30 s jitter. Since H506 it also refuses a HEARTBEAT front-matter that its injection scan flags. Admin routes /heartbeat/{agent_id}/start|stop|run (agents/core/routers/heartbeat.py:27) and the HUD HeartbeatPanel drive it. Owner-armed jobs accept plain-words schedules, can be paused, resumed and deleted, and include an `ask` action that sends a prompt to an agent. That prompt goes through a one-shot Orchestrator.process call on channel 'job' (agents/core/autonomy/jobs.py:1250), and the reply goes to the owner's channel, not into the originating chat's history. The only chat slash commands are /help, /status, /sessions, /pause, /stop, /resume, /jobs, /remind and /voice. CommandContext (agents/core/commands.py:50) carries no explicit session id, but its principal is a Principal with channel and chat (agents/core/commands.py:37-46), and ctx.orch.session_id already resolves to the bound channel session because the channel handler sets the active session before handle_input dispatches a command. Turns are serialized per session: Orchestrator.turn_lease (agents/core/orchestrator.py:1506) keeps a per-session asyncio.Lock table with a re-entrant held set. But nothing records an idle boundary or consults that lease before firing a heartbeat. Existing heartbeat and jobs tests pass (tests/test_heartbeat.py, tests/test_heartbeat_actions.py, tests/test_owner_jobs.py).",
+      "summary": "The pieces around the feature exist, but nothing binds a standing instruction to a conversation. HeartbeatScheduler (agents/core/heartbeat.py:180) schedules per-agent routines from HEARTBEAT.md or agents.yaml, with MIN_HEARTBEAT_INTERVAL 3600 s (agents/core/heartbeat.py:52) and 15–30 s jitter. Since H506 it also refuses a HEARTBEAT front-matter that its injection scan flags. Admin routes /heartbeat/{agent_id}/start|stop|run (agents/core/routers/heartbeat.py:27) and the HUD HeartbeatPanel drive it. Owner-armed jobs accept plain-words schedules, can be paused, resumed and deleted, and include an `ask` action that sends a prompt to an agent. That prompt goes through a one-shot Orchestrator.process call on channel 'job' (agents/core/autonomy/jobs.py:1291), and the reply goes to the owner's channel, not into the originating chat's history. The only chat slash commands are /help, /status, /sessions, /pause, /stop, /resume, /jobs, /remind and /voice. CommandContext (agents/core/commands.py:50) carries no explicit session id, but its principal is a Principal with channel and chat (agents/core/commands.py:37-46), and ctx.orch.session_id already resolves to the bound channel session because the channel handler sets the active session before handle_input dispatches a command. Turns are serialized per session: Orchestrator.turn_lease (agents/core/orchestrator.py:1506) keeps a per-session asyncio.Lock table with a re-entrant held set. But nothing records an idle boundary or consults that lease before firing a heartbeat. Existing heartbeat and jobs tests pass (tests/test_heartbeat.py, tests/test_heartbeat_actions.py, tests/test_owner_jobs.py).",
       "remaining": "Every accepted part is missing:\n- No `/heartbeat every <interval> <prompt>` entry point, and no pause/resume/clear/status for it.\n- No per-session persistence binding a standing prompt to a session_id and originating channel/chat.\n- No idle-only firing: turn_lease serializes turns but no heartbeat consults it, and no idle boundary is recorded (row H460's idle-boundary rule, also missing).\n- No fire record written before the injected turn runs, so a long turn could double-fire.\n- No coalescing of missed ticks with the anchor reset to now.\n- No floor specific to this lane.\n- No 'any DB failure degrades to no heartbeat' guard.\n- No injection of the prompt as a user turn into that conversation's history, where its effects would cross the kernel normally.",
       "evidence": [
         {
@@ -6013,11 +6013,11 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -6099,7 +6099,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_background_review.py",
@@ -6340,7 +6340,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -6348,7 +6348,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "tests/test_nerva_send.py",
@@ -6382,11 +6382,11 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         }
       ]
     },
@@ -6431,7 +6431,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -6500,7 +6500,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_o26_f6_boot_guards.py",
@@ -7246,7 +7246,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/channels/telegram.py",
@@ -7290,7 +7290,7 @@
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
           "path": "frontend/src/panels/jobs.test.tsx",
@@ -7789,7 +7789,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/cockpit.tsx",
@@ -7871,7 +7871,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -8260,11 +8260,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -8276,11 +8276,11 @@
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         }
       ]
     },
@@ -8781,7 +8781,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -9057,11 +9057,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "tests/test_owner_jobs.py",
@@ -9276,7 +9276,7 @@
       "id": "H681",
       "row_sha256": "ceea59bea96a9445bcf5c755764b3327929687a08d127539bbfe782e1b981363",
       "status": "partial",
-      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1428-1431) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1244) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1617-1622). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
+      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1428-1431) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1285) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1617-1622). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
       "remaining": "(1) Per-child API settings: accept model/provider, plus bounded request overrides such as max_tokens/temperature/extra_body deep-merged one level, on SubAgentManager.spawn, on the /api/subagents/spawn body and through a default autonomy.subagent_model setting. Apply them in _subagent_runner through selection_scope with documented precedence: explicit, then setting, then parent. (2) Failure honesty: a child whose provider call failed (empty output, degraded reply or error marker) is recorded as failed with the error class, not done. (3) Batch report: a batch spawn surface whose result emits one notice when every child failed with a model-not-found phrase AND the configured subagent model name. The notice names the model, the setting that controls it and whether a fallback exists. A failure naming a model that is not the configured one must not trigger it. (4) Tests for all three.",
       "evidence": [
         {
@@ -9301,7 +9301,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "tests/test_subagents_h20_6.py",
@@ -9330,19 +9330,19 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "tests/test_slash_commands.py",
-          "sha256": "6f6692f239f02dc72b50dc5e288ce4732b6b66501bddbe47f901f2ea92b96557"
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
         }
       ]
     },
@@ -9400,7 +9400,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -9420,7 +9420,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -9432,7 +9432,7 @@
         },
         {
           "path": "tests/test_nerva_cli.py",
-          "sha256": "206a4f6c69f4e3230871e6f53ecd0a274136c4115fedac5967776e6edef87450"
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -9512,45 +9512,49 @@
     {
       "id": "H687",
       "row_sha256": "2de11ca878088fadad4274ae450dd68ad2f84531b03f1f961f89cafa9549984a",
-      "status": "partial",
-      "summary": "Owner recurring instructions are Nerva jobs. Every creation surface calls JobRunner.create (agents/core/autonomy/jobs.py:1040): POST /api/jobs (agents/core/routers/jobs.py:106), the /remind slash command (_remind, agents/core/commands.py:254), `nerva jobs create` (agents/cli/nerva.py:1043) and the HUD arm/JobCreateDialog flow (frontend/src/panels/jobs.tsx:134). JobRunner.create validates and persists the job, then only registers an APScheduler cron trigger (agents/core/autonomy/jobs.py:1047, register at agents/core/autonomy/jobs.py:918), so the first execution waits for the first cron slot. A governed manual path already exists. POST /api/jobs/{job_id}/run (agents/core/routers/jobs.py:222) calls JobRunner.request_run (agents/core/autonomy/jobs.py:940), which enqueues a dispatch receipt. _fire_once (agents/core/autonomy/jobs.py:1107) then runs it under the shared job gate with the estop, runnable, validation and repeat-reservation checks, and delivery obeys quiet hours (JobRunner.quiet_hours, agents/core/autonomy/jobs.py:1290). The HUD offers this as the per-job '▶ now' button (frontend/src/panels/jobs.tsx:215). tests/test_jobs_routes.py:96 confirms that creating a job sends nothing until /run is drained. Company-mode work runs that were never ticked are due at the next sweep (agents/core/autonomy/schedule_runtime.py:274-275), but those are approved goals, not owner cadences. The creation confirmations report only the schedule and cron ('Armed <id>: <schedule> (<cron>)' at agents/core/commands.py:271; 'armed · …' at frontend/src/panels/jobs.tsx:134) and never mention a first run.",
-      "remaining": "A new job does not run until its first cron slot, and no confirmation says anything else. Required: JobRunner.create (agents/core/autonomy/jobs.py:1040) queues an immediate first run through the existing governed request_run → _fire_once path (estop, runnable/pause, repeat reservation, quiet-hours hold and interrupt budget). This applies to agent-instruction jobs (ask/task/brief and script jobs), with an explicit opt-out. POST /api/jobs returns the first-run receipt. The /remind, `nerva jobs create` and HUD confirmations state 'first run now, then <cadence>', or 'on its cadence' when the first run is off.",
+      "status": "equivalent",
+      "summary": "Built on this branch. A recurring instruction now runs once when it is created, then on its cadence. Hermes does the same: LoopManager.set() starts a new loop with next_due_at=now (hermes_cli/loops.py:466), and the creation reply says the first wakeup fires now. Before this change, a new Nerva job waited for its first cron slot, and every confirmation named only the schedule.\n\nEvery creation surface now goes through JobRunner.arm (agents/core/autonomy/jobs.py:1073):\n- POST /api/jobs (agents/core/routers/jobs.py:106);\n- the /remind slash command (agents/core/commands.py:263);\n- `nerva jobs create`, which posts to that route and prints the hub's confirmation (agents/cli/nerva.py:1044);\n- the HUD arm and JobCreateDialog notes (armNote, frontend/src/panels/jobs.tsx:29, used at frontend/src/panels/jobs.tsx:142 and frontend/src/panels/jobs.tsx:299).\n\nJobRunner.create is kept as a thin wrapper (agents/core/autonomy/jobs.py:1070). arm validates, persists and registers the cron trigger as before. When the job is runnable and wants_first_run (agents/core/autonomy/jobs.py:400) agrees, it queues one first run (agents/core/autonomy/jobs.py:1088) through request_run (agents/core/autonomy/jobs.py:970). That is the same dispatch receipt the owner's '▶ now' button uses; there is no new execution path.\n\n_fire_once (agents/core/autonomy/jobs.py:1148) drains the first run under the shared job gate, so every gate still applies:\n- the runnable/pause check;\n- the emergency stop (agents/core/autonomy/jobs.py:1166-1170);\n- option and action validation;\n- the repeat reservation (agents/core/autonomy/jobs.py:1180);\n- the quiet-hours hold on delivery (agents/core/autonomy/jobs.py:1331).\n\nWhich jobs fire at creation:\n- Fire now: ask, brief and task actions, and script or monitor sources.\n- Wait for the cadence: a reminder, because '/remind every weekday at 7 | stand-up' delivered the moment it is armed is noise, not a first run.\n- Wait for the cadence: a repeat-limited job, because a first run would spend one of its few attempts and could skip the slot the owner scheduled (critic note 15).\n- options.first_run overrides the choice either way. It is accepted at agents/core/autonomy/jobs.py:350 and must be a boolean (agents/core/autonomy/jobs.py:371).\n\nPOST /api/jobs now returns two extra fields (agents/core/routers/jobs.py:111-112):\n- the receipt as first_run, or null when the job waits;\n- one confirmation built by arm_confirmation (agents/core/autonomy/jobs.py:422): 'first run now, then <schedule> (<cron>)' or '<schedule> (<cron>), on its cadence'.\n/remind, the CLI and the HUD print that same wording. Against an older hub without the field, the CLI and HUD still print the schedule.\n\nTests:\n- tests/test_job_first_run.py, 18 cases:\n  - an ask job is queued at creation and drained into exactly one run before any cron slot, linked to its request (tests/test_job_first_run.py:83);\n  - with the emergency stop engaged, the first run is recorded 'skipped' and nothing is sent (tests/test_job_first_run.py:95);\n  - a reminder queues nothing (tests/test_job_first_run.py:106);\n  - first_run false and true (tests/test_job_first_run.py:115);\n  - a repeat-limited job keeps attempts at 0 (tests/test_job_first_run.py:127);\n  - the boolean check (tests/test_job_first_run.py:135);\n  - the decision table (tests/test_job_first_run.py:154);\n  - the /remind wording (tests/test_job_first_run.py:158);\n  - the confirmation strings (tests/test_job_first_run.py:166).\n- tests/test_nerva_cli.py:1223 (the CLI prints the confirmation, with the fallback).\n- tests/test_slash_commands.py:316 (the /remind owner gate, through arm).\n- frontend/src/test/jobs-first-run.test.ts (3 cases for armNote).\n- tests/test_jobs_routes.py still pins that a new reminder sends nothing until /run is drained.\n\nScope note: one-shot run_at jobs do not exist yet; that is H450. When they land they must stay out of the first run, and the H450 row says so.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "28ee90ad3d53bd230c57798c42c11bbf1a7bd0b00875c1d0bf9e758a65940184"
+          "sha256": "0a388c6f5b2c88955a403f726b178134ad3cc83ac869c3dd3f46aa72a498cf98"
         },
         {
           "path": "agents/core/routers/jobs.py",
-          "sha256": "717e8dc7858caec0785ad797f8812858bb3decc50c1f783e7fb002cb068faf12"
+          "sha256": "ca8ef92f4f43472cd758119d58377da3948f1d2c672e01e33cbe33cf94b16438"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "d1788ca0db421869252ae1cd844293046c02e0ea3a64dcfaaf51f93c4b0429f6"
+          "sha256": "63c5ef23ebb60f28f08fea2c672c885fbd7d936e1855626694d2216ad5666ec1"
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "ea839996d2b00f69d1753c55585a2bc983d6721e74f382d6f327435cbb81bbdb"
+          "sha256": "5d50438e96deb09bc66ac47b2ba1c0afb9cd7ae98f4295ab5eb8b4263bd9a97a"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
-          "sha256": "4989ae6a3d3ed95134b4848feeb9ec4f04ad13235f08a7bb406ac76fd9f28e04"
+          "sha256": "22e1d07425f121b11d2d2ac860802c448b657b3c164ae5f2e46b249ed12e23ce"
         },
         {
-          "path": "agents/core/autonomy/schedule_runtime.py",
-          "sha256": "a921c5413517a7979a48f23cb07c136eabf6e88f1400ef72e2bf3f3a21e47083"
+          "path": "tests/test_job_first_run.py",
+          "sha256": "e01776ace81e8aed7412ce58c78cd2b7d6916e184904f0d3c103c7667c52d31f"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "1e56333b43bbd55d9148caae6056afec22f137ecf68483c72d630fe2a81a72f1"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "4da3c93fd2b8dd0585af3af6559d0dcc18624a64ea60e22276f28bedd793d327"
+        },
+        {
+          "path": "frontend/src/test/jobs-first-run.test.ts",
+          "sha256": "30138247ddfa89d72b683bb41dea084b228f4e1578634e71ce53dec638837336"
         },
         {
           "path": "tests/test_jobs_routes.py",
           "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
-        },
-        {
-          "path": "tests/test_owner_jobs.py",
-          "sha256": "592e18768ad5ea4bf6762d145ffb54a7ccd8fa74ec70f4baed6a35561b132421"
-        },
-        {
-          "path": "tests/test_schedule_runtime.py",
-          "sha256": "6f6e9c2783f85a6d57d26262ac02ccda95e669d5ab86f1b933f3f99a1113f232"
         }
       ]
     },
