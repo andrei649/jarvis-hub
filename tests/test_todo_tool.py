@@ -380,9 +380,12 @@ def test_a_memory_purge_forgets_every_plan(monkeypatch):
     monkeypatch.setattr(todo_tool, "TODOS", store)
     store.write("web-1", _items(("private plan", "pending")))
     store.write("tg-9", _items(("another", "pending")))
+    # Only the plans are this test's: another test's leftovers (an ingestion cache) may be
+    # cleared by the same purge, so the report is read for its plans entry alone.
     cleared, failed = asyncio.run(data_purge.clear_live_memory(object()))
-    assert store.recent() == [] and cleared == ["todo_plans"] and failed == []
-    assert asyncio.run(data_purge.clear_live_memory(object())) == ([], [])   # nothing to drop, nothing claimed
+    assert store.recent() == [] and cleared.count("todo_plans") == 1 and failed == []
+    cleared, failed = asyncio.run(data_purge.clear_live_memory(object()))
+    assert "todo_plans" not in cleared and failed == []                   # nothing to drop, nothing claimed
 
 
 _PLAN = {"session_id": "web-1", "updated_at": 1790000000.0, "agent": "nerva", "posture": "operator/owner",
