@@ -2516,8 +2516,10 @@ class Orchestrator:
     # H428 — Hermes bounds each memory prefetch at 8 s (_EXTERNAL_PREFETCH_TIMEOUT_S).
     _RECALL_TIMEOUT_DEFAULT_S = 8.0
     _RECALL_TIMEOUT_BOUNDS_S = (0.1, 60.0)
-    # A late result waits this long, counted from when it finished, for a retry of the same question.
+    # A late result waits this long, counted from when it finished, for a retry of the same
+    # question; a session's warm context stays usable for the same time.
     _RECALL_HANDOFF_TTL_S = 600.0
+    _RECALL_WARM_SESSIONS = 256
 
     def _recall_timeout_s(self) -> float:
         """``memory.recall_timeout_s``, validated: a non-number, non-finite or
@@ -2590,16 +2592,41 @@ class Orchestrator:
         """Recall bookkeeping (lazy, so orchestrators built without __init__ work too).
 
         ``stuck``: recalls still running past their timeout. ``late``: the result of
-        the last one that finished cleanly, for one handoff. ``generation``: bumped
-        by a purge, so nothing started before it is ever served after it.
+        the last one that finished cleanly, for one handoff. ``warm``: per session,
+        the hits its last recall served (the next-turn warm-up). ``generation``:
+        bumped by a purge, so nothing from before it is ever served after it.
         """
         state = getattr(self, "_recall_state", None)
         if state is None:
-            state = self._recall_state = SimpleNamespace(stuck=set(), late=None, generation=0)
+            state = self._recall_state = SimpleNamespace(stuck=set(), late=None, warm={}, generation=0)
         return state
 
-    async def _bounded_recall_hits(self, text: str) -> list:
-        """Recall hits under the hard timeout, or [] (H428).
+    def _recall_session_key(self) -> str:
+        try:
+            return str(self.session_id or "default")
+        except AttributeError:  # orchestrators built without __init__
+            return "default"
+
+    def _keep_warm_recall(self, hits: list) -> None:
+        """This session's served hits become the next turn's warm context (H428)."""
+        state = self._recall_runtime()
+        key = self._recall_session_key()
+        state.warm.pop(key, None)
+        state.warm[key] = SimpleNamespace(hits=list(hits), stored=time.monotonic(), generation=state.generation)
+        while len(state.warm) > self._RECALL_WARM_SESSIONS:
+            state.warm.pop(next(iter(state.warm)))
+
+    def _warm_recall(self) -> list | None:
+        """This session's warm context, while fresh and from the current purge generation."""
+        state = self._recall_runtime()
+        warm = state.warm.get(self._recall_session_key())
+        if (warm is None or warm.generation != state.generation
+                or time.monotonic() - warm.stored > self._RECALL_HANDOFF_TTL_S):
+            return None
+        return list(warm.hits)
+
+    async def _bounded_recall_hits(self, text: str) -> list | None:
+        """Recall hits under the hard timeout, or None when recall was unavailable (H428).
 
         A timed-out recall cannot be killed — its embedding and search run on worker
         threads, the search holding the memory manager's store lock — so it is left
@@ -2608,13 +2635,15 @@ class Orchestrator:
         (Hermes skips a provider whose previous prefetch is still alive). A straggler
         that finishes cleanly leaves its hits for one handoff: the next recall takes
         them, and serves them only if it is a retry of the same question within the
-        TTL of their completion and no purge ran in between.
+        TTL of their completion and no purge ran in between. ``None`` (skipped or
+        timed out) is not ``[]`` (recall ran and found nothing): only the first lets
+        _recall_block fall back to the session's warm context.
         """
         state = self._recall_runtime()
         stuck = [task for task in state.stuck if not task.done()]
         if stuck:
             logger.info("recall skipped: %d earlier recall(s) still running past the timeout", len(stuck))
-            return []
+            return None
         late, state.late = state.late, None
         if (late is not None and late.text == text and late.generation == state.generation
                 and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
@@ -2631,8 +2660,8 @@ class Orchestrator:
             raise
         if not done:
             self._adopt_recall_straggler(task, text)
-            logger.warning("recall timed out after %.1fs; this turn runs without long-term memory", timeout)
-            return []
+            logger.warning("recall timed out after %.1fs", timeout)
+            return None
         return task.result()
 
     def _adopt_recall_straggler(self, task: "asyncio.Task", text: str) -> None:
@@ -2655,6 +2684,7 @@ class Orchestrator:
         state = self._recall_runtime()
         state.generation += 1
         state.late = None
+        state.warm.clear()
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
@@ -2683,6 +2713,16 @@ class Orchestrator:
             return ""
         try:
             hits = await self._bounded_recall_hits(text)
+            if hits is None:
+                # Next-turn warm-up (Hermes' queue_prefetch_all): when this turn's own
+                # recall timed out or was skipped behind a stuck one, the session's
+                # previous recall stands in, instead of no long-term memory at all.
+                hits = self._warm_recall() or []
+                logger.info("recall unavailable this turn; %s",
+                            f"using this session's previous recall ({len(hits)} hits)" if hits
+                            else "the turn runs without long-term memory")
+            elif hits:
+                self._keep_warm_recall(hits)
             if hits:
                 hits = await asyncio.to_thread(self._living_memory_rerank_hits, hits)
         except Exception as e:

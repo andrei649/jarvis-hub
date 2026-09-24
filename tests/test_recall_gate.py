@@ -382,3 +382,77 @@ async def test_the_rerank_runs_after_the_bound_and_off_the_event_loop(monkeypatc
         beat.cancel()
     assert "Tuesday" in block  # the bound covers retrieval, not the local rerank
     assert ticks >= 10         # the loop kept running during the rerank
+
+
+# ── next-turn warm-up (the half the review found missing) ────────────────────
+
+
+def _in_session(orch, session):
+    orch._session_id_default = session
+    return orch
+
+
+async def test_a_timed_out_turn_falls_back_to_this_sessions_previous_recall(caplog):
+    memory = _Memory(hits=[_hit()])
+    orch = _in_session(_orch(memory, **{"memory.recall_timeout_s": 0.2}), "owner")
+    assert "Tuesday" in await orch._recall_block("when is the dentist?")
+    memory.delay = 30  # the backend hangs from here on
+    with caplog.at_level(logging.INFO, logger="jarvis.orchestrator"):
+        block = await orch._recall_block("and what time was it?")
+    assert "Tuesday" in block and "previous recall (1 hits)" in caplog.text
+    # skipped behind the stuck one: the warm context still stands in
+    assert "Tuesday" in await orch._recall_block("and which clinic?")
+    assert memory.calls == ["when is the dentist?", "and what time was it?"]
+    _release(orch)
+
+
+async def test_warm_context_never_crosses_sessions():
+    memory = _Memory(hits=[_hit()])
+    orch = _in_session(_orch(memory, **{"memory.recall_timeout_s": 0.2}), "owner")
+    await orch._recall_block("when is the dentist?")
+    memory.delay = 30
+    _in_session(orch, "guest-telegram-42")
+    assert await orch._recall_block("and what time was it?") == ""
+    _release(orch)
+
+
+async def test_an_empty_recall_is_an_answer_not_a_miss():
+    memory = _Memory(hits=[_hit()])
+    orch = _in_session(_orch(memory), "owner")
+    await orch._recall_block("when is the dentist?")
+    memory.hits = []
+    assert await orch._recall_block("what is the weather tomorrow?") == ""
+
+
+async def test_warm_context_is_dropped_by_a_purge_and_expires(monkeypatch):
+    from agents.core import data_purge
+    from agents.core.orchestrator import Orchestrator
+
+    memory = _Memory(hits=[_hit("my PIN is 1234")])
+    orch = _in_session(_orch(memory, **{"memory.recall_timeout_s": 0.2}), "owner")
+    await orch._recall_block("what is my PIN?")
+    await data_purge.clear_live_memory(orch)
+    memory.delay = 30
+    assert await orch._recall_block("and the other card?") == ""
+    _release(orch)
+
+    memory.delay = 0
+    fresh = _in_session(_orch(memory, **{"memory.recall_timeout_s": 0.2}), "owner")
+    await fresh._recall_block("what is my PIN?")
+    monkeypatch.setattr(Orchestrator, "_RECALL_HANDOFF_TTL_S", 0.0)
+    memory.delay = 30
+    assert await fresh._recall_block("and the other card?") == ""
+    _release(fresh)
+
+
+async def test_trivial_and_pinned_turns_get_no_warm_context():
+    from agents.core.llm.job_selection import selection_scope
+
+    memory = _Memory(hits=[_hit()])
+    orch = _in_session(_orch(memory, **{"memory.recall_timeout_s": 0.2}), "owner")
+    await orch._recall_block("when is the dentist?")
+    memory.delay = 30
+    assert await orch._recall_block("ok") == ""
+    with selection_scope({"model": "pinned-model"}):
+        assert await orch._recall_block("and what time was it?") == ""
+    assert memory.calls == ["when is the dentist?"]
