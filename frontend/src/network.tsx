@@ -48,10 +48,10 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     return () => clearInterval(i);
   }, [motion]);
 
-  // which packets are live (a few links pulse)
+  // Bolt Optimization: Maintain O(1) Set lookup for active agent IDs to avoid O(N*M) nested array searches.
   const livePackets = useMemo(() => {
-    const active = agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id);
-    return links.filter(l => active.includes(l.a) || active.includes(l.b)).slice(0,6);
+    const active = new Set(agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id));
+    return links.filter(l => active.has(l.a) || active.has(l.b)).slice(0,6);
   }, [links, agents]);
 
   const focused = focusId;
@@ -106,8 +106,16 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     return p+'Z';
   }
 
-  const activeCount = agents.filter(a=>a.status==='active').length;
-  const busyCount = agents.filter(a=>a.status==='busy').length;
+  // Bolt Optimization: Memoize agent status counts so two array filter passes and allocations are avoided on every 60ms tick re-render.
+  const { activeCount, busyCount } = useMemo(() => {
+    let active = 0, busy = 0;
+    for (let i = 0; i < agents.length; i++) {
+      const status = agents[i].status;
+      if (status === 'active') active++;
+      else if (status === 'busy') busy++;
+    }
+    return { activeCount: active, busyCount: busy };
+  }, [agents]);
 
   return (
     <div className="net-wrap">

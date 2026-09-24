@@ -11,3 +11,7 @@
 ## 2026-04-02 - Per-frame Canvas Text Layout Measurements (ctx.measureText) and O(N*M) Roster Scans
 **Learning:** Calling `ctx.measureText()` inside Canvas 2D `requestAnimationFrame` loops at 60 FPS triggers browser font layout engine calculations on every frame. Additionally, resolving task-to-tier mappings via nested `Array.includes()` scans creates O(Tasks * Tiers * Agents) work on state updates.
 **Action:** Cache `ctx.measureText` results on cluster/node state objects until text strings actually change, and build an `agentToTier` `Map` during roster indexing to keep task resolution O(1).
+
+## 2026-04-03 - High-Frequency Timer Component Status Array Iteration and Scans
+**Learning:** React visualizer components running frequent `setInterval` ticks (such as `NetworkBrain` updating every 60ms) re-render at ~16.6 FPS. Running unmemoized `.filter()` array passes or nested `Array.includes()` scans on every tick causes CPU churn and main-thread allocations.
+**Action:** Convert nested array searches to `Set.prototype.has` O(1) lookups and memoize status counts with `useMemo` on source data (`[agents]`) to eliminate per-tick array filtering and allocations.
