@@ -13,6 +13,7 @@ import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
+import { WebhooksPanel } from './panels/webhooks';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -4763,6 +4764,7 @@ const PANEL_COMPONENTS = {
   TodayReceiptPanel,
   ModelSetupPanel,
   DocsPanel,
+  WebhooksPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
   HousePanel,

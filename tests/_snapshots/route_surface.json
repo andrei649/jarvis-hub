@@ -277,6 +277,7 @@
   "GET /v2/{path:path}",
   "PATCH /api/jobs/{job_id}",
   "PATCH /api/notes/blocks/{block_id}",
+  "PATCH /api/webhooks/{hook_id}",
   "POST /api/a2a/card",
   "POST /api/a2a/inbox/{task_id}/decide",
   "POST /api/a2a/peers",

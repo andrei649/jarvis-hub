@@ -308,12 +308,19 @@
   }
 
   function WebhooksPanel() {
-    const _ = useApi('/api/webhooks', true), s = _[0], reload = _[1];
+    /* The hook routes are admin-only (SEC-1): every call carries the admin token, or
+       the panel only worked in the no-admin-token localhost posture (H153). */
+    const _s = useState({ loading: true }), s = _s[0], setS = _s[1];
+    const reload = useCallback(function () {
+      setS({ loading: true });
+      adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: String(e) }); });
+    }, []);
+    useEffect(function () { reload(); }, []);
     const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
     const _sg = useState(false), signed = _sg[0], setSigned = _sg[1];
     const _c = useState(null), created = _c[0], setCreated = _c[1];
-    function create() { api('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e); }); }
-    function del(id) { fetch('/api/webhooks/' + id, { method: 'DELETE' }).then(reload).catch(function () {}); }
+    function create() { adminFetch('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e.message); }); }
+    function del(id) { if (!confirm('Delete this webhook? Its token stops working.')) return; adminFetch('/api/webhooks/' + encodeURIComponent(id), { method: 'DELETE' }).then(reload).catch(function (e) { alert(e.message); }); }
     const hooks = s.data ? (s.data.webhooks || []) : [];
     const body = h('div', null,
       h('div', { className: 'tool-form' },

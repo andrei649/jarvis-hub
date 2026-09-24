@@ -130,6 +130,8 @@
     "/v2/console/skills-import/",
     "/v2/console/writeback-digest",
     "/v2/console/writeback-digest/",
+    "/v2/console/webhooks",
+    "/v2/console/webhooks/",
     "/v2/console/a2-a-inbox",
     "/v2/console/a2-a-inbox/",
     "/v2/console/mesh-peers",

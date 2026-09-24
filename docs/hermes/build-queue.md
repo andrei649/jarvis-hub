@@ -6,13 +6,12 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 80 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7) — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 78 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
 | [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
 | [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
@@ -22,7 +21,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
 | [H670](#h670) | The default identity prompt is a behavior contract, and it lives in one file | partial | 5 | [29](#critic-note-29) |
 | [H145](#h145) | Read the system logs from the UI | missing | 6 | [32](#critic-note-32) |
-| [H153](#h153) | Webhook subscriptions (create, enable, HMAC secret, delete) | partial | 6 | [7](#critic-note-7) |
 | [H157](#h157) | Edit every configuration key from the UI | partial | 6 | [6](#critic-note-6) |
 | [H283](#h283) | Know what kind of machine this is, and tell the model | partial | 6 | [29](#critic-note-29), [31](#critic-note-31) |
 | [H285](#h285) | Choose which skills, plugins and MCP servers load at startup | partial | 6 | [8](#critic-note-8), [24](#critic-note-24) |
@@ -92,14 +90,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H200
-
-**Webhook subscription management surface** (desktop) — partial, ~5 h. Critic notes: [7](#critic-note-7).
-
-Files: `frontend/src/panels/webhooks.tsx`, `frontend/src/panels/webhooks.test.tsx`, `frontend/src/console-routes.ts`, `frontend/src/gap.tsx`, `frontend/src/modes2.tsx`, `agents/core/routers/webhooks.py`, `tests/test_h10_8_webhooks.py`
-
-Plan: Backend: in agents/core/routers/webhooks.py add _audit_webhook(action, hook_id, target, signed). It writes a SecurityEvent through orch.audit via asyncio.to_thread, following admin._audit_settings_change, and never includes the token or secret. Call it from create_webhook and from delete_webhook when the delete succeeds. Red-first test in tests/test_h10_8_webhooks.py: POST then DELETE /api/webhooks with a stub orch.audit asserts two events, and that neither content_preview contains the token or signing_secret. Frontend: new frontend/src/panels/webhooks.tsx (WebhooksPanel), all calls with the admin header. List from GET /api/webhooks showing name, target, signed, calls, last_called and token_hint; clicking a row expands its detail. The create form POSTs {target,target_type,name,signed}. On success it shows a one-time reveal card: `${location.origin}/api/webhooks/${id}`, the token, and signing_secret when signed, each with a copy button. The card lives only in component state, is cleared on dismiss or unmount, and is never refetched. Delete asks for confirmation, then DELETE /api/webhooks/{id}. Register {id:'webhooks', group:'Interop', component:'WebhooksPanel'} in console-routes.ts and PANEL_COMPONENTS in gap.tsx, and link the modes2 WEBHOOKS header to it. frontend/src/panels/webhooks.test.tsx: the secret renders after create, is absent after reload, and delete does not fire without confirmation.
 
 ## H273
 
@@ -174,14 +164,6 @@ Plan: Create agents/_system/IDENTITY.md with the behaviour spec (reply sizing, t
 Files: `agents/core/log.py`, `agents/cli/nerva.py`, `agents/core/routers/admin.py`, `frontend/src/panels/logs.tsx`, `frontend/src/console-routes.ts`, `tests/test_admin_logs_route.py`, `frontend/src/panels/logs.test.tsx`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
 
 Plan: Reader: move `log_path` from agents/cli/nerva.py into agents/core/log.py. Add `tail_log(lines, level=None, component=None, file_index=0, max_lines=500)` there. It reverse-reads in blocks (never the whole file) and parses `_LOG_FORMAT` into {ts, level, component, text}. It runs each returned line through the same SecretScanner that SecretRedactionFilter uses. The CLI `cmd_logs` switches to this reader. Endpoint: add `GET /api/admin/logs` (admin_guard) with params file (jarvis.log or rotation N), level, component and lines (500 or fewer). It returns {enabled, file, lines[]}; when file logging is off it returns `enabled:false` plus the `system.log_to_file` hint. Page: add frontend/src/panels/logs.tsx with segmented Level/Component/Lines filters, regex level colouring and a 5 s auto-refresh toggle with a Live badge, and register it under Admin in frontend/src/console-routes.ts. Regenerate the route snapshots and schema.gen.ts. First red test: tests/test_admin_logs_route.py. Without an admin token the route is refused. A 10k-line file returns only the newest 500 lines. A line holding a synthetic `ghp_...` token comes back masked. level=ERROR drops INFO lines. A missing file returns enabled:false.
-
-## H153
-
-**Webhook subscriptions (create, enable, HMAC secret, delete)** (web) — partial, ~6 h. Critic notes: [7](#critic-note-7).
-
-Files: `agents/core/webhooks.py`, `agents/core/routers/webhooks.py`, `frontend/src/panels/webhooks.tsx`, `frontend/src/console-routes.ts`, `frontend/src/modes2.tsx`, `agents/web/static/tools.js`, `tests/test_h10_8_webhooks.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
-
-Plan: Enable/disable: add `enabled: bool` to WebhookStore records (a missing value on load means True) plus a `set_enabled` method. Add `PATCH /api/webhooks/{hook_id}` {enabled} (admin_guard). The trigger refuses a disabled hook before checking auth. Audit: create, delete and toggle each emit a SecurityEvent with hook id, target and signed flag, never the token or secret. Workflow targets: resolve the named pipeline the way the workflows router does, and call `engine.run(pipeline, text)` inside `bind_action_origin(INBOUND_ACTION_ORIGIN)`. Cockpit UI: add frontend/src/panels/webhooks.tsx (registered in console-routes.ts, or make the Interop WEBHOOKS list interactive). It needs a create form (name, target, agent/workflow, signed), a one-time token/secret reveal, a per-row signed badge, an enable toggle and delete, all sent with admin credentials. Switch /v1 tools.js to adminFetch. Regenerate the route snapshots and schema.gen.ts. First red tests in tests/test_h10_8_webhooks.py. A disabled hook is refused even with a valid token. PATCH toggles the flag. Create and delete each write an audit row. A workflow-target trigger runs the pipeline under the inbound origin; today it raises AttributeError.
 
 ## H157
 
@@ -812,6 +794,8 @@ Rows: [H200](#h200), [H153](#h153), [H659](#h659), [H409](#h409).
 H200 and H153 specify the same frontend/src/panels/webhooks.tsx, console route and create/delete audit. H200's create form offers workflow targets and its summary treats them as working. H153 found, and I confirmed, that trigger_webhook calls engine.run(hook['target'], {'input': text}) (agents/core/routers/webhooks.py) while WorkflowEngine.run(pipeline, initial_input) expects a Pipeline, so every workflow-target trigger raises outside the inbound origin. H659 says the trigger 'runs orch.handle_input on every delivery', which is true only for agent targets. H409 introduces a `nerva webhooks` verb for outbound hooks only, while H200 lists the missing inbound CLI.
 
 **Fix.** Build once from H153's spec: enabled toggle, audit, workflow fix under bind_action_origin(INBOUND), and the panel. H200 closes with it, and its remaining must name the workflow bug or restrict creation to agent targets. H659 places the idempotency reservation before both branches. Make the CLI `nerva webhooks inbound|outbound`.
+
+**Done in #1207 (2026-09-24):** H153 and H200 closed together (the workflow-target fix landed first, under the inbound origin). H659 and H409 remain; the CLI verb was not built.
 
 ### Critic note 8
 

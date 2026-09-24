@@ -85,6 +85,7 @@ class WebhookStore(JsonStore):
             "name": name or target,
             "signed": bool(signed),
             "signing_secret": secrets.token_urlsafe(32) if signed else None,
+            "enabled": True,
             "created_at": time.time(),
             "calls": 0,
             "last_called": None,
@@ -104,14 +105,34 @@ class WebhookStore(JsonStore):
             return True
         return False
 
+    def set_enabled(self, hook_id: str, enabled: bool) -> Optional[dict]:
+        """Switch a hook on or off (H153); the masked record, or None when unknown.
+
+        A disabled hook keeps its token and secret, so switching it back on needs no
+        change at the sender. The trigger refuses it after authentication.
+        """
+        rec = self._hooks.get(hook_id)
+        if rec is None:
+            return None
+        rec["enabled"] = bool(enabled)
+        self._save()
+        return self._masked(rec)
+
+    @staticmethod
+    def is_enabled(rec: dict) -> bool:
+        """A record written before the switch existed is on."""
+        return rec.get("enabled", True) is not False
+
+    def _masked(self, rec: dict) -> dict:
+        safe = {k: v for k, v in rec.items() if k not in ("token", "signing_secret")}
+        safe["token_hint"] = rec["token"][:4] + "…"
+        safe["signed"] = bool(rec.get("signed"))
+        safe["enabled"] = self.is_enabled(rec)
+        return safe
+
     def list(self) -> list[dict]:
         """List webhooks with the token masked (never expose it after creation)."""
-        out = []
-        for rec in self._hooks.values():
-            safe = {k: v for k, v in rec.items() if k not in ("token", "signing_secret")}
-            safe["token_hint"] = rec["token"][:4] + "…"
-            safe["signed"] = bool(rec.get("signed"))
-            out.append(safe)
+        out = [self._masked(rec) for rec in self._hooks.values()]
         return sorted(out, key=lambda r: r["created_at"], reverse=True)
 
     # ── auth + accounting ────────────────────────────────────────────────────

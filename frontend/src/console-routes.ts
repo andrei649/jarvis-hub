@@ -45,6 +45,7 @@ export const CONSOLE_PANELS = [
   {"id": "marketplace-admin", "label": "Marketplace Admin", "group": "Interop", "component": "MarketplaceAdminPanel"},
   {"id": "skills-import", "label": "Skills Import", "group": "Interop", "component": "SkillsImportPanel"},
   {"id": "writeback-digest", "label": "Writeback Digest", "group": "Interop", "component": "WritebackDigestPanel"},
+  {"id": "webhooks", "label": "Webhooks", "group": "Interop", "component": "WebhooksPanel"},
   {"id": "a2-a-inbox", "label": "A2 A Inbox", "group": "Interop", "component": "A2AInboxPanel"},
   {"id": "mesh-peers", "label": "Mesh Peers", "group": "Interop", "component": "MeshPeersPanel"},
   {"id": "satellites", "label": "Satellites", "group": "Interop", "component": "SatellitesPanel"},

@@ -396,13 +396,13 @@ export function useLiveModes(): LiveModes {
         apiGet('/api/a2a/peers').catch(() => null),
         apiGet('/api/admin/mcp').catch(() => null),
         apiGet('/api/admin/widgets').catch(() => null),
-        apiGet('/api/webhooks').catch(() => null),
+        apiGet('/api/webhooks', { admin: true }).catch(() => null),  // admin-only route (SEC-1)
       ]).then(([a2a, mcp, widgets, webhooks]: any[]) => {
         const I = { ...V2.INTEROP };
         const ap = arr(a2a, 'peers'); if (ap) I.a2a = ap.map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] }));
         const ms = arr(mcp, 'servers'); if (ms) I.mcp = ms.map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' }));
         const wd = arr(widgets, 'widgets'); if (wd) I.widgets = wd.map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false }));
-        const wh = arr(webhooks, 'webhooks'); if (wh) I.webhooks = wh.map((w: any) => ({ event: w.event || w.id, dir: w.dir || 'in', url: w.url || w.target || '', status: w.status || 'active' }));
+        const wh = arr(webhooks, 'webhooks'); if (wh) I.webhooks = wh.map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''), status: w.enabled === false ? 'off' : 'active' }));
         set('INTEROP', I);
         if (ap || ms || wd || wh) mark('INTEROP');
       }).catch(() => {});

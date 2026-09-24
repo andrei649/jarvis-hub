@@ -867,7 +867,12 @@ export interface paths {
         delete: operations["delete_webhook_api_webhooks__hook_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Switch Webhook
+         * @description Switch a hook on or off (H153). It keeps its token; a disabled hook refuses
+         *     every delivery after authentication.
+         */
+        patch: operations["switch_webhook_api_webhooks__hook_id__patch"];
         trace?: never;
     };
     "/.well-known/agent-card": {
@@ -10820,6 +10825,11 @@ export interface components {
              */
             signed: boolean;
         };
+        /** WebhookSwitchBody */
+        WebhookSwitchBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** WorkflowRunBody */
         WorkflowRunBody: {
             /** Pipeline Id */
@@ -12256,6 +12266,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_webhook_api_webhooks__hook_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookSwitchBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

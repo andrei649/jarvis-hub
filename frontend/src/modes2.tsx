@@ -329,7 +329,8 @@ function InteropMode({ t }){
             <div className="cap-row" key={i}><div><div className="cn">{w.name}</div><div className="cd">{w.surface}</div></div>
               <span className={'cap-tag '+(w.enabled?'allow':'scoped')}>{w.enabled?'LIVE':'OFF'}</span></div>
           ))}
-          <SubH style={{marginTop:16}}>WEBHOOKS</SubH>
+          {/* H200 — create, switch and delete live in the console's Webhooks panel. */}
+          <SubH style={{marginTop:16}}>WEBHOOKS <a href={appUrl('/v2/console/webhooks')} style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
           {N.webhooks.map((h,i)=>(
             <div className="io-row" key={i}>
               <span className={'io-dir '+h.dir}>{h.dir==='in'?'IN':'OUT'}</span>

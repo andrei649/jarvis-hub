@@ -281,6 +281,7 @@
   "GET /v2/{path:path}": "open",
   "PATCH /api/jobs/{job_id}": "admin",
   "PATCH /api/notes/blocks/{block_id}": "user",
+  "PATCH /api/webhooks/{hook_id}": "admin",
   "POST /api/a2a/card": "admin",
   "POST /api/a2a/inbox/{task_id}/decide": "admin",
   "POST /api/a2a/peers": "admin",
