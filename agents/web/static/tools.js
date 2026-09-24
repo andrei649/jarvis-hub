@@ -309,11 +309,14 @@
 
   function WebhooksPanel() {
     /* The hook routes are admin-only (SEC-1): every call carries the admin token, or
-       the panel only worked in the no-admin-token localhost posture (H153). */
+       the panel only worked in the no-admin-token localhost posture (H153). A refused
+       list says why instead of reading as "No webhooks." (a missing admin token is
+       the usual cause), and a new hook shows the one credential its sender uses (the
+       signing secret of a signed hook, the token otherwise) until it is dismissed. */
     const _s = useState({ loading: true }), s = _s[0], setS = _s[1];
     const reload = useCallback(function () {
       setS({ loading: true });
-      adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: String(e) }); });
+      adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: (e && e.message) || String(e) }); });
     }, []);
     useEffect(function () { reload(); }, []);
     const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
@@ -322,13 +325,18 @@
     function create() { adminFetch('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e.message); }); }
     function del(id) { if (!confirm('Delete this webhook? Its token stops working.')) return; adminFetch('/api/webhooks/' + encodeURIComponent(id), { method: 'DELETE' }).then(reload).catch(function (e) { alert(e.message); }); }
     const hooks = s.data ? (s.data.webhooks || []) : [];
+    const credential = created && (created.signed ? 'signing secret: ' + (created.signing_secret || '') : 'token: ' + (created.token || ''));
+    const list = s.err ? Err(s.err)
+      : s.loading ? Empty('Loading…')
+        : hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '') + (w.enabled === false ? ' (off)' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); })
+          : Empty('No webhooks.');
     const body = h('div', null,
       h('div', { className: 'tool-form' },
         h('input', { className: 'tool-input', placeholder: 'target agent', value: target, onChange: function (e) { setTarget(e.target.value); } }),
         h('label', { className: 'tool-hint' }, h('input', { type: 'checkbox', checked: signed, onChange: function (e) { setSigned(e.target.checked); } }), ' HMAC signed'),
         Btn('Create', create, 'ok')),
-      created && h('div', { className: 'tool-card' }, 'token: ' + (created.token || '') + (created.signing_secret ? (' · secret: ' + created.signing_secret) : ''), h('div', { className: 'tool-hint' }, '(shown once)')),
-      hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); }) : Empty('No webhooks.'));
+      created && h('div', { className: 'tool-card webhook-created' }, h('span', { className: 'tool-card-text' }, credential), h('div', { className: 'tool-hint' }, '(shown once: save it now)'), Btn('I have saved it', function () { setCreated(null); })),
+      list);
     return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
   }
 

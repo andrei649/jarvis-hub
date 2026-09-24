@@ -49,6 +49,12 @@ def _printable(value, limit: int = 128) -> str:
     return "".join(ch if ch.isprintable() else " " for ch in str(value))[:limit]
 
 
+def _quoted(value, limit: int = 160) -> str:
+    """A JSON string (quotes and control characters escaped): an owner-chosen target
+    cannot pass off its own text as the row's id or flags."""
+    return json.dumps(str(value)[:limit])
+
+
 async def _audit_webhook(action: str, record: dict) -> None:
     """H153 — a hook created, switched or deleted: its id, target and signed flag,
     never its token or signing secret (the precedent is admin._audit_settings_change)."""
@@ -58,9 +64,9 @@ async def _audit_webhook(action: str, record: dict) -> None:
         return
     from agents.core.security.types import SecurityEvent, SecurityEventType
 
-    preview = (f"webhook {action}: id={_printable(record.get('id'))} "
-               f"target={_printable(record.get('target_type'))}:{_printable(record.get('target'))} "
-               f"signed={bool(record.get('signed'))} enabled={record.get('enabled', True) is not False}")
+    target = f"{record.get('target_type')}:{record.get('target')}"
+    preview = (f"webhook {action}: id={_printable(record.get('id'))} target={_quoted(target)} "
+               f"signed={bool(record.get('signed'))} enabled={_get_webhook_store().is_enabled(record)}")
     try:
         await asyncio.to_thread(audit.log, SecurityEvent(
             event_type=SecurityEventType.SETTINGS_CHANGE,
@@ -111,7 +117,9 @@ async def delete_webhook(hook_id: str):
     ok = store.delete(hook_id)
     if ok and rec is not None:
         await _audit_webhook("delete", rec)
-    return nocache_json({"ok": ok}, status_code=200 if ok else 404)
+    if not ok:
+        return nocache_json({"ok": False, "error": "webhook not found"}, status_code=404)
+    return nocache_json({"ok": True})
 
 
 @router.post("/api/webhooks/{hook_id}")
@@ -135,9 +143,14 @@ async def trigger_webhook(hook_id: str, request: Request):
         token = request.headers.get("x-webhook-token") or request.query_params.get("token", "")
         if not store.verify(hook_id, token):
             return nocache_json({"error": "invalid or missing token"}, status_code=401)
-    # H153 — checked after authentication, so a caller without the token or secret
-    # learns nothing about the switch. A refused delivery is not counted as a call.
-    if not store.is_enabled(hook):
+    # H153 — the switch is read from the live record, after authentication: the body
+    # read above can take any time, and a switch-off that lands during it must stop
+    # this delivery too. A caller without the token or secret learns nothing about
+    # it, and a refused delivery is not counted as a call.
+    live = store.get(hook_id)
+    if live is None:
+        return nocache_json({"error": "webhook not found"}, status_code=404)
+    if not store.is_enabled(live):
         return nocache_json({"error": "webhook disabled"}, status_code=403)
 
     try:

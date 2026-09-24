@@ -185,3 +185,75 @@ describe('panel flows', () => {
     expect(JSON.parse(post[1].body).name).toBe('smoke');
   });
 });
+
+// H153 / H200 review — the legacy Webhooks panel: admin-only routes, a delete that
+// asks first, a refused list that says why, and one credential shown until dismissed.
+describe('Webhooks panel', () => {
+  function hooksBackend(listReply) {
+    const calls = [];
+    const fetch = vi.fn((url, init = {}) => {
+      calls.push({ url, method: init.method || 'GET', admin: (init.headers || {})['X-Admin-Token'] });
+      if (url === '/api/webhooks' && !init.method) return listReply();
+      if (url === '/api/webhooks' && init.method === 'POST') {
+        const signed = JSON.parse(init.body).signed;
+        return json({ id: 'hk2', token: 'tok-1', signing_secret: signed ? 'sec-1' : null, signed });
+      }
+      if (init.method === 'DELETE') return json({ ok: true });
+      return json({});
+    });
+    return { fetch, calls };
+  }
+  async function openWebhooks(listReply) {
+    env.cleanup();
+    const backendCalls = hooksBackend(listReply);
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: backendCalls.fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    return { container, calls: backendCalls.calls, text: () => container.querySelector('.console-content').textContent };
+  }
+  const listed = () => json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', signed: false, enabled: false }] });
+
+  it('lists with the admin token, and a delete asks first and carries it too', async () => {
+    const { container, calls, text } = await openWebhooks(listed);
+    expect(calls.find((c) => c.url === '/api/webhooks').admin).toBe('adm');
+    expect(text()).toContain('ci → POST /api/webhooks/hk1 (off)');
+    env.window.confirm = vi.fn(() => false);
+    env.click(toolBtn(container, 'Delete'));
+    expect(env.window.confirm).toHaveBeenCalledTimes(1);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    env.window.confirm = vi.fn(() => true);
+    env.click(toolBtn(container, 'Delete'));
+    const del = calls.find((c) => c.method === 'DELETE');
+    expect(del.url).toBe('/api/webhooks/hk1');
+    expect(del.admin).toBe('adm');
+  });
+
+  it('says why a refused list failed instead of "No webhooks."', async () => {
+    const { text } = await openWebhooks(() => json({ detail: 'admin token required' }, { ok: false, status: 401 }));
+    expect(text()).toContain('admin token required (set it in ⚙ Settings)');
+    expect(text()).not.toContain('No webhooks.');
+  });
+
+  it('shows a signed hook only its signing secret, until it is dismissed', async () => {
+    const { container, calls, text } = await openWebhooks(listed);
+    env.toggle(container.querySelector('.console-content input[type="checkbox"]'));
+    env.click(toolBtn(container, 'Create'));
+    await env.flush(6);
+    expect(calls.find((c) => c.method === 'POST').admin).toBe('adm');
+    expect(text()).toContain('signing secret: sec-1');
+    expect(text()).not.toContain('tok-1');
+    env.click(toolBtn(container, 'I have saved it'));
+    expect(text()).not.toContain('sec-1');
+  });
+
+  it('shows a token hook its token', async () => {
+    const { container, text } = await openWebhooks(listed);
+    env.click(toolBtn(container, 'Create'));
+    await env.flush(6);
+    expect(text()).toContain('token: tok-1');
+    expect(text()).not.toContain('secret');
+  });
+});

@@ -10,6 +10,8 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
+**Re-opened in #1207** (2026-09-24): H153. Its review found the per-hook switch leaked for a delivery already in flight (fixed: the switch is read live after the body), and that its equivalence rested on a narrowing of scope nobody decided. Still to build: an event filter, a prompt template and a receiver switch that refuses every delivery at once (its ledger entry lists them). H200 stays closed with the review's fixes. 78 rows remain.
+
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
 | [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
@@ -786,7 +788,7 @@ H200 and H153 specify the same frontend/src/panels/webhooks.tsx, console route a
 
 **Fix.** Build once from H153's spec: enabled toggle, audit, workflow fix under bind_action_origin(INBOUND), and the panel. H200 closes with it, and its remaining must name the workflow bug or restrict creation to agent targets. H659 places the idempotency reservation before both branches. Make the CLI `nerva webhooks inbound|outbound`.
 
-**Done in #1207 (2026-09-24):** H153 and H200 closed together (the workflow-target fix landed first, under the inbound origin). H659 and H409 remain; the CLI verb was not built.
+**Done in #1207 (2026-09-24):** H153 and H200 closed together (the workflow-target fix landed first, under the inbound origin). H659 and H409 remain; the CLI verb was not built. After review, H153 is partial again until the event filter, prompt template and receiver switch are built.
 
 ### Critic note 8
 

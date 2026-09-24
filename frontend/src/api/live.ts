@@ -108,6 +108,27 @@ function workflowToCanvas(workflow: any) {
   };
 }
 
+/** Build the INTEROP view from the four admin-only sources, never borrowing the
+ * demo seed (H200 review). Once one source answers the mode is marked LIVE, so a
+ * section whose source failed is empty and listed in `unavailable` (the mode says
+ * "not connected" there), never the seed's peers, servers or widgets. Returns null
+ * when no source answered. Exported so the shipped path is what the tests run.
+ */
+export function hydrateInterop(a2a: any, mcp: any, widgets: any, webhooks: any) {
+  const ap = arr(a2a, 'peers');
+  const ms = arr(mcp, 'servers');
+  const wd = arr(widgets, 'widgets');
+  const wh = arr(webhooks, 'webhooks');
+  if (!ap && !ms && !wd && !wh) return null;
+  return {
+    a2a: (ap || []).map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] })),
+    mcp: (ms || []).map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' })),
+    widgets: (wd || []).map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false })),
+    webhooks: (wh || []).map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''), status: w.enabled === false ? 'off' : 'active' })),
+    unavailable: { a2a: !ap, mcp: !ms, widgets: !wd, webhooks: !wh },
+  };
+}
+
 /** Build the OBSERVE view from the live payloads, never borrowing the demo seed.
  *
  * Exported so its behaviour is tested directly — a test that re-implements this
@@ -398,20 +419,17 @@ export function useLiveModes(): LiveModes {
         if (observeEvidence(bench, quality, resil, al, tl)) mark('OBSERVE');
       }).catch(() => {});
 
-      // INTEROP — a2a peers / mcp servers / widgets / webhooks
+      // INTEROP — a2a peers / mcp servers / widgets / webhooks. All four are
+      // admin-only routes. When nothing answers, the corpus is left alone: the mode
+      // stays "Not connected", and DEMO keeps its seed.
       await Promise.all([
-        apiGet('/api/a2a/peers').catch(() => null),
-        apiGet('/api/admin/mcp').catch(() => null),
-        apiGet('/api/admin/widgets').catch(() => null),
-        apiGet('/api/webhooks', { admin: true }).catch(() => null),  // admin-only route (SEC-1)
+        apiGet('/api/a2a/peers', { admin: true }).catch(() => null),
+        apiGet('/api/admin/mcp', { admin: true }).catch(() => null),
+        apiGet('/api/admin/widgets', { admin: true }).catch(() => null),
+        apiGet('/api/webhooks', { admin: true }).catch(() => null),
       ]).then(([a2a, mcp, widgets, webhooks]: any[]) => {
-        const I = { ...V2.INTEROP };
-        const ap = arr(a2a, 'peers'); if (ap) I.a2a = ap.map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] }));
-        const ms = arr(mcp, 'servers'); if (ms) I.mcp = ms.map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' }));
-        const wd = arr(widgets, 'widgets'); if (wd) I.widgets = wd.map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false }));
-        const wh = arr(webhooks, 'webhooks'); if (wh) I.webhooks = wh.map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''), status: w.enabled === false ? 'off' : 'active' }));
-        set('INTEROP', I);
-        if (ap || ms || wd || wh) mark('INTEROP');
+        const I = hydrateInterop(a2a, mcp, widgets, webhooks);
+        if (I) { set('INTEROP', I); mark('INTEROP'); }
       }).catch(() => {});
 
       // AUTONOMY — morning brief + observer log

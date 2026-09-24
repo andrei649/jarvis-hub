@@ -2,9 +2,9 @@
 /* H200 / H153 — the Webhooks console panel creates, switches and deletes inbound hooks
    with the admin credential, shows a new hook's token or secret exactly once, and asks
    before deleting. fetch is mocked. */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, cleanup, act } from '@testing-library/react';
 import { WebhooksPanel, triggerUrl } from '../panels/webhooks';
 import { CONSOLE_PANELS } from '../console-routes';
 
@@ -35,8 +35,18 @@ beforeEach(() => {
       hooks = [{ ...rec, token: undefined, signing_secret: undefined, token_hint: 'tok-…' }, ...hooks];
       return reply(200, rec);
     }
-    if (method === 'PATCH') return reply(200, { ok: true, webhook: { ...hooks[0], enabled: body.enabled } });
-    if (method === 'DELETE') return reply(200, { ok: true });
+    const id = decodeURIComponent(u.split('/api/webhooks/')[1] || '');
+    const known = hooks.find((h) => h.id === id);
+    if (method === 'PATCH') {
+      if (!known) return reply(404, { error: 'webhook not found' });
+      hooks = hooks.map((h) => (h.id === id ? { ...h, enabled: body.enabled } : h));
+      return reply(200, { ok: true, webhook: { ...known, enabled: body.enabled } });
+    }
+    if (method === 'DELETE') {
+      if (!known) return reply(404, { ok: false, error: 'webhook not found' });
+      hooks = hooks.filter((h) => h.id !== id);
+      return reply(200, { ok: true });
+    }
     return reply(404, { error: 'unexpected' });
   });
 });
@@ -86,8 +96,9 @@ describe('WebhooksPanel', () => {
     fireEvent.click(screen.getByText('create'));
     await waitFor(() => expect(screen.getByTestId('webhook-secret').textContent).toBe('sec-ONE-TIME'));
     expect(sent('POST')[0].body).toMatchObject({ target: 'triage', target_type: 'workflow', signed: true });
-    expect(screen.getByRole('alert').textContent).toContain('X-Signature-256');
-    expect(screen.getByRole('alert').textContent).not.toContain('tok-ONE-TIME');
+    const reveal = screen.getByTestId('webhook-reveal');
+    expect(reveal.textContent).toContain('X-Signature-256');
+    expect(reveal.textContent).not.toContain('tok-ONE-TIME');
   });
 
   it('does not delete until asked twice', async () => {
@@ -123,5 +134,196 @@ describe('WebhooksPanel', () => {
     fireEvent.click(screen.getByText('create'));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('refused · invalid webhook target'));
     expect(screen.queryByTestId('webhook-secret')).toBeNull();
+  });
+});
+
+/* H200 review — the list is reloaded after every switch or delete, whatever the hub
+   answered; a row's buttons are held while its call is pending; each button names its
+   hook; focus follows the control that replaced the one clicked; the one-time secret
+   is not inside the alert; the trigger URL is pinned to a literal. */
+describe('WebhooksPanel after review', () => {
+  const second = { id: 'hk3', name: 'deploy', target: 'triage', target_type: 'workflow', signed: true, enabled: false,
+                   token_hint: 'WxYz…', calls: 0, last_called: null, created_at: 1770000000 };
+  const ready = async () => { await waitFor(() => expect(screen.getByText('ci')).toBeTruthy()); };
+  const gets = () => sent('GET').length;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete navigator.clipboard;
+  });
+
+  it('reloads the list after a switch', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('switch off'));
+    await waitFor(() => expect(gets()).toBe(2));
+    await waitFor(() => expect(screen.getByText('switch on')).toBeTruthy());   // the reloaded row says off
+  });
+
+  it('reloads the list after a delete, and the row is gone', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('delete…'));
+    fireEvent.click(screen.getByText('delete for good'));
+    await waitFor(() => expect(gets()).toBe(2));
+    await waitFor(() => expect(screen.queryByText('ci')).toBeNull());
+  });
+
+  it('holds a row while its call is pending: a double click sends one DELETE and no refusal', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('delete…'));
+    const confirm = screen.getByText('delete for good');
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(gets()).toBe(2));
+    expect(sent('DELETE')).toHaveLength(1);
+    expect(screen.queryByRole('status')?.textContent || '').not.toContain('refused');
+  });
+
+  it('holds the switch while its call is pending, and frees it after', async () => {
+    let release;
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init = {}) => ((init.method || 'GET') === 'PATCH'
+      ? new Promise((resolve) => { release = () => resolve(real(url, init)); })
+      : real(url, init)));
+    render(<WebhooksPanel />);
+    await ready();
+    const toggle = screen.getByRole('button', { name: 'switch off ci' });
+    fireEvent.click(toggle);
+    expect(toggle.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'delete ci…' }).disabled).toBe(true);
+    fireEvent.click(toggle);
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'switch on ci' }).disabled).toBe(false));
+    expect(sent('PATCH')).toHaveLength(1);
+  });
+
+  it('a hook deleted elsewhere: the switch says so and the ghost row goes', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    hooks = [];                                    // deleted by another tab or the CLI
+    fireEvent.click(screen.getByText('switch off'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci no longer exists'));
+    await waitFor(() => expect(screen.queryByText('agent:jarvis')).toBeNull());
+    expect(gets()).toBe(2);
+  });
+
+  it('a hook deleted elsewhere: the delete says it was already gone and reloads', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    hooks = [];
+    fireEvent.click(screen.getByText('delete…'));
+    fireEvent.click(screen.getByText('delete for good'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci was already deleted'));
+    await waitFor(() => expect(screen.queryByText('agent:jarvis')).toBeNull());
+    expect(screen.queryByText('delete for good')).toBeNull();
+  });
+
+  it('a refused delete keeps the confirmation, says why, and still reloads', async () => {
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init = {}) => ((init.method || 'GET') === 'DELETE'
+      ? Promise.resolve(reply(401, { detail: 'admin token required' })) : real(url, init)));
+    vi.spyOn(window, 'prompt').mockReturnValue('');
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('delete…'));
+    fireEvent.click(screen.getByText('delete for good'));
+    await waitFor(() => expect(screen.getAllByRole('status').map((n) => n.textContent)).toContain('refused · admin token required'));
+    expect(screen.getByText('delete for good')).toBeTruthy();
+    await waitFor(() => expect(gets()).toBe(2));
+  });
+
+  it('creates once per click burst, and not again until the secret is dismissed', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    const create = screen.getByText('create');
+    fireEvent.click(create);
+    fireEvent.click(create);
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    expect(sent('POST')).toHaveLength(1);
+    expect(create.disabled).toBe(true);            // a second hook would replace this secret
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'pepper' } });
+    fireEvent.click(create);
+    expect(sent('POST')).toHaveLength(1);
+    fireEvent.click(screen.getByText('I have saved it'));
+    expect(create.disabled).toBe(false);
+  });
+
+  it('names the hook in every row button', async () => {
+    hooks = [...hooks, second];
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByRole('button', { name: 'switch off ci' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'switch on deploy' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'delete deploy…' }));
+    expect(screen.getByRole('button', { name: 'delete deploy for good' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'keep deploy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'delete ci…' })).toBeTruthy();   // the other row is untouched
+  });
+
+  it('moves focus to the control that replaced the one clicked', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'delete ci…' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'delete ci for good' }));
+    fireEvent.click(screen.getByRole('button', { name: 'keep ci' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'delete ci…' }));
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    fireEvent.click(screen.getByText('I have saved it'));
+    expect(document.activeElement).toBe(screen.getByLabelText('webhook name'));
+  });
+
+  it('alerts with the warning sentence only: the secret is not read aloud', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByTestId('webhook-secret').textContent).toBe('tok-ONE-TIME'));
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toBe('Save these now. The token is shown once and never again.');
+    expect(alert.contains(screen.getByTestId('webhook-secret'))).toBe(false);
+  });
+
+  it('says "copied" in a polite live region', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'copy the token' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('tok-ONE-TIME'));
+    const regions = () => [...document.querySelectorAll('[aria-live="polite"]')].map((n) => n.textContent);
+    await waitFor(() => expect(regions()).toContain('the token is copied'));
+    expect(regions()).not.toContain('the URL is copied');
+  });
+
+  it('warns that a loopback URL is not reachable from another machine', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(screen.getByTestId('webhook-secret')).toBeTruthy());
+    expect(new URL(window.location.origin).hostname).toBe('localhost');
+    expect(screen.getByTestId('webhook-reveal').textContent).toContain('A sender elsewhere needs one it can reach');
+  });
+});
+
+describe('triggerUrl', () => {
+  afterEach(() => { delete window.__NERVA_BASE_PATH__; });
+
+  it('is the page origin, the base path and the encoded id', () => {
+    window.__NERVA_BASE_PATH__ = '/nerva';
+    expect(triggerUrl('a b/c?d#e%')).toBe(`${window.location.origin}/nerva/api/webhooks/a%20b%2Fc%3Fd%23e%25`);
+    delete window.__NERVA_BASE_PATH__;
+    expect(triggerUrl('hk1')).toBe(`${window.location.origin}/api/webhooks/hk1`);
+  });
+
+  it('never throws while rendering an id no URL can carry', () => {
+    expect(() => triggerUrl('\ud800')).not.toThrow();
   });
 });

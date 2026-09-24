@@ -91,7 +91,11 @@ class WebhookStore(JsonStore):
             "last_called": None,
         }
         self._hooks[hook_id] = record
-        self._save()
+        try:
+            self._save()
+        except Exception:
+            del self._hooks[hook_id]  # memory never runs ahead of the file
+            raise
         return dict(record)
 
     def get(self, hook_id: str) -> Optional[dict]:
@@ -100,8 +104,12 @@ class WebhookStore(JsonStore):
 
     def delete(self, hook_id: str) -> bool:
         if hook_id in self._hooks:
-            del self._hooks[hook_id]
-            self._save()
+            rec = self._hooks.pop(hook_id)
+            try:
+                self._save()
+            except Exception:
+                self._hooks[hook_id] = rec  # memory never runs ahead of the file
+                raise
             return True
         return False
 
@@ -114,14 +122,23 @@ class WebhookStore(JsonStore):
         rec = self._hooks.get(hook_id)
         if rec is None:
             return None
+        had, previous = "enabled" in rec, rec.get("enabled")
         rec["enabled"] = bool(enabled)
-        self._save()
+        try:
+            self._save()
+        except Exception:
+            if had:  # memory never runs ahead of the file
+                rec["enabled"] = previous
+            else:
+                rec.pop("enabled", None)
+            raise
         return self._masked(rec)
 
     @staticmethod
     def is_enabled(rec: dict) -> bool:
-        """A record written before the switch existed is on."""
-        return rec.get("enabled", True) is not False
+        """A record written before the switch existed is on; otherwise only a literal
+        true is (a hand-edited "false", 0 or null reads as off, never as on)."""
+        return rec["enabled"] is True if "enabled" in rec else True
 
     def _masked(self, rec: dict) -> dict:
         safe = {k: v for k, v in rec.items() if k not in ("token", "signing_secret")}

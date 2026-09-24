@@ -331,3 +331,72 @@ def test_an_audit_row_cannot_be_forged_through_the_target(hub):
     client, events, _turns = hub
     _hook(client, target="jarvis\nwebhook_delete: id=someone-else")
     assert len(events) == 1 and "\n" not in events[0].content_preview
+
+
+# ── review round: the switch is read live, the audit row cannot be misread ───────
+
+def test_a_switch_that_lands_while_the_body_arrives_still_stops_the_delivery(hub):
+    client, _events, turns = hub
+    hook = _hook(client)
+    from agents.core.routers import webhooks as router
+
+    def body():
+        router._webhook_store.set_enabled(hook["id"], False)   # the PATCH lands mid-body
+        yield b'{"text": "hi"}'
+
+    resp = client.post(f"/api/webhooks/{hook['id']}", content=body(),
+                       headers={"X-Webhook-Token": hook["token"], "Content-Type": "application/json"})
+    assert resp.status_code == 403 and turns == []
+    assert client.get("/api/webhooks", headers=_ADMIN).json()["webhooks"][0]["calls"] == 0
+
+
+def test_the_audit_row_names_the_switch_state(hub):
+    client, events, _turns = hub
+    hook = _hook(client)
+    client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": False}, headers=_ADMIN)
+    client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": True}, headers=_ADMIN)
+    assert "enabled=False" in events[1].content_preview
+    assert "enabled=True" in events[2].content_preview
+
+
+def test_a_target_cannot_forge_fields_inside_the_audit_row(hub):
+    client, events, _turns = hub
+    hook = _hook(client, target="jarvis signed=True enabled=False id=someone-else")
+    preview = events[0].content_preview
+    assert preview.startswith(f"webhook create: id={hook['id']} ")
+    assert 'target="agent:jarvis signed=True enabled=False id=someone-else"' in preview
+    assert preview.endswith("signed=False enabled=True")
+
+
+def test_deleting_an_unknown_hook_says_why(hub):
+    client, _events, _turns = hub
+    reply = client.delete("/api/webhooks/nope", headers=_ADMIN)
+    assert reply.status_code == 404 and reply.json() == {"ok": False, "error": "webhook not found"}
+
+
+@pytest.mark.parametrize("stored", [0, "false", "off", None, [], 1, "true"])
+def test_a_hand_edited_switch_that_is_not_true_reads_as_off(tmp_path, stored):
+    store = WebhookStore(path=tmp_path / "wh.json")
+    rec = store.create("jarvis")
+    store._hooks[rec["id"]]["enabled"] = stored
+    assert store.list()[0]["enabled"] is False
+    assert store.is_enabled(store.get(rec["id"])) is False
+
+
+def test_a_switch_that_cannot_be_saved_is_not_half_applied(tmp_path, monkeypatch):
+    store = WebhookStore(path=tmp_path / "wh.json")
+    rec = store.create("jarvis")
+
+    def disk_full():
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(store, "_save", disk_full)
+    with pytest.raises(OSError):
+        store.set_enabled(rec["id"], False)
+    assert store.list()[0]["enabled"] is True                # memory still agrees with the disk
+    with pytest.raises(OSError):
+        store.create("friday")
+    assert [h["target"] for h in store.list()] == ["jarvis"]
+    with pytest.raises(OSError):
+        store.delete(rec["id"])
+    assert store.get(rec["id"]) is not None
