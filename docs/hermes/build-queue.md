@@ -14,6 +14,10 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Reviewed and fixed in #1207** (2026-09-24): H315. Its review found the plan keyed on the shared default session, so a widget visitor, a webhook, a job, a subagent and a direct tool call read and replaced the owner's plan. It also found that a plan carried injected text into a later, clean turn, and that the repeat detector ended a turn that followed the tool's own re-read advice. All three are fixed: on the shared session only an owner's turn keeps a plan; each item records its writer and whether its text is untrusted, and a tainted item makes the answer fenced DATA; and `todo` is never counted as a repeat or against a per-tool cap. `todo` now reaches an inbound guest through the default `llm.guest_tools` instead of a session-local exemption (critic note 22 is updated). The row stays closed.
 
+**Reviewed and fixed in #1207** (2026-09-24): H273, a second time. The review found three problems: the doctor sent the admin credential through a redirect or a proxy; more keys than serve.py's four are read before any .env is loaded; and a one-case line of value material could still be printed as a name. Fixed: the credential goes only to a loopback hub and never through a redirect or a proxy; the before-load list is measured by spying on the hub's import; and the doctor prints a name only when the hub reads it, it is prefixed or declared, or it is a plain name with a real value. The nits are fixed too. The row stays closed.
+
+**Re-opened in #1207** (2026-09-24): H153, by its third review. Deliver to reaches none of the owner's channels as shipped: a push to telegram, voice or ntfy answers 500 after the turn, web has no receiver, and ntfy refuses the label. The fix round is next.
+
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |

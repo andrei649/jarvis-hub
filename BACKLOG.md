@@ -14,6 +14,27 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H273 second adversarial review round (stays equivalent after the fixes, #1207). H153 back to partial (headline 140 → 139/697).
+
+  The review found one major, fixed: the doctor sent `JARVIS_ADMIN_TOKEN` to whatever answered at the hub address, following a cross-origin redirect or going through an `http_proxy`. Now every request to the hub goes through `doctor.hub_open`, which refuses redirects and never goes through a proxy to a loopback hub. The route is asked without the credential first, and the credential follows a refusal only to a hub on this machine.
+
+  Minors, fixed:
+  - **Before-load keys.** `READ_BEFORE_LOAD` is measured, not remembered. A test imports the hub in a subprocess with the environment spied on, and every Nerva name read there must be listed or declared `READ_AGAIN_AFTER_LOAD` (DEV_MODE, the tokens, the OAuth ids, the trusted proxies). The list now covers the app and data roots, the ASGI root path, the rate limit, CORS, CSP, auto-deep, the analytics cap and the Neo4j defaults. The note says to set them in the process environment.
+  - **Names shown.** The doctor prints a .env name only when the hub reads it, it carries Nerva's prefix, `.env.example` declares it, or it is a plain one-case name with a real value (not empty, not only `=` padding). Everything else is counted (`withheld_env_names`), which closes base32 seeds and hex digests printed as names.
+  - **The hub's names** include reads through a bound mapping (the Telegram group allowlist) and `*_ENV` constants (uvicorn's forwarding knobs).
+  - **Unpinned guards.** The 12 surviving mutants each have a test now.
+
+  Nits:
+  - a second load keeps a file's attribution only while the value it set is unchanged, and recomputes what the files shadow;
+  - `PYTHON_DOTENV_DISABLED` set in the repo .env stops the data-home layer, and files report `disabled` / unread;
+  - a data-home .env that is the repo .env is present;
+  - odd hub payloads keep the table, and "1 key" is singular;
+  - one parse per file;
+  - `${VAR}` in the data home expands in load_dotenv's own order;
+  - no private python-dotenv API;
+  - the settings listings read the posture in their own connection.
+
+  Mutation: 29 mutants of the new guards, 25 caught at once, and tests added for the other four. Records: H273 rewritten. H153 set back to partial with the third review's gaps named, and its fix round follows. 34 drifted rows re-read and re-stamped (H288's shorthand by hand); build-queue notes. Tests: backend 13,967 → 14,031 (tests/test_h273c_provenance_review.py 56, tests/test_doctor_hub_credential.py 8); vitest unchanged at 1,410.
 - 2026-09-24 H315 adversarial review round (stays equivalent after the fixes, #1207).
 
   The review found three majors, all fixed:

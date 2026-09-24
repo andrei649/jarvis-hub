@@ -246,7 +246,7 @@ def test_the_doctor_names_each_configuration_keys_layer(tmp_path, monkeypatch):
     assert check.detail.startswith("predicted from this shell's environment")
     text = doctor.format_report(doctor.DoctorReport(ok=True, root=str(root), checks=[check]))
     assert "OPENAI_API_KEY" in text and "process environment" in text
-    assert "(ignored: repo .env)" in text and "serve.py reads it before" in text
+    assert "(ignored: repo .env)" in text and "reads it before the .env files are loaded" in text
     assert SECRET_VALUE not in text and "from-shell" not in text and "tg-home-value-51c9" not in text
     assert SECRET_VALUE not in json.dumps(doctor.DoctorReport(ok=True, root=str(root), checks=[check]).to_dict())
 
@@ -318,7 +318,7 @@ def test_a_named_pipe_env_is_read_once_and_loaded(tmp_path, scrub):
     thread.join(5)
     assert os.environ["FIFO_OPENAI_API_KEY"] == "sk-fifo"
     assert table["FIFO_OPENAI_API_KEY"] == {"layer": "repo_env", "shadowed": []}
-    assert ep.files()["repo_env"] == {"path": str(fifo), "kind": "fifo"}
+    assert ep.files()["repo_env"] == {"path": str(fifo), "kind": "fifo", "present": True, "read": True}
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes are POSIX")
@@ -348,7 +348,7 @@ def test_a_data_home_named_in_the_repo_env_is_loaded(tmp_path, monkeypatch, scru
     table = ep.load_layered_env(repo, lambda: (user_home() / ".env") if user_home() is not None else None)
     assert os.environ["PROV_NAMED_HOME_KEY"] == "1"
     assert table["PROV_NAMED_HOME_KEY"]["layer"] == "user_env"
-    assert ep.files()["user_env"] == {"path": str(home / ".env"), "kind": "file"}
+    assert ep.files()["user_env"] == {"path": str(home / ".env"), "kind": "file", "present": True, "read": True}
     derived = ep.derive(repo, lambda merged: Path(merged["JARVIS_USER_HOME"]) / ".env"
                         if merged.get("JARVIS_USER_HOME") else None, {})
     assert derived["PROV_NAMED_HOME_KEY"]["layer"] == "user_env"          # the doctor follows it too
@@ -409,7 +409,7 @@ def test_the_route_flags_a_key_serve_reads_first_and_names_the_files_read(admin,
     assert "_PROV_PRIVATE" not in rows
     assert reply["files"]["repo_env"] == {"path": str(repo), "present": True, "kind": "file", "read": True}
     assert reply["files"]["user_env"] == {"path": str(tmp_path / "missing-home" / ".env"), "present": False,
-                                          "kind": "absent", "read": True}
+                                          "kind": "absent", "read": False}
 
 
 # ── the doctor, after review ───────────────────────────────────────────────────
@@ -433,7 +433,7 @@ def test_the_doctor_never_prints_value_material_as_a_name(tmp_path):
     text, blob = doctor.format_report(report), json.dumps(report.to_dict())
     assert "k8sA7QxLmNp" in "".join(ep.env_file_keys(root / ".env"))        # dotenv really makes it a key
     assert "k8sA7QxLmNp" not in text and "k8sA7QxLmNp" not in blob
-    assert check.status == doctor.WARN and check.reason.startswith("malformed_env_names:1")
+    assert check.status == doctor.WARN and check.reason.startswith("withheld_env_names:1")
     assert {row["key"] for row in check.data["sources"]} >= {"GOOGLE_PRIVATE_KEY", "OPENAI_API_KEY"}
 
 
@@ -469,7 +469,7 @@ def test_the_doctor_reports_an_unimportable_provenance_module(tmp_path, monkeypa
     assert check.status == doctor.WARN and check.reason == "provenance_unavailable"
 
 
-def _hub(sources=None, status=200, seen=None):
+def _hub(sources=None, status=200, seen=None, token=None):
     import urllib.error
 
     class _Resp:
@@ -489,6 +489,9 @@ def _hub(sources=None, status=200, seen=None):
         if url.endswith("/readyz"):
             return _Resp(b"ok")
         if url.endswith("/api/admin/env/sources"):
+            sent = {k.lower(): v for k, v in dict(getattr(request, "headers", {}) or {}).items()}
+            if token is not None and sent.get("x-admin-token") != token:
+                raise urllib.error.HTTPError(url, 401, "admin token required", {}, None)
             if status != 200:
                 raise urllib.error.HTTPError(url, status, "refused", {}, None)
             return _Resp(json.dumps(sources).encode("utf-8"))
@@ -506,7 +509,7 @@ def test_the_doctor_reads_the_running_hubs_own_table(tmp_path):
         {"key": "JARVIS_PORT", "layer": "repo_env", "shadowed": [], "label": "repo .env"},
         {"key": "JARVIS_HOST", "layer": "process", "shadowed": [], "label": "process environment"},
     ], "files": {"repo_env": {"path": "/srv/nerva/.env", "present": True, "kind": "file", "read": True}}}
-    opener = _hub(payload, seen=seen)
+    opener = _hub(payload, seen=seen, token="adm-7c1")
     env = {"JARVIS_ADMIN_TOKEN": "adm-7c1"}
     readyz = doctor.check_readyz(opener, env=env)
     check = doctor.check_config_sources(tmp_path, env, opener=opener, readyz=readyz)
@@ -517,8 +520,10 @@ def test_the_doctor_reads_the_running_hubs_own_table(tmp_path):
     assert "note" not in rows["JARVIS_HOST"]                         # from the process: it is in effect
     assert check.detail.startswith("read from the running hub at http://127.0.0.1:8080")
     assert "/srv/nerva/.env (file)" in check.detail
-    sent = [headers for url, headers in seen if url.endswith("/api/admin/env/sources")]
-    assert sent and {k.lower(): v for k, v in sent[0].items()}.get("x-admin-token") == "adm-7c1"
+    sent = [{k.lower(): v for k, v in headers.items()} for url, headers in seen
+            if url.endswith("/api/admin/env/sources")]
+    # asked without the credential first (a hub in dev posture answers), then with it
+    assert [h.get("x-admin-token") for h in sent] == [None, "adm-7c1"]
 
 
 def test_the_doctor_predicts_when_the_hub_refuses_or_is_down(tmp_path):

@@ -36,9 +36,12 @@ smoke               advisory   the install smoke (only with ``--smoke``; ~30s) f
 ==================  =========  ==========================================================
 
 The hub's address is the one ``nerva status`` reads (``hub_url``: ``NERVA_HUB_URL``, else
-``JARVIS_HOST``/``JARVIS_PORT``, default ``http://127.0.0.1:8080``); ``readyz`` and
-``runtime_resolves`` share it, so the ``readyz`` verdict vouches for the hub the credential
-goes to.
+``JARVIS_HOST``/``JARVIS_PORT``, default ``http://127.0.0.1:8080``); ``readyz``,
+``runtime_resolves`` and ``config_sources`` share it, and every request to it goes through
+``hub_open``, which never follows a redirect and never goes through a proxy to a hub on
+this machine — so what answered ``/readyz`` is what the credential reaches. The admin
+credential goes only to a loopback hub, and only after the route refused the request
+without it (H273 second review, A1).
 
 ``runtime_resolves`` is the strict check (Hermes ``setup.runtime_check``, ledger H242):
 ``runtimes`` proves something listens, this proves the configured route is runnable. It
@@ -68,6 +71,7 @@ import re
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -238,9 +242,10 @@ def hub_url(env=None) -> str:
     return f"http://{host}:{port}"
 
 
-def check_readyz(opener=urllib.request.urlopen, url: str | None = None, timeout: float = 2.0,
+def check_readyz(opener=None, url: str | None = None, timeout: float = 2.0,
                  *, env=None) -> Check:
     url = url or hub_url(env) + READYZ_PATH
+    opener = opener or hub_open
     try:
         resp = opener(url, timeout=timeout)
         status = int(getattr(resp, "status", None) or getattr(resp, "code", 200))
@@ -262,6 +267,34 @@ def check_readyz(opener=urllib.request.urlopen, url: str | None = None, timeout:
     if status != 200:
         return _result("readyz", False, f"readyz_status:{status}")
     return _result("readyz", True, "ready", body[:200])
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is refused: returning None leaves the 3xx to urllib's default error
+    handler, which raises HTTPError. A credential never follows one to another address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def is_loopback_url(url: str) -> bool:
+    """Whether *url* names this machine (``LOOPBACK_HOSTS``)."""
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").strip("[]").lower()
+    except ValueError:
+        return False
+    return host in LOOPBACK_HOSTS
+
+
+def hub_open(request, timeout=None):
+    """Open a request to the hub: never follows a redirect, and never goes through a proxy
+    to a loopback hub (an ``http_proxy`` with no ``no_proxy`` entry would otherwise answer
+    ``/readyz`` itself and receive the credential in clear text)."""
+    url = getattr(request, "full_url", request)
+    handlers = [_RefuseRedirects()]
+    if is_loopback_url(str(url)):
+        handlers.append(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
 
 
 def _hub_headers(env) -> dict:
@@ -286,7 +319,7 @@ def _text(value) -> str | None:
     return None
 
 
-def check_runtime_resolves(opener=urllib.request.urlopen, *, readyz: Check | None = None,
+def check_runtime_resolves(opener=None, *, readyz: Check | None = None,
                            env=None, url: str | None = None,
                            timeout: float = 10.0) -> Check:
     """Does the route a Jarvis turn takes resolve to a usable model — not "does some
@@ -307,6 +340,7 @@ def check_runtime_resolves(opener=urllib.request.urlopen, *, readyz: Check | Non
                      "the route is resolved by the running hub — start it, then re-run")
     env = os.environ if env is None else env
     url = url or hub_url(env) + COMMAND_CENTER_PATH
+    opener = opener or hub_open
     headers = _hub_headers(env)
     try:
         request = urllib.request.Request(url, headers=headers, method="GET")
@@ -374,29 +408,54 @@ OS_NAMES = frozenset({
     "XDG_SESSION_TYPE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
     "DBUS_SESSION_BUS_ADDRESS", "GITHUB_STEP_SUMMARY",
 })
+# A read of the environment in the hub's code: through os.environ or a helper, through
+# a mapping bound to it (``env.get(...)``, as GroupPolicy.from_env reads its group
+# allowlist), or a module constant naming a variable (``*_ENV = "..."``, as proxy_trust
+# names uvicorn's forwarding knobs).
 _ENV_READ = re.compile(
-    r"""(?:os\.environ\.get|os\.getenv|environ\.get|env_str|env_int|env_flag|env_float|env_list"""
+    r"""(?:os\.environ\.get|os\.getenv|environ\.get|\benv\.get|env_str|env_int|env_flag|env_float|env_list"""
     r"""|env_json_object|env_int_map)\(\s*["']([A-Z][A-Z0-9_]+)["']"""
-    r"""|environ\[\s*["']([A-Z][A-Z0-9_]+)["']\s*\]""")
-# A name the doctor prints: an identifier in one case. A mis-quoted multi-line value
-# (a PEM, a base64 blob) turns its lines into "keys" that are almost always
-# mixed case or carry + / =, so they are counted instead of printed.
+    r"""|environ\[\s*["']([A-Z][A-Z0-9_]+)["']\s*\]"""
+    r"""|^[ \t]*[A-Z][A-Z0-9_]*_ENV[ \t]*=[ \t]*["']([A-Z][A-Z0-9_]+)["']""", re.M)
+# A name from a .env file the doctor prints although nothing declares it: an identifier
+# in one case, and only when python-dotenv gives it a real value. A mis-quoted
+# multi-line value turns its lines into "keys": a PEM or base64 line is mixed case, and
+# a base32 seed or a hex digest line is one case but its "value" is only "=" padding or
+# nothing. Those are counted instead of printed.
 _SHOWN_NAME = re.compile(r"(?:[A-Z_][A-Z0-9_]*|[a-z_][a-z0-9_]*)\Z")
 ENV_SOURCES_PATH = "/api/admin/env/sources"
+
+
+def names_read_in(text: str) -> set:
+    """The environment names one source file reads (see ``_ENV_READ``)."""
+    return {next(group for group in m.groups() if group) for m in _ENV_READ.finditer(text)}
+
+
+def _code_base(root: Path) -> Path:
+    return Path(root) if (Path(root) / "agents").is_dir() else REPO_ROOT   # the code this doctor ships with
 
 
 def hub_env_names(root: Path) -> frozenset:
     """The environment names the hub's code reads (``agents/`` and ``serve.py``),
     found by reading the source, less the operating system's own variables."""
     names: set = set()
-    base = Path(root) if (Path(root) / "agents").is_dir() else REPO_ROOT   # the code this doctor ships with
+    base = _code_base(root)
     for path in [*sorted((base / "agents").rglob("*.py")), base / "serve.py"]:
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        names.update(m.group(1) or m.group(2) for m in _ENV_READ.finditer(text))
+        names.update(names_read_in(text))
     return frozenset(names - OS_NAMES)
+
+
+def declared_env_names(root: Path) -> frozenset:
+    """The names ``.env.example`` tells the owner to set (commented out or not)."""
+    try:
+        text = (_code_base(root) / ".env.example").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return frozenset()
+    return frozenset(re.findall(r"^#?[ \t]*([A-Z][A-Z0-9_]+)=", text, re.M))
 
 
 def _home_env(environ) -> Path | None:
@@ -434,29 +493,46 @@ def _file_state(ep, path) -> str:
     return f"{path} ({'present' if ep.is_file_or_fifo(path) else 'absent'})"
 
 
-def _hub_sources(env, opener, readyz, timeout: float = 5.0):
-    """The running hub's own table, or None: only with a ready hub, and only with the
-    admin credential (the route is admin-only). Never raises."""
-    if opener is None or readyz is None or readyz.status != OK:
-        return None
-    headers = {"Accept": "application/json"}
-    admin = (env.get("JARVIS_ADMIN_TOKEN") or "").strip()
-    if admin:
-        headers["x-admin-token"] = admin
+def _read_json(opener, url: str, headers: dict, timeout: float):
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    resp = opener(request, timeout=timeout)
     try:
-        request = urllib.request.Request(hub_url(env) + ENV_SOURCES_PATH, headers=headers, method="GET")
-        resp = opener(request, timeout=timeout)
+        return json.loads(resp.read().decode("utf-8", "replace"))
+    finally:
+        close = getattr(resp, "close", None)
+        if close:
+            close()
+
+
+def _hub_sources(env, opener, readyz, timeout: float = 5.0):
+    """``(payload, "")`` with the running hub's own table, or ``(None, why)``. Asked only of
+    a ready hub. The route is admin-only, but a hub in its localhost dev posture answers it
+    without a credential, so it is asked without one first; the admin credential follows
+    a refusal only when the hub is on this machine. Never raises."""
+    if opener is None or readyz is None or readyz.status != OK:
+        return None, "no running hub answered /readyz"
+    url = hub_url(env) + ENV_SOURCES_PATH
+    admin = (env.get("JARVIS_ADMIN_TOKEN") or "").strip()
+    attempts = [{"Accept": "application/json"}]
+    if admin and is_loopback_url(url):
+        attempts.append({"Accept": "application/json", "x-admin-token": admin})
+    why = "the running hub refused the admin route"
+    for headers in attempts:
         try:
-            payload = json.loads(resp.read().decode("utf-8", "replace"))
-        finally:
-            close = getattr(resp, "close", None)
-            if close:
-                close()
-    except Exception:
-        return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("sources"), list):
-        return None
-    return payload
+            payload = _read_json(opener, url, headers, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                why = ("the running hub refused the admin token" if "x-admin-token" in headers else
+                       "the admin credential is sent only to a hub on this machine" if admin else
+                       "the running hub needs the admin token (JARVIS_ADMIN_TOKEN)")
+                continue
+            return None, f"the running hub answered {exc.code}"
+        except Exception as exc:
+            return None, f"the running hub could not be read ({type(exc).__name__})"
+        if not isinstance(payload, dict) or not isinstance(payload.get("sources"), list):
+            return None, "the running hub's reply is not a sources table"
+        return payload, ""
+    return None, why
 
 
 def check_config_sources(root: Path, env=None, *, opener=None, readyz: Check | None = None) -> Check:
@@ -464,9 +540,11 @@ def check_config_sources(root: Path, env=None, *, opener=None, readyz: Check | N
     then ``<root>/.env``, then the data-home ``.env``, the first one to set a key
     winning. Read from the running hub when it answers with the admin credential,
     else derived offline the way the hub loads it (``agents.core.env_provenance``).
-    Names and layers only; a name that is not an identifier (value material from a
-    mis-quoted multi-line value) is counted, never printed. Informational: ``ok``
-    unless such a name turns up or the table cannot be had, never a crash."""
+    Names and layers only. A .env name is printed when the hub reads it, it carries
+    Nerva's prefix, ``.env.example`` declares it, or it is a plain one-case name with a
+    real value; anything else (value material from a mis-quoted multi-line value looks
+    like that) is counted, never printed. Informational: ``ok`` unless such a name turns
+    up or the table cannot be had, never a crash."""
     env = os.environ if env is None else env
     try:
         return _config_sources(Path(root), env, opener, readyz)
@@ -479,10 +557,11 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         from agents.core import env_provenance as ep
     except Exception as exc:  # a broken install must still get the rest of the report
         return _result("config_sources", False, "provenance_unavailable", type(exc).__name__)
-    hub = _hub_sources(env, opener, readyz)
+    hub, why = _hub_sources(env, opener, readyz)
     unreadable: list = []
+    values: dict = {}
     if hub is not None:
-        table = {row["key"]: {"layer": row.get("layer"), "shadowed": list(row.get("shadowed") or [])}
+        table = {row["key"]: {"layer": row.get("layer"), "shadowed": _layers(row.get("shadowed"))}
                  for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
         files = hub.get("files") if isinstance(hub.get("files"), dict) else {}
         where = f"read from the running hub at {hub_url(env)}"
@@ -491,21 +570,26 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     else:
         repo_env = root / ".env"
         table = ep.derive(repo_env, _home_env, env)
-        where = "predicted from this shell's environment (no running hub answered with the admin token)"
-        home = _home_env({**{k: v for k, v in _values_or_empty(ep, repo_env).items() if k not in env}, **env})
+        where = f"predicted from this shell's environment ({why})"
+        home = _home_env(ep.after_repo_layer(repo_env, env))
         detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
+        for path in (home, repo_env):                 # the first layer's value wins, as in the load
+            if path is not None:
+                values.update(ep.raw_values(path))
         unreadable = [label for label, path in (("repo_env", repo_env), ("user_env", home))
                       if path is not None and _not_utf8(path)]
         if ep.dotenv_disabled(env):
             detail += "; PYTHON_DOTENV_DISABLED is set: no .env file is loaded"
     names = hub_env_names(root)
-    rows, malformed = [], 0
+    declared = declared_env_names(root)
+    rows, withheld = [], 0
     for key, row in sorted(table.items()):
+        known = key in names or key in declared or key.startswith(CONFIG_PREFIXES)
         in_file = row["layer"] in (ep.REPO_ENV, ep.USER_ENV) or bool(row["shadowed"])
-        if not (in_file or key in names or key.startswith(CONFIG_PREFIXES)):
+        if not (in_file or known):
             continue
-        if not _SHOWN_NAME.match(key):
-            malformed += 1
+        if not known and not _plain_name(key, values.get(key)):
+            withheld += 1
             continue
         item = {"key": key, "layer": row["layer"], "shadowed": list(row["shadowed"])}
         note = ep.note_for(key, row["layer"])
@@ -513,9 +597,11 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
             item["note"] = note
         rows.append(item)
     counts = {layer: sum(1 for row in rows if row["layer"] == layer)
-              for layer in (ep.PROCESS, ep.REPO_ENV, ep.USER_ENV)}
-    reason = (f"{len(rows)} keys: {counts[ep.PROCESS]} process environment, "
+              for layer in (ep.PROCESS, ep.REPO_ENV, ep.USER_ENV, ep.RUNTIME)}
+    reason = (f"{len(rows)} key{'s' if len(rows) != 1 else ''}: {counts[ep.PROCESS]} process environment, "
               f"{counts[ep.REPO_ENV]} repo .env, {counts[ep.USER_ENV]} data-home .env")
+    if counts[ep.RUNTIME]:
+        reason += f", {counts[ep.RUNTIME]} set while running"
     overriding = sum(1 for row in rows if row["layer"] == ep.PROCESS and row["shadowed"])
     if overriding:
         reason += (f"; {overriding} key{'s' if overriding != 1 else ''} set in the process environment "
@@ -524,19 +610,24 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     if unreadable:
         status = WARN
         reason = f"env_not_utf8:{','.join(unreadable)} — the hub's load fails on it. " + reason
-    if malformed:
+    if withheld:
         status = WARN
-        reason = (f"malformed_env_names:{malformed} — a .env line yields a name that is not a one-case "
-                  f"identifier (a multi-line value is unquoted or mis-escaped); not shown. " + reason)
+        reason = (f"withheld_env_names:{withheld} — {withheld} .env key{'s' if withheld != 1 else ''} not "
+                  f"shown: not a name Nerva reads or .env.example declares, nor a plain one-case name with "
+                  f"a value (an unquoted or mis-escaped multi-line value may produce such keys). " + reason)
     return Check("config_sources", status, reason, f"{where}; {detail}",
                  data={"sources": rows, "labels": dict(ep.LABELS)})
 
 
-def _values_or_empty(ep, path) -> dict:
-    try:
-        return ep.file_values(path)
-    except Exception:
-        return {}
+def _layers(value) -> list:
+    """A hub row's ``shadowed``: a list of layer names, anything else read as none."""
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _plain_name(key: str, value) -> bool:
+    """An undeclared .env key the doctor may print: a one-case identifier whose value
+    is real, not empty and not only ``=`` padding (the tail of a base32 or base64 line)."""
+    return bool(_SHOWN_NAME.match(key)) and isinstance(value, str) and value.strip("=") != ""
 
 
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
@@ -554,20 +645,23 @@ def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
 
 
 # ── report ─────────────────────────────────────────────────────────
-def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=urllib.request.urlopen,
+def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=None,
                smoke: bool = False, run=None, version_info=None) -> DoctorReport:
+    """``opener`` stands in for every request (tests); left out, the hub is reached only
+    through ``hub_open`` and the local runtime probes through urllib's own opener."""
     root = Path(root)
-    readyz = check_readyz(opener, env=env)
+    to_hub = opener or hub_open
+    readyz = check_readyz(to_hub, env=env)
     checks = [
         check_python(version_info),
         check_venv(root),
         check_locks(root),
         check_bind(env),
         check_data_root(root, env),
-        check_runtimes(opener),
+        check_runtimes(opener or urllib.request.urlopen),
         readyz,
-        check_runtime_resolves(opener, readyz=readyz, env=env),
-        check_config_sources(root, env, opener=opener, readyz=readyz),
+        check_runtime_resolves(to_hub, readyz=readyz, env=env),
+        check_config_sources(root, env, opener=to_hub, readyz=readyz),
         check_smoke(root, enabled=smoke, run=run),
     ]
     ok = all(c.status != FAIL for c in checks)

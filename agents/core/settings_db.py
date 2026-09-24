@@ -456,12 +456,18 @@ def value_source(category: str, key: str, value, raw=None) -> str:
 _NO_OVERLAY = object()
 
 
-def _posture_overlay() -> tuple[str, dict]:
+def _posture_overlay(stored) -> tuple[str, dict]:
     """The selected product posture and the settings it forces while selected (the
-    runtime applies them over the stored rows: product_posture.apply_to_runtime_settings)."""
+    runtime applies them over the stored rows: product_posture.apply_to_runtime_settings).
+    ``stored`` is the raw ``product.posture`` row value (or None), read by the caller in
+    the connection it already has open; an unknown name is normalised to off."""
     from agents.core import product_posture
 
-    name = product_posture.normalize(get_value("product", "posture", product_posture.OFF))
+    try:
+        raw = product_posture.OFF if stored is None else json.loads(stored)
+    except (TypeError, ValueError):
+        raw = product_posture.OFF
+    name = product_posture.normalize(raw)
     return name, dict(product_posture.POSTURES[name].get("applies", {}))
 
 
@@ -482,7 +488,8 @@ def get_all() -> dict[str, list[dict]]:
     rows = conn.execute("SELECT category, key, value, label, kind, opts FROM settings ORDER BY category, key").fetchall()
     conn.close()
     groups: dict[str, list[dict]] = {}
-    posture = _posture_overlay()
+    posture = _posture_overlay(next((r["value"] for r in rows
+                                     if r["category"] == "product" and r["key"] == "posture"), None))
     for r in rows:
         cat = r["category"]
         if cat not in groups:
@@ -573,9 +580,10 @@ def get_category(cat: str) -> list[dict]:
         "SELECT key, value, label, kind, opts FROM settings WHERE category=? ORDER BY key",
         (cat,),
     ).fetchall()
+    stored = conn.execute("SELECT value FROM settings WHERE category='product' AND key='posture'").fetchone()
     conn.close()
     out = []
-    posture = _posture_overlay()
+    posture = _posture_overlay(stored["value"] if stored is not None else None)
     for r in rows:
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)

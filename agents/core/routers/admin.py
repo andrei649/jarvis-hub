@@ -238,12 +238,13 @@ async def admin_env_sources():
         if note:
             item["note"] = note
         rows.append(item)
-    # The files the load actually read; with no load in this process, the files it
-    # would read now.
+    # What the load did with each file (read, absent, the same file as the repo .env,
+    # or skipped because python-dotenv was switched off); with no load in this process,
+    # the files it would read now.
     loaded = env_provenance.files()
     if loaded:
-        files = {layer: {"path": info["path"], "present": info["kind"] in ("file", "fifo"),
-                         "kind": info["kind"], "read": True}
+        files = {layer: {"path": info["path"], "present": info["present"], "kind": info["kind"],
+                         "read": info["read"]}
                  for layer, info in loaded.items()}
     else:
         repo_env = Path(__file__).resolve().parents[3] / ".env"

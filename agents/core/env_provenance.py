@@ -27,6 +27,8 @@ declared ``default`` or ``set``.
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import io
 import os
 import re
@@ -44,13 +46,38 @@ LABELS = {
     RUNTIME: "set while running",
 }
 
-# serve.py reads these to build the server before any .env file is loaded, so a
-# .env value for them is recorded but never in effect.
-READ_BEFORE_LOAD = frozenset({"JARVIS_HOST", "JARVIS_PORT", "JARVIS_LOG_LEVEL", "JARVIS_SHUTDOWN_TIMEOUT"})
-BEFORE_LOAD_NOTE = "serve.py reads it before the .env files are loaded: the .env value is not in effect"
+# The hub reads these while it starts, before the lifespan loads any .env file: serve.py
+# builds the server from the first four, and importing agents.web freezes the rest into
+# module constants (the ASGI root path, the rate limit, CORS, CSP, the router's auto-deep
+# switch, the analytics cap, the graph's Neo4j defaults) or resolves paths with them. A
+# .env value for them is recorded but not in effect: they belong in the process
+# environment. The list is measured, not remembered: tests/test_h273c_provenance_review.py
+# spies on the environment while the hub is imported and fails on a Nerva name that is
+# in neither this list nor READ_AGAIN_AFTER_LOAD.
+READ_BEFORE_LOAD = frozenset({
+    "JARVIS_HOST", "JARVIS_PORT", "JARVIS_LOG_LEVEL", "JARVIS_SHUTDOWN_TIMEOUT",
+    "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_ROOT_PATH",
+    "JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_CSP", "JARVIS_DISABLE_CSP",
+    "JARVIS_AUTO_DEEP", "JARVIS_ANALYTICS_MAX_EVENTS",
+    "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD",
+})
+# Read while the hub is imported and read again once the .env files are loaded, so a .env
+# value is in effect: DEV_MODE (app_state.dev_mode, ENV-039), the admin and user tokens,
+# the OAuth client ids (PluginManager.build calls oauth.init_from_env after the load) and
+# the trusted proxies (proxy_trust.trusted_proxies reads the environment on every call).
+READ_AGAIN_AFTER_LOAD = frozenset({
+    "DEV_MODE", "JARVIS_ADMIN_TOKEN", "JARVIS_USER_TOKEN",
+    "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
+    "JARVIS_TRUSTED_PROXIES", "JARVIS_TRUSTED_PROXY",
+})
+BEFORE_LOAD_NOTE = ("the hub reads it before the .env files are loaded: the .env value is not in effect, "
+                    "so set it in the process environment")
 
 _TABLE: dict[str, dict] = {}
-_FILES: dict[str, dict] = {}   # what the last load read, per layer: {"path", "kind"}
+_FILES: dict[str, dict] = {}   # what the last load read, per layer: {"path", "kind", "present", "read"}
+# Per key a load set: the layer and a digest of the value it set (never the value). A
+# later load keeps that attribution only while the environment still holds that value.
+_LOADED: dict[str, tuple[str, str]] = {}
 
 # python-dotenv 1.2.3's grammar (dotenv/parser.py), ported for key names only. A
 # binding is optional whitespace and ``export``, a single-quoted or unquoted key,
@@ -153,15 +180,37 @@ def env_file_keys(path) -> list[str]:
     """The keys a ``.env`` file sets, as python-dotenv parses them, without their
     values. A named pipe is not read (reading one consumes it, or blocks with no
     writer); a file that cannot be read as UTF-8 sets nothing here."""
-    if path is None or not os.path.isfile(path):
-        return []
+    parsed = _file_bindings(path)
+    return [] if parsed is None else list(parsed[0])
+
+
+@functools.lru_cache(maxsize=16)
+def _parse_cached(path: str, mtime_ns: int, size: int):
+    """One parse per file content: its keys (python-dotenv's, else the stdlib port's)
+    and its raw bindings (``None`` without python-dotenv, which alone knows values)."""
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return []
-    return text_keys(text)
+        return None
+    try:
+        from dotenv import dotenv_values
+    except Exception:
+        return tuple(_port_keys(text)), None
+    raw = tuple(dotenv_values(stream=io.StringIO(text), interpolate=False).items())
+    return tuple(key for key, value in raw if value is not None), raw
 
 
+def _file_bindings(path):
+    """``(keys, raw bindings or None)`` for a regular file, parsed once while it is
+    unchanged; ``None`` for anything else (a named pipe is never read here)."""
+    if path is None or not os.path.isfile(path):
+        return None
+    try:
+        info = os.stat(path)
+        real = os.path.realpath(path)
+    except (OSError, ValueError, TypeError):
+        return None
+    return _parse_cached(real, info.st_mtime_ns, info.st_size)
 
 
 def _same_file(a, b) -> bool:
@@ -182,18 +231,59 @@ def _shadow(table: dict[str, dict], layer: str, keys) -> None:
             row["shadowed"].append(layer)
 
 
+# python-dotenv's own ${VAR} / ${VAR:-default} syntax (dotenv/variables.py).
+_POSIX_VARIABLE = re.compile(r"\$\{(?P<name>[^\}:]*)(?::-(?P<default>[^\}]*))?\}")
+
+
+def _interpolate(value: str, env: Mapping[str, str]) -> str:
+    def one(match: re.Match) -> str:
+        default = match.group("default")
+        result = env.get(match.group("name"), default if default is not None else "")
+        return result if result is not None else ""
+    return _POSIX_VARIABLE.sub(one, value)
+
+
+def hub_values(raw, environ: Mapping[str, str]) -> dict[str, str]:
+    """What ``load_dotenv(override=False)`` adds to *environ* from a file's raw
+    bindings: a key already set is kept, and ``${VAR}`` sees the environment before the
+    file's earlier values (python-dotenv's order when it does not override)."""
+    seen: dict[str, str | None] = {}
+    out: dict[str, str] = {}
+    for key, value in raw:
+        resolved = None if value is None else _interpolate(value, {**seen, **environ})
+        seen[key] = resolved
+        if resolved is not None and key not in environ:
+            out[key] = resolved
+    return out
+
+
+def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
+    """The environment the hub has once the repo .env is loaded, without loading it:
+    *environ* plus what the file adds. Just *environ* when python-dotenv is switched off
+    or missing (only it knows values), or the file cannot be read."""
+    merged = dict(environ)
+    if dotenv_disabled(merged):
+        return merged
+    parsed = _file_bindings(repo_env)
+    if parsed is None or parsed[1] is None:
+        return merged
+    merged.update(hub_values(parsed[1], merged))
+    return merged
+
+
 def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
     """The table for an environment, without loading anything (scripts/doctor.py).
 
     ``home_env`` may be a callable: it gets the environment the hub would have after
-    the repo layer (``environ`` plus the repo .env's values, first wins, from
-    python-dotenv when it can be imported), so a data home named in the repo .env is
-    followed as the hub follows it. A named pipe is not read."""
+    the repo layer (``after_repo_layer``), so a data home the repo .env names, or
+    builds from ``${VAR}``, is followed as the hub follows it. python-dotenv checks its
+    switch on every load, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the
+    data-home layer here too. A named pipe is not read."""
     table = {key: {"layer": PROCESS, "shadowed": []} for key in environ}
-    if dotenv_disabled(environ):
-        return table
     merged = dict(environ)
     for layer, source in ((REPO_ENV, repo_env), (USER_ENV, home_env)):
+        if dotenv_disabled(merged):
+            break
         path = _resolve(source, merged) if layer == USER_ENV else source
         if path is None or (layer == USER_ENV and _same_file(path, repo_env)):
             continue
@@ -203,22 +293,20 @@ def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
                 table[key] = {"layer": layer, "shadowed": []}
         _shadow(table, layer, keys)
         if layer == REPO_ENV:
-            merged.update({key: value for key, value in file_values(path).items() if key not in merged})
+            merged = after_repo_layer(path, merged)
     return table
 
 
-def file_values(path) -> dict[str, str]:
-    """The values a .env file sets, for resolving the data home only; {} without
-    python-dotenv or for anything but a readable regular file."""
-    if path is None or not os.path.isfile(path):
-        return {}
-    try:
-        from dotenv import dotenv_values
+def raw_values(path) -> dict[str, str | None]:
+    """A file's bindings as written (no ``${VAR}`` expansion; ``None`` for a key with no
+    ``=``), for the doctor's checks on names; {} without python-dotenv or for anything
+    but a readable regular file."""
+    parsed = _file_bindings(path)
+    return {} if parsed is None or parsed[1] is None else dict(parsed[1])
 
-        text = Path(path).read_text(encoding="utf-8")
-    except Exception:
-        return {}
-    return {key: value for key, value in dotenv_values(stream=io.StringIO(text)).items() if value is not None}
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def load_layered_env(repo_env, home_env) -> dict[str, dict]:
@@ -226,40 +314,59 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
     set is kept), and record where every key came from. Returns the table.
 
     ``home_env`` may be a callable, called after the repo layer is loaded. A key a
-    previous load in this process attributed to a file keeps that attribution: it is
-    in the environment now only because that load put it there."""
-    from dotenv.main import DotEnv
+    previous load in this process put in the environment keeps that attribution while
+    the environment still holds the value that load set (anything else set it since);
+    what the files shadow is worked out afresh from the files as they are now. The load
+    itself is python-dotenv's public ``load_dotenv``, which checks its switch on every
+    call, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the next layer."""
+    from dotenv import dotenv_values, load_dotenv
 
-    previous = {key: row for key, row in _TABLE.items() if row["layer"] in (REPO_ENV, USER_ENV)}
-    table = {key: ({"layer": previous[key]["layer"], "shadowed": list(previous[key]["shadowed"])}
-                   if key in previous else {"layer": PROCESS, "shadowed": []})
-             for key in os.environ}
+    table: dict[str, dict] = {}
+    loaded: dict[str, tuple[str, str]] = {}
+    for key, value in os.environ.items():
+        prior = _LOADED.get(key)
+        if prior is not None and prior[1] == _digest(value):
+            table[key] = {"layer": prior[0], "shadowed": []}
+            loaded[key] = prior
+        else:
+            table[key] = {"layer": PROCESS, "shadowed": []}
     files: dict[str, dict] = {}
-    disabled = dotenv_disabled(os.environ)
     repo_path = None
     for layer, source in ((REPO_ENV, repo_env), (USER_ENV, home_env)):
         path = _resolve(source)
         if layer == REPO_ENV:
             repo_path = path
-        kind = ("fifo" if is_fifo(path) else "file") if path is not None and is_file_or_fifo(path) else "absent"
-        files[layer] = {"path": str(path) if path is not None else None, "kind": kind}
-        if kind == "absent" or disabled:
+        present = path is not None and is_file_or_fifo(path)
+        info = {"path": str(path) if path is not None else None,
+                "kind": ("fifo" if is_fifo(path) else "file") if present else "absent",
+                "present": present, "read": False}
+        files[layer] = info
+        if not present:
             continue
         if layer == USER_ENV and _same_file(path, repo_path):
-            files[layer]["kind"] = "same file as the repo .env"
+            info["kind"] = "same file as the repo .env"
+            continue
+        if dotenv_disabled(os.environ):
+            info["kind"] = "disabled"
             continue
         with open(path, encoding="utf-8") as stream:   # once: a pipe cannot be read twice
             text = stream.read()
-        dotenv = DotEnv(None, stream=io.StringIO(text), interpolate=True, override=False)
+        info["read"] = True
         before = set(os.environ)
-        dotenv.set_as_environment_variables()   # load_dotenv's own step: a key already set is kept
-        for key in set(os.environ) - before:
+        load_dotenv(stream=io.StringIO(text), override=False, interpolate=True)
+        now = dict(os.environ)
+        for key in now.keys() - before:
             table[key] = {"layer": layer, "shadowed": []}
-        _shadow(table, layer, [key for key, value in dotenv.dict().items() if value is not None])
+            loaded[key] = (layer, _digest(now[key]))
+        _shadow(table, layer, [key for key, value in
+                               dotenv_values(stream=io.StringIO(text), interpolate=False).items()
+                               if value is not None])
     _TABLE.clear()
     _TABLE.update({key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in table.items()})
     _FILES.clear()
     _FILES.update(files)
+    _LOADED.clear()
+    _LOADED.update(loaded)
     return {key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in _TABLE.items()}
 
 
@@ -286,8 +393,8 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 
 __all__ = [
-    "LABELS", "PROCESS", "READ_BEFORE_LOAD", "REPO_ENV", "RUNTIME", "USER_ENV",
-    "derive", "dotenv_disabled", "env_file_keys", "files", "is_fifo", "is_file_or_fifo",
-    "load_layered_env", "note_for", "provenance", "text_keys",
+    "LABELS", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV", "RUNTIME", "USER_ENV",
+    "after_repo_layer", "derive", "dotenv_disabled", "env_file_keys", "files", "hub_values",
+    "is_fifo", "is_file_or_fifo", "load_layered_env", "note_for", "provenance", "raw_values", "text_keys",
 ]
 
