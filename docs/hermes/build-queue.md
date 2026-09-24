@@ -16,7 +16,7 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Reviewed and fixed in #1207** (2026-09-24): H273, a second time. The review found three problems: the doctor sent the admin credential through a redirect or a proxy; more keys than serve.py's four are read before any .env is loaded; and a one-case line of value material could still be printed as a name. Fixed: the credential goes only to a loopback hub and never through a redirect or a proxy; the before-load list is measured by spying on the hub's import; and the doctor prints a name only when the hub reads it, it is prefixed or declared, or it is a plain name with a real value. The nits are fixed too. The row stays closed.
 
-**Re-opened in #1207** (2026-09-24): H153, by its third review. Deliver to reaches none of the owner's channels as shipped: a push to telegram, voice or ntfy answers 500 after the turn, web has no receiver, and ntfy refuses the label. The fix round is next.
+**Re-opened and closed again in #1207** (2026-09-24): H153, by its third review. Deliver to reached none of the owner's channels as shipped: a push to telegram, voice or ntfy answered 500 after the turn, web has no receiver, and ntfy refused the label. Fixed with a real send on each channel, tested down to the adapter: the quiet-hours rule imports the right function and runs on a fixed clock in the tests, a delivery that fails is recorded and never a 500 after the turn, web is refused by name, ntfy gets an ASCII title, the text goes as plain text (Telegram: no markup, link preview or voice note), each hook pushes at most 30 times an hour, the hook and the receiver are read again after the turn, deliver-only needs a channel, and a workflow delivers its last step or nothing. H153 closed a fourth time.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
@@ -787,7 +787,7 @@ H200 and H153 specify the same frontend/src/panels/webhooks.tsx, console route a
 
 **Fix.** Build once from H153's spec: enabled toggle, audit, workflow fix under bind_action_origin(INBOUND), and the panel. H200 closes with it, and its remaining must name the workflow bug or restrict creation to agent targets. H659 places the idempotency reservation before both branches. Make the CLI `nerva webhooks inbound|outbound`.
 
-**Done in #1207 (2026-09-24):** H153 and H200 closed together (the workflow-target fix landed first, under the inbound origin). H659 and H409 remain; the CLI verb was not built. After review, H153 was partial again until its event filter, prompt template and receiver switch were built; it closed again with them. A second review found Deliver to missing and the receiver switch failing open; both were built and it closed a third time.
+**Done in #1207 (2026-09-24):** H153 and H200 closed together (the workflow-target fix landed first, under the inbound origin). H659 and H409 remain; the CLI verb was not built. After review, H153 was partial again until its event filter, prompt template and receiver switch were built; it closed again with them. A second review found Deliver to missing and the receiver switch failing open; both were built and it closed a third time. A third review found that no delivery reached a channel for real; each offered channel now receives one, tested down to the adapter, and it closed a fourth time.
 
 ### Critic note 8
 

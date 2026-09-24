@@ -10902,8 +10902,9 @@ export interface components {
             /**
              * Deliver
              * @default log
+             * @enum {string}
              */
-            deliver: string;
+            deliver: "log" | "telegram" | "voice" | "ntfy";
             /**
              * Deliver Only
              * @default false
@@ -10927,8 +10928,11 @@ export interface components {
             events?: string[];
             /** Prompt */
             prompt?: string;
-            /** Deliver */
-            deliver?: string;
+            /**
+             * Deliver
+             * @enum {string}
+             */
+            deliver?: "log" | "telegram" | "voice" | "ntfy";
             /** Deliver Only */
             deliver_only?: boolean;
             /** Description */

@@ -14,6 +14,56 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H153 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
+
+  The review found two majors, both fixed. Each offered channel now gets a real send, tested down to the adapter (`tests/test_h153c_webhook_sends.py`: the router, `send_to_target`, `ChannelManager.send` and its contract, then a recording adapter per channel, plus the real Telegram adapter's HTTP body):
+  - **Pushes answered 500 after the turn.** The quiet-hours check imported `is_night` from a module that has no such name. It now uses `schedule_runtime.is_night` on the router's clock, with the hours taken modulo 24. A test runs the real rule at 3 am and 3 pm. `_deliver` no longer fails loud: whatever fails is recorded on the hook and answered, never a 500 after the turn ran. A failed turn is recorded too, and still answers 500 so the sender's retry runs it again.
+  - **No owner channel received a delivery.** `web` has no receiver in the hub (nothing connects a WebChannel client), so it is no longer offered and is refused by name. ntfy refused the label's " · ". The label is now `Webhook <name> - <event>`, and ntfy gets it as a title folded to printable ASCII and cut to 120 characters.
+
+  Minors, fixed:
+  - **Plain text.** Every push goes as plain text: `to_plain` strips the markup and keeps each link's address in view. Telegram sends it with no parse mode, no link preview and no voice note; a note would also take the chat's pending voice turn.
+  - **A per-hook cap.** A hook pushes at most 30 times an hour. The cap is per process and counts every attempt; a push over it is noted, not sent.
+  - **Deliver only** needs a channel: deliver-only with the log is refused on create and on PATCH, with the reason, and the panel says so before sending. A record from before the rule can still be switched off, and its delivery says the text was dropped.
+  - **Wording.** The quiet-hours and cut notes say where the whole text is: the session for a reply; for deliver-only or workflow text, that it was not kept.
+  - **Changes during the turn.** The hook and the receiver are read again before the push. A hook deleted or switched off, or a receiver switched off, stops it, and a new destination is used.
+  - **Workflows.** A workflow delivers its last step's output, or nothing when the run failed or its last step errored. Every exit after a call is counted records the outcome on the hook: a missing or invalid workflow, a run that raised, no text.
+  - **The receiver read** is single-flight (the others get the last state at once). A reset, a reseed or another store drops a read that was already running.
+  - **A missing receiver row** shows the hub's default ("on · not stored") and can be switched off.
+  - **A typed model id is free text:** `model-select` values are no longer written to the audit row.
+  - **Mutant survivors.** 35 of the reviewer's 42 surviving mutants were real gaps, and each now has a test.
+
+  Nits:
+  - CHN-170 notes that `{payload.x}` reads the body's own `x`;
+  - `useApi` keeps only the newest answer, so a stale "on" can no longer land;
+  - focus goes to the create form when a hook's row is gone;
+  - an untemplated delivery with no text has its own skip reason;
+  - `Content-Length` must be ASCII digits;
+  - the schema names the four destinations as an enum (`schema.gen.ts` regenerated);
+  - the `stored_events` docstring is corrected;
+  - the generation is bumped on a reset and on a store swap.
+
+  Correction to the second round's record: it re-stamped 40 rows, not 38. H315, `needs_review` after af9ba74f edited its test, was re-stamped too.
+
+  CI on fad8fd08 failed on `test_hermes_sprint_status`: H273's test file was edited after its hash was taken. It is re-stamped here.
+
+  Mutation: 92 mutants of the new guards and of the reviewer's survivors (70 backend, 19 panel and Interop, 3 /v1):
+  - 89 were caught at once;
+  - two survivors got tests: a slow failed receiver read, and a reset while a read ran;
+  - the third was equivalent, so its redundant strip was removed.
+
+  Records:
+  - H153 rewritten and back to equivalent;
+  - H157 no longer says the audit carries a model id, and no longer contradicts itself on the reseed's audit row;
+  - H200's counts updated, and H659 notes the push cap;
+  - 32 drifted rows re-read and re-stamped (H683's shorthand checked by hand);
+  - build-queue notes updated;
+  - test manual CHN-170 to 174 rewritten, and new CHN-176 to 179;
+  - `schema.gen.ts` regenerated with openapi-typescript 7.13.0.
+
+  Tests:
+  - backend 14,031 → 14,111 (`tests/test_h153c_webhook_sends.py` 80);
+  - vitest 1,410 → 1,425 (`webhooks-panel` 40 → 53, `interop-live-honesty` 12 → 14);
+  - the /v1 `tools.test.js` 16 → 18.
 - 2026-09-24 H273 second adversarial review round (stays equivalent after the fixes, #1207). H153 back to partial (headline 140 → 139/697).
 
   The review found one major, fixed: the doctor sent `JARVIS_ADMIN_TOKEN` to whatever answered at the hub address, following a cross-origin redirect or going through an `http_proxy`. Now every request to the hub goes through `doctor.hub_open`, which refuses redirects and never goes through a proxy to a loopback hub. The route is asked without the credential first, and the credential follows a refusal only to a hub on this machine.

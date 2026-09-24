@@ -8,19 +8,28 @@
 
    The HUD parity gate globs every .tsx under frontend/src, so a panel in its own file
    counts as a real caller exactly like an inline one. */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiGet, apiPost } from './api/client';
 
+/** One GET, reloadable. Only the newest request's answer is kept: a slow answer to an
+    earlier read never overwrites a newer one (H153 review: a stale "on"). `status` is
+    the failed read's HTTP status (0 when it never reached the hub). */
 export function useApi(path, auto = true, admin = false) {
   const [d, setD] = useState(null);
   const [e, setE] = useState(null);
+  const [status, setStatus] = useState(0);
   const [loading, setLoading] = useState(false);
+  const latest = useRef(0);
   const reload = useCallback(() => {
+    const mine = ++latest.current;
     setLoading(true);
-    apiGet(path, admin ? { admin: true } : undefined).then((r) => { setD(r); setE(null); }).catch((err) => setE(err?.message || 'offline')).finally(() => setLoading(false));
+    apiGet(path, admin ? { admin: true } : undefined)
+      .then((r) => { if (mine === latest.current) { setD(r); setE(null); setStatus(0); } })
+      .catch((err) => { if (mine === latest.current) { setE(err?.message || 'offline'); setStatus(Number(err?.status) || 0); } })
+      .finally(() => { if (mine === latest.current) setLoading(false); });
   }, [path, admin]);
   useEffect(() => { if (auto) reload(); }, [auto, reload]);
-  return { d, e, loading, reload };
+  return { d, e, status, loading, reload };
 }
 export const arr = (x, ...k) => (Array.isArray(x) ? x : (k.map((kk) => x && x[kk]).find(Array.isArray) || []));
 export const mono = { fontFamily: 'var(--font-mono)', fontSize: 11 };

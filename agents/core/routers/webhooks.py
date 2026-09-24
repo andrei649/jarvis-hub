@@ -9,26 +9,34 @@ set on create or by PATCH, and the receiver switch (setting
 ``webhooks.receiver_enabled``) that refuses every delivery at once.
 
 H153 review: where a delivery goes (``deliver``: the log, or one of the owner's own
-direct-send channels through ``send_to_target``; ``deliver_only`` skips the agent; a
-push waits out quiet hours as a note on the hook), a description, a receiver switch
-that fails closed and is read off the event loop, and a body cap.
+channels through ``send_to_target``; ``deliver_only`` skips the agent; quiet hours hold
+a push, which is then noted on the hook), a description, a receiver switch that fails
+closed and is read off the event loop, and a body cap.
+
+H153 third round: a delivery reaches its channel for real (the quiet-hours rule ran for
+the first time), a push that fails is recorded on the hook and is never a 500 after the
+turn, the text goes as plain text, each hook is capped per hour, and the hook and the
+receiver are read again after the turn, before anything is pushed.
 """
 
 import asyncio
 import json
 import logging
 import time
+import unicodedata
 
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
+from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictStr, WithJsonSchema,
+                      model_validator)
 from pydantic.json_schema import SkipJsonSchema
 
 from agents.core.action_origin import INBOUND_ACTION_ORIGIN, bind_action_origin, reset_action_origin
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
+from agents.core.webhooks import DELIVER_CHOICES
 
 logger = logging.getLogger("jarvis.webhooks")
 
@@ -66,7 +74,10 @@ def _destination(value: str) -> str:
 EventName = Annotated[StrictStr, AfterValidator(_event_name)]
 EventList = Annotated[list[EventName], Field(max_length=32)]
 PromptTemplate = Annotated[StrictStr, Field(max_length=2_000)]
-Destination = Annotated[StrictStr, AfterValidator(_destination)]
+# The schema names the choices; the validator (not an enum) gives a refused Hermes
+# destination its own reason.
+Destination = Annotated[StrictStr, AfterValidator(_destination),
+                        WithJsonSchema({"type": "string", "enum": list(DELIVER_CHOICES)})]
 Description = Annotated[StrictStr, Field(max_length=500)]
 
 
@@ -83,6 +94,15 @@ class WebhookCreateBody(BaseModel):
     deliver: Destination = "log"                       # H153 review — where the result goes
     deliver_only: StrictBool = False                   # H153 review — skip the agent
     description: Description = ""
+
+    @model_validator(mode="after")
+    def _somewhere_to_go(self):
+        from agents.core.webhooks import delivery_problem
+
+        problem = delivery_problem(self.deliver, self.deliver_only)
+        if problem:
+            raise ValueError(problem)
+        return self
 
 
 class WebhookUpdateBody(BaseModel):
@@ -173,8 +193,17 @@ async def update_webhook(hook_id: str, body: WebhookUpdateBody):
     """Switch a hook on or off, or change its event list or prompt template (H153).
     It keeps its token; a disabled hook refuses every delivery after authentication."""
     changes = {name: getattr(body, name) for name in body.model_fields_set}
+    store = _get_webhook_store()
+    current = store.get(hook_id)
+    if current is not None and ("deliver" in changes or "deliver_only" in changes):
+        from agents.core.webhooks import delivery_problem
+
+        problem = delivery_problem(changes.get("deliver", store.destination(current)),
+                                   changes.get("deliver_only", store.delivers_only(current)))
+        if problem:      # a fixed sentence, not exception text
+            return nocache_json({"error": problem}, status_code=422)
     try:
-        rec = _get_webhook_store().update(hook_id, **changes)
+        rec = store.update(hook_id, **changes)
     except ValueError as exc:
         return error_json(exc, 422, "invalid webhook change")
     if rec is None:
@@ -221,7 +250,7 @@ async def _receiver_refusal():
 async def _capped_body(request: Request):
     """The raw body, or None when it is larger than :data:`MAX_BODY_BYTES`."""
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+    if declared.isascii() and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         return None
     chunks, size = [], 0
     async for chunk in request.stream():
@@ -232,66 +261,138 @@ async def _capped_body(request: Request):
     return b"".join(chunks)
 
 
+#: The router's clock (seconds since the epoch): quiet hours read the local hour from it.
+_now = time.time
+
+
 def _quiet_hours(orch) -> bool:
-    """The owner's night, as the jobs read it (ambient.quiet_hours_start/end)."""
+    """The owner's night, as the jobs read it: ``ambient.quiet_hours_start`` to
+    ``ambient.quiet_hours_end`` (22 to 7 by default), hours taken modulo 24, on the
+    router's clock."""
     from agents.core.autonomy.jobs import (
         DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING)
-    from agents.core.autonomy.worker import is_night
+    from agents.core.autonomy.schedule_runtime import is_night
 
     get_setting = getattr(orch, "get_setting", None)
 
     def hour(key, default):
         try:
             value = get_setting(key, default) if callable(get_setting) else default
-            return int(value)
+            return int(value) % 24
         except (TypeError, ValueError):
             return default
 
-    return is_night(time.localtime().tm_hour, start=hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
+    return is_night(time.localtime(_now()).tm_hour, start=hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
                     end=hour(QUIET_END_SETTING, DEFAULT_QUIET_END))
 
 
-_CUT_NOTE = "… (cut: the whole reply is in the session)"
+#: Where the whole text of a delivery is kept, by what produced it: ``(the quiet-hours
+#: note, the cut note)``. An agent's reply is in its session; the rendered text of a
+#: deliver-only hook and a workflow's output are not kept by this route.
+_KEPT = {
+    True: ("the reply is in the session", "the whole reply is in the session"),
+    False: ("the text was not kept", "the rest was not kept"),
+}
 
 
-async def _deliver(orch, store, hook: dict, text: str, event: str) -> dict:
-    """H153 review — send a delivery's result where the hook says, and note how it went.
+def _ascii_title(text: str) -> str:
+    """*text* as printable ASCII (a letter keeps its base, anything else is "?")."""
+    folded = unicodedata.normalize("NFKD", text)
+    return "".join(ch if ch.isascii() else "?" for ch in folded if not unicodedata.combining(ch))
 
-    The log is the reply in the sender's response and the session: nothing to send. An
-    owner channel gets the text through ``send_to_target`` (audited, rate-limited, the
-    owner's own destination only), labelled as the hook, cut to what the channel
-    carries. A push channel stays silent through quiet hours and says so."""
-    from agents.core.channels import outbound
-    from agents.core.webhooks import DELIVER_LOG, PUSH_CHANNELS, _event_name
 
-    channel = store.destination(hook)
-    if channel == DELIVER_LOG:
-        store.mark_delivered(hook["id"], channel, True)
-        return {"channel": channel, "ok": True}
-    if channel in PUSH_CHANNELS and _quiet_hours(orch):
-        reason = "quiet hours: not pushed; the reply is in the session"
-        store.mark_delivered(hook["id"], channel, False, reason)
-        return {"channel": channel, "ok": False, "reason": reason}
-    label = _event_name(str(hook.get("name") or hook.get("target") or "webhook"), 80)
-    subject = f"Webhook {label}" + (f" · {_event_name(event, 64)}" if event else "")
-    room = outbound.MAX_TEXT_CHARS - len(subject) - 2
-    body = str(text or "")
-    if len(body) > room:
-        body = body[:room - len(_CUT_NOTE)] + _CUT_NOTE
-    result = await outbound.send_to_target(orch, channel, body, subject=subject, source=f"webhook:{hook['id']}")
-    ok = bool(result.get("ok"))
-    reason = "" if ok else str(result.get("reason") or "not delivered")
-    store.mark_delivered(hook["id"], channel, ok, reason)
+def _record(store, hook_id: str, channel: str, ok: bool, reason: str = "") -> dict:
+    """Note a delivery's outcome on the hook (a note that cannot be saved is logged, not
+    raised: the delivery happened either way) and answer it."""
+    try:
+        store.mark_delivered(hook_id, channel, ok, reason)
+    except Exception:
+        logger.warning("webhook %s: the delivery outcome could not be saved", hook_id, exc_info=True)
     return {"channel": channel, "ok": True} if ok else {"channel": channel, "ok": False, "reason": reason}
 
 
-def _workflow_text(pipeline, result) -> str:
-    """The last step's output: what a workflow run hands on."""
+async def _deliver(orch, store, hook: dict, text: str, event: str, *, in_session: bool) -> dict:
+    """Send a delivery's result where the hook says, and note how it went. Never raises:
+    whatever fails is recorded on the hook and answered, so a sender is never told 500
+    after its turn ran. *in_session* is whether the whole text is in a session (an
+    agent's reply) or kept nowhere (deliver-only text, a workflow's output)."""
+    try:
+        return await _push(orch, store, hook, text, event, in_session=in_session)
+    except Exception as exc:
+        logger.warning("webhook %s: the delivery failed", hook.get("id"), exc_info=True)
+        return _record(store, hook["id"], store.destination(hook), False, f"the delivery failed: {type(exc).__name__}")
+
+
+async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: bool) -> dict:
+    from agents.core.channels import outbound
+    from agents.core.channels.render import to_plain
+    from agents.core.webhooks import DELIVER_LOG, PUSH_CHANNELS, PUSHES, RECEIVER, _event_name
+
+    hook_id = hook["id"]
+    # The turn can take minutes: what the owner did meanwhile (switched the hook or the
+    # receiver off, deleted the hook, moved it to another channel) decides the push.
+    live = store.get(hook_id)
+    if live is None:
+        return {"channel": store.destination(hook), "ok": False,
+                "reason": "the hook was deleted before its delivery: not sent"}
+    channel = store.destination(live)
+    if channel == DELIVER_LOG:
+        if store.delivers_only(hook):
+            return _record(store, hook_id, channel, False,
+                           "deliver only to the log keeps nothing: the text was dropped")
+        return _record(store, hook_id, channel, True)
+    if not store.is_enabled(live):
+        return _record(store, hook_id, channel, False, "the hook was switched off before its delivery: not sent")
+    receiver = await asyncio.to_thread(RECEIVER.state)
+    if receiver is not True:
+        return _record(store, hook_id, channel, False,
+                       "the webhook receiver was switched off before this delivery: not sent" if receiver is False
+                       else "the webhook receiver's state cannot be read: not sent")
+    kept, rest = _KEPT[in_session]
+    if channel in PUSH_CHANNELS and _quiet_hours(orch):
+        return _record(store, hook_id, channel, False, f"quiet hours: not pushed; {kept}")
+    if not PUSHES.allow(hook_id):
+        return _record(store, hook_id, channel, False,
+                       f"over this hook's push limit ({PUSHES.limit} an hour): not pushed; {kept}")
+    label = _event_name(str(live.get("name") or live.get("target") or "webhook"), 80)
+    subject = f"Webhook {label}" + (f" - {_event_name(event, 64)}" if event else "")
+    if channel == "ntfy":                        # a title is an HTTP header: printable ASCII
+        subject = _ascii_title(subject)[:outbound.NTFY_TITLE_CHARS]   # send_to_target strips it
+    # Plain text: the sender wrote it, or steered the turn that did, so no markup is
+    # rendered and a link shows its address.
+    body = to_plain(str(text or ""))
+    room = outbound.MAX_TEXT_CHARS - len(subject) - 2
+    if len(body) > room:
+        note = f"… (cut: {rest})"
+        body = body[:room - len(note)] + note
+    result = await outbound.send_to_target(orch, channel, body, subject=subject, source=f"webhook:{hook_id}",
+                                           plain=True)
+    ok = bool(result.get("ok"))
+    return _record(store, hook_id, channel, ok, "" if ok else str(result.get("reason") or "not delivered"))
+
+
+def _workflow_output(pipeline, result) -> tuple[str, str]:
+    """``(text, "")``, the last step's output, which is what a workflow run hands on; or
+    ``("", why)`` when there is none. A run that failed delivers nothing: an earlier
+    step's output is not the run's result. A step with no output did not run (the run
+    stopped early), so the last step that ran is the one read."""
+    from agents.core.webhooks import _event_name
+
+    if not isinstance(result, dict):
+        return "", "the workflow returned no result"
+    if result.get("_ok") is False:
+        failed = [_event_name(step, 64) for step in result.get("_errors") or [] if isinstance(step, str)]
+        return "", "the workflow run failed" + (f" at {', '.join(failed)}" if failed else "") + ": nothing delivered"
     for step in reversed(list(getattr(pipeline, "steps", None) or [])):
-        out = result.get(getattr(step, "id", None)) if isinstance(result, dict) else None
-        if isinstance(out, str) and out and not out.startswith("[error:"):
-            return out
-    return ""
+        out = result.get(getattr(step, "id", None))
+        if out is None:
+            continue
+        if isinstance(out, str) and out.startswith("[error:"):
+            return "", "the workflow's last step failed: nothing delivered"
+        if isinstance(out, str) and out.strip():
+            return out, ""
+        return "", "the workflow's last step produced no text"
+    return "", "the workflow produced no text"
 
 
 def _skipped(store, hook_id: str, event: str, reason: str):
@@ -363,29 +464,42 @@ async def trigger_webhook(hook_id: str, request: Request):
     template = live.get("prompt") if isinstance(live.get("prompt"), str) else ""
     text = render_prompt(template, payload, event) if template else extract_input(payload)
     if not text.strip():
-        return _skipped(store, hook_id, event, "the prompt template rendered nothing")
+        return _skipped(store, hook_id, event,
+                        "the prompt template rendered nothing" if template else "the delivery carries no text")
     store.mark_called(hook_id)
+    # From here every way out notes the delivery's outcome on the hook, so the detail
+    # pane never shows an earlier success for a call that delivered nothing.
+    channel = store.destination(live)
 
     if store.delivers_only(live):
         # Deliver only: the rendered text goes where the hook says, and no turn runs.
-        delivery = await _deliver(orch, store, live, text, event)
+        delivery = await _deliver(orch, store, live, text, event, in_session=False)
         return nocache_json({"ok": True, "target": hook["target"], "delivery": delivery})
 
     if hook["target_type"] == "agent":
-        reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
-        delivery = await _deliver(orch, store, live, reply if isinstance(reply, str) else str(reply), event)
+        try:
+            reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
+        except Exception as exc:
+            # The turn did not finish: say so on the hook, and let the sender's retry run it.
+            _record(store, hook_id, channel, False, f"the turn failed: {type(exc).__name__}")
+            raise
+        delivery = await _deliver(orch, store, live, reply if isinstance(reply, str) else str(reply), event,
+                                  in_session=True)
         return nocache_json({"ok": True, "target": hook["target"], "response": reply, "delivery": delivery})
 
     # workflow target (requires the workflow engine)
     engine = getattr(orch, "workflow_engine", None)
     if engine is None or not hasattr(engine, "run"):
+        _record(store, hook_id, channel, False, "workflow execution is not available on this hub")
         return nocache_json({"error": "workflow execution not available"}, status_code=501)
     from agents.core.routers.workflows import resolve_pipeline
     try:
         pipeline = resolve_pipeline(orch, hook["target"])
     except Exception as exc:
+        _record(store, hook_id, channel, False, "the stored workflow is invalid")
         return error_json(exc, 200, "invalid stored pipeline", extra={"ok": False, "target": hook["target"]})
     if pipeline is None:
+        _record(store, hook_id, channel, False, "workflow not found")
         return nocache_json({"ok": False, "error": "workflow not found", "target": hook["target"]}, status_code=404)
     # The text came from outside, so every step the workflow runs is an inbound turn.
     # The engine runs its steps through handle_input on the ``workflow`` channel,
@@ -395,11 +509,12 @@ async def trigger_webhook(hook_id: str, request: Request):
     try:
         result = await engine.run(pipeline, initial_input=text)
     except Exception as exc:
+        _record(store, hook_id, channel, False, f"the workflow run failed: {type(exc).__name__}")
         return error_json(exc, 200, "workflow run failed", extra={"ok": False, "target": hook["target"]})
     finally:
         reset_action_origin(origin_token)
-    out = _workflow_text(pipeline, result)
-    delivery = await _deliver(orch, store, live, out, event) if out else {
-        "channel": store.destination(live), "ok": False, "reason": "the workflow produced no text"}
-    return nocache_json({"ok": result.get("_ok", True), "target": hook["target"], "result": result,
-                         "delivery": delivery})
+    out, why = _workflow_output(pipeline, result)
+    delivery = (await _deliver(orch, store, live, out, event, in_session=False) if out
+                else _record(store, hook_id, channel, False, why))
+    ran_ok = result.get("_ok", True) if isinstance(result, dict) else False
+    return nocache_json({"ok": ran_ok, "target": hook["target"], "result": result, "delivery": delivery})

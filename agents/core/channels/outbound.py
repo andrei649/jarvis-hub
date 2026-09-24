@@ -165,13 +165,18 @@ def _with_subject(name: str, body: str, subject: str, kwargs: dict[str, Any]) ->
 
 
 async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "",
-                         source: str = "api") -> dict:
+                         source: str = "api", plain: bool = False) -> dict:
     """Send *text* to a configured destination. Never raises; every outcome is a dict.
 
     ``{"ok": True, "channel": …, "audited": bool}`` or
     ``{"ok": False, "reason": …}``. ``audited`` is reported rather than assumed: an
     unaudited send is a real (small) governance gap and the caller should be able to see
     it, not discover it later from an empty log. *subject* is optional and one line.
+
+    *plain* marks a notice whose text came from outside (a webhook's sender, or a turn
+    it steered): Telegram shows it as it is, with no markup rendered, no link preview
+    and no voice note (which would also take the chat's pending voice turn). ntfy is
+    plain already, and voice only speaks.
     """
     body = str(text or "").strip()
     if not body:
@@ -185,6 +190,8 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
     if kwargs is None:
         return {"ok": False, "reason": reason}
     body, kwargs = _with_subject(name, body, title, kwargs)
+    if plain and name == "telegram":
+        kwargs = {**kwargs, "plain": True, "voice": False}
     if len(body) > MAX_TEXT_CHARS:
         return {"ok": False, "reason": f"the message is longer than {MAX_TEXT_CHARS} characters"}
 

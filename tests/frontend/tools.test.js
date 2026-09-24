@@ -254,7 +254,7 @@ describe('Webhooks panel', () => {
     const calls = [];
     const fetch = vi.fn((url, init = {}) => {
       calls.push({ url, admin: (init.headers || {})['X-Admin-Token'] });
-      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true, deliver: 'web' }] });
+      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true, deliver: 'telegram' }] });
       if (url === '/api/admin/settings/webhooks') return json({ webhooks: [{ key: 'receiver_enabled', value: false }] });
       return json({});
     });
@@ -267,7 +267,37 @@ describe('Webhooks panel', () => {
     const text = container.querySelector('.console-content').textContent;
     expect(calls.find((c) => c.url === '/api/admin/settings/webhooks').admin).toBe('adm');
     expect(text).toContain('Receiver off: every delivery is refused');
-    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off) · deliver to web');
+    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off) · deliver to telegram');
+  });
+
+  // H153 third round — only a literal true is on, and a read that failed is "not read",
+  // never a guessed "on".
+  async function openWithReceiver(settings) {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true }] });
+      if (url === '/api/admin/settings/webhooks') return settings();
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    return container.querySelector('.console-content').textContent;
+  }
+
+  it('reads a stored receiver value that is not literally true as off', async () => {
+    const text = await openWithReceiver(() => json({ webhooks: [{ key: 'receiver_enabled', value: 'yes' }] }));
+    expect(text).toContain('Receiver off: every delivery is refused');
+    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off)');
+  });
+
+  it('says the receiver was not read when its read fails, never "on"', async () => {
+    const text = await openWithReceiver(() => json({ error: 'boom' }, { ok: false, status: 500 }));
+    expect(text).toContain('Receiver: not read');
+    expect(text).not.toContain('Receiver: on');
   });
 
   it('shows a token hook its token', async () => {

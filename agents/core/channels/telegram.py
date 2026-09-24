@@ -250,13 +250,19 @@ class TelegramChannel(ChannelAdapter):
         Telegram still rejects a chunk's markup (HTTP 400), the same chunk is sent again as
         plain text — the words always arrive; the formatting is best effort. Returns True
         only when every chunk was delivered, in order.
+
+        ``plain=True`` sends every chunk as it is, never rendered and with no link
+        preview: a notice whose text came from outside (a webhook's sender) must not
+        become markup, least of all a link that hides its address.
         """
         cid = chat_id or kwargs.get("chat_id")
         if not cid:
             logger.warning("No chat_id provided for Telegram send")
             return False
+        plain = kwargs.get("plain") is True
         for piece in chunk(str(message or ""), self.descriptor.max_message_length):
-            if not await self._send_chunk(cid, piece):
+            sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
+            if not sent:
                 return False
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo) that is never spoken.
@@ -309,6 +315,18 @@ class TelegramChannel(ChannelAdapter):
             return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
+            return False
+
+    async def _send_plain_chunk(self, cid, piece: str) -> bool:
+        """One chunk as plain text: no parse mode, no link preview. False on any failure
+        (logged by type only: an HTTP error names the URL, and the URL holds the token)."""
+        try:
+            resp = await self.client.post(f"{self.api_base}/sendMessage", json={
+                "chat_id": cid, "text": piece, "link_preview_options": {"is_disabled": True}})
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
     async def _send_message(self, cid, html_text: str, *, plain: str) -> Optional[int]:

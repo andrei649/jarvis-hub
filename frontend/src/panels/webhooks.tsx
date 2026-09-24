@@ -22,7 +22,12 @@
    H153 review — where a delivery goes (Deliver to: the log, or one of the owner's own
    channels; "deliver only" skips the agent), a description, the last delivery, and a
    receiver row that never shows a stale or unread state as on: a failed read says why,
-   and ↻ re-reads it with the list. */
+   and ↻ re-reads it with the list.
+
+   H153 third round — the channels offered are the ones something receives (web is not
+   one), deliver only needs one of them, a receiver row the store does not hold yet is
+   the hub's default (on) and can be switched off, and a hook that vanished hands focus
+   to the create form. */
 import React, { useEffect, useRef, useState } from 'react';
 import { appUrl } from '../base-path';
 import { apiDelete, apiPatch, apiPost, apiPut } from '../api/client';
@@ -30,8 +35,12 @@ import { Card, Row, State, Tag, arr, asLive, inpS, mono, refusalReason, taS, use
 
 const HOOKS_PATH = '/api/webhooks';
 const RECEIVER_PATH = '/api/admin/settings/webhooks';
-/** Where a delivery can go: the log, or the owner's own direct-send channels. */
-export const DESTINATIONS = ['log', 'telegram', 'web', 'voice', 'ntfy'];
+/** Where a delivery can go: the log, or the owner's own channels that something
+    receives. The web channel is not one: nothing in the hub receives a push there. */
+export const DESTINATIONS = ['log', 'telegram', 'voice', 'ntfy'];
+export const DELIVER_ONLY_NEEDS_A_CHANNEL = 'deliver only needs a channel: with log the sender’s text would go nowhere';
+const PUSH_NOTE = 'A push is plain text (no formatting; a link shows its address), is not sent in quiet hours, '
+  + 'and a hook sends at most 30 an hour.';
 const RECEIVER = ':receiver';   // its pending key; hook ids are URL-safe and never start with ':'
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const SR_ONLY: React.CSSProperties = {
@@ -181,8 +190,12 @@ export function WebhooksPanel() {
   // A failed re-read drops what was read before: a stale "on" is not shown as the state.
   const receiverRow = receiver.e ? undefined
     : arr(receiver.d, 'webhooks').find((row: any) => row && row.key === 'receiver_enabled');
+  // The store holds no row for it (404): the hub reads the declared default, on, and a
+  // write creates the row, so switching it off is offered.
+  const receiverMissing = !!receiver.e && receiver.status === 404;
   // The hub treats only a literal true as on (it fails closed), and so does this row.
-  const receiverOn: boolean | null = receiverRow ? receiverRow.value === true : null;   // null: not read
+  const receiverOn: boolean | null = receiverRow ? receiverRow.value === true
+    : receiverMissing ? true : null;   // null: not read
   const receiverOdd = !!receiverRow && typeof receiverRow.value !== 'boolean';
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
@@ -223,6 +236,10 @@ export function WebhooksPanel() {
       setNote(`name the ${targetType} this webhook runs`);
       return;
     }
+    if (deliverOnly && deliver === 'log') {
+      setNote(DELIVER_ONLY_NEEDS_A_CHANNEL);
+      return;
+    }
     setBusy(true);
     apiPost(HOOKS_PATH, { name: name.trim(), target: target.trim(), target_type: targetType, signed,
       events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description: description.trim() },
@@ -242,35 +259,60 @@ export function WebhooksPanel() {
       .catch(refused)
       .finally(() => setBusy(false));
   };
+  // A hook that is gone (deleted here or elsewhere) takes its row, and the focused button
+  // with it, on the reload: focus goes to the create form, which stays.
   const toggle = (hook: any) => {
     hold(hook.id, true);
+    let gone = false;
     apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { enabled: !hook.enabled }, { admin: true })
       .then(() => setNote(''))
-      .catch((err: any) => (err && err.status === 404 ? setNote(`${hookName(hook)} no longer exists`) : refused(err)))
-      .finally(() => { hold(hook.id, false); list.reload(); });
+      .catch((err: any) => {
+        if (err && err.status === 404) {
+          gone = true;
+          setNote(`${hookName(hook)} no longer exists`);
+        } else {
+          refused(err);
+        }
+      })
+      .finally(() => { hold(hook.id, false); list.reload(); if (gone) setFocusKey('create'); });
   };
   const remove = (hook: any) => {
     hold(hook.id, true);
+    let gone = false;
     apiDelete(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { admin: true })
-      .then(() => { setConfirming(''); setNote(''); })
+      .then(() => { gone = true; setConfirming(''); setNote(''); })
       .catch((err: any) => {
         if (err && err.status === 404) {
+          gone = true;
           setConfirming('');
           setNote(`${hookName(hook)} was already deleted`);
         } else {
           refused(err);
         }
       })
-      .finally(() => { hold(hook.id, false); list.reload(); });
+      .finally(() => { hold(hook.id, false); list.reload(); if (gone) setFocusKey('create'); });
   };
   const save = (hook: any, change: SubscriptionChange) => {
+    if (change.deliver_only && change.deliver === 'log') {
+      setNote(DELIVER_ONLY_NEEDS_A_CHANNEL);
+      return;
+    }
     hold(hook.id, true);
+    let gone = false;
     apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, change, { admin: true })
       .then(() => setNote(`${hookName(hook)} saved`))
-      .catch((err: any) => (err && err.status === 404 ? setNote(`${hookName(hook)} no longer exists`) : refused(err)))
+      .catch((err: any) => {
+        if (err && err.status === 404) {
+          gone = true;
+          setNote(`${hookName(hook)} no longer exists`);
+        } else {
+          refused(err);
+        }
+      })
       // The editor re-mounts with what the hub stored, taking the focused button with
-      // it: focus goes to the hook's own row button, which stays.
-      .finally(() => { hold(hook.id, false); list.reload(); setFocusKey(`open:${hook.id}`); });
+      // it: focus goes to the hook's own row button, which stays (or to the create form
+      // when the hook is gone).
+      .finally(() => { hold(hook.id, false); list.reload(); setFocusKey(gone ? 'create' : `open:${hook.id}`); });
   };
   const switchReceiver = () => {
     if (receiverOn === null) return;
@@ -290,7 +332,8 @@ export function WebhooksPanel() {
       <Row>
         <span style={mono}>receiver</span>
         <Tag c={receiverOn === false ? 'var(--amber)' : receiverOn ? 'var(--green)' : undefined}>
-          {receiverOn === null ? (receiver.e ? `not read · ${receiver.e}` : 'not read') : receiverOn ? 'on' : 'off'}
+          {receiverOn === null ? (receiver.e ? `not read · ${receiver.e}` : 'not read')
+            : receiverMissing ? 'on · not stored (the default)' : receiverOn ? 'on' : 'off'}
         </Tag>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>takes effect at once, no restart</span>
         <span style={{ marginLeft: 'auto' }}>
@@ -402,8 +445,9 @@ export function WebhooksPanel() {
                     : `the reply goes to ${hook.deliver || 'log'}`}
                   {' · '}{lastDelivery(hook)}
                 </div>
-                <div>{hook.deliver_only === true ? 'The sender’s text reaches you as is, labelled with this hook.'
+                <div>{hook.deliver_only === true ? 'The sender’s text reaches you labelled with this hook.'
                   : 'Each delivery runs as an inbound, untrusted turn.'}</div>
+                {hook.deliver && hook.deliver !== 'log' ? <div>{PUSH_NOTE}</div> : null}
                 <Subscription key={`${hook.id}:${hook.events_unreadable ? '!' : arr(hook, 'events').join(',')}:${hook.prompt || ''}:${hook.deliver}:${hook.deliver_only}:${hook.description || ''}`}
                   hook={hook} label={label} held={held} onSave={(change) => save(hook, change)} />
               </div>

@@ -89,13 +89,15 @@ class AdminPutBody(BaseModel):
 
 #: Setting kinds whose value is a choice, never a secret: a switch, a pick from a list,
 #: a number. The audit row says what such a key became (H153 review: "when was the
-#: webhook receiver off?" had no answer in a row that named only the key).
-_VALUE_AUDITED_KINDS = frozenset({"toggle", "select", "number", "slider", "model-select"})
+#: webhook receiver off?" had no answer in a row that named only the key). A model id is
+#: typed, not picked (``model-select`` takes any string), so it is free text: a pasted
+#: key would land in the row.
+_VALUE_AUDITED_KINDS = frozenset({"toggle", "select", "number", "slider"})
 
 
 def _audited_values(category: str, values: dict) -> str:
     """``key=value`` for the keys whose declared kind is a choice; never a secret key,
-    never free text (a URL or a note can carry a credential)."""
+    never free text (a URL, a note or a typed model id can carry a credential)."""
     from agents.core import settings_db
 
     kinds = {(row["category"], row["key"]): row.get("kind") for row in settings_db.DEFAULTS}

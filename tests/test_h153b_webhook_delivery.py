@@ -6,10 +6,10 @@ The review of the H153 build found two majors:
   Telegram, Discord, Slack, email, a GitHub comment) and can skip the agent (deliver
   only). Nerva's hook answered only the sender. Now a hook has ``deliver`` — ``log``
   (the default: the reply stays in the response and the session) or one of the owner's
-  own direct-send channels (telegram, web, voice, ntfy) — and ``deliver_only``, which
-  sends the rendered text without a turn. The send is the audited, rate-limited
-  ``send_to_target``; a push to the owner's phone waits out quiet hours as a note on the
-  hook, never a buzz. The Hermes destinations Nerva does not offer are refused by name:
+  own channels (telegram, voice, ntfy; ``web`` was dropped in the third round, nothing
+  receives it) — and ``deliver_only``, which sends the rendered text without a turn.
+  The send is the audited ``send_to_target``; quiet hours hold a push, which is noted on
+  the hook, never a buzz. The Hermes destinations Nerva does not offer are refused by name:
   email (an inbound delivery never gains an outbound mail side effect), a GitHub
   comment (a write to someone else's system goes through governed write-back, one
   approval each), Discord and Slack (reply-only transports here, no home channel).
@@ -24,6 +24,9 @@ lists a hand edit broke read as unreadable, rendering whose work is bounded, a b
 event names that are not cut to fit, commas refused in names, an empty render skipped,
 ``{payload.x}`` for a payload key the template reserves, and a create that refuses fields
 it does not know.
+
+The fakes here (``sends``, ``daytime``) stand in for the send and the clock; the real path,
+down to each channel's adapter, is ``test_h153c_webhook_sends.py``.
 """
 import json
 import sqlite3
@@ -65,8 +68,8 @@ def sends(monkeypatch):
 
     calls, answer = [], {"value": None}
 
-    async def send_to_target(orch, channel, text, *, subject="", source="api"):
-        calls.append({"channel": channel, "text": text, "subject": subject, "source": source})
+    async def send_to_target(orch, channel, text, *, subject="", source="api", **kwargs):
+        calls.append({"channel": channel, "text": text, "subject": subject, "source": source, **kwargs})
         return answer["value"] or {"ok": True, "channel": channel, "audited": True}
 
     monkeypatch.setattr(outbound, "send_to_target", send_to_target)
@@ -98,15 +101,15 @@ def test_a_hook_keeps_its_reply_in_the_log_unless_told_otherwise(hub, sends, day
 
 def test_a_reply_goes_to_the_owners_channel_labelled_as_the_hook(hub, sends, daytime):
     client, _events, turns = hub
-    hook = _hook(client, name="ci", deliver="web", description="builds on main")
+    hook = _hook(client, name="ci", deliver="telegram", description="builds on main")
     reply = _post(client, hook, {"text": "build 12 failed"}, **{"X-GitHub-Event": "check_run"})
     assert reply.status_code == 200 and turns == ["build 12 failed"]
     calls, _ = sends
-    assert calls == [{"channel": "web", "text": "done", "subject": "Webhook ci · check_run",
-                      "source": f"webhook:{hook['id']}"}]
-    assert reply.json()["delivery"] == {"channel": "web", "ok": True}
+    assert calls == [{"channel": "telegram", "text": "done", "subject": "Webhook ci - check_run",
+                      "source": f"webhook:{hook['id']}", "plain": True}]
+    assert reply.json()["delivery"] == {"channel": "telegram", "ok": True}
     listed = _listed(client, hook["id"])
-    assert listed["last_delivery"]["channel"] == "web" and listed["last_delivery"]["ok"] is True
+    assert listed["last_delivery"]["channel"] == "telegram" and listed["last_delivery"]["ok"] is True
     assert listed["description"] == "builds on main"
 
 
@@ -120,12 +123,10 @@ def test_deliver_only_sends_the_rendered_text_and_runs_no_turn(hub, sends, dayti
     assert _listed(client, hook["id"])["calls"] == 1
 
 
-def test_deliver_only_to_the_log_runs_nothing_and_sends_nothing(hub, sends, daytime):
+def test_deliver_only_to_the_log_is_refused_it_would_keep_nothing(hub, sends, daytime):
     client, _events, turns = hub
-    hook = _hook(client, deliver_only=True)
-    reply = _post(client, hook, {"text": "noted"})
-    assert reply.status_code == 200 and turns == [] and sends[0] == []
-    assert reply.json()["delivery"] == {"channel": "log", "ok": True}
+    refused = client.post("/api/webhooks", json={"target": "jarvis", "deliver_only": True}, headers=_ADMIN)
+    assert refused.status_code == 422 and turns == [] and sends[0] == []
 
 
 @pytest.mark.parametrize("destination, reason", [
@@ -133,7 +134,7 @@ def test_deliver_only_to_the_log_runs_nothing_and_sends_nothing(hub, sends, dayt
     ("github_comment", "write-back"),
     ("discord", "reply-only"),
     ("slack", "reply-only"),
-    ("pigeon", "log, telegram, web, voice, ntfy"),
+    ("pigeon", "log, telegram, voice, ntfy"),
 ])
 def test_destinations_nerva_does_not_offer_are_refused_by_name(hub, destination, reason):
     client, _events, _turns = hub
@@ -153,8 +154,8 @@ def test_quiet_hours_keep_a_push_off_the_phone_and_say_so(hub, sends, daytime):
     delivery = reply.json()["delivery"]
     assert delivery["ok"] is False and "quiet hours" in delivery["reason"]
     assert "quiet hours" in _listed(client, pushed["id"])["last_delivery"]["reason"]
-    web = _hook(client, deliver="web")                     # the HUD wakes nobody
-    assert _post(client, web, {"text": "also at 3 am"}).json()["delivery"]["ok"] is True
+    logged = _hook(client)                                 # the log wakes nobody
+    assert _post(client, logged, {"text": "also at 3 am"}).json()["delivery"]["ok"] is True
 
 
 def test_a_send_that_fails_is_recorded_not_raised(hub, sends, daytime):
@@ -203,7 +204,7 @@ def test_a_workflow_result_is_delivered_too(hub, sends, daytime, monkeypatch):
     monkeypatch.setattr(orch.workflow_engine, "run", run)
     pipeline = SimpleNamespace(steps=[SimpleNamespace(id="fetch"), SimpleNamespace(id="summarize")])
     monkeypatch.setattr(workflows, "resolve_pipeline", lambda orch, target: pipeline)
-    hook = _hook(client, target_type="workflow", target="digest", deliver="web")
+    hook = _hook(client, target_type="workflow", target="digest", deliver="telegram")
     reply = _post(client, hook, {"text": "the week"})
     assert reply.status_code == 200
     assert [c["text"] for c in sends[0]] == ["summary of the week"]
@@ -236,7 +237,7 @@ def test_a_description_is_bounded(hub):
 
 def test_only_a_literal_true_skips_the_agent(tmp_path):
     store = WebhookStore(path=tmp_path / "wh.json")
-    rec = store.create("jarvis", deliver_only=True)
+    rec = store.create("jarvis", deliver="telegram", deliver_only=True)
     assert store.delivers_only(store.get(rec["id"])) is True
     for hand_edit in ("yes", 1, "true"):
         store._hooks[rec["id"]]["deliver_only"] = hand_edit
@@ -246,7 +247,7 @@ def test_only_a_literal_true_skips_the_agent(tmp_path):
 
 def test_a_hand_edited_destination_delivers_only_to_the_log(tmp_path):
     store = WebhookStore(path=tmp_path / "wh.json")
-    rec = store.create("jarvis", deliver="web")
+    rec = store.create("jarvis", deliver="ntfy")
     store._hooks[rec["id"]]["deliver"] = "email"          # a hand edit
     assert store.destination(store.get(rec["id"])) == "log"
     store._hooks[rec["id"]]["deliver"] = 7

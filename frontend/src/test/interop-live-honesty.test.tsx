@@ -95,12 +95,12 @@ describe('InteropMode renders what the sources said', () => {
 const ADMIN_ROUTES = ['/api/a2a/peers', '/api/admin/mcp', '/api/admin/widgets', '/api/webhooks'];
 const reply = (status, body) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) });
 
-function install(answer) {
+function install(answer, routes = ADMIN_ROUTES) {
   const seen = [];
   global.fetch = vi.fn(async (url, init = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, '').split('?')[0];
     const admin = (init.headers || {})['X-Admin-Token'];
-    if (ADMIN_ROUTES.includes(path)) {
+    if (routes.includes(path)) {
       seen.push({ path, admin: admin || null });
       if (admin !== 'admin-secret') return reply(401, { detail: 'admin token required' });
       return answer(path);
@@ -182,3 +182,34 @@ describe('Interop reads the webhook receiver', () => {
   });
 });
 
+
+/* H153 third round — the receiver is fetched by the shipped hook, with the admin
+   credential (the settings route is admin-only), and a receiver that was not read gets
+   its own note. */
+describe('useLiveModes reads the receiver with the admin credential', () => {
+  const SETTINGS = '/api/admin/settings/webhooks';
+
+  beforeEach(() => {
+    liveRef = null;
+    try { localStorage.clear(); localStorage.setItem('hud.admin_token', 'admin-secret'); } catch { /* ignore */ }
+    vi.spyOn(window, 'prompt').mockReturnValue('');
+  });
+
+  it('marks every switched-on hook refused when the hub says the receiver is off', async () => {
+    const seen = install((path) => (path === '/api/webhooks' ? reply(200, { webhooks: [HOOK] })
+      : path === SETTINGS ? reply(200, { webhooks: [{ key: 'receiver_enabled', value: false }] })
+        : reply(200, path === '/api/a2a/peers' ? { peers: [] } : path === '/api/admin/mcp' ? { servers: [] } : { widgets: [] })),
+    [...ADMIN_ROUTES, SETTINGS]);
+    render(<Harness />);
+    await waitFor(() => expect(liveRef && liveRef.live.INTEROP).toBe(true), { timeout: 8000 });
+    expect(seen.find((s) => s.path === SETTINGS)).toEqual({ path: SETTINGS, admin: 'admin-secret' });
+    expect(V2.INTEROP.receiver).toBe('off');
+    expect(V2.INTEROP.webhooks).toEqual([{ event: 'ci', dir: 'in', url: 'agent:jarvis', status: 'receiver off' }]);
+  }, 15000);
+
+  it('says the receiver was not read when its read failed', () => {
+    V2.INTEROP = hydrateInterop({ peers: [] }, { servers: [] }, { widgets: [] }, { webhooks: [HOOK] }, null);
+    render(<InteropMode t={{ interop: 'Interop' }} />);
+    expect(screen.getByTestId('interop-receiver').textContent).toBe('receiver not read: deliveries may be refused');
+  });
+});

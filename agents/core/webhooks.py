@@ -17,9 +17,9 @@ whose event is not on it is skipped, never run) and a prompt template that decid
 what the agent reads. ``delivery_event`` and ``render_prompt`` are the two halves.
 
 The H153 review added the rest: where a delivery goes (``deliver``: the log, or one of
-the owner's own direct-send channels; ``deliver_only`` skips the agent), a
-description, and :class:`ReceiverSwitch`, which reads the platform switch so that it
-fails closed.
+the owner's own channels that something receives; ``deliver_only`` skips the agent), a
+description, :class:`ReceiverSwitch`, which reads the platform switch so that it fails
+closed, and :class:`PushLimit`, which caps how often one hook may push.
 
 File-backed store (JSON under ``memory_logs/webhooks.json``), pure-Python and
 offline-testable. Tokens/signatures are compared with constant-time checks.
@@ -35,10 +35,10 @@ import re
 import secrets
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Optional, Union
 
-from agents.core.channels.outbound import DIRECT_SEND_CHANNELS
 from agents.core.paths import data_path
 
 from .persistence import JsonStore
@@ -62,12 +62,16 @@ _PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\}")
 
 # H153 review — where a delivery goes (Hermes' "Deliver to"). The log keeps the reply in
 # the sender's response and the session; every other destination is one of the owner's
-# own direct-send channels, reached through the audited, rate-limited send_to_target.
+# own direct-send channels that something receives, reached through the audited
+# send_to_target. A name is matched exactly: "Telegram" is not a destination.
 DELIVER_LOG = "log"
-DELIVER_CHOICES: tuple[str, ...] = (DELIVER_LOG, *DIRECT_SEND_CHANNELS)
-#: The channels that reach the owner's pocket or ears: quiet hours keep them silent.
-PUSH_CHANNELS = frozenset({"telegram", "voice", "ntfy"})
-#: Destinations a Hermes subscription offers that a Nerva hook refuses, and why.
+#: The owner's channels a delivery can reach. ``web`` is a direct-send channel too, but
+#: nothing in the hub connects a client to it, so a push there would never arrive.
+DELIVER_CHANNELS: tuple[str, ...] = ("telegram", "voice", "ntfy")
+DELIVER_CHOICES: tuple[str, ...] = (DELIVER_LOG, *DELIVER_CHANNELS)
+#: The channels that reach the owner's pocket or ears (all of them): quiet hours hold them.
+PUSH_CHANNELS = frozenset(DELIVER_CHANNELS)
+#: Destinations a Hermes subscription (or an earlier build) offers that a hook refuses, and why.
 REFUSED_DESTINATIONS = {
     "email": "email is never an outbound side effect of an inbound delivery "
              "(the rule ChannelManager.send keeps)",
@@ -75,7 +79,12 @@ REFUSED_DESTINATIONS = {
                       "proposes it through governed write-back, one approval each",
     "discord": "Discord is a reply-only transport here, with no home channel to address",
     "slack": "Slack is a reply-only transport here, with no home channel to address",
+    "web": "the HUD has no receiver for a pushed message yet (nothing connects a client to "
+           "the web channel), so a delivery there would never arrive; with log the reply "
+           "stays in the hook's session",
 }
+DELIVER_ONLY_NEEDS_A_CHANNEL = ("deliver only needs a channel: with log the sender's text "
+                                "would go nowhere")
 
 
 def destination_problem(value) -> str:
@@ -87,6 +96,12 @@ def destination_problem(value) -> str:
     if reason:
         return f"deliver={name} is not offered: {reason}"
     return f"deliver is one of {', '.join(DELIVER_CHOICES)}"
+
+
+def delivery_problem(deliver, deliver_only) -> str:
+    """"" when a hook may keep this pair, else why not: deliver-only runs no turn, so
+    with the log as its destination the text would be kept nowhere."""
+    return DELIVER_ONLY_NEEDS_A_CHANNEL if deliver_only is True and deliver == DELIVER_LOG else ""
 
 
 def compute_signature(secret: str, body: Union[bytes, str]) -> str:
@@ -239,6 +254,10 @@ class ReceiverSwitch:
       flood costs one read a second; a write in this process
       (``settings_db.put_category``, the settings route) is seen at once, and one from
       another process (``nerva config set``) within the TTL;
+    - the store is read by one caller at a time: while a read runs (a locked store takes
+      SQLite's busy timeout), every other caller gets the last state at once instead of
+      reading too, so a burst of deliveries cannot hold every worker thread;
+    - a read that a write, a reset or another store overtook while it ran is dropped;
     - :meth:`state` blocks on SQLite: call it off the event loop.
     """
 
@@ -246,19 +265,25 @@ class ReceiverSwitch:
         self._ttl = ttl
         self._clock = clock
         self._lock = threading.Lock()
+        self._generation = 0
+        self._reader: Optional[object] = None
         self.reset()
 
     def reset(self) -> None:
+        """Forget everything; a read still running when this lands is dropped."""
         with self._lock:
             self._known: Optional[bool] = None
             self._fresh_until = float("-inf")
-            self._generation = 0
+            self._generation += 1
+            self._reader = None
             self._source = ""
 
     def expire(self) -> None:
-        """The next :meth:`state` reads the store; the last state stays the fallback."""
+        """The next :meth:`state` reads the store; the last state stays the fallback, and a
+        read already running (which may predate what expired it) is dropped."""
         with self._lock:
             self._fresh_until = float("-inf")
+            self._generation += 1
 
     def written(self, value) -> None:
         """A write in this process: its value is the state, at once."""
@@ -275,16 +300,27 @@ class ReceiverSwitch:
         return str(getattr(settings_db, "DB_PATH", ""))
 
     def state(self) -> Optional[bool]:
-        """True on, False off, None never read and unreadable now."""
+        """True on, False off, None never read and unreadable now (or its first read is
+        still running)."""
         from agents.core import settings_db
 
         source = self._store_path()
         with self._lock:
             if source != self._source:            # another settings store: nothing known
                 self._known, self._fresh_until, self._source = None, float("-inf"), source
-            if self._clock() < self._fresh_until:
+                self._generation += 1             # a read of the old store must not land
+            if self._clock() < self._fresh_until or self._reader is not None:
                 return self._known
             generation = self._generation
+            reader = self._reader = object()
+        try:
+            return self._read(settings_db, generation)
+        finally:
+            with self._lock:
+                if self._reader is reader:
+                    self._reader = None
+
+    def _read(self, settings_db, generation: int) -> Optional[bool]:
         try:
             found, value = settings_db.read_setting("webhooks", "receiver_enabled")
         except settings_db.SettingsUnreadable as exc:
@@ -297,7 +333,7 @@ class ReceiverSwitch:
                            "refusing deliveries until it can be read")
             return known
         with self._lock:
-            if generation == self._generation:    # no write landed while this read ran
+            if generation == self._generation:    # nothing overtook this read while it ran
                 self._known = (value is True) if found else True
                 self._fresh_until = self._clock() + self._ttl
             return self._known
@@ -305,6 +341,46 @@ class ReceiverSwitch:
 
 #: The process-wide receiver state the trigger reads.
 RECEIVER = ReceiverSwitch()
+
+
+PUSH_LIMIT = 30          # pushes one hook may make in PUSH_WINDOW seconds
+PUSH_WINDOW = 3_600.0
+
+
+class PushLimit:
+    """At most *limit* pushes per hook in any *window* seconds (H153 review).
+
+    A hook's sender decides how often it posts, and a push lands on the owner's phone
+    or speaker, so each hook gets its own allowance; a push over it is recorded on the
+    hook with the reason, never sent. The count is per process and starts empty at
+    boot; every attempt counts, whether or not the channel took it."""
+
+    def __init__(self, limit: int = PUSH_LIMIT, window: float = PUSH_WINDOW, clock=time.monotonic) -> None:
+        self.limit = limit
+        self.window = window
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._sent: dict[str, deque] = {}
+
+    def allow(self, hook_id: str) -> bool:
+        """Count one push for *hook_id*, or say no when its allowance is spent."""
+        now = self._clock()
+        with self._lock:
+            sent = self._sent.setdefault(str(hook_id), deque())
+            while sent and now - sent[0] >= self.window:
+                sent.popleft()
+            if len(sent) >= self.limit:
+                return False
+            sent.append(now)
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self._sent.clear()
+
+
+#: The process-wide push allowance the trigger spends.
+PUSHES = PushLimit()
 
 
 def _on_settings_change(category, values) -> None:
@@ -345,7 +421,7 @@ class WebhookStore(JsonStore):
         """
         if target_type not in ("agent", "workflow"):
             raise ValueError(f"invalid target_type: {target_type}")
-        problem = destination_problem(deliver)
+        problem = destination_problem(deliver) or delivery_problem(deliver, deliver_only)
         if problem:
             raise ValueError(problem)
         hook_id = secrets.token_urlsafe(8)
@@ -407,12 +483,20 @@ class WebhookStore(JsonStore):
                deliver_only: Optional[bool] = None, description: Optional[str] = None) -> Optional[dict]:
         """Change a hook's switch, event list, prompt template, destination or
         description (H153): the masked record, or None when unknown. A save that fails
-        undoes the change in memory."""
+        undoes the change in memory. A change to where a delivery goes is refused when
+        it would leave deliver-only on the log; a change to anything else is not (a
+        record from before that rule can still be switched off)."""
         rec = self._hooks.get(hook_id)
         if rec is None:
             return None
         if deliver is not None:
             problem = destination_problem(deliver)
+            if problem:
+                raise ValueError(problem)
+        if deliver is not None or deliver_only is not None:
+            problem = delivery_problem(deliver if deliver is not None else self.destination(rec),
+                                       (deliver_only is True) if deliver_only is not None
+                                       else self.delivers_only(rec))
             if problem:
                 raise ValueError(problem)
         before = {key: rec[key] for key in self._EDITABLE if key in rec}
@@ -448,9 +532,11 @@ class WebhookStore(JsonStore):
     @staticmethod
     def stored_events(rec: dict) -> Optional[list[str]]:
         """A hook's event list: empty (every event) for a record written before the
-        field existed, and None when a hand edit left anything the API would refuse —
-        null, not a list, or an item that is not a name (not text, blank, a comma, too
-        long). The trigger reads None as "skip everything", never as "run everything"."""
+        field existed, and None when a hand edit left something that is not a list of
+        names: null, not a list, or an item that is not text, is blank, holds a comma or
+        is too long. The trigger reads None as "skip everything", never as "run
+        everything". Other oddities the API would refuse (a control character, more than
+        32 names) are kept: they can only narrow what the list matches."""
         if "events" not in rec:
             return []
         events = rec["events"]

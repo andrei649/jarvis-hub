@@ -5,12 +5,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup, act } from '@testing-library/react';
-import { WebhooksPanel, parseEvents, triggerUrl } from '../panels/webhooks';
+import { DELIVER_ONLY_NEEDS_A_CHANNEL, DESTINATIONS, WebhooksPanel, parseEvents, triggerUrl } from '../panels/webhooks';
 import { CONSOLE_PANELS } from '../console-routes';
 
 let hooks;
 let calls;
-let receiverSetting;   // null: the settings route answers 404
+let receiverSetting;   // null: the settings route answers 404 (the store holds no row yet)
+let receiverFails;     // a status: the settings read fails with it
 
 function reply(status, body) {
   return { ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -23,6 +24,7 @@ beforeEach(() => {
              token_hint: 'AbCd…', calls: 3, last_called: 1790000000, created_at: 1780000000 }];
   calls = [];
   receiverSetting = null;
+  receiverFails = 0;
   global.fetch = vi.fn(async (url, init = {}) => {
     const u = String(url);
     const method = init.method || 'GET';
@@ -31,6 +33,7 @@ beforeEach(() => {
     if (u.endsWith('/api/admin/settings/webhooks')) {
       if ((init.headers || {})['X-Admin-Token'] !== 'admin-secret') return reply(401, { detail: 'admin token required' });
       if (method === 'PUT') { receiverSetting = body.values.receiver_enabled; return reply(200, { ok: true, updated: 1 }); }
+      if (receiverFails) return reply(receiverFails, { error: 'settings store unavailable' });
       return receiverSetting === null ? reply(404, { error: 'unknown category: webhooks' })
         : reply(200, { webhooks: [{ key: 'receiver_enabled', value: receiverSetting, kind: 'toggle', source: 'set' }] });
     }
@@ -360,10 +363,11 @@ describe('WebhooksPanel subscriptions', () => {
   });
 
   it('never guesses the receiver: unread, it cannot be switched', async () => {
+    receiverFails = 500;
     render(<WebhooksPanel />);
     await ready();
-    // the settings route refused (404 here): the row says it was not read, and why
-    await waitFor(() => expect(screen.getByText(/^not read · .*404/)).toBeTruthy());
+    // the settings read failed: the row says it was not read, and why
+    await waitFor(() => expect(screen.getByText(/^not read · .*500/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'receiver state not read' }).disabled).toBe(true);
     expect(screen.queryByTestId('receiver-off')).toBeNull();
   });
@@ -456,16 +460,16 @@ describe('WebhooksPanel — the H153 review round', () => {
   });
 
   it('shows where a hook delivers and how its last delivery went', async () => {
-    hooks = [{ ...hooks[0], deliver: 'web', deliver_only: true, description: 'from CI', skipped: 1,
-               last_delivery: { at: 1790000000, channel: 'web', ok: false, reason: 'web refused the message' } }];
+    hooks = [{ ...hooks[0], deliver: 'voice', deliver_only: true, description: 'from CI', skipped: 1,
+               last_delivery: { at: 1790000000, channel: 'voice', ok: false, reason: 'voice refused the message' } }];
     render(<WebhooksPanel />);
     await ready();
-    expect(screen.getByText('→ web')).toBeTruthy();
+    expect(screen.getByText('→ voice')).toBeTruthy();
     expect(screen.getAllByText('deliver only').some((el) => el.tagName === 'SPAN')).toBe(true);   // the row's tag
     fireEvent.click(screen.getByText('ci'));
     expect(screen.getByText('from CI')).toBeTruthy();
-    expect(screen.getByText(/deliver only: no turn, the text goes to web/)).toBeTruthy();
-    expect(screen.getByText(/not delivered to web: web refused the message/)).toBeTruthy();
+    expect(screen.getByText(/deliver only: no turn, the text goes to voice/)).toBeTruthy();
+    expect(screen.getByText(/not delivered to voice: voice refused the message/)).toBeTruthy();
     expect(screen.getByText(/^3 calls/)).toBeTruthy();                // calls and skipped are told apart
     expect(screen.getByText(/^1 skipped/)).toBeTruthy();
   });
@@ -570,3 +574,183 @@ describe('WebhooksPanel — the H153 review round', () => {
   });
 });
 
+
+/* H153 third round — the channels offered are the ones something receives, deliver only
+   needs one, a receiver the store holds no row for is the hub's default (on) and can be
+   switched off, an earlier read never overwrites a newer one, and a hook that vanished
+   hands focus to the create form. */
+describe('WebhooksPanel — the third H153 round', () => {
+  const ready = () => waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
+  const options = (label) => Array.from(screen.getByLabelText(label).querySelectorAll('option')).map((o) => o.value);
+
+  it('offers the log and the channels something receives, voice included and web not', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    expect(DESTINATIONS).toEqual(['log', 'telegram', 'voice', 'ntfy']);
+    expect(options('deliver to')).toEqual(['log', 'telegram', 'voice', 'ntfy']);
+    fireEvent.click(screen.getByText('ci'));
+    expect(options('deliver ci to')).toEqual(['log', 'telegram', 'voice', 'ntfy']);
+  });
+
+  it('starts a clean form after a create: log, not deliver only, no description', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.change(screen.getByLabelText('description'), { target: { value: 'pager' } });
+    fireEvent.change(screen.getByLabelText('deliver to'), { target: { value: 'ntfy' } });
+    fireEvent.click(screen.getByLabelText('deliver only (skip the agent)'));
+    fireEvent.click(screen.getByText('create'));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    await screen.findByTestId('webhook-reveal');
+    expect(screen.getByLabelText('deliver to').value).toBe('log');
+    expect(screen.getByLabelText('deliver only (skip the agent)').checked).toBe(false);
+    expect(screen.getByLabelText('description').value).toBe('');
+  });
+
+  it('refuses deliver only to the log before posting, and says why', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.click(screen.getByLabelText('deliver only (skip the agent)'));
+    fireEvent.click(screen.getByText('create'));
+    expect(screen.getByText(DELIVER_ONLY_NEEDS_A_CHANNEL)).toBeTruthy();
+    fireEvent.click(screen.getByText('ci'));
+    fireEvent.click(screen.getByLabelText('deliver only for ci (skip the agent)'));
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sent('POST')).toHaveLength(0);
+    expect(sent('PATCH')).toHaveLength(0);
+  });
+
+  it('shows no destination tag for the log, and tells how a push goes', async () => {
+    hooks = [{ ...hooks[0], deliver: 'log' }, { ...hooks[0], id: 'hk9', name: 'pager', deliver: 'telegram' }];
+    const { container } = render(<WebhooksPanel />);
+    await ready();
+    expect(container.textContent).not.toContain('→ log');
+    expect(screen.getByText('→ telegram')).toBeTruthy();
+    fireEvent.click(screen.getByText('pager'));
+    expect(screen.getByText(/A push is plain text .* not sent in quiet hours, and a hook sends at most 30 an hour/)).toBeTruthy();
+  });
+
+  it('opens the editor at the hook’s own destination, so an unedited save keeps it', async () => {
+    hooks = [{ ...hooks[0], deliver: 'telegram', deliver_only: true, description: 'pager' }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByLabelText('deliver ci to').value).toBe('telegram');
+    expect(screen.getByLabelText('deliver only for ci (skip the agent)').checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0].body).toMatchObject({ deliver: 'telegram', deliver_only: true, description: 'pager' });
+  });
+
+  it('refreshes the editor when the destination changed elsewhere', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByLabelText('deliver ci to').value).toBe('log');
+    hooks = [{ ...hooks[0], deliver: 'ntfy', deliver_only: true, description: 'moved' }];
+    fireEvent.click(screen.getByLabelText('Reload'));
+    await waitFor(() => expect(screen.getByLabelText('deliver ci to').value).toBe('ntfy'));
+    expect(screen.getByLabelText('deliver only for ci (skip the agent)').checked).toBe(true);
+    expect(screen.getByLabelText('description of ci').value).toBe('moved');
+  });
+
+  it('reads a receiver the store holds no row for as the hub does (on), and offers to switch it off', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    await waitFor(() => expect(screen.getByText('on · not stored (the default)')).toBeTruthy());
+    const off = screen.getByRole('button', { name: 'switch the receiver off' });
+    expect(off.disabled).toBe(false);
+    fireEvent.click(off);
+    await waitFor(() => expect(sent('PUT')).toHaveLength(1));
+    expect(sent('PUT')[0].body).toEqual({ values: { receiver_enabled: false } });
+    await waitFor(() => expect(screen.getByTestId('receiver-off')).toBeTruthy());
+  });
+
+  it('never lets an earlier receiver read overwrite a newer one', async () => {
+    receiverSetting = true;
+    const real = global.fetch;
+    let releaseFirst;
+    let reads = 0;
+    global.fetch = vi.fn((url, init = {}) => {
+      if (String(url).endsWith('/api/admin/settings/webhooks') && (init.method || 'GET') === 'GET') {
+        reads += 1;
+        if (reads === 1) {
+          const answer = real(url, init);                               // reads "on" now...
+          return new Promise((resolve) => { releaseFirst = () => resolve(answer); });   // ...lands last
+        }
+      }
+      return real(url, init);
+    });
+    render(<WebhooksPanel />);
+    await ready();
+    await waitFor(() => expect(reads).toBe(1));
+    receiverSetting = false;                                            // switched off elsewhere
+    fireEvent.click(screen.getByLabelText('Reload'));
+    await waitFor(() => expect(screen.getByTestId('receiver-off')).toBeTruthy());
+    await act(async () => { releaseFirst(); await new Promise((r) => setTimeout(r, 20)); });
+    expect(screen.getByTestId('receiver-off')).toBeTruthy();            // the stale "on" is dropped
+    expect(screen.getByRole('button', { name: 'switch the receiver on' })).toBeTruthy();
+  });
+
+  it('never lets an earlier failed read replace a newer answer', async () => {
+    receiverSetting = true;
+    const real = global.fetch;
+    let failFirst;
+    let reads = 0;
+    global.fetch = vi.fn((url, init = {}) => {
+      if (String(url).endsWith('/api/admin/settings/webhooks') && (init.method || 'GET') === 'GET') {
+        reads += 1;
+        if (reads === 1) return new Promise((resolve) => { failFirst = () => resolve(reply(500, { error: 'boom' })); });
+      }
+      return real(url, init);
+    });
+    render(<WebhooksPanel />);
+    await ready();
+    await waitFor(() => expect(reads).toBe(1));
+    fireEvent.click(screen.getByLabelText('Reload'));
+    await screen.findByRole('button', { name: 'switch the receiver off' });   // the newer read: on
+    await act(async () => { failFirst(); await new Promise((r) => setTimeout(r, 20)); });
+    expect(screen.queryByText(/^not read/)).toBeNull();                        // the old failure is dropped
+    expect(screen.getByRole('button', { name: 'switch the receiver off' })).toBeTruthy();
+  });
+
+  it('hands focus to the create form when a save finds the hook gone', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    hooks = [];                                                         // deleted elsewhere
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(screen.getByText('ci no longer exists')).toBeTruthy());
+    await waitFor(() => expect(document.activeElement.getAttribute('aria-label')).toBe('webhook name'));
+  });
+
+  it('hands focus to the create form when a switch finds the hook gone', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    hooks = [];                                                         // deleted elsewhere
+    fireEvent.click(screen.getByRole('button', { name: 'switch off ci' }));
+    await waitFor(() => expect(screen.getByText('ci no longer exists')).toBeTruthy());
+    await waitFor(() => expect(document.activeElement.getAttribute('aria-label')).toBe('webhook name'));
+  });
+
+  it('keeps focus where it was after a switch that worked', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    const name = screen.getByLabelText('target');
+    name.focus();
+    fireEvent.click(screen.getByRole('button', { name: 'switch off ci' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'switch on ci' })).toBeTruthy());
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('hands focus to the create form once a delete took the row', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'delete ci…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'delete ci for good' }));
+    await waitFor(() => expect(screen.queryByText('ci')).toBeNull());
+    await waitFor(() => expect(document.activeElement.getAttribute('aria-label')).toBe('webhook name'));
+  });
+});
