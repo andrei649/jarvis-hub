@@ -17,7 +17,12 @@
    H153 — the rest of a Hermes subscription: the receiver switch (the setting
    webhooks.receiver_enabled: off, every delivery is refused until it is switched
    back on), and each hook's event list and prompt template, set on create and
-   changed in its detail pane. Neither needs a restart. */
+   changed in its detail pane. Neither needs a restart.
+
+   H153 review — where a delivery goes (Deliver to: the log, or one of the owner's own
+   channels; "deliver only" skips the agent), a description, the last delivery, and a
+   receiver row that never shows a stale or unread state as on: a failed read says why,
+   and ↻ re-reads it with the list. */
 import React, { useEffect, useRef, useState } from 'react';
 import { appUrl } from '../base-path';
 import { apiDelete, apiPatch, apiPost, apiPut } from '../api/client';
@@ -25,6 +30,8 @@ import { Card, Row, State, Tag, arr, asLive, inpS, mono, refusalReason, taS, use
 
 const HOOKS_PATH = '/api/webhooks';
 const RECEIVER_PATH = '/api/admin/settings/webhooks';
+/** Where a delivery can go: the log, or the owner's own direct-send channels. */
+export const DESTINATIONS = ['log', 'telegram', 'web', 'voice', 'ntfy'];
 const RECEIVER = ':receiver';   // its pending key; hook ids are URL-safe and never start with ':'
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const SR_ONLY: React.CSSProperties = {
@@ -59,20 +66,50 @@ export function parseEvents(text: string): string[] {
   return text.split(',').map((name) => name.trim()).filter(Boolean);
 }
 
-/** A hook's event list and prompt template, changed in place (H153). */
-function Subscription({ hook, label, held, onSave }: { hook: any; label: string; held: boolean; onSave: (events: string[], prompt: string) => void }) {
-  const [events, setEvents] = useState(arr(hook, 'events').join(', '));
+export type SubscriptionChange = {
+  events: string[]; prompt: string; deliver: string; deliver_only: boolean; description: string;
+};
+
+/** A hook's event list, prompt template, destination and description, changed in place
+    (H153). An unreadable event list is not pre-filled: saving it empty says, on the
+    button, that it now runs every event. */
+function Subscription({ hook, label, held, onSave }: { hook: any; label: string; held: boolean; onSave: (change: SubscriptionChange) => void }) {
+  const unreadable = !!hook.events_unreadable;
+  const [events, setEvents] = useState(unreadable ? '' : arr(hook, 'events').join(', '));
   const [prompt, setPrompt] = useState(String(hook.prompt || ''));
+  const [deliver, setDeliver] = useState(DESTINATIONS.includes(hook.deliver) ? hook.deliver : 'log');
+  const [deliverOnly, setDeliverOnly] = useState(hook.deliver_only === true);
+  const [description, setDescription] = useState(String(hook.description || ''));
+  const everyEvent = unreadable && parseEvents(events).length === 0;
   return (
     <div style={{ display: 'grid', gap: 4, margin: '4px 0' }}>
       <input aria-label={`events for ${label}`} placeholder="events, comma-separated (empty: every event)" value={events}
         onChange={(e) => setEvents(e.target.value)} style={inpS} />
       <textarea aria-label={`prompt template for ${label}`} placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
         value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
-      <span><button className="tool-btn" disabled={held} onClick={() => onSave(parseEvents(events), prompt)}
-        aria-label={`save the events and template of ${label}`}>save</button></span>
+      <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select aria-label={`deliver ${label} to`} value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>
+          {DESTINATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <label style={mono}>
+          <input type="checkbox" checked={deliverOnly} onChange={(e) => setDeliverOnly(e.target.checked)}
+            aria-label={`deliver only for ${label} (skip the agent)`} /> deliver only
+        </label>
+        <input aria-label={`description of ${label}`} placeholder="description" value={description} maxLength={500}
+          onChange={(e) => setDescription(e.target.value)} style={{ ...inpS, flex: 1 }} />
+      </span>
+      <span><button className="tool-btn" disabled={held}
+        onClick={() => onSave({ events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description })}
+        aria-label={everyEvent ? `save ${label}: every event` : `save ${label}`}>{everyEvent ? 'save: every event' : 'save'}</button></span>
     </div>
   );
+}
+
+function lastDelivery(hook: any): string {
+  const d = hook.last_delivery;
+  if (!d || typeof d !== 'object') return 'no delivery yet';
+  const outcome = d.ok ? `delivered to ${d.channel}` : `not delivered to ${d.channel}${d.reason ? `: ${d.reason}` : ''}`;
+  return `last delivery ${when(d.at)} · ${outcome}`;
 }
 
 function Copy({ value, label }: { value: string; label: string }) {
@@ -141,14 +178,21 @@ export function WebhooksPanel() {
   const list = useApi(HOOKS_PATH, true, true);
   const hooks = arr(list.d, 'webhooks');
   const receiver = useApi(RECEIVER_PATH, true, true);
-  const receiverRow = arr(receiver.d, 'webhooks').find((row: any) => row && row.key === 'receiver_enabled');
-  const receiverOn: boolean | null = receiverRow ? receiverRow.value !== false : null;   // null: not read
+  // A failed re-read drops what was read before: a stale "on" is not shown as the state.
+  const receiverRow = receiver.e ? undefined
+    : arr(receiver.d, 'webhooks').find((row: any) => row && row.key === 'receiver_enabled');
+  // The hub treats only a literal true as on (it fails closed), and so does this row.
+  const receiverOn: boolean | null = receiverRow ? receiverRow.value === true : null;   // null: not read
+  const receiverOdd = !!receiverRow && typeof receiverRow.value !== 'boolean';
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
   const [targetType, setTargetType] = useState('agent');
   const [signed, setSigned] = useState(false);
   const [events, setEvents] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [deliver, setDeliver] = useState('log');
+  const [deliverOnly, setDeliverOnly] = useState(false);
+  const [description, setDescription] = useState('');
   const [created, setCreated] = useState<any>(null);
   const [open, setOpen] = useState('');
   const [confirming, setConfirming] = useState('');
@@ -181,13 +225,17 @@ export function WebhooksPanel() {
     }
     setBusy(true);
     apiPost(HOOKS_PATH, { name: name.trim(), target: target.trim(), target_type: targetType, signed,
-      events: parseEvents(events), prompt }, { admin: true })
+      events: parseEvents(events), prompt, deliver, deliver_only: deliverOnly, description: description.trim() },
+      { admin: true })
       .then((rec: any) => {
         setCreated(rec);
         setName('');
         setTarget('');
         setEvents('');
         setPrompt('');
+        setDeliver('log');
+        setDeliverOnly(false);
+        setDescription('');
         setNote('');
         list.reload();
       })
@@ -215,12 +263,14 @@ export function WebhooksPanel() {
       })
       .finally(() => { hold(hook.id, false); list.reload(); });
   };
-  const save = (hook: any, nextEvents: string[], nextPrompt: string) => {
+  const save = (hook: any, change: SubscriptionChange) => {
     hold(hook.id, true);
-    apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { events: nextEvents, prompt: nextPrompt }, { admin: true })
+    apiPatch(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, change, { admin: true })
       .then(() => setNote(`${hookName(hook)} saved`))
       .catch((err: any) => (err && err.status === 404 ? setNote(`${hookName(hook)} no longer exists`) : refused(err)))
-      .finally(() => { hold(hook.id, false); list.reload(); });
+      // The editor re-mounts with what the hub stored, taking the focused button with
+      // it: focus goes to the hook's own row button, which stays.
+      .finally(() => { hold(hook.id, false); list.reload(); setFocusKey(`open:${hook.id}`); });
   };
   const switchReceiver = () => {
     if (receiverOn === null) return;
@@ -235,22 +285,25 @@ export function WebhooksPanel() {
   const dismiss = () => { setCreated(null); setFocusKey('create'); };
 
   return (
-    <Card title="WEBHOOKS" live={asLive(list.d)} sub={`${hooks.length} inbound`} onReload={list.reload}>
+    <Card title="WEBHOOKS" live={asLive(list.d)} sub={`${hooks.length} inbound`}
+      onReload={() => { list.reload(); receiver.reload(); }}>
       <Row>
         <span style={mono}>receiver</span>
         <Tag c={receiverOn === false ? 'var(--amber)' : receiverOn ? 'var(--green)' : undefined}>
-          {receiverOn === null ? 'not read' : receiverOn ? 'on' : 'off'}
+          {receiverOn === null ? (receiver.e ? `not read · ${receiver.e}` : 'not read') : receiverOn ? 'on' : 'off'}
         </Tag>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>takes effect at once, no restart</span>
         <span style={{ marginLeft: 'auto' }}>
           <button className="tool-btn" disabled={receiverOn === null || !!pending[RECEIVER]} onClick={switchReceiver}>
-            {receiverOn === false ? 'switch the receiver on' : 'switch the receiver off'}
+            {receiverOn === null ? 'receiver state not read' : receiverOn ? 'switch the receiver off' : 'switch the receiver on'}
           </button>
         </span>
       </Row>
       {receiverOn === false && (
         <div role="status" data-testid="receiver-off" style={{ ...mono, color: 'var(--amber)', padding: '4px 0 6px' }}>
+          {receiverOdd ? 'The stored receiver setting is not true or false, so the hub treats it as off. ' : ''}
           The receiver is off: every delivery is refused until it is switched back on. Hooks keep their credentials.
+          A sender that retries on an error (GitHub, Stripe) may deliver again once it is back on.
         </div>
       )}
       {created && <Reveal hook={created} onDismiss={dismiss} />}
@@ -266,14 +319,28 @@ export function WebhooksPanel() {
         <label style={mono}>
           <input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} /> HMAC-signed
         </label>
-        <button className="tool-btn" disabled={busy || !!created} onClick={create}
-          title={created ? 'save the new hook’s credentials first' : undefined}>create</button>
       </div>
       <div style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+        <input aria-label="description" placeholder="description" value={description} maxLength={500}
+          onChange={(e) => setDescription(e.target.value)} style={inpS} />
         <input aria-label="events" placeholder="events, comma-separated (empty: every event)" value={events} maxLength={2400}
           onChange={(e) => setEvents(e.target.value)} style={inpS} />
         <textarea aria-label="prompt template" placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
           value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
+        <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={mono}>deliver to{' '}
+            <select aria-label="deliver to" value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>
+              {DESTINATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+          <label style={mono}>
+            <input type="checkbox" checked={deliverOnly} onChange={(e) => setDeliverOnly(e.target.checked)}
+              aria-label="deliver only (skip the agent)" /> deliver only
+          </label>
+          {/* Last in the tab order: every field above is filled before create is reached. */}
+          <button className="tool-btn" disabled={busy || !!created} onClick={create}
+            title={created ? 'save the new hook’s credentials first' : undefined}>create</button>
+        </span>
       </div>
       {note && <div role="status" style={{ ...mono, color: 'var(--amber)', marginBottom: 6 }}>{note}</div>}
       <State e={list.e} loading={list.loading && !list.d} n={hooks.length} />
@@ -283,13 +350,15 @@ export function WebhooksPanel() {
         return (
           <div key={hook.id}>
             <Row>
-              <button className="tool-btn" aria-expanded={open === hook.id} style={{ ...mono, textAlign: 'left' }}
-                onClick={() => setOpen(open === hook.id ? '' : hook.id)}>
+              <button ref={focusRef(`open:${hook.id}`)} className="tool-btn" aria-expanded={open === hook.id}
+                style={{ ...mono, textAlign: 'left' }} onClick={() => setOpen(open === hook.id ? '' : hook.id)}>
                 {hook.name || hook.target}
               </button>
               <span style={mono}>{hook.target_type}:{hook.target}</span>
               <Tag c={hook.signed ? 'var(--green)' : undefined}>{hook.signed ? 'HMAC' : `token ${hook.token_hint || ''}`}</Tag>
               <Tag c={hook.enabled ? 'var(--green)' : 'var(--amber)'}>{hook.enabled ? 'on' : 'off'}</Tag>
+              {hook.deliver && hook.deliver !== 'log' && <Tag>{`→ ${hook.deliver}`}</Tag>}
+              {hook.deliver_only === true && <Tag>deliver only</Tag>}
               {hook.events_unreadable
                 ? <Tag c="var(--amber)">event list unreadable</Tag>
                 : arr(hook, 'events').length > 0 && <Tag>{`${arr(hook, 'events').length} event${arr(hook, 'events').length === 1 ? '' : 's'}`}</Tag>}
@@ -320,15 +389,23 @@ export function WebhooksPanel() {
               <div style={{ ...mono, color: 'var(--ink-2)', padding: '2px 0 8px 8px' }}>
                 <div>POST {triggerUrl(hook.id)}</div>
                 <div>{hook.signed ? 'X-Signature-256 (HMAC-SHA256 of the raw body)' : `X-Webhook-Token (${hook.token_hint || '…'})`}</div>
+                {hook.description ? <div>{hook.description}</div> : null}
                 <div>{hook.calls ?? 0} calls · last {when(hook.last_called)} · created {when(hook.created_at)}</div>
                 <div>
                   {hook.skipped ?? 0} skipped{hook.last_skipped_event ? ` · last skipped: ${hook.last_skipped_event}` : ''}
-                  {' · '}{arr(hook, 'events').length ? `events: ${arr(hook, 'events').join(', ')}` : 'every event'}
+                  {' · '}{hook.events_unreadable ? 'event list unreadable: every delivery is skipped'
+                    : arr(hook, 'events').length ? `events: ${arr(hook, 'events').join(', ')}` : 'every event'}
                   {' · '}{hook.prompt ? 'a prompt template' : "the payload's text"}
                 </div>
-                <div>Each delivery runs as an inbound, untrusted turn.</div>
-                <Subscription key={`${hook.id}:${arr(hook, 'events').join(',')}:${hook.prompt || ''}`} hook={hook} label={label}
-                  held={held} onSave={(nextEvents, nextPrompt) => save(hook, nextEvents, nextPrompt)} />
+                <div>
+                  {hook.deliver_only === true ? `deliver only: no turn, the text goes to ${hook.deliver || 'log'}`
+                    : `the reply goes to ${hook.deliver || 'log'}`}
+                  {' · '}{lastDelivery(hook)}
+                </div>
+                <div>{hook.deliver_only === true ? 'The sender’s text reaches you as is, labelled with this hook.'
+                  : 'Each delivery runs as an inbound, untrusted turn.'}</div>
+                <Subscription key={`${hook.id}:${hook.events_unreadable ? '!' : arr(hook, 'events').join(',')}:${hook.prompt || ''}:${hook.deliver}:${hook.deliver_only}:${hook.description || ''}`}
+                  hook={hook} label={label} held={held} onSave={(change) => save(hook, change)} />
               </div>
             )}
           </div>

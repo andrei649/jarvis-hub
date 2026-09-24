@@ -10869,7 +10869,11 @@ export interface components {
              */
             live: boolean;
         };
-        /** WebhookCreateBody */
+        /**
+         * WebhookCreateBody
+         * @description A new hook. A field this model does not know is refused (a Hermes-shaped create
+         *     that carries ``skills`` or ``deliver_chat_id`` hears no, rather than a silent drop).
+         */
         WebhookCreateBody: {
             /** Target */
             target: string;
@@ -10895,18 +10899,40 @@ export interface components {
              * @default
              */
             prompt: string;
+            /**
+             * Deliver
+             * @default log
+             */
+            deliver: string;
+            /**
+             * Deliver Only
+             * @default false
+             */
+            deliver_only: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /**
          * WebhookUpdateBody
-         * @description H153 — what PATCH may change; at least one field, and none of them null.
+         * @description H153 — what PATCH may change; at least one field, and none of them null (the
+         *     schema says so too: a null is not advertised).
          */
         WebhookUpdateBody: {
             /** Enabled */
-            enabled?: boolean | null;
+            enabled?: boolean;
             /** Events */
-            events?: string[] | null;
+            events?: string[];
             /** Prompt */
-            prompt?: string | null;
+            prompt?: string;
+            /** Deliver */
+            deliver?: string;
+            /** Deliver Only */
+            deliver_only?: boolean;
+            /** Description */
+            description?: string;
         };
         /** WorkflowRunBody */
         WorkflowRunBody: {

@@ -87,9 +87,30 @@ class AdminPutBody(BaseModel):
     values: dict
 
 
-async def _audit_settings_change(category: str, keys: list) -> None:
-    """AUD-8: record a settings write in the audit log — the changed KEY NAMES only,
-    never their values, so the row can't leak a secret that was just set."""
+#: Setting kinds whose value is a choice, never a secret: a switch, a pick from a list,
+#: a number. The audit row says what such a key became (H153 review: "when was the
+#: webhook receiver off?" had no answer in a row that named only the key).
+_VALUE_AUDITED_KINDS = frozenset({"toggle", "select", "number", "slider", "model-select"})
+
+
+def _audited_values(category: str, values: dict) -> str:
+    """``key=value`` for the keys whose declared kind is a choice; never a secret key,
+    never free text (a URL or a note can carry a credential)."""
+    from agents.core import settings_db
+
+    kinds = {(row["category"], row["key"]): row.get("kind") for row in settings_db.DEFAULTS}
+    parts = []
+    for key in sorted(values):
+        if key in settings_db.SECRET_KEYS or kinds.get((category, key)) not in _VALUE_AUDITED_KINDS:
+            continue
+        try:
+            parts.append(f"{key}={json.dumps(values[key], ensure_ascii=False)[:64]}")
+        except (TypeError, ValueError):
+            continue
+    return " ".join(parts)
+
+
+async def _audit_row(preview: str, action: str, category: str) -> None:
     orch = get_orch()
     audit = getattr(orch, "audit", None) if orch else None
     if audit is None:
@@ -98,13 +119,24 @@ async def _audit_settings_change(category: str, keys: list) -> None:
         await asyncio.to_thread(audit.log, SecurityEvent(
             event_type=SecurityEventType.SETTINGS_CHANGE,
             timestamp=time.time(),
-            content_preview=f"settings.{category} updated: {sorted(keys)}",
-            action_taken="settings_update",
+            content_preview=preview,
+            action_taken=action,
         ))
     except Exception:
         # log_safe (not safe_reflect) is the recognized py/log-injection sanitizer:
         # it strips CR/LF so a hostile category can't forge log lines.
         logger.warning("failed to audit settings change for %s", log_safe(category))
+
+
+async def _audit_settings_change(category: str, keys: list, values: dict | None = None) -> None:
+    """AUD-8: record a settings write in the audit log — the changed KEY NAMES, and the
+    new value only for a key whose kind is a choice (a switch, a list pick, a number),
+    never a secret or free text, so the row can't leak a secret that was just set."""
+    preview = f"settings.{category} updated: {sorted(keys)}"
+    shown = _audited_values(category, {key: (values or {}).get(key) for key in keys if key in (values or {})})
+    if shown:
+        preview = f"{preview} · {shown}"
+    await _audit_row(preview, "settings_update", category)
 
 
 @router.put("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
@@ -117,7 +149,7 @@ async def admin_put_category(category: str, body: AdminPutBody):
     updated, skipped = put_category(category, body.values)
     changed = [k for k in body.values if k not in skipped]
     if changed:
-        await _audit_settings_change(category, changed)
+        await _audit_settings_change(category, changed, body.values)
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
@@ -127,6 +159,10 @@ async def admin_put_category(category: str, body: AdminPutBody):
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])
 async def admin_reseed():
     init_db(force=True)
+    # H153 review: a reseed puts every setting back to its declared value — a webhook
+    # receiver switched off comes back on — so it leaves a row like any other write.
+    await _audit_row("settings reseeded from defaults: every setting is back to its declared value",
+                     "settings_reseed", "all")
     return {"ok": True, "message": "Settings reseeded from defaults"}
 
 

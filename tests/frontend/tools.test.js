@@ -249,6 +249,27 @@ describe('Webhooks panel', () => {
     expect(text()).not.toContain('sec-1');
   });
 
+  it('reads the receiver with the admin token, and shows every hook refused while it is off', async () => {
+    env.cleanup();
+    const calls = [];
+    const fetch = vi.fn((url, init = {}) => {
+      calls.push({ url, admin: (init.headers || {})['X-Admin-Token'] });
+      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true, deliver: 'web' }] });
+      if (url === '/api/admin/settings/webhooks') return json({ webhooks: [{ key: 'receiver_enabled', value: false }] });
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    const text = container.querySelector('.console-content').textContent;
+    expect(calls.find((c) => c.url === '/api/admin/settings/webhooks').admin).toBe('adm');
+    expect(text).toContain('Receiver off: every delivery is refused');
+    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off) · deliver to web');
+  });
+
   it('shows a token hook its token', async () => {
     const { container, text } = await openWebhooks(listed);
     env.click(toolBtn(container, 'Create'));

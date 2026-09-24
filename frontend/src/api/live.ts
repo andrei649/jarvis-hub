@@ -114,17 +114,30 @@ function workflowToCanvas(workflow: any) {
  * "not connected" there), never the seed's peers, servers or widgets. Returns null
  * when no source answered. Exported so the shipped path is what the tests run.
  */
-export function hydrateInterop(a2a: any, mcp: any, widgets: any, webhooks: any) {
+/** H153 review — the webhook receiver switch as the hub reads it: only a literal true
+    is on; a settings answer without the row, or no answer, is "not read". */
+export function receiverState(settings: any): 'on' | 'off' | 'not read' {
+  const rows = arr(settings, 'webhooks');
+  const row = rows ? rows.find((r: any) => r && r.key === 'receiver_enabled') : undefined;
+  if (!row) return 'not read';
+  return row.value === true ? 'on' : 'off';
+}
+
+export function hydrateInterop(a2a: any, mcp: any, widgets: any, webhooks: any, receiver?: any) {
   const ap = arr(a2a, 'peers');
   const ms = arr(mcp, 'servers');
   const wd = arr(widgets, 'widgets');
   const wh = arr(webhooks, 'webhooks');
   if (!ap && !ms && !wd && !wh) return null;
+  // A hook switched on is not "active" while the receiver refuses every delivery.
+  const rx = receiverState(receiver);
   return {
     a2a: (ap || []).map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] })),
     mcp: (ms || []).map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' })),
     widgets: (wd || []).map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false })),
-    webhooks: (wh || []).map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''), status: w.enabled === false ? 'off' : 'active' })),
+    webhooks: (wh || []).map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''),
+      status: w.enabled === false ? 'off' : rx === 'off' ? 'receiver off' : 'active' })),
+    receiver: rx,
     unavailable: { a2a: !ap, mcp: !ms, widgets: !wd, webhooks: !wh },
   };
 }
@@ -432,8 +445,9 @@ export function useLiveModes(): LiveModes {
         apiGet('/api/admin/mcp', { admin: true }).catch(() => null),
         apiGet('/api/admin/widgets', { admin: true }).catch(() => null),
         apiGet('/api/webhooks', { admin: true }).catch(() => null),
-      ]).then(([a2a, mcp, widgets, webhooks]: any[]) => {
-        const I = hydrateInterop(a2a, mcp, widgets, webhooks);
+        apiGet('/api/admin/settings/webhooks', { admin: true }).catch(() => null),
+      ]).then(([a2a, mcp, widgets, webhooks, receiver]: any[]) => {
+        const I = hydrateInterop(a2a, mcp, widgets, webhooks, receiver);
         if (I) { set('INTEROP', I); mark('INTEROP'); }
       }).catch(() => {});
 

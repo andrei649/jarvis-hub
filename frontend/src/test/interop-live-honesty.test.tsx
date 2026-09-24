@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { V2 } from '../data';
-import { hydrateInterop, useLiveModes } from '../api/live';
+import { hydrateInterop, receiverState, useLiveModes } from '../api/live';
 import { InteropMode } from '../modes2';
 
 const SEED_FICTION = ['home-assistant', 'partner-crm', 'research-swarm', 'sqlite-ledger', 'qdrant-memory',
@@ -143,3 +143,42 @@ describe('useLiveModes hydrates Interop with the admin credential', () => {
     expect(V2.INTEROP).toBe(saved);                  // the seed, untouched, for DEMO
   }, 15000);
 });
+
+
+/* H153 review — with the receiver switched off, no hook is "active": every delivery is
+   refused. The receiver reads as the hub reads it (only a literal true is on), and a
+   webhooks source that alone failed says "not connected", not "none". */
+describe('Interop reads the webhook receiver', () => {
+  const off = { webhooks: [{ key: 'receiver_enabled', value: false }] };
+
+  it('shows every switched-on hook as refused while the receiver is off', () => {
+    const I = hydrateInterop(null, null, null,
+      { webhooks: [HOOK, { id: 'hk2', name: 'deploy', target: 'triage', target_type: 'workflow', enabled: false }] }, off);
+    expect(I.receiver).toBe('off');
+    expect(I.webhooks.map((w) => w.status)).toEqual(['receiver off', 'off']);
+    V2.INTEROP = I;
+    render(<InteropMode t={{ interop: 'Interop' }} />);
+    expect(screen.getByTestId('interop-receiver').textContent).toBe('receiver off: every delivery is refused');
+  });
+
+  it('reads the receiver as the hub does', () => {
+    expect(receiverState({ webhooks: [{ key: 'receiver_enabled', value: true }] })).toBe('on');
+    expect(receiverState({ webhooks: [{ key: 'receiver_enabled', value: 'yes' }] })).toBe('off');
+    expect(receiverState({ webhooks: [] })).toBe('not read');
+    expect(receiverState(null)).toBe('not read');
+    const I = hydrateInterop(null, null, null, { webhooks: [HOOK] }, { webhooks: [{ key: 'receiver_enabled', value: true }] });
+    expect(I.webhooks[0].status).toBe('active');
+    V2.INTEROP = I;
+    render(<InteropMode t={{ interop: 'Interop' }} />);
+    expect(screen.queryByTestId('interop-receiver')).toBeNull();
+  });
+
+  it('says "not connected" when only the webhooks source failed', () => {
+    V2.INTEROP = hydrateInterop({ peers: [] }, { servers: [] }, { widgets: [] }, null, off);
+    expect(V2.INTEROP.unavailable.webhooks).toBe(true);
+    render(<InteropMode t={{ interop: 'Interop' }} />);
+    expect(screen.getAllByText('not connected')).toHaveLength(1);
+    expect(screen.queryByTestId('interop-receiver')).toBeNull();   // no receiver note on a section that failed
+  });
+});
+

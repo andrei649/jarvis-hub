@@ -436,6 +436,8 @@ def init_db(force: bool = False):
     _migrate_retired_claude_default(conn)
     conn.commit()
     conn.close()
+    if force:
+        _changed(None, None)
 
 def value_source(category: str, key: str, value, raw=None) -> str:
     """H273 — where a stored value stands against its declaration: ``default`` when
@@ -515,6 +517,53 @@ def get_value(category: str, key: str, default=None):
         return _decrypt_if_secret(json.loads(row["value"]))
     except Exception:
         return default
+
+
+class SettingsUnreadable(RuntimeError):
+    """The settings store could not be read (corrupt, locked, no table)."""
+
+
+def read_setting(category: str, key: str) -> tuple[bool, Any]:
+    """``(found, value)`` for one setting, raising :class:`SettingsUnreadable` when the
+    store cannot be read. For a guard that must fail closed: ``get_value`` turns every
+    error into the default, which for an "on by default" switch means on."""
+    try:
+        _ensure_init()
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE category=? AND key=?",
+                (category, key),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+    if row is None:
+        return False, None
+    try:
+        return True, _decrypt_if_secret(json.loads(row["value"]))
+    except Exception as exc:
+        raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+
+
+_change_listeners: list = []
+
+
+def on_change(listener) -> None:
+    """Call ``listener(category, values)`` after a write in this process: a category
+    write passes what it wrote, a reseed passes ``(None, None)``. A listener that raises
+    is logged and skipped; it never fails the write."""
+    if listener not in _change_listeners:
+        _change_listeners.append(listener)
+
+
+def _changed(category, values) -> None:
+    for listener in list(_change_listeners):
+        try:
+            listener(category, values)
+        except Exception:
+            logger.warning("a settings change listener failed", exc_info=True)
 
 
 def get_category(cat: str) -> list[dict]:
@@ -642,6 +691,9 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))
+    written = {key: value for key, value in data.items() if key not in skipped}
+    if written:
+        _changed(cat, written)
     return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────

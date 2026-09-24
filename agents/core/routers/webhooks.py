@@ -7,6 +7,11 @@ its target and whether it is signed, never its token or signing secret.
 H153 (the rest of a Hermes subscription): a hook's event list and prompt template,
 set on create or by PATCH, and the receiver switch (setting
 ``webhooks.receiver_enabled``) that refuses every delivery at once.
+
+H153 review: where a delivery goes (``deliver``: the log, or one of the owner's own
+direct-send channels through ``send_to_target``; ``deliver_only`` skips the agent; a
+push waits out quiet hours as a note on the hook), a description, a receiver switch
+that fails closed and is read off the event loop, and a body cap.
 """
 
 import asyncio
@@ -18,6 +23,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from agents.core.action_origin import INBOUND_ACTION_ORIGIN, bind_action_origin, reset_action_origin
 from agents.core.web_helpers import nocache_json, error_json
@@ -43,31 +49,52 @@ def _event_name(value: str) -> str:
     from agents.core.webhooks import MAX_EVENT_NAME
 
     name = value.strip()
-    if not name or len(name) > MAX_EVENT_NAME or not name.isprintable():
-        raise ValueError(f"an event name is 1 to {MAX_EVENT_NAME} printable characters")
+    if not name or len(name) > MAX_EVENT_NAME or not name.isprintable() or "," in name:
+        raise ValueError(f"an event name is 1 to {MAX_EVENT_NAME} printable characters, no comma")
     return name
+
+
+def _destination(value: str) -> str:
+    from agents.core.webhooks import destination_problem
+
+    problem = destination_problem(value)
+    if problem:
+        raise ValueError(problem)
+    return value
 
 
 EventName = Annotated[StrictStr, AfterValidator(_event_name)]
 EventList = Annotated[list[EventName], Field(max_length=32)]
 PromptTemplate = Annotated[StrictStr, Field(max_length=2_000)]
+Destination = Annotated[StrictStr, AfterValidator(_destination)]
+Description = Annotated[StrictStr, Field(max_length=500)]
 
 
 class WebhookCreateBody(BaseModel):
+    """A new hook. A field this model does not know is refused (a Hermes-shaped create
+    that carries ``skills`` or ``deliver_chat_id`` hears no, rather than a silent drop)."""
+    model_config = ConfigDict(extra="forbid")
     target: str = Field(..., max_length=128)
     target_type: str = Field("agent", pattern="^(agent|workflow)$")
     name: str = Field("", max_length=128)
     signed: bool = False   # H16.4 — require an HMAC X-Signature-256 on triggers
     events: EventList = Field(default_factory=list)   # H153 — empty: every event
     prompt: PromptTemplate = ""                        # H153 — empty: the payload's text
+    deliver: Destination = "log"                       # H153 review — where the result goes
+    deliver_only: StrictBool = False                   # H153 review — skip the agent
+    description: Description = ""
 
 
 class WebhookUpdateBody(BaseModel):
-    """H153 — what PATCH may change; at least one field, and none of them null."""
+    """H153 — what PATCH may change; at least one field, and none of them null (the
+    schema says so too: a null is not advertised)."""
     model_config = ConfigDict(extra="forbid")
-    enabled: StrictBool | None = None
-    events: EventList | None = None
-    prompt: PromptTemplate | None = None
+    enabled: StrictBool | SkipJsonSchema[None] = None
+    events: EventList | SkipJsonSchema[None] = None
+    prompt: PromptTemplate | SkipJsonSchema[None] = None
+    deliver: Destination | SkipJsonSchema[None] = None
+    deliver_only: StrictBool | SkipJsonSchema[None] = None
+    description: Description | SkipJsonSchema[None] = None
 
     @model_validator(mode="after")
     def _a_real_change(self):
@@ -102,9 +129,11 @@ async def _audit_webhook(action: str, record: dict) -> None:
     target = f"{record.get('target_type')}:{record.get('target')}"
     events = json.dumps(record.get("events") or [], ensure_ascii=False)
     prompt = record.get("prompt") if isinstance(record.get("prompt"), str) else ""
+    store = _get_webhook_store()
     preview = (f"webhook {action}: id={_printable(record.get('id'))} target={_quoted(target)} "
                f"events={events} prompt={len(prompt)} chars "
-               f"signed={bool(record.get('signed'))} enabled={_get_webhook_store().is_enabled(record)}")
+               f"deliver={store.destination(record)} deliver_only={store.delivers_only(record)} "
+               f"signed={bool(record.get('signed'))} enabled={store.is_enabled(record)}")
     try:
         await asyncio.to_thread(audit.log, SecurityEvent(
             event_type=SecurityEventType.SETTINGS_CHANGE,
@@ -131,7 +160,8 @@ async def create_webhook(body: WebhookCreateBody):
     """Create an inbound webhook; the token is returned ONCE."""
     try:
         rec = _get_webhook_store().create(body.target, body.target_type, body.name, signed=body.signed,
-                                          events=body.events, prompt=body.prompt)
+                                          events=body.events, prompt=body.prompt, deliver=body.deliver,
+                                          deliver_only=body.deliver_only, description=body.description)
     except ValueError as exc:
         return error_json(exc, 400, "invalid webhook target")
     await _audit_webhook("create", rec)
@@ -143,7 +173,10 @@ async def update_webhook(hook_id: str, body: WebhookUpdateBody):
     """Switch a hook on or off, or change its event list or prompt template (H153).
     It keeps its token; a disabled hook refuses every delivery after authentication."""
     changes = {name: getattr(body, name) for name in body.model_fields_set}
-    rec = _get_webhook_store().update(hook_id, **changes)
+    try:
+        rec = _get_webhook_store().update(hook_id, **changes)
+    except ValueError as exc:
+        return error_json(exc, 422, "invalid webhook change")
     if rec is None:
         return nocache_json({"error": "webhook not found"}, status_code=404)
     if set(changes) == {"enabled"}:
@@ -165,17 +198,100 @@ async def delete_webhook(hook_id: str):
     return nocache_json({"ok": True})
 
 
-def _receiver_enabled() -> bool:
+#: The largest body a delivery may carry (a GitHub push with hundreds of commits is a
+#: few megabytes). A larger one is refused with 413 once the cap is crossed, before the
+#: rest is read, because the trigger holds the raw body to check its signature.
+MAX_BODY_BYTES = 5 * 1024 * 1024
+
+
+async def _receiver_refusal():
     """H153 — the platform-level switch (setting ``webhooks.receiver_enabled``, on by
-    default). Only a stored false turns it off: a settings store that cannot be read
-    leaves every hook to its own switch."""
-    from agents.core import settings_db
+    default), read off the event loop through ``webhooks.RECEIVER``, which fails closed:
+    off, and a store that cannot be read, both refuse. The refusal, or None to go on."""
+    from agents.core.webhooks import RECEIVER
 
-    return settings_db.get_value("webhooks", "receiver_enabled", True) is not False
-
-
-def _receiver_off():
+    state = await asyncio.to_thread(RECEIVER.state)
+    if state is True:
+        return None
+    if state is None:
+        return nocache_json({"error": "the webhook receiver's state cannot be read"}, status_code=503)
     return nocache_json({"error": "the webhook receiver is off"}, status_code=503)
+
+
+async def _capped_body(request: Request):
+    """The raw body, or None when it is larger than :data:`MAX_BODY_BYTES`."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _quiet_hours(orch) -> bool:
+    """The owner's night, as the jobs read it (ambient.quiet_hours_start/end)."""
+    from agents.core.autonomy.jobs import (
+        DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING)
+    from agents.core.autonomy.worker import is_night
+
+    get_setting = getattr(orch, "get_setting", None)
+
+    def hour(key, default):
+        try:
+            value = get_setting(key, default) if callable(get_setting) else default
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    return is_night(time.localtime().tm_hour, start=hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
+                    end=hour(QUIET_END_SETTING, DEFAULT_QUIET_END))
+
+
+_CUT_NOTE = "… (cut: the whole reply is in the session)"
+
+
+async def _deliver(orch, store, hook: dict, text: str, event: str) -> dict:
+    """H153 review — send a delivery's result where the hook says, and note how it went.
+
+    The log is the reply in the sender's response and the session: nothing to send. An
+    owner channel gets the text through ``send_to_target`` (audited, rate-limited, the
+    owner's own destination only), labelled as the hook, cut to what the channel
+    carries. A push channel stays silent through quiet hours and says so."""
+    from agents.core.channels import outbound
+    from agents.core.webhooks import DELIVER_LOG, PUSH_CHANNELS, _event_name
+
+    channel = store.destination(hook)
+    if channel == DELIVER_LOG:
+        store.mark_delivered(hook["id"], channel, True)
+        return {"channel": channel, "ok": True}
+    if channel in PUSH_CHANNELS and _quiet_hours(orch):
+        reason = "quiet hours: not pushed; the reply is in the session"
+        store.mark_delivered(hook["id"], channel, False, reason)
+        return {"channel": channel, "ok": False, "reason": reason}
+    label = _event_name(str(hook.get("name") or hook.get("target") or "webhook"), 80)
+    subject = f"Webhook {label}" + (f" · {_event_name(event, 64)}" if event else "")
+    room = outbound.MAX_TEXT_CHARS - len(subject) - 2
+    body = str(text or "")
+    if len(body) > room:
+        body = body[:room - len(_CUT_NOTE)] + _CUT_NOTE
+    result = await outbound.send_to_target(orch, channel, body, subject=subject, source=f"webhook:{hook['id']}")
+    ok = bool(result.get("ok"))
+    reason = "" if ok else str(result.get("reason") or "not delivered")
+    store.mark_delivered(hook["id"], channel, ok, reason)
+    return {"channel": channel, "ok": True} if ok else {"channel": channel, "ok": False, "reason": reason}
+
+
+def _workflow_text(pipeline, result) -> str:
+    """The last step's output: what a workflow run hands on."""
+    for step in reversed(list(getattr(pipeline, "steps", None) or [])):
+        out = result.get(getattr(step, "id", None)) if isinstance(result, dict) else None
+        if isinstance(out, str) and out and not out.startswith("[error:"):
+            return out
+    return ""
 
 
 def _skipped(store, hook_id: str, event: str, reason: str):
@@ -189,16 +305,19 @@ async def trigger_webhook(hook_id: str, request: Request):
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
-    # H153 — the receiver switch is read before the body (a flood costs nothing to
-    # refuse) and again after authentication (a switch that lands mid-body).
-    if not _receiver_enabled():
-        return _receiver_off()
+    # H153 — the receiver switch is read before the body (a refusal reads no body) and
+    # again after authentication (a switch that lands mid-body).
+    refusal = await _receiver_refusal()
+    if refusal is not None:
+        return refusal
     store = _get_webhook_store()
     hook = store.get(hook_id)
     if hook is None:
         return nocache_json({"error": "webhook not found"}, status_code=404)
 
-    raw = await request.body()
+    raw = await _capped_body(request)
+    if raw is None:
+        return nocache_json({"error": f"the body is larger than {MAX_BODY_BYTES} bytes"}, status_code=413)
     if hook.get("signed"):
         # H16.4: signed sources authenticate via HMAC over the raw body.
         signature = request.headers.get("x-signature-256", "")
@@ -215,8 +334,12 @@ async def trigger_webhook(hook_id: str, request: Request):
     live = store.get(hook_id)
     if live is None:
         return nocache_json({"error": "webhook not found"}, status_code=404)
-    if not _receiver_enabled():
-        return _receiver_off()
+    refusal = await _receiver_refusal()
+    if refusal is not None:
+        return refusal
+    live = store.get(hook_id)           # the read above awaited: take the record as it is now
+    if live is None:
+        return nocache_json({"error": "webhook not found"}, status_code=404)
     if not store.is_enabled(live):
         return nocache_json({"error": "webhook disabled"}, status_code=403)
 
@@ -239,11 +362,19 @@ async def trigger_webhook(hook_id: str, request: Request):
         return _skipped(store, hook_id, event, f"event '{event}' is not subscribed")
     template = live.get("prompt") if isinstance(live.get("prompt"), str) else ""
     text = render_prompt(template, payload, event) if template else extract_input(payload)
+    if not text.strip():
+        return _skipped(store, hook_id, event, "the prompt template rendered nothing")
     store.mark_called(hook_id)
+
+    if store.delivers_only(live):
+        # Deliver only: the rendered text goes where the hook says, and no turn runs.
+        delivery = await _deliver(orch, store, live, text, event)
+        return nocache_json({"ok": True, "target": hook["target"], "delivery": delivery})
 
     if hook["target_type"] == "agent":
         reply = await orch.handle_input(text, channel="webhook", agent_override=hook["target"])
-        return nocache_json({"ok": True, "target": hook["target"], "response": reply})
+        delivery = await _deliver(orch, store, live, reply if isinstance(reply, str) else str(reply), event)
+        return nocache_json({"ok": True, "target": hook["target"], "response": reply, "delivery": delivery})
 
     # workflow target (requires the workflow engine)
     engine = getattr(orch, "workflow_engine", None)
@@ -267,4 +398,8 @@ async def trigger_webhook(hook_id: str, request: Request):
         return error_json(exc, 200, "workflow run failed", extra={"ok": False, "target": hook["target"]})
     finally:
         reset_action_origin(origin_token)
-    return nocache_json({"ok": result.get("_ok", True), "target": hook["target"], "result": result})
+    out = _workflow_text(pipeline, result)
+    delivery = await _deliver(orch, store, live, out, event) if out else {
+        "channel": store.destination(live), "ok": False, "reason": "the workflow produced no text"}
+    return nocache_json({"ok": result.get("_ok", True), "target": hook["target"], "result": result,
+                         "delivery": delivery})

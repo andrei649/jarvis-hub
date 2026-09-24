@@ -339,6 +339,11 @@ function InteropMode({ t }){
           ))}</Section>
           {/* H200 — create, switch and delete live in the console's Webhooks panel. */}
           <SubH style={{marginTop:16}}>WEBHOOKS <a href={appUrl('/v2/console/webhooks')} aria-label="manage webhooks" style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
+          {!off.webhooks && N.receiver && N.receiver !== 'on' && (
+            <div className="iod" data-testid="interop-receiver" style={{padding:'4px 0',color:'var(--amber)'}}>
+              {N.receiver === 'off' ? 'receiver off: every delivery is refused' : 'receiver not read: deliveries may be refused'}
+            </div>
+          )}
           <Section off={off.webhooks} n={N.webhooks.length}>{N.webhooks.map((h,i)=>(
             <div className="io-row" key={i}>
               <span className={'io-dir '+h.dir}>{h.dir==='in'?'IN':'OUT'}</span>

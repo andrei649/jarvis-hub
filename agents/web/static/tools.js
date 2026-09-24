@@ -314,9 +314,16 @@
        the usual cause), and a new hook shows the one credential its sender uses (the
        signing secret of a signed hook, the token otherwise) until it is dismissed. */
     const _s = useState({ loading: true }), s = _s[0], setS = _s[1];
+    // H153 review — the receiver switch as the hub reads it (only a literal true is
+    // on): while it is off no hook is live, whatever its own switch says.
+    const _rx = useState('not read'), rx = _rx[0], setRx = _rx[1];
     const reload = useCallback(function () {
       setS({ loading: true });
       adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: (e && e.message) || String(e) }); });
+      adminFetch('/api/admin/settings/webhooks').then(function (d) {
+        const row = ((d && d.webhooks) || []).filter(function (r) { return r && r.key === 'receiver_enabled'; })[0];
+        setRx(row ? (row.value === true ? 'on' : 'off') : 'not read');
+      }).catch(function () { setRx('not read'); });
     }, []);
     useEffect(function () { reload(); }, []);
     const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
@@ -328,9 +335,11 @@
     const credential = created && (created.signed ? 'signing secret: ' + (created.signing_secret || '') : 'token: ' + (created.token || ''));
     const list = s.err ? Err(s.err)
       : s.loading ? Empty('Loading…')
-        : hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '') + (w.enabled === false ? ' (off)' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); })
+        : hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '') + (w.enabled === false ? ' (off)' : rx === 'off' ? ' (receiver off)' : '') + (w.deliver && w.deliver !== 'log' ? ' · deliver to ' + w.deliver + (w.deliver_only ? ' only' : '') : '')), Btn('Delete', function () { del(w.id); }, 'bad')); })
           : Empty('No webhooks.');
     const body = h('div', null,
+      h('div', { className: rx === 'off' ? 'tool-stat bad' : 'tool-hint' },
+        rx === 'off' ? 'Receiver off: every delivery is refused (Console → Webhooks switches it back on).' : 'Receiver: ' + rx),
       h('div', { className: 'tool-form' },
         h('input', { className: 'tool-input', placeholder: 'target agent', value: target, onChange: function (e) { setTarget(e.target.value); } }),
         h('label', { className: 'tool-hint' }, h('input', { type: 'checkbox', checked: signed, onChange: function (e) { setSigned(e.target.checked); } }), ' HMAC signed'),

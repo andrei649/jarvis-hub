@@ -29,6 +29,7 @@ beforeEach(() => {
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ method, url: u, body, admin: (init.headers || {})['X-Admin-Token'] });
     if (u.endsWith('/api/admin/settings/webhooks')) {
+      if ((init.headers || {})['X-Admin-Token'] !== 'admin-secret') return reply(401, { detail: 'admin token required' });
       if (method === 'PUT') { receiverSetting = body.values.receiver_enabled; return reply(200, { ok: true, updated: 1 }); }
       return receiverSetting === null ? reply(404, { error: 'unknown category: webhooks' })
         : reply(200, { webhooks: [{ key: 'receiver_enabled', value: receiverSetting, kind: 'toggle', source: 'set' }] });
@@ -361,8 +362,9 @@ describe('WebhooksPanel subscriptions', () => {
   it('never guesses the receiver: unread, it cannot be switched', async () => {
     render(<WebhooksPanel />);
     await ready();
-    expect(screen.getByText('not read')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'switch the receiver off' }).disabled).toBe(true);
+    // the settings route refused (404 here): the row says it was not read, and why
+    await waitFor(() => expect(screen.getByText(/^not read · .*404/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'receiver state not read' }).disabled).toBe(true);
     expect(screen.queryByTestId('receiver-off')).toBeNull();
   });
 
@@ -388,7 +390,7 @@ describe('WebhooksPanel subscriptions', () => {
     expect(events.value).toBe('');
     fireEvent.change(events, { target: { value: 'push' } });
     fireEvent.change(screen.getByLabelText('prompt template for ci'), { target: { value: '{event}!' } });
-    fireEvent.click(screen.getByRole('button', { name: 'save the events and template of ci' }));
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
     await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
     expect(sent('PATCH')[0]).toMatchObject({ admin: 'admin-secret', body: { events: ['push'], prompt: '{event}!' } });
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('ci saved'));
@@ -430,3 +432,141 @@ describe('WebhooksPanel subscriptions', () => {
     expect(parseEvents('')).toEqual([]);
   });
 });
+
+
+/* H153 review — Deliver to, deliver only, a description, the last delivery, an
+   unreadable event list, and a receiver row that never shows a stale state. */
+describe('WebhooksPanel — the H153 review round', () => {
+  const ready = () => waitFor(() => expect(screen.getByText('ci')).toBeTruthy());
+
+  it('creates a hook with a destination, deliver only and a description, create last in the tab order', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
+    fireEvent.change(screen.getByLabelText('description'), { target: { value: ' builds on main ' } });
+    fireEvent.change(screen.getByLabelText('deliver to'), { target: { value: 'telegram' } });
+    fireEvent.click(screen.getByLabelText('deliver only (skip the agent)'));
+    const template = screen.getByLabelText('prompt template');
+    const create = screen.getByText('create');
+    expect(template.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(create);
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toMatchObject({ target: 'friday', deliver: 'telegram', deliver_only: true,
+                                                 description: 'builds on main' });
+  });
+
+  it('shows where a hook delivers and how its last delivery went', async () => {
+    hooks = [{ ...hooks[0], deliver: 'web', deliver_only: true, description: 'from CI', skipped: 1,
+               last_delivery: { at: 1790000000, channel: 'web', ok: false, reason: 'web refused the message' } }];
+    render(<WebhooksPanel />);
+    await ready();
+    expect(screen.getByText('→ web')).toBeTruthy();
+    expect(screen.getAllByText('deliver only').some((el) => el.tagName === 'SPAN')).toBe(true);   // the row's tag
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText('from CI')).toBeTruthy();
+    expect(screen.getByText(/deliver only: no turn, the text goes to web/)).toBeTruthy();
+    expect(screen.getByText(/not delivered to web: web refused the message/)).toBeTruthy();
+    expect(screen.getByText(/^3 calls/)).toBeTruthy();                // calls and skipped are told apart
+    expect(screen.getByText(/^1 skipped/)).toBeTruthy();
+  });
+
+  it('changes the destination in the detail pane', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    fireEvent.change(screen.getByLabelText('deliver ci to'), { target: { value: 'ntfy' } });
+    fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'pager' } });
+    fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    expect(sent('PATCH')[0]).toMatchObject({ admin: 'admin-secret',
+      body: { deliver: 'ntfy', deliver_only: false, description: 'pager', events: [] } });
+  });
+
+  it('holds the detail save while it is pending, and gives focus back to the hook', async () => {
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    const save = screen.getByRole('button', { name: 'save ci' });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
+    await waitFor(() => expect(document.activeElement && document.activeElement.textContent).toBe('ci'));
+    expect(sent('PATCH')).toHaveLength(1);
+  });
+
+  it('never pre-fills an unreadable event list, and says so before saving it as every event', async () => {
+    hooks = [{ ...hooks[0], events: [], events_unreadable: true }];
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByText('ci'));
+    expect(screen.getByText(/event list unreadable: every delivery is skipped/)).toBeTruthy();
+    expect(screen.getByLabelText('events for ci').value).toBe('');
+    expect(screen.getByRole('button', { name: 'save ci: every event' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('events for ci'), { target: { value: 'push' } });
+    expect(screen.getByRole('button', { name: 'save ci' })).toBeTruthy();
+  });
+
+  it('reads the receiver with the admin credential, and ↻ reads it again', async () => {
+    receiverSetting = true;
+    render(<WebhooksPanel />);
+    await ready();
+    const reads = () => calls.filter((c) => c.method === 'GET' && c.url.endsWith('/api/admin/settings/webhooks'));
+    await waitFor(() => expect(reads()).toHaveLength(1));
+    expect(reads()[0].admin).toBe('admin-secret');
+    receiverSetting = false;                                           // switched off elsewhere
+    fireEvent.click(screen.getByLabelText('Reload'));
+    await waitFor(() => expect(screen.getByTestId('receiver-off')).toBeTruthy());
+    expect(reads()).toHaveLength(2);
+  });
+
+  it('drops a stale "on" when a re-read fails, and says why', async () => {
+    receiverSetting = true;
+    render(<WebhooksPanel />);
+    await ready();
+    await screen.findByRole('button', { name: 'switch the receiver off' });          // read: on
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init) => (String(url).endsWith('/api/admin/settings/webhooks')
+      ? Promise.resolve(reply(500, { error: 'boom' })) : real(url, init)));
+    fireEvent.click(screen.getByLabelText('Reload'));
+    await waitFor(() => expect(screen.getByText(/^not read · /)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'receiver state not read' }).disabled).toBe(true);
+  });
+
+  it('treats a stored value that is not true or false as off, as the hub does', async () => {
+    receiverSetting = 'yes';
+    render(<WebhooksPanel />);
+    await ready();
+    await waitFor(() => expect(screen.getByTestId('receiver-off').textContent).toMatch(/not true or false/));
+    expect(screen.getByRole('button', { name: 'switch the receiver on' })).toBeTruthy();
+  });
+
+  it('holds the receiver switch while its call is pending, and shows a refusal', async () => {
+    receiverSetting = true;
+    let release;
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init = {}) => {
+      if (String(url).endsWith('/api/admin/settings/webhooks') && init.method === 'PUT') {
+        calls.push({ method: 'PUT', url: String(url), body: JSON.parse(init.body) });
+        return new Promise((resolve) => { release = () => resolve(reply(403, { error: 'kernel denied' })); });
+      }
+      return real(url, init);
+    });
+    render(<WebhooksPanel />);
+    await ready();
+    const button = await screen.findByRole('button', { name: 'switch the receiver off' });
+    fireEvent.click(button);
+    await waitFor(() => expect(button.disabled).toBe(true));
+    fireEvent.click(button);
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByText('refused · kernel denied')).toBeTruthy());
+  });
+
+  it('says a sender may retry once the receiver is back on', async () => {
+    receiverSetting = false;
+    render(<WebhooksPanel />);
+    await ready();
+    await waitFor(() => expect(screen.getByTestId('receiver-off').textContent).toMatch(/retries on an error/));
+  });
+});
+

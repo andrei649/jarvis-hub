@@ -119,7 +119,11 @@ def test_the_event_is_read_from_the_senders_header_then_the_payload(headers, pay
 
 
 def test_an_event_name_is_bounded_and_printable():
-    assert delivery_event({"x-github-event": "a" * 500}, {}) == "a" * 64
+    # Bounded when read, but never cut to the 64-character subscription limit: a longer
+    # name must match no subscription rather than the one its first 64 characters spell.
+    from agents.core.webhooks import MAX_DELIVERED_EVENT
+
+    assert delivery_event({"x-github-event": "a" * 500}, {}) == "a" * MAX_DELIVERED_EVENT
     assert delivery_event({}, {"event": "push\nforged line"}) == "push forged line"
 
 

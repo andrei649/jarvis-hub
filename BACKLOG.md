@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H153 second adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found two majors:
+  - **Deliver to was missing.** H153 was marked equivalent although Hermes' "Deliver to" choice and deliver-only were unbuilt and unmentioned, and a create carrying them was answered 200 with the fields dropped.
+  - **The receiver switch failed open.** A settings store that could not be read turned the switched-off receiver back on.
+
+  Fixed:
+  - **Deliver to:** `deliver` is `log` (the default) or one of the owner's own direct-send channels (telegram, web, voice, ntfy), sent through the audited, rate-limited `send_to_target`, labelled with the hook and cut to fit. A push waits out quiet hours as a note on the hook. `deliver_only` skips the agent. A description and the last delivery are shown. Email, a GitHub comment, Discord and Slack are refused by name, and a create with an unknown field is refused.
+  - **Receiver:** `settings_db.read_setting` raises instead of answering the default, and `webhooks.ReceiverSwitch` keeps the last state, treats only a literal true as on, and refuses a receiver never read with its own reason. It is read off the event loop, cached for one second, and seen at once after a write in this process (`settings_db.on_change`).
+  - **Minors:** the settings audit row carries a choice's new value and a reseed is audited; a hand-broken event list is unreadable, not "every event"; rendering is bounded by its caps and a body over 5 MiB is 413; the panel's receiver row never shows a stale or unread state as on, ↻ re-reads it, and the banner warns about retries; Interop and /v1 show hooks refused while it is off.
+  - **Nits:** event names are not cut to fit; ASCII case only; no comma; an empty render is skipped; `{payload.x}` reads a reserved key; the update schema advertises no null; create is last in the tab order; focus returns after a save.
+
+  68 mutants of the new guards (44 backend, 21 panel and Interop, 3 /v1): 67 caught; the 68th removed a stop in `render_prompt` that the loop's next check already made, so that redundant stop was deleted. Records: H153 rewritten; H157, H259, H378, H409, H659, H200 and H270 corrected; 38 rows re-read and re-stamped; test manual CHN-171..175. Also fixed: CI lint (ruff I001 in `scripts/status_sync.py`, 48a1ae67) and the H315 purge test, which assumed no other test had left an ingestion cache behind (af9ba74f). Tests: backend 13,848 → 13,911; vitest 1,394 → 1,407.
 - 2026-09-24 H315 the agent keeps a visible checklist of what it is doing (missing → equivalent, #1207).
 
   - **The tool:** `agents/core/todo_tool.py` registers an ungated `todo` ToolRPC tool: items `{id, content, status}` with Hermes' four statuses. A call replaces the list, merges by id with merge=true, or reads it with no todos, and always answers with the whole list and its counts.
