@@ -446,6 +446,12 @@ async def clear_live_memory(orch) -> tuple[list[str], list[str]]:
         failed.append(f"{what}: {exc}")
 
     mem = getattr(orch, "memory", None)
+    # H428 — a turn embedding still queued, or a recall still running, from before
+    # the forget must never be stored or served after it.
+    if mem is not None and hasattr(mem, "discard_pending_embeddings"):
+        mem.discard_pending_embeddings()
+    if hasattr(orch, "_recall_purged"):
+        orch._recall_purged()
     if mem is not None and hasattr(mem, "clear"):
         try:
             await mem.clear()

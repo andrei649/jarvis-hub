@@ -6,10 +6,13 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H428, H433, H687 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 81 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 82 rows remain.
+
+**Re-opened in #1207** (2026-09-24): H428. Its review round kept the triviality gate, the hard timeout and skip-while-stuck, and made the bound hold for the turn: a separate store lock, and background turn embeddings. The next-turn warm-up half was never built, so the row is back at partial. Its plan below covers only that half.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
+| [H428](#h428) | Pre-turn recall: the next-turn warm-up half | partial | 4 | [11](#critic-note-11) |
 | [H165](#h165) | In-app documentation | missing | 5 |  |
 | [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
 | [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
@@ -91,6 +94,27 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
+
+## H428
+
+**Pre-turn recall: the next-turn warm-up half** (memory) — partial, ~4 h. Critic notes: [11](#critic-note-11).
+
+Files: `agents/core/orchestrator.py`, `agents/core/memory/recall_gate.py`, `agents/core/data_purge.py`, `tests/test_recall_gate.py`
+
+Plan:
+1. After a completed turn, when recall is on and the prompt was not trivial, queue one background recall of that turn's text. Use the same `_recall_hits` path under `memory.recall_timeout_s`, and never await it from the turn. This mirrors Hermes' `queue_prefetch_all` → `provider.queue_prefetch`.
+2. Key the result to the session. The next turn's `_recall_block` consumes it only if all of the following hold, and never waits for it (Hermes' Honcho `_consume_pending_dialectic`):
+   - it is done;
+   - it is younger than the handoff TTL;
+   - it comes from the current purge generation;
+   - the turn is not job-pinned.
+3. Decide, and pin with a test, whether those hits go into the fenced block beside the new turn's own or only when its own recall is skipped or times out. Taint applies as for any recall hit.
+4. Skip the warm-up while a straggler is stuck, for a trivial prompt, and for a pinned job turn. A purge (`_recall_purged`) drops it.
+5. Tests to write red-first:
+   - a warmed result is served to the next turn in the same session without a new query when its own recall times out;
+   - it is never served to another session, or after a purge, or to a pinned turn;
+   - a trivial turn queues nothing;
+   - the warm-up never delays the turn that queued it.
 
 ## H165
 
@@ -846,7 +870,7 @@ Three rows add overlapping per-turn payloads and meters on the same surfaces. H2
 
 ### Critic note 11
 
-Rows: [H416](#h416), H428 (closed in #1207), [H674](#h674), [H677](#h677).
+Rows: [H416](#h416), [H428](#h428), [H674](#h674), [H677](#h677).
 
 H416's accepted requirement is one budget primitive whose timeout_for(kind) replaces site-local constants. H428 (memory.recall_timeout_s) and H674 (compression_max_turn_hold_seconds, compression_inactivity_seconds) add new site-local timeouts inside the turn, which H416 would then have to chase down again. H677 adds boot and teardown budgets, which sit outside a turn.
 
@@ -854,7 +878,7 @@ H416's accepted requirement is one budget primitive whose timeout_for(kind) repl
 
 ### Critic note 12
 
-Rows: H428 (closed in #1207), H433 (closed in #1207).
+Rows: [H428](#h428), H433 (closed in #1207).
 
 Both rows modify Orchestrator._recall_block. H433 adds a strict-local rewrite call (max_tokens 96, no timeout) before memory.recall. H428 bounds only memory.recall with its hard timeout and gates trivial prompts. A hung local backend in the rewrite would stall the turn outside H428's bound, and trivial prompts would still pay for a rewrite.
 

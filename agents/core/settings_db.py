@@ -5,6 +5,7 @@ Seeds defaults from agents.yaml on first init.
 
 import json
 import logging
+import math
 import sqlite3
 import threading
 from typing import Any
@@ -515,6 +516,10 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         # bool is an int subclass — exclude it so a toggle value can't pass as a number.
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return f"{key}: expected a number"
+        # NaN and the infinities are JSON-storable but no setting means them (H428:
+        # a NaN recall timeout silently switched recall off).
+        if isinstance(value, float) and not math.isfinite(value):
+            return f"{key}: expected a finite number"
     elif kind == "select":
         if value not in opts:
             return f"{key}: {value!r} is not one of {opts}"

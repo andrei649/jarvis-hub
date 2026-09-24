@@ -160,6 +160,7 @@ async def test_add_turn_embeds_when_enabled():
     mm.embed_turns = True
     sid = await mm.new_session()
     await mm.add_turn(sid, "user", "remember that I like espresso")
+    await mm.flush_embeddings()  # H428: turn embeddings are written in the background
     assert len(mm.vectors) == 1
 
 

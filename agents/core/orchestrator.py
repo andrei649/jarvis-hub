@@ -17,6 +17,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Optional
 
 from .agent import Agent
@@ -87,16 +88,6 @@ from datetime import UTC
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
 
 logger = logging.getLogger("jarvis.orchestrator")
-
-
-def _consume_task_exception(task: "asyncio.Task") -> None:
-    """Retrieve a background task's exception so asyncio never logs it as unretrieved.
-
-    Used for a recall left running past its timeout (H428): its outcome is read, if
-    at all, by the next turn, and a failure must stay a quiet empty block.
-    """
-    if not task.cancelled():
-        task.exception()
 
 
 def _is_failed_agent_reply(agent_id: str | None, response: object) -> bool:
@@ -1308,6 +1299,16 @@ class Orchestrator:
                 logger.warning(f"Error stopping Oracle watcher: {e}")
         # Close all active plugins gracefully (CLN-2: owned by PluginManager).
         await self.plugin_manager.close_all()
+        # H428 — turn embeddings are written in the background: give the queue a
+        # bounded chance to land before the backends close, and say what it dropped.
+        flush = getattr(getattr(self, "memory", None), "flush_embeddings", None)
+        if flush is not None:
+            try:
+                await asyncio.wait_for(flush(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("shutdown: queued turn embeddings did not land within 5s; they are dropped")
+            except Exception as e:
+                logger.warning(f"Error flushing turn embeddings: {e}")
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
@@ -2515,24 +2516,25 @@ class Orchestrator:
     # H428 — Hermes bounds each memory prefetch at 8 s (_EXTERNAL_PREFETCH_TIMEOUT_S).
     _RECALL_TIMEOUT_DEFAULT_S = 8.0
     _RECALL_TIMEOUT_BOUNDS_S = (0.1, 60.0)
-    # A late result waits this long for a retry of the same question.
+    # A late result waits this long, counted from when it finished, for a retry of the same question.
     _RECALL_HANDOFF_TTL_S = 600.0
 
     def _recall_timeout_s(self) -> float:
-        """``memory.recall_timeout_s``, validated: a non-positive or non-number value
-        reads as the default, anything else is clamped into the bounds."""
+        """``memory.recall_timeout_s``, validated: a non-number, non-finite or
+        non-positive value reads as the default, anything else is clamped into the bounds."""
         raw = self.get_setting("memory.recall_timeout_s", self._RECALL_TIMEOUT_DEFAULT_S)
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or raw <= 0:
             return self._RECALL_TIMEOUT_DEFAULT_S
         low, high = self._RECALL_TIMEOUT_BOUNDS_S
         return float(min(max(raw, low), high))
 
     async def _recall_hits(self, text: str) -> list:
-        """The whole retrieval step the hard timeout bounds: model pins, the query
-        embedding, fused vector ⊕ graph search and the living-memory rerank.
-        (A query rewrite, H433, belongs inside this coroutine too.)"""
+        """The retrieval step the hard timeout bounds: the query rewrite (H433), the
+        query embedding and the fused vector ⊕ graph search. The job-model-pin check
+        runs before it (_recall_block) and the living-memory rerank after it, on the
+        hits a turn actually uses."""
         from .llm.job_selection import current_selection, SelectionError
-        if current_selection() is not None:
+        if current_selection() is not None:  # the task runs in the caller's copied context
             raise SelectionError("job model pins exclude auxiliary recall embedding")
         query = text
         if self.get_setting("memory.recall_query_rewrite", False):
@@ -2541,8 +2543,7 @@ class Orchestrator:
             from .memory.query_rewrite import rewrite_query
             query = await rewrite_query(text, self._query_rewriter()) or text
         k = self.get_setting("memory.recall_top_k", 5)
-        hits = await self.memory.recall(query, top_k=k)
-        return self._living_memory_rerank_hits(hits)
+        return await self.memory.recall(query, top_k=k)
 
     def _query_rewriter(self):
         """Strict-local generate() for the H433 query rewrite, or ``None``.
@@ -2566,50 +2567,75 @@ class Orchestrator:
 
         return _generate
 
+    def _recall_runtime(self) -> SimpleNamespace:
+        """Recall bookkeeping (lazy, so orchestrators built without __init__ work too).
+
+        ``stuck``: recalls still running past their timeout. ``late``: the result of
+        the last one that finished cleanly, for one handoff. ``generation``: bumped
+        by a purge, so nothing started before it is ever served after it.
+        """
+        state = getattr(self, "_recall_state", None)
+        if state is None:
+            state = self._recall_state = SimpleNamespace(stuck=set(), late=None, generation=0)
+        return state
+
     async def _bounded_recall_hits(self, text: str) -> list:
         """Recall hits under the hard timeout, or [] (H428).
 
         A timed-out recall cannot be killed — its embedding and search run on worker
-        threads and hold the memory manager's lock — so it is left to finish as the
-        *straggler*. While it runs, later turns skip recall instead of queueing
-        another round-trip behind the same hung backend (Hermes skips a provider
-        whose previous prefetch is still alive). When it finishes, its hits are kept
-        for one handoff: a retry of the same question within the TTL gets them
-        without a new query; any other turn discards them.
+        threads, the search holding the memory manager's store lock — so it is left
+        to finish as a *straggler*. While any straggler runs, later recalls are
+        skipped instead of queueing another round-trip behind the same hung backend
+        (Hermes skips a provider whose previous prefetch is still alive). A straggler
+        that finishes cleanly leaves its hits for one handoff: the next recall takes
+        them, and serves them only if it is a retry of the same question within the
+        TTL of their completion and no purge ran in between.
         """
-        straggler = getattr(self, "_recall_straggler", None)
-        if straggler is not None:
-            if not straggler.done():
-                logger.info("recall skipped: the previous recall is still running past its timeout")
-                return []
-            self._recall_straggler = None
-            late = self._recall_handoff(straggler)
-            if late is not None and late[0] == text:
-                return late[1]
+        state = self._recall_runtime()
+        stuck = [task for task in state.stuck if not task.done()]
+        if stuck:
+            logger.info("recall skipped: %d earlier recall(s) still running past the timeout", len(stuck))
+            return []
+        late, state.late = state.late, None
+        if (late is not None and late.text == text and late.generation == state.generation
+                and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
+            return late.hits
         timeout = self._recall_timeout_s()
         task = asyncio.ensure_future(self._recall_hits(text))
         try:
             done, _pending = await asyncio.wait({task}, timeout=timeout)
         except asyncio.CancelledError:
-            task.cancel()
+            # The turn is gone, but the worker threads cannot be: keep the task as a
+            # straggler (still holding the store lock) instead of cancelling it out
+            # from under them, which would let a second search start beside it.
+            self._adopt_recall_straggler(task, text)
             raise
         if not done:
-            task.add_done_callback(_consume_task_exception)
-            self._recall_straggler = task
-            self._recall_straggler_text = text
-            self._recall_straggler_started = time.monotonic()
+            self._adopt_recall_straggler(task, text)
             logger.warning("recall timed out after %.1fs; this turn runs without long-term memory", timeout)
             return []
         return task.result()
 
-    def _recall_handoff(self, straggler) -> tuple[str, list] | None:
-        """``(query, hits)`` from a straggler that finished cleanly within the TTL."""
-        started = getattr(self, "_recall_straggler_started", 0.0)
-        if straggler.cancelled() or straggler.exception() is not None:
-            return None
-        if time.monotonic() - started > self._RECALL_HANDOFF_TTL_S:
-            return None
-        return getattr(self, "_recall_straggler_text", ""), straggler.result()
+    def _adopt_recall_straggler(self, task: "asyncio.Task", text: str) -> None:
+        state = self._recall_runtime()
+        state.stuck.add(task)
+        generation = state.generation
+
+        def _finished(done: "asyncio.Task") -> None:
+            state.stuck.discard(done)
+            # exception() also marks a failure as retrieved: it stays a quiet empty block.
+            if done.cancelled() or done.exception() is not None or generation != state.generation:
+                return
+            state.late = SimpleNamespace(text=text, hits=done.result(), finished=time.monotonic(),
+                                         generation=generation)
+
+        task.add_done_callback(_finished)
+
+    def _recall_purged(self) -> None:
+        """A purge ("forget me"): no recall started before it is ever served after it."""
+        state = self._recall_runtime()
+        state.generation += 1
+        state.late = None
 
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
@@ -2620,16 +2646,26 @@ class Orchestrator:
         graph); any failure degrades to an empty block (never breaks a turn).
 
         H428: a trivial prompt (empty, a slash command, a bare acknowledgement —
-        memory.recall_gate) skips recall entirely, and the retrieval is bounded by
-        `memory.recall_timeout_s` (default 8 s) through _bounded_recall_hits."""
+        memory.recall_gate) skips recall entirely, a job-model-pinned turn never
+        recalls, and the retrieval is bounded by `memory.recall_timeout_s`
+        (default 8 s) through _bounded_recall_hits. The living-memory rerank then
+        runs off the event loop on the hits this turn uses."""
         if not self.get_setting("memory.recall_enabled", False):
             return ""
         from .memory.recall_gate import is_trivial_prompt
         if is_trivial_prompt(text):
             logger.debug("recall skipped: trivial prompt")
             return ""
+        from .llm.job_selection import current_selection
+        if current_selection() is not None:
+            # Checked before any handoff: a pinned job turn never receives a late
+            # result an owner's turn left behind, and never consumes it either.
+            logger.info("recall skipped: job model pins exclude auxiliary recall embedding")
+            return ""
         try:
             hits = await self._bounded_recall_hits(text)
+            if hits:
+                hits = await asyncio.to_thread(self._living_memory_rerank_hits, hits)
         except Exception as e:
             logger.warning(f"recall failed: {e}")
             return ""

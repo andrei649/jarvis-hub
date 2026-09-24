@@ -154,7 +154,8 @@ async def test_a_hung_rewrite_backend_is_inside_the_recall_bound():
     assert await orch._recall_block("and the trip?") == ""
     assert time.monotonic() - started < 1.0
     assert memory.calls == []
-    orch._recall_straggler.cancel()
+    for task in orch._recall_state.stuck:
+        task.cancel()
 
 
 async def test_no_local_backend_means_no_rewrite():
