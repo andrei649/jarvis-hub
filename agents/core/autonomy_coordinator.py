@@ -848,6 +848,13 @@ class AutonomyCoordinator:
             agents = getattr(config, "agents", None) or {}
             return getattr(agents.get(agent_id), "tools", None)
 
+        def _on_shared_session() -> bool:
+            # H315 review — a turn with no session of its own runs on the HUD's shared
+            # session; what a session-scoped tool keeps there is the owner's. A double
+            # without the probe counts as shared (fail closed).
+            probe = getattr(self._orch, "on_shared_session", None)
+            return True if not callable(probe) else bool(probe())
+
         # K1 — the model may write one script that orchestrates many tool calls. Off
         # unless `llm.execute_code` is on, and registered last on purpose: the tool
         # offers a script exactly the tools registered above, minus itself, narrowed by
@@ -864,6 +871,8 @@ class AutonomyCoordinator:
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            # A script's reach is narrowed as the turn's offer is, the shared session included.
+            shared_session=_on_shared_session,
             # K2 — a resident interpreter per authorized session, behind its own
             # switch. Docker only and pinned by digest: a kernel that survives an
             # hour deserves the pin the acquisition profile already demands, and a
@@ -886,13 +895,6 @@ class AutonomyCoordinator:
         # to be reachable from a route. Bound even when it is None: "sessions are off"
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
-
-        def _on_shared_session() -> bool:
-            # H315 review — a turn with no session of its own runs on the HUD's shared
-            # session; what a session-scoped tool keeps there is the owner's. A double
-            # without the probe counts as shared (fail closed).
-            probe = getattr(self._orch, "on_shared_session", None)
-            return True if not callable(probe) else bool(probe())
 
         tool_profile = ToolProfileResolver(
             settings=_get_setting,

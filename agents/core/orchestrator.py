@@ -274,6 +274,12 @@ _TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
 )
+#: Whether the turn's session was the shared default when the turn resolved it (H315
+#: second review): a default that moves later (an owner resuming another session) does
+#: not let an in-flight turn that started on it in. None: no turn has resolved one.
+_session_is_shared: contextvars.ContextVar = contextvars.ContextVar(
+    "jarvis_session_is_shared", default=None
+)
 
 
 def _sum_usage(running, incoming):
@@ -781,6 +787,8 @@ class Orchestrator:
             self._session_id_default = value
         else:
             _active_session.set(value)
+            if value is None or value == self._session_id_default:
+                _session_is_shared.set(True)     # a turn can move onto the shared session, never off it
 
     def on_shared_session(self) -> bool:
         """H315 review: True when this turn runs on the shared default session (the HUD's)
@@ -788,11 +796,18 @@ class Orchestrator:
 
         A turn gets a session of its own from an explicit session id or from a channel's
         own conversation (``channel_handler``). A turn that binds neither falls back to the
-        shared default, and so does a caller outside any turn: a widget visitor with no
-        client id, a webhook, a job, a subagent, a direct tool call. Naming the default's
-        id explicitly is still the shared session. Whatever is kept per session there is
-        the owner's.
+        shared default, and so does a caller outside any turn: a widget visitor (the widget
+        route binds no session), a webhook, a job, a subagent, a direct tool call. Naming
+        the default's id explicitly is still the shared session. Whatever is kept per
+        session there is the owner's.
+
+        The answer is the one the turn got when it resolved its session: the default can
+        move while a turn runs (``/sessions/resume``, ``/memory/clear``), and a turn that
+        started on the shared session stays on it for this question.
         """
+        pinned = _session_is_shared.get()
+        if pinned is not None:
+            return bool(pinned)
         value = _active_session.get()
         if value is _SESSION_UNSET or value is None:
             return True
@@ -1401,12 +1416,15 @@ class Orchestrator:
                 # and reset it in finally, so the binding is scoped to this request's
                 # async context only and never touches the shared default.
                 # `_resolve_session` inside handle_input keeps the value we set here.
-                token = _active_session.set(self._channel_sessions[key])
+                channel_session = self._channel_sessions[key]
+                token = _active_session.set(channel_session)
+                shared_token = _session_is_shared.set(channel_session == self._session_id_default)
                 try:
                     response = await self._channel_turn(
                         text, channel, observe_only=observe_only, draft=draft
                     )
                 finally:
+                    _session_is_shared.reset(shared_token)
                     _active_session.reset(token)
             else:
                 response = await self._channel_turn(
@@ -1600,12 +1618,16 @@ class Orchestrator:
         """
         if session_id is not None:
             _active_session.set(session_id)
+            _session_is_shared.set(session_id == self._session_id_default)
             return session_id
         existing = _active_session.get()
         if existing is not _SESSION_UNSET:
+            if _session_is_shared.get() is None:
+                _session_is_shared.set(existing is None or existing == self._session_id_default)
             return existing
         sid = self._session_id_default
         _active_session.set(sid)
+        _session_is_shared.set(True)
         return sid
 
     async def process(self, prompt: str, agent: str = "jarvis", channel: str = "internal") -> str:

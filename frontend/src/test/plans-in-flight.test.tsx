@@ -82,6 +82,27 @@ describe('Decision Inbox — plans in flight (H315)', () => {
     expect(planAge(0, 5 * 3600 * 1000)).toBe('5 h ago');
   });
 
+  it('shows every tag an item carries, not only the first', async () => {
+    route([plan('telegram-42', [{ ...item(1, 'from a guest page', 'pending'), by: 'inbound/guest', tainted: true }])]);
+    render(<DecisionInboxPanel />);
+    const line = (await screen.findByText('from a guest page', { exact: false })).closest('li').textContent;
+    expect(line).toContain('guest turn');
+    expect(line).toContain('untrusted source');
+  });
+
+  it('draws the age boundaries where they are', () => {
+    expect(planAge(0, 59_400)).toBe('just now');        // 59 s
+    expect(planAge(0, 59_600)).toBe('1 min ago');       // rounds to 60 s
+    expect(planAge(0, 60_000)).toBe('1 min ago');
+    expect(planAge(0, 3_599_000)).toBe('59 min ago');
+    expect(planAge(0, 3_600_000)).toBe('1 h ago');
+    expect(planAge(0, 86_399_000)).toBe('23 h ago');
+    expect(planAge(0, 86_400_000)).toBe('1 d ago');
+    expect(planAge(0, 129_600_000)).toBe('1 d ago');    // a day and a half is still one day
+    expect(planAge(0, 172_800_000)).toBe('2 d ago');
+    expect(planAge(10, 0)).toBe('just now');            // a clock behind the hub's is not negative time
+  });
+
   it('strikes cancelled items through, names the agent and labels the section', async () => {
     route([plan('web-1', [item(1, 'dropped step', 'cancelled'), item(2, 'open step', 'pending')], { agent: 'friday' })]);
     render(<DecisionInboxPanel />);

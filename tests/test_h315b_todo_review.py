@@ -307,7 +307,11 @@ async def test_each_item_remembers_whether_its_text_came_from_an_untrusted_turn(
     await _todo(server, {"todos": [{"id": "1", "status": "completed"}], "merge": True})
     assert store.read("tg")["todos"][0]["tainted"] is True             # a status is no new text
     reply = await _todo(server, {"todos": [{"id": "1", "content": "rewritten"}], "merge": True})
-    assert store.read("tg")["todos"][0]["tainted"] is False             # new text, from a clean turn
+    # H315 second review: new text from a clean turn keeps the item's taint, because its id
+    # came from the untrusted turn; only a new list starts clean.
+    assert store.read("tg")["todos"][0]["tainted"] is True
+    reply = await _todo(server, {"todos": [{"id": "a", "content": "rewritten"}]})
+    assert store.read("tg")["todos"][0]["tainted"] is False
     assert "tainted" not in reply and "tainted" not in reply["todos"][0]
 
 
@@ -384,11 +388,13 @@ async def test_text_copied_from_an_untrusted_page_taints_the_later_turn_that_rea
     assert origin2 != "generated"                                        # the reading turn is tainted
 
 
-# ── M3: re-reading the plan never ends a turn ────────────────────────────────────
+# ── M3: keeping the plan current never ends a turn ───────────────────────────────
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("per_tool_limit", [0, 2])
 async def test_reading_the_plan_before_every_step_never_ends_the_turn(per_tool_limit):
+    """Each step reads the plan and marks its item: the plan changes between reads, so no
+    read repeats the one before it (the H315 second review keys a repeat on the plan)."""
     store = TodoStore()
     server = _server(store)
 
@@ -398,7 +404,8 @@ async def test_reading_the_plan_before_every_step_never_ends_the_turn(per_tool_l
     server.register_tool("act", act, description="do a step",
                          input_schema={"type": "object", "properties": {"step": {"type": "integer"}}})
     script = [("todo", {"todos": _items(*[(f"step {i}", "pending") for i in range(1, 5)])})]
-    script += [[("todo", {}), ("act", {"step": i})] for i in range(1, 5)]
+    script += [[("todo", {"todos": [{"id": str(i), "status": "completed"}], "merge": True}),
+                ("act", {"step": i})] for i in range(1, 5)]
     backend = _Backend(script)
     runtime = AgentToolRuntime(server, enabled=lambda: True, max_iterations=lambda: 8,
                                per_tool_limit=per_tool_limit)
@@ -634,7 +641,7 @@ def test_the_capability_registry_says_todo_writes_session_state():
     register_todo_tool(server, store=TodoStore(), session_id=lambda: "s")
     record = next(r for r in _tool_records(SimpleNamespace(tool_rpc=server)) if r.id == "tool:todo")
     assert record.risk == "reversible"
-    assert "No mutation" not in record.rollback.description and "not kept" in record.rollback.description
+    assert "No mutation" not in record.rollback.description and "keeps no copy" in record.rollback.description
 
 
 @pytest.mark.parametrize("reply", [[], "nope", {"plans": {"a": 1}}, {"plans": ["x"]},

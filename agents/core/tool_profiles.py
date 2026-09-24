@@ -243,7 +243,7 @@ class ToolProfileResolver:
     ``principal`` and ``origin`` are read per call so the posture is the *current* turn's;
     ``agent_patterns`` maps an agent id to its ``tools:`` list (``None`` = unrestricted);
     ``shared_session`` says whether the turn runs on the shared default session (read per
-    call; a getter that fails counts as yes).
+    call; a getter that fails counts as yes, and so does a resolver built without one).
     """
 
     def __init__(
@@ -253,7 +253,7 @@ class ToolProfileResolver:
         agent_patterns: Callable[[str], Sequence[str] | None] = lambda agent_id: None,
         principal: Callable[[], Any] = lambda: None,
         origin: Callable[[], str] = current_action_origin,
-        shared_session: Callable[[], bool] = lambda: False,
+        shared_session: Callable[[], bool] = lambda: True,
     ) -> None:
         self._settings = settings
         self._agent_patterns = agent_patterns

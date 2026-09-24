@@ -8,6 +8,7 @@ import logging
 import math
 import sqlite3
 import threading
+import time
 from typing import Any
 
 from agents.core.llm import provider_routing as _routing
@@ -108,7 +109,21 @@ CREATE TABLE IF NOT EXISTS settings (
     opts     TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (category, key)
 );
+CREATE TABLE IF NOT EXISTS settings_migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at REAL NOT NULL
+);
 """
+
+#: Shipped defaults a later build changed: (name, category, key, the old shipped value,
+#: the new one). A store still holding the old value gets the new one the first time a
+#: build that knows the change starts on it, once: ``settings_migrations`` records it,
+#: so an owner who chooses the old value afterwards keeps it. A store holding anything
+#: else is the owner's choice and is left alone.
+_CHANGED_DEFAULTS: tuple[tuple[str, str, str, Any, Any], ...] = (
+    # H315 review: the guest allowlist gained todo (a guest's own plan on its own chat).
+    ("llm.guest_tools+todo", "llm", "guest_tools", ["echo", "time"], ["echo", "time", "todo"]),
+)
 
 # ── default settings — seed values ────────────────────────────────
 
@@ -162,7 +177,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
-    dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap)", kind="number"),
+    dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     dict(category="llm",     key="guest_tools", value=["echo", "time", "todo"],      label="Tools offered to a guest on an inbound channel (never a gated one)", kind="tags"),
     dict(category="llm",     key="inbound_actuation", value=False,                  label="Offer gated (approval-bound) tools to the owner on inbound channels", kind="toggle"),
@@ -434,10 +449,43 @@ def init_db(force: bool = False):
         logger.info(f"Seeded {inserted} new default settings (total {len(DEFAULTS)})")
 
     _migrate_retired_claude_default(conn)
+    _migrate_changed_defaults(conn)
+    _refresh_labels(conn)
     conn.commit()
     conn.close()
     if force:
         _changed(None, None)
+
+
+def _refresh_labels(conn: sqlite3.Connection) -> int:
+    """A label is the build's own words, never the owner's (every write takes the
+    declaration's): a declared row keeps its value and takes this build's label, so a
+    reworded label reaches an install seeded by an earlier build. Returns how many moved."""
+    moved = 0
+    for row in DEFAULTS:
+        cursor = conn.execute(
+            "UPDATE settings SET label=? WHERE category=? AND key=? AND label<>?",
+            (row["label"], row["category"], row["key"], row["label"]),
+        )
+        moved += cursor.rowcount
+    return moved
+
+
+def _migrate_changed_defaults(conn: sqlite3.Connection) -> list[str]:
+    """Apply each :data:`_CHANGED_DEFAULTS` entry once per store; the names it changed."""
+    changed: list[str] = []
+    for name, category, key, old, new in _CHANGED_DEFAULTS:
+        if conn.execute("SELECT 1 FROM settings_migrations WHERE name=?", (name,)).fetchone():
+            continue
+        cursor = conn.execute(
+            "UPDATE settings SET value=? WHERE category=? AND key=? AND value=?",
+            (json.dumps(new), category, key, json.dumps(old)),
+        )
+        conn.execute("INSERT INTO settings_migrations (name, applied_at) VALUES (?, ?)", (name, time.time()))
+        if cursor.rowcount > 0:
+            changed.append(name)
+            logger.info("settings: %s.%s had the old shipped default and now has the new one", category, key)
+    return changed
 
 def value_source(category: str, key: str, value, raw=None) -> str:
     """H273 — where a stored value stands against its declaration: ``default`` when

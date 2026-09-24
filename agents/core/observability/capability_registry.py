@@ -282,8 +282,9 @@ def _action_records(orch=None) -> list[CapabilityRecord]:
 
 def _session_state_record(tool: dict, capability_id: str, name: str, verification) -> CapabilityRecord:
     """H315 review: a session-scoped tool (``todo``) is ungated but not read-only. It
-    writes the session's own state in memory; the next call can rewrite it, but a list
-    it replaced is not kept anywhere."""
+    writes the session's own state in memory. What a call replaced is put back by a
+    compensating call: every answer carries the whole list, and the answer stays in the
+    transcript (H315 second review: "none" contradicted "reversible")."""
     return CapabilityRecord(
         id=capability_id,
         kind="tool",
@@ -295,9 +296,10 @@ def _session_state_record(tool: dict, capability_id: str, name: str, verificatio
         supports=("tool-rpc", "inline"),
         verification=verification,
         rollback=RollbackContract(
-            mode="none",
-            description=("It writes only this session's in-memory state: the next call can "
-                         "rewrite it, but what a call replaced is not kept."),
+            mode="compensate",
+            description=("It writes only this session's in-memory state. Every answer carries "
+                         "the whole list, so a later call can write back what a call replaced; "
+                         "the tool keeps no copy of it."),
         ),
         confidence=0.0,
         implementation=f"agents.core.tool_rpc:{name}",

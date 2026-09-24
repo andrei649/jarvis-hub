@@ -59,6 +59,27 @@ def current_tool_actor() -> str:
     return _tool_actor.get()
 
 
+#: Which model turn a call belongs to (H315 second review): the tool loop binds a fresh
+#: token for each run and a script's calls run with none, so a tool can tell text the
+#: model itself sent in this turn (it is in the transcript already) from text an earlier
+#: turn or a script wrote. ``None`` outside a loop run.
+_tool_turn: ContextVar[Optional[str]] = ContextVar("jarvis_tool_turn", default=None)
+
+
+def bind_tool_turn(token: Optional[str]):
+    """Bind the turn the next calls belong to; returns the reset token."""
+    return _tool_turn.set(token)
+
+
+def reset_tool_turn(token) -> None:
+    _tool_turn.reset(token)
+
+
+def current_tool_turn() -> Optional[str]:
+    """The model turn of the call in flight, or ``None`` (no loop run, or a script)."""
+    return _tool_turn.get()
+
+
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
@@ -286,6 +307,11 @@ class ToolRPCServer:
         """
         spec = self._tools.get(str(name or ""))
         return None if spec is None else spec.get("max_result_bytes")
+
+    def declares_untrusted_output(self, name: str) -> bool:
+        """Whether this tool said what it returns comes from outside the box."""
+        spec = self._tools.get(str(name or ""))
+        return bool(spec and spec.get("untrusted_output"))
 
     def allows(self, name: str) -> bool:
         return name in self._tools

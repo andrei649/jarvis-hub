@@ -291,6 +291,7 @@ class CodeExecutionTool:
         kernels=None,
         authorizer: Callable[..., object] | None = None,
         result_store=None,
+        shared_session: Callable[[], bool] | None = None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -298,6 +299,9 @@ class CodeExecutionTool:
         self._agent_patterns = agent_patterns
         self._principal = principal
         self._session_id = session_id
+        # Whether the turn runs on the owner's shared session (H315 second review): a
+        # script's reach is narrowed exactly as the turn's offer is. Unknown is yes.
+        self._shared_session = shared_session
         # K2. Absent, or switched off, and every call is the K1 one-shot path.
         self._kernels = kernels
         self._authorizer = authorizer
@@ -342,6 +346,10 @@ class CodeExecutionTool:
                 session = str(self._session_id() or "")
             except Exception:
                 session = ""
+        try:
+            shared = True if self._shared_session is None else bool(self._shared_session())
+        except Exception:
+            shared = True
         invocation, _decision = bind(
             tools=self._offerable(),
             agent=agent,
@@ -350,6 +358,7 @@ class CodeExecutionTool:
             session_id=session,
             settings=self._settings,
             agent_patterns=patterns,
+            shared_session=shared,
         )
         return invocation
 
@@ -599,6 +608,7 @@ def register_code_tools(
     kernels=None,
     authorizer: Callable[..., object] | None = None,
     result_store=None,
+    shared_session: Callable[[], bool] | None = None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -616,7 +626,7 @@ def register_code_tools(
     tool = CodeExecutionTool(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
         principal=principal, session_id=session_id, kernels=kernels,
-        authorizer=authorizer, result_store=result_store,
+        authorizer=authorizer, result_store=result_store, shared_session=shared_session,
     )
     sessions = tool.sessions_on()
     server.register_tool(

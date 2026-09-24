@@ -5,9 +5,9 @@ Both are user-guarded. The orchestrator (which owns `checkpoints` + `memory`) is
 resolved at request time via `get_orch()` (late binding to `web.orch`), matching
 the other extracted routers. Behavior is unchanged from the inline versions.
 
-H315 adds the agent's own plans: `GET /sessions/todo` (the most recently updated
-ones) and `GET /sessions/{id}/todo` (one session's), both user-guarded and never
-cached — a plan is work in flight and a stale copy misstates it.
+H315 adds the agent's own plans: `GET /sessions/todo` (the ones the agent most
+recently wrote or read) and `GET /sessions/{id}/todo` (one session's), both
+user-guarded and never cached — a plan is work in flight and a stale copy misstates it.
 """
 
 from uuid import UUID
@@ -40,7 +40,8 @@ RECENT_PLANS = 20
 
 @router.get("/sessions/todo", dependencies=[Depends(user_guard)])
 async def get_recent_plans():
-    """H315 — the checklists the agent keeps, most recently updated first."""
+    """H315 — the checklists the agent keeps, the one it most recently wrote or read
+    first (each carries ``updated_at``, when its list last changed)."""
     from agents.core import todo_tool
 
     return JSONResponse({"plans": todo_tool.TODOS.recent(RECENT_PLANS)}, headers=_NO_STORE)

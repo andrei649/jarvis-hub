@@ -56,7 +56,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .action_origin import current_action_origin
 from .environments.output_limits import MAX_OUTPUT_BYTES, render_capped
+from .security.recall_taint import mark_turn_recall_tainted
+from .security.taint import is_untrusted_source
 from .session_kernel_mailbox import SessionRPCStore
 
 logger = logging.getLogger("jarvis.session_kernels")
@@ -322,6 +325,10 @@ class _Record:
     pending_loss: str = ""
     quarantined: bool = False
     teardown_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    #: The interpreter has held untrusted text: a cell of it read an untrusted tool, or
+    #: ran in a turn that had. Its variables outlive the turn, so every later cell runs
+    #: tainted until a reset replaces the record (H315 second review).
+    tainted: bool = False
 
 
 class PipeKernelBackend:
@@ -657,7 +664,23 @@ class SessionKernelManager:
 
     async def _cell(self, key: KernelKey, record: _Record, cell: str,
                     broker=None, sinks=None) -> CellOutcome:
-        """Run one cell on a record whose lock this call holds."""
+        """Run one cell on a record whose lock this call holds.
+
+        A kernel that has held untrusted text taints the turn that runs its next cell
+        and every call the cell makes; a cell that reads untrusted text, or runs in a
+        turn that did, taints the kernel from then on."""
+        tainted = record.tainted or is_untrusted_source(current_action_origin())
+        if tainted and broker is not None:
+            broker.tainted = True
+        try:
+            return await self._run_cell(key, record, cell, broker, sinks)
+        finally:
+            if tainted or getattr(broker, "tainted", False):
+                record.tainted = True
+                mark_turn_recall_tainted()
+
+    async def _run_cell(self, key: KernelKey, record: _Record, cell: str,
+                        broker=None, sinks=None) -> CellOutcome:
         continuity, record.pending_loss = record.pending_loss or CONTINUED, ""
         mailbox, child_mailbox = self._cell_mailbox(record, broker)
         try:

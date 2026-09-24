@@ -26,7 +26,8 @@ from agents.core.sandbox_invocation import (
     InvocationRefused,
     SandboxInvocation,
 )
-from agents.core.tool_rpc import ToolRPCServer
+from agents.core.security.recall_taint import mark_turn_recall_tainted
+from agents.core.tool_rpc import ToolRPCServer, bind_tool_turn, reset_tool_turn
 
 logger = logging.getLogger("jarvis.tool_rpc_runtime")
 
@@ -43,15 +44,24 @@ class ToolCallBroker:
     A broker is per *authority*, not per process: a session kernel builds a fresh one
     for every cell, which is what stops a variable created in cell 1 from carrying
     cell 1's permissions into cell 400.
+
+    It also carries what the script has read (the H315 second review). A script's tool
+    calls never pass through the loop, which raises the turn's taint only once a batch
+    returns, so a script could read a page and write it into the plan as clean text.
+    Once a call reaches a tool that declares ``untrusted_output``, or answers with
+    ``tainted``, :attr:`tainted` is set and every later call this broker services runs
+    under a raised origin. The flag lives here, not only in the context: a session
+    kernel services each batch of a cell's calls in a task of its own.
     """
 
-    __slots__ = ("server", "invocation", "revoked")
+    __slots__ = ("server", "invocation", "revoked", "tainted")
 
     def __init__(self, server: ToolRPCServer, invocation: SandboxInvocation | None,
-                 *, revoked: Callable[[], bool] | None = None) -> None:
+                 *, revoked: Callable[[], bool] | None = None, tainted: bool = False) -> None:
         self.server = server
         self.invocation = invocation
         self.revoked = revoked
+        self.tainted = bool(tainted)
 
     async def call(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         # Authority first, and entirely before `handle`: a refusal after the call has
@@ -65,18 +75,36 @@ class ToolCallBroker:
             )
         except InvocationRefused as refusal:
             return refusal.as_response()
+        if self.tainted:
+            mark_turn_recall_tainted()        # an earlier call of this run read untrusted text
+        declares = getattr(self.server, "declares_untrusted_output", None)
+        untrusted = bool(declares(tool)) if callable(declares) else False
+        # A script's call belongs to no model turn: what it writes is not text the model
+        # sent in its own transcript, so a tool never treats it as the turn's own words.
+        turn = bind_tool_turn(None)
         try:
             response = await self.server.handle(
                 {"tool": tool, "args": args}, actor=self.invocation.agent,
             )
         except Exception:
             logger.warning("file-rpc tool request failed: %s", tool, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": tool}
+            response = {"ok": False, "reason": "tool_error", "tool": tool}
+        finally:
+            reset_tool_turn(turn)
+        if untrusted or _declares_taint(response):
+            self.tainted = True
+            mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
             "ok": False,
             "reason": "bad_response",
             "tool": tool,
         }
+
+
+def _declares_taint(response: Any) -> bool:
+    """A handler's own answer, under ``result``, says its content is tainted."""
+    inner = response.get("result") if isinstance(response, dict) else None
+    return isinstance(inner, dict) and inner.get("tainted") is True
 
 
 @dataclass(frozen=True)
@@ -302,6 +330,8 @@ class ToolRPCSandboxRuntime:
             store.request_path(seq).unlink(missing_ok=True)
 
     async def _handle_request(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        # A broker per request is enough here: this loop services every request of the
+        # run in one context, so the origin an untrusted read raised holds for the next.
         return await ToolCallBroker(
             self.server, self.invocation, revoked=self.revoked,
         ).call(tool, args)

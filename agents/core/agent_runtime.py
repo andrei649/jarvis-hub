@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import inspect
 import json
 import logging
 import math
 import re
+import secrets
 from collections.abc import Callable, Coroutine, Mapping
 from contextlib import suppress
 from functools import partial
@@ -61,7 +63,7 @@ from .tool_result_store import (
     preview_envelope,
     threshold_for,
 )
-from .tool_rpc import ToolRPCServer
+from .tool_rpc import ToolRPCServer, bind_tool_turn, reset_tool_turn
 
 logger = logging.getLogger("jarvis.agent_runtime")
 
@@ -115,10 +117,11 @@ _DUPLICATE_NOTICE = (
 # H315 — tools whose answer IS the thing the model must re-read. `todo` restates the whole
 # plan on every call so the model reads its own checklist again; a "same as call N" stub
 # would point it at an older copy many messages up (possibly compacted by then), which is
-# exactly the re-reading the tool exists to force. For the same reason such a call is not
-# counted by the repeat detector or against a per-tool cap: a plan read between two steps
-# is the tool doing its job, not a loop, and ending the turn for it lost the answer. The
-# loop's iteration limit still bounds a turn that does nothing else.
+# exactly the re-reading the tool exists to force. Such a call is not counted against a
+# per-tool cap, and the repeat detector keys it on the plan it last saw as well as its
+# arguments (H315 second review): a read after the plan changed is the tool doing its
+# job, but the same call again with nothing changed in between is the loop signature,
+# and it is stopped like any other repeat.
 _ALWAYS_RESTATED = frozenset({"todo"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
@@ -334,6 +337,33 @@ class AgentToolRuntime:
         constructor default untouched; a value is clamped to
         ``WALL_SECONDS_MIN..WALL_SECONDS_CAP`` and stays finite (Hermes absorption 5c).
         """
+        # Each run is one model turn: calls it makes carry its token, so a tool can tell
+        # what the model sent in this turn from what an earlier turn or a script wrote.
+        turn = bind_tool_turn(secrets.token_hex(8))
+        try:
+            return await self._run_turn(
+                agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
+                max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
+                wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+            )
+        finally:
+            reset_tool_turn(turn)
+
+    async def _run_turn(
+        self,
+        *,
+        agent_id: str,
+        backend: Any,
+        model: str,
+        prompt: str,
+        system: str = "",
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        event_sink: ToolEventSink | None = None,
+        wall_seconds: float | None = None,
+        usage_sink: Callable[[TokenUsage], None] | None = None,
+        effective_window: EffectiveWindow | None = None,
+    ) -> str:
         # None, a bool, a non-number, a non-finite or a non-positive value all keep
         # the constructor's own deadline; only a real value is clamped into the range.
         parsed = 0.0 if isinstance(wall_seconds, bool) else _safe_float(wall_seconds, default=0.0)
@@ -478,6 +508,7 @@ class AgentToolRuntime:
         seen_calls: dict[tuple[str, str], int] = {}
         failure_streaks: dict[str, int] = {}
         tool_counts: dict[str, int] = {}
+        restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
         seen_results: dict[str, str] = {}
 
         # H298 — what this turn has already put in the window, and how big that window
@@ -573,13 +604,13 @@ class AgentToolRuntime:
                     agent_id=agent_id, event_sink=event_sink,
                 ):
                     return _CONTEXT_REPLY
-            repeated, looping = self._note_repeats(bounded_calls, seen_calls)
+            repeated, looping = self._note_repeats(bounded_calls, seen_calls, restated)
             if looping is not None:
                 await self._emit(
                     event_sink,
                     {
                         **self._event(looping, agent_id, "tool_loop_repeated", "repeated_call"),
-                        "repeats": seen_calls[_call_key(looping)],
+                        "repeats": seen_calls[_call_key(looping, restated)],
                         "limit": self._repeat_limit,
                     },
                 )
@@ -630,6 +661,9 @@ class AgentToolRuntime:
                         "content": content,
                     }
                 )
+            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+                if call.name in _ALWAYS_RESTATED:
+                    restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
@@ -820,6 +854,7 @@ class AgentToolRuntime:
         self,
         calls: tuple[ToolCall, ...],
         seen: dict[tuple[str, str], int],
+        restated: Mapping[str, str] | None = None,
     ) -> tuple[dict[str, int], ToolCall | None]:
         """Count identical (tool, arguments) calls across the turn.
 
@@ -832,9 +867,7 @@ class AgentToolRuntime:
         if limit <= 0:
             return repeated, None
         for call in calls:
-            if call.name in _ALWAYS_RESTATED:
-                continue
-            key = _call_key(call)
+            key = _call_key(call, restated)
             count = seen.get(key, 0) + 1
             seen[key] = count
             if count > limit:
@@ -1486,9 +1519,11 @@ def _failure_reason(result: Mapping[str, Any]) -> str:
     return reason if isinstance(reason, str) and reason else "failed"
 
 
-def _call_key(call: ToolCall) -> tuple[str, str]:
+def _call_key(call: ToolCall, restated: Mapping[str, str] | None = None) -> tuple[str, str]:
     """Identity of a call for the repeat detector: the tool plus its arguments in
-    canonical JSON (key order does not make a different call)."""
+    canonical JSON (key order does not make a different call). A restated tool's call
+    also carries the revision of its last answer, so the same call is a repeat only
+    while nothing changed in between."""
     if isinstance(call.arguments, dict):
         try:
             encoded = json.dumps(
@@ -1498,7 +1533,22 @@ def _call_key(call: ToolCall) -> tuple[str, str]:
             encoded = str(call.raw_arguments)
     else:
         encoded = str(call.raw_arguments)
+    if call.name in _ALWAYS_RESTATED:
+        encoded = f"{encoded}@{(restated or {}).get(call.name, '')}"
     return (str(call.name), encoded)
+
+
+def _answer_revision(result: Any, previous: str) -> str:
+    """The revision of a restated tool's answer: a digest of what it restated. A call
+    that failed restated nothing, and leaves the last revision in force."""
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    if not isinstance(inner, Mapping) or inner.get("ok") is False:
+        return previous
+    try:
+        encoded = json.dumps(inner, sort_keys=True, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return previous
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def _non_json(tool_name: str) -> dict[str, Any]:

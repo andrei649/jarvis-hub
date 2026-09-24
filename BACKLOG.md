@@ -14,6 +14,51 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H315 second adversarial review round (stays equivalent after the fixes, #1207). **H273 back to partial** after its third review (headline 140 → 139/697).
+
+  The review found one major, fixed:
+  - **A script laundered untrusted text into the plan.** An item took its taint from the turn's origin, and the loop raises that only after a batch returns. So an `execute_code` script that fetched a page wrote it into the plan as clean text, and a later, clean turn re-read it unfenced. A session kernel carried it further: a clean cell wrote a variable an earlier, tainted cell had filled.
+  - Now the broker that services a script's calls raises the origin once a call reaches an `untrusted_output` tool or answers `tainted`. A script's calls belong to no model turn, so what a script wrote is data even to the turn that ran it. A kernel that has held untrusted text taints every later cell's calls, and the turn that runs the cell, until a reset.
+  - Tested through the real subprocess sandbox and the real session kernel.
+
+  Minors, fixed:
+  - **The new guest default reaches an existing install.** A start replaces exactly the old shipped `llm.guest_tools` (echo, time) with the new one (echo, time, todo), once per store (`settings_migrations`). A list the owner changed is left alone.
+  - **A turn keeps the shared verdict it resolved its session with.** An owner resuming another session no longer lets an in-flight widget turn in.
+  - **Other users' text.** On a session of its own, text written by a turn that is not the owner's (a household member continuing the owner's session, a guest) is untrusted to the owner.
+  - **A turn reads its own plan unfenced.** Each loop run carries a turn token and each item records the turn that wrote it. The owner's Telegram DM no longer reads its own checklist as DATA; a later turn still does.
+  - **The repeat detector keys a plan read on the plan the model last saw.** Reading an unchanged plan again is a repeat once more: the third read is refused and the fourth ends the turn. A read after a change is not.
+  - `todo` stays off the per-tool cap, and the cap's label says so. A start now refreshes every declared setting's label, so a reworded label reaches an existing install.
+  - The reviewer's 12 surviving mutants are each caught: bytes measured as sent, the per-character mark cap with enclosing marks, punctuation-only content, which writer the plan's labels name, the resolver's default (now fail-closed), the CLI's non-object items, and the HUD's tags and age boundaries.
+
+  Nits, fixed:
+  - a status set by an untrusted turn taints the item;
+  - a clean rewrite keeps the taint of an id an untrusted turn chose;
+  - a script's reach on the shared session is narrowed as the turn's offer is;
+  - the plan's labels move only when its list changes;
+  - a status-only merge is never refused as too long;
+  - the capability record's rollback is `compensate`;
+  - the docstrings say "most recently written or read" and that the widget route binds no session;
+  - the docs give the new guest default.
+
+  Mutation: 48 mutants of the new guards (42 backend, 6 HUD):
+  - 38 were caught at once;
+  - two survivors were code with no effect and were removed: a broker per script run, whose raised origin the service loop's one context already carries; and the kernel's mark before a cell, which the broker and the mark after the cell cover;
+  - one is equivalent: the HUD's clamp at zero, since a negative age already reads "just now";
+  - seven got tests. Those tests also catch a new mutant: a broker that keeps its flag without marking the context.
+
+  H273 is back to partial. Its third review found that the before-load note is right for the hub's import but not for the rest of its start. The lifespan reads 31 more names before the `.env` load (`llm_router.detect()` runs before `plugin_manager.build`), so ten `.env` knobs are shown as in effect while they are not, among them the audit key and the public-profile gate. Two entries of the read-again list are false: the tokens in the bind guard, and the OAuth ids behind a second module copy. Separately, the MCP transport checks the user token frozen at import. All of it is in H273's `remaining`, with the doctor minors; the fix round comes next.
+
+  Records:
+  - H315 rewritten;
+  - H273 set to partial, with its gaps in `remaining`;
+  - H456's `remaining` no longer lists `todo` among the tools a job can reach only without a group;
+  - 94 drifted rows re-read and re-stamped (the shorthand cites of H288, H427, H456 and H477 remapped by content);
+  - the build-queue note and critic note 22 updated;
+  - test manual GOV-240 notes the upgrade, and GOV-246 to 248 are new.
+
+  Tests:
+  - backend 14,111 → 14,148 (`tests/test_h315c_todo_review.py` 37);
+  - vitest 1,425 → 1,427 (`plans-in-flight` 8 → 10).
 - 2026-09-24 H153 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
 
   The review found two majors, both fixed. Each offered channel now gets a real send, tested down to the adapter (`tests/test_h153c_webhook_sends.py`: the router, `send_to_target`, `ChannelManager.send` and its contract, then a recording adapter per channel, plus the real Telegram adapter's HTTP body):

@@ -234,7 +234,8 @@ class TodoStore:
 
     @staticmethod
     def _view(session_id: str, plan: Mapping[str, Any] | None) -> dict[str, Any]:
-        todos = [dict(item) for item in (plan or {}).get("todos", ())]
+        todos = [{key: value for key, value in item.items() if key != "turn"}
+                 for item in (plan or {}).get("todos", ())]
         return {
             "session_id": session_id,
             "todos": todos,
@@ -263,13 +264,38 @@ class TodoStore:
         posture: str = "",
         tainted: bool = False,
     ) -> dict[str, Any]:
-        """Replace or merge, then answer with the whole list. Nothing is half-applied:
-        the new list is built on a copy and stored only when every item passed. An item
-        whose text this call sets records ``posture`` and ``tainted`` as its own; an empty
-        list is no plan, and its slot is freed."""
+        """Replace or merge, then answer with the whole list: :meth:`apply` without a turn."""
+        return self.apply(session_id, todos, merge, agent=agent, posture=posture, tainted=tainted)[0]
+
+    def apply(
+        self,
+        session_id: str,
+        todos: Any,
+        merge: Any = False,
+        *,
+        agent: str = "",
+        posture: str = "",
+        tainted: bool = False,
+        turn: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        """Replace, merge or (``todos`` None) read, as the tool does: ``(view, foreign)``.
+
+        Nothing is half-applied: the new list is built on a copy and stored only when
+        every item passed. An item new to the list records ``posture``, ``tainted`` and
+        ``turn`` as its own. A rewrite of its text records the writer, and keeps any taint
+        it had: its id came from whoever wrote it first. A status set by an untrusted
+        turn taints the item too, so the next clean turn knows who moved it. ``foreign``
+        says the list holds a tainted item that this ``turn`` did not write (an earlier
+        turn's, or a script's): the answer must be read as DATA. The plan's labels (when,
+        which agent, whose turn) move only when the list actually changed, and an empty
+        list is no plan: its slot is freed."""
         sid = self._session(session_id)
         if todos is None:
-            return self.read(sid, touch=True)
+            with self._lock:
+                plan = self._plans.get(sid)
+                if plan is not None:
+                    self._plans.move_to_end(sid)
+                return self._view(sid, plan), _foreign(plan, turn)
         if not isinstance(merge, bool):
             raise TodoError("todo_bad_merge", "merge is true or false")
         if not isinstance(todos, list):
@@ -277,11 +303,14 @@ class TodoStore:
         if len(todos) > MAX_ITEMS:
             raise TodoError("todo_too_many", f"a list holds at most {MAX_ITEMS} items")
         by = str(posture or "")[:32]
+        taint = bool(tainted)
         with self._lock:
             current = self._plans.get(sid)
-            items = [dict(item) for item in current["todos"]] if merge and current else []
+            before = [dict(item) for item in current["todos"]] if current else []
+            items = [dict(item) for item in before] if merge else []
             by_id = {item["id"]: item for item in items}
             seen: set[str] = set()
+            wrote_text = not merge
             for raw in todos:
                 if not isinstance(raw, Mapping):
                     raise TodoError("todo_bad_item", "each item is an object {id, content, status}")
@@ -301,17 +330,26 @@ class TodoStore:
                         "content": _clean_content(raw.get("content"), item_id),
                         "status": _clean_status("pending" if status is None else status, item_id),
                         "by": by,
-                        "tainted": bool(tainted),
+                        "tainted": taint,
+                        "turn": turn,
                     }
                     items.append(item)
                     by_id[item_id] = item
+                    wrote_text = True
                     continue
                 if raw.get("content") is not None:
-                    target["content"] = _clean_content(raw.get("content"), item_id)
-                    target["by"] = by
-                    target["tainted"] = bool(tainted)
+                    text = _clean_content(raw.get("content"), item_id)
+                    if text != target["content"]:
+                        target["content"] = text
+                        target["by"] = by
+                    target["tainted"] = bool(target.get("tainted")) or taint
+                    target["turn"] = turn
+                    wrote_text = True
                 if raw.get("status") is not None:
                     target["status"] = _clean_status(raw.get("status"), item_id)
+                    if taint and not target.get("tainted"):
+                        target["tainted"] = True
+                        target["turn"] = turn
             if len(items) > MAX_ITEMS:
                 raise TodoError("todo_too_many", f"a list holds at most {MAX_ITEMS} items")
             if sum(item["status"] == "in_progress" for item in items) > 1:
@@ -320,8 +358,10 @@ class TodoStore:
                     "only one item can be in_progress at a time: mark the current one "
                     "completed (or back to pending) first",
                 )
+            # The cap is on what the list says. A merge that moves statuses only never
+            # crosses it: a status is at most a few bytes longer, and the budget has room.
             size = plan_bytes(items)
-            if size > MAX_PLAN_BYTES:
+            if wrote_text and size > MAX_PLAN_BYTES:
                 raise TodoError(
                     "todo_plan_too_long",
                     f"the whole list is at most {MAX_PLAN_BYTES:,} bytes and this one would be "
@@ -329,14 +369,17 @@ class TodoStore:
                 )
             if not items:
                 self._plans.pop(sid, None)
-                return self._view(sid, None)
-            plan = {"todos": items, "updated_at": time.time(),
-                    "agent": str(agent or "")[:64], "posture": by}
+                return self._view(sid, None), False
+            if current is not None and _public(items) == _public(before):
+                plan = {**current, "todos": items}          # nothing changed: the labels stay
+            else:
+                plan = {"todos": items, "updated_at": time.time(),
+                        "agent": str(agent or "")[:64], "posture": by}
             self._plans[sid] = plan
             self._plans.move_to_end(sid)
             while len(self._plans) > self._max:
                 self._plans.popitem(last=False)
-            return self._view(sid, plan)
+            return self._view(sid, plan), _foreign(plan, turn)
 
     def recent(self, limit: int = 20) -> list[dict[str, Any]]:
         """The plans, most recently written or read by the agent first."""
@@ -351,6 +394,17 @@ class TodoStore:
             dropped = len(self._plans)
             self._plans.clear()
             return dropped
+
+
+def _public(items: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Items as anyone reads them: the turn that last wrote each one is bookkeeping."""
+    return [{key: value for key, value in item.items() if key != "turn"} for item in items]
+
+
+def _foreign(plan: Mapping[str, Any] | None, turn: str | None) -> bool:
+    """Whether the plan holds a tainted item that ``turn`` did not write."""
+    return any(item.get("tainted") and (turn is None or item.get("turn") != turn)
+               for item in (plan or {}).get("todos", ()))
 
 
 #: The process-wide store the live tool, the routes and the purge share.
@@ -424,7 +478,7 @@ def register_todo_tool(
             return True
 
     async def _handle(args: dict) -> dict:
-        from agents.core.tool_rpc import current_tool_actor
+        from agents.core.tool_rpc import current_tool_actor, current_tool_turn
 
         unknown = sorted(str(key) for key in args if key not in _ARG_FIELDS)
         if unknown:
@@ -446,16 +500,23 @@ def register_todo_tool(
         todos = args.get("todos")
         merge = args.get("merge")
         merge = False if merge is None else merge   # an explicit null is "not sent"
+        # Text is untrusted to the owner when an untrusted turn wrote it, or a turn that is
+        # not the owner's: a household member or a guest on a session they share with the
+        # owner, a background job.
+        untrusted = _untrusted() or not where.endswith("/owner")
         try:
-            view = _target().write(sid, todos, merge, agent=current_tool_actor(), posture=where,
-                                   tainted=_untrusted())
+            view, foreign = _target().apply(sid, todos, merge, agent=current_tool_actor(), posture=where,
+                                            tainted=untrusted, turn=current_tool_turn())
         except TodoError as exc:
             return {"ok": False, "reason": exc.reason, "detail": exc.detail}
         if todos is not None:
             _record_event(view, merge=merge is True)
         reply: dict[str, Any] = {"ok": True, "todos": model_items(view["todos"]), "counts": view["counts"]}
-        if any(item.get("tainted") for item in view["todos"]):
-            reply["tainted"] = True   # the loop fences it as DATA and taints the reading turn
+        if foreign:
+            # The loop fences it as DATA and taints the reading turn. An item this very turn
+            # wrote is not a reason: its text is the model's own argument, already in the
+            # transcript, and fencing it would tell the model not to follow its own plan.
+            reply["tainted"] = True
         return reply
 
     server.register_tool(
