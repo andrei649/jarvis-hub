@@ -76,10 +76,15 @@ class PluginManager:
         # .env (dev) keeps precedence and only unset keys are filled — in a frozen
         # install there is no repo .env, making this the config source. H273: the
         # load records which layer supplied each key (names only), for the admin
-        # route, the doctor and the HUD.
+        # route, the doctor and the HUD. The data home is resolved after the repo
+        # layer is loaded, so a JARVIS_USER_HOME set in the repo .env still names it.
         from agents.core.paths import user_home
-        home = user_home()
-        load_layered_env(env_path, home / ".env" if home is not None else None)
+
+        def home_env():
+            home = user_home()
+            return home / ".env" if home is not None else None
+
+        load_layered_env(env_path, home_env)
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=env_str("ANTHROPIC_API_KEY"),
             openai_key=env_str("OPENAI_API_KEY"),

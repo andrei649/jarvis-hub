@@ -192,17 +192,33 @@ async def admin_env_sources():
     from agents.core import env_provenance
     from agents.core.paths import user_home
 
-    rows = [{"key": key, "layer": row["layer"], "label": env_provenance.LABELS[row["layer"]],
-             "shadowed": row["shadowed"], "masked": any(h in key.lower() for h in _SECRET_HINTS)}
-            for key, row in sorted(env_provenance.provenance().items()) if not key.startswith("_")]
-    repo_env = Path(__file__).resolve().parents[3] / ".env"
-    home = user_home()
-    home_env = home / ".env" if home is not None else None
-    files = {
-        "repo_env": {"path": str(repo_env), "present": repo_env.is_file()},
-        "user_env": {"path": str(home_env) if home_env else None,
-                     "present": bool(home_env and home_env.is_file())},
-    }
+    rows = []
+    for key, row in sorted(env_provenance.provenance().items()):
+        if key.startswith("_"):
+            continue
+        item = {"key": key, "layer": row["layer"], "label": env_provenance.LABELS[row["layer"]],
+                "shadowed": row["shadowed"], "masked": any(h in key.lower() for h in _SECRET_HINTS)}
+        note = env_provenance.note_for(key, row["layer"])
+        if note:
+            item["note"] = note
+        rows.append(item)
+    # The files the load actually read; with no load in this process, the files it
+    # would read now.
+    loaded = env_provenance.files()
+    if loaded:
+        files = {layer: {"path": info["path"], "present": info["kind"] in ("file", "fifo"),
+                         "kind": info["kind"], "read": True}
+                 for layer, info in loaded.items()}
+    else:
+        repo_env = Path(__file__).resolve().parents[3] / ".env"
+        home = user_home()
+        home_env = home / ".env" if home is not None else None
+        files = {
+            "repo_env": {"path": str(repo_env), "present": env_provenance.is_file_or_fifo(repo_env),
+                         "read": False},
+            "user_env": {"path": str(home_env) if home_env else None,
+                         "present": bool(home_env and env_provenance.is_file_or_fifo(home_env)), "read": False},
+        }
     return nocache_json({"sources": rows, "files": files})
 
 

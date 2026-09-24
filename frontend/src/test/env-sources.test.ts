@@ -12,7 +12,7 @@ it('names the layer each key came from, and nothing for a key it does not know',
   ] };
   const keys = hydrateAdminKeys(ENV, sources);
   expect(keys[0]).toEqual({ name: 'OPENAI_API_KEY', masked: 'sk-…ab', status: 'set', rotated: '',
-    source: 'process environment' });
+    source: 'process environment, overriding repo .env' });
   expect(keys[1].name).toBe('TELEGRAM_BOT_TOKEN');
   expect('source' in keys[1]).toBe(false);
 });
@@ -22,4 +22,14 @@ it('ignores a missing or malformed sources payload', () => {
   expect('source' in hydrateAdminKeys(ENV, null)[0]).toBe(false);
   expect('source' in hydrateAdminKeys(ENV, { sources: 'nope' })[0]).toBe(false);
   expect('source' in hydrateAdminKeys(ENV, { sources: [{ key: 'OPENAI_API_KEY', label: 7 }] })[0]).toBe(false);
+});
+
+it('names every layer a key overrides, and only known layers', () => {
+  const sources = { sources: [
+    { key: 'OPENAI_API_KEY', layer: 'process', label: 'process environment', shadowed: ['repo_env', 'user_env', 'bogus'] },
+    { key: 'TELEGRAM_BOT_TOKEN', layer: 'repo_env', label: 'repo .env', shadowed: [] },
+  ] };
+  const keys = hydrateAdminKeys(ENV, sources);
+  expect(keys[0].source).toBe('process environment, overriding repo .env and data-home .env');
+  expect(keys[1].source).toBe('repo .env');
 });

@@ -14,6 +14,26 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-24 H273 adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found four majors, and 12 of its 12 natural mutants survived:
+  - The stdlib parser was python-dotenv's grammar from before 1.2.3, while the lock pins 1.2.3. A UTF-8 BOM, or a quoted Windows path ending in an escaped backslash, threw it off, and the doctor then printed a line of a PEM key as a key name.
+  - A named-pipe `.env` (1Password) was no longer loaded, and the doctor hung on one.
+  - A `JARVIS_USER_HOME` set in the repo `.env` no longer named the data home.
+
+  Fixed:
+  - **Key names:** one read of each file (a regular file or a FIFO) feeds both python-dotenv's own parse, which sets the variables, and the key names. The stdlib port, now 1.2.3's grammar with BOM strip and last-binding semantics, is the broken-install fallback. It is pinned on 25 cases plus a 4,000-file differential fuzz; 100k random files showed no difference.
+  - **Loading:** the data home is resolved after the repo layer. `PYTHON_DOTENV_DISABLED` is honoured. A reload keeps its attribution, and the same file is read once. The route names the files the load actually read. Four keys that serve.py reads before any `.env` carry a "not in effect" note.
+  - **Doctor:**
+    - It reads the running hub's own table when /readyz is ok and the admin credential opens it; otherwise it labels the table a prediction.
+    - It shows every `.env` key, plus the shell keys the hub's code reads (found in agents/ and serve.py), and no other tools' tokens.
+    - It prints only one-case identifiers, counting value material instead (`malformed_env_names`).
+    - It flags a non-UTF-8 `.env` (`env_not_utf8`) and never opens a named pipe.
+    - An unexpected error becomes a named reason, not a crash.
+  - **Settings rows:** they say `unreadable` for a secret whose key is lost, and name a value a product posture puts in effect (`in_effect`, `overlay`); `nerva config list` prints both.
+  - **HUD:** the key list names the layers a key overrides.
+
+  41 mutants, all caught (the first run's one survivor, a bare key counted as overriding, is now pinned). H157's key count corrected (163 in 20 categories), and 69 rows citing the touched files were re-read and re-stamped. Also fixed: CI lint (ruff 0.16.8 UP045 in the webhook update body, 1f6f4ea2). Tests: backend 13,782 → 13,811; vitest 1,388 → 1,389.
 - 2026-09-24 H153 the rest of a Hermes webhook subscription (partial → equivalent, #1207; headline 138 → 139/697).
   - **Receiver switch:** the setting `webhooks.receiver_enabled` (a toggle, on by default, written through the audited settings route). When it is off, the trigger refuses every delivery with 503, both before reading the body and again after authentication, so a switch-off that lands while a body is still arriving stops that delivery too. The admin routes keep working, and hooks keep their credentials.
   - **Per-hook event list:** the event is read from the sender's header (GitHub, GitLab, Bitbucket, generic), else from the payload. A delivery of any other event, one that names no event, or one to a hook whose list a hand edit left unreadable is answered 202 and never run. It counts as skipped, not as a call, and the last skipped event is kept. A GitHub hook subscribed to `push` no longer turns `ping` into a turn.

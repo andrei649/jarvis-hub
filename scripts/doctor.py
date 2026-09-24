@@ -4,7 +4,8 @@ The bootstrap (``scripts/bootstrap.py``) *makes* an install; the doctor *proves*
 still healthy, in the same vocabulary, without changing anything on disk. It is the
 first thing to run when "Nerva does not start", and the thing a bug report pastes.
 
-Checks (``DoctorReport.checks``; each row is ``{name, status, reason, detail}``):
+Checks (``DoctorReport.checks``; each row is ``{name, status, reason, detail}``, plus
+``data`` when a check has rows to show — only ``config_sources`` does):
 
 ==================  =========  ==========================================================
 name                severity   what a red row means
@@ -27,7 +28,10 @@ runtime_resolves    advisory   the route a Jarvis turn takes does not resolve to
 config_sources      advisory   informational: which layer supplied each configuration key
                                (process environment > repo .env > data-home .env, first
                                wins) and which .env values a higher layer overrides — names
-                               only, never a value (H273)
+                               only, never a value (H273). Read from the running hub when it
+                               answers with the admin token, else predicted from this shell;
+                               warns when a .env line yields a name that is not an identifier
+                               (a mis-quoted multi-line value), which it never prints
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
 ==================  =========  ==========================================================
 
@@ -60,6 +64,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import sys
 import tempfile
 import urllib.error
@@ -358,48 +363,180 @@ def check_runtime_resolves(opener=urllib.request.urlopen, *, readyz: Check | Non
 
 
 # Configuration keys worth naming: every key a .env file sets, and the process
-# environment's keys with these prefixes or suffixes. The rest of a shell's
-# environment (PATH, HOME …) is not Nerva configuration.
-CONFIG_PREFIXES = ("JARVIS_", "NERVA_", "MEMORY_", "KNOWLEDGE_GRAPH_", "QDRANT_", "NEO4J_",
-                   "OLLAMA_", "LMSTUDIO_", "LM_STUDIO_")
-CONFIG_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_BASE_URL", "_MODEL")
+# environment's keys the hub's own code reads (found by reading agents/ and serve.py)
+# or that carry Nerva's prefixes. The rest of a shell's environment (PATH, HOME, other
+# tools' tokens …) is not Nerva configuration.
+CONFIG_PREFIXES = ("JARVIS_", "NERVA_")
+OS_NAMES = frozenset({
+    "PATH", "HOME", "USER", "USERNAME", "USERPROFILE", "LOGNAME", "SHELL", "PWD", "OLDPWD", "LANG",
+    "LANGUAGE", "TERM", "TZ", "TMP", "TEMP", "TMPDIR", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA",
+    "SYSTEMROOT", "COMSPEC", "PATHEXT", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+    "DBUS_SESSION_BUS_ADDRESS", "GITHUB_STEP_SUMMARY",
+})
+_ENV_READ = re.compile(
+    r"""(?:os\.environ\.get|os\.getenv|environ\.get|env_str|env_int|env_flag|env_float|env_list"""
+    r"""|env_json_object|env_int_map)\(\s*["']([A-Z][A-Z0-9_]+)["']"""
+    r"""|environ\[\s*["']([A-Z][A-Z0-9_]+)["']\s*\]""")
+# A name the doctor prints: an identifier in one case. A mis-quoted multi-line value
+# (a PEM, a base64 blob) turns its lines into "keys" that are almost always
+# mixed case or carry + / =, so they are counted instead of printed.
+_SHOWN_NAME = re.compile(r"(?:[A-Z_][A-Z0-9_]*|[a-z_][a-z0-9_]*)\Z")
+ENV_SOURCES_PATH = "/api/admin/env/sources"
 
 
-def check_config_sources(root: Path, env=None) -> Check:
-    """H273 — which layer supplies each configuration key, derived offline the way
-    the hub loads it (``agents.core.env_provenance``): the process environment, then
-    ``<root>/.env``, then ``$JARVIS_USER_HOME/.env``, the first one to set a key
-    winning. Names and layers only. Informational: it is ``ok`` unless the table
-    cannot be derived."""
+def hub_env_names(root: Path) -> frozenset:
+    """The environment names the hub's code reads (``agents/`` and ``serve.py``),
+    found by reading the source, less the operating system's own variables."""
+    names: set = set()
+    base = Path(root) if (Path(root) / "agents").is_dir() else REPO_ROOT   # the code this doctor ships with
+    for path in [*sorted((base / "agents").rglob("*.py")), base / "serve.py"]:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        names.update(m.group(1) or m.group(2) for m in _ENV_READ.finditer(text))
+    return frozenset(names - OS_NAMES)
+
+
+def _home_env(environ) -> Path | None:
+    """The data-home .env the hub would read for this environment (``user_home``)."""
+    raw = str(environ.get("JARVIS_USER_HOME", "") or "").strip()
+    if not raw:
+        return None
+    try:
+        return Path(raw).expanduser() / ".env"
+    except (RuntimeError, KeyError):   # ~nosuchuser
+        return Path(raw) / ".env"
+
+
+def _not_utf8(path) -> bool:
+    """A regular .env file python-dotenv cannot read (it decodes UTF-8): the hub's load
+    raises on it."""
+    try:
+        if not os.path.isfile(path):
+            return False
+        Path(path).read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+    return False
+
+
+def _file_state(ep, path) -> str:
+    if path is None:
+        return "not configured (no JARVIS_USER_HOME)"
+    if ep.is_fifo(path):
+        return f"{path} (a named pipe: the hub reads it, the doctor does not)"
+    if _not_utf8(path):
+        return f"{path} (present, not UTF-8: python-dotenv cannot read it, so the hub's load fails)"
+    return f"{path} ({'present' if ep.is_file_or_fifo(path) else 'absent'})"
+
+
+def _hub_sources(env, opener, readyz, timeout: float = 5.0):
+    """The running hub's own table, or None: only with a ready hub, and only with the
+    admin credential (the route is admin-only). Never raises."""
+    if opener is None or readyz is None or readyz.status != OK:
+        return None
+    headers = {"Accept": "application/json"}
+    admin = (env.get("JARVIS_ADMIN_TOKEN") or "").strip()
+    if admin:
+        headers["x-admin-token"] = admin
+    try:
+        request = urllib.request.Request(hub_url(env) + ENV_SOURCES_PATH, headers=headers, method="GET")
+        resp = opener(request, timeout=timeout)
+        try:
+            payload = json.loads(resp.read().decode("utf-8", "replace"))
+        finally:
+            close = getattr(resp, "close", None)
+            if close:
+                close()
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("sources"), list):
+        return None
+    return payload
+
+
+def check_config_sources(root: Path, env=None, *, opener=None, readyz: Check | None = None) -> Check:
+    """H273 — which layer supplies each configuration key: the process environment,
+    then ``<root>/.env``, then the data-home ``.env``, the first one to set a key
+    winning. Read from the running hub when it answers with the admin credential,
+    else derived offline the way the hub loads it (``agents.core.env_provenance``).
+    Names and layers only; a name that is not an identifier (value material from a
+    mis-quoted multi-line value) is counted, never printed. Informational: ``ok``
+    unless such a name turns up or the table cannot be had, never a crash."""
     env = os.environ if env is None else env
     try:
-        from agents.core import env_provenance
+        return _config_sources(Path(root), env, opener, readyz)
+    except Exception as exc:  # advisory: a broken install still gets the rest of the report
+        return _result("config_sources", False, f"provenance_unavailable:{type(exc).__name__}")
+
+
+def _config_sources(root: Path, env, opener, readyz) -> Check:
+    try:
+        from agents.core import env_provenance as ep
     except Exception as exc:  # a broken install must still get the rest of the report
         return _result("config_sources", False, "provenance_unavailable", type(exc).__name__)
-    repo_env = Path(root) / ".env"
-    home_dir = str(env.get("JARVIS_USER_HOME", "") or "").strip()
-    home_env = Path(home_dir).expanduser() / ".env" if home_dir else None
-    table = env_provenance.derive(repo_env, home_env, env)
-    in_files = set(env_provenance.env_file_keys(repo_env))
-    if home_env is not None:
-        in_files |= set(env_provenance.env_file_keys(home_env))
-    rows = [{"key": key, "layer": row["layer"], "shadowed": list(row["shadowed"])}
-            for key, row in sorted(table.items())
-            if key in in_files or key.startswith(CONFIG_PREFIXES) or key.endswith(CONFIG_SUFFIXES)]
+    hub = _hub_sources(env, opener, readyz)
+    unreadable: list = []
+    if hub is not None:
+        table = {row["key"]: {"layer": row.get("layer"), "shadowed": list(row.get("shadowed") or [])}
+                 for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
+        files = hub.get("files") if isinstance(hub.get("files"), dict) else {}
+        where = f"read from the running hub at {hub_url(env)}"
+        detail = "; ".join(f"{ep.LABELS.get(layer, layer)} {info.get('path')} ({info.get('kind') or ('present' if info.get('present') else 'absent')})"
+                           for layer, info in files.items() if isinstance(info, dict))
+    else:
+        repo_env = root / ".env"
+        table = ep.derive(repo_env, _home_env, env)
+        where = "predicted from this shell's environment (no running hub answered with the admin token)"
+        home = _home_env({**{k: v for k, v in _values_or_empty(ep, repo_env).items() if k not in env}, **env})
+        detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
+        unreadable = [label for label, path in (("repo_env", repo_env), ("user_env", home))
+                      if path is not None and _not_utf8(path)]
+        if ep.dotenv_disabled(env):
+            detail += "; PYTHON_DOTENV_DISABLED is set: no .env file is loaded"
+    names = hub_env_names(root)
+    rows, malformed = [], 0
+    for key, row in sorted(table.items()):
+        in_file = row["layer"] in (ep.REPO_ENV, ep.USER_ENV) or bool(row["shadowed"])
+        if not (in_file or key in names or key.startswith(CONFIG_PREFIXES)):
+            continue
+        if not _SHOWN_NAME.match(key):
+            malformed += 1
+            continue
+        item = {"key": key, "layer": row["layer"], "shadowed": list(row["shadowed"])}
+        note = ep.note_for(key, row["layer"])
+        if note:
+            item["note"] = note
+        rows.append(item)
     counts = {layer: sum(1 for row in rows if row["layer"] == layer)
-              for layer in (env_provenance.PROCESS, env_provenance.REPO_ENV, env_provenance.USER_ENV)}
-    reason = (f"{len(rows)} keys: {counts[env_provenance.PROCESS]} process environment, "
-              f"{counts[env_provenance.REPO_ENV]} repo .env, {counts[env_provenance.USER_ENV]} data-home .env")
-    overriding = sum(1 for row in rows if row["layer"] == env_provenance.PROCESS and row["shadowed"])
+              for layer in (ep.PROCESS, ep.REPO_ENV, ep.USER_ENV)}
+    reason = (f"{len(rows)} keys: {counts[ep.PROCESS]} process environment, "
+              f"{counts[ep.REPO_ENV]} repo .env, {counts[ep.USER_ENV]} data-home .env")
+    overriding = sum(1 for row in rows if row["layer"] == ep.PROCESS and row["shadowed"])
     if overriding:
         reason += (f"; {overriding} key{'s' if overriding != 1 else ''} set in the process environment "
                    f"override{'' if overriding != 1 else 's'} a .env value")
-    # The files it read, like Hermes' `config env-path`: paths, never contents.
-    detail = (f"repo .env {repo_env} ({'present' if repo_env.is_file() else 'absent'}); data-home .env "
-              + (f"{home_env} ({'present' if home_env.is_file() else 'absent'})" if home_env is not None
-                 else "not configured (no JARVIS_USER_HOME)"))
-    return Check("config_sources", OK, reason, detail,
-                 data={"sources": rows, "labels": dict(env_provenance.LABELS)})
+    status = OK
+    if unreadable:
+        status = WARN
+        reason = f"env_not_utf8:{','.join(unreadable)} — the hub's load fails on it. " + reason
+    if malformed:
+        status = WARN
+        reason = (f"malformed_env_names:{malformed} — a .env line yields a name that is not a one-case "
+                  f"identifier (a multi-line value is unquoted or mis-escaped); not shown. " + reason)
+    return Check("config_sources", status, reason, f"{where}; {detail}",
+                 data={"sources": rows, "labels": dict(ep.LABELS)})
+
+
+def _values_or_empty(ep, path) -> dict:
+    try:
+        return ep.file_values(path)
+    except Exception:
+        return {}
 
 
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
@@ -430,7 +567,7 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=urllib.request.urlope
         check_runtimes(opener),
         readyz,
         check_runtime_resolves(opener, readyz=readyz, env=env),
-        check_config_sources(root, env),
+        check_config_sources(root, env, opener=opener, readyz=readyz),
         check_smoke(root, enabled=smoke, run=run),
     ]
     ok = all(c.status != FAIL for c in checks)
@@ -447,7 +584,8 @@ def format_report(report: DoctorReport) -> str:
         for row in (c.data or {}).get("sources", []):
             ignored = ", ".join(labels.get(layer, layer) for layer in row["shadowed"])
             lines.append(f"         {row['key']:<28} <- {labels.get(row['layer'], row['layer'])}"
-                         + (f" (ignored: {ignored})" if ignored else ""))
+                         + (f" (ignored: {ignored})" if ignored else "")
+                         + (f" [{row['note']}]" if row.get("note") else ""))
     lines.append("verdict: " + ("healthy" if report.ok else "NOT healthy — fix the FAIL rows"))
     return "\n".join(lines)
 

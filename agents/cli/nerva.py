@@ -676,7 +676,9 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 shown = json.dumps(_shown(row, reveal=ns.reveal), ensure_ascii=False)
                 # H273: "default" is the declared value; "set" was changed from it
                 source = f", {row['source']}" if row.get("source") else ""
-                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source})")
+                overlay = (f"; in effect: {json.dumps(row['in_effect'])} by {row['overlay']}"
+                           if row.get("overlay") else "")
+                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
         return EXIT_OK
     if ns.action == "get":
         category, key = _split_name(ns.name)

@@ -437,14 +437,41 @@ def init_db(force: bool = False):
     conn.commit()
     conn.close()
 
-def value_source(category: str, key: str, value) -> str:
+def value_source(category: str, key: str, value, raw=None) -> str:
     """H273 — where a stored value stands against its declaration: ``default`` when
     it equals the declared default, ``set`` when it differs (an owner write or a
-    migration), ``undeclared`` for a stored key with no declaration."""
+    migration), ``undeclared`` for a stored key with no declaration, and
+    ``unreadable`` for an encrypted secret whose key is lost (it reads as empty, which
+    must not pass for the default). ``raw`` is the stored value before decryption."""
     spec = _SPEC.get((category, key))
     if spec is None:
         return "undeclared"
+    if isinstance(raw, str) and raw.startswith(_ENC_PREFIX) and value == "":
+        return "unreadable"
     return "default" if value == spec.get("value") else "set"
+
+
+_NO_OVERLAY = object()
+
+
+def _posture_overlay() -> tuple[str, dict]:
+    """The selected product posture and the settings it forces while selected (the
+    runtime applies them over the stored rows: product_posture.apply_to_runtime_settings)."""
+    from agents.core import product_posture
+
+    name = product_posture.normalize(get_value("product", "posture", product_posture.OFF))
+    return name, dict(product_posture.POSTURES[name].get("applies", {}))
+
+
+def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
+    """H273 review — the stored row says ``default``, but a selected posture may put
+    another value in effect: name it, so ``source`` is never the whole story."""
+    name, applies = posture
+    forced = applies.get(f"{category}.{row['key']}", _NO_OVERLAY)
+    if forced is not _NO_OVERLAY:
+        row["in_effect"] = forced
+        row["overlay"] = f"product.posture:{name}"
+    return row
 
 
 def get_all() -> dict[str, list[dict]]:
@@ -453,19 +480,21 @@ def get_all() -> dict[str, list[dict]]:
     rows = conn.execute("SELECT category, key, value, label, kind, opts FROM settings ORDER BY category, key").fetchall()
     conn.close()
     groups: dict[str, list[dict]] = {}
+    posture = _posture_overlay()
     for r in rows:
         cat = r["category"]
         if cat not in groups:
             groups[cat] = []
-        value = _decrypt_if_secret(json.loads(r["value"]))
-        groups[cat].append({
+        raw = json.loads(r["value"])
+        value = _decrypt_if_secret(raw)
+        groups[cat].append(_mark_overlay(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
-            "source": value_source(cat, r["key"], value),
-        })
+            "source": value_source(cat, r["key"], value, raw),
+        }, posture))
     return groups
 
 def get_value(category: str, key: str, default=None):
@@ -497,16 +526,18 @@ def get_category(cat: str) -> list[dict]:
     ).fetchall()
     conn.close()
     out = []
+    posture = _posture_overlay()
     for r in rows:
-        value = _decrypt_if_secret(json.loads(r["value"]))
-        out.append({
+        raw = json.loads(r["value"])
+        value = _decrypt_if_secret(raw)
+        out.append(_mark_overlay(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
-            "source": value_source(cat, r["key"], value),
-        })
+            "source": value_source(cat, r["key"], value, raw),
+        }, posture))
     return out
 
 
