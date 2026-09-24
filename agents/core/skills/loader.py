@@ -441,6 +441,7 @@ class Skill:
             "has_module": self.module is not None,
             "platforms": self.platforms,
             "environments": self.environments,
+            "requires_apps": self.requires_apps,
             "required_env": self.required_env,
             "hermes": self.hermes_meta,
         }
@@ -477,6 +478,10 @@ class Skill:
     @property
     def environments(self) -> list[str]:
         return list(self.manifest.get("environments", []))
+
+    @property
+    def requires_apps(self) -> list[str]:
+        return list(self.manifest.get("requires_apps", []))
 
     @property
     def required_env(self) -> list[str]:
@@ -570,9 +575,30 @@ class SkillLoader:
         for root in roots:
             for skill_dir in sorted(root.iterdir()):
                 if skill_dir.is_dir():
-                    self._load_skill(skill_dir, discovery_root=root)
+                    try:
+                        self._load_skill(skill_dir, discovery_root=root)
+                    except signing.SkillSigningMisconfigured:
+                        raise  # SEC-B2: the operator has to see this one
+                    except Exception:
+                        # One hostile or unreadable SKILL.md must not take the rest of
+                        # discovery (and startup) down with it; it simply is not registered.
+                        logger.warning("Skill at %s could not be loaded; skipped", skill_dir, exc_info=True)
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
+
+    def _register(self, name: str, skill: "Skill") -> None:
+        """Put ``skill`` in the registry slot ``name``, saying so when it replaces another.
+
+        A user skill replacing a bundled one of the same name is by design (info). Two
+        skills of one tree claiming one name — e.g. two names that share their first 64
+        characters, the agentskills.io cap — is a collision the owner should see.
+        """
+        previous = self.skills.get(name)
+        if previous is not None and Path(previous.path) != Path(skill.path):
+            same_tree = Path(previous.path).parent == Path(skill.path).parent
+            (logger.warning if same_tree else logger.info)(
+                "Skill name '%s' from %s replaces the one from %s", name, skill.path, previous.path)
+        self.skills[name] = skill
 
     def _load_skill(self, path: Path, *, discovery_root: Path | None = None):
         # H32.5: acquired packages are signed for integrity but are NEVER trusted
@@ -617,7 +643,7 @@ class SkillLoader:
             skill.trusted = False
             skill.sandboxed = True
             skill.signature_reason = "pending review (CDX-8 quarantine)"
-            self.skills[name] = skill
+            self._register(name, skill)
             logger.info("Skill '%s' is PENDING REVIEW — NOT loaded in-process (quarantined)", name)
             return
 
@@ -625,7 +651,7 @@ class SkillLoader:
             skill.trusted = False
             skill.sandboxed = True
             skill.signature_reason = "source-snapshot-invalid"
-            self.skills[name] = skill
+            self._register(name, skill)
             logger.warning(
                 "Skill '%s' source was not a stable regular-file snapshot — "
                 "module NOT loaded in-process",
@@ -705,7 +731,7 @@ class SkillLoader:
                     skill.sandboxed = True
                 logger.warning(f"Failed to load skill module {name}: {e}")
 
-        self.skills[name] = skill
+        self._register(name, skill)
         logger.info(f"Loaded skill: {name} v{skill.version}")
 
     def _parse_manifest(
@@ -729,19 +755,24 @@ class SkillLoader:
         # back to the heading parser for everything else.
         fm, body = _split_frontmatter(content)
         if fm is not None:
-            return self._manifest_from_frontmatter(fm, body, default_name)
+            try:
+                return self._manifest_from_frontmatter(fm, body, default_name)
+            except Exception:
+                # Third-party frontmatter the normaliser cannot read registers the skill
+                # under its directory name instead of failing its whole discovery.
+                logger.warning("Skill frontmatter in %s could not be read; using defaults", path, exc_info=True)
+                return self._manifest_from_headings("", default_name)
         return self._manifest_from_headings(content, default_name)
 
     def _manifest_from_frontmatter(self, fm: dict, body: str, default_name: str) -> dict:
         meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
         hermes = meta.get("hermes") if isinstance(meta.get("hermes"), dict) else {}
 
-        requires = fm.get("requires") or hermes.get("requires_toolsets") or []
-        if isinstance(requires, str):
-            requires = [r.strip() for r in requires.split(",") if r.strip()]
-        agents = fm.get("agents") or []
-        if isinstance(agents, str):
-            agents = [a.strip() for a in agents.split(",") if a.strip()]
+        # A YAML list, "[a, b]" or "a, b" alike (the key:value fallback leaves a flow
+        # list as a string), as plain strings: a YAML date in `agents:` must not reach
+        # a JSON route as a date object.
+        requires = _fm.str_list(fm.get("requires")) or _fm.str_list(hermes.get("requires_toolsets"))
+        agents = _fm.str_list(fm.get("agents"))
         commands = self._normalize_commands(fm.get("commands"))
         if not commands:
             commands = self._parse_commands_from_body(body)
@@ -749,12 +780,14 @@ class SkillLoader:
         manifest = {
             # agentskills.io caps: a name at 64 characters, a description at 1024.
             "name": _fm.text(fm.get("name"), limit=_fm.MAX_NAME_LENGTH) or default_name,
-            "description": _fm.cap_description(fm.get("description")),
+            # No declared description: the first body line, as Hermes' listing reads it.
+            "description": _fm.cap_description(fm.get("description"))
+            or _fm.cap_description(_fm.first_body_line(body)),
             "version": _fm.text(fm.get("version")) or "0.1.0",
-            "author": _fm.text(fm.get("author")) or "unknown",
-            "license": _fm.text(fm.get("license")),
-            "agents": list(agents),
-            "requires": list(requires),
+            "author": _fm.joined(fm.get("author")) or "unknown",
+            "license": _fm.joined(fm.get("license")),
+            "agents": agents,
+            "requires": requires,
             "commands": commands,
         }
         # H327 — every other key Hermes recognises, normalised (metadata only).
@@ -817,11 +850,15 @@ class SkillLoader:
         out: list[dict] = []
         if not isinstance(raw, list):
             return out
-        for entry in raw:
+        for entry in raw[: 4 * _fm.MAX_LIST_ITEMS]:
             if isinstance(entry, dict):
                 cmd = entry.get("command")
                 if isinstance(cmd, str) and re.fullmatch(r"\w+", cmd):
-                    out.append(entry)
+                    # The rest of the entry is third-party YAML too: plain, finite
+                    # JSON types only (H327), with the command token kept whole.
+                    safe = _fm.json_safe(entry) or {}
+                    safe["command"] = cmd
+                    out.append(safe)
             elif isinstance(entry, str) and re.fullmatch(r"\w+", entry):
                 out.append({"command": entry})
         return out

@@ -265,7 +265,7 @@ class SkillImporter:
                 logger.warning("Hermes content digest mismatch for '%s'", entry.slug)
                 return None
             text = raw.decode("utf-8")
-            if SkillImporter._extract_frontmatter(text).get("name") != entry.slug:
+            if SkillImporter._extract_frontmatter(text, strict=True).get("name") != entry.slug:
                 logger.warning("Hermes content identity mismatch for '%s'", entry.slug)
                 return None
         except UnicodeDecodeError:
@@ -491,14 +491,16 @@ class SkillImporter:
         return f"---\n{fm_text}\n---\n\n" + "\n".join(body)
 
     @staticmethod
-    def _extract_frontmatter(text: str) -> dict:
+    def _extract_frontmatter(text: str, *, strict: bool = False) -> dict:
         # The same parse the loader runs (H327): BOM-safe, with the key:value
-        # fallback for malformed YAML, so the importer and the loader agree.
+        # fallback for malformed YAML, so the importer and the loader agree on
+        # metadata. ``strict`` drops that fallback: a name only the fallback can
+        # find never decides an identity (the Hermes pin gate, a migration slug).
         if not text:
             return {}
         from .frontmatter import split_frontmatter
 
-        data, _body = split_frontmatter(text)
+        data, _body = split_frontmatter(text, lenient=not strict)
         return data if isinstance(data, dict) else {}
 
     async def _sync_from_hermes(self, category: Optional[str]) -> list[str]:
@@ -1173,7 +1175,7 @@ async def _import_local_skill(
         text = raw.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return _local_skill_result(None, "rejected", "skill_md_unreadable")
-    frontmatter = SkillImporter._extract_frontmatter(text)
+    frontmatter = SkillImporter._extract_frontmatter(text, strict=True)
     declared = frontmatter.get("name")
     slug = _safe_slug(str(declared) if declared else Path(skill_dir).name)
     if slug is None:
@@ -1349,7 +1351,7 @@ def rescan_imported(
                 _local_skill_result(target.name, "source_unreadable", "skill_md_unreadable", **info)
             )
             continue
-        declared = SkillImporter._extract_frontmatter(text).get("name")
+        declared = SkillImporter._extract_frontmatter(text, strict=True).get("name")
         slug = _safe_slug(str(declared) if declared else source_path.parent.name)
         if slug != target.name:
             rows.append(
