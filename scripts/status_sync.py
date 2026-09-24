@@ -53,11 +53,11 @@ import json
 import os
 import re
 import shutil
-import tempfile
 
 # Local CLI orchestrates fixed pytest/npm/git argv and never invokes a shell.
 import subprocess  # nosec B404
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
