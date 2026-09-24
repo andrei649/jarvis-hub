@@ -89,6 +89,16 @@ from datetime import UTC
 logger = logging.getLogger("jarvis.orchestrator")
 
 
+def _consume_task_exception(task: "asyncio.Task") -> None:
+    """Retrieve a background task's exception so asyncio never logs it as unretrieved.
+
+    Used for a recall left running past its timeout (H428): its outcome is read, if
+    at all, by the next turn, and a failure must stay a quiet empty block.
+    """
+    if not task.cancelled():
+        task.exception()
+
+
 def _is_failed_agent_reply(agent_id: str | None, response: object) -> bool:
     """Classify stable degraded replies and exact per-agent failure markers."""
 
@@ -2502,22 +2512,96 @@ class Orchestrator:
         """Execute a detected LLM-control action (delegates to llm_control, CLN-2)."""
         return await llm_control.run_llm_control(self, action, model, channel=channel)
 
+    # H428 — Hermes bounds each memory prefetch at 8 s (_EXTERNAL_PREFETCH_TIMEOUT_S).
+    _RECALL_TIMEOUT_DEFAULT_S = 8.0
+    _RECALL_TIMEOUT_BOUNDS_S = (0.1, 60.0)
+    # A late result waits this long for a retry of the same question.
+    _RECALL_HANDOFF_TTL_S = 600.0
+
+    def _recall_timeout_s(self) -> float:
+        """``memory.recall_timeout_s``, validated: a non-positive or non-number value
+        reads as the default, anything else is clamped into the bounds."""
+        raw = self.get_setting("memory.recall_timeout_s", self._RECALL_TIMEOUT_DEFAULT_S)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
+            return self._RECALL_TIMEOUT_DEFAULT_S
+        low, high = self._RECALL_TIMEOUT_BOUNDS_S
+        return float(min(max(raw, low), high))
+
+    async def _recall_hits(self, text: str) -> list:
+        """The whole retrieval step the hard timeout bounds: model pins, the query
+        embedding, fused vector ⊕ graph search and the living-memory rerank.
+        (A query rewrite, H433, belongs inside this coroutine too.)"""
+        from .llm.job_selection import current_selection, SelectionError
+        if current_selection() is not None:
+            raise SelectionError("job model pins exclude auxiliary recall embedding")
+        k = self.get_setting("memory.recall_top_k", 5)
+        hits = await self.memory.recall(text, top_k=k)
+        return self._living_memory_rerank_hits(hits)
+
+    async def _bounded_recall_hits(self, text: str) -> list:
+        """Recall hits under the hard timeout, or [] (H428).
+
+        A timed-out recall cannot be killed — its embedding and search run on worker
+        threads and hold the memory manager's lock — so it is left to finish as the
+        *straggler*. While it runs, later turns skip recall instead of queueing
+        another round-trip behind the same hung backend (Hermes skips a provider
+        whose previous prefetch is still alive). When it finishes, its hits are kept
+        for one handoff: a retry of the same question within the TTL gets them
+        without a new query; any other turn discards them.
+        """
+        straggler = getattr(self, "_recall_straggler", None)
+        if straggler is not None:
+            if not straggler.done():
+                logger.info("recall skipped: the previous recall is still running past its timeout")
+                return []
+            self._recall_straggler = None
+            late = self._recall_handoff(straggler)
+            if late is not None and late[0] == text:
+                return late[1]
+        timeout = self._recall_timeout_s()
+        task = asyncio.ensure_future(self._recall_hits(text))
+        try:
+            done, _pending = await asyncio.wait({task}, timeout=timeout)
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+        if not done:
+            task.add_done_callback(_consume_task_exception)
+            self._recall_straggler = task
+            self._recall_straggler_text = text
+            self._recall_straggler_started = time.monotonic()
+            logger.warning("recall timed out after %.1fs; this turn runs without long-term memory", timeout)
+            return []
+        return task.result()
+
+    def _recall_handoff(self, straggler) -> tuple[str, list] | None:
+        """``(query, hits)`` from a straggler that finished cleanly within the TTL."""
+        started = getattr(self, "_recall_straggler_started", 0.0)
+        if straggler.cancelled() or straggler.exception() is not None:
+            return None
+        if time.monotonic() - started > self._RECALL_HANDOFF_TTL_S:
+            return None
+        return getattr(self, "_recall_straggler_text", ""), straggler.result()
+
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
 
         Off by default — enable with the `memory.recall_enabled` setting. Pairs
         with `MEMORY_EMBED_TURNS=true` or explicit `/api/memory/remember` so there
         is something to recall. Embeds the query and runs fused recall (vector ⊕
-        graph); any failure degrades to an empty block (never breaks a turn)."""
+        graph); any failure degrades to an empty block (never breaks a turn).
+
+        H428: a trivial prompt (empty, a slash command, a bare acknowledgement —
+        memory.recall_gate) skips recall entirely, and the retrieval is bounded by
+        `memory.recall_timeout_s` (default 8 s) through _bounded_recall_hits."""
         if not self.get_setting("memory.recall_enabled", False):
             return ""
+        from .memory.recall_gate import is_trivial_prompt
+        if is_trivial_prompt(text):
+            logger.debug("recall skipped: trivial prompt")
+            return ""
         try:
-            from .llm.job_selection import current_selection, SelectionError
-            if current_selection() is not None:
-                raise SelectionError("job model pins exclude auxiliary recall embedding")
-            k = self.get_setting("memory.recall_top_k", 5)
-            hits = await self.memory.recall(text, top_k=k)
-            hits = self._living_memory_rerank_hits(hits)
+            hits = await self._bounded_recall_hits(text)
         except Exception as e:
             logger.warning(f"recall failed: {e}")
             return ""

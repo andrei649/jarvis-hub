@@ -6,11 +6,10 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 84 rows remain.
+**Closed in #1207** (2026-09-24): H327, H428 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 83 rows remain.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H428](#h428) | Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up | partial | 4 | [11](#critic-note-11), [12](#critic-note-12) |
 | [H687](#h687) | A recurring instruction runs once immediately, then on its cadence | partial | 4 | [15](#critic-note-15) |
 | [H165](#h165) | In-app documentation | missing | 5 |  |
 | [H200](#h200) | Webhook subscription management surface | partial | 5 | [7](#critic-note-7) |
@@ -94,14 +93,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H428
-
-**Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up** (memory) — partial, ~4 h. Critic notes: [11](#critic-note-11), [12](#critic-note-12).
-
-Files: `agents/core/memory/recall_gate.py`, `agents/core/orchestrator.py`, `tests/test_recall_gate.py`
-
-Plan: 1. Add agents/core/memory/recall_gate.py with TRIVIAL_RE and is_trivial_prompt(text). The anchored, case-insensitive regex matches: - empty or whitespace-only text - text starting with '/' - bare acknowledgements: ok|okay|k|kk|thanks|thank you|thx|ty|mersi|mulțumesc|merci|da|nu|bine|super|perfect|hi|hello|hey|salut|lgtm|cool|nice|great, with optional trailing punctuation/emoji. 'k8s', 'yolo' and 'ok, and what about X?' must not match. 2. In Orchestrator._recall_block (agents/core/orchestrator.py), return '' when is_trivial_prompt(text), with a debug log. 3. Wrap self.memory.recall(...) in asyncio.wait_for(timeout=float(get_setting('memory.recall_timeout_s', 8.0))). On TimeoutError log a warning and return ''. 4. Keep a per-session in-flight set so a turn whose previous recall thread is still alive skips recall and logs the skip. The first red test is new tests/test_recall_gate.py: with recall_enabled, _recall_block('ok') never calls memory.recall. A memory.recall stub that awaits asyncio.sleep(30) with timeout 0.2 returns '' in under 1 s. Add a parametrized table of trivial and non-trivial prompts.
 
 ## H687
 
@@ -873,7 +864,7 @@ Three rows add overlapping per-turn payloads and meters on the same surfaces. H2
 
 ### Critic note 11
 
-Rows: [H416](#h416), [H428](#h428), [H674](#h674), [H677](#h677).
+Rows: [H416](#h416), H428 (closed in #1207), [H674](#h674), [H677](#h677).
 
 H416's accepted requirement is one budget primitive whose timeout_for(kind) replaces site-local constants. H428 (memory.recall_timeout_s) and H674 (compression_max_turn_hold_seconds, compression_inactivity_seconds) add new site-local timeouts inside the turn, which H416 would then have to chase down again. H677 adds boot and teardown budgets, which sit outside a turn.
 
@@ -881,7 +872,7 @@ H416's accepted requirement is one budget primitive whose timeout_for(kind) repl
 
 ### Critic note 12
 
-Rows: [H428](#h428), [H433](#h433).
+Rows: H428 (closed in #1207), [H433](#h433).
 
 Both rows modify Orchestrator._recall_block. H433 adds a strict-local rewrite call (max_tokens 96, no timeout) before memory.recall. H428 bounds only memory.recall with its hard timeout and gates trivial prompts. A hung local backend in the rewrite would stall the turn outside H428's bound, and trivial prompts would still pay for a rewrite.
 

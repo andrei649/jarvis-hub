@@ -218,6 +218,9 @@ DEFAULTS: list[dict[str, Any]] = [
     # consent step (O26-P2.4) is what flips it deliberately.
     dict(category="memory",  key="recall_enabled",   value=False,                 label="Long-term recall in prompts", kind="toggle"),
     dict(category="memory",  key="recall_top_k",     value=5,                     label="Recall hits per prompt", kind="number"),
+    # H428 — the hard bound on the pre-turn recall (embedding + fused search), as
+    # Hermes bounds a memory prefetch at 8 s. Validated in Orchestrator._recall_timeout_s.
+    dict(category="memory",  key="recall_timeout_s", value=8,                     label="Recall time limit (seconds)", kind="number"),
     # O26-P0.3 (F2): the H21 cognition subsystem read cognition.* flags that were
     # never seeded — un-toggleable from the product. Master OFF (default-off
     # discipline); sub-flags ON so flipping the single master wakes the layer
