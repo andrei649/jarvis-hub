@@ -109,13 +109,14 @@ class ManualDispatch:
         them); how many were cancelled."""
         origins = (origin,) if isinstance(origin, str) else tuple(origin)
         s = self.store
-        with s._lock, s._conn:
-            cursor = s._conn.execute(
-                "UPDATE job_requests SET status='cancelled', reason=? WHERE job_id=? AND status='queued' "
-                f"AND origin IN ({','.join('?' * len(origins))})",
-                (reason, job_id, *origins),
-            )
-            return cursor.rowcount
+        cancelled = 0
+        with s._lock, s._conn:  # one transaction, one fixed statement per origin
+            for one in origins:
+                cancelled += s._conn.execute(
+                    "UPDATE job_requests SET status='cancelled', reason=? WHERE job_id=? AND status='queued' AND origin=?",
+                    (reason, job_id, one),
+                ).rowcount
+        return cancelled
 
     def get(self, request_id):
         s = self.store
