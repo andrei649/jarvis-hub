@@ -40,6 +40,7 @@
   "GET /api/admin/audit": "admin",
   "GET /api/admin/backup": "admin",
   "GET /api/admin/env": "admin",
+  "GET /api/admin/env/sources": "admin",
   "GET /api/admin/mcp": "admin",
   "GET /api/admin/network/calls": "admin",
   "GET /api/admin/prompts/{agent_id}/ab": "admin",

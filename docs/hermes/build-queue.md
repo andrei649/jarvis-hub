@@ -6,13 +6,12 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7) — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 78 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 77 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H273](#h273) | Tell the owner where an effective value actually came from | partial | 5 |  |
 | [H315](#h315) | Keep a visible checklist of what the agent is doing | missing | 5 | [22](#critic-note-22) |
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
@@ -90,14 +89,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H273
-
-**Tell the owner where an effective value actually came from** (env) — partial, ~5 h.
-
-Files: `agents/core/env_provenance.py`, `agents/core/plugin_manager.py`, `agents/core/routers/admin.py`, `scripts/doctor.py`, `agents/cli/nerva.py`, `tests/test_env_provenance.py`, `tests/test_doctor.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`
-
-Plan: 1. Add agents/core/env_provenance.py with load_layered_env(repo_env, home_env, environ=os.environ). It records every key already in environ as 'process'. It then reads dotenv_values(repo_env) followed by dotenv_values(home_env), records 'repo_env' or 'user_env' only for keys not already present (the same first-wins semantics as override=False), and applies those values to environ. It keeps a module-level {key: layer} snapshot behind a provenance() accessor that returns names and layers only. 2. Replace the two load_dotenv calls in PluginManager.build with this function. 3. Add an admin-guarded GET /api/admin/env/sources in agents/core/routers/admin.py that returns [{key, layer}] plus a masked flag computed with the existing _SECRET_HINTS/mask_secret rule. Never return raw values. Regenerate the route/auth/openapi snapshots. 4. Add a non-required check_config to scripts/doctor.py that re-derives the same layers offline (os.environ vs the repo .env vs the data-home .env) for JARVIS_* and provider key names and prints key -> layer. Include it in --json. 5. First red test: tests/test_env_provenance.py::test_home_only_key_reports_user_env. A key present only in the home .env reports 'user_env'; a key in both files reports 'repo_env'; a monkeypatched shell key reports 'process'. No value string appears in provenance(), the route body or the doctor report.
 
 ## H315
 

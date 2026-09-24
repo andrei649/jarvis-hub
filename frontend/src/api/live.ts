@@ -168,12 +168,19 @@ export function hydrateObserve(bench: any, quality: any, resil: any, seed: any) 
  * We only know a key is SET — never claim validity or rotation age. */
 const SECRET_NAME_HINTS = ['key', 'token', 'secret', 'password', 'passwd', 'pass', 'client_id'];
 
-export function hydrateAdminKeys(env: any) {
+export function hydrateAdminKeys(env: any, sources?: any) {
   if (!env || typeof env !== 'object' || Array.isArray(env)) return [];
+  /* H273 — /api/admin/env/sources names the layer each key came from (process
+     environment, repo .env, data-home .env): names and layers, never values. */
+  const layer: Record<string, string> = {};
+  for (const row of (sources && Array.isArray(sources.sources) ? sources.sources : [])) {
+    if (row && typeof row.key === 'string' && typeof row.label === 'string') layer[row.key] = row.label;
+  }
   return Object.entries(env)
     .filter(([name]) => SECRET_NAME_HINTS.some((h) => name.toLowerCase().includes(h)))
     .slice(0, 8)
-    .map(([name, value]) => ({ name, masked: text(value as any, ''), status: 'set', rotated: '' }));
+    .map(([name, value]) => ({ name, masked: text(value as any, ''), status: 'set', rotated: '',
+      ...(layer[name] ? { source: layer[name] } : {}) }));
 }
 
 /* /api/admin/agents/stats → OBSERVE's "LATENCY BY AGENT" meters. latency_ms
@@ -465,9 +472,12 @@ export function useLiveModes(): LiveModes {
       // API KEYS & SECRETS — what the server actually has in its environment,
       // already masked server-side. Absent or empty → the panel stays "not
       // connected" rather than showing keys that were never configured.
-      await apiGet('/api/admin/env', { admin: true }).then((env: any) => {
+      await Promise.all([
+        apiGet('/api/admin/env', { admin: true }),
+        apiGet('/api/admin/env/sources', { admin: true }).catch(() => null),
+      ]).then(([env, sources]: any[]) => {
         if (!alive || loadId !== loadGeneration) return;
-        const keys = hydrateAdminKeys(env);
+        const keys = hydrateAdminKeys(env, sources);
         set('ADMIN', { ...V2.ADMIN, keys });
         if (keys.length) mark('ADMIN');
       }).catch(() => {});

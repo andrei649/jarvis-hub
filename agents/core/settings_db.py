@@ -434,6 +434,16 @@ def init_db(force: bool = False):
     conn.commit()
     conn.close()
 
+def value_source(category: str, key: str, value) -> str:
+    """H273 — where a stored value stands against its declaration: ``default`` when
+    it equals the declared default, ``set`` when it differs (an owner write or a
+    migration), ``undeclared`` for a stored key with no declaration."""
+    spec = _SPEC.get((category, key))
+    if spec is None:
+        return "undeclared"
+    return "default" if value == spec.get("value") else "set"
+
+
 def get_all() -> dict[str, list[dict]]:
     _ensure_init()
     conn = get_conn()
@@ -444,12 +454,14 @@ def get_all() -> dict[str, list[dict]]:
         cat = r["category"]
         if cat not in groups:
             groups[cat] = []
+        value = _decrypt_if_secret(json.loads(r["value"]))
         groups[cat].append({
             "key": r["key"],
-            "value": _decrypt_if_secret(json.loads(r["value"])),
+            "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
+            "source": value_source(cat, r["key"], value),
         })
     return groups
 
@@ -481,13 +493,18 @@ def get_category(cat: str) -> list[dict]:
         (cat,),
     ).fetchall()
     conn.close()
-    return [{
-        "key": r["key"],
-        "value": _decrypt_if_secret(json.loads(r["value"])),
-        "label": r["label"],
-        "kind": r["kind"],
-        "opts": json.loads(r["opts"]),
-    } for r in rows]
+    out = []
+    for r in rows:
+        value = _decrypt_if_secret(json.loads(r["value"]))
+        out.append({
+            "key": r["key"],
+            "value": value,
+            "label": r["label"],
+            "kind": r["kind"],
+            "opts": json.loads(r["opts"]),
+            "source": value_source(cat, r["key"], value),
+        })
+    return out
 
 
 # ── settings integrity (AUD-8 / F10) ──────────────────────────────

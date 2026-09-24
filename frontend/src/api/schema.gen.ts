@@ -6107,6 +6107,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/env/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Env Sources
+         * @description H273: where each environment key came from — the process environment, the
+         *     repo .env or the data-home .env, and which lower layers it overrides.
+         *
+         *     Names and layers only, at the same boundary as /api/admin/env: no value is
+         *     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+         */
+        get: operations["admin_env_sources_api_admin_env_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tool-events": {
         parameters: {
             query?: never;
@@ -19839,6 +19863,26 @@ export interface operations {
         };
     };
     admin_get_env_api_admin_env_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_env_sources_api_admin_env_sources_get: {
         parameters: {
             query?: never;
             header?: never;

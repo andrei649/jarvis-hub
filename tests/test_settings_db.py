@@ -53,6 +53,7 @@ def test_agent_tool_loop_defaults_are_seeded_default_off(temp_db):
         "label": "Agent tool loop (experimental)",
         "kind": "toggle",
         "opts": [],
+        "source": "default",
     }
     assert llm["tool_loop_max_iterations"] == {
         "key": "tool_loop_max_iterations",
@@ -60,6 +61,7 @@ def test_agent_tool_loop_defaults_are_seeded_default_off(temp_db):
         "label": "Agent tool-loop model-turn cap",
         "kind": "number",
         "opts": [],
+        "source": "default",
     }
 
 

@@ -674,7 +674,9 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         for cat, rows in groups.items():
             for row in rows:
                 shown = json.dumps(_shown(row, reveal=ns.reveal), ensure_ascii=False)
-                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')})")
+                # H273: "default" is the declared value; "set" was changed from it
+                source = f", {row['source']}" if row.get("source") else ""
+                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source})")
         return EXIT_OK
     if ns.action == "get":
         category, key = _split_name(ns.name)

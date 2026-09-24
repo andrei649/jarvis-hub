@@ -179,6 +179,33 @@ async def admin_get_env():
     return out
 
 
+@router.get("/api/admin/env/sources", dependencies=[Depends(admin_guard)])
+async def admin_env_sources():
+    """H273: where each environment key came from — the process environment, the
+    repo .env or the data-home .env, and which lower layers it overrides.
+
+    Names and layers only, at the same boundary as /api/admin/env: no value is
+    returned, and ``masked`` says whether /api/admin/env masks the key's value.
+    """
+    from pathlib import Path
+
+    from agents.core import env_provenance
+    from agents.core.paths import user_home
+
+    rows = [{"key": key, "layer": row["layer"], "label": env_provenance.LABELS[row["layer"]],
+             "shadowed": row["shadowed"], "masked": any(h in key.lower() for h in _SECRET_HINTS)}
+            for key, row in sorted(env_provenance.provenance().items()) if not key.startswith("_")]
+    repo_env = Path(__file__).resolve().parents[3] / ".env"
+    home = user_home()
+    home_env = home / ".env" if home is not None else None
+    files = {
+        "repo_env": {"path": str(repo_env), "present": repo_env.is_file()},
+        "user_env": {"path": str(home_env) if home_env else None,
+                     "present": bool(home_env and home_env.is_file())},
+    }
+    return nocache_json({"sources": rows, "files": files})
+
+
 def _redact_audit_details(details: object) -> object:
     """AUD-12: mask any raw ``matched_text`` in a findings JSON blob at the read
     boundary. New rows are already redacted at write time (audit.py); this also

@@ -253,7 +253,7 @@ function AdminMode({ t }){
             <SubH3 style={{marginTop:16}}>API KEYS &amp; SECRETS</SubH3>
             {A.keys.length ? A.keys.map((k,i)=>(
               <div className="key-row" key={i}>
-                <div><div className="key-name">{k.name}</div><div className="key-mask">{k.masked}</div></div>
+                <div><div className="key-name">{k.name}</div><div className="key-mask">{k.masked}{'source' in k && k.source ? ` · ${String(k.source)}` : ''}</div></div>
                 <div className="key-right"><span className={'key-status '+(k.status==='valid'?'ok':'warn')}>{k.status}</span><span className="key-rot">{k.rotated}</span></div>
               </div>
             )) : <NotConnected what="no keys in env"/>}

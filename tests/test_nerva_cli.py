@@ -443,7 +443,7 @@ def test_config_list_get_set_and_check_work_on_the_data_root(temp_settings):
     assert code == EXIT_OK and settings_db.get_value("llm", "tool_loop_max_iterations") == 12
 
     code, out, _err, _hub = _run(["config", "list", "llm"])
-    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number)" in out
+    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number, set)" in out   # H273: changed from 8
 
     code, out, _err, _hub = _run(["config", "list", "--json"])
     assert code == EXIT_OK and json.loads(out)["llm"]

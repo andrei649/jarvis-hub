@@ -24,6 +24,10 @@ runtime_resolves    advisory   the route a Jarvis turn takes does not resolve to
                                model (``configured_not_resident``, ``route_unselected``,
                                ``residency_unknown`` …) — read from the running hub; with
                                no ready hub it is ``skip`` (``skipped:hub_down``), never ok
+config_sources      advisory   informational: which layer supplied each configuration key
+                               (process environment > repo .env > data-home .env, first
+                               wins) and which .env values a higher layer overrides — names
+                               only, never a value (H273)
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
 ==================  =========  ==========================================================
 
@@ -81,7 +85,7 @@ WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared
 LOOPBACK_HOSTS = frozenset({"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 REQUIRED = ("python", "venv", "locks_in_sync", "bind_is_loopback", "data_root_writable")
-ADVISORY = ("runtimes", "readyz", "runtime_resolves", "smoke")
+ADVISORY = ("runtimes", "readyz", "runtime_resolves", "config_sources", "smoke")
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
 
@@ -92,6 +96,7 @@ class Check:
     status: str
     reason: str
     detail: str = ""
+    data: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -104,7 +109,13 @@ class DoctorReport:
         return {c.name: c for c in self.checks}
 
     def to_dict(self) -> dict:
-        return {"ok": self.ok, "root": self.root, "checks": [asdict(c) for c in self.checks]}
+        checks = []
+        for c in self.checks:
+            row = asdict(c)
+            if not row.get("data"):
+                row.pop("data", None)  # only a check with a table carries one (config_sources)
+            checks.append(row)
+        return {"ok": self.ok, "root": self.root, "checks": checks}
 
 
 def _result(name: str, ok: bool, reason: str, detail: str = "") -> Check:
@@ -346,6 +357,51 @@ def check_runtime_resolves(opener=urllib.request.urlopen, *, readyz: Check | Non
     return _result(name, False, reason, detail)
 
 
+# Configuration keys worth naming: every key a .env file sets, and the process
+# environment's keys with these prefixes or suffixes. The rest of a shell's
+# environment (PATH, HOME …) is not Nerva configuration.
+CONFIG_PREFIXES = ("JARVIS_", "NERVA_", "MEMORY_", "KNOWLEDGE_GRAPH_", "QDRANT_", "NEO4J_",
+                   "OLLAMA_", "LMSTUDIO_", "LM_STUDIO_")
+CONFIG_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_BASE_URL", "_MODEL")
+
+
+def check_config_sources(root: Path, env=None) -> Check:
+    """H273 — which layer supplies each configuration key, derived offline the way
+    the hub loads it (``agents.core.env_provenance``): the process environment, then
+    ``<root>/.env``, then ``$JARVIS_USER_HOME/.env``, the first one to set a key
+    winning. Names and layers only. Informational: it is ``ok`` unless the table
+    cannot be derived."""
+    env = os.environ if env is None else env
+    try:
+        from agents.core import env_provenance
+    except Exception as exc:  # a broken install must still get the rest of the report
+        return _result("config_sources", False, "provenance_unavailable", type(exc).__name__)
+    repo_env = Path(root) / ".env"
+    home_dir = str(env.get("JARVIS_USER_HOME", "") or "").strip()
+    home_env = Path(home_dir).expanduser() / ".env" if home_dir else None
+    table = env_provenance.derive(repo_env, home_env, env)
+    in_files = set(env_provenance.env_file_keys(repo_env))
+    if home_env is not None:
+        in_files |= set(env_provenance.env_file_keys(home_env))
+    rows = [{"key": key, "layer": row["layer"], "shadowed": list(row["shadowed"])}
+            for key, row in sorted(table.items())
+            if key in in_files or key.startswith(CONFIG_PREFIXES) or key.endswith(CONFIG_SUFFIXES)]
+    counts = {layer: sum(1 for row in rows if row["layer"] == layer)
+              for layer in (env_provenance.PROCESS, env_provenance.REPO_ENV, env_provenance.USER_ENV)}
+    reason = (f"{len(rows)} keys: {counts[env_provenance.PROCESS]} process environment, "
+              f"{counts[env_provenance.REPO_ENV]} repo .env, {counts[env_provenance.USER_ENV]} data-home .env")
+    overriding = sum(1 for row in rows if row["layer"] == env_provenance.PROCESS and row["shadowed"])
+    if overriding:
+        reason += (f"; {overriding} key{'s' if overriding != 1 else ''} set in the process environment "
+                   f"override{'' if overriding != 1 else 's'} a .env value")
+    # The files it read, like Hermes' `config env-path`: paths, never contents.
+    detail = (f"repo .env {repo_env} ({'present' if repo_env.is_file() else 'absent'}); data-home .env "
+              + (f"{home_env} ({'present' if home_env.is_file() else 'absent'})" if home_env is not None
+                 else "not configured (no JARVIS_USER_HOME)"))
+    return Check("config_sources", OK, reason, detail,
+                 data={"sources": rows, "labels": dict(env_provenance.LABELS)})
+
+
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
     if not enabled:
         return Check("smoke", SKIP, "skipped", "pass --smoke to run it (~30s)")
@@ -374,6 +430,7 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=urllib.request.urlope
         check_runtimes(opener),
         readyz,
         check_runtime_resolves(opener, readyz=readyz, env=env),
+        check_config_sources(root, env),
         check_smoke(root, enabled=smoke, run=run),
     ]
     ok = all(c.status != FAIL for c in checks)
@@ -386,6 +443,11 @@ def format_report(report: DoctorReport) -> str:
         mark = {OK: "ok  ", FAIL: "FAIL", WARN: "warn", SKIP: "skip"}[c.status]
         tail = f"  ({c.detail})" if c.detail else ""
         lines.append(f"[{mark}] {c.name:<19} {c.reason}{tail}")
+        labels = c.data.get("labels", {}) if c.data else {}
+        for row in (c.data or {}).get("sources", []):
+            ignored = ", ".join(labels.get(layer, layer) for layer in row["shadowed"])
+            lines.append(f"         {row['key']:<28} <- {labels.get(row['layer'], row['layer'])}"
+                         + (f" (ignored: {ignored})" if ignored else ""))
     lines.append("verdict: " + ("healthy" if report.ok else "NOT healthy — fix the FAIL rows"))
     return "\n".join(lines)
 
