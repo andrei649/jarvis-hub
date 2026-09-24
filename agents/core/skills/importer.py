@@ -492,21 +492,14 @@ class SkillImporter:
 
     @staticmethod
     def _extract_frontmatter(text: str) -> dict:
-        if not text or not text.startswith("---"):
+        # The same parse the loader runs (H327): BOM-safe, with the key:value
+        # fallback for malformed YAML, so the importer and the loader agree.
+        if not text:
             return {}
-        lines = text.split("\n")
-        if lines[0].strip() != "---":
-            return {}
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                try:
-                    import yaml
+        from .frontmatter import split_frontmatter
 
-                    data = yaml.safe_load("\n".join(lines[1:i]))
-                    return data if isinstance(data, dict) else {}
-                except Exception:
-                    return {}
-        return {}
+        data, _body = split_frontmatter(text)
+        return data if isinstance(data, dict) else {}
 
     async def _sync_from_hermes(self, category: Optional[str]) -> list[str]:
         pin = _load_hermes_pin()

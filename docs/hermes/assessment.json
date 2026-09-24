@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "56903ac121f0a21dcaaf1831dc0c53bb834a27ef",
-  "assessed_at": "2026-09-23T12:07:23Z",
+  "base_sha": "9056c1d7c4a76c60da1c0b99689a686500d91512",
+  "assessed_at": "2026-09-24T12:33:31Z",
   "reviews": [
     {
       "id": "H001",
@@ -2266,8 +2266,8 @@
       "id": "H204",
       "row_sha256": "584435ff5f5192135c60864bb09bd088060eed9581b77071335eb91ee6d34a14",
       "status": "partial",
-      "summary": "The installed-tree and registry surfaces are wired end to end. GET /skills (agents/core/routers/skills.py:29) and the admin-guarded marketplace routes (list, history, rollback, publish, install, install-zip, review, uninstall, pending, approve; agents/core/routers/skills.py:355-580) each have a HUD caller. The console panels are all registered in frontend/src/console-routes.ts: SKILLS MARKETPLACE (review + rollback, frontend/src/gap.tsx:1759), Marketplace Admin (frontend/src/panels/marketplace-admin.tsx: publish, install-zip and uninstall keyed by folder name, which avoids the manifest-title trap), Skills Import, Skill History, Pending Skills and the Security Skills Map. Per-skill usage counters (use_count, last_used_at) are tracked in agents/core/skills/usage.py:34. SkillCurator (agents/core/skills/curator.py:35) archives stale agent-created, unpinned skills on its own schedule. Per-agent scoping exists only as author-declared manifest `agents:` filtering in SkillLoader.prompt_catalog (agents/core/skills/loader.py:1192-1193) and the static agents.yaml `tools:` list (agents/core/tool_profiles.py:37). test_skills_api.py, test_skill_lifecycle_curator.py and test_skill_approval_revoke.py: 37 pass.",
-      "remaining": "Both gaps the rationale accepts are absent. (1) Per-agent skill enable/disable as a capability grant: the permission ledger's SURFACES (agents/core/permission_ledger.py:69) has no skill surface. No route or HUD control enables or disables a skill for an agent, there is no All master switch, and neither SkillLoader.prompt_catalog nor SkillLoader.execute (agents/core/skills/loader.py:483) consults an owner-set grant. The manifest `agents:` field is author-controlled and only un-advertises. (2) A 'Disable unused' sweep: usage.py records use_count and last_used_at, but no owner-triggered route or control disables idle skills. The curator acts only on agent-created skills, on its own schedule, and never on imported or bundled ones. The profile-scope selector waits on the profile export/import row.",
+      "summary": "The installed-tree and registry surfaces are wired end to end. GET /skills (agents/core/routers/skills.py:29) and the admin-guarded marketplace routes (list, history, rollback, publish, install, install-zip, review, uninstall, pending, approve; agents/core/routers/skills.py:355-580) each have a HUD caller. The console panels are all registered in frontend/src/console-routes.ts: SKILLS MARKETPLACE (review + rollback, frontend/src/gap.tsx:1759), Marketplace Admin (frontend/src/panels/marketplace-admin.tsx: publish, install-zip and uninstall keyed by folder name, which avoids the manifest-title trap), Skills Import, Skill History, Pending Skills and the Security Skills Map. Per-skill usage counters (use_count, last_used_at) are tracked in agents/core/skills/usage.py:34. SkillCurator (agents/core/skills/curator.py:35) archives stale agent-created, unpinned skills on its own schedule. Per-agent scoping exists only as author-declared manifest `agents:` filtering in SkillLoader.prompt_catalog (agents/core/skills/loader.py:1209-1210) and the static agents.yaml `tools:` list (agents/core/tool_profiles.py:37). test_skills_api.py, test_skill_lifecycle_curator.py and test_skill_approval_revoke.py: 37 pass.",
+      "remaining": "Both gaps the rationale accepts are absent. (1) Per-agent skill enable/disable as a capability grant: the permission ledger's SURFACES (agents/core/permission_ledger.py:69) has no skill surface. No route or HUD control enables or disables a skill for an agent, there is no All master switch, and neither SkillLoader.prompt_catalog nor SkillLoader.execute (agents/core/skills/loader.py:494) consults an owner-set grant. The manifest `agents:` field is author-controlled and only un-advertises. (2) A 'Disable unused' sweep: usage.py records use_count and last_used_at, but no owner-triggered route or control disables idle skills. The curator acts only on agent-created skills, on its own schedule, and never on imported or bundled ones. The profile-scope selector waits on the profile export/import row.",
       "evidence": [
         {
           "path": "agents/core/routers/skills.py",
@@ -2295,7 +2295,7 @@
         },
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/permission_ledger.py",
@@ -2954,7 +2954,7 @@
       "id": "H275",
       "row_sha256": "aff2a4fa6dd456d07b37cdb5b29a29509d517ab11755f23c72f7992c2498ad93",
       "status": "missing",
-      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:65).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:466).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:939). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:552).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:319) at each compaction commit (agents/core/orchestrator.py:3171), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
+      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:65).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:466).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:939). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:563).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:319) at each compaction commit (agents/core/orchestrator.py:3171), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
       "remaining": "The whole feature is missing. It needs:\n1. A single boot flag (e.g. JARVIS_SAFE_MODE=1 plus a serve.py/`nerva` switch that sets it) that skips data-home and generated skills (bundled tree only), skips persisted MCP servers without erasing their saved config, skips owner-activated plugins/extensions, and ignores SOUL.local.md/HEARTBEAT.local.md overlays in favour of the shipped templates, both at construction and at the H672 compaction-boundary refresh (refresh_soul), so a safe-mode session cannot pick an overlay back up mid-conversation.\n2. A visible indicator that safe mode is on (status/readyz field and a HUD banner).\n3. A fail-closed guarantee that safe mode only removes capability: no kernel mediation, approval floor, plugin gate or egress policy relaxes.\n4. Tests for each skipped layer and for the no-relaxation property.",
       "evidence": [
         {
@@ -2971,7 +2971,7 @@
         },
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/agent.py",
@@ -3090,12 +3090,12 @@
       "id": "H285",
       "row_sha256": "90cfd3fe60c2ec0397cf67e040bf06654f6b298140a4c68fc2617d8b058b990e",
       "status": "partial",
-      "summary": "The install side is well governed: skill.install is kernel-mediated (agents/core/kernel/registry.py:106), with the signing/review gates plus marketplace uninstall and rollback. Narrowing what loads exists only piecemeal and does not survive a restart:\n- PUT /plugins/{plugin_id}/toggle (agents/core/routers/plugins.py:88) flips the in-memory PluginManifest.enabled through PermissionGate.disable (agents/core/plugin_gate.py:723) and is lost on restart.\n- MCP servers can be disconnected (agents/core/routers/mcp.py:243) or deleted from the persisted list, but MCPManager.load_from_config (agents/core/mcp/client.py:814) loads every persisted server.\n- Skills cannot be disabled at all: SkillLoader.discover (agents/core/skills/loader.py:541) loads every directory in the bundled tree and in the data-home skills folder.\nThere is no declared startup load-set for skills, plugins or MCP servers. Tests tests/test_systems_api.py::test_plugin_toggle_endpoint, tests/test_mcp_admin.py and tests/test_cdx8_skill_quarantine.py pass.",
+      "summary": "The install side is well governed: skill.install is kernel-mediated (agents/core/kernel/registry.py:106), with the signing/review gates plus marketplace uninstall and rollback. Narrowing what loads exists only piecemeal and does not survive a restart:\n- PUT /plugins/{plugin_id}/toggle (agents/core/routers/plugins.py:88) flips the in-memory PluginManifest.enabled through PermissionGate.disable (agents/core/plugin_gate.py:723) and is lost on restart.\n- MCP servers can be disconnected (agents/core/routers/mcp.py:243) or deleted from the persisted list, but MCPManager.load_from_config (agents/core/mcp/client.py:814) loads every persisted server.\n- Skills cannot be disabled at all: SkillLoader.discover (agents/core/skills/loader.py:552) loads every directory in the bundled tree and in the data-home skills folder.\nThere is no declared startup load-set for skills, plugins or MCP servers. Tests tests/test_systems_api.py::test_plugin_toggle_endpoint, tests/test_mcp_admin.py and tests/test_cdx8_skill_quarantine.py pass.",
       "remaining": "1. A declared, persisted load-set (allow/deny lists in settings or env) naming which skills, plugins and MCP servers load at boot. It must be honoured by SkillLoader.discover, PluginManager.build/PermissionGate and _load_mcp_config, and surfaced in the skills/MCP/plugin status rows.\n2. Plugin toggles must survive a restart.\n3. Narrowing-only semantics: a name that is not installed or approved is ignored and reported, never installed, never written to the approval store, and never a way around skill.install or the admin MCP add route.\n4. Tests for each of these.\nSafe mode (H275), which this row depends on, is also missing.",
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/routers/plugins.py",
@@ -3863,12 +3863,12 @@
       "id": "H318",
       "row_sha256": "ce66881c44936de4458650fb8aa7fa5f47279507c2a598faaf67ba7fd8d12124",
       "status": "partial",
-      "summary": "The governed skill system is intact: loader, proposals, approval, signing, marketplace, curator and usage. Listing is covered by injection, not by a tool. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1110) builds bounded rows (skill, command, description, at most 20) gated on signature and injection, and Orchestrator._prompt_context (agents/core/orchestrator.py:2647) adds them to every agent prompt unless llm.skills_in_prompt is off. Authoring reaches the governed pipeline only through the post-turn BackgroundReviewer, which is off by default. A new skill goes through SkillLoader.generate_skill quarantine (_dispatch_new_skill, agents/core/learning/background_review.py:284). A patch lands as a pending SkillProposalStore proposal plus an approval request (_dispatch_patch, agents/core/learning/background_review.py:298) and never touches the live skill. The model is offered no tool to list or read skills: the registry (tests/_snapshots/tool_profiles.json) has no skills_list or skill_view, and GET /skills (agents/core/routers/skills.py:29) is an HTTP route.",
+      "summary": "The governed skill system is intact: loader, proposals, approval, signing, marketplace, curator and usage. Listing is covered by injection, not by a tool. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) builds bounded rows (skill, command, description, at most 20) gated on signature and injection, and Orchestrator._prompt_context (agents/core/orchestrator.py:2647) adds them to every agent prompt unless llm.skills_in_prompt is off. Authoring reaches the governed pipeline only through the post-turn BackgroundReviewer, which is off by default. A new skill goes through SkillLoader.generate_skill quarantine (_dispatch_new_skill, agents/core/learning/background_review.py:284). A patch lands as a pending SkillProposalStore proposal plus an approval request (_dispatch_patch, agents/core/learning/background_review.py:298) and never touches the live skill. The model is offered no tool to list or read skills: the registry (tests/_snapshots/tool_profiles.json) has no skills_list or skill_view, and GET /skills (agents/core/routers/skills.py:29) is an HTTP route.",
       "remaining": "There is no `skill_view`. During a turn the model can see only a skill's one-line catalog row; it cannot read the full SKILL.md or any linked reference, template or script file. There is no queryable `skills_list` tool either: the injected catalog is capped at 20 command rows. The accepted adaptation needs both as ungated read-only ToolRPC tools. They must apply prompt_catalog's trust gates (no sandboxed, quarantined or signature-mismatched skills; injection scan with taint), be bounded, and be confined to the skill's directory. An in-turn authoring request should route into SkillProposalStore or generate_skill quarantine (propose, never write SKILL.md).",
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -3913,7 +3913,7 @@
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "tests/test_skills_in_prompt.py",
@@ -3924,17 +3924,25 @@
     {
       "id": "H327",
       "row_sha256": "fa44d35701de3cbbcea68f8dc2dd94aaf0696b025e0043e623059628a0717d1c",
-      "status": "partial",
-      "summary": "SkillLoader._parse_manifest (agents/core/skills/loader.py:700) handles both dialects. _split_frontmatter (agents/core/skills/loader.py:404) runs yaml.safe_load on a leading --- block, and _manifest_from_frontmatter (agents/core/skills/loader.py:722) keeps name, description, version, author, license, agents, requires (falling back to metadata.hermes.requires_toolsets) and commands. _normalize_commands drops non-\\w+ command tokens. Every other recognised Hermes key is discarded. Probes on main confirmed four gaps. A SKILL.md declaring platforms, environments, required_environment_variables, setup and metadata.hermes.tags/category/config parses to only those eight keys. A UTF-8 BOM before the --- makes the file fall through to the heading dialect: the name becomes the directory name and the description is empty. A 200-char name and a 3000-char description pass uncapped. A YAML parse failure has no naive key:value fallback. SkillImporter._extract_frontmatter in agents/core/skills/importer.py has the same BOM blind spot.",
-      "remaining": "Still needed: BOM-safe reads (utf-8-sig) in the loader and importer; a naive key:value fallback when YAML fails; a 64-char name cap and a 1024-char description cap. The manifest must keep, in normalised form: platforms, environments, setup, prerequisites, dependencies, required_environment_variables, required_credential_files, tags, homepage, related_skills, compatibility, triggers, and metadata.hermes.{tags, category, upstream_skill, supersedes, session_platforms, requires_toolsets, requires_tools, fallback_for_toolsets, fallback_for_tools, config}. These must be exposed on Skill so the gating/setup rows can consume them.",
+      "status": "equivalent",
+      "summary": "The SKILL.md frontmatter contract Hermes parses (agent/skill_utils.parse_frontmatter, tools/skills_tool_plugin.py) is now one shared module, agents/core/skills/frontmatter.py, used by both the loader and the importer. split_frontmatter (agents/core/skills/frontmatter.py:43) drops a leading UTF-8 BOM before the fence check (agents/core/skills/frontmatter.py:50), and a block that is not valid YAML falls back to key: value lines (_naive_key_values, agents/core/skills/frontmatter.py:69) instead of demoting the file to the heading dialect. SkillLoader._parse_manifest also decodes with utf-8-sig (agents/core/skills/loader.py:720, agents/core/skills/loader.py:722), so a BOM cannot defeat the heading dialect either, and SkillImporter._extract_frontmatter runs the same splitter (agents/core/skills/importer.py:501). The name is capped at 64 characters and the description at 1024 with an ellipsis (agents/core/skills/loader.py:751-752; MAX_NAME_LENGTH/MAX_DESCRIPTION_LENGTH at agents/core/skills/frontmatter.py:24-25). contract_fields (agents/core/skills/frontmatter.py:238), merged into every frontmatter manifest (agents/core/skills/loader.py:761), keeps every key Hermes recognises in normalised form: homepage, compatibility, platforms (aliases such as darwin/win32 mapped to macos/linux/windows, agents/core/skills/frontmatter.py:120), environments, triggers, dependencies, tags and related_skills (metadata.hermes first, then the top-level key, as in Hermes' skill_view), setup, prerequisites, required_credential_files, required_environment_variables — merged from the declared list, setup.collect_secrets and the legacy prerequisites.env_vars with first-entry-wins and name validation, as Hermes' _get_required_environment_variables does (agents/core/skills/frontmatter.py:137) — and metadata.hermes.{tags, category, upstream_skill, supersedes, session_platforms, requires_toolsets, requires_tools, fallback_for_toolsets, fallback_for_tools, config} (agents/core/skills/frontmatter.py:220; config entries need a key and a description, as in extract_skill_config_vars). Skill exposes platforms, environments, required_env (names only; no value is read) and hermes_meta, and to_dict carries them (agents/core/skills/loader.py:474, agents/core/skills/loader.py:482, agents/core/skills/loader.py:488, agents/core/skills/loader.py:445). Imported frontmatter is third-party text, so json_safe (agents/core/skills/frontmatter.py:79) bounds depth, list length and string length and turns YAML dates into ISO strings, which keeps the security-posture route that serialises Skill.to_dict working. tests/test_skill_frontmatter_contract.py pins all of it red-first (17 cases: the BOM, broken YAML, both caps, the full key set, the env-var merge, platform aliases, JSON safety, bounds, malformed metadata, the unchanged heading dialect, the importer) and 410 skill-related tests pass. Gating on these fields is not this row: H328 (visibility) and the setup rows consume them.",
+      "remaining": "",
       "evidence": [
         {
+          "path": "agents/core/skills/frontmatter.py",
+          "sha256": "d321ed5a9a3ed7e0ec5383556d4742bb246a9c0d3d232a5f6141397f73a20024"
+        },
+        {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/skills/importer.py",
-          "sha256": "4b6be1d72493c7b5ac2be26aa4d73df4563a427814bd9db3c11326d3fae59389"
+          "sha256": "4686d020a0d49422ccf8adb1cbb52aebd1dbad32a7f0b5bd2de12f2499bf2382"
+        },
+        {
+          "path": "tests/test_skill_frontmatter_contract.py",
+          "sha256": "d7aedd31cef45aed591cf8d0f93bc5522ec3ae466f3b35180f1c3c1a278da721"
         },
         {
           "path": "tests/test_hermes_import.py",
@@ -3950,12 +3958,16 @@
       "id": "H328",
       "row_sha256": "6f0f8e6113d6fa9017881e878f05f7895fea957a8ba8f50502ca8b6e69fe8d8f",
       "status": "missing",
-      "summary": "No conditional skill visibility exists. SkillLoader.discover (agents/core/skills/loader.py:541) loads every directory under the bundled and user roots unconditionally. prompt_catalog (agents/core/skills/loader.py:1110) hides a skill only for sandboxing, an untrusted signature, an injection-flagged row, or a declared agents list that excludes the caller. parse_command (agents/core/skills/loader.py:832) and Skill.execute accept any loaded skill. The frontmatter parser drops platforms, environments and metadata.hermes.* (H327), so nothing downstream could gate on them. A probe loaded a SKILL.md with `platforms: [macos]` on linux, and prompt_catalog returned its row. There is no per-channel session_platforms gating (the turn surface known to agents/core/tool_profiles.py is not consulted by the skills catalog) and no requires_tools/fallback_for_* gating. A grep for platforms|environments|session_platforms|fallback_for under agents/core/skills/ returns nothing.",
-      "remaining": "All four gates are missing. platforms: a hard gate that hides the skill and refuses explicit invocation with readiness_status unsupported. environments: soft hide only. metadata.hermes.session_platforms: per-channel hiding. requires_toolsets/requires_tools/fallback_for_toolsets/fallback_for_tools: checked against the tools actually offered this turn. A soft-hidden skill stays invokable by name, and every hide is logged. This depends on the widened parser (H327).",
+      "summary": "No conditional skill visibility exists. SkillLoader.discover (agents/core/skills/loader.py:552) loads every directory under the bundled and user roots unconditionally. prompt_catalog (agents/core/skills/loader.py:1127) hides a skill only for sandboxing, an untrusted signature, an injection-flagged row, or a declared agents list that excludes the caller. parse_command (agents/core/skills/loader.py:849) and Skill.execute accept any loaded skill. Since H327 the parser keeps platforms, environments and metadata.hermes.* (session_platforms, requires_toolsets, requires_tools, fallback_for_*) in normalised form (agents/core/skills/frontmatter.py) and Skill exposes platforms, environments and hermes_meta, but nothing consults them. A probe on this head parsed a SKILL.md with `platforms: [macos]` on linux: the manifest carried platforms == ['macos'], and prompt_catalog still returned its row. There is no per-channel session_platforms gating (the turn surface known to agents/core/tool_profiles.py is not consulted by the skills catalog) and no requires_tools/fallback_for_* gating. Outside the parser and those read-only Skill properties, nothing under agents/core/skills/ reads these keys.",
+      "remaining": "All four gates are missing. platforms: a hard gate that hides the skill and refuses explicit invocation with readiness_status unsupported. environments: soft hide only. metadata.hermes.session_platforms: per-channel hiding. requires_toolsets/requires_tools/fallback_for_toolsets/fallback_for_tools: checked against the tools actually offered this turn. A soft-hidden skill stays invokable by name, and every hide is logged. The widened parser (H327) now supplies the inputs; the gates themselves are the work.",
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
+        },
+        {
+          "path": "agents/core/skills/frontmatter.py",
+          "sha256": "d321ed5a9a3ed7e0ec5383556d4742bb246a9c0d3d232a5f6141397f73a20024"
         },
         {
           "path": "agents/core/tool_profiles.py",
@@ -3971,7 +3983,7 @@
       "id": "H329",
       "row_sha256": "21b762d5bf9cb26ccb4beac0360b3681f0c4f4b8621064025c03815b7da0f94c",
       "status": "missing",
-      "summary": "There is no reversible per-skill off switch. The skills router (agents/core/routers/skills.py) exposes list, import, marketplace install/review/rollback/uninstall and pending/approve routes but no enable/disable. The settings skills category (agents/core/settings_db.py:282 onward) holds only auto_generate, sandbox_enabled, max_skills and import_source. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1110) and parse_command consult no disabled list, and no HUD control or CLI toggles a skill. The only ways to take a skill away are destructive. POST /api/skills/marketplace/uninstall (agents/core/routers/skills.py:515) calls SkillMarketplace.uninstall_skill (agents/core/skills/marketplace.py:640), which deletes the directory; the route then revokes the owner approval bound to that path (agents/core/routers/skills.py:556-559). The curator's move is _archive_skill (agents/core/skills/curator.py:115). permission.grant is registered as a kernel-mediated kind (agents/core/kernel/registry.py:110), but no skill re-enable path exists to use it. HEQ lot 1 (H503) changed only how a package is installed: install_from_zip now extracts through the capped archive_safe module into a staging directory and renames it into place, so a rejected update no longer deletes the installed version. It adds no disabled state.",
+      "summary": "There is no reversible per-skill off switch. The skills router (agents/core/routers/skills.py) exposes list, import, marketplace install/review/rollback/uninstall and pending/approve routes but no enable/disable. The settings skills category (agents/core/settings_db.py:282 onward) holds only auto_generate, sandbox_enabled, max_skills and import_source. SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127) and parse_command consult no disabled list, and no HUD control or CLI toggles a skill. The only ways to take a skill away are destructive. POST /api/skills/marketplace/uninstall (agents/core/routers/skills.py:515) calls SkillMarketplace.uninstall_skill (agents/core/skills/marketplace.py:640), which deletes the directory; the route then revokes the owner approval bound to that path (agents/core/routers/skills.py:556-559). The curator's move is _archive_skill (agents/core/skills/curator.py:115). permission.grant is registered as a kernel-mediated kind (agents/core/kernel/registry.py:110), but no skill re-enable path exists to use it. HEQ lot 1 (H503) changed only how a package is installed: install_from_zip now extracts through the capped archive_safe module into a staging directory and renames it into place, so a rejected update no longer deletes the installed version. It adds no disabled state.",
       "remaining": "Missing: a persisted global skills.disabled list and a per-surface skills.platform_disabled list; hiding disabled skills from prompt_catalog and refusing explicit invocation with a named reason; an essential-skills floor that cannot be disabled; admin routes plus a HUD per-skill and per-category toggle; an audited direct write for disable; re-enable routed through permission.grant so the audit carries an approver; tests proving usage history, signature and approval survive a disable/enable cycle.",
       "evidence": [
         {
@@ -3984,7 +3996,7 @@
         },
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/skills/marketplace.py",
@@ -4013,7 +4025,7 @@
       "evidence": [
         {
           "path": "agents/core/skills/importer.py",
-          "sha256": "4b6be1d72493c7b5ac2be26aa4d73df4563a427814bd9db3c11326d3fae59389"
+          "sha256": "4686d020a0d49422ccf8adb1cbb52aebd1dbad32a7f0b5bd2de12f2499bf2382"
         },
         {
           "path": "agents/core/skills/hermes_pin_v1.json",
@@ -4057,12 +4069,12 @@
       "id": "H340",
       "row_sha256": "b7f0c754dcb6a9b7aec33663bf1cf01efa059a6ff39ec9818b7415f1518883b3",
       "status": "missing",
-      "summary": "Nothing substitutes template variables into a skill body. SkillLoader._parse_manifest splits the frontmatter with _split_frontmatter (agents/core/skills/loader.py:404). _manifest_from_frontmatter (agents/core/skills/loader.py:722) uses the body only to parse commands (agents/core/skills/loader.py:733-734), and the manifest it returns carries no body. The only model-facing skill surface, SkillLoader.prompt_catalog (agents/core/skills/loader.py:1110), renders one bounded command/description row per advertised command and never includes a body. Skill.execute (agents/core/skills/loader.py:483) returns an empty string for a SKILL.md-only skill, so a body never reaches the model at all. agents/core/skills/ has no handling of ${HERMES_SKILL_DIR}, ${HERMES_SESSION_ID}, a Nerva equivalent or skills.template_vars (a grep over agents/ for these names returns nothing). A scratch probe parsed a frontmatter SKILL.md whose body contained ${HERMES_SKILL_DIR}/scripts/x.sh: the manifest came back without the body and nothing was expanded. The existing frontmatter tests in tests/test_hermes_import.py pass. The H351 catalog-scan tests added to tests/test_skills_in_prompt.py concern injection scanning of catalog rows, not body substitution.",
+      "summary": "Nothing substitutes template variables into a skill body. SkillLoader._parse_manifest splits the frontmatter with _split_frontmatter (agents/core/skills/loader.py:405). _manifest_from_frontmatter (agents/core/skills/loader.py:735) uses the body only to parse commands (agents/core/skills/loader.py:746-747), and the manifest it returns carries no body. The only model-facing skill surface, SkillLoader.prompt_catalog (agents/core/skills/loader.py:1127), renders one bounded command/description row per advertised command and never includes a body. Skill.execute (agents/core/skills/loader.py:494) returns an empty string for a SKILL.md-only skill, so a body never reaches the model at all. agents/core/skills/ has no handling of ${HERMES_SKILL_DIR}, ${HERMES_SESSION_ID}, a Nerva equivalent or skills.template_vars (a grep over agents/ for these names returns nothing). A scratch probe parsed a frontmatter SKILL.md whose body contained ${HERMES_SKILL_DIR}/scripts/x.sh: the manifest came back without the body and nothing was expanded. The existing frontmatter tests in tests/test_hermes_import.py pass. The H351 catalog-scan tests added to tests/test_skills_in_prompt.py concern injection scanning of catalog rows, not body substitution.",
       "remaining": "Load-time substitution into the skill body is missing. It should cover a fixed skill-dir variable and a session-id variable (Nerva names, plus the ${HERMES_SKILL_DIR}/${HERMES_SESSION_ID} spellings used by imported skills) and owner-configured skills.template_vars (literal non-secret values only, never environment variables). The substitution must happen at the point the body reaches the model. No such point exists today: the body is discarded at parse time and no skill-view surface delivers it (see H326).",
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "tests/test_hermes_import.py",
@@ -4078,12 +4090,12 @@
       "id": "H344",
       "row_sha256": "5a7f34e592b589ccf4555d041be1da2c18dbd281d68822e0a55981115280fd5f",
       "status": "equivalent",
-      "summary": "Import-once stays the only way a Hermes / OpenClaw / Claude Code skill enters Nerva's skills tree (no live-scanned external_dirs tier; SkillLoader.discover() is unchanged), and a re-run of `python scripts/nerva_import.py` now notices upstream movement instead of reporting a blanket skipped/exists. Each imported skill is re-detected against the absolute source_path and sha256 recorded in its manifest.json (importer.py:946, importer.py:991): unchanged; changed, with the old and new digests plus a bounded line diff shown by --json; moved to another folder of the same install and followed (importer.py:925); removed; renamed; unreadable; or source_untrusted when a record names a file outside the install, which is then never read (importer.py:1273). The default run is a dry run. `--apply --update` re-imports only changed skills that this source imported (importer.py:1056): the current copy is backed up under data/imports/skill_backups, PENDING_REVIEW is written before the new bytes land, SKILL.sig and the legacy approval marker are cleared, and the owner's approval is revoked. A linked control file, an unusable backup dir or a refused save fails closed, and the write is bound to the probed digest. Every import and re-import crosses skill.install through the real Action Kernel at the shipped CLI (nerva_import.py:577, bound at nerva_import.py:1032 and as the ImportRunner default at nerva_import.py:682), behind SKILL_IMPORT_CONTRACT (nerva_import.py:145). The persisted kill switch is re-read on every decision, so an engaged halt refuses an import or re-import before a byte moves. The external origin keeps a policy GRANT at QUEUE, and only GRANT or QUEUE writes (nerva_import.py:764), so every write lands quarantined. The human summary names a local edit that --update replaces (with its backup path), a failed revoke, and moved, untrusted and refused rows (nerva_import.py:938). Tests in test_nerva_import.py: 44 passed and 1 live-gated skip under python 3.11 and 3.12. They include test_cli_skill_writes_cross_the_real_kernel_and_honour_the_kill_switch, test_runner_default_authorizer_is_the_kernel_for_skills_and_queue_for_memory, test_source_moved_within_the_install_is_followed_not_reported_removed, test_apply_update_reimports_changed_skill_into_quarantine_and_revokes_approval, test_rescan_never_follows_a_record_outside_the_install and test_reimport_refuses_a_linked_control_file_and_never_writes_through_it. Two known limits sit outside the accepted requirement. (1) The CLI binds no durable audit sink, so each kernel decision is recorded only on its report row (kernel/kernel_reason) and in the in-process kernel metrics. (2) A record written before this change with a cwd-relative source_path (relative --home) is not rewritten by an unchanged re-run. From another directory it reads skipped/exists plus source_untrusted until a changed source is re-imported with --apply --update, which records the absolute path.",
+      "summary": "Import-once stays the only way a Hermes / OpenClaw / Claude Code skill enters Nerva's skills tree (no live-scanned external_dirs tier; SkillLoader.discover() is unchanged), and a re-run of `python scripts/nerva_import.py` now notices upstream movement instead of reporting a blanket skipped/exists. Each imported skill is re-detected against the absolute source_path and sha256 recorded in its manifest.json (importer.py:939, importer.py:984): unchanged; changed, with the old and new digests plus a bounded line diff shown by --json; moved to another folder of the same install and followed (importer.py:918); removed; renamed; unreadable; or source_untrusted when a record names a file outside the install, which is then never read (importer.py:1266). The default run is a dry run. `--apply --update` re-imports only changed skills that this source imported (importer.py:1049): the current copy is backed up under data/imports/skill_backups, PENDING_REVIEW is written before the new bytes land, SKILL.sig and the legacy approval marker are cleared, and the owner's approval is revoked. A linked control file, an unusable backup dir or a refused save fails closed, and the write is bound to the probed digest. Every import and re-import crosses skill.install through the real Action Kernel at the shipped CLI (nerva_import.py:577, bound at nerva_import.py:1032 and as the ImportRunner default at nerva_import.py:682), behind SKILL_IMPORT_CONTRACT (nerva_import.py:145). The persisted kill switch is re-read on every decision, so an engaged halt refuses an import or re-import before a byte moves. The external origin keeps a policy GRANT at QUEUE, and only GRANT or QUEUE writes (nerva_import.py:764), so every write lands quarantined. The human summary names a local edit that --update replaces (with its backup path), a failed revoke, and moved, untrusted and refused rows (nerva_import.py:938). Tests in test_nerva_import.py: 44 passed and 1 live-gated skip under python 3.11 and 3.12. They include test_cli_skill_writes_cross_the_real_kernel_and_honour_the_kill_switch, test_runner_default_authorizer_is_the_kernel_for_skills_and_queue_for_memory, test_source_moved_within_the_install_is_followed_not_reported_removed, test_apply_update_reimports_changed_skill_into_quarantine_and_revokes_approval, test_rescan_never_follows_a_record_outside_the_install and test_reimport_refuses_a_linked_control_file_and_never_writes_through_it. Two known limits sit outside the accepted requirement. (1) The CLI binds no durable audit sink, so each kernel decision is recorded only on its report row (kernel/kernel_reason) and in the in-process kernel metrics. (2) A record written before this change with a cwd-relative source_path (relative --home) is not rewritten by an unchanged re-run. From another directory it reads skipped/exists plus source_untrusted until a changed source is re-imported with --apply --update, which records the absolute path.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/skills/importer.py",
-          "sha256": "4b6be1d72493c7b5ac2be26aa4d73df4563a427814bd9db3c11326d3fae59389"
+          "sha256": "4686d020a0d49422ccf8adb1cbb52aebd1dbad32a7f0b5bd2de12f2499bf2382"
         },
         {
           "path": "scripts/nerva_import.py",
@@ -4099,12 +4111,16 @@
       "id": "H350",
       "row_sha256": "2c4aef8a4d423fb693c7e298f173810edc72815c1b06d969ea74783305d6b7e8",
       "status": "missing",
-      "summary": "No SKILL.md validator or linter exists. _split_frontmatter (agents/core/skills/loader.py:404) swallows a YAML error or a non-mapping frontmatter and returns (None, content) (agents/core/skills/loader.py:421-422). _parse_manifest then falls back to the heading parser (agents/core/skills/loader.py:720), which produces a skill named after its directory with an empty description. A scratch probe with a broken fence returned {'name': 'broken', 'description': ''} and raised no error. None of the write paths validates the document. SkillLoader.generate_skill (agents/core/skills/loader.py:860) writes a fixed heading template (agents/core/skills/loader.py:939) after only the injection scan and _safe_command_name. SkillProposalStore.apply writes the approved proposed text verbatim (agents/core/skills/proposals.py:129). SkillImporter._save_skill (agents/core/skills/importer.py:403) checks only the slug. The H344 local re-import that HEQ lot 1 added (_reimport_local_skill) writes through the same _save_skill with no document check. SkillMarketplace.publish_skill (agents/core/skills/marketplace.py:345) and install_from_zip (agents/core/skills/marketplace.py:772) require only that a SKILL.md exists (agents/core/skills/marketplace.py:356; agents/core/skills/marketplace.py:797 calls _find_manifest, which raises at agents/core/skills/marketplace.py:750). install_from_zip now extracts through archive_safe with package member and byte caps (H503) into a staging dir before placing. Those are archive-safety limits on the package, not validation of the SKILL.md document. There is no advisory lint script.",
+      "summary": "No SKILL.md validator or linter exists. _split_frontmatter (agents/core/skills/loader.py:405) now delegates to split_frontmatter in agents/core/skills/frontmatter.py (H327): a YAML error falls back to key: value lines as Hermes does, but a block that parses to a non-mapping, or a fence that never closes, still returns (None, content), and _parse_manifest then falls back to the heading parser (agents/core/skills/loader.py:733), producing a skill named after its directory with an empty description — silently, with no error. An over-long name or description is truncated to 64/1024 characters rather than refused. None of the write paths validates the document. SkillLoader.generate_skill (agents/core/skills/loader.py:877) writes a fixed heading template (agents/core/skills/loader.py:956) after only the injection scan and _safe_command_name. SkillProposalStore.apply writes the approved proposed text verbatim (agents/core/skills/proposals.py:129). SkillImporter._save_skill (agents/core/skills/importer.py:403) checks only the slug. The H344 local re-import that HEQ lot 1 added (_reimport_local_skill) writes through the same _save_skill with no document check. SkillMarketplace.publish_skill (agents/core/skills/marketplace.py:345) and install_from_zip (agents/core/skills/marketplace.py:772) require only that a SKILL.md exists (agents/core/skills/marketplace.py:356; agents/core/skills/marketplace.py:797 calls _find_manifest, which raises at agents/core/skills/marketplace.py:750). install_from_zip now extracts through archive_safe with package member and byte caps (H503) into a staging dir before placing. Those are archive-safety limits on the package, not validation of the SKILL.md document. There is no advisory lint script.",
       "remaining": "Two pieces are missing. (1) A hard validator that returns field-level errors: fence present, YAML mapping, name present and a safe slug, description present and within the length cap, non-empty body, size cap. It must block the write at every entry point: import (_save_skill / _import_local_skill, including the H344 re-import path), marketplace publish and install_from_zip, agent generation, and proposal apply. (2) An advisory authoring linter (a CLI) for the standards the hard validator does not cover.",
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
+        },
+        {
+          "path": "agents/core/skills/frontmatter.py",
+          "sha256": "d321ed5a9a3ed7e0ec5383556d4742bb246a9c0d3d232a5f6141397f73a20024"
         },
         {
           "path": "agents/core/skills/proposals.py",
@@ -4112,7 +4128,7 @@
         },
         {
           "path": "agents/core/skills/importer.py",
-          "sha256": "4b6be1d72493c7b5ac2be26aa4d73df4563a427814bd9db3c11326d3fae59389"
+          "sha256": "4686d020a0d49422ccf8adb1cbb52aebd1dbad32a7f0b5bd2de12f2499bf2382"
         },
         {
           "path": "agents/core/skills/marketplace.py",
@@ -4137,7 +4153,7 @@
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "agents/core/security/quarantine.py",
@@ -4775,7 +4791,7 @@
       "evidence": [
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": "tests/test_skills_in_prompt.py",
@@ -6723,7 +6739,7 @@
       "id": "H507",
       "row_sha256": "ab160ecbed5ad9a20413aa2bf5309ce2a32dfa4be035688020b5ef8e3190480a",
       "status": "missing",
-      "summary": "Nothing in the agent loop checks code the model writes for dangerous patterns. FileTools.write_file (agents/core/file_tools.py:944) hands off to FileTools._mutate (agents/core/file_tools.py:961), which returns only ok/op/path/bytes/existed/snapshot_ref. The one classifier on the file_write approval card is FileTools.classify_mutation (agents/core/file_tools.py:1136). It delegates to instruction_labels (agents/core/file_tools.py:292) and labels only instruction files (H506); for ordinary code it returns None. ToolRPCServer._classify (agents/core/tool_rpc.py:530) merges classifier labels into the card payload and appends a `notice` label to the card title (agents/core/tool_rpc.py:374), which is where a warning would plug in, but no code-guidance label exists. A probe wrote `pickle.load(open(...))`, `subprocess.run(cmd, shell=True)` and `eval(user)` to a .py file with approved=True. The result had no warning field and classify_mutation returned None. Neither skill path (SkillMarketplace.install_skill at agents/core/skills/marketplace.py:579, SkillLoader.generate_skill at agents/core/skills/loader.py:860) runs code-pattern rules; they check contracts, moderation, signatures, quarantine and — since H503, for a marketplace package unpacked by install_from_zip — archive shape (member names, link and device entries, member and byte caps) only. bandit/semgrep in .github/workflows/security.yml scan Nerva's own repository, not what the agent writes into the owner's trees. There is no rule table anywhere under agents/: a grep for pickle/yaml.load/shell=True/new Function/createCipher/github.event rules returns nothing.",
+      "summary": "Nothing in the agent loop checks code the model writes for dangerous patterns. FileTools.write_file (agents/core/file_tools.py:944) hands off to FileTools._mutate (agents/core/file_tools.py:961), which returns only ok/op/path/bytes/existed/snapshot_ref. The one classifier on the file_write approval card is FileTools.classify_mutation (agents/core/file_tools.py:1136). It delegates to instruction_labels (agents/core/file_tools.py:292) and labels only instruction files (H506); for ordinary code it returns None. ToolRPCServer._classify (agents/core/tool_rpc.py:530) merges classifier labels into the card payload and appends a `notice` label to the card title (agents/core/tool_rpc.py:374), which is where a warning would plug in, but no code-guidance label exists. A probe wrote `pickle.load(open(...))`, `subprocess.run(cmd, shell=True)` and `eval(user)` to a .py file with approved=True. The result had no warning field and classify_mutation returned None. Neither skill path (SkillMarketplace.install_skill at agents/core/skills/marketplace.py:579, SkillLoader.generate_skill at agents/core/skills/loader.py:877) runs code-pattern rules; they check contracts, moderation, signatures, quarantine and — since H503, for a marketplace package unpacked by install_from_zip — archive shape (member names, link and device entries, member and byte caps) only. bandit/semgrep in .github/workflows/security.yml scan Nerva's own repository, not what the agent writes into the owner's trees. There is no rule table anywhere under agents/: a grep for pickle/yaml.load/shell=True/new Function/createCipher/github.event rules returns nothing.",
       "remaining": "The whole feature is missing: a warn-only table of about 25 rules with per-extension path filters and lookbehind guards. It must cover unsafe deserialization (pickle/dill, yaml.load without SafeLoader, torch.load without weights_only), command injection (os.system, shell=True, child_process.exec, Go exec.Command(\"sh\")), code injection (eval, new Function), XSS sinks, crypto footguns (ECB, createCipher without IV, disabled TLS verification), XXE, missing SRI and `${{ github.event.* }}` inside workflow `run:`. `model.eval()` must not match. Its findings must be attached to the file_write approval card and write result and to skill install/generation results, with a kill switch. It must never block.",
       "evidence": [
         {
@@ -6740,7 +6756,7 @@
         },
         {
           "path": "agents/core/skills/loader.py",
-          "sha256": "b7ddc9478cbbd2c007f45ee9dc3a3526d2f8b477aeaa260691c6ae9b8c530b58"
+          "sha256": "1dab3a0593c3d049a53ed2e38359be5c421b1a673527212531ceedb8fb38a9b7"
         },
         {
           "path": ".github/workflows/security.yml",
@@ -9621,7 +9637,7 @@
         },
         {
           "path": "agents/core/skills/importer.py",
-          "sha256": "4b6be1d72493c7b5ac2be26aa4d73df4563a427814bd9db3c11326d3fae59389"
+          "sha256": "4686d020a0d49422ccf8adb1cbb52aebd1dbad32a7f0b5bd2de12f2499bf2382"
         },
         {
           "path": "agents/core/routers/skills.py",

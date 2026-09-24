@@ -25,6 +25,7 @@ from agents.core.automation_contracts import (
     predicate,
 )
 
+from . import frontmatter as _fm
 from . import signing
 from .approval import SkillApprovalStore
 
@@ -404,25 +405,12 @@ def _skill_generation_allowed(payload: dict) -> bool:
 def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
     """Split a SKILL.md into (yaml_frontmatter_dict, body).
 
-    Returns (None, content) when there is no parseable ``---`` frontmatter
-    block, so callers can fall back to the Markdown-heading dialect.
+    Returns (None, content) when there is no ``---`` frontmatter block, so callers
+    can fall back to the Markdown-heading dialect. The parse is the shared H327
+    contract: a leading BOM is dropped and malformed YAML falls back to
+    ``key: value`` lines (``frontmatter.split_frontmatter``).
     """
-    if not content.startswith("---"):
-        return None, content
-    lines = content.split("\n")
-    if lines[0].strip() != "---":
-        return None, content
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            try:
-                import yaml
-
-                data = yaml.safe_load("\n".join(lines[1:i]))
-            except Exception:
-                return None, content
-            body = "\n".join(lines[i + 1 :])
-            return (data, body) if isinstance(data, dict) else (None, content)
-    return None, content
+    return _fm.split_frontmatter(content)
 
 
 class Skill:
@@ -451,6 +439,10 @@ class Skill:
             "signature_reason": self.signature_reason,
             "sandboxed": self.sandboxed,
             "has_module": self.module is not None,
+            "platforms": self.platforms,
+            "environments": self.environments,
+            "required_env": self.required_env,
+            "hermes": self.hermes_meta,
         }
 
     @property
@@ -476,6 +468,25 @@ class Skill:
     @property
     def commands_meta(self) -> list[dict]:
         return self.manifest.get("commands", [])
+
+    # H327 — the contract fields a SKILL.md declared (empty for the heading dialect).
+    @property
+    def platforms(self) -> list[str]:
+        return list(self.manifest.get("platforms", []))
+
+    @property
+    def environments(self) -> list[str]:
+        return list(self.manifest.get("environments", []))
+
+    @property
+    def required_env(self) -> list[str]:
+        """Names of the environment variables the skill declares; never their values."""
+        return [e["name"] for e in self.manifest.get("required_environment_variables", [])
+                if isinstance(e, dict) and e.get("name")]
+
+    @property
+    def hermes_meta(self) -> dict:
+        return dict(self.manifest.get("hermes", {}))
 
     def register_command(self, name: str, fn: Callable):
         self.commands[name] = fn
@@ -703,10 +714,12 @@ class SkillLoader:
         *,
         source_bytes: bytes | None = None,
     ) -> dict:
+        # utf-8-sig: a byte-order mark from a Windows editor must not defeat the
+        # ``---`` fence check or the heading dialect's ``# name`` line (H327).
         content = (
-            source_bytes.decode("utf-8")
+            source_bytes.decode("utf-8-sig")
             if source_bytes is not None
-            else path.read_text(encoding="utf-8")
+            else path.read_text(encoding="utf-8-sig")
         )
         default_name = path.parent.name
 
@@ -733,16 +746,20 @@ class SkillLoader:
         if not commands:
             commands = self._parse_commands_from_body(body)
 
-        return {
-            "name": fm.get("name", default_name),
-            "description": fm.get("description", ""),
-            "version": str(fm.get("version", "0.1.0")),
-            "author": fm.get("author", "unknown"),
-            "license": fm.get("license", ""),
+        manifest = {
+            # agentskills.io caps: a name at 64 characters, a description at 1024.
+            "name": _fm.text(fm.get("name"), limit=_fm.MAX_NAME_LENGTH) or default_name,
+            "description": _fm.cap_description(fm.get("description")),
+            "version": _fm.text(fm.get("version")) or "0.1.0",
+            "author": _fm.text(fm.get("author")) or "unknown",
+            "license": _fm.text(fm.get("license")),
             "agents": list(agents),
             "requires": list(requires),
             "commands": commands,
         }
+        # H327 — every other key Hermes recognises, normalised (metadata only).
+        manifest.update(_fm.contract_fields(fm))
+        return manifest
 
     def _manifest_from_headings(self, content: str, default_name: str) -> dict:
         manifest = {

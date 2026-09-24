@@ -6,9 +6,10 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
+**Closed in #1207** (2026-09-24): H327 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 84 rows remain.
+
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H327](#h327) | SKILL.md frontmatter contract (agentskills.io-compatible) | partial | 4 |  |
 | [H428](#h428) | Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up | partial | 4 | [11](#critic-note-11), [12](#critic-note-12) |
 | [H687](#h687) | A recurring instruction runs once immediately, then on its cadence | partial | 4 | [15](#critic-note-15) |
 | [H165](#h165) | In-app documentation | missing | 5 |  |
@@ -93,14 +94,6 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H327
-
-**SKILL.md frontmatter contract (agentskills.io-compatible)** (skills) — partial, ~4 h.
-
-Files: `agents/core/skills/loader.py`, `agents/core/skills/importer.py`, `tests/test_skill_frontmatter_contract.py`
-
-Plan: In agents/core/skills/loader.py: decode with 'utf-8-sig' (or lstrip('﻿')) before _split_frontmatter. When yaml.safe_load raises, fall back to a naive `key: value` line parser instead of the heading dialect. In _manifest_from_frontmatter, cap name to 64 and description to 1024 chars. Add normalised list/str fields: platforms (lower-cased, mapped to macos/linux/windows), environments, setup, prerequisites, dependencies, required_environment_variables, required_credential_files, tags, homepage, related_skills, compatibility, triggers, and a `hermes` sub-dict with tags, category, upstream_skill, supersedes, session_platforms, requires_toolsets, requires_tools, fallback_for_toolsets, fallback_for_tools and config. String-or-list coercion goes through one helper. Add Skill properties (platforms, environments, required_env, hermes_meta) and include them in to_dict. Apply the same BOM strip in SkillImporter._extract_frontmatter. Parsed env-var names are metadata only; any value capture must go through secret_broker in the setup rows. Red-first tests in tests/test_skill_frontmatter_contract.py: a BOM-prefixed frontmatter keeps its name; platforms/required_environment_variables/metadata.hermes.category are present; name/description are capped; broken YAML still yields name/description through the naive fallback. The first test to go red: manifest['platforms'] == ['macos'].
 
 ## H428
 
