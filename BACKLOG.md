@@ -14,6 +14,21 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 `/refine [focus]`: the self-improvement review runs on demand (partial → equivalent, #1207; headline 144 → 145/697).
+
+  Hermes' `/refine` forks the memory/skill review against a conversation snapshot, refuses while a turn is in flight and reports back into the chat. Nerva now does the same with its strict-local `BackgroundReviewer`:
+  - **The command**: `/refine [focus]` is owner-only. Its reply lists what was kept, one line per memory or skill change, and says when skill changes wait in the Decision Inbox. Every reason it did nothing is named: turn in flight, a review already running, budget spent, no local model, nothing to review.
+  - **The snapshot**: `Orchestrator.refine` reads the session's newest turns whole, each cut at 2,000 characters and 12,000 in all, and never writes to the session.
+  - **Busy check**: it reuses the turn lease, as critic note 1 asked. Busy means the lock is held and not by this context, so the command's own turn is not refused. No new in-flight set was added.
+  - **The reviewer**: `BackgroundReviewer.run_on_demand` skips the cadence but spends the daily budget, runs one at a time, and adds a focus line to the prompt. The per-turn prompt is byte-identical.
+
+  Mutation: 20 mutants; 18 caught at once, two after cases were added.
+
+  Also in this change: `orchestrator_bindings.py`'s writer inventory is re-pinned. The H318 insert in `autonomy_coordinator.py` shifted 12 pinned lines, a failure the loaded local run had hidden behind a worker timeout.
+
+  Records: H465 closed; 53 drifted rows re-read and re-stamped (H427's `publish()` range and H288's GOV-224 citation corrected by hand); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
+
+  Tests: backend 14,373 → 14,395 (`tests/test_h465_refine.py` 22); vitest unchanged at 1,444.
 - 2026-09-25 H318 + H340 the model lists, reads and proposes its own skills (H318 partial → equivalent, H340 missing → equivalent, H351 partial → equivalent, #1207; headline 141 → 144/697).
 
   Built as one change, per critic note 21 (one `skill_view`). Hermes' `skills_list` / `skill_view` / `skill_manage` become three ungated ToolRPC tools in `agents/core/skills/tools.py`:

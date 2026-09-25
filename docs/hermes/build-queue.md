@@ -6,7 +6,7 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315, and on 2026-09-25 H666 and H318 + H340 (built once, per critic note 21) — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 73 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315, and on 2026-09-25 H666, H318 + H340 (built once, per critic note 21) and H465 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 72 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
@@ -47,7 +47,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
 | [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
 | [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
 | [H670](#h670) | The default identity prompt is a behavior contract, and it lives in one file | partial | 5 | [29](#critic-note-29) |
@@ -120,16 +119,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H465
-
-**Run the self-improvement review on demand** (automation) — partial, ~5 h. Critic notes: [1](#critic-note-1), [3](#critic-note-3).
-
-Owner gate: none
-
-Files: `agents/core/learning/background_review.py`, `agents/core/orchestrator.py`, `agents/core/commands.py`, `tests/test_background_review.py`, `tests/test_refine_command.py`
-
-Plan: 1. Add a `focus: str = ''` parameter to BackgroundReviewer.run, rendered as a 'Focus for this review:' line in REVIEW_PROMPT, plus a run_on_demand() path. It bypasses the cadence gate, still spends the daily budget, and keeps the strict-local LLM. 2. Add Orchestrator.refine(session_id, focus). It refuses with a reason when the session has a turn in flight (add a per-session in-flight set maintained in process()). Otherwise it snapshots that session's history with memory.get_history(session_id, last_n=N, bounded chars) into a string, calls reviewer.run over the snapshot without touching the live session, and returns result['actions']. 3. Register SlashCommand('refine', usage='[focus]', tier=ADMIN) in agents/core/commands.py. This needs session_id on CommandContext. It replies with the listed memories added and the skill proposals pending approval; skill installs still cross skill.install approval. 4. Optionally add POST /api/learning/refine with the same contract. 5. Red-first test in tests/test_refine_command.py: '/refine deployment steps' currently returns an unknown-command reply; with it, a fake reviewer receives the snapshot and the focus, and the reply lists its actions. 6. Also test that the command refuses while the session is marked in flight, and that the focus text appears in the prompt (tests/test_background_review.py).
 
 ## H586
 
@@ -737,6 +726,8 @@ H461 and H465 both state that the orchestrator has no per-session turn-in-flight
 
 **Fix.** Correct the H461 and H465 summaries: the marker exists as turn_lease. Rewrite both gap_specs to reuse it. Busy means _turn_leases[key].locked() and key not in _held_turn_leases.get(), which excludes the command's own turn. The H461 heartbeat sweep acquires turn_lease(session_key) with a short wait and skips on False. Drop 'add a per-session in-flight set in process()' from both.
 
+**Done in #1207 (2026-09-25) for H465.** `/refine` reuses the lease: `Orchestrator.refine` answers `turn_in_flight` when the session's lock is held and the key is not among this context's held leases, so the command's own turn is not refused; no in-flight set was added. H461 should reuse the same check.
+
 ### Critic note 2
 
 Rows: [H461](#h461), [H472](#h472).
@@ -752,6 +743,8 @@ Rows: [H461](#h461), [H465](#h465), [H472](#h472), [H441](#h441).
 H461's summary says CommandContext (commands.py:50) 'carries no session or chat identity', and step 2 adds channel/chat to it. CommandContext.principal is already a Principal with channel and chat (agents/core/commands.py Principal, used by /voice). ctx.orch.session_id already resolves to the bound channel session, because channel_handler sets _active_session before handle_input dispatches commands (orchestrator.py:1687). H461, H465 and H472 each plan the same CommandContext change separately.
 
 **Fix.** Correct the H461 summary: only an explicit session_id is missing, and ctx.orch.session_id already yields it. Make one shared prerequisite change: optionally add session_id to CommandContext, and otherwise use ctx.principal.channel/chat plus ctx.orch.session_id. Reference it from H461, H465, H472 and H441 (/recap) instead of four separate edits.
+
+**Done in #1207 (2026-09-25) for H465.** `/refine` needed no CommandContext change: `Orchestrator.refine` resolves the session through `_lease_key` (the bound channel session, as `ctx.orch.session_id` would). H461, H472 and H441 can do the same.
 
 ### Critic note 4
 

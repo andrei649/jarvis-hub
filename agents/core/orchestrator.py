@@ -3034,6 +3034,38 @@ class Orchestrator:
         except Exception:
             logger.debug("background review spawn skipped", exc_info=True)
 
+    async def refine(self, focus: str = "", session_id: Optional[str] = None) -> dict:
+        """H465 — review this conversation now (``/refine [focus]``), as Hermes' /refine does.
+
+        The review reads a snapshot of the session's history (the newest turns, bounded)
+        and never writes to it, so the live conversation is untouched. It refuses while
+        another turn holds the session's lease — busy means the lease is held and not by
+        this very context, so the /refine command's own turn, which holds it, is not
+        refused (critic note 1). Returns the reviewer's result; the command reports it."""
+        from .learning.background_review import conversation_snapshot
+
+        reviewer = getattr(self, "reviewer", None)
+        if reviewer is None or not hasattr(reviewer, "run_on_demand"):
+            return {"ran": False, "reason": "unavailable", "actions": []}
+        key = self._lease_key(session_id)
+        lock = self.__dict__.get("_turn_leases", {}).get(key)
+        if lock is not None and lock.locked() and key not in _held_turn_leases.get():
+            return {"ran": False, "reason": "turn_in_flight", "actions": []}
+        try:
+            turns = await self.memory.get_history(key, last_n=None)
+        except Exception:
+            logger.warning("refine: the conversation could not be read", exc_info=True)
+            turns = []
+        snapshot = conversation_snapshot(turns)
+        if not snapshot:
+            return {"ran": False, "reason": "empty_conversation", "actions": []}
+        result = await reviewer.run_on_demand(snapshot, focus=focus)
+        if result.get("ran"):
+            self.last_learning_review = result
+        for action in result.get("actions", []):
+            logger.info("learning review (on demand): %s", action)
+        return result
+
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
         history = ""

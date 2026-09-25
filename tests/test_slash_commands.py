@@ -231,7 +231,7 @@ async def test_a_command_never_reaches_the_model_and_a_message_still_does():
 
 def test_the_default_registry_names_the_first_wave():
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
-        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind", "voice",
+        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind", "voice", "refine",
     }
     assert {c.name for c in build_default_registry().visible(GUEST)} == {
         "help", "status", "sessions", "jobs", "voice",

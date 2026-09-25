@@ -47,7 +47,7 @@ only real signal counts.
 Conversation (recent context, then the turn under review):
 {context}
 
-Signals worth capturing:
+{focus}Signals worth capturing:
   1. USER FACTS — the user revealed persona, preferences, personal details, or
      expectations about how the assistant should behave.
   2. AGENT FACTS — a durable operational fact the assistant should remember
@@ -79,6 +79,42 @@ Respond with ONLY valid JSON (no markdown fences, no explanation):
   "nothing": false
 }}
 Set "nothing": true (with empty lists) when there is no real signal."""
+
+
+#: H465 — how much of a conversation an on-demand review reads: the newest turns whole,
+#: each cut at REFINE_TURN_CHARS, up to this many characters in all.
+REFINE_SNAPSHOT_CHARS = 12_000
+REFINE_TURN_CHARS = 2_000
+REFINE_FOCUS_CHARS = 200
+
+
+def conversation_snapshot(turns, limit: int = REFINE_SNAPSHOT_CHARS,
+                          per_turn: int = REFINE_TURN_CHARS) -> str:
+    """A conversation as ``role: content`` lines for an on-demand review (H465).
+
+    The newest turns are kept first, each cut at ``per_turn`` characters, until the next
+    one would pass ``limit``; they are returned oldest first. A copy: the session is only
+    read, never changed."""
+    lines: list[str] = []
+    used = 0
+    for turn in reversed(list(turns or [])):
+        if not isinstance(turn, dict):
+            continue
+        content = turn.get("content")
+        if content is None or not str(content).strip():
+            continue
+        line = f"{turn.get('role') or '?'}: {str(content)[:per_turn]}"
+        sep = 1 if lines else 0
+        if used + sep + len(line) > limit:
+            break
+        lines.append(line)
+        used += sep + len(line)
+    return "\n".join(reversed(lines))
+
+
+def _focus_line(focus: str) -> str:
+    text = " ".join(str(focus or "").split())[:REFINE_FOCUS_CHARS]
+    return f"Focus for this review: {text}\n\n" if text else ""
 
 
 def _default_detect(text: str) -> list:
@@ -166,6 +202,7 @@ class BackgroundReviewer:
         self._last_run_ts: float | None = None
         self._day = ""
         self._day_count = 0
+        self._on_demand = False
         self.last_result: dict | None = None
 
     # ── cadence / budget gate ────────────────────────────────────────────────
@@ -192,7 +229,29 @@ class BackgroundReviewer:
 
     # ── the review pass ──────────────────────────────────────────────────────
 
-    async def run(self, user_text: str, assistant_text: str, history: str = "") -> dict:
+    async def run_on_demand(self, history: str, *, focus: str = "") -> dict:
+        """H465 — the review the owner asked for (``/refine [focus]``), over a snapshot.
+
+        It skips the cadence gate (the owner asked now) but spends the daily budget like
+        any pass, keeps the strict-local model, and runs one at a time: a second request
+        while one runs is refused ``busy``, not queued."""
+        if self._on_demand:
+            return {"ran": False, "reason": "busy", "actions": []}
+        today = date.today().isoformat()
+        if today != self._day:
+            self._day, self._day_count = today, 0
+        budget = int(self._get("learning.review_daily_budget", 20) or 20)
+        if self._day_count >= budget:
+            return {"ran": False, "reason": "daily_budget", "actions": []}
+        self._on_demand = True
+        try:
+            return await self.run("", "", history=history, focus=focus,
+                                  context_chars=REFINE_SNAPSHOT_CHARS)
+        finally:
+            self._on_demand = False
+
+    async def run(self, user_text: str, assistant_text: str, history: str = "", *,
+                  focus: str = "", context_chars: int = 6000) -> dict:
         """One review pass. Never raises — failures return a summary dict."""
         self._turns_since = 0
         self._last_run_ts = self._now()
@@ -203,7 +262,8 @@ class BackgroundReviewer:
             f"assistant: {assistant_text.strip()}" if assistant_text else "",
         ) if part)
         skills_list = ", ".join(sorted(self._skill_names())[:40]) or "(none)"
-        prompt = REVIEW_PROMPT.format(context=context[:6000], skills=skills_list)
+        prompt = REVIEW_PROMPT.format(context=context[:context_chars], skills=skills_list,
+                                      focus=_focus_line(focus))
 
         try:
             raw = await self._llm(prompt)

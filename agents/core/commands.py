@@ -311,6 +311,38 @@ def _voice(ctx: CommandContext) -> str:
     return f"Voice mode here is now {wanted} — {voice_mode.DESCRIPTIONS[wanted]}. {engine}"
 
 
+_REFINE_REFUSALS = {
+    "turn_in_flight": "A turn is still running in this conversation; try /refine again when it has answered.",
+    "busy": "A review is already running; try again in a moment.",
+    "daily_budget": "Today's review budget (learning.review_daily_budget) is spent; try again tomorrow.",
+    "llm_error": ("The review could not run: it needs a local model, and none answered "
+                  "(reviews never leave this machine)."),
+    "empty_conversation": "There is no conversation here to review yet.",
+    "unavailable": "The learning reviewer is not available on this hub.",
+}
+
+
+async def _refine(ctx: CommandContext) -> str:
+    """H465 — Hermes' ``/refine [focus]``: review this conversation for durable memories
+    and skill changes now, and say what was kept. New and changed skills are proposals
+    that wait for the owner's approval; facts land in the living memory."""
+    refine = getattr(ctx.orch, "refine", None)
+    if refine is None:
+        return _REFINE_REFUSALS["unavailable"]
+    focus = " ".join((ctx.args or "").split())[:200]
+    result = await refine(focus=focus)
+    if not result.get("ran"):
+        return _REFINE_REFUSALS.get(str(result.get("reason")), "The review did not run.")
+    actions = [str(a) for a in result.get("actions") or []]
+    if not actions:
+        return "Reviewed this conversation: nothing worth keeping."
+    head = f"Reviewed this conversation (focus: {focus}):" if focus else "Reviewed this conversation:"
+    lines = [head, *[f"- {a}" for a in actions]]
+    if any("pending" in a or "quarantined" in a for a in actions):
+        lines.append("Skill changes wait for your approval in the Decision Inbox.")
+    return "\n".join(lines)
+
+
 def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -322,4 +354,5 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
+    registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
     return registry
