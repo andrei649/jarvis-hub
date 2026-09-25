@@ -39,19 +39,121 @@ async def list_skills():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core import load_set
+    from agents.core.skills import switches
+
+    try:
+        switched = switches.state()
+    except Exception:
+        logger.warning("skill switches unreadable", exc_info=True)
+        switched = {switches.GLOBAL_KEY: [], switches.CHANNEL_KEY: {}}
     result = {}
     for name, skill in orch.skills.skills.items():
+        key = skill.name.casefold()
+        essential = switches.is_essential(skill)
         result[name] = {
             "name": skill.name,
             "version": skill.version,
             "description": skill.description,
             "agents": skill.agents,
             "commands": skill.commands_meta,
+            # H329: switched off (kept installed) everywhere, or on these channels.
+            "category": _skill_category(skill),
+            "essential": essential,
+            "disabled": not essential and key in {n.casefold() for n in switched[switches.GLOBAL_KEY]},
+            "disabled_channels": [] if essential else sorted(
+                ch for ch, names in switched[switches.CHANNEL_KEY].items()
+                if key in {n.casefold() for n in names}),
         }
-    from agents.core import load_set
-
     # H285: what the owner's load set switched off at discovery, and what it names in vain.
-    return {"skills": result, "load_set": load_set.status("skills")}
+    return {"skills": result, "load_set": load_set.status("skills"), "switches": switched}
+
+
+def _skill_category(skill) -> str:
+    """The category a SKILL.md declared (``metadata.hermes.category``), or ``""``."""
+    value = (getattr(skill, "hermes_meta", None) or {}).get("category")
+    return value.strip() if isinstance(value, str) else ""
+
+
+class SkillSwitchBody(BaseModel):
+    skill: str | None = Field(None, max_length=128)
+    category: str | None = Field(None, max_length=64)
+    enabled: bool
+    channel: str | None = Field(None, max_length=32)
+
+
+@router.post("/api/skills/switch", dependencies=[Depends(admin_guard)])
+async def switch_skill(body: SkillSwitchBody):
+    """H329 — switch one skill, or every skill of a category, on or off: everywhere, or
+    on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
+    can be; on widens what the hub does, so it is refused unless the intent log records
+    it. An essential skill is never switched off."""
+    import asyncio
+
+    from agents.core.skills import switches
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skills", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if bool(body.skill) == bool(body.category):
+        return JSONResponse({"error": "name one skill or one category", "reason": "bad_target"}, status_code=422)
+    channel = ""
+    if body.channel:
+        channel = switches.clean_channel(body.channel)
+        if not channel:
+            return JSONResponse({"error": f"{body.channel!r} is not a channel name", "reason": "bad_channel"},
+                                status_code=422)
+    loaded = orch.skills.skills
+    if body.skill:
+        wanted = body.skill.strip().casefold()
+        # A manifest name wins over another skill's folder of the same spelling.
+        targets = sorted((s for s in loaded.values() if wanted in switches.identities(s)),
+                         key=lambda s: s.name.casefold() != wanted)
+    else:
+        wanted = body.category.strip().casefold()
+        targets = [s for s in loaded.values() if _skill_category(s).casefold() == wanted and wanted]
+    if not targets:
+        what = "skill" if body.skill else "category"
+        return JSONResponse({"error": f"no installed {what} named {(body.skill or body.category)!r}",
+                             "reason": "not_found"}, status_code=404)
+    targets = targets[:1] if body.skill else targets
+    if body.skill and not body.enabled and switches.is_essential(targets[0]):
+        return JSONResponse({"error": f"{targets[0].name} is essential and cannot be switched off",
+                             "reason": "essential"}, status_code=409)
+    audit = getattr(orch, "intent_log", None)
+    recordable = audit is not None and callable(getattr(audit, "record", None))
+    if body.enabled and not recordable:
+        return JSONResponse({"error": "switching a skill back on is recorded in the intent log, "
+                                      "which is not available", "reason": "audit_unavailable"}, status_code=503)
+    try:
+        outcome = await asyncio.to_thread(switches.apply, targets, enabled=body.enabled, channel=channel)
+    except Exception:
+        logger.warning("skill switch failed", exc_info=True)
+        return JSONResponse({"error": "the skill switches could not be saved", "reason": "write_failed"},
+                            status_code=500)
+    audited = False
+    if outcome["changed"]:
+        where = f"on {channel}" if channel else "everywhere"
+        try:
+            audit.record(actor="owner", action="skill.enable" if body.enabled else "skill.disable",
+                         why=f"the owner switched {', '.join(outcome['changed'])} "
+                             f"{'on' if body.enabled else 'off'} {where}",
+                         cause="skills.switch",
+                         metadata={"skills": outcome["changed"], "channel": channel or None,
+                                   "category": body.category or None})
+            audited = True
+        except Exception:
+            logger.warning("skill switch not recorded in the intent log", exc_info=True)
+            if body.enabled:
+                # Never widened unrecorded: put the switches back as they were.
+                restored = await asyncio.to_thread(switches.restore, outcome["before"], outcome["state"])
+                return JSONResponse({"error": "the switch could not be recorded, so it was not kept"
+                                              if restored else "the switch could not be recorded and a later "
+                                              "change landed first; check the skill switches",
+                                     "reason": "audit_failed", "restored": restored}, status_code=503)
+    return {"ok": True, "enabled": body.enabled, "channel": channel or None, "changed": outcome["changed"],
+            "unchanged": outcome["unchanged"], "essential": outcome["essential"], "audited": audited,
+            "switches": outcome["state"]}
 
 
 @router.get("/sandbox/status")

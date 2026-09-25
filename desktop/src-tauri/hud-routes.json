@@ -108,6 +108,8 @@
     "/v2/console/audit-anchors/",
     "/v2/console/security-skills",
     "/v2/console/security-skills/",
+    "/v2/console/skill-switches",
+    "/v2/console/skill-switches/",
     "/v2/console/network-monitor",
     "/v2/console/network-monitor/",
     "/v2/console/comms-rate",

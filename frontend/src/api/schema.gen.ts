@@ -2925,6 +2925,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Skill
+         * @description H329 — switch one skill, or every skill of a category, on or off: everywhere, or
+         *     on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
+         *     can be; on widens what the hub does, so it is refused unless the intent log records
+         *     it. An essential skill is never switched off.
+         */
+        post: operations["switch_skill_api_skills_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sandbox/status": {
         parameters: {
             query?: never;
@@ -10834,6 +10857,17 @@ export interface components {
              */
             max_reviews: number;
         };
+        /** SkillSwitchBody */
+        SkillSwitchBody: {
+            /** Skill */
+            skill?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Channel */
+            channel?: string | null;
+        };
         /** SocialActionBody */
         SocialActionBody: {
             /** Platform */
@@ -15689,6 +15723,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    switch_skill_api_skills_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSwitchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

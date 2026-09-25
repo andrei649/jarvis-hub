@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H329 a skill can be switched off without uninstalling it, everywhere or on one channel (missing → equivalent, #1207; headline 158 → 159/697).
+
+  An owner who distrusted a skill could only uninstall it, losing its usage history, signature and approval. Now (`agents/core/skills/switches.py`):
+  - **The switches.** `skills.disabled` (everywhere) and `skills.channel_disabled` (`{channel: [names]}`), read live, so a switch applies to the next turn with no restart. Entries are skill names; the route and CLI resolve a folder to its name.
+  - **Off, not gone.** A switched-off skill stays installed, signed, approved and counted; the shared `catalog_gate` leaves it out of the model's catalog, `skills_list` and `skill_view`, and a command naming it is refused with the reason (no usage counted). The security monitor is essential and has no off switch.
+  - **Governed.** `POST /api/skills/switch` (admin): one skill or a whole `metadata.hermes.category`, on/off, everywhere or per channel, one settings write, every change in the intent log. Switching back on is refused (503) when it cannot be recorded, and an unrecorded one is put back by compare-and-set.
+  - **Surfaces.** `GET /skills` carries `disabled` / `disabled_channels` / `essential` / `category`; `nerva skills list | off | on [--channel] [--category]`; the Console's Skill Switches panel (Trust). Distinct from the H285 load set, which keeps a skill from loading at all.
+
+  58 mutants, all caught. Test manual: GOV-263, GOV-264.
+  Tests: backend 15,694 → 15,733 (`tests/test_h329_skill_switches.py` 39); vitest 1,499 → 1,503 (`skill-switches-panel.test.tsx` 4).
+
 - 2026-09-25 H490 safe mode takes the rest of Hermes' reduced posture: no plugins, no outbound hooks, no memory in the turn, no loosened settings (missing → equivalent, #1207; headline 157 → 158/697).
 
   H275's safe mode left out the owner's customizations but still built every plugin, started the outbound channels, injected memory and served every loosened setting. Now, with `JARVIS_SAFE_MODE=1` (`agents/core/safe_mode.py`, four new layers):

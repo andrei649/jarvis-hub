@@ -99,7 +99,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
-    assert tree["skills"] == ["lint"]
+    assert tree["skills"] == ["lint", "list", "off", "on"]
 
 
 @pytest.mark.parametrize("report,expected", [

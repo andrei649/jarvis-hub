@@ -167,6 +167,16 @@ def build_parser() -> argparse.ArgumentParser:
                              help="a SKILL.md, a skill folder, or a folder of skill folders")
     skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
     skills_lint.add_argument("--json", action="store_true")
+    # H329 — switched off, not uninstalled (admin; applies at once).
+    skills_verbs.add_parser("list", help="installed skills and where each is switched off").add_argument(
+        "--json", action="store_true")
+    for verb, text in (("off", "switch a skill off without uninstalling it (admin)"),
+                       ("on", "switch a skill back on (admin; recorded in the intent log)")):
+        switch = skills_verbs.add_parser(verb, help=text)
+        switch.add_argument("name", nargs="?", help="the skill's name or folder")
+        switch.add_argument("--category", help="every skill of this category instead of one skill")
+        switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
+        switch.add_argument("--json", action="store_true")
 
     estop = verbs.add_parser("estop", help="the global emergency stop")
     estop_verbs = estop.add_subparsers(dest="action", required=True, metavar="action")
@@ -1049,7 +1059,10 @@ def _skill_files(raw: str) -> list[Path] | None:
 
 
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
-    """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice."""
+    """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
+    H329 — ``nerva skills list | off | on``: the skill switches on the running hub."""
+    if ns.action in ("list", "off", "on"):
+        return _skill_switches(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -1124,6 +1137,47 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(entry["text"])
     if tail["truncated"] and len(tail["entries"]) < ns.lines:
         ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
+    return EXIT_OK
+
+
+def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
+    client = ctx.client()
+    if ns.action == "list":
+        reply = client.get("/skills")
+        skills = reply.get("skills") if isinstance(reply, dict) else None
+        if not isinstance(skills, dict):
+            ctx.err.write("unexpected reply from the hub: no skills in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        for name in sorted(skills, key=str.casefold):
+            row = skills[name] if isinstance(skills[name], dict) else {}
+            where = ("off everywhere" if row.get("disabled") else
+                     "off on " + ", ".join(row["disabled_channels"]) if row.get("disabled_channels") else "on")
+            ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}")
+        return EXIT_OK
+    if bool(ns.name) == bool(ns.category):
+        ctx.err.write("name one skill, or one --category\n")
+        return EXIT_USAGE
+    body = {"enabled": ns.action == "on"}
+    body.update({"skill": ns.name} if ns.name else {"category": ns.category})
+    if ns.channel:
+        body["channel"] = ns.channel
+    reply = client.post("/api/skills/switch", body)
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    changed = reply.get("changed") or [] if isinstance(reply, dict) else []
+    where = f"on {ns.channel}" if ns.channel else "everywhere"
+    if changed:
+        ctx.say(f"switched {ns.action} {where}: {', '.join(changed)}")
+    for name in (reply.get("unchanged") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: already {ns.action} {where}")
+    for name in (reply.get("essential") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: essential, stays on")
+    if changed and isinstance(reply, dict) and not reply.get("audited"):
+        ctx.say("note: the intent log could not record this switch")
     return EXIT_OK
 
 

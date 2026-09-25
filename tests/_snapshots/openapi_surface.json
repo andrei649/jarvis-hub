@@ -467,6 +467,7 @@
   "POST /api/skills/marketplace/review": "marketplace_review_api_skills_marketplace_review_post",
   "POST /api/skills/marketplace/uninstall": "marketplace_uninstall_api_skills_marketplace_uninstall_post",
   "POST /api/skills/marketplace/{name}/rollback": "marketplace_rollback_api_skills_marketplace__name__rollback_post",
+  "POST /api/skills/switch": "switch_skill_api_skills_switch_post",
   "POST /api/skills/{name}/approve": "approve_generated_skill_api_skills__name__approve_post",
   "POST /api/subagents/spawn": "subagents_spawn_api_subagents_spawn_post",
   "POST /api/subagents/{spawn_id}/steer": "subagents_steer_api_subagents__spawn_id__steer_post",

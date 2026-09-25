@@ -324,6 +324,9 @@ DEFAULTS: list[dict[str, Any]] = [
     # H340 — literal text a skill body may name as ${key} (skill_view renders it); never a
     # secret or an environment variable: a value holding "$", "env:" or "secret:" is ignored.
     dict(category="skills",  key="template_vars",    value={},                    label="Skill template variables — JSON {\"name\": \"literal text\"}, used as ${name} in a skill body", kind="json"),
+    # H329: switched off, not uninstalled (skills/switches.py); the skill switch route writes them.
+    dict(category="skills",  key="disabled",         value=[],                    label="Skills switched off everywhere (kept installed)", kind="tags"),
+    dict(category="skills",  key="channel_disabled", value={},                    label="Skills switched off on one channel — JSON {\"telegram\": [\"Spotify\"]}", kind="json"),
     # H32 governed acquisition — an independent owner switch. Product Posture
     # intentionally does not enable this capability.
     dict(category="acquisition", key="enabled", value=False, label="Governed capability acquisition", kind="toggle"),
@@ -773,6 +776,9 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
+        if err is None and (cat, key) == ("skills", "channel_disabled"):
+            from .skills.switches import channel_map_problem
+            err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
         if err:

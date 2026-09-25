@@ -541,6 +541,13 @@ class Skill:
         self.commands[name] = fn
 
     async def execute(self, command: str, args: str = "", context: dict = None) -> str:
+        from . import switches
+
+        # H329: a switched-off skill stays installed and is not run; the turn is told why.
+        off = switches.off_reason(self, (context or {}).get("channel"))
+        if off:
+            logger.info("Skill '%s' is switched off %s; command '%s' refused", self.name, off, command)
+            return switches.refusal(self, off)
         if self.usage_hook is not None:
             try:
                 self.usage_hook(self.name, "use")
@@ -1293,10 +1300,16 @@ def register(skill):
         return [s for s in self.skills.values() if agent_id in s.agents or "all" in s.agents]
 
     @staticmethod
-    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None) -> str:
-        """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``sandboxed``,
-        ``untrusted`` (a signature that does not verify here) or ``agent`` (declared for
-        other agents). The catalog, ``skills_list`` and ``skill_view`` share it (H318)."""
+    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None, *, switches: Optional[dict] = None) -> str:
+        """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``disabled``
+        (switched off by the owner, everywhere or on this turn's channel — H329),
+        ``sandboxed``, ``untrusted`` (a signature that does not verify here) or ``agent``
+        (declared for other agents). The catalog, ``skills_list`` and ``skill_view`` share
+        it (H318). ``switches`` is a ``skills.switches.state()`` already read."""
+        from . import switches as skill_switches
+
+        if skill_switches.off_reason(skill, current=switches):
+            return "disabled"
         if skill.sandboxed:
             return "sandboxed"
         reason = str(getattr(skill, "signature_reason", "") or "")
@@ -1368,14 +1381,20 @@ def register(skill):
         must not become a silent capability revocation.
         """
         from ..security import quarantine
+        from . import switches as skill_switches
 
         rows: list[dict] = []
         dropped_untrusted: list[str] = []
         cap = max(0, int(limit))
         chars = max(0, int(description_chars))
+        try:
+            switched = skill_switches.state()   # H329: read once for the whole catalog
+        except Exception:
+            logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
+            switched = {}
         for name in sorted(self.skills):
             skill = self.skills[name]
-            gate = self.catalog_gate(skill, agent_id)
+            gate = self.catalog_gate(skill, agent_id, switches=switched)
             if gate == "untrusted":
                 dropped_untrusted.append(skill.name)
                 logger.warning(

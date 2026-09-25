@@ -34,6 +34,7 @@ export const CONSOLE_PANELS = [
   {"id": "posture", "label": "Posture", "group": "Trust", "component": "PosturePanel"},
   {"id": "audit-anchors", "label": "Audit Anchors", "group": "Trust", "component": "AuditAnchorsPanel"},
   {"id": "security-skills", "label": "Security Skills", "group": "Trust", "component": "SecuritySkillsPanel"},
+  {"id": "skill-switches", "label": "Skill Switches", "group": "Trust", "component": "SkillSwitchesPanel"},
   {"id": "network-monitor", "label": "Network Monitor", "group": "Trust", "component": "NetworkMonitorPanel"},
   {"id": "comms-rate", "label": "Comms Rate", "group": "Trust", "component": "CommsRatePanel"},
   {"id": "safe-comms-draft", "label": "Safe Comms Draft", "group": "Trust", "component": "SafeCommsDraftPanel"},

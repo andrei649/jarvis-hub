@@ -268,6 +268,7 @@ inspection; all extension callables remain empty. See [`EXTENSIONS.md`](EXTENSIO
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/skills/loader.py` | Skill discovery + execution; CDX-8: auto-generated skills are quarantined `PENDING_REVIEW` (not exec'd) until `approve_generated_skill` | `SkillLoader.discover`, `Skill.execute`, `parse_command`, `generate_skill`, `approve_generated_skill` |
+| `agents/core/skills/switches.py` | H329: switch a skill off without uninstalling it — `skills.disabled` (everywhere) and `skills.channel_disabled` (`{channel: [names]}`), read live; `catalog_gate` hides it from the catalog / `skills_list` / `skill_view` and `Skill.execute` refuses with the reason; `ESSENTIAL_SKILLS` (security monitor) has no off switch; `POST /api/skills/switch` (admin, intent-logged; on refused when unrecorded), `nerva skills list/off/on`, Skill Switches panel | `off_reason`, `apply`, `restore`, `state`, `ESSENTIAL_SKILLS` |
 | `agents/core/skills/importer.py` | Import from Hermes/OpenClaw/GitHub | `SkillImporter.import_from_hermes` |
 | `agents/core/skills/marketplace.py` | Local marketplace (install/publish/zip + 0.58 uninstall/remove) | `SkillMarketplace`, `uninstall_skill`, `remove_from_registry` |
 | `agents/core/skills/signing.py` | Skill signature (SKILL.sig) — sign/verify, `JARVIS_REQUIRE_SIGNED_SKILLS` | `sign_skill`, `verify_skill`, `require_signed` |
