@@ -557,13 +557,16 @@ class Agent:
 
     def system_prompt(self) -> str:
         """What the model is given as the system prompt (H670): the shared behaviour
-        contract, then this agent's persona. Either may be empty. When both were blocked,
-        the house fallback rules appear once (review-H670b nit 5)."""
+        contract, the operator's description of this machine when one is set (H283,
+        ``JARVIS_ENVIRONMENT_HINT``), then this agent's persona. Any may be empty. When
+        both were blocked, the house fallback rules appear once (review-H670b nit 5)."""
+        from .environment_hint import hint_block
+
         identity = (getattr(self, "identity", None) or {}).get("content", "")
         persona = (self.soul or {}).get("content", "")
         if identity and _SOUL_FALLBACK_RULES in identity and _SOUL_FALLBACK_RULES in persona:
             identity = identity.replace(_SOUL_FALLBACK_RULES, "").strip()
-        return "\n\n".join(part for part in (identity, persona) if part)
+        return "\n\n".join(part for part in (identity, hint_block(), persona) if part)
 
     def _load_identity(self) -> None:
         self._identity_kept = False

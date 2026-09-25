@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H283 systemd knows when the hub is ready and when it hangs, and the operator can describe the machine (partial → equivalent, #1207; headline 152 → 153/697).
+
+  - **sd_notify** (`agents/core/sd_notify.py`). The lifespan sends `READY=1` once `/readyz` would answer 200, and `STOPPING=1` on teardown. Between the two, an event-loop task sends `WATCHDOG=1` every half `WATCHDOG_USEC` (only for this PID), so a hung loop stops the pings and systemd restarts the hub. It is a no-op without `NOTIFY_SOCKET` and never raises.
+  - **The unit.** It is now `Type=notify`, `NotifyAccess=main`, `WatchdogSec=60`, `TimeoutStartSec=300`. The README describes the protocol instead of saying the hub does not emit it.
+  - **The environment hint** (`agents/core/environment_hint.py`). `JARVIS_ENVIRONMENT_HINT` is cleaned: a `\n` escape becomes a line break, control and bidi characters are removed, no line may be a heading, and it is capped at 2,000 characters. It goes into every agent's stable system prompt between the shared contract and the persona, under a heading that names it context, not instructions. It is byte-stable across turns, and with the variable unset the prompt is unchanged.
+
+  21 mutants, all caught. 41 rows re-stamped; H456's `:1249` and H510's web.py ranges recomputed by hand. Test manual: ENV-165, ENV-166.
+  Tests: backend 15,442 → 15465 (`tests/test_h283_host_notify_and_hint.py` 23).
+
 - 2026-09-25 H441 a free recap when you come back to a conversation (partial → equivalent, #1207; headline 151 → 152/697).
 
   Resuming a session used to return its last 20 raw turns and nothing else. There was no `/recap`, and the HUD showed nothing after a resume. Now:

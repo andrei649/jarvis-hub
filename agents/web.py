@@ -607,7 +607,13 @@ async def lifespan(application: FastAPI):
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
         f"{list(orch.skills.skills.keys())} skills"
     )
+    # H283 — tell systemd (Type=notify) the hub is ready once /readyz would say so,
+    # and keep its watchdog fed from the event loop; a no-op without NOTIFY_SOCKET.
+    from agents.core.routers.ops import readiness_snapshot
+    from agents.core.sd_notify import NOTIFIER
+    NOTIFIER.ready(readiness_snapshot())
     yield
+    await NOTIFIER.stopping()
     from agents.core.routers.cameras import stop_camera_ingestion
     await stop_camera_ingestion()
     from agents.core.ambient.runtime import close_ambient_runtimes

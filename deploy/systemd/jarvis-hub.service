@@ -19,7 +19,15 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# H283: the hub tells systemd when it is ready (sd_notify READY=1, once /readyz would
+# answer 200) and feeds the watchdog from its event loop (WATCHDOG=1 every half
+# WatchdogSec), so `systemctl start` returns when it can serve and a hung loop is
+# restarted (Restart=on-failure). Only the main process may notify.
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
+# Loading agents and models can take a while on a cold disk.
+TimeoutStartSec=300
 # ── EDIT THESE for your install ──────────────────────────────────────────────
 User=jarvis
 Group=jarvis
