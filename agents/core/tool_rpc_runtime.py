@@ -94,7 +94,12 @@ class ToolCallBroker:
             response = {"ok": False, "reason": "tool_error", "tool": tool}
         finally:
             reset_tool_turn(turn)
-        if (untrusted and _answered_ok(response)) or _declares_taint(response) or _flagged(response):
+        # Once the run is tainted a scan can change nothing, so it is skipped; otherwise it
+        # runs off the event loop (review-H315e m2: 50 nested answers of 2 MB held every
+        # chat for 16 s), over the whole answer (an injection deep in it counts).
+        if not self.tainted and (
+                (untrusted and _answered_ok(response)) or _declares_taint(response)
+                or await asyncio.to_thread(_flagged, response)):
             self.tainted = True
             mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
@@ -113,14 +118,15 @@ def _answered_ok(response: Any) -> bool:
 
 
 def _flagged(response: Any) -> bool:
-    """The injection scanner flags the answer, as it would in the loop's fence."""
-    from agents.core.security.quarantine import detect_injection
+    """The answer is flagged as the loop's fence flags a result: an injection pattern, or
+    the fence's own markers spelled out inside it (review-H315e n1)."""
+    from agents.core.security.quarantine import FENCE_CLOSE, detect_injection
 
     try:
         encoded = json.dumps(response, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return False
-    return bool(detect_injection(encoded))
+    return bool(detect_injection(encoded)) or FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded
 
 
 def _declares_taint(response: Any) -> bool:

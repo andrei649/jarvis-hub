@@ -123,6 +123,8 @@ _DUPLICATE_NOTICE = (
 # job, but the same call again with nothing changed in between is the loop signature,
 # and it is stopped like any other repeat.
 _ALWAYS_RESTATED = frozenset({"todo"})
+#: Tools that run a script able to call other tools behind the model's back (H315).
+_SCRIPT_TOOLS = frozenset({"execute_code"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -509,6 +511,7 @@ class AgentToolRuntime:
         failure_streaks: dict[str, int] = {}
         tool_counts: dict[str, int] = {}
         restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
+        scripts_run = 0                 # scripts this turn: each one opens a new revision
         seen_results: dict[str, str] = {}
 
         # H298 — what this turn has already put in the window, and how big that window
@@ -664,11 +667,16 @@ class AgentToolRuntime:
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
                 if call.name in _ALWAYS_RESTATED:
                     restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
-                elif _made_nested_calls(result):
-                    # A script called tools the model never saw answer (H315 third review):
-                    # it may have changed a restated tool's state, so the next read of one
-                    # is not the same call as the last.
-                    restated.clear()
+                elif call.name in _SCRIPT_TOOLS or _made_nested_calls(result):
+                    # A script may have called tools the model never saw answer (H315 third
+                    # review), so it may have changed a restated tool's state: the next read
+                    # of one is not the same call as the last. Each script opens its own
+                    # revision — clearing it would key every read after a script alike, so
+                    # the third such read became a "repeat" (review-H315e M1). A script that
+                    # crashed reports no calls, so the tool's name decides, not the count.
+                    scripts_run += 1
+                    for name in _ALWAYS_RESTATED:
+                        restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
             failing = self._note_failures(bounded_calls, observations, failure_streaks)

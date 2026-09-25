@@ -49,6 +49,8 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
+import re
 import secrets
 import shutil
 import time
@@ -112,6 +114,20 @@ class KernelRefused(Exception):
 
 class KernelStartupUnavailable(KernelRefused):
     """No cell was dispatched; the governed isolated per-call path is safe."""
+
+
+_OWNER_DIR = re.compile(r"p(\d{1,10})-[0-9a-f]{8}")
+
+
+def _process_alive(pid: int) -> bool:
+    """Whether a process with this id runs (on this host). One we may not signal runs."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
 
 
 class KernelTeardownUnconfirmed(KernelRefused):
@@ -586,6 +602,9 @@ class SessionKernelManager:
     ) -> None:
         self._backend = backend
         self._rpc_root = None if rpc_root is None else Path(rpc_root)
+        # This manager's own directory under the root, named for its process, so another
+        # process's start can tell whose interpreters these are (review-H315e m1).
+        self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
         self._max_tool_calls = max(0, int(max_tool_calls))
         self._poll_interval = max(0.001, float(poll_interval))
         self._max_kernels = max(1, int(max_kernels))
@@ -920,8 +939,11 @@ class SessionKernelManager:
                 handle = await self._backend.start(key, **mount)
             except KernelTeardownUnconfirmed as refusal:
                 now = self._clock()
+                # The quarantined row owns the directory, so its teardown removes it
+                # (review-H315e n3).
                 self._records[key] = _Record(key=key, handle=refusal.handle,
-                    created_at=now, last_used=now, quarantined=True)
+                    created_at=now, last_used=now, quarantined=True,
+                    rpc_host=Path(mount["rpc_dir"]) if mount else None)
                 if refusal.cancelled:
                     raise asyncio.CancelledError from None
                 raise
@@ -929,6 +951,9 @@ class SessionKernelManager:
                 self._unmount(mount)
                 if refusal.reason == KERNEL_UNAVAILABLE:
                     raise KernelStartupUnavailable(KERNEL_UNAVAILABLE) from None
+                raise
+            except BaseException:
+                self._unmount(mount)       # any other failed start leaves nothing behind
                 raise
             now = self._clock()
             record = _Record(key=key, handle=handle, created_at=now, last_used=now,
@@ -942,7 +967,7 @@ class SessionKernelManager:
         every interpreter, never one an earlier interpreter of the same key wrote in."""
         if self._rpc_root is None:
             return {}
-        host = self._rpc_root / f"{key.token}-{secrets.token_hex(8)}"
+        host = self._rpc_root / self._owner / f"{key.token}-{secrets.token_hex(8)}"
         try:
             host.mkdir(parents=True, exist_ok=False)
         except OSError:
@@ -958,13 +983,31 @@ class SessionKernelManager:
             shutil.rmtree(host, ignore_errors=True)
 
     def _clear_stale_mounts(self) -> None:
-        """At start no interpreter of this manager exists yet: every directory under the
-        root was an earlier process's, and what its cells left there goes with it."""
+        """Remove what the interpreters of a process that is gone left under the root.
+
+        Two processes can share one data root (the documented jarvis-hub and
+        jarvis-runtime units do), so a start may not sweep the whole root: that deleted the
+        other's live mounts (review-H315e m1). Each manager keeps its interpreters under a
+        directory named for its process (``p<pid>-<token>``); a start removes only those of
+        a process that no longer runs. A directory of the older flat layout is removed once
+        it is older than the idle expiry, which no live interpreter's is."""
         if self._rpc_root is None or not self._rpc_root.is_dir():
             return
         for entry in self._rpc_root.iterdir():
-            if entry.is_dir() and not entry.is_symlink():
-                shutil.rmtree(entry, ignore_errors=True)
+            if not entry.is_dir() or entry.is_symlink():
+                continue
+            owner = _OWNER_DIR.fullmatch(entry.name)
+            if owner is not None:
+                if _process_alive(int(owner.group(1))):
+                    continue
+            else:
+                try:
+                    age = time.time() - entry.stat().st_mtime
+                except OSError:
+                    continue
+                if age < self._idle_ttl:
+                    continue
+            shutil.rmtree(entry, ignore_errors=True)
 
     async def _reap(self) -> None:
         cutoff = self._clock() - self._idle_ttl

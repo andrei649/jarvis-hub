@@ -335,6 +335,7 @@ class TodoStore:
             before = [dict(item) for item in current["todos"]] if current else []
             items = [dict(item) for item in before] if merge else []
             by_id = {item["id"]: item for item in items}
+            prior_by_id = {item["id"]: item for item in before}
             seen: set[str] = set()
             wrote_text = not merge
             for raw in todos:
@@ -362,6 +363,17 @@ class TodoStore:
                     }
                     if parent is not None and (above := _clean_parent(parent, item_id)) is not None:
                         item["parent"] = above
+                    prior = None if merge else prior_by_id.get(item_id)
+                    if prior is not None and prior["content"] == item["content"]:
+                        # A replace that re-sends an item's text unchanged is no rewrite of it,
+                        # as a merge is not (review-H315e n2): the item stays its writer's, with
+                        # its taint; a status or place moved by an untrusted turn taints it.
+                        item["by"], item["turn"] = prior.get("by", ""), prior.get("turn")
+                        item["tainted"] = bool(prior.get("tainted"))
+                        moved_it = (item["status"] != prior["status"]
+                                    or item.get("parent") != prior.get("parent"))
+                        if taint and moved_it and not item["tainted"]:
+                            item["tainted"], item["turn"] = True, turn
                     items.append(item)
                     by_id[item_id] = item
                     wrote_text = True

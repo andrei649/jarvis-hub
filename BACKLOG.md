@@ -14,6 +14,23 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 fourth adversarial review round (partial → equivalent, #1207; headline 143 → 144/697).
+
+  review-H315e found one MAJOR (a regression), three minors and four nits. All are fixed:
+  - **Plan reads after scripts (M1).** Clearing the repeat detector's revision after a script keyed every later read alike, so the third read after scripts was refused and the fourth ended the turn. Each script (`execute_code`) now opens its own revision, whether or not it reported calls: a crashed cell reports none.
+  - **Two processes on one data root (m1).** A kernel manager's start swept the whole mailbox root, deleting the live mounts of the other process (`jarvis-hub` and `jarvis-runtime` share `JARVIS_HOME`). Each manager now keeps its interpreters under `p<pid>-<token>`, and a start removes only a dead process's (and legacy directories older than the idle expiry).
+  - **The broker's scan (m2).** It runs off the event loop, and not at all once the run is tainted.
+  - **Nits.**
+    - The scan flags the fence's own markers, as the loop does.
+    - A same-text replace is no rewrite, as a merge was not: the item keeps its writer and taint, and a status moved by an untrusted turn still taints it.
+    - A failed start leaves no mount; a quarantined start's row owns its directory.
+    - The re-stamp count is corrected.
+
+  Mutation: the review's five real survivors and the third review's X27 are pinned. This round's 15 mutants were all caught; one needed a case added, and one equivalent branch was removed.
+
+  Records: H315 rewritten and closed; 29 drifted rows re-read and re-stamped; test manual GOV-258.
+
+  Tests: backend 14,426 → 14,439 (`tests/test_h315e_todo_review.py` 13; two h315d tests follow the new rules); vitest unchanged at 1,447.
 - 2026-09-25 H465 adversarial review round (stays equivalent, #1207). **H273 back to partial** after its fourth review (headline 144 → 143/697).
 
   review-H465 found one MAJOR, seven minors and seven nits. All are fixed:

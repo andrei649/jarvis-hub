@@ -212,9 +212,13 @@ async def test_what_a_kernel_left_in_its_mount_is_gone_with_it(tmp_path, how):
 
 @pytest.mark.asyncio
 async def test_a_new_manager_clears_what_an_earlier_process_left(tmp_path):
+    import subprocess
+
     from agents.core.session_kernels import WORKER_SOURCE, PipeKernelBackend, SessionKernelManager
 
-    stale = tmp_path / "kernel-rpc" / "0123456789abcdef-deadbeefdeadbeef"
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    stale = tmp_path / "kernel-rpc" / f"p{gone.pid}-deadbeef" / "0123456789abcdef-deadbeefdeadbeef"
     stale.mkdir(parents=True)
     (stale / "stash.txt").write_text(PAGE, encoding="utf-8")
     SessionKernelManager(
@@ -466,8 +470,9 @@ async def test_the_repeat_event_counts_a_plan_read_loop(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_script_that_called_no_tool_leaves_a_repeated_read_a_repeat(tmp_path):
-    """Only a script that made calls of its own can have changed the plan."""
+async def test_any_script_opens_a_new_revision_for_the_next_read(tmp_path):
+    """review-H315e: a script is judged by what it is, not by the calls it reported (a
+    crashed one reports none), so the read after any script is a new call."""
     store = TodoStore()
     server = _fetching_server(store)
     runtime = _k1(server, tmp_path)
@@ -479,4 +484,4 @@ async def test_a_script_that_called_no_tool_leaves_a_repeated_read_a_repeat(tmp_
         ("todo", {}),
     ]
     _backend, _events, _origin, _reply = await _turn(runtime, script)
-    assert "repeated_call" in _tool_messages(_backend)[-1]
+    assert "repeated_call" not in _tool_messages(_backend)[-1]
