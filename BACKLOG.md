@@ -14,6 +14,41 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 second adversarial review round (partial → equivalent, #1207; headline 144 → 145/697).
+
+  review-H318b found two majors, seven minors and seven nits:
+  - **An approved change disabled the skill it improved (M-1).** Writing the new SKILL.md kept none of the skill's standing. A bundled skill became external, and with its code it was sandboxed and dropped from the catalog. A signed skill failed its signature, and one the owner had approved lost the approval. Now:
+    - a bundled skill is refused, when proposed and when applied: it is product source;
+    - an applied change renews a signature that verified and an approval the owner had given, both read fresh before the write;
+    - a skill nothing vouched for gains no vouch, a tampered signature is not renewed, and code changed on disk since the approval does not ride the patch;
+    - the decide answer names the state the skill is left in.
+  - **The owner approved blind (M-2).** The diff lived only in the card's raw JSON, cut at 4,000 characters, and no inbox showed it. `GET /api/skills/proposals` (admin) now serves each pending proposal with its whole diff, built from the ledger, plus its drift and flags (a rename, a bundled skill). The HUD's Decision Inbox shows them under SKILL CHANGES with approve and reject, and the /v1 action panel shows the same diff.
+  - **Minors:**
+    - a superseded proposal's card is withdrawn; one card per proposal, whoever proposed;
+    - the six unpinned mutants have cases;
+    - the file list skill_view returns is bounded (3 KiB of names, `files_more`);
+    - the backup is named by the skill's directory, with a unique suffix;
+    - only the card a proposal queued decides it, and the decide route says so of any other;
+    - publishing to the marketplace signs a staged copy, never the owner's tree.
+  - **Nits:**
+    - applies run one at a time;
+    - a rename is refused;
+    - every outcome is reported;
+    - the settings panel shows a refused save with the hub's reason and keeps the edit;
+    - critic note 21 names the view's limits.
+    - Two are kept by decision and stated: the per-process daily limit, and `skill_propose` still being offered where it refuses.
+
+  Mutation: this round's 31 mutants (26 Python, 5 HUD) were all caught, one after a case was added.
+
+  Records:
+  - H318 rewritten and closed;
+  - 49 drifted rows re-read and re-stamped (H503's publish citation rewritten by hand);
+  - GOV-256 rewritten;
+  - the route snapshots, the API sweep and `schema.gen.ts` regenerated;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,487 → 14,509 (`tests/test_h318c_skill_review.py` 22); vitest 1,447 → 1,456 (`skill-changes` 8, `settings-json-field` 2 → 3).
+
 - 2026-09-25 H273 fourth adversarial review round (partial → equivalent, #1207). **H318 back to partial** after its second review (headline stays 144/697).
 
   review-H273e found two majors, four minors and ten nits:

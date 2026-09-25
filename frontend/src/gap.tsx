@@ -15,6 +15,7 @@ import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
+import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2647,16 +2648,22 @@ export function SettingsPanel() {
   const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
+  const [refused, setRefused] = useState<string[]>([]);
   const cats = d && typeof d === 'object' ? d : {};
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
   const save = async () => {
+    // A refused category keeps its edits and shows the hub's own reason (review-H318b n-4:
+    // "updated 0" over a 422 read as saved, and the typed text stayed in the box).
     let n = 0;
+    const kept: Record<string, any> = {};
+    const why: string[] = [];
     for (const cat of Object.keys(dirty)) {
-      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
+      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; }
+      catch (err) { kept[cat] = dirty[cat]; why.push(`${cat}: ${refusalReason(err, 'not saved')}`); }
     }
-    setSaved(n); setDirty({}); reload();
+    setSaved(n); setRefused(why); setDirty(kept); reload();
   };
   return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
@@ -2679,6 +2686,7 @@ export function SettingsPanel() {
     </div>
     {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
+    {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
   </Card>;
 }
 function PromptsPanel() {
@@ -2970,7 +2978,9 @@ export function OnboardingPanel() {
    autonomy queue, drawn as a network fan) but had NO control to resolve a blocked
    decision. This is it: the blocked queue (GET /autonomy/tasks?status=blocked) with
    accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin).
-   H315 — under them, the plans the agent is working through (GET /sessions/todo). */
+   H315 — under them, the plans the agent is working through (GET /sessions/todo).
+   H318 — and the skill changes the agent proposed, each with its whole diff
+   (GET /api/skills/proposals; panels/skill-changes.tsx). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   useEffect(() => {
@@ -2981,6 +2991,7 @@ export function DecisionInboxPanel() {
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
   const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
+  const changes = useApi(SKILL_CHANGES_PATH, true, true);   // H318 — skill changes, each with its whole diff
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
@@ -3013,7 +3024,7 @@ export function DecisionInboxPanel() {
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
-      onReload={() => { reload(); interrupts.reload(); plans.reload(); }}>
+      onReload={() => { reload(); interrupts.reload(); plans.reload(); changes.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
       {pending.slice(0, 10).map((t, i) => (
@@ -3070,6 +3081,7 @@ export function DecisionInboxPanel() {
         </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+      <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );

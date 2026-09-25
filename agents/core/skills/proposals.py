@@ -13,7 +13,9 @@ is reversible.
 
 from __future__ import annotations
 
+import difflib
 import logging
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -29,7 +31,16 @@ STATUS_APPROVED = "approved"
 STATUS_APPLIED = "applied"
 STATUS_REJECTED = "rejected"
 STATUS_STALE = "stale"
-_VALID = {STATUS_PENDING, STATUS_APPROVED, STATUS_APPLIED, STATUS_REJECTED, STATUS_STALE}
+STATUS_SUPERSEDED = "superseded"
+_VALID = {STATUS_PENDING, STATUS_APPROVED, STATUS_APPLIED, STATUS_REJECTED, STATUS_STALE,
+          STATUS_SUPERSEDED}
+CARD_TOOL = "skill.patch_proposal"
+
+
+def unified_diff(current: str, proposed: str, name: str = "SKILL.md") -> str:
+    """The whole change, as the owner reviews it: built from the ledger, never from a card."""
+    return "".join(difflib.unified_diff(current.splitlines(keepends=True), proposed.splitlines(keepends=True),
+                                        fromfile=f"{name} (now)", tofile=f"{name} (proposed)"))
 
 
 class SkillProposalStore(JsonStore):
@@ -37,6 +48,7 @@ class SkillProposalStore(JsonStore):
 
     def __init__(self, path: str | Path | None = None) -> None:
         super().__init__(path)
+        self._card_lock = threading.Lock()
 
     def _serialize(self):
         return {"proposals": self._items}
@@ -81,7 +93,7 @@ class SkillProposalStore(JsonStore):
                    if status is None or r.get("status") == status]
         return sorted(out, key=lambda r: r.get("ts", 0.0))
 
-    def mark(self, proposal_id: str, status: str) -> dict | None:
+    def mark(self, proposal_id: str, status: str, reason: str = "") -> dict | None:
         if status not in _VALID:
             return None
         with self._lock:
@@ -90,8 +102,72 @@ class SkillProposalStore(JsonStore):
                 return None
             rec["status"] = status
             rec["decided_ts"] = time.time()
+            if reason:
+                rec["reason"] = reason
             self._save()
             return dict(rec)
+
+    # ── the approval card (one per proposal, bound to it) ────────────────────
+
+    def queue_card(self, proposal_id: str, queue, *, agent: str, summary: str) -> str | None:
+        """Queue the proposal's one approval card and bind it to the proposal.
+
+        Only the bound card decides the proposal (review-H318b m-6: any user token can
+        queue a card naming a proposal id). A proposal that already has its card gets no
+        second one, whoever proposed the same text (m-1). The card carries no diff: what
+        the owner reviews is built from the ledger (``describe``)."""
+        with self._card_lock:
+            rec = self.get(proposal_id)
+            if rec is None or rec.get("status") != STATUS_PENDING:
+                return None
+            if rec.get("card"):
+                return rec["card"]
+            item = queue.request({"tool": CARD_TOOL, "agent": agent, "summary": summary,
+                                  "args": {"skill": rec["skill"], "proposal_id": proposal_id}})
+            card = str((item or {}).get("id") or "")
+            if not card:
+                return None
+            with self._lock:
+                live = self._items.get(proposal_id)
+                if live is not None:
+                    live["card"] = card
+                    self._save()
+            return card
+
+    def supersede(self, proposal_id: str, queue=None) -> None:
+        """A newer proposal replaces this one: marked superseded, its card withdrawn, so
+        approving the old card cannot look like it did something (review-H318b m-1)."""
+        rec = self.mark(proposal_id, STATUS_SUPERSEDED)
+        card = (rec or {}).get("card")
+        if card and queue is not None:
+            try:
+                queue.decide(card, False, by="superseded")
+            except Exception:
+                logger.debug("superseded card %s not withdrawn", card, exc_info=True)
+
+    def describe(self, rec: dict, loader) -> dict:
+        """A proposal as the owner reviews it: the whole diff against the live SKILL.md,
+        whether the skill drifted since, and what the change would do beyond the text."""
+        out = {k: rec.get(k) for k in ("id", "skill", "origin", "status", "ts", "card", "reason")}
+        skill = getattr(loader, "skills", {}).get(rec.get("skill"))
+        if skill is None:
+            return {**out, "diff": "", "drifted": True, "flags": ["the skill is gone"]}
+        try:
+            current = (Path(skill.path) / "SKILL.md").read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return {**out, "diff": "", "drifted": True, "flags": ["the skill cannot be read"]}
+        flags = []
+        naming = getattr(loader, "manifest_name", None)
+        if callable(naming):
+            try:
+                if naming(Path(skill.path), rec.get("proposed", "")) != rec.get("skill"):
+                    flags.append("renames the skill")
+            except Exception:
+                flags.append("its header cannot be read")
+        if not getattr(skill, "external", True):
+            flags.append("a bundled skill: it cannot be changed here")
+        return {**out, "diff": unified_diff(current, rec.get("proposed", "")),
+                "drifted": manifest_hash(current) != rec.get("original_hash"), "flags": flags}
 
     # ── apply (curator-driven, owner-approved) ───────────────────────────────
 
@@ -111,6 +187,17 @@ class SkillProposalStore(JsonStore):
         if skill is None:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "skill_missing"}
+        # A bundled skill is product source: an edit would unbundle it, and with its code
+        # it would stop loading (review-H318b M-1). It is refused, never half-applied.
+        standing_of = getattr(loader, "owner_standing", None)
+        standing = standing_of(skill) if callable(standing_of) else {}
+        if standing.get("bundled"):
+            self.mark(proposal_id, STATUS_REJECTED, reason="bundled")
+            return {"ok": False, "reason": "bundled_skill"}
+        naming = getattr(loader, "manifest_name", None)
+        if callable(naming) and naming(Path(skill.path), rec["proposed"]) != rec["skill"]:
+            self.mark(proposal_id, STATUS_REJECTED, reason="renames")
+            return {"ok": False, "reason": "renames_skill"}
         skill_md = Path(skill.path) / "SKILL.md"
         try:
             current = skill_md.read_text(encoding="utf-8")
@@ -124,20 +211,32 @@ class SkillProposalStore(JsonStore):
             backup_root = Path(backup_dir)
             backup_root.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            backup = backup_root / f"{rec['skill']}-{stamp}.SKILL.md"
+            # Named by the skill's directory, never its manifest name (review-H318b m-5: a
+            # name like ../../x escaped the archive), and unique within the second.
+            backup = backup_root / f"{Path(skill.path).name}-{stamp}-{uuid.uuid4().hex[:6]}.SKILL.md"
             backup.write_text(current, encoding="utf-8")
             skill_md.write_text(rec["proposed"], encoding="utf-8")
         except Exception:
             logger.warning("proposal apply failed for %s", rec["skill"], exc_info=True)
             return {"ok": False, "reason": "write_failed"}
+        restore = getattr(loader, "restore_standing", None)
+        if callable(restore):
+            try:
+                restore(Path(skill.path), standing)
+            except Exception:
+                logger.warning("skill '%s' patched, but its signature or approval could not be renewed",
+                               rec["skill"], exc_info=True)
         try:
-            loader._load_skill(Path(skill.path))     # refresh manifest in place
+            loader._load_skill(Path(skill.path), discovery_root=Path(skill.path).parent)
         except Exception:
             logger.debug("skill reload after patch skipped", exc_info=True)
         self.mark(proposal_id, STATUS_APPLIED)
-        logger.info("Skill '%s' patched via approved proposal %s (backup: %s)",
-                    rec["skill"], proposal_id, backup)
-        return {"ok": True, "skill": rec["skill"], "backup": str(backup)}
+        live = getattr(loader, "skills", {}).get(rec["skill"])
+        gate = getattr(loader, "catalog_gate", None)
+        state = "hidden" if live is None else ((gate(live) if callable(gate) else "") or "shown")
+        logger.info("Skill '%s' patched via approved proposal %s (backup: %s, now %s)",
+                    rec["skill"], proposal_id, backup, state)
+        return {"ok": True, "skill": rec["skill"], "backup": str(backup), "state": state}
 
     def stats(self) -> dict:
         with self._lock:
@@ -147,5 +246,5 @@ class SkillProposalStore(JsonStore):
             return {"total": len(self._items), "by_status": by}
 
 
-__all__ = ["SkillProposalStore", "STATUS_PENDING", "STATUS_APPROVED",
-           "STATUS_APPLIED", "STATUS_REJECTED", "STATUS_STALE"]
+__all__ = ["CARD_TOOL", "SkillProposalStore", "STATUS_PENDING", "STATUS_APPROVED",
+           "STATUS_APPLIED", "STATUS_REJECTED", "STATUS_STALE", "STATUS_SUPERSEDED", "unified_diff"]

@@ -207,6 +207,7 @@
   "GET /api/skills/marketplace",
   "GET /api/skills/marketplace/history",
   "GET /api/skills/pending",
+  "GET /api/skills/proposals",
   "GET /api/status",
   "GET /api/subagents",
   "GET /api/support/bundle",

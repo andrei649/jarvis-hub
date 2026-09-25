@@ -40,4 +40,25 @@ describe('SettingsPanel — a JSON setting', () => {
     await waitFor(() => expect(puts.length).toBe(1));
     expect(puts[0].body).toEqual({ values: { template_vars: '{team: ops' } });
   });
+
+  it('says when the hub refuses the save, with its reason, and keeps the edit (review-H318b n-4)', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      if (init.method === 'PUT') {
+        puts.push({ url: u, body: JSON.parse(init.body) });
+        return { ok: false, status: 422, json: async () => ({ error: 'template_vars: "team" must be text' }),
+                 text: async () => '{"error": "template_vars: \\"team\\" must be text"}' };
+      }
+      const body = u.includes('/api/admin/settings')
+        ? { skills: [{ key: 'template_vars', label: 'Skill template variables', value: { team: 'ops' }, kind: 'json' }] }
+        : { docs: [] };
+      return { ok: true, status: 200, json: async () => body };
+    });
+    render(<SettingsPanel />);
+    const box = await screen.findByLabelText('json value of template_vars');
+    fireEvent.change(box, { target: { value: '{"team": 1}' } });
+    fireEvent.click(screen.getByText(/save 1 change/));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/not saved · skills: template_vars/));
+    expect(screen.getByText(/save 1 change/)).toBeTruthy();          // the edit is kept to fix and resend
+  });
 });

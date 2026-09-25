@@ -587,3 +587,30 @@ async def approve_generated_skill(name: str):
     if orch.skills.approve_generated_skill(name):
         return {"approved": True, "skill": name}
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
+
+
+@router.get("/api/skills/proposals", dependencies=[Depends(admin_guard)])
+async def skill_proposals():
+    """The skill changes awaiting the owner, as they review them (review-H318b M-2): each
+    pending proposal with the whole diff built from the ledger against the live SKILL.md
+    (never a card's own text), whether the skill drifted since, what the change does beyond
+    its text (a rename, a bundled skill), and the one approval card that decides it
+    (``POST /api/actions/{card}/decide``). A proposal from before cards were bound gets its
+    card here."""
+    orch = get_orch()
+    store = getattr(orch, "skill_proposals", None) if orch else None
+    if store is None:
+        return component_unavailable("skill proposals are not available")
+    loader = getattr(orch, "skills", None)
+    queue = getattr(orch, "action_approvals", None)
+    out = []
+    for rec in store.list("pending"):
+        if not rec.get("card") and queue is not None:
+            try:
+                store.queue_card(rec["id"], queue, agent=str(rec.get("origin") or "agent"),
+                                 summary=f"A change to skill '{rec.get('skill')}' is proposed")
+                rec = store.get(rec["id"]) or rec
+            except Exception:
+                logger.warning("skill proposal %s: its card could not be queued", rec.get("id"), exc_info=True)
+        out.append(store.describe(rec, loader))
+    return JSONResponse({"proposals": out, "count": len(out)}, headers={"Cache-Control": "no-store"})

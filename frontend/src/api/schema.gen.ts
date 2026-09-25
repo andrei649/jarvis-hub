@@ -3229,6 +3229,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Skill Proposals
+         * @description The skill changes awaiting the owner, as they review them (review-H318b M-2): each
+         *     pending proposal with the whole diff built from the ledger against the live SKILL.md
+         *     (never a card's own text), whether the skill drifted since, what the change does beyond
+         *     its text (a rename, a bundled skill), and the one approval card that decides it
+         *     (``POST /api/actions/{card}/decide``). A proposal from before cards were bound gets its
+         *     card here.
+         */
+        get: operations["skill_proposals_api_skills_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/components": {
         parameters: {
             query?: never;
@@ -15963,6 +15988,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_proposals_api_skills_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

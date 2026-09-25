@@ -1180,6 +1180,37 @@ def register(skill):
         self._load_skill(Path(skill.path), discovery_root=Path(skill.path).parent)
         return line
 
+    def owner_standing(self, skill: "Skill") -> dict:
+        """What vouches for ``skill``'s bytes as they are on disk now (review-H318b M-1).
+
+        ``bundled``: it ships with Nerva. ``signed``: its SKILL.sig verifies. ``approved``:
+        the owner approved these exact bytes. Read fresh, never from the load, so a change
+        made on disk since the load cannot ride an approved patch into a new vouch."""
+        path = Path(skill.path)
+        try:
+            _, reason = signing.verify_skill(path)
+        except OSError:
+            reason = "unreadable"
+        return {
+            "bundled": not getattr(skill, "external", True),
+            "signed": reason in ("signed", "integrity-only"),
+            "approved": self._approval_store.is_approved(path),
+        }
+
+    def restore_standing(self, path: Path, standing: dict) -> None:
+        """Give an approved patch's bytes the standing the replaced bytes had: re-sign what
+        verified and re-approve what the owner had approved. The owner approved this
+        change, and only SKILL.md changed; a skill nothing vouched for gains no vouch."""
+        if standing.get("signed"):
+            signing.sign_skill(path)
+        if standing.get("approved"):
+            self._approval_store.approve(path)
+
+    def manifest_name(self, path: Path, text: str) -> str:
+        """The registry name a SKILL.md text would give the skill at ``path``."""
+        manifest = self._parse_manifest(Path(path) / "SKILL.md", source_bytes=text.encode("utf-8"))
+        return str(manifest.get("name") or Path(path).name)
+
     def _name_from_task(self, task: str) -> str:
         words = re.sub(r"[^a-zA-Z0-9\s]", "", task).lower().split()
         important = [

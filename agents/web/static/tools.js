@@ -7,12 +7,12 @@
 (function () {
 
   /* ── shared hooks/widgets ──────────────────────────────────────────────── */
-  function useApi(url, auto) {
+  function useApi(url, auto, admin) {
     const _s = useState({ loading: !!auto }), s = _s[0], set = _s[1];
     const reload = useCallback(function () {
       set({ loading: true });
-      api(url).then(function (d) { set({ data: d }); }).catch(function (e) { set({ err: String(e) }); });
-    }, [url]);
+      (admin ? adminFetch : api)(url).then(function (d) { set({ data: d }); }).catch(function (e) { set({ err: String(e) }); });
+    }, [url, admin]);
     useEffect(function () { if (auto) reload(); }, [url]);
     return [s, reload];
   }
@@ -77,17 +77,31 @@
 
   function ActionsPanel() {
     const _ = useApi('/api/actions/pending', true), s = _[0], reload = _[1];
+    // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub
+    // from the proposal ledger (never from the card's own args), before Approve.
+    const _c = useApi('/api/skills/proposals', true, true), changes = _c[0], reloadChanges = _c[1];
+    const byCard = {};
+    ((changes.data && changes.data.proposals) || []).forEach(function (p) { if (p.card) byCard[p.card] = p; });
     function decide(id, ok) {
-      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(reload).catch(function (e) { alert(e.message); });
+      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(function () { reload(); reloadChanges(); }).catch(function (e) { alert(e.message); });
+    }
+    function skillChange(a) {
+      if (a.tool !== 'skill.patch_proposal') return null;
+      const p = byCard[a.id];
+      if (!p) return h('div', { className: 'tool-card-text' }, 'This card is not a proposal\'s own approval card: approving it changes no skill.');
+      return h('div', null,
+        (p.flags || []).concat(p.drifted ? ['the skill changed since: approving applies nothing'] : []).map(function (f) { return h('div', { key: f, className: 'tool-card-text' }, '⚠ ' + f); }),
+        h('pre', { className: 'tool-diff', style: { whiteSpace: 'pre-wrap', maxHeight: '320px', overflow: 'auto' } }, p.diff || '(no change)'));
     }
     let body;
     if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
     else { const acts = (s.data.actions || []); body = acts.length ? acts.map(function (a) {
       return h('div', { key: a.id, className: 'tool-card' },
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
+        skillChange(a),
         h('div', { className: 'tool-actions' }, Btn('Approve', function () { decide(a.id, true); }, 'ok'), Btn('Reject', function () { decide(a.id, false); }, 'bad')));
     }) : Empty('No pending tool-calls.'); }
-    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', reload));
+    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', function () { reload(); reloadChanges(); }));
   }
 
   /* ── Arena ─────────────────────────────────────────────────────────────── */

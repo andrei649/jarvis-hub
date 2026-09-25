@@ -71,6 +71,13 @@ async def actions_decide(action_id: str, req: Request):
     if item.get("tool") == "skill.patch_proposal":
         # H318 review — a decided skill change lands now, not at the curator's next night
         # (which never comes while the learning loop is off, the default).
+        store = getattr(get_orch(), "skill_proposals", None)
+        rec = store.get(str((item.get("args") or {}).get("proposal_id") or "")) if store is not None else None
+        if rec is None or rec.get("card") != action_id:
+            # Only the card a proposal queued decides it (review-H318b m-6): say so, rather
+            # than answer as if this decision changed a skill.
+            return nocache_json({"ok": True, "action": {
+                **item, "note": "this card is not a proposal's own approval card: no skill was changed"}})
         curator = getattr(get_orch(), "curator", None)
         if curator is not None and hasattr(curator, "apply_decisions"):
             try:

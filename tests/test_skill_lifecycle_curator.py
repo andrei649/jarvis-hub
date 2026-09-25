@@ -187,11 +187,19 @@ async def test_approval_queue_decisions_sync_to_ledger(tmp_path):
     rec = props.propose("s", "# S\nv1", "# S\nv2")
 
     class _Approvals:
+        def request(self, row):
+            return {"id": "card-1"}
+
         def list(self, status=None):
             if status == "approved":
-                return [{"tool": "skill.patch_proposal",
+                # a card someone else queued naming the same proposal decides nothing
+                return [{"id": "forged", "tool": "skill.patch_proposal",
+                         "args": {"skill": "s", "proposal_id": rec["id"]}},
+                        {"id": "card-1", "tool": "skill.patch_proposal",
                          "args": {"skill": "s", "proposal_id": rec["id"]}}]
             return []
+
+    assert props.queue_card(rec["id"], _Approvals(), agent="t", summary="s") == "card-1"
 
     cur = _curator(loader, _store(tmp_path), tmp_path,
                    datetime.now(UTC), proposals=props,

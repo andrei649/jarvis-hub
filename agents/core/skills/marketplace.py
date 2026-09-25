@@ -359,19 +359,29 @@ class SkillMarketplace:
         loader = SkillLoader()
         manifest = loader._parse_manifest(skill_file)
 
-        # Sign the skill so the published package ships a SKILL.sig the installer
-        # can verify (HMAC-keyed when JARVIS_SKILL_SIGNING_KEY is set). (H12.12)
-        signature = signing.sign_skill(skill_path)
-
-        # Build Zip archive in memory (includes the freshly written SKILL.sig). The walk
-        # never follows or packs a link (H503): signing already refuses a linked
+        # Sign the package so it ships a SKILL.sig the installer can verify (HMAC-keyed
+        # when JARVIS_SKILL_SIGNING_KEY is set; H12.12). The signature is made on a staged
+        # copy, never on the owner's tree (review-H318b m-7): sharing a skill is not
+        # vouching for it, and a keyed SKILL.sig written in place would make an imported,
+        # unvouched skill load as owner-vouched.
+        #
+        # The walk never follows or packs a link (H503): signing already refuses a linked
         # artifact, and this keeps a link planted after signing from pulling an
         # arbitrary file into a package that leaves the machine.
         zip_buffer = io.BytesIO()
-        files, _links = archive_safe.collect_regular_files(skill_path)
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for file_path in files:
-                zip_file.write(file_path, file_path.relative_to(skill_path).as_posix())
+        with tempfile.TemporaryDirectory(prefix="nerva-publish-") as staging:
+            staged = Path(staging) / skill_path.name
+            source_files, _links = archive_safe.collect_regular_files(skill_path)
+            for file_path in source_files:
+                dest = staged / file_path.relative_to(skill_path)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(file_path, dest)
+            staged.mkdir(parents=True, exist_ok=True)
+            signature = signing.sign_skill(staged)
+            files, _links = archive_safe.collect_regular_files(staged)
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for file_path in files:
+                    zip_file.write(file_path, file_path.relative_to(staged).as_posix())
 
         zip_data = zip_buffer.getvalue()
 

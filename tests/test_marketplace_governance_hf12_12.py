@@ -54,7 +54,9 @@ def _clean_env(monkeypatch):
 def test_publish_signs_and_marks_pending(tmp_path):
     mk = _mk(tmp_path)
     sd, name = _publish(mk)
-    assert (sd / "SKILL.sig").exists()                 # package is signed on publish
+    # The package is signed on publish; the owner's tree is not (review-H318b m-7: sharing
+    # a skill is not vouching for it).
+    assert not (sd / "SKILL.sig").exists()
     entry = mk.list_skills()[0]
     assert entry["review_status"] == "pending"
     assert entry["signed"] is True

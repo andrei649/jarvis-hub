@@ -207,6 +207,7 @@
   "GET /api/skills/marketplace": "admin",
   "GET /api/skills/marketplace/history": "admin",
   "GET /api/skills/pending": "admin",
+  "GET /api/skills/proposals": "admin",
   "GET /api/status": "open",
   "GET /api/subagents": "user",
   "GET /api/support/bundle": "admin",

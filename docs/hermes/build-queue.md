@@ -892,7 +892,7 @@ Both rows add a `skill_view` ToolRPC tool. H318 puts it in agents/core/skills/to
 
 **Fix.** Build one skill_view in H318's module that returns H340's rendered body under H318's gates, and close H340 with that PR. Make `file` read the H696-imported references, confined to the skill directory.
 
-**Done in #1207 (2026-09-25).** One `skill_view` in agents/core/skills/tools.py returns H340's rendered body under the catalog's gates, and H340 closed with it. `file` reads any file of the skill as captured at load, so H696's imported references will be readable once H696 imports them.
+**Done in #1207 (2026-09-25).** One `skill_view` in agents/core/skills/tools.py returns H340's rendered body under the catalog's gates, and H340 closed with it. `file` reads a file of the skill as captured at load: one of up to 64 KiB, within 1 MiB for the whole skill (a larger one, or one past that total, is listed and refused as too large). H696's imported references will be readable once H696 imports them, within those limits.
 
 ### Critic note 22
 

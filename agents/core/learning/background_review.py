@@ -426,6 +426,10 @@ class BackgroundReviewer:
         if skill is None:
             logger.debug("review patch for unknown skill %r skipped", name)
             return False
+        if not getattr(skill, "external", True):
+            # A bundled skill is product source; the apply refuses it (review-H318b M-1).
+            logger.debug("review patch for bundled skill %r skipped", name)
+            return False
         if self._detect(update["content"]):
             logger.warning("review skill patch blocked (injection-flagged): %s", name)
             return False
@@ -441,15 +445,13 @@ class BackgroundReviewer:
                 return False
             if self._approvals is not None:
                 try:
-                    # ActionApprovalQueue persists tool/args — proposal_id rides
-                    # in args so the curator can map the decision back.
-                    self._approvals.request({
-                        "tool": "skill.patch_proposal",
-                        "args": {"skill": name, "proposal_id": prop["id"]},
-                        "agent": self._label,
-                        "summary": (f"/refine proposes a patch to skill '{name}'" if self._label == "refine"
-                                    else f"Background review proposes a patch to skill '{name}'"),
-                    })
+                    # The proposal's one card, bound to it in the ledger: only that card's
+                    # decision is the owner's (review-H318b m-6), and a proposal that
+                    # already has a card gets no second one (m-1).
+                    self._proposals.queue_card(
+                        prop["id"], self._approvals, agent=self._label,
+                        summary=(f"/refine proposes a patch to skill '{name}'" if self._label == "refine"
+                                 else f"Background review proposes a patch to skill '{name}'"))
                 except Exception:
                     logger.debug("approval request for patch skipped", exc_info=True)
             actions.append(f"Skill '{name}' patch proposed (pending approval)")

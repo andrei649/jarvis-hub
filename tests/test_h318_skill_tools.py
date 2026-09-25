@@ -22,6 +22,7 @@ from agents.core.skills.proposals import SkillProposalStore
 from agents.core.skills.template_vars import clean_template_vars, render_skill_body
 from agents.core.skills.tools import (
     MAX_FILE_BYTES,
+    MAX_LISTED_BYTES,
     TOOL_LIST,
     TOOL_PROPOSE,
     TOOL_VIEW,
@@ -290,7 +291,9 @@ def test_a_patch_to_an_existing_skill_is_a_pending_proposal_and_the_live_file_is
     assert approvals.requests[0]["tool"] == "skill.patch_proposal"
     card = approvals.requests[0]["args"]
     assert card["skill"] == "plan" and card["proposal_id"] == pending[0]["id"]
-    assert "-Old steps." in card["diff"] and "+Better steps." in card["diff"]   # the owner sees the change
+    assert "diff" not in card and pending[0]["card"] == "a1"         # bound; the card claims nothing
+    shown = proposals.describe(pending[0], loader)                     # what the owner reviews: the ledger
+    assert "-Old steps." in shown["diff"] and "+Better steps." in shown["diff"]
     assert (installed.root / "plan" / "SKILL.md").read_bytes() == live
     # the same text again is no second proposal and no second card
     again = _call(server, TOOL_PROPOSE, {"name": "plan", "content": new})
@@ -476,7 +479,7 @@ def test_view_edges_nul_bom_description_and_the_declared_budget(installed):
     assert _call(server, TOOL_VIEW, {"name": "e", "file": "bom.md"})["content"] == "hello\n"
     loader.skills["e"].manifest["description"] = "two\nlines   here"
     assert _call(server, TOOL_VIEW, {"name": "e"})["description"] == "two lines here"
-    assert server.declared_result_bytes(TOOL_VIEW) == MAX_FILE_BYTES + 4096
+    assert server.declared_result_bytes(TOOL_VIEW) == MAX_FILE_BYTES + MAX_LISTED_BYTES + 4096
 
 
 def test_the_list_pages_end_exactly_and_caps_commands(installed):
@@ -520,7 +523,7 @@ def test_a_newer_proposal_supersedes_the_older_one_and_a_day_has_a_limit(install
     first = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "One.\n"})
     second = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "Two.\n"})
     assert [p["id"] for p in proposals.list("pending")] == [second["proposal_id"]]
-    assert proposals.get(first["proposal_id"])["status"] == "stale"
+    assert proposals.get(first["proposal_id"])["status"] == "superseded"
     for i in range(8):
         assert _call(server, TOOL_PROPOSE, {"name": "plan", "content": f"More {i}.\n"})["ok"] is True
     limited = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "Eleventh.\n"})
@@ -570,12 +573,14 @@ def test_an_approved_proposal_lands_when_the_owner_decides(installed, tmp_path, 
     _call(server, TOOL_PROPOSE, {"name": "plan", "content": new})
     card = queue.list("pending")[0]
     monkeypatch.setattr(web, "ADMIN_TOKEN", "h318-admin")
-    monkeypatch.setattr(web, "orch", SimpleNamespace(action_approvals=queue, curator=curator))
+    monkeypatch.setattr(web, "orch", SimpleNamespace(action_approvals=queue, curator=curator,
+                                                     skill_proposals=proposals))
     client = TestClient(web.app)
     reply = client.post(f"/api/actions/{card['id']}/decide", json={"approved": True},
                         headers={"X-Admin-Token": "h318-admin"})
     assert reply.status_code == 200, reply.text
     assert reply.json()["action"]["applied"]["applied"] == ["plan"]
+    assert reply.json()["action"]["applied"]["outcomes"][0]["state"] == "shown"
     assert (installed.root / "plan" / "SKILL.md").read_text() == new.strip()
 
 

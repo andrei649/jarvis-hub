@@ -52,7 +52,6 @@ names them in ``llm.guest_tools`` (critic note 22).
 
 from __future__ import annotations
 
-import difflib
 import logging
 import posixpath
 import re
@@ -80,8 +79,10 @@ MAX_PROPOSAL = 16 * 1024
 MAX_STEPS = 20
 MAX_STEP = 300
 MAX_COMMAND = 120
-MAX_DIFF = 4_000
 MAX_PROPOSALS_PER_DAY = 10
+#: The file list skill_view shows beside a body, in bytes of names (review-H318b m-4): a
+#: skill with thousands of files cannot push the answer past its declared budget.
+MAX_LISTED_BYTES = 3 * 1024
 _COMMAND = re.compile(r"\w+")
 
 _SKILL_FILE = "SKILL.md"
@@ -153,14 +154,6 @@ def _unknown(name: str) -> dict:
     return _refuse("skill_unknown", f"no skill named {name!r} is available to you: call skills_list")
 
 
-def _diff(before: str, after: str) -> str:
-    """What the owner approves, on the card: a unified diff, cut at MAX_DIFF characters."""
-    lines = difflib.unified_diff(before.splitlines(), after.splitlines(), "SKILL.md (now)",
-                                 "SKILL.md (proposed)", lineterm="")
-    text = "\n".join(lines)
-    return text if len(text) <= MAX_DIFF else text[:MAX_DIFF] + "\n… (cut; the whole proposal is in the ledger)"
-
-
 def _clean_path(raw: str) -> str | None:
     """A relative POSIX path inside the skill, normalised; None when it would leave it."""
     if "\\" in raw or "\x00" in raw or raw.startswith("/") or not raw.isprintable():
@@ -185,12 +178,12 @@ def register_skill_tools(
     """Expose the three tools. Every getter is read per call, so a reload, a new session
     or a changed setting is seen by the next call."""
     from ..security.taint import is_untrusted_source
-    from .proposals import STATUS_PENDING, STATUS_STALE
+    from .proposals import STATUS_PENDING
 
-    # Proposals made today (one entry, keyed by the day) and the proposals that already
-    # have an approval card: a retry after a failed card queues one, a repeat does not.
+    # Proposals made today (one entry, keyed by the day). A proposal's approval card is
+    # bound to it in the ledger (queue_card): a retry after a failed card queues one, a
+    # repeat of the same text, from any origin, does not.
     spent: dict[str, int] = {}
-    carded: set[str] = set()
 
     def _spend(today: str) -> None:
         count = spent.get(today, 0) + 1
@@ -323,7 +316,16 @@ def register_skill_tools(
                 return _refuse("skill_file_too_large", f"the body is over {MAX_FILE_BYTES:,} bytes once its "
                                                        "variables are rendered")
             description = _one_line(skill.description, 1024)
-            reply = {"ok": True, "name": skill.name, "description": description, "body": body, "files": listed}
+            shown_files, used = [], 0
+            for path in listed:
+                used += len(path.encode("utf-8")) + 4          # the name, its quotes and a comma
+                if used > MAX_LISTED_BYTES:
+                    break
+                shown_files.append(path)
+            reply = {"ok": True, "name": skill.name, "description": description, "body": body,
+                     "files": shown_files}
+            if len(shown_files) < len(listed):
+                reply["files_more"] = len(listed) - len(shown_files)
             shown = f"{description}\n{body}"
         else:
             reply = {"ok": True, "name": skill.name, "file": rel, "content": text}
@@ -400,28 +402,35 @@ def register_skill_tools(
         current = files.get(_SKILL_FILE) if skill is not None else None
         if not isinstance(current, bytes):
             return _unknown(name)
+        if not getattr(skill, "external", True):
+            # Bundled skills are product source: a change would unbundle one and, with its
+            # code, stop it loading (review-H318b M-1). A new skill is the way to extend one.
+            return _refuse("skill_propose_bundled", f"{skill.name!r} ships with Nerva and cannot be changed "
+                                                    "here: propose a new skill with description and steps instead")
         current_text = current.decode("utf-8", errors="replace")
+        naming = getattr(target, "manifest_name", None)
+        try:
+            renamed = callable(naming) and naming(Path(skill.path), content) != skill.name
+        except Exception:
+            renamed = True
+        if renamed:
+            # A rename would leave the old entry serving the old text (review-H318b n-2).
+            return _refuse("skill_propose_rename", f"the new SKILL.md must keep the skill's name, {skill.name!r}")
         origin_label = f"agent:{actor}"
         record = store.propose(skill.name, current_text, content, origin=origin_label)
         if record is None:
             return _refuse("skill_propose_no_change", "that is the skill's current SKILL.md")
         # One pending change per skill per agent: a newer proposal supersedes the older one
         # rather than queueing beside it (review-H318 m-3).
+        queue = approvals()
         for older in store.list(STATUS_PENDING) if hasattr(store, "list") else ():
             if (older.get("id") != record["id"] and older.get("skill") == skill.name
                     and older.get("origin") == origin_label):
-                store.mark(older["id"], STATUS_STALE)
-        queue = approvals()
-        if record["id"] not in carded and queue is not None:
+                store.supersede(older["id"], queue)
+        if queue is not None:
             try:
-                queue.request({
-                    "tool": "skill.patch_proposal",
-                    "args": {"skill": skill.name, "proposal_id": record["id"],
-                             "diff": _diff(current_text, content)},
-                    "agent": actor,
-                    "summary": f"The agent proposes a change to skill '{skill.name}'",
-                })
-                carded.add(record["id"])
+                store.queue_card(record["id"], queue, agent=actor,
+                                 summary=f"The agent proposes a change to skill '{skill.name}'")
             except Exception:
                 logger.warning("skill_propose: the approval card could not be queued", exc_info=True)
         _spend(today)
@@ -433,12 +442,12 @@ def register_skill_tools(
                          input_schema=LIST_SCHEMA, capability_id="tool:skills_list")
     server.register_tool(TOOL_VIEW, _view, gated=False, description=VIEW_DESCRIPTION,
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
-                         max_result_bytes=MAX_FILE_BYTES + 4096)
+                         max_result_bytes=MAX_FILE_BYTES + MAX_LISTED_BYTES + 4096)
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
                          input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose")
     return TOOL_LIST, TOOL_VIEW, TOOL_PROPOSE
 
 
 __all__ = [
-    "MAX_FILE_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",
+    "MAX_FILE_BYTES", "MAX_LISTED_BYTES", "MAX_PAGE", "TOOL_LIST", "TOOL_PROPOSE", "TOOL_VIEW", "register_skill_tools",
 ]
