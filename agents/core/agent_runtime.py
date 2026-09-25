@@ -569,6 +569,10 @@ class AgentToolRuntime:
                                 _bounded_identity(name)
                                 for name in refreshed.removed[:_EVENT_WITHHELD_NAMES]
                             ],
+                            "reshaped": [
+                                _bounded_identity(name)
+                                for name in refreshed.reshaped[:_EVENT_WITHHELD_NAMES]
+                            ],
                             "offered": len(refreshed.tools),
                         },
                     )

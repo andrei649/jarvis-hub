@@ -1920,7 +1920,10 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                         "items": {
                             "type": "object",
                             "properties": {
-                                "action": {"type": "string", "maxLength": 64},
+                                # H296: the actions the step validator accepts, advertised.
+                                "action": {"type": "string", "maxLength": 64, "enum": [
+                                    "click", "launch", "locate", "observe", "read", "screenshot", "type",
+                                ]},
                                 "args": {
                                     "type": "object",
                                     "maxProperties": 32,
@@ -2070,7 +2073,11 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
         {
             "name": "terminal_run",
             "gated": True,
-            "description": "Run one bounded shell command on a named governed target.",
+            # H296: with JARVIS_TERMINAL_TARGETS off the tool says so instead of
+            # advertising targets it will refuse.
+            "description": ("Run one bounded shell command on a named governed target. "
+                            "Terminal targets are switched off on this hub "
+                            "(JARVIS_TERMINAL_TARGETS), so every call is refused."),
             "input_schema": {
                 "type": "object",
                 "properties": {

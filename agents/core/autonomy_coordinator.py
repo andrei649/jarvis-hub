@@ -71,6 +71,44 @@ logger = logging.getLogger("jarvis.orchestrator")
 _RESEARCH_MAX_RESULTS = 5
 
 
+_DESKTOP_RUN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "steps": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "maxLength": 64},
+                    "args": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["steps"],
+    "additionalProperties": False,
+}
+
+
+def _desktop_run_overrides() -> dict:
+    """H296 — desktop_run names the step actions its validator accepts (the table
+    ``validate_desktop_run_args`` checks), not a free string."""
+    from copy import deepcopy
+
+    from .desktop_operator import _DESKTOP_ARG_RULES
+
+    steps = deepcopy(_DESKTOP_RUN_SCHEMA["properties"]["steps"])
+    steps["items"]["properties"]["action"]["enum"] = sorted(_DESKTOP_ARG_RULES)
+    return {"properties": {"steps": steps}}
+
+
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
@@ -517,30 +555,9 @@ class AutonomyCoordinator:
             _rpc_desktop_run,
             gated=True,
             description="Propose bounded governed desktop steps for approval.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "steps": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "maxLength": 64},
-                                "args": {
-                                    "type": "object",
-                                    "maxProperties": 32,
-                                    "additionalProperties": True,
-                                },
-                            },
-                            "required": ["action"],
-                            "additionalProperties": False,
-                        },
-                    }
-                },
-                "required": ["steps"],
-                "additionalProperties": False,
-            },
+            # H296: the actions the step validator accepts, from its own table.
+            schema_overrides=_desktop_run_overrides,
+            input_schema=_DESKTOP_RUN_SCHEMA,
             capability_id="tool:desktop_run",
             preflight=_desktop_preflight,
             trusted_execution=True,
@@ -617,6 +634,7 @@ class AutonomyCoordinator:
             },
             capability_id="tool:terminal_run",
             trusted_execution=True,
+            schema_overrides=self._terminal_run_overrides,
         )
 
         async def _rpc_desktop_plan(args):
@@ -1041,6 +1059,20 @@ class AutonomyCoordinator:
             rpc_root=str(data_path("code_sessions")),
             max_tool_calls=int(get_setting("security.sandbox_max_tool_calls", 50) or 50),
         )
+
+    def _terminal_run_overrides(self) -> dict:
+        """H296 — terminal_run names the targets actually registered, or says it is off."""
+        from .env_config import env_flag
+
+        if not env_flag("JARVIS_TERMINAL_TARGETS"):
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "Terminal targets are switched off on this hub "
+                                   "(JARVIS_TERMINAL_TARGETS), so every call is refused."}
+        names = self._target_registry().names()
+        if not names:
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "No target is registered, so every call is refused."}
+        return {"properties": {"target": {"enum": names[:64]}}}
 
     def _target_registry(self):
         """Build the named-target registry once, with a durable audit chain.

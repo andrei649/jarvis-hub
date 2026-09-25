@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H296 a tool tells the model what this install can do, and a running session sees it move (missing → equivalent, #1207; headline 153 → 154/697).
+
+  Every ToolRPC tool advertised one static schema: `terminal_run` took any `target` string, `desktop_run` any step `action`, `speak` any device or room, and the model learned the real names from a refusal. Now:
+  - **The hook** (`agents/core/tool_rpc.py`). `register_tool(schema_overrides=...)` takes a zero-argument hook, asked every time the tool list is built and merged over the static schema by `advertised_schema`. It may change the `description`, per-property keys of properties the schema already declares (it narrows an argument, never invents one) and `required`. A hook that raises or answers something malformed is logged once per tool and the static schema is advertised. The capability-registry projection gets the same shape, since its records are built from `tools()`.
+  - **The session boundary** (`agents/core/session_refresh.py`). At the H672 fold, a still-offered tool whose description or schema moved is `reshaped`: the specs are rebuilt, `tool_offer_refreshed` names it and the boundary note says "tool schemas moved".
+  - **Three tools use it.** `terminal_run` names the registered targets, or says that terminal targets are switched off or that none is registered. `desktop_run` names the step actions its validator accepts. `speak` names the announce-capable speakers, their rooms and `presence:auto`, or says that no speaker can announce or the Media Director is unavailable. The handlers still check every call.
+
+  35 mutants: 33 caught, 2 equivalent. 45 rows re-stamped (H515 for the binding inventory, whose pinned coordinator lines moved); H456's bare `:455-471` and `:778-867` recomputed by hand. Test manual: GOV-261, GOV-262.
+  Tests: backend 15,465 → 15,516 (`tests/test_h296_schema_overrides.py` 51).
+
 - 2026-09-25 H283 systemd knows when the hub is ready and when it hangs, and the operator can describe the machine (partial → equivalent, #1207; headline 152 → 153/697).
 
   - **sd_notify** (`agents/core/sd_notify.py`). The lifespan sends `READY=1` once `/readyz` would answer 200, and `STOPPING=1` on teardown. Between the two, an event-loop task sends `WATCHDOG=1` every half `WATCHDOG_USEC` (only for this PID), so a hung loop stops the pings and systemd restarts the hub. It is a no-op without `NOTIFY_SOCKET` and never raises.

@@ -140,6 +140,8 @@ _AUDIO_SUFFIX = {
     "audio/mp4": ".m4a",
 }
 _ARG_KEYS = frozenset({"text", "target", "urgency", "lang"})
+#: H296 — the most targets advertised; past it the model names one it knows by id.
+MAX_ADVERTISED_TARGETS = 64
 _MAX_DETAIL = 200
 
 INPUT_SCHEMA: dict[str, Any] = {
@@ -289,6 +291,41 @@ class SpeakTool:
         self._audit = audit
         self._speaker = speaker
         self._tts_ready = tts_ready
+
+    # ── H296: what the model is told it can target, from the live registry ──
+
+    def schema_overrides(self) -> dict[str, Any]:
+        """The targets that can announce right now: announce-capable device ids, rooms
+        with one announce default, and presence:auto when a presence room resolves.
+        None configured, or the Media Director unavailable, is said in the description
+        instead of an enum a model could never satisfy."""
+        try:
+            director = self._get_director()
+            registry = director.registry
+            rows = [row for row in registry.list() if isinstance(row, Mapping)]
+        except ToolRPCValidationError:
+            return {"description": DESCRIPTION + " The Media Director is not available right now, "
+                                                 "so every call is refused."}
+        targets = [str(row["id"]) for row in rows if ANNOUNCE in (row.get("supports") or ())]
+        for room in sorted({str(row.get("room")) for row in rows if row.get("room")}):
+            if room in targets:
+                continue
+            try:
+                _room_announce_device(registry, room)
+            except ToolRPCValidationError:
+                continue
+            targets.append(room)
+        presence = str(getattr(director, "presence_room", "") or "")
+        if presence:
+            try:
+                _room_announce_device(registry, presence)
+                targets.append(PRESENCE_TARGET)
+            except ToolRPCValidationError:
+                pass
+        if not targets:
+            return {"description": DESCRIPTION + " No speaker can announce yet: register one "
+                                                 "that supports announce in the Media Director first."}
+        return {"properties": {"target": {"enum": targets[:MAX_ADVERTISED_TARGETS]}}}
 
     # ── preflight: runs at proposal (no card on refusal) and again at execution ──
 
@@ -634,6 +671,7 @@ def register_speak_tool(
         preflight=tool.preflight,
         trusted_execution=True,
         gated_intake=tool.intake,
+        schema_overrides=tool.schema_overrides,
     )
     return [SPEAK_TOOL]
 

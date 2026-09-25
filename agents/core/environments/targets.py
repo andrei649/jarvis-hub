@@ -242,6 +242,11 @@ class TargetRegistry:
         for target in targets:
             self.register(target)
 
+    def names(self) -> list[str]:
+        """The registered target names, sorted (H296: what terminal_run advertises)."""
+        with self._lock:
+            return sorted(self._targets)
+
     def register(self, target: TerminalTarget) -> None:
         if not isinstance(target, TerminalTarget):
             raise ValueError("target must be TerminalTarget")
