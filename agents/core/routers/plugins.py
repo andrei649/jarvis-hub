@@ -100,6 +100,13 @@ async def toggle_plugin(plugin_id: str):
     manifest = orch.permission_gate.plugins.get(plugin_id)
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found")
+    from agents.core import safe_mode
+
+    if safe_mode.enabled():
+        # H490: plugins stay off in safe mode, and the saved choice is not rewritten.
+        return nocache_json({"id": plugin_id, "error": safe_mode.REASON,
+                             "message": "plugins cannot be switched in safe mode; restart normally first"},
+                            status_code=409)
     if manifest.enabled:
         orch.permission_gate.disable(plugin_id)
         action = "disabled"

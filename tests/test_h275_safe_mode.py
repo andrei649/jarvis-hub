@@ -259,7 +259,8 @@ def test_the_owner_plugin_grants_are_dropped_and_nothing_else_moves(monkeypatch)
     safe = plugin_gate.PermissionGate()
     assert safe._grants == {} and safe.least_privilege is normal.least_privilege is True
     assert set(safe.plugins) == set(normal.plugins)
-    assert safe_mode.status()["skipped"] == ["plugin_grants"]
+    # H490: the gate also switches every plugin off in safe mode.
+    assert safe_mode.status()["skipped"] == ["plugin_grants", "plugins"]
 
 
 def test_no_grant_configured_is_not_reported_as_left_out(monkeypatch):
@@ -443,11 +444,17 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
     assert readers == sorted([
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
+        "agents/core/channels/outbound.py",
         "agents/core/heartbeat.py",
+        "agents/core/memory_tool.py",
+        "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
         "agents/core/routers/mcp.py",
         "agents/core/routers/ops.py",
+        "agents/core/routers/plugins.py",
+        "agents/core/routers/security.py",
         "agents/core/routers/status.py",
+        "agents/core/routers/webhooks.py",
         "agents/core/scheduler_service.py",
         "agents/core/skills/loader.py",
         "agents/web.py",

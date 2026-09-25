@@ -25,6 +25,14 @@ describe('safe mode — H275', () => {
     expect(safeModeLabel({ enabled: true, skipped: [] })).toBe('only shipped skills, personas and schedules load');
   });
 
+  it('names the reduced-posture layers (H490)', () => {
+    const state = readSafeMode({ enabled: true,
+      skipped: ['plugins', 'outbound_webhooks', 'memory_injection', 'settings_overrides'] });
+    expect(state.skipped).toHaveLength(4);
+    expect(safeModeLabel(state))
+      .toBe('left out: plugins, outbound webhooks, memory in prompts, loosened settings');
+  });
+
   it('shows a banner only in safe mode, with no way to dismiss it', () => {
     const { rerender, container } = render(<SafeModeBanner state={SAFE_MODE_OFF} />);
     expect(container.innerHTML).toBe('');

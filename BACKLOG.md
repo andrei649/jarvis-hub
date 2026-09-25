@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H490 safe mode takes the rest of Hermes' reduced posture: no plugins, no outbound hooks, no memory in the turn, no loosened settings (missing → equivalent, #1207; headline 157 → 158/697).
+
+  H275's safe mode left out the owner's customizations but still built every plugin, started the outbound channels, injected memory and served every loosened setting. Now, with `JARVIS_SAFE_MODE=1` (`agents/core/safe_mode.py`, four new layers):
+  - **Plugins.** None is built (`Orchestrator._build_plugins`; the `.env` still loads), so no integration is reached and no WorldView / Signal Layer data reaches a prompt; the gate switches every plugin off and the toggle answers 409 `safe_mode` without rewriting the saved choice.
+  - **Outbound webhooks.** ntfy and `JARVIS_WEBHOOK_CHANNELS` are not started, `send_to_target` refuses, and the inbound receiver answers 503 before reading its switch.
+  - **Memory.** No pre-turn recall, no core block, and the H314 `memory` tool reads as switched off. The conversation's own history stays.
+  - **Settings.** Each setting that loosens an approval or widens a budget (`FORCED_SETTINGS`: actuation and tool-loop switches, earned autonomy, ambient, acquisition, the scans, the autonomy caps, sandbox limits, model-pull cap, guest tools, cloud fallback, product posture) reads the **stricter** of the owner's value and the shipped default, so an owner who tightened one keeps it; the three unseeded loosening keys are dropped. Applied to the runtime settings (around the product posture) and to the orchestrator's boot reads.
+  - **Said.** `/api/security/posture` gains `safe_mode`; the boot log and the HUD banner name the new layers. Nerva has no owner shell hooks, so there are none to skip. No gate reads the flag (the H275 reader pin now lists 16 modules).
+
+  52 mutants, all caught. Test manual: ENV-171, ENV-172.
+  Tests: backend 15,638 → 15,694 (`tests/test_h490_safe_mode_posture.py` 56); vitest 1,498 → 1,499 (`safe-mode-banner.test.tsx` +1).
+
 - 2026-09-25 H314 the model writes its own long-term memory, visibly and undoably (partial → equivalent, #1207; headline 156 → 157/697).
 
   The model could reach the LivingMemory core and user rings only through the post-turn review (off by default, unaudited). Now a `memory` tool (`agents/core/memory_tool.py`):

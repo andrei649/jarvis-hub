@@ -471,7 +471,8 @@ async def lifespan(application: FastAPI):
     if safe_mode.enabled():
         logger.warning(
             "SAFE MODE: only shipped skills, personas and schedules load; saved MCP servers, "
-            "acquired packages, plugin grants and owner jobs are left out (JARVIS_SAFE_MODE)"
+            "acquired packages, plugins and their grants, outbound webhooks, memory in prompts, "
+            "owner jobs and loosened settings are left out (JARVIS_SAFE_MODE)"
         )
     if scaffolded_home is not None:
         logger.info("User data home: %s", scaffolded_home)
@@ -559,6 +560,10 @@ async def lifespan(application: FastAPI):
     # Outbound only — nothing that arrives on a topic can become a turn. The topic is the
     # identity on ntfy, so it is never logged.
     ntfy_ch = NtfyChannel.from_env(os.environ)
+    if ntfy_ch is not None and safe_mode.enabled():
+        # H490: in safe mode no outbound webhook is started (ntfy, the webhook channels).
+        safe_mode.note("outbound_webhooks")
+        ntfy_ch = None
     if ntfy_ch is not None:
         await orch.register_channel(ntfy_ch)
         logger.info("ntfy channel wired")
@@ -598,6 +603,9 @@ async def lifespan(application: FastAPI):
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
     # Default-off; each adapter routes inbound through the same governed gateway.
     wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})
+    if wh_cfg and safe_mode.enabled():
+        safe_mode.note("outbound_webhooks")
+        wh_cfg = {}
     if wh_cfg:
         from core.channels.webhook_channels import channels_from_config
         for ch in channels_from_config(wh_cfg, gateway.route):

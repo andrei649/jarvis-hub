@@ -550,7 +550,7 @@ class Orchestrator:
         if rules:
             self.learning.set_promotion_rules(rules)
         self.bench = LatencyBenchmark()
-        from .settings_db import get_value as _gv
+        from .safe_mode import get_value as _gv   # H490: the stricter value in safe mode
         # /admin → security.sandbox_timeout / sandbox_memory. allow_subprocess stays
         # OFF (HF-6): the host-exec fallback is never enabled by these knobs.
         self.sandbox = Sandbox(
@@ -930,7 +930,7 @@ class Orchestrator:
 
         # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
         # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
-        self.plugin_manager.build(self)
+        self._build_plugins()
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -1177,6 +1177,20 @@ class Orchestrator:
             if ensemble is not None and baseline:
                 ensemble.register_persona(agent_id, baseline)
 
+    def _build_plugins(self) -> None:
+        """Build the live plugins, or, in safe mode (H490), none: no integration is
+        reached and no plugin data enters a prompt. The .env credentials are still
+        loaded (the hub's one load), and oracle_bridge / argus stay None."""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            from .env_provenance import load_hub_env
+
+            load_hub_env()
+            safe_mode.note("plugins")
+            return
+        self.plugin_manager.build(self)
+
     def load_runtime_settings(self):
         try:
             all_s = _get_settings()
@@ -1184,8 +1198,12 @@ class Orchestrator:
             for cat, items in all_s.items():
                 for item in items:
                     flat[f"{cat}.{item['key']}"] = item["value"]
+            from . import safe_mode
             from .product_posture import apply_to_runtime_settings
-            flat = apply_to_runtime_settings(flat)
+            # H490: in safe mode a setting that loosens an approval or widens a budget
+            # reads the stricter of the owner's value and its shipped default, before and
+            # after the product posture (which it forces off) is applied.
+            flat = safe_mode.override_settings(apply_to_runtime_settings(safe_mode.override_settings(flat)))
             self._runtime_settings = flat
             logger.debug(f"Runtime settings loaded: {len(flat)} keys")
             # Product Posture wave 1 can wake turn embeddings without replacing
@@ -2802,6 +2820,11 @@ class Orchestrator:
         runs off the event loop on the hits this turn uses."""
         if not self.get_setting("memory.recall_enabled", False):
             return ""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            safe_mode.note("memory_injection")   # H490: no recalled memory in the prompt
+            return ""
         from .memory.recall_gate import is_trivial_prompt
         if is_trivial_prompt(text):
             logger.debug("recall skipped: trivial prompt")
@@ -2877,6 +2900,11 @@ class Orchestrator:
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
+            return ""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            safe_mode.note("memory_injection")   # H490: no core block in the prompt
             return ""
         # Key on (session, day): jarvis sessions can live for days (unlike
         # hermes conversation-scoped ones), and the nightly reflector writes

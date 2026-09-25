@@ -1,5 +1,6 @@
 /* H275 — the hub was started in safe mode (JARVIS_SAFE_MODE / serve.py --safe-mode):
-   only shipped skills, personas and schedules loaded. The banner says so on every
+   only shipped skills, personas and schedules loaded, and (H490) no plugins, outbound
+   webhooks, memory in prompts or loosened settings. The banner says so on every
    page while it lasts and names what was left out; it cannot be dismissed, since the
    hub behaving differently from what the owner configured is the thing to notice. */
 import React from 'react';
@@ -19,6 +20,10 @@ const LABELS: Record<string, string> = {
   persona_overlays: 'persona overlays',
   heartbeat_overlays: 'heartbeat overlays',
   owner_jobs: 'scheduled jobs',
+  plugins: 'plugins',
+  outbound_webhooks: 'outbound webhooks',
+  memory_injection: 'memory in prompts',
+  settings_overrides: 'loosened settings',
 };
 
 /** The hub's `safe_mode` field as the HUD holds it; anything malformed is "off". */

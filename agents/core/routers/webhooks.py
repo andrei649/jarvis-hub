@@ -239,8 +239,13 @@ async def _receiver_refusal():
     """H153 — the platform-level switch (setting ``webhooks.receiver_enabled``, on by
     default), read off the event loop through ``webhooks.RECEIVER``, which fails closed:
     off, and a store that cannot be read, both refuse. The refusal, or None to go on."""
+    from agents.core import safe_mode
     from agents.core.webhooks import RECEIVER
 
+    if safe_mode.enabled():
+        # H490: an owner-configured hook starts agent runs and pushes out; not in safe mode.
+        safe_mode.note("outbound_webhooks")
+        return nocache_json({"error": "the webhook receiver is off in safe mode"}, status_code=503)
     state = await RECEIVER.astate()
     if state is True:
         return None

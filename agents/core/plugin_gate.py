@@ -648,8 +648,13 @@ class PermissionGate:
         """H285: switch off the plugins the owner's load set names (``loadset.plugins_*``
         and the ``plugins.<id>`` switches). It only disables: a name that is not a
         registered plugin is reported, and nothing is enabled or registered here."""
-        from agents.core import load_set
+        from agents.core import load_set, safe_mode
 
+        if safe_mode.enabled():
+            # H490: no plugin is built in safe mode; the gate refuses every one as well.
+            for manifest in self.plugins.values():
+                manifest.enabled = False
+            safe_mode.note("plugins")
         lists = load_set.declared("plugins")
         load_set.begin("plugins")
         for plugin_id, manifest in self.plugins.items():

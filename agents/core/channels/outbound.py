@@ -183,6 +183,12 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
     the chat's pending voice turn). Voice speaks the words without the markup, because
     a symbol read aloud is noise; the text is bounded here, so that render is cheap.
     """
+    from agents.core import safe_mode
+
+    if safe_mode.enabled():
+        # H490: no proactive send to the owner's configured destinations in safe mode.
+        safe_mode.note("outbound_webhooks")
+        return {"ok": False, "reason": "outbound sends are off in safe mode"}
     body = str(text or "").strip()
     if not body:
         return {"ok": False, "reason": "the message is empty"}

@@ -28,7 +28,8 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   deletes them too. :func:`undo` restores a write while nothing has changed since, and is
   recorded the same way; ``POST /api/memory/core/undo`` is the owner's door;
 * a write leaves a ``memory_updated`` row in the tool trail (targets, actions and counts,
-  never text).
+  never text);
+* in safe mode (H490) memory reads as switched off: the tool refuses and says so.
 
 The prompt's core block is frozen per session (it keeps the prompt cache), so a write
 reaches the system prompt at the next session; the tool answers with both rings as they
@@ -367,6 +368,12 @@ def register_memory_tool(
     from .security.taint import is_untrusted_source
 
     def _living() -> Any:
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            # H490: no memory reaches a turn in safe mode, through the prompt or this tool.
+            safe_mode.note("memory_injection")
+            return None
         try:
             return living()
         except Exception:
