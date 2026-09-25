@@ -392,9 +392,10 @@ async def test_text_copied_from_an_untrusted_page_taints_the_later_turn_that_rea
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("per_tool_limit", [0, 2])
-async def test_reading_the_plan_before_every_step_never_ends_the_turn(per_tool_limit):
-    """Each step reads the plan and marks its item: the plan changes between reads, so no
-    read repeats the one before it (the H315 second review keys a repeat on the plan)."""
+async def test_updating_the_plan_between_steps_never_ends_the_turn(per_tool_limit):
+    """Each step marks its item in the plan (a status merge), so the plan changes between
+    calls and none repeats the one before it (the H315 second review keys a repeat on the
+    plan). Reading an unchanged plan again is a repeat, and the detector stops it."""
     store = TodoStore()
     server = _server(store)
 

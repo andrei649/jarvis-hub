@@ -53,6 +53,7 @@ from .environments.output_limits import (
     truncate_text,
 )
 from .sandbox_invocation import bind
+from .security.taint import is_untrusted_source
 from .tool_result_store import DEFAULT_PAGE_BYTES, page_recipe
 from .tool_rpc import ToolRPCValidationError, current_tool_actor
 
@@ -471,6 +472,8 @@ class CodeExecutionTool:
             "max_tool_calls": max_calls,
             "timed_out": run.timed_out,
             "offered_tools": sorted(invocation.offered),
+            **_run_taint(stdout.text, stderr.text,
+                         read_untrusted=is_untrusted_source(current_action_origin())),
         }
 
 
@@ -560,6 +563,7 @@ class CodeExecutionTool:
             "output_limit": limit,
             "session": True,
             "offered_tools": sorted(invocation.offered),
+            **_run_taint(stdout.text, stderr.text, read_untrusted=outcome.tainted),
         }
 
     def _authorize_fallback(self, invocation):
@@ -595,6 +599,17 @@ class CodeExecutionTool:
             raise ToolRPCValidationError(SESSION_DENIED) from None
         if getattr(decision, "verdict", None) is Verdict.DENY:
             raise ToolRPCValidationError(SESSION_DENIED)
+
+
+def _run_taint(stdout: str, stderr: str, *, read_untrusted: bool) -> dict:
+    """``{"tainted": True}`` for a run whose output reaches the model as third-party
+    text (H315 third review). The tool declares ``untrusted_output``, but the loop fences
+    such a result only when it is ok, and a run that fails still carries what it printed:
+    a script that fetched a page, printed it and exited 1 handed the page to a clean turn.
+    A run that read an untrusted tool, or a kernel that held one, says so too, whatever
+    it printed: the broker's own mark stays in this handler's task and never reaches the
+    turn. The loop fences a result that says ``tainted`` and raises the turn's taint."""
+    return {"tainted": True} if stdout or stderr or read_untrusted else {}
 
 
 def register_code_tools(

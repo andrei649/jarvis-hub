@@ -58,7 +58,6 @@ from pathlib import Path
 
 from .action_origin import current_action_origin
 from .environments.output_limits import MAX_OUTPUT_BYTES, render_capped
-from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import is_untrusted_source
 from .session_kernel_mailbox import SessionRPCStore
 
@@ -302,6 +301,10 @@ class CellOutcome:
     tool_calls: int = 0
     reason: str = ""
     fallback_safe: bool = False
+    #: The kernel has held untrusted text by the end of this cell (H315 third review):
+    #: the caller declares it in its result, so the loop fences the output and raises
+    #: the turn's taint whether the cell succeeded or not.
+    tainted: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -329,6 +332,10 @@ class _Record:
     #: ran in a turn that had. Its variables outlive the turn, so every later cell runs
     #: tainted until a reset replaces the record (H315 second review).
     tainted: bool = False
+    #: This interpreter's own host directory, shared with it as its mailbox root. It is
+    #: new for every interpreter and removed when the interpreter is (H315 third review):
+    #: a file a tainted kernel left there cannot reach the clean kernel after it.
+    rpc_host: Path | None = None
 
 
 class PipeKernelBackend:
@@ -547,7 +554,8 @@ def docker_kernel_argv(image: str, *, memory_mb: int = 256, pids: int = 64):
             "--security-opt", "no-new-privileges",
             "--read-only",
             # nosec B108 — a tmpfs mount spec for the container, not a host path: the
-            # root filesystem is read-only, so this is the only place a cell may write.
+            # root filesystem is read-only, so a cell writes only here and in its mailbox
+            # mount (above), which is this interpreter's own and removed with it.
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",  # noqa: S108
             "--memory", f"{int(memory_mb)}m",
             "--memory-swap", f"{int(memory_mb)}m",
@@ -593,6 +601,7 @@ class SessionKernelManager:
         # Bounded, because a key is a principal x session and both are unbounded.
         self._expiries: dict[KernelKey, str] = {}
         self._guard = asyncio.Lock()
+        self._clear_stale_mounts()
 
     # ── the cell ─────────────────────────────────────────────────────────────
 
@@ -666,18 +675,23 @@ class SessionKernelManager:
                     broker=None, sinks=None) -> CellOutcome:
         """Run one cell on a record whose lock this call holds.
 
-        A kernel that has held untrusted text taints the turn that runs its next cell
-        and every call the cell makes; a cell that reads untrusted text, or runs in a
-        turn that did, taints the kernel from then on."""
+        A kernel that has held untrusted text taints every call its next cell makes, and
+        the cell's outcome says so, so the caller declares it and the loop fences the
+        output and taints the turn that ran the cell, whether the cell succeeded or not.
+        A cell that reads untrusted text, or runs in a turn that did, taints the kernel
+        from then on."""
         tainted = record.tainted or is_untrusted_source(current_action_origin())
         if tainted and broker is not None:
             broker.tainted = True
+        outcome = None
         try:
-            return await self._run_cell(key, record, cell, broker, sinks)
+            outcome = await self._run_cell(key, record, cell, broker, sinks)
+            return outcome
         finally:
             if tainted or getattr(broker, "tainted", False):
                 record.tainted = True
-                mark_turn_recall_tainted()
+                if outcome is not None:
+                    outcome.tainted = True
 
     async def _run_cell(self, key: KernelKey, record: _Record, cell: str,
                         broker=None, sinks=None) -> CellOutcome:
@@ -733,10 +747,10 @@ class SessionKernelManager:
         authority, so a shim captured in an earlier cell writes where nobody reads.
         """
         root = getattr(record.handle, "child_rpc_dir", "")
-        if broker is None or self._rpc_root is None or not root:
+        if broker is None or record.rpc_host is None or not root:
             return None, ""
         name = f"cell-{secrets.token_hex(16)}"
-        mailbox = self._rpc_root / record.key.token / name
+        mailbox = record.rpc_host / name
         try:
             mailbox.mkdir(parents=True, exist_ok=False)
         except OSError:
@@ -901,8 +915,9 @@ class SessionKernelManager:
                     raise KernelRefused(TEARDOWN_UNCONFIRMED)
             while len(self._records) >= self._max_kernels:
                 await self._evict()
+            mount = self._mount(key)
             try:
-                handle = await self._backend.start(key, **self._mount(key))
+                handle = await self._backend.start(key, **mount)
             except KernelTeardownUnconfirmed as refusal:
                 now = self._clock()
                 self._records[key] = _Record(key=key, handle=refusal.handle,
@@ -911,26 +926,45 @@ class SessionKernelManager:
                     raise asyncio.CancelledError from None
                 raise
             except KernelRefused as refusal:
+                self._unmount(mount)
                 if refusal.reason == KERNEL_UNAVAILABLE:
                     raise KernelStartupUnavailable(KERNEL_UNAVAILABLE) from None
                 raise
             now = self._clock()
             record = _Record(key=key, handle=handle, created_at=now, last_used=now,
-                             pending_loss=lost or self._expiries.pop(key, "") or NEW_KERNEL)
+                             pending_loss=lost or self._expiries.pop(key, "") or NEW_KERNEL,
+                             rpc_host=Path(mount["rpc_dir"]) if mount else None)
             self._records[key] = record
             return record
 
     def _mount(self, key: KernelKey) -> dict:
-        """The one shared directory a kernel gets, created before it starts."""
+        """The one shared directory a kernel gets, created before it starts: new for
+        every interpreter, never one an earlier interpreter of the same key wrote in."""
         if self._rpc_root is None:
             return {}
-        host = self._rpc_root / key.token
+        host = self._rpc_root / f"{key.token}-{secrets.token_hex(8)}"
         try:
-            host.mkdir(parents=True, exist_ok=True)
+            host.mkdir(parents=True, exist_ok=False)
         except OSError:
             logger.warning("session kernel rpc root unavailable", exc_info=True)
             return {}
         return {"rpc_dir": str(host), "child_rpc_dir": self._backend.child_rpc_dir(str(host))}
+
+    @staticmethod
+    def _unmount(mount) -> None:
+        """Remove an interpreter's directory, with whatever its cells left in it."""
+        host = (mount or {}).get("rpc_dir") if isinstance(mount, dict) else mount
+        if host:
+            shutil.rmtree(host, ignore_errors=True)
+
+    def _clear_stale_mounts(self) -> None:
+        """At start no interpreter of this manager exists yet: every directory under the
+        root was an earlier process's, and what its cells left there goes with it."""
+        if self._rpc_root is None or not self._rpc_root.is_dir():
+            return
+        for entry in self._rpc_root.iterdir():
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
 
     async def _reap(self) -> None:
         cutoff = self._clock() - self._idle_ttl
@@ -966,6 +1000,7 @@ class SessionKernelManager:
                 logger.warning("session kernel teardown unconfirmed")
                 return False
             self._records.pop(key, None)
+            self._unmount(record.rpc_host)    # stopped: nothing writes there any more
             self._remember(key, reason)
             return True
 

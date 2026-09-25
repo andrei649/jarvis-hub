@@ -14,6 +14,22 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
+
+  The review found one major, fixed:
+  - **A failing script handed a page to a clean turn unfenced.** A script or a session-kernel cell that printed a page and then failed answered not ok, and the loop fences an untrusted tool's result only when it is ok. The taint the broker and the kernel raised stayed in the handler's own task. So the page reached a clean turn as plain text, and the model's plan from it was stored clean. Now an `execute_code` result says `tainted` whenever the run printed anything, read untrusted text, or ran on a kernel that held some, and the loop fences it and taints the turn whether the run succeeded or failed. Tested through the real loop, the real subprocess sandbox and the real kernel.
+
+  Minors, fixed:
+  - **A kernel's files end with it.** Each interpreter gets a mailbox directory of its own, removed with it (a reset, a crash, an idle expiry, an eviction), and a start clears what an earlier process left. A clean cell can no longer read a page a tainted one stashed.
+  - The eleven mutants no test caught each got a test (the coordinator's shared-session wiring, a channel session that is the default, the rule that another's turn is untrusted, an untrusted status, the repeat event's count, a failing shared-session getter, `bind`'s default), or were made equivalent by this round.
+
+  Nits, fixed: the broker reads an answer as the loop does (a successful untrusted answer, a declared taint or an injection-scanner flag taints; a refusal or a raising tool does not); a same-text merge is no write, so it moves no writer, turn or label; a script that made tool calls ends the repeat detector's last seen plan; `ToolCallBroker(tainted=)` and the kernel's post-cell mark are gone; the kernel argv comment names the mailbox mount; the H315b test is renamed for what it checks.
+
+  Mutation: 15 mutants of the new guards, 12 caught at once, and three after a test was tightened or added.
+
+  Records: H315 rewritten and closed; 29 drifted rows re-read and re-stamped; the build-queue note; test manual GOV-246 gains the failing-script step, and GOV-249 is new.
+
+  Tests: backend 14,283 → 14,309 (`tests/test_h315d_todo_review.py` 26); vitest unchanged at 1,434.
 - 2026-09-25 H153 fourth adversarial review round (partial → equivalent, #1207; headline 138 → 139/697).
 
   The review found one major, fixed:

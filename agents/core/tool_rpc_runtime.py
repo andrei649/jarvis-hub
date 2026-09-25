@@ -48,20 +48,23 @@ class ToolCallBroker:
     It also carries what the script has read (the H315 second review). A script's tool
     calls never pass through the loop, which raises the turn's taint only once a batch
     returns, so a script could read a page and write it into the plan as clean text.
-    Once a call reaches a tool that declares ``untrusted_output``, or answers with
-    ``tainted``, :attr:`tainted` is set and every later call this broker services runs
-    under a raised origin. The flag lives here, not only in the context: a session
-    kernel services each batch of a cell's calls in a task of its own.
+    It reads an answer as the loop reads a result (H315 third review): once a tool that
+    declares ``untrusted_output`` answers ok, an answer says ``tainted``, or the injection
+    scanner flags an answer, :attr:`tainted` is set and every later call this broker
+    services runs under a raised origin. A refusal or a tool that raised is Nerva's own
+    words about a call that did not happen, and taints nothing. The flag lives here, not
+    only in the context: a session kernel services each batch of a cell's calls in a task
+    of its own.
     """
 
     __slots__ = ("server", "invocation", "revoked", "tainted")
 
     def __init__(self, server: ToolRPCServer, invocation: SandboxInvocation | None,
-                 *, revoked: Callable[[], bool] | None = None, tainted: bool = False) -> None:
+                 *, revoked: Callable[[], bool] | None = None) -> None:
         self.server = server
         self.invocation = invocation
         self.revoked = revoked
-        self.tainted = bool(tainted)
+        self.tainted = False
 
     async def call(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         # Authority first, and entirely before `handle`: a refusal after the call has
@@ -91,7 +94,7 @@ class ToolCallBroker:
             response = {"ok": False, "reason": "tool_error", "tool": tool}
         finally:
             reset_tool_turn(turn)
-        if untrusted or _declares_taint(response):
+        if (untrusted and _answered_ok(response)) or _declares_taint(response) or _flagged(response):
             self.tainted = True
             mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
@@ -99,6 +102,25 @@ class ToolCallBroker:
             "reason": "bad_response",
             "tool": tool,
         }
+
+
+def _answered_ok(response: Any) -> bool:
+    """The tool ran and answered: neither the server nor the handler refused."""
+    if not isinstance(response, dict) or response.get("ok") is not True:
+        return False
+    inner = response.get("result")
+    return not (isinstance(inner, dict) and inner.get("ok") is False)
+
+
+def _flagged(response: Any) -> bool:
+    """The injection scanner flags the answer, as it would in the loop's fence."""
+    from agents.core.security.quarantine import detect_injection
+
+    try:
+        encoded = json.dumps(response, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return False
+    return bool(detect_injection(encoded))
 
 
 def _declares_taint(response: Any) -> bool:

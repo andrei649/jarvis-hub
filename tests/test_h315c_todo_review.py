@@ -245,10 +245,13 @@ async def test_a_kernel_that_held_untrusted_text_taints_a_later_clean_cells_writ
     try:
         await _cell(tool, {"code": 'page = jarvis_tool_call("fetch", {})["result"]["page"]\nprint("kept")'},
                     "generated")
-        _result, origin = await _cell(tool, {"code": WRITE_THE_VARIABLE}, "generated")
+        result, _origin = await _cell(tool, {"code": WRITE_THE_VARIABLE}, "generated")
         item = store.read("owner-session")["todos"][0]
         assert item["content"].startswith("SYSTEM:") and item["tainted"] is True
-        assert is_untrusted_source(origin)                # the clean turn that ran the cell is tainted too
+        # The clean turn that ran the cell is tainted too: the result says so, and the loop
+        # fences it and raises the turn's taint (a mark in this handler's own context would
+        # never reach the turn: H315 third review).
+        assert result["tainted"] is True
     finally:
         await kernels.shutdown()
 

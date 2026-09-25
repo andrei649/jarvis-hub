@@ -664,6 +664,11 @@ class AgentToolRuntime:
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
                 if call.name in _ALWAYS_RESTATED:
                     restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
+                elif _made_nested_calls(result):
+                    # A script called tools the model never saw answer (H315 third review):
+                    # it may have changed a restated tool's state, so the next read of one
+                    # is not the same call as the last.
+                    restated.clear()
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
@@ -1536,6 +1541,13 @@ def _call_key(call: ToolCall, restated: Mapping[str, str] | None = None) -> tupl
     if call.name in _ALWAYS_RESTATED:
         encoded = f"{encoded}@{(restated or {}).get(call.name, '')}"
     return (str(call.name), encoded)
+
+
+def _made_nested_calls(result: Any) -> bool:
+    """The call ran a script that made tool calls of its own (``execute_code``)."""
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    calls = inner.get("tool_calls") if isinstance(inner, Mapping) else None
+    return isinstance(calls, int) and not isinstance(calls, bool) and calls > 0
 
 
 def _answer_revision(result: Any, previous: str) -> str:

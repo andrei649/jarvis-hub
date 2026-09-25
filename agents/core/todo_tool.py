@@ -339,12 +339,14 @@ class TodoStore:
                     continue
                 if raw.get("content") is not None:
                     text = _clean_content(raw.get("content"), item_id)
+                    # The same text again is no write (H315 third review): the item stays
+                    # whoever wrote it, so another turn cannot make it its own by re-sending it.
                     if text != target["content"]:
                         target["content"] = text
                         target["by"] = by
-                    target["tainted"] = bool(target.get("tainted")) or taint
-                    target["turn"] = turn
-                    wrote_text = True
+                        target["tainted"] = bool(target.get("tainted")) or taint
+                        target["turn"] = turn
+                        wrote_text = True
                 if raw.get("status") is not None:
                     target["status"] = _clean_status(raw.get("status"), item_id)
                     if taint and not target.get("tainted"):
