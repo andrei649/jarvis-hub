@@ -45,7 +45,9 @@ through the default ``llm.guest_tools``, so an owner who empties that list keeps
 off the tool loop entirely. The rule for every tool the Hermes rows add (critic note 22):
 a tool that acts on the owner's HUD, memory or skills (a canvas pointer, a memory write, a
 skill body) stays off inbound/guest unless the owner names it in ``llm.guest_tools``;
-``speak`` is gated and follows the gated rows of the table.
+``speak`` is gated and follows the gated rows of the table. The **owner-operator** tools
+(:data:`OWNER_OPERATOR_TOOLS`, today ``memory``, H314) are stricter still: they are offered
+to operator/owner only, whatever ``llm.guest_tools`` says.
 
 A per-agent ``tools:`` list in ``agents.yaml`` (names or glob patterns; ``"*"`` = all)
 narrows the posture further and never widens it. The resolved sets are snapshot-tested in
@@ -94,6 +96,10 @@ _UNBOUND_CHANNELS = frozenset({"", "unknown"})
 #: Tools that keep state per session (H315). On the shared default session that state is
 #: the owner's, so there they are offered to an owner's turn only (see the docstring).
 SESSION_SCOPED_TOOLS: frozenset[str] = frozenset({"todo"})
+#: Tools that write what the owner keeps (H314: ``memory``). Offered to the owner at the
+#: operator surface only: not to a guest, not to an inbound turn (a channel message is
+#: untrusted input), not to a job, and not through ``llm.guest_tools`` either.
+OWNER_OPERATOR_TOOLS: frozenset[str] = frozenset({"memory"})
 MAX_AGENT_PATTERNS = 64
 MAX_PATTERN_CHARS = 64
 
@@ -228,6 +234,8 @@ def resolve_tools(
         allowed = allows(name) and _posture_allows(posture, tool, settings, guest_names)
         if allowed and owners_only and name in SESSION_SCOPED_TOOLS:
             allowed = False
+        if allowed and name in OWNER_OPERATOR_TOOLS and posture.key != f"{SURFACE_OPERATOR}/{PRINCIPAL_OWNER}":
+            allowed = False
         if allowed and patterns is not None:
             allowed = any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
         if allowed:
@@ -299,7 +307,7 @@ class ToolProfileResolver:
 __all__ = [
     "DEFAULT_GUEST_TOOLS", "GUEST_TOOLS_SETTING", "INBOUND_ACTUATION_SETTING",
     "INTERNAL_ACTUATION_SETTING", "POSTURES", "PRINCIPAL_GUEST", "PRINCIPAL_OWNER",
-    "PRINCIPAL_SYSTEM", "ProfileDecision", "SESSION_SCOPED_TOOLS", "SURFACE_INBOUND",
+    "OWNER_OPERATOR_TOOLS", "PRINCIPAL_SYSTEM", "ProfileDecision", "SESSION_SCOPED_TOOLS", "SURFACE_INBOUND",
     "SURFACE_INTERNAL", "SURFACE_OPERATOR", "ToolPosture", "ToolProfileResolver", "classify_turn",
     "guest_tool_names", "resolve_tools",
 ]

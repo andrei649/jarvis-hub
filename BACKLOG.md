@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H314 the model writes its own long-term memory, visibly and undoably (partial → equivalent, #1207; headline 156 → 157/697).
+
+  The model could reach the LivingMemory core and user rings only through the post-turn review (off by default, unaudited). Now a `memory` tool (`agents/core/memory_tool.py`):
+  - **Operations.** add / replace / remove on `memory` (agent notes) or `user` (profile), checked in full on a working copy, then committed by a new `CoreMemory.compare_and_set`, so a forget in between wins and nothing forgotten comes back. A full ring refuses instead of dropping the oldest fact.
+  - **Guarded.** One line of ≤300 characters, no control or invisible characters, the normalised injection scan. Offered to operator/owner only (`OWNER_OPERATOR_TOOLS`, not even via `llm.guest_tools`), and refused in a turn that read untrusted content.
+  - **Recorded and undoable.** Each write is an intent-log `memory.write` record (ref, targets, hashes; never the text, since the intent log survives "forget me"), with the before-image in a purgeable undo store. `POST /api/memory/core/undo` restores it while nothing changed since; `GET /api/memory/core` reads the rings, and the Console's Long-Term Memory panel shows them with an undo per write. A `memory_updated` trail row carries targets and actions only.
+
+  33 mutants: 32 caught, 1 equivalent. Test manual: MEM-204, MEM-205.
+  Tests: backend 15,581 → 15638 (`tests/test_h314_memory_tool.py` 57); vitest 1,495 → 1,498 (`long-term-memory-panel.test.tsx` 3).
+
 - 2026-09-25 H285 the owner declares which skills, plugins and MCP servers load, and a plugin toggle survives a restart (partial → equivalent, #1207; headline 155 → 156/697).
 
   A plugin toggle flipped an in-memory flag a restart forgot, an MCP server could only be disconnected or deleted, and a skill could not be switched off. Now (`agents/core/load_set.py`):

@@ -5636,6 +5636,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/core": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Core
+         * @description H314 — the long-term memory the model writes: both rings, and the newest writes
+         *     that can still be undone (ref, time, targets).
+         */
+        get: operations["memory_core_api_memory_core_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/core/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Core Undo
+         * @description H314 — undo one write of the model's memory tool, while nothing has changed since.
+         */
+        post: operations["memory_core_undo_api_memory_core_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/remember": {
         parameters: {
             query?: never;
@@ -6056,6 +6097,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Export Settings
+         * @description H157 — the declared settings as JSON for another box. Secrets, values that look
+         *     like credentials and settings that hold credentials by design are left out and
+         *     named in ``excluded``. Registered before ``/{category}`` so it is never read as one.
+         */
+        get: operations["admin_export_settings_api_admin_settings_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/settings/{category}": {
         parameters: {
             query?: never;
@@ -6068,6 +6131,52 @@ export interface paths {
         /** Admin Put Category */
         put: operations["admin_put_category_api_admin_settings__category__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Import Settings
+         * @description H157 — import a settings document (an export, or any ``{"settings": {category:
+         *     {key: value}}}``). Every key must be declared and passes the same validation a single
+         *     write does; one refusal and nothing is written (422 with every reason). The write is
+         *     one transaction with one audit row. ``"dry_run": true`` answers what would change.
+         */
+        post: operations["admin_import_settings_api_admin_settings_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/{category}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Reset Category
+         * @description H157 — put one category back to its declared values (the global reseed was the only
+         *     reset). Its secrets are kept (``kept``); a setting the selected product posture forces
+         *     stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
+         *     from this origin only (review-H157 M1).
+         */
+        post: operations["admin_reset_category_api_admin_settings__category__reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6175,6 +6284,29 @@ export interface paths {
          *     ever fire" is answerable even after the ring buffer has turned over.
          */
         get: operations["admin_tool_events_api_admin_tool_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Logs
+         * @description H145 — the hub's own log, from the UI: the newest records of the log file or one of
+         *     its rotations, read backwards within a byte budget (at most 500 records), filtered by
+         *     file, minimum level and component, and redacted again as they are read. Admin-only and
+         *     read-only; when file logging is off the answer says so (``enabled``, ``note``).
+         */
+        get: operations["admin_logs_api_admin_logs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -19437,6 +19569,61 @@ export interface operations {
             };
         };
     };
+    memory_core_api_memory_core_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_core_undo_api_memory_core_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_remember_api_memory_remember_post: {
         parameters: {
             query?: never;
@@ -19874,6 +20061,26 @@ export interface operations {
             };
         };
     };
+    admin_export_settings_api_admin_settings_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     admin_get_category_api_admin_settings__category__get: {
         parameters: {
             query?: never;
@@ -19919,6 +20126,57 @@ export interface operations {
                 "application/json": components["schemas"]["AdminPutBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_import_settings_api_admin_settings_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_reset_category_api_admin_settings__category__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -20037,6 +20295,40 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_logs_api_admin_logs_get: {
+        parameters: {
+            query?: {
+                file?: string;
+                level?: string;
+                component?: string;
+                lines?: number;
             };
             header?: never;
             path?: never;

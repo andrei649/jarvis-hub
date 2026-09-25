@@ -15,6 +15,7 @@ export const CONSOLE_PANELS = [
   {"id": "vault", "label": "Vault", "group": "Memory", "component": "VaultPanel"},
   {"id": "kg", "label": "Kg", "group": "Memory", "component": "KgPanel"},
   {"id": "memory-write", "label": "Memory Write", "group": "Memory", "component": "MemoryWritePanel"},
+  {"id": "long-term-memory", "label": "Long-Term Memory", "group": "Memory", "component": "LongTermMemoryPanel"},
   {"id": "memory-hygiene", "label": "Memory Hygiene", "group": "Memory", "component": "MemoryHygienePanel"},
   {"id": "memory-consolidate", "label": "Memory Consolidate", "group": "Memory", "component": "MemoryConsolidatePanel"},
   {"id": "memory-eval", "label": "Memory Eval", "group": "Memory", "component": "MemoryEvalPanel"},

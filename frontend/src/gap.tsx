@@ -14,6 +14,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
+import { LongTermMemoryPanel } from './panels/long-term-memory';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
@@ -4812,6 +4813,7 @@ const PANEL_COMPONENTS = {
   VaultPanel,
   KgPanel,
   MemoryWritePanel,
+  LongTermMemoryPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
   MemoryEvalPanel,

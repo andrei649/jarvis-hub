@@ -1878,6 +1878,8 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
+    from agents.core.memory_tool import INPUT_SCHEMA as MEMORY_SCHEMA
+    from agents.core.memory_tool import OFF_DESCRIPTION as MEMORY_OFF_DESCRIPTION
     from agents.core.skills.tools import LIST_DESCRIPTION as SKILLS_LIST_DESCRIPTION
     from agents.core.skills.tools import LIST_SCHEMA as SKILLS_LIST_SCHEMA
     from agents.core.skills.tools import PROPOSE_DESCRIPTION as SKILL_PROPOSE_DESCRIPTION
@@ -1958,6 +1960,14 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "description": "Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
             "input_schema": INPUT_SCHEMA,
             "capability_id": "tool:image_generate",
+        },
+        {
+            # H314: the orchestrator here has no cognition, so the tool says memory is off.
+            "name": "memory",
+            "gated": False,
+            "description": MEMORY_OFF_DESCRIPTION,
+            "input_schema": MEMORY_SCHEMA,
+            "capability_id": "tool:memory",
         },
         {
             "name": "operator_plan",

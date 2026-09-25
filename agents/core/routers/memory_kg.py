@@ -36,7 +36,7 @@ from agents.core.automation_contracts import ContractTemplate, contract_denial, 
 from agents.core.memory.consolidation import (
     ADD, DELETE, UPDATE, ListStore, existing_from_hits, validate_plan,
 )
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.routers._component import require_component
 from agents.core.security import quarantine, taint
 from agents.core.security.rag_guard import REDACTION, provenance_from_hit
@@ -859,6 +859,42 @@ async def memory_eval_run(mode: str = "keyword"):
     if mode == "recall":
         return nocache_json(await run_recall_eval())
     return JSONResponse({"error": "mode must be keyword or recall"}, status_code=400)
+
+
+def _living_memory():
+    orch = get_orch()
+    cog = getattr(orch, "cognition", None) if orch else None
+    if cog is None or not cog.sub_enabled("memory_enabled"):
+        return None
+    return cog.module("memory")
+
+
+@router.get("/api/memory/core", dependencies=[Depends(user_guard)])
+async def memory_core():
+    """H314 — the long-term memory the model writes: both rings, and the newest writes
+    that can still be undone (ref, time, targets)."""
+    from agents.core.memory_tool import UNDO
+
+    living = _living_memory()
+    if living is None:
+        return nocache_json({"enabled": False, "memory": [], "user": [], "undoable": []})
+    return nocache_json({"enabled": True, "memory": living.core.list(), "user": living.user_core.list(),
+                         "undoable": UNDO.recent()})
+
+
+@router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])
+async def memory_core_undo(body: dict):
+    """H314 — undo one write of the model's memory tool, while nothing has changed since."""
+    from agents.core.memory_tool import MemoryToolError, undo
+
+    orch = get_orch()
+    try:
+        result = undo(str((body or {}).get("ref") or ""), living=_living_memory(),
+                      audit=getattr(orch, "intent_log", None) if orch else None)
+    except MemoryToolError as exc:
+        status = 404 if exc.reason == "memory_undo_unknown" else 409
+        return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail}, status_code=status)
+    return nocache_json(result)
 
 
 @router.post("/api/memory/remember", dependencies=[Depends(user_guard)])

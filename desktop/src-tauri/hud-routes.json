@@ -70,6 +70,8 @@
     "/v2/console/kg/",
     "/v2/console/memory-write",
     "/v2/console/memory-write/",
+    "/v2/console/long-term-memory",
+    "/v2/console/long-term-memory/",
     "/v2/console/memory-hygiene",
     "/v2/console/memory-hygiene/",
     "/v2/console/memory-consolidate",

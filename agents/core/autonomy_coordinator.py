@@ -932,6 +932,22 @@ class AutonomyCoordinator:
             posture=lambda: tool_profile.posture().key,
             shared_session=_on_shared_session,
         )
+        # H314 — the model writes its long-term memory (the LivingMemory core and user
+        # rings): owner-operator turns only, audited in the intent log, undoable.
+        from .memory_tool import register_memory_tool
+
+        def _living_memory():
+            cog = getattr(self._orch, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        register_memory_tool(
+            server,
+            living=_living_memory,
+            audit=lambda: getattr(self._orch, "intent_log", None),
+            posture=lambda: tool_profile.posture().key,
+        )
         # H318 + H340 — the model lists and reads its skills under the catalog's trust
         # gates (the body rendered with its template variables) and proposes changes into
         # the governed pipeline; nothing here writes a live SKILL.md.
