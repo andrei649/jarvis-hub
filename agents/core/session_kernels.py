@@ -153,14 +153,48 @@ def _hold_owner_lock(owner_dir: Path):
     return fd
 
 
-def _lock_intact(owner_dir: Path, fd) -> bool:
-    """The lock this manager holds is still the one at ``<owner>/.lock``: nothing removed
-    the directory or replaced the file under it."""
+LOCK_HELD, LOCK_UNKNOWN, LOCK_LOST = "held", "unknown", "lost"
+
+
+def _lock_state(owner_dir: Path, fd) -> str:
+    """Whether the lock this manager holds is still the one at ``<owner>/.lock``.
+
+    Only a ``.lock`` that is gone, or one that is another file now, reads as lost. Any
+    other error (ESTALE, EACCES, ENOMEM) says nothing about the lock, which is kept: a
+    manager that gave up an intact lock over its live mounts let the next start remove
+    them (review-H315h m1)."""
+    if fd is None:
+        return LOCK_LOST
     try:
-        held, there = os.fstat(fd), os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
-    except (OSError, TypeError):
-        return False
-    return (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev)
+        held = os.fstat(fd)
+        there = os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
+    except FileNotFoundError:
+        return LOCK_LOST
+    except OSError:
+        return LOCK_UNKNOWN
+    return LOCK_HELD if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev) else LOCK_LOST
+
+
+def _relock_in_place(owner_dir: Path):
+    """Hold ``<owner>/.lock`` again in a directory this manager still owns, whose lock file
+    went or was replaced: its live mounts keep a holder, so no other start removes them
+    (review-H315h m1). None when the directory is gone, or someone else holds the file."""
+    if _fcntl is None or owner_dir.is_symlink() or not owner_dir.is_dir():
+        return None
+    lock = owner_dir / _OWNER_LOCK
+    try:
+        fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError:
+        return None
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
+        if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev):
+            return fd
+    except OSError:
+        pass
+    os.close(fd)
+    return None
 
 
 def _owner_alive(owner_dir: Path) -> bool | None:
@@ -864,10 +898,11 @@ class SessionKernelManager:
             if record.quarantined or self._records.get(record.key) is not record:
                 raise KernelRefused(CRASHED)
             payload = await task
-            if isinstance(payload, dict) and store is not None:
+            if isinstance(payload, dict):
                 # The calls the host served, not the count the kernel reports: a cell can
-                # set its own counter to anything (review-H315g n1).
-                payload = {**payload, "tool_calls": len(served)}
+                # set its own counter to anything (review-H315g n1). With no mailbox the
+                # host served none (review-H315h n2).
+                payload = {**payload, "tool_calls": len(served) if store is not None else 0}
             return payload
         finally:
             active = False
@@ -1029,16 +1064,22 @@ class SessionKernelManager:
         every interpreter, never one an earlier interpreter of the same key wrote in."""
         if self._rpc_root is None:
             return {}
-        if _fcntl is not None and not _lock_intact(self._rpc_root / self._owner, self._owner_fd):
-            # The directory went, or its lock was replaced: a mount there would have no
-            # holder, and the next start would remove it live. Take a new directory; with no
-            # lock to be had, give no mount at all (review-H315g m1).
-            if self._owner_fd is not None:
-                os.close(self._owner_fd)
-            self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
-            self._owner_fd = _hold_owner_lock(self._rpc_root / self._owner)
-            if self._owner_fd is None:
-                return {}
+        if _fcntl is not None:
+            owner_dir = self._rpc_root / self._owner
+            state = _lock_state(owner_dir, self._owner_fd)
+            if state == LOCK_LOST:
+                # The old fd locks a file no longer at the path, so it holds nothing up
+                # and is closed. Hold the directory's lock again where its mounts live;
+                # when that cannot be had, take a new directory, and with no lock at all,
+                # give no mount (review-H315g m1, review-H315h m1).
+                if self._owner_fd is not None:
+                    os.close(self._owner_fd)
+                self._owner_fd = _relock_in_place(owner_dir)
+                if self._owner_fd is None:
+                    self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
+                    self._owner_fd = _hold_owner_lock(self._rpc_root / self._owner)
+                if self._owner_fd is None:
+                    return {}
         host = self._rpc_root / self._owner / f"{key.token}-{secrets.token_hex(8)}"
         try:
             host.mkdir(parents=True, exist_ok=False)

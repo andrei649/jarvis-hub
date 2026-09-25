@@ -128,7 +128,11 @@ _SCRIPT_TOOLS = frozenset({"execute_code"})
 #: execute_code's refusals before any script runs (agents/core/code_tools.py: DISABLED,
 #: SANDBOX_UNAVAILABLE, NOT_ISOLATED, AUTHORITY_UNAVAILABLE): nothing can have changed.
 _SCRIPT_REFUSALS = frozenset({"code_execution_disabled", "sandbox_unavailable",
-                              "sandbox_not_isolated", "authority_unavailable"})
+                              "sandbox_not_isolated", "authority_unavailable",
+                              # K2's own, before any cell reaches the interpreter (review-H315h
+                              # n2). Not teardown_unconfirmed: it also ends a cell that ran.
+                              "estop_engaged", "authority_expired", "cell_denied",
+                              "kernel_unavailable", "cell_refused", "cell_too_long"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -1566,7 +1570,9 @@ def _script_revision_due(tool: str, result: Any) -> bool:
     one the server refused and never ran (no answer of its own), changed nothing, so the
     repeat stop still holds across it (review-H315f n2). A handler that raised may have
     raised after its script ran, so it opens one; execute_code's own refusals before any
-    script (switched off, no sandbox, not isolated, no authority) do not (review-H315g n1)."""
+    script (switched off, no sandbox, not isolated, no authority) do not (review-H315g n1),
+    nor do the session kernel's before any cell (e-stop, expired, denied, no kernel, an
+    empty or overlong cell: review-H315h n2)."""
     if _made_nested_calls(result):
         return True
     if tool not in _SCRIPT_TOOLS:

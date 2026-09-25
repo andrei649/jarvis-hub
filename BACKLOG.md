@@ -14,6 +14,30 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315h found no major, three minors and four nits:
+  - **A lock that was never lost was given up over live mounts (m1).** Any error from the `stat` of the owner's `.lock` (ESTALE, EACCES) read as "lost"; the manager then closed the fd that held the lock while its kernels still mounted there, and the next start by another process removed them. Only a `.lock` that is gone or is another file reads as lost now; any other error keeps the lock. A directory that still stands is locked again in place, where its mounts are; a new directory is taken only when that cannot be had.
+  - **Four scan workers made the loop wait (m2).** The scan holds the GIL, so four threads bought no throughput and made the loop's p99 gap 4-5x longer. One thread now; small answers are still scanned inline.
+  - **Eleven survivors (m3):** the fork hook itself, a mount with no `flock`, `bytes` sizes, a raising tool that is not a script, an inflated K2 count, a kept fd, a failed lock's staging directory, `_` at a slice end, a dotfile's name, dict keys, scalars. Each has a case.
+  - **Nits:**
+    - the size walk is bounded and counts what an answer encodes to: a container wider than what is left is refused before it is listed, control characters and `bytes` count their escapes, and a huge int or an object is never small;
+    - the session kernel's own refusals before a cell (e-stop, expired, denied, no kernel, an empty or overlong cell) open no plan revision; an unconfirmed teardown still does, since it also ends a cell that ran; a cell with no mailbox made 0 calls, whatever the kernel says;
+    - a dotted directory in the run's file name no longer leaves a directory per run;
+    - GOV-258 now carries "another user's lock is kept".
+  - An answer too deep to encode (older than this round) is flagged, never raised out of the broker.
+
+  Still open, and older than H315: under Docker and WASM each run mounts the whole shared `work_dir`, so a run can read concurrent runs' scripts and tool-RPC mailboxes; and a cancelled subprocess run keeps running. Both are for their own row.
+
+  Mutation: this round's 23 mutants were all caught, one after its case was added (a lock file replaced while it is being locked).
+
+  Records:
+  - H315 rewritten;
+  - 29 drifted rows re-read and re-stamped;
+  - GOV-258 extended (a lock unreadable for a moment, another user's hub on the same root).
+
+  Tests: backend 14,769 → 14,803 (`tests/test_h315h_todo_review.py` 34); vitest unchanged at 1,461.
+
 - 2026-09-25 H318 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H318d found one major, five minors and six nits:

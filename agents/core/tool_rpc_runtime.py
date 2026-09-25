@@ -121,11 +121,13 @@ def _answered_ok(response: Any) -> bool:
     return not (isinstance(inner, dict) and inner.get("ok") is False)
 
 
-#: The scan's own threads: never the loop's default pool, which scans of many concurrent
-#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3). A
-#: few of them, and only for large answers: with one, every script's small calls queued
-#: behind other scripts' multi-megabyte scans (review-H315g m2).
-_SCAN_WORKERS = 4
+#: The scan's own thread: never the loop's default pool, which scans of many concurrent
+#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3). Only
+#: large answers go to it; small ones are scanned inline, so they never queue behind a
+#: multi-megabyte scan (review-H315g m2). One thread, not four: the scan holds the GIL,
+#: so more scanners bought no throughput and made the loop wait 4-5x longer at p99
+#: (review-H315h m2).
+_SCAN_WORKERS = 1
 
 
 def _new_scan_pool() -> ThreadPoolExecutor:
@@ -151,22 +153,38 @@ _SCAN_INLINE_BYTES = 16 * 1024
 
 
 def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
-    """Whether ``value`` is under ``budget`` characters of text, counted until it is not:
-    the walk costs at most ``budget``, whatever the answer's size."""
+    """Whether ``value`` encodes to under ``budget`` characters, counted until it does not:
+    a container wider than what is left is refused before its items are listed, and a
+    string longer than it before it is looked at, so the walk costs at most ``budget``
+    whatever the answer's size (review-H315h n1). Text counts as it encodes: a control
+    character is six (``\\u0000``), a byte of ``bytes`` up to five (``\\\\x00``). A value
+    JSON spells through ``str()`` (a huge int, any object) has a size nobody knows until it
+    is spelled, so it is never small."""
     stack = [value]
     while stack:
         item = stack.pop()
-        if isinstance(item, (str, bytes)):
-            budget -= len(item) + 2
+        if isinstance(item, str):
+            if len(item) > budget:
+                return False
+            budget -= (len(item) if item.isprintable() else 6 * len(item)) + 2
+        elif isinstance(item, (bytes, bytearray)):
+            budget -= 5 * len(item) + 2
         elif isinstance(item, dict):
             budget -= 2 * len(item) + 2
+            if budget < 0:
+                return False
             stack.extend(item.keys())
             stack.extend(item.values())
         elif isinstance(item, (list, tuple)):
             budget -= len(item) + 2
+            if budget < 0:
+                return False
             stack.extend(item)
-        else:
+        elif item is None or isinstance(item, (bool, float)) or (
+                isinstance(item, int) and -(2 ** 63) <= item < 2 ** 63):
             budget -= 24
+        else:
+            return False
         if budget < 0:
             return False
     return True
@@ -202,6 +220,8 @@ def _flagged(response: Any) -> bool:
 
     try:
         encoded = json.dumps(response, ensure_ascii=False, default=str)
+    except RecursionError:
+        return True                      # too deep to read is not clean: fail closed (review-H315h)
     except (TypeError, ValueError):
         return False
     if FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded:

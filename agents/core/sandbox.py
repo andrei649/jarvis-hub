@@ -16,7 +16,7 @@ import secrets
 import sys
 import tempfile
 import time
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath, PurePosixPath
 
 logger = logging.getLogger("jarvis.sandbox")
 
@@ -243,9 +243,13 @@ class Sandbox:
         script, against the other's tool-RPC mailbox, and answered it to the wrong
         caller (review-H315g).
         """
-        stem, dot, ext = filename.rpartition(".")
-        run_name = (f"{stem}-{secrets.token_hex(8)}.{ext}" if dot and stem
-                    else f"{filename}-{secrets.token_hex(8)}")
+        # The suffix comes off the file's own name only: a dot in a directory ("a.d/run")
+        # made a new directory per run, left behind (review-H315h n4).
+        path = PurePath(filename)
+        stem, dot, ext = path.name.rpartition(".")
+        name = (f"{stem}-{secrets.token_hex(8)}.{ext}" if dot and stem
+                else f"{path.name}-{secrets.token_hex(8)}")
+        run_name = str(path.with_name(name))
         try:
             return await self._execute_python_file(code, run_name, writable_paths=writable_paths,
                                                    sinks=sinks)

@@ -71,7 +71,7 @@ def test_the_owner_directory_appears_already_locked(tmp_path, monkeypatch):
     manager = _manager(root)
     owner = root / manager._owner
     assert owner.is_dir() and sk._owner_alive(owner) is True
-    assert sk._lock_intact(owner, manager._owner_fd)
+    assert sk._lock_state(owner, manager._owner_fd) == sk.LOCK_HELD
     assert manager._mount(sk.KernelKey(agent="a", principal="p", session_id="s", data_scope="d"))
 
 
@@ -171,7 +171,7 @@ async def test_a_small_answer_is_scanned_inline_and_a_large_one_on_the_pool(monk
     assert used == []
     assert await rt._scan({"ok": True, "result": {"text": "x" * 40_000}}) is False
     assert len(used) == 1
-    assert rt._SCAN_WORKERS > 1
+    assert rt._SCAN_WORKERS == 1                   # inline small scans need no second worker (review-H315h m2)
 
 
 def test_the_size_walk_stops_at_its_budget():
@@ -225,7 +225,7 @@ def test_the_refusals_listed_are_execute_codes_own():
     from agents.core import agent_runtime, code_tools
 
     assert {code_tools.DISABLED, code_tools.SANDBOX_UNAVAILABLE,
-                                              code_tools.NOT_ISOLATED, code_tools.AUTHORITY_UNAVAILABLE} == agent_runtime._SCRIPT_REFUSALS
+            code_tools.NOT_ISOLATED, code_tools.AUTHORITY_UNAVAILABLE} < agent_runtime._SCRIPT_REFUSALS
 
 
 # ── m3: who wrote an item (G41, G44) ─────────────────────────────────────────────
@@ -263,7 +263,8 @@ def test_a_replaced_lock_file_is_not_this_managers_lock(tmp_path):
     lock.unlink()
     lock.write_text("")                                   # same name, a lock nobody holds
     manager._mount(sk.KernelKey(agent="a", principal="p", session_id="s", data_scope="d"))
-    assert manager._owner != first
+    # Held again in place, where the mounts live (review-H315h m1), not left unheld.
+    assert manager._owner == first and sk._lock_state(root / first, manager._owner_fd) == sk.LOCK_HELD
 
 
 @pytest.mark.asyncio
