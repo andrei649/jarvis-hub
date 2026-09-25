@@ -221,6 +221,7 @@ async def test_a_new_manager_clears_what_an_earlier_process_left(tmp_path):
     stale = tmp_path / "kernel-rpc" / f"p{gone.pid}-deadbeef" / "0123456789abcdef-deadbeefdeadbeef"
     stale.mkdir(parents=True)
     (stale / "stash.txt").write_text(PAGE, encoding="utf-8")
+    (stale.parent / ".lock").write_text("")          # its lock, which nothing holds now
     SessionKernelManager(
         PipeKernelBackend(lambda key, token, rpc_dir="": [sys.executable, "-c", WORKER_SOURCE], name="local"),
         rpc_root=str(tmp_path / "kernel-rpc"))
@@ -470,9 +471,14 @@ async def test_the_repeat_event_counts_a_plan_read_loop(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_any_script_opens_a_new_revision_for_the_next_read(tmp_path):
-    """review-H315e: a script is judged by what it is, not by the calls it reported (a
-    crashed one reports none), so the read after any script is a new call."""
+@pytest.mark.parametrize("code, opens", [
+    ('raise RuntimeError("crashed")', True),     # a crash reports no calls (review-H315e)
+    ('print("nothing to do")', False),           # a clean run with no calls changed nothing
+])
+async def test_a_script_opens_a_new_revision_only_when_it_may_have_changed_the_plan(tmp_path, code, opens):
+    """review-H315e: a crashed script reports no calls, so the read after it is a new
+    call. review-H315f n2: a script that ran cleanly and called nothing changed nothing,
+    so the repeat stop still holds across it."""
     store = TodoStore()
     server = _fetching_server(store)
     runtime = _k1(server, tmp_path)
@@ -480,8 +486,8 @@ async def test_any_script_opens_a_new_revision_for_the_next_read(tmp_path):
         ("todo", {"todos": [{"id": "1", "content": "step one"}]}),
         ("todo", {}),
         ("todo", {}),
-        ("execute_code", {"code": 'print("nothing to do")'}),
+        ("execute_code", {"code": code}),
         ("todo", {}),
     ]
     _backend, _events, _origin, _reply = await _turn(runtime, script)
-    assert "repeated_call" not in _tool_messages(_backend)[-1]
+    assert ("repeated_call" not in _tool_messages(_backend)[-1]) is opens

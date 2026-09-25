@@ -117,17 +117,56 @@ class KernelStartupUnavailable(KernelRefused):
 
 
 _OWNER_DIR = re.compile(r"p(\d{1,10})-[0-9a-f]{8}")
+_OWNER_LOCK = ".lock"
+
+try:                                     # POSIX; elsewhere owner directories age out
+    import fcntl as _fcntl
+except ImportError:                      # pragma: no cover - Windows
+    _fcntl = None
 
 
-def _process_alive(pid: int) -> bool:
-    """Whether a process with this id runs (on this host). One we may not signal runs."""
+def _hold_owner_lock(owner_dir: Path):
+    """Take this manager's owner lock and keep it for the process's life: an exclusive
+    ``flock`` on ``<owner>/.lock``. The kernel drops it when the process ends, however it
+    ends, and it means the same in every pid namespace that shares the data root, where a
+    pid does not (review-H315f m1: a hub is PID 1 in every container start)."""
+    if _fcntl is None:
+        return None
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except (PermissionError, OSError):
+        owner_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(owner_dir / _OWNER_LOCK, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError:
+        logger.warning("session kernel owner lock unavailable", exc_info=True)
+        return None
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        logger.warning("session kernel owner lock already held", exc_info=True)
+        return None
+    return fd
+
+
+def _owner_alive(owner_dir: Path) -> bool | None:
+    """Whether the manager that owns ``owner_dir`` still runs: its lock is held. None when
+    that cannot be told (no lock file: a directory from before the lock, or no flock), so
+    the caller falls back to the directory's age. An error reads as alive."""
+    lock = owner_dir / _OWNER_LOCK
+    if _fcntl is None or lock.is_symlink() or not lock.is_file():
+        return None
+    try:
+        fd = os.open(lock, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
         return True
-    return True
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return True
+    finally:
+        os.close(fd)                     # closing drops a lock this call took
+    return False
 
 
 class KernelTeardownUnconfirmed(KernelRefused):
@@ -602,9 +641,11 @@ class SessionKernelManager:
     ) -> None:
         self._backend = backend
         self._rpc_root = None if rpc_root is None else Path(rpc_root)
-        # This manager's own directory under the root, named for its process, so another
-        # process's start can tell whose interpreters these are (review-H315e m1).
+        # This manager's own directory under the root, with a lock it holds while its
+        # process runs, so another process's start can tell whose interpreters these are
+        # and whether that process is gone (review-H315e m1, review-H315f m1).
         self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
+        self._owner_fd = None if self._rpc_root is None else _hold_owner_lock(self._rpc_root / self._owner)
         self._max_tool_calls = max(0, int(max_tool_calls))
         self._poll_interval = max(0.001, float(poll_interval))
         self._max_kernels = max(1, int(max_kernels))
@@ -988,19 +1029,21 @@ class SessionKernelManager:
         Two processes can share one data root (the documented jarvis-hub and
         jarvis-runtime units do), so a start may not sweep the whole root: that deleted the
         other's live mounts (review-H315e m1). Each manager keeps its interpreters under a
-        directory named for its process (``p<pid>-<token>``); a start removes only those of
-        a process that no longer runs. A directory of the older flat layout is removed once
-        it is older than the idle expiry, which no live interpreter's is."""
+        directory of its own (``p<pid>-<token>``) and holds that directory's lock while its
+        process runs; a start removes an owner directory whose lock it can take, which is a
+        process that has ended, in any pid namespace sharing the root. A pid is not asked:
+        in a container the hub is PID 1 on every start (review-H315f m1). A directory with
+        no lock (the older layouts, or no flock) is removed once it is older than the idle
+        expiry, which no live interpreter's is."""
         if self._rpc_root is None or not self._rpc_root.is_dir():
             return
         for entry in self._rpc_root.iterdir():
-            if not entry.is_dir() or entry.is_symlink():
+            if not entry.is_dir() or entry.is_symlink() or entry.name == self._owner:
                 continue
-            owner = _OWNER_DIR.fullmatch(entry.name)
-            if owner is not None:
-                if _process_alive(int(owner.group(1))):
-                    continue
-            else:
+            alive = _owner_alive(entry) if _OWNER_DIR.fullmatch(entry.name) else None
+            if alive:
+                continue
+            if alive is None:
                 try:
                     age = time.time() - entry.stat().st_mtime
                 except OSError:

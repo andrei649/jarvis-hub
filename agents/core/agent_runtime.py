@@ -667,13 +667,17 @@ class AgentToolRuntime:
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
                 if call.name in _ALWAYS_RESTATED:
                     restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
-                elif call.name in _SCRIPT_TOOLS or _made_nested_calls(result):
+            # Scripts after the reads of the same step: the batch runs concurrently, so a
+            # read beside a script answered the plan from before it; the step must end on
+            # the script's revision, or the next read keys on a plan the model already read
+            # (review-H315f m2).
+            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+                if _script_revision_due(call.name, result):
                     # A script may have called tools the model never saw answer (H315 third
                     # review), so it may have changed a restated tool's state: the next read
-                    # of one is not the same call as the last. Each script opens its own
+                    # of one is not the same call as the last. Each such script opens its own
                     # revision — clearing it would key every read after a script alike, so
-                    # the third such read became a "repeat" (review-H315e M1). A script that
-                    # crashed reports no calls, so the tool's name decides, not the count.
+                    # the third such read became a "repeat" (review-H315e M1).
                     scripts_run += 1
                     for name in _ALWAYS_RESTATED:
                         restated[name] = f"script:{scripts_run}"
@@ -1549,6 +1553,22 @@ def _call_key(call: ToolCall, restated: Mapping[str, str] | None = None) -> tupl
     if call.name in _ALWAYS_RESTATED:
         encoded = f"{encoded}@{(restated or {}).get(call.name, '')}"
     return (str(call.name), encoded)
+
+
+def _script_revision_due(tool: str, result: Any) -> bool:
+    """Whether a call may have changed a restated tool's state behind the model's back: it
+    made tool calls of its own, or it is a script that ran and did not finish cleanly (a
+    crash reports no calls, review-H315e M1). A script that ran cleanly with no calls, or
+    one the server refused and never ran (no answer of its own), changed nothing, so the
+    repeat stop still holds across it (review-H315f n2)."""
+    if _made_nested_calls(result):
+        return True
+    if tool not in _SCRIPT_TOOLS:
+        return False
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    if not isinstance(inner, Mapping):
+        return False
+    return inner.get("ok") is False or bool(inner.get("timed_out"))
 
 
 def _made_nested_calls(result: Any) -> bool:

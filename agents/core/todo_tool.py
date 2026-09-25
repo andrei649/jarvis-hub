@@ -374,6 +374,10 @@ class TodoStore:
                                     or item.get("parent") != prior.get("parent"))
                         if taint and moved_it and not item["tainted"]:
                             item["tainted"], item["turn"] = True, turn
+                    elif prior is not None and prior.get("tainted"):
+                        # A rewrite of a tainted item's text keeps the taint, as a merge's
+                        # does (review-H315f n3): the rewriter owns the text, not a clean slate.
+                        item["tainted"] = True
                     items.append(item)
                     by_id[item_id] = item
                     wrote_text = True
@@ -400,8 +404,12 @@ class TodoStore:
                             target["parent"] = above
                         moved = wrote_text = True
                 if raw.get("status") is not None:
-                    target["status"] = _clean_status(raw.get("status"), item_id)
-                    moved = True
+                    status = _clean_status(raw.get("status"), item_id)
+                    # Re-sending the current status moves nothing, as in a replace
+                    # (review-H315f n3): only a change is the writer's word.
+                    if status != target["status"]:
+                        target["status"] = status
+                        moved = True
                 if moved and taint and not target.get("tainted"):
                     target["tainted"] = True
                     target["turn"] = turn

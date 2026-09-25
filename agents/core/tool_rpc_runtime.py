@@ -15,6 +15,7 @@ import logging
 import shutil
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
@@ -94,12 +95,15 @@ class ToolCallBroker:
             response = {"ok": False, "reason": "tool_error", "tool": tool}
         finally:
             reset_tool_turn(turn)
-        # Once the run is tainted a scan can change nothing, so it is skipped; otherwise it
-        # runs off the event loop (review-H315e m2: 50 nested answers of 2 MB held every
-        # chat for 16 s), over the whole answer (an injection deep in it counts).
-        if not self.tainted and (
-                (untrusted and _answered_ok(response)) or _declares_taint(response)
-                or await asyncio.to_thread(_flagged, response)):
+        # Once the run is tainted a scan can change nothing, so it is skipped: this broker's
+        # own flag, or the origin an earlier read raised (the K1 loop builds a broker per
+        # request, review-H315f m3). Otherwise it runs off the event loop (review-H315e m2:
+        # 50 nested answers of 2 MB held every chat for 16 s), over the whole answer (an
+        # injection deep in it counts), in chunks on a thread of its own.
+        if self.tainted or _origin_untrusted():
+            self.tainted = True
+        elif ((untrusted and _answered_ok(response)) or _declares_taint(response)
+                or await asyncio.get_running_loop().run_in_executor(_SCAN_POOL, _flagged, response)):
             self.tainted = True
             mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
@@ -117,6 +121,28 @@ def _answered_ok(response: Any) -> bool:
     return not (isinstance(inner, dict) and inner.get("ok") is False)
 
 
+#: The scan's own thread: never the loop's default pool, which scans of many concurrent
+#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3).
+_SCAN_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tool-rpc-scan")
+#: The answer is scanned in slices of this many characters, overlapping by
+#: _SCAN_OVERLAP, so no single regex call holds the interpreter lock for a whole 2 MB
+#: answer (the loop stalls while it does); the overlap keeps a pattern that straddles two
+#: slices whole.
+_SCAN_CHUNK = 64 * 1024
+_SCAN_OVERLAP = 4 * 1024
+
+
+def _origin_untrusted() -> bool:
+    """This context has already read untrusted text (an earlier call of the run)."""
+    try:
+        from agents.core.action_origin import current_action_origin
+        from agents.core.security.taint import is_untrusted_source
+
+        return bool(is_untrusted_source(current_action_origin()))
+    except Exception:
+        return False
+
+
 def _flagged(response: Any) -> bool:
     """The answer is flagged as the loop's fence flags a result: an injection pattern, or
     the fence's own markers spelled out inside it (review-H315e n1)."""
@@ -126,7 +152,12 @@ def _flagged(response: Any) -> bool:
         encoded = json.dumps(response, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return False
-    return bool(detect_injection(encoded)) or FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded
+    if FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded:
+        return True
+    for start in range(0, max(1, len(encoded)), _SCAN_CHUNK):
+        if detect_injection(encoded[start:start + _SCAN_CHUNK + _SCAN_OVERLAP]):
+            return True
+    return False
 
 
 def _declares_taint(response: Any) -> bool:

@@ -14,6 +14,27 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315f found four minors and four nits:
+  - **Liveness was a pid (m1).** A pid means nothing across pid namespaces. In the shipped image the hub is PID 1 on every start, so a dead container's kernel directories looked alive forever, and a container took a live host process's directories for dead. Each manager now holds an exclusive \`flock\` on its owner directory's \`.lock\` for its process's life. A start removes a directory whose lock it can take. A directory with no lock (an older layout) ages out. This also ends the out-of-range pid crash (n1).
+  - **A read beside a script (m2).** A plan read in the same step as a script answered the plan from before it, then overwrote the script's revision, so the next read was refused. Script revisions are now applied after the step's reads.
+  - **The broker's scan (m3).** The K1 loop builds a broker per request, so "skip once tainted" never applied there. The scan now also skips once the context's origin is untrusted. It runs on a thread of its own, never the default pool, and still covers the whole answer, in overlapping 64 KiB slices, so no single regex call holds the loop.
+  - **Mutation (m4).** Seven survivors are now covered. Four have tests: an untrusted replace that changes the text, an untrusted re-parent, the fence's open marker and a cancelled start. The two per-key and refused-start survivors of the last round have tests, and so does a crashed K2 cell. The EPERM case is gone with the pid check. The two moved-item-turn survivors are left: they change only whether the moving turn's own later read is fenced.
+  - **Nits:**
+    - a script that ran cleanly and called nothing opens no revision, so the repeat stop holds across it;
+    - a merge and a replace treat a re-sent status, and a clean rewrite of a tainted item, alike;
+    - the records are corrected: the re-stamp count, two citations beside their claims, the tests list, and the mutation sentence.
+
+  Mutation: this round's 15 mutants were all caught, one after its case was corrected.
+
+  Records:
+  - H315 rewritten;
+  - 29 drifted rows re-read and re-stamped;
+  - GOV-258 extended to the container restart.
+
+  Tests: backend 14,518 → 14,539 (\`tests/test_h315f_todo_review.py\` 20; one h315d case split in two); vitest unchanged at 1,456.
+
 - 2026-09-25 H465 second adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H465b found three minors and six nits:
@@ -104,11 +125,11 @@
     - The scan flags the fence's own markers, as the loop does.
     - A same-text replace is no rewrite, as a merge was not: the item keeps its writer and taint, and a status moved by an untrusted turn still taints it.
     - A failed start leaves no mount; a quarantined start's row owns its directory.
-    - The re-stamp count is corrected.
+    - The re-stamp count was said to be corrected; it was not (review-H315f n4), and is now.
 
   Mutation: the review's five real survivors and the third review's X27 are pinned. This round's 15 mutants were all caught; one needed a case added, and one equivalent branch was removed.
 
-  Records: H315 rewritten and closed; 29 drifted rows re-read and re-stamped; test manual GOV-258.
+  Records: H315 rewritten and closed; 30 drifted rows re-read and re-stamped (first recorded as 29, review-H315f n4); test manual GOV-258.
 
   Tests: backend 14,426 → 14,439 (`tests/test_h315e_todo_review.py` 13; two h315d tests follow the new rules); vitest unchanged at 1,447.
 - 2026-09-25 H465 adversarial review round (stays equivalent, #1207). **H273 back to partial** after its fourth review (headline 144 → 143/697).

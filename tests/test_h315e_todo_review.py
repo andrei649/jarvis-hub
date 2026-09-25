@@ -89,19 +89,34 @@ def _dead_pid():
 
 
 def test_a_start_removes_only_a_dead_processs_mounts(tmp_path):
+    """A live owner holds its directory's lock; a dead one's lock is free (review-H315f m1:
+    the pid is not asked). A directory with no lock ages out like the flat layout."""
+    import fcntl
+
     root = tmp_path / "kernel-rpc"
     live = root / f"p{os.getpid()}-0badc0de" / "k-1"
     dead = root / f"p{_dead_pid()}-deadbeef" / "k-2"
+    pid1_dead = root / "p1-feedface" / "k-3"                 # a container's PID 1, gone
+    old_unlocked = root / "p2-0ddba11a" / "k-4"
     old_flat = root / "0123456789abcdef-deadbeefdeadbeef"
     fresh_flat = root / "fedcba9876543210-0123456789abcdef"
-    for path in (live, dead, old_flat, fresh_flat):
+    for path in (live, dead, pid1_dead, old_unlocked, old_flat, fresh_flat):
         path.mkdir(parents=True)
         (path / "stash.txt").write_text("x")
+    for owner in (live.parent, dead.parent, pid1_dead.parent):
+        (owner / ".lock").write_text("")
+    held = os.open(live.parent / ".lock", os.O_RDWR)
+    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
     past = time.time() - 3_600
     os.utime(old_flat, (past, past))
-    _manager(root)
+    os.utime(old_unlocked.parent, (past, past))
+    try:
+        _manager(root)
+    finally:
+        os.close(held)
     assert live.exists() and fresh_flat.exists()      # a live process's, and a young legacy one
-    assert not dead.parent.exists() and not old_flat.exists()
+    assert not dead.parent.exists() and not pid1_dead.parent.exists()
+    assert not old_flat.exists() and not old_unlocked.parent.exists()
 
 
 @pytest.mark.asyncio

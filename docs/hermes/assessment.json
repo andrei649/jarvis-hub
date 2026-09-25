@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "f94bbffcd4ab271a2ba2313cdace9cb8efa5b4a7",
-  "assessed_at": "2026-09-25T04:46:38Z",
+  "base_sha": "0a941f64bff8a458733022360f31d37341c4609c",
+  "assessed_at": "2026-09-25T04:58:20Z",
   "reviews": [
     {
       "id": "H001",
@@ -1664,7 +1664,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -3300,7 +3300,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -3336,7 +3336,7 @@
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -3425,7 +3425,7 @@
         },
         {
           "path": "docs/test-manual/07-autonomy-governance.md",
-          "sha256": "4c3897bc56d1a5ed4ff71e5ae32e7087766685644189f0959e8d9ca3a40c7d98"
+          "sha256": "245accbea406c61b5c48c25f42061a297c025d503e68ce030ff8a0eefa0af4b4"
         }
       ]
     },
@@ -3450,7 +3450,7 @@
       "id": "H296",
       "row_sha256": "b9a9ae73c74897142114c7d465f46bd3cd754d47d3df63dff928322c778777a9",
       "status": "missing",
-      "summary": "Tool schemas are static. ToolRPCServer.register_tool (agents/core/tool_rpc.py:166) deep-copies the caller's input_schema once, at registration (agents/core/tool_rpc.py:243). ToolRPCServer.tools() (agents/core/tool_rpc.py:283) returns deep copies of that stored schema (agents/core/tool_rpc.py:290). AgentRuntime builds each turn's ToolSpec list from that output (agents/core/agent_runtime.py:471, agents/core/agent_runtime.py:502) through _specs_for, which copies input_schema verbatim (agents/core/agent_runtime.py:281-284). In registry mode, _registry_metadata (agents/core/agent_runtime.py:1076) substitutes the capability record's inputs (agents/core/agent_runtime.py:1122), and build_records copies those from the same static tool schema (agents/core/observability/capability_registry.py:334). The H672 compaction-boundary refresh does not change this. _resolve_offer (agents/core/agent_runtime.py:294) re-reads the same static tools() (agents/core/agent_runtime.py:304), and the specs are rebuilt only when a tool was added or removed or the refresh failed closed (agents/core/agent_runtime.py:549, agents/core/agent_runtime.py:578). So it tracks which tools are offered, not what their schemas advertise. There is no per-tool override hook, no merge over the static schema and no exception fallback. For example, terminal_run advertises target as a free string (agents/core/autonomy_coordinator.py:610) rather than the targets actually registered, and desktop_run's step action is likewise a free string (agents/core/autonomy_coordinator.py:529). The gated speak tool that HEQ lot 1 added (registered only with JARVIS_MEDIA_DIRECTOR on) follows the same pattern: a fixed INPUT_SCHEMA whose target is a free string naming a device id, a room or presence:auto, not the rooms and speakers the Media Director actually has. tests/test_tool_rpc_h20_1.py and tests/test_agent_runtime_v2.py exercise only static schemas.",
+      "summary": "Tool schemas are static. ToolRPCServer.register_tool (agents/core/tool_rpc.py:166) deep-copies the caller's input_schema once, at registration (agents/core/tool_rpc.py:243). ToolRPCServer.tools() (agents/core/tool_rpc.py:283) returns deep copies of that stored schema (agents/core/tool_rpc.py:290). AgentRuntime builds each turn's ToolSpec list from that output (agents/core/agent_runtime.py:471, agents/core/agent_runtime.py:502) through _specs_for, which copies input_schema verbatim (agents/core/agent_runtime.py:281-284). In registry mode, _registry_metadata (agents/core/agent_runtime.py:1080) substitutes the capability record's inputs (agents/core/agent_runtime.py:1126), and build_records copies those from the same static tool schema (agents/core/observability/capability_registry.py:334). The H672 compaction-boundary refresh does not change this. _resolve_offer (agents/core/agent_runtime.py:294) re-reads the same static tools() (agents/core/agent_runtime.py:304), and the specs are rebuilt only when a tool was added or removed or the refresh failed closed (agents/core/agent_runtime.py:549, agents/core/agent_runtime.py:578). So it tracks which tools are offered, not what their schemas advertise. There is no per-tool override hook, no merge over the static schema and no exception fallback. For example, terminal_run advertises target as a free string (agents/core/autonomy_coordinator.py:610) rather than the targets actually registered, and desktop_run's step action is likewise a free string (agents/core/autonomy_coordinator.py:529). The gated speak tool that HEQ lot 1 added (registered only with JARVIS_MEDIA_DIRECTOR on) follows the same pattern: a fixed INPUT_SCHEMA whose target is a free string naming a device id, a room or presence:auto, not the rooms and speakers the Media Director actually has. tests/test_tool_rpc_h20_1.py and tests/test_agent_runtime_v2.py exercise only static schemas.",
       "remaining": "Two pieces are missing. (1) A dynamic schema-override hook on tool registration, merged over the static schema on every tools()/ToolSpec build, logging and falling back to the static schema when the hook raises, and applied in both the ToolRPC path and the registry projection. That includes the H672 compaction-boundary rebuild, which today rebuilds specs only when the set of tool names changes. (2) Real overrides on the flag- and hardware-conditional tools the rationale names (terminal_run targets, desktop_run supported actions), and on speak's target (the rooms and speakers actually configured), so that the advertised schema matches the live install.",
       "evidence": [
         {
@@ -3459,7 +3459,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/observability/capability_registry.py",
@@ -3496,7 +3496,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_tool_loop_result_spill.py",
@@ -3520,7 +3520,7 @@
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -3536,7 +3536,7 @@
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/llm/effective_window.py",
@@ -3585,7 +3585,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -3610,7 +3610,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -3647,12 +3647,12 @@
       "id": "H305",
       "row_sha256": "54d56dd4b1b5e5233d7879a083c21f549732d92b42e944149a6545ab748d92fc",
       "status": "partial",
-      "summary": "K1, K2 și K3 sunt livrate: execute_code înregistrat pentru model, celule într-un interpreter rezident pe sesiune (K2, `llm.execute_code_sessions`, implicit oprit) și controale de operator peste el. Spill-ul stdout/stderr într-un fișier funcționează pe ambele căi. `_open_stream_spills` (agents/core/code_tools.py:480) deschide scriitorii în flux înainte de rulare. Pe K1, sinks trec prin `ToolRPCSandboxRuntime.run_python` (code_tools.py:449) până la `Sandbox.execute_python`. Pe K2, worker-ul trimite ieșirea celulei în cadre de cel mult 4096 de caractere (agents/core/session_kernels.py:224), iar `_Capture` dă fiecare cadru scriitorului (session_kernels.py:537). Gazda vede deci tot fluxul, iar memoria ei rămâne mărginită: păstrează doar capul și coada. Un flux care a încăput nu lasă fișier; rezultatul unui spill poartă calea, referința, dimensiunea și sha256. Lotul HEQ 1 (H661) a făcut din notiță apelul exact. `_spill_notice` (code_tools.py:191) scrie `file_read(path=…, offset=0, max_bytes=…)`, construit de `page_recipe` (agents/core/tool_result_store.py:145), și cere paginarea prin next_offset. `stdout_read_with` (code_tools.py:272) apare doar când turei i s-a oferit file_read și sonda `_spill_readable` (agents/core/autonomy_coordinator.py:800) confirmă că poate deschide acel fișier; altfel notița spune că fișierul e păstrat pentru owner și nu poate fi paginat din tura asta. file_read primește directorul de spill ca ușă read-only (autonomy_coordinator.py:796). Un spill în flux are acum un plafon: DEFAULT_MAX_STREAM_BYTES, 5 MB (tool_result_store.py:130, cifra lui Hermes). Peste el fișierul ține primii 5 MB și se termină într-un marcaj explicit (coada fluxului rămâne doar inline), iar rezultatul poartă `stdout_spill_capped`, `stdout_kept_bytes` și `stdout_file_bytes` (code_tools.py:274). tests/test_code_tools.py paginează înapoi tot fluxul pe ambele căi (tests/test_code_tools.py:824) și verifică plafonul (tests/test_code_tools.py:877).",
+      "summary": "K1, K2 și K3 sunt livrate: execute_code înregistrat pentru model, celule într-un interpreter rezident pe sesiune (K2, `llm.execute_code_sessions`, implicit oprit) și controale de operator peste el. Spill-ul stdout/stderr într-un fișier funcționează pe ambele căi. `_open_stream_spills` (agents/core/code_tools.py:480) deschide scriitorii în flux înainte de rulare. Pe K1, sinks trec prin `ToolRPCSandboxRuntime.run_python` (code_tools.py:449) până la `Sandbox.execute_python`. Pe K2, worker-ul trimite ieșirea celulei în cadre de cel mult 4096 de caractere (agents/core/session_kernels.py:263), iar `_Capture` dă fiecare cadru scriitorului (session_kernels.py:576). Gazda vede deci tot fluxul, iar memoria ei rămâne mărginită: păstrează doar capul și coada. Un flux care a încăput nu lasă fișier; rezultatul unui spill poartă calea, referința, dimensiunea și sha256. Lotul HEQ 1 (H661) a făcut din notiță apelul exact. `_spill_notice` (code_tools.py:191) scrie `file_read(path=…, offset=0, max_bytes=…)`, construit de `page_recipe` (agents/core/tool_result_store.py:145), și cere paginarea prin next_offset. `stdout_read_with` (code_tools.py:272) apare doar când turei i s-a oferit file_read și sonda `_spill_readable` (agents/core/autonomy_coordinator.py:800) confirmă că poate deschide acel fișier; altfel notița spune că fișierul e păstrat pentru owner și nu poate fi paginat din tura asta. file_read primește directorul de spill ca ușă read-only (autonomy_coordinator.py:796). Un spill în flux are acum un plafon: DEFAULT_MAX_STREAM_BYTES, 5 MB (tool_result_store.py:130, cifra lui Hermes). Peste el fișierul ține primii 5 MB și se termină într-un marcaj explicit (coada fluxului rămâne doar inline), iar rezultatul poartă `stdout_spill_capped`, `stdout_kept_bytes` și `stdout_file_bytes` (code_tools.py:274). tests/test_code_tools.py paginează înapoi tot fluxul pe ambele căi (tests/test_code_tools.py:824) și verifică plafonul (tests/test_code_tools.py:877).",
       "remaining": "Rămân kernelul remote și proba pe un daemon Docker real. Modul `project|strict` al lui Hermes rămâne necopiat deliberat: postura o decide profilul de unelte (agent × suprafață × principal).",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -3696,7 +3696,7 @@
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -3961,12 +3961,12 @@
       "id": "H315",
       "row_sha256": "9fe00eef4cd8a093c246617bf098a1b255f5005439957b3d91ac2ae29a26203a",
       "status": "equivalent",
-      "summary": "Built in #1207, then fixed after three adversarial reviews. The model keeps a checklist of its own work and re-reads all of it on every change. The owner can read the same list, with who wrote each item and whether its text is trusted, before any approval card it leads to.\n\nThe tool. agents/core/todo_tool.py registers `todo` on the ToolRPC server, ungated (agents/core/todo_tool.py:577), with the schema {todos: [{id, content, status, parent?}], merge} (agents/core/todo_tool.py:90); the optional parent is H666's.\n- Items use Hermes' four statuses: pending, in_progress, completed, cancelled. A call with todos replaces the list. With merge=true it updates items by id, changing only the fields sent, and appends new ones. A call without todos reads the list. Every call answers with the whole list and its counts.\n- TodoStore.apply (agents/core/todo_tool.py:296) is bounded: at most 50 items, content of one printable line up to 200 characters, ids of 1 to 64 characters, 7,000 bytes for the whole list in the UTF-8 the tool sends it in, and at most one item in progress. A merge that only moves statuses is never refused as too long.\n- Control and format characters are dropped, text is NFC, each character keeps at most three combining marks (enclosing marks included), and whitespace runs collapse. Text that renders blank (only fillers or marks) is no content; punctuation or a symbol alone is content (agents/core/todo_tool.py:136). So what the owner reads is what was written. Two ids that are canonically equal are one id; look-alikes from another script or width stay two.\n- Every refusal is named, and each comes with a sentence the model can act on: todo_too_many, todo_content_too_long, todo_content_required, todo_bad_status, todo_bad_id, todo_duplicate_id, todo_one_in_progress, todo_bad_list, todo_bad_item, todo_bad_merge, todo_no_session, todo_unknown_field (a key the schema does not have, top level or item), todo_plan_too_long and todo_shared_session. A refused call changes nothing, because a merge is built on a copy.\n\nWhose plan it is. The coordinator passes the session, the turn's posture and whether the turn runs on the shared default session (agents/core/autonomy_coordinator.py:851; Orchestrator.on_shared_session, agents/core/orchestrator.py:793). A turn keeps the answer it got when it resolved its session (agents/core/orchestrator.py:280), so an owner resuming another session does not let an in-flight turn in. A turn that binds no session of its own runs on that shared session, and the plan kept there is the owner's. Such turns include the HUD, the web widget (its route binds none), voice, rooms, notes, workflows, MCP ask_*, a webhook, a job, a subagent and a direct POST /api/toolrpc/call.\n- On it, only an owner's turn keeps a plan. Anyone else is refused todo_shared_session and is never read the plan (agents/core/todo_tool.py:548). Neither the turn's offer nor a script's reach includes the tool for them (SESSION_SCOPED_TOOLS, agents/core/tool_profiles.py:229; agents/core/code_tools.py:362). Voice carries no identity, so even the owner's voice is a guest's turn there and keeps no plan.\n- A turn on any other session keeps that session's plan, whoever it is. That covers a chat of its own and an explicit session a user token continues. Text written there by a turn that is not the owner's (a household member, a guest) is untrusted to the owner, and the owner's next turn reads it as DATA (agents/core/todo_tool.py:561).\n- Otherwise it is offered like any ungated tool. An inbound guest reaches it through `llm.guest_tools`, whose default is now echo, time and todo (agents/core/tool_profiles.py:82). An install that still holds the old default (echo, time) gets the new one once, at start (agents/core/settings_db.py:477). A list the owner changed is left alone. An owner who empties it keeps guests off the tool loop entirely.\n- At most 256 plans are kept in memory. The one the agent least recently wrote or read is dropped first, and an empty list frees its slot.\n\nWhere its text came from. Each item records three things: the posture of the turn that set its text (by), which turn that was, and whether it was untrusted (tainted). A turn is untrusted when it came from an inbound channel (the owner's own Telegram DM included), is not the owner's, or had already read untrusted content.\n- A status set by an untrusted turn taints the item too. A clean rewrite of the text keeps the taint, because the id came from whoever wrote it first. The same text again is no write, in a merge or a replace: the item keeps its writer, its turn, its taint and the plan's labels, and a status or place moved by an untrusted turn still taints it (review-H315e n2; agents/core/todo_tool.py:383).\n- A call that answers with a tainted item another turn wrote says so (agents/core/todo_tool.py:574). The loop then fences the answer as DATA and raises the reading turn's taint. An item the reading turn wrote itself is its own argument, already in its transcript, and is not fenced (agents/core/todo_tool.py:459; the loop gives each run a turn token, agents/core/agent_runtime.py:344).\n- So the owner's HUD turn that reads a plan written from Telegram is tainted by it. That follows the kernel's inbound policy, and the HUD tags such items \"untrusted source\".\n- A script's own writes cannot launder text into the plan (agents/core/tool_rpc_runtime.py:35). The broker for an execute_code script's calls reads an answer as the loop reads a result (agents/core/tool_rpc_runtime.py:100): it raises the origin once a tool that declares untrusted_output answers ok, an answer says tainted, or the answer is flagged as the loop's fence flags one (an injection pattern anywhere in it, or the fence's own markers). The scan runs off the event loop, and not at all once the run is tainted (review-H315e m2). A refusal, or a tool that raised, taints nothing. Every later call of that run then writes tainted items.\n- A script's calls belong to no model turn (agents/core/tool_rpc_runtime.py:87), so what it wrote is data even to the turn that ran it.\n- A session kernel that has held untrusted text taints every later cell's calls until a reset replaces its record (agents/core/session_kernels.py:693). It has held it once a cell read it, or ran in a turn that had. Each interpreter gets a mailbox directory of its own, removed with it (a reset, a crash, an idle expiry, an eviction, a failed start). The directories sit under one per process (p<pid>-<token>), and a start removes only those of a process that no longer runs, so two processes on one data root (jarvis-hub and jarvis-runtime) never delete each other's live mounts (review-H315e m1; agents/core/session_kernels.py:965, agents/core/session_kernels.py:985), so a file a tainted kernel wrote there never reaches the clean kernel after it.\n- A run's result says tainted whenever it printed anything, read untrusted text, or ran on a kernel that held some (agents/core/code_tools.py:604), so the loop fences its output and raises the turn's taint whether the run succeeded or failed. A plan therefore cannot carry an injected instruction into a later, clean turn as the tool's own words, and the web tools' taint refusals and the kernel's queueing apply to the turn that ran the script.\n\nThe loop. It never replaces the answer with a \"same as call N\" stub, and never counts a todo call against a per-tool cap (agents/core/agent_runtime.py:125). The cap setting's label says so (agents/core/settings_db.py:180), and a start gives a stored row the current label (agents/core/settings_db.py:463).\n- The repeat detector keys a todo call on its arguments and on the plan the model last saw (agents/core/agent_runtime.py:1561). A read after the plan changed is the tool doing its job. The same call with nothing changed in between is stopped like any other repeat: the third is refused and the fourth ends the turn. A failed call leaves the plan the model saw unchanged. A script (execute_code) may have changed the plan behind the model's back, so each one opens its own revision and the next read after it is a new call, however many scripts ran and whether or not the script reported its calls (a crashed one reports none; review-H315e M1, agents/core/agent_runtime.py:1554).\n- The answer is never cut: 7,000 bytes fits the smallest per-result budget, and the tool is pinned whole even after the turn's allowance is spent (agents/core/tool_result_store.py:100).\n- The description asks the model to mark the item it starts in_progress, and completed when it is done.\n\nThe owner's view:\n- A write leaves a todo_updated event in the tool trail (agents/core/todo_tool.py:471). It carries the session, the statuses, the position of the item in progress and the total. It never carries the text or the ids, which are free text too. A read or a refusal leaves no event.\n- GET /sessions/todo and GET /sessions/{id}/todo (agents/core/routers/sessions.py:42, agents/core/routers/sessions.py:51) are user-guarded and no-store; an invalid id is a 400.\n- Each item carries its by and tainted, never its turn. The recent list puts first the plan the agent most recently wrote or read. A plan's labels (when, which agent, whose turn) move only when its list changes.\n- `nerva todo [SESSION]` (agents/cli/nerva.py:1207) prints the plans with [ ] [>] [x] [-] marks and each item's tags (agents/cli/nerva.py:1165): guest turn, household turn, background turn, untrusted source. A bad session id exits 2 before any request. A malformed reply, a non-object item included, exits 1.\n- The Decision Inbox shows the plans with open work under the decisions (frontend/src/panels/plans.tsx:65, mounted at frontend/src/gap.tsx:3085). It shows at most three plans of eight items each, how long ago each plan was written, and every tag of each item (frontend/src/panels/plans.tsx:39). A failed read is shown as failed, with its reason, not as \"no plans\".\n- The capability registry calls the tool reversible session state with a compensating rollback: a later call can write back what a call replaced, and the tool keeps no copy of it (agents/core/observability/capability_registry.py:283).\n- A forget clears every plan (agents/core/data_purge.py:547) and lists todo_plans in live_stores_cleared. A turn already running when the purge starts can still write its plan afterwards, just as it still saves its reply.\n\nAdapted: Hermes classifies todo as mutating in its loop guardrails. Here it is ungated because it writes only its own session's list: the shared session's list only for the owner's turns, and every item's origin is kept and shown.\n\nTests: tests/test_todo_tool.py (36 cases) covers the store, the tool, the loop, the routes, the purge and the CLI.\n\ntests/test_h315b_todo_review.py (56 cases, first review) covers:\n- the shared session through the real routes. A widget visitor, a webhook (tests/test_h315b_todo_review.py:187), a subagent and a direct tool call (tests/test_h315b_todo_review.py:216) neither read nor replace the owner's plan;\n- a later turn tainted by text copied from an untrusted page (tests/test_h315b_todo_review.py:353);\n- status updates between steps, which never end the turn (tests/test_h315b_todo_review.py:395).\n\ntests/test_h315c_todo_review.py (37 cases, second review) covers:\n- scripts in the real subprocess sandbox (tests/test_h315c_todo_review.py:115). A script that read an untrusted tool or a tainted plan writes tainted items, and a clean one writes clean items. Its write is data even to the turn that ran it;\n- the real session kernel (tests/test_h315c_todo_review.py:241). A later clean cell writes tainted items, and a reset kernel's record starts clean;\n- the upgrade migration and the label refresh (tests/test_h315c_todo_review.py:328);\n- the pinned shared verdict (tests/test_h315c_todo_review.py:381);\n- a turn's own plan unfenced (tests/test_h315c_todo_review.py:413);\n- the repeat detector's revisions (tests/test_h315c_todo_review.py:482);\n- a household member's text, the status and rewrite taint, the labels, the status-only cap, the byte measure, the mark cap, punctuation content, the resolver default, the script's reach, the capability record and the CLI's non-object items.\n\ntests/test_h315d_todo_review.py (26 cases, third review) covers:\n- a script and a kernel cell that read a page and fail, printed or silent, through the real loop: fenced, the turn tainted, the plan write tainted (tests/test_h315d_todo_review.py:90);\n- a kernel's files gone after a reset, a crash and a restart (tests/test_h315d_todo_review.py:183);\n- the broker's rule (a refusal, a raising tool, a scanner flag), a same-text merge, an untrusted turn's status, the posture rule, the coordinator's wiring, a failing shared-session getter, bind's default, a channel session that is the default, and the repeat detector after a script (tests/test_h315d_todo_review.py:261).\n\nfrontend/src/test/plans-in-flight.test.tsx (10 cases) covers the inbox section: the admin credential, marks with spoken names, every tag of an item, the plan's age at its boundaries, the caps, cancelled items struck through, a failed read with its reason, and reload.\n\nMutation, second round: 48 mutants of its guards (42 backend, 6 HUD), each run against its own suites. 38 were caught at once. Of the other ten:\n- Two were code with no effect, and were removed: a broker per script run (the service loop's one context already carries the raised origin) and the kernel's mark before a cell (the broker and the mark after the cell cover it).\n- One is equivalent: the HUD's clamp at zero, since a negative age already reads \"just now\".\n- Seven got tests that now catch them. The tests also catch one new mutant: a broker that keeps its flag without marking the context.\n- The second review's own set left 12 mutants no test caught. Re-run against this code, all 12 are caught. One of them, the resolver's fail-closed default, is now the code itself, and flipping it back to fail-open is caught.\n\nMutation, third round: 15 mutants of its guards, each run against its own suites. 12 were caught at once. Three were caught once a test was tightened or added: a cell's taint when it printed nothing (twice) and a script that made no tool calls. The third review's own 76 mutants left 11 that are not equivalent; each now has a test. The fourth review's own 30 mutants left five that are not equivalent (an untrusted rewrite of a clean item, a scan limited to the head of an answer, a refused start's mount, per-key mounts, stderr-only output) and the third review's X27 (a same-list replace moving the turn); each now has a test, and this round's 15 mutants were all caught, one after a case was added, one equivalent branch removed. A raising tool now taints nothing by design, and that is pinned too.",
+      "summary": "Built in #1207, then fixed after five adversarial reviews. The model keeps a checklist of its own work and re-reads all of it on every change. The owner can read the same list, with who wrote each item and whether its text is trusted, before any approval card it leads to.\n\nThe tool. agents/core/todo_tool.py registers `todo` on the ToolRPC server, ungated (agents/core/todo_tool.py:585), with the schema {todos: [{id, content, status, parent?}], merge} (agents/core/todo_tool.py:90); the optional parent is H666's.\n- Items use Hermes' four statuses: pending, in_progress, completed, cancelled. A call with todos replaces the list. With merge=true it updates items by id, changing only the fields sent, and appends new ones. A call without todos reads the list. Every call answers with the whole list and its counts.\n- TodoStore.apply (agents/core/todo_tool.py:296) is bounded: at most 50 items, content of one printable line up to 200 characters, ids of 1 to 64 characters, 7,000 bytes for the whole list in the UTF-8 the tool sends it in, and at most one item in progress. A merge that only moves statuses is never refused as too long.\n- Control and format characters are dropped, text is NFC, each character keeps at most three combining marks (enclosing marks included), and whitespace runs collapse. Text that renders blank (only fillers or marks) is no content; punctuation or a symbol alone is content (agents/core/todo_tool.py:136). So what the owner reads is what was written. Two ids that are canonically equal are one id; look-alikes from another script or width stay two.\n- Every refusal is named, and each comes with a sentence the model can act on: todo_too_many, todo_content_too_long, todo_content_required, todo_bad_status, todo_bad_id, todo_duplicate_id, todo_one_in_progress, todo_bad_list, todo_bad_item, todo_bad_merge, todo_no_session, todo_unknown_field (a key the schema does not have, top level or item), todo_plan_too_long and todo_shared_session. A refused call changes nothing, because a merge is built on a copy.\n\nWhose plan it is. The coordinator passes the session, the turn's posture and whether the turn runs on the shared default session (agents/core/autonomy_coordinator.py:851; Orchestrator.on_shared_session, agents/core/orchestrator.py:793). A turn keeps the answer it got when it resolved its session (agents/core/orchestrator.py:280), so an owner resuming another session does not let an in-flight turn in. A turn that binds no session of its own runs on that shared session, and the plan kept there is the owner's. Such turns include the HUD, the web widget (its route binds none), voice, rooms, notes, workflows, MCP ask_*, a webhook, a job, a subagent and a direct POST /api/toolrpc/call.\n- On it, only an owner's turn keeps a plan. Anyone else is refused todo_shared_session and is never read the plan (agents/core/todo_tool.py:556). Neither the turn's offer nor a script's reach includes the tool for them (SESSION_SCOPED_TOOLS, agents/core/tool_profiles.py:229; agents/core/code_tools.py:362). Voice carries no identity, so even the owner's voice is a guest's turn there and keeps no plan.\n- A turn on any other session keeps that session's plan, whoever it is. That covers a chat of its own and an explicit session a user token continues. Text written there by a turn that is not the owner's (a household member, a guest) is untrusted to the owner, and the owner's next turn reads it as DATA (agents/core/todo_tool.py:569).\n- Otherwise it is offered like any ungated tool. An inbound guest reaches it through `llm.guest_tools`, whose default is now echo, time and todo (agents/core/tool_profiles.py:82). An install that still holds the old default (echo, time) gets the new one once, at start (agents/core/settings_db.py:477). A list the owner changed is left alone. An owner who empties it keeps guests off the tool loop entirely.\n- At most 256 plans are kept in memory. The one the agent least recently wrote or read is dropped first, and an empty list frees its slot.\n\nWhere its text came from. Each item records three things: the posture of the turn that set its text (by), which turn that was, and whether it was untrusted (tainted). A turn is untrusted when it came from an inbound channel (the owner's own Telegram DM included), is not the owner's, or had already read untrusted content.\n- A status set by an untrusted turn taints the item too. A clean rewrite of the text keeps the taint, in a merge or a replace alike, because the id came from whoever wrote it first (review-H315f n3). The same text again is no write, in a merge or a replace: the item keeps its writer, its turn, its taint and the plan's labels, and a status or place moved by an untrusted turn still taints it (review-H315e n2; agents/core/todo_tool.py:367). A status re-sent unchanged moves nothing in either mode.\n- A call that answers with a tainted item another turn wrote says so (agents/core/todo_tool.py:582). The loop then fences the answer as DATA and raises the reading turn's taint. An item the reading turn wrote itself is its own argument, already in its transcript, and is not fenced (agents/core/todo_tool.py:467; the loop gives each run a turn token, agents/core/agent_runtime.py:344).\n- So the owner's HUD turn that reads a plan written from Telegram is tainted by it. That follows the kernel's inbound policy, and the HUD tags such items \"untrusted source\".\n- A script's own writes cannot launder text into the plan (agents/core/tool_rpc_runtime.py:36). The broker for an execute_code script's calls reads an answer as the loop reads a result (agents/core/tool_rpc_runtime.py:105): it raises the origin once a tool that declares untrusted_output answers ok, an answer says tainted, or the answer is flagged as the loop's fence flags one (an injection pattern anywhere in it, or the fence's own markers). Once the run is tainted, by the broker's own flag or by the origin an earlier read raised, nothing is scanned: the K1 loop builds a broker per request, so the origin is what carries it there (agents/core/tool_rpc_runtime.py:103; review-H315f m3). Otherwise the scan runs on a thread of its own, never the loop's default pool. It covers the whole answer in overlapping 64 KiB slices, so no single regex call holds the interpreter lock for a large answer (agents/core/tool_rpc_runtime.py:146; review-H315e m2). A refusal, or a tool that raised, taints nothing. Every later call of that run then writes tainted items.\n- A script's calls belong to no model turn (agents/core/tool_rpc_runtime.py:88), so what it wrote is data even to the turn that ran it.\n- A session kernel that has held untrusted text taints every later cell's calls until a reset replaces its record (agents/core/session_kernels.py:734). It has held it once a cell read it, or ran in a turn that had. Each interpreter gets a mailbox directory of its own, removed with it (a reset, a crash, an idle expiry, an eviction, a failed start). The directories sit under one per manager (p<pid>-<token>), whose lock (an exclusive flock on its .lock) the manager holds while its process runs (agents/core/session_kernels.py:128). A start removes an owner directory whose lock it can take, which is a process that ended, in any pid namespace sharing the root: a pid is not asked, since the hub is PID 1 on every container start (review-H315f m1; agents/core/session_kernels.py:150, agents/core/session_kernels.py:1026). A directory with no lock (an older layout) ages out after the idle expiry. So two processes on one data root (jarvis-hub and jarvis-runtime, or a container and the host) never delete each other's live mounts (review-H315e m1), and a file a tainted kernel wrote there never reaches the clean kernel after it.\n- A run's result says tainted whenever it printed anything, read untrusted text, or ran on a kernel that held some (agents/core/code_tools.py:604), so the loop fences its output and raises the turn's taint whether the run succeeded or failed. A plan therefore cannot carry an injected instruction into a later, clean turn as the tool's own words, and the web tools' taint refusals and the kernel's queueing apply to the turn that ran the script.\n\nThe loop. It never replaces the answer with a \"same as call N\" stub, and never counts a todo call against a per-tool cap (agents/core/agent_runtime.py:125). The cap setting's label says so (agents/core/settings_db.py:180), and a start gives a stored row the current label (agents/core/settings_db.py:463).\n- The repeat detector keys a todo call on its arguments and on the plan the model last saw (agents/core/agent_runtime.py:1581). A read after the plan changed is the tool doing its job. The same call with nothing changed in between is stopped like any other repeat: the third is refused and the fourth ends the turn. A failed call leaves the plan the model saw unchanged. A script (execute_code) may have changed the plan behind the model's back. So each one that made tool calls, or did not finish cleanly (a crashed one reports none), opens its own revision, and the next read after it is a new call, however many scripts ran (review-H315e M1; agents/core/agent_runtime.py:1558). The revision is applied after the reads of the script's own step, which answered the plan from before it (review-H315f m2). A script that ran cleanly and called nothing changed nothing, so the repeat stop holds across it (review-H315f n2).\n- The answer is never cut: 7,000 bytes fits the smallest per-result budget, and the tool is pinned whole even after the turn's allowance is spent (agents/core/tool_result_store.py:100).\n- The description asks the model to mark the item it starts in_progress, and completed when it is done.\n\nThe owner's view:\n- A write leaves a todo_updated event in the tool trail (agents/core/todo_tool.py:479). It carries the session, the statuses, the position of the item in progress and the total. It never carries the text or the ids, which are free text too. A read or a refusal leaves no event.\n- GET /sessions/todo and GET /sessions/{id}/todo (agents/core/routers/sessions.py:42, agents/core/routers/sessions.py:51) are user-guarded and no-store; an invalid id is a 400.\n- Each item carries its by and tainted, never its turn. The recent list puts first the plan the agent most recently wrote or read. A plan's labels (when, which agent, whose turn) move only when its list changes.\n- `nerva todo [SESSION]` (agents/cli/nerva.py:1207) prints the plans with [ ] [>] [x] [-] marks and each item's tags (agents/cli/nerva.py:1165): guest turn, household turn, background turn, untrusted source. A bad session id exits 2 before any request. A malformed reply, a non-object item included, exits 1.\n- The Decision Inbox shows the plans with open work under the decisions (frontend/src/panels/plans.tsx:65, mounted at frontend/src/gap.tsx:3085). It shows at most three plans of eight items each, how long ago each plan was written, and every tag of each item (frontend/src/panels/plans.tsx:39). A failed read is shown as failed, with its reason, not as \"no plans\".\n- The capability registry calls the tool reversible session state with a compensating rollback: a later call can write back what a call replaced, and the tool keeps no copy of it (agents/core/observability/capability_registry.py:283).\n- A forget clears every plan (agents/core/data_purge.py:547) and lists todo_plans in live_stores_cleared. A turn already running when the purge starts can still write its plan afterwards, just as it still saves its reply.\n\nAdapted: Hermes classifies todo as mutating in its loop guardrails. Here it is ungated because it writes only its own session's list: the shared session's list only for the owner's turns, and every item's origin is kept and shown.\n\nTests: tests/test_todo_tool.py (36 cases) covers the store, the tool, the loop, the routes, the purge and the CLI.\n\ntests/test_h315b_todo_review.py (56 cases, first review) covers:\n- the shared session through the real routes. A widget visitor, a webhook (tests/test_h315b_todo_review.py:187), a subagent and a direct tool call (tests/test_h315b_todo_review.py:216) neither read nor replace the owner's plan;\n- a later turn tainted by text copied from an untrusted page (tests/test_h315b_todo_review.py:353);\n- status updates between steps, which never end the turn (tests/test_h315b_todo_review.py:395).\n\ntests/test_h315c_todo_review.py (37 cases, second review) covers:\n- scripts in the real subprocess sandbox (tests/test_h315c_todo_review.py:115). A script that read an untrusted tool or a tainted plan writes tainted items, and a clean one writes clean items. Its write is data even to the turn that ran it;\n- the real session kernel (tests/test_h315c_todo_review.py:241). A later clean cell writes tainted items, and a reset kernel's record starts clean;\n- the upgrade migration and the label refresh (tests/test_h315c_todo_review.py:328);\n- the pinned shared verdict (tests/test_h315c_todo_review.py:381);\n- a turn's own plan unfenced (tests/test_h315c_todo_review.py:413);\n- the repeat detector's revisions (tests/test_h315c_todo_review.py:482);\n- a household member's text, the status and rewrite taint, the labels, the status-only cap, the byte measure, the mark cap, punctuation content, the resolver default, the script's reach, the capability record and the CLI's non-object items.\n\ntests/test_h315d_todo_review.py (26 cases, third review) covers:\n- a script and a kernel cell that read a page and fail, printed or silent, through the real loop: fenced, the turn tainted, the plan write tainted (tests/test_h315d_todo_review.py:90);\n- a kernel's files gone after a reset, a crash and a restart (tests/test_h315d_todo_review.py:183);\n- the broker's rule (a refusal, a raising tool, a scanner flag), a same-text merge, an untrusted turn's status, the posture rule, the coordinator's wiring, a failing shared-session getter, bind's default, a channel session that is the default, and the repeat detector after a script (tests/test_h315d_todo_review.py:262).\n\ntests/test_h315e_todo_review.py (13 cases, fourth review) covers plan reads after several scripts and after a crashed one, the sweep of a dead process's mounts beside a live one's, a failed start, and the broker's deep scan and markers.\n\ntests/test_h315f_todo_review.py (20 cases, fifth review) covers liveness by the owner's lock through a real second process whose pid names nothing here, a dead PID 1's directory, an out-of-range pid, per-interpreter directories, a refused or cancelled start, a read beside a script in one step, a crashed K2 cell, the K1 scan stopping once tainted, the scan's own thread, slices across a boundary and 1.5 MB deep, the fence's open marker, and the two write modes' parity.\n\nfrontend/src/test/plans-in-flight.test.tsx (10 cases) covers the inbox section: the admin credential, marks with spoken names, every tag of an item, the plan's age at its boundaries, the caps, cancelled items struck through, a failed read with its reason, and reload.\n\nMutation, second round: 48 mutants of its guards (42 backend, 6 HUD), each run against its own suites. 38 were caught at once. Of the other ten:\n- Two were code with no effect, and were removed: a broker per script run (the service loop's one context already carries the raised origin) and the kernel's mark before a cell (the broker and the mark after the cell cover it).\n- One is equivalent: the HUD's clamp at zero, since a negative age already reads \"just now\".\n- Seven got tests that now catch them. The tests also catch one new mutant: a broker that keeps its flag without marking the context.\n- The second review's own set left 12 mutants no test caught. Re-run against this code, all 12 are caught. One of them, the resolver's fail-closed default, is now the code itself, and flipping it back to fail-open is caught.\n\nMutation, third round: 15 mutants of its guards, each run against its own suites. 12 were caught at once. Three were caught once a test was tightened or added: a cell's taint when it printed nothing (twice) and a script that made no tool calls. The third review's own 76 mutants left 11 that are not equivalent; each now has a test. The fourth review's own 30 mutants left five that are not equivalent (an untrusted rewrite of a clean item, a scan limited to the head of an answer, a refused start's mount, per-key mounts, stderr-only output) and the third review's X27 (a same-list replace moving the turn). That round's 15 mutants were all caught, one after a case was added, and one equivalent branch was removed. A raising tool taints nothing by design, and that is pinned too. The fifth review found two of those five still unpinned (per-key mounts, a refused start) and X27 equivalent once a same-text replace keeps its turn. Its own 32 mutants left seven that are not equivalent:\n- four have a test now: an untrusted replace that changes the text, an untrusted re-parent, the fence's open marker and a cancelled start;\n- the EPERM case went with the pid check;\n- the two on the moved item's turn are left, since they change only whether the moving turn's own later read is fenced.\nThe two it found unpinned have tests now. So does a crashed K2 cell, which only a print-only test had caught. This round's 15 mutants were all caught, one after its case was corrected.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/todo_tool.py",
-          "sha256": "7cefd68cb9491986c1562e01f5f17c20100e927e3f989089d77d749c25363b91"
+          "sha256": "3bef3408de08c011a1b7a96d06d1ae8ae95f55b7bfd2a223ea32d99d06de783e"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -3978,7 +3978,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/tool_profiles.py",
@@ -4026,11 +4026,11 @@
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "agents/core/sandbox_invocation.py",
@@ -4058,11 +4058,15 @@
         },
         {
           "path": "tests/test_h315d_todo_review.py",
-          "sha256": "408b51b864148e8ca0126397f3621de7241f50586b640d4ef65c1d965b23c039"
+          "sha256": "af7769a0aad9c917b0ee627ca43914a4c0aa4e735c02eaaaff06409ef45be37d"
         },
         {
           "path": "tests/test_h315e_todo_review.py",
-          "sha256": "14fa8f803e157c6c06bf1bc8a6812a2efbb2a0e6d34f7261fa242203912d2468"
+          "sha256": "5f62aff8943959d8fbf7ebd961ce3ac0977b7690ea9dc720c2772f4020f0ce0c"
+        },
+        {
+          "path": "tests/test_h315f_todo_review.py",
+          "sha256": "e46c3189ef2ca133ff581352e16c1a9d649c912de3f1d6848daf82b1033f25c4"
         }
       ]
     },
@@ -4075,7 +4079,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -4482,7 +4486,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -4539,7 +4543,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -5041,7 +5045,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -5112,7 +5116,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -5141,7 +5145,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -5157,12 +5161,12 @@
       "id": "H396",
       "row_sha256": "763dc96cf8172d031098611b5bd1dc3c84957702549d3aa9fe59a9078e2453e3",
       "status": "partial",
-      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:700-708). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:577). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:553, agents/core/agent_runtime.py:572). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:286-287) and `nerva tools` (agents/cli/nerva.py:739). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3724, agents/core/orchestrator.py:3726) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2349). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:324), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1249). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
+      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:704-712). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:577). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:553, agents/core/agent_runtime.py:572). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:286-287) and `nerva tools` (agents/cli/nerva.py:739). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3724, agents/core/orchestrator.py:3726) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2349). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:324), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1249). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
       "remaining": "(1) A typed turn exit-reason vocabulary (completed, approval_required, deadline, context_budget, tools_withdrawn, window_invalid, repeated_call, failing_tool, iteration_limit, no_tools, no_capability, agent_timeout), returned with the reply from AgentToolRuntime.run and carried to ChatResponse and the SSE end event. (2) One diagnostic log line per turn naming the reason: INFO normally, WARNING when the loop stopped with a tool result the model never answered. (3) A consolidated user-facing completion explainer that the HUD renders from that reason, replacing the fixed strings. (4) The file-mutation footer: file_write/file_delete calls that failed this turn and were never superseded by a later success on the same path, appended to the reply so the model cannot claim every file was edited. (5) A per-turn accounting line (tool calls, failures, tokens) and cumulative output tokens shown in the HUD.",
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/observability/tool_events.py",
@@ -5203,7 +5207,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_tool_loop_guardrails.py",
@@ -5224,7 +5228,7 @@
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_tool_result_taint.py",
@@ -5371,7 +5375,7 @@
       "id": "H416",
       "row_sha256": "c0d5a3625cdb3959ada7e5ca5d061ad00fe2787c12b37da82b35fc8c8167318c",
       "status": "partial",
-      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:508). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:700-708). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:3192) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3698). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:371-375), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1246), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:201), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
+      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:508). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:704-712). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:3192) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3698). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:371-375), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1250), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:232), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
       "remaining": "(1) One deadline/budget primitive that extends iteration_budget.py, as the 2026-08-28 delta doc chose: a wall-clock deadline plus an iteration count, remaining and fraction-spent readings, and a timeout resolver per call kind. The orchestrator turn, the tool loop, tool calls, ToolRPC and plugin gathering derive their timeouts from it instead of their own constants. (2) An 80%-spent wrap-up nudge, injected once into the tool-loop transcript, asking the model to deliver from what it has. (3) The exhaustion protocol: tell the model exactly once, grant one final tool-less call, and force a summary from the transcript if that call yields no text, instead of returning the fixed safety-limit string. (4) Deadline and budget stops reported through the H396 exit-reason vocabulary.",
       "evidence": [
         {
@@ -5380,7 +5384,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -5388,7 +5392,7 @@
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/resilience.py",
@@ -5578,7 +5582,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -5603,7 +5607,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -5628,7 +5632,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -5889,7 +5893,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -6224,7 +6228,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -8233,7 +8237,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -8277,7 +8281,7 @@
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -8712,7 +8716,7 @@
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "fb794d3e3c3f301e6c111cde241c6e263e86c394f4fc285ca0b8810518df8c42"
+          "sha256": "15924a58c33e009d958810dddef30e5aaee30eb90888d1eebbc79a1e228d623d"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -8736,7 +8740,7 @@
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "83ec60923911e7dc59b494fc621ede5bce14711b2ed8e51129021119c9219e87"
+          "sha256": "99e01d63ca7f22e78acf7527bc571f5738c85f7413594a83c1cbe55ca9e1465d"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -8788,7 +8792,7 @@
       "id": "H661",
       "row_sha256": "f561e9e036f1b296b050101ac1f5ead31c1e09146635fe8adae5e8d7424c2bab",
       "status": "equivalent",
-      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1375) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:122, agents/core/file_tools.py:1476). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1395, agents/core/file_tools.py:728). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:746). A page that stops early returns next_offset (agents/core/file_tools.py:1250) and never ends inside a UTF-8 character (agents/core/file_tools.py:1202). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1254). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:636, agents/core/file_tools.py:673, agents/core/file_tools.py:1167), wired at agents/core/autonomy_coordinator.py:796. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:800). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:932), and able to open this very path (agents/core/autonomy_coordinator.py:812, agents/core/file_tools.py:701). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:687), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:753, agents/core/file_tools.py:905), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
+      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1379) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:122, agents/core/file_tools.py:1476). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1395, agents/core/file_tools.py:728). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:746). A page that stops early returns next_offset (agents/core/file_tools.py:1250) and never ends inside a UTF-8 character (agents/core/file_tools.py:1202). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1254). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:636, agents/core/file_tools.py:673, agents/core/file_tools.py:1167), wired at agents/core/autonomy_coordinator.py:796. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:800). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:932), and able to open this very path (agents/core/autonomy_coordinator.py:812, agents/core/file_tools.py:701). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:687), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:753, agents/core/file_tools.py:905), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
       "remaining": "",
       "evidence": [
         {
@@ -8809,7 +8813,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/environments/output_limits.py",
@@ -8841,7 +8845,7 @@
       "id": "H666",
       "row_sha256": "a2e2e641a03692b92823e4e711cd9554161964dc43b645e31345e05c4b370f10",
       "status": "equivalent",
-      "summary": "Built in #1207 and fixed after one adversarial review (review-H666: no major; five minors and eight nits, all fixed). Hermes nests the agent's subtasks with one optional parent on each todo item (the id of another item) instead of a nested array, so merge-by-id keeps working, and draws the list through one defensive tree builder. Nerva now does both, for the todo tool's items and for mission plan steps.\n\nThe tree builder:\n- agents/core/todo_tree.py tree() (agents/core/todo_tree.py:48) returns (item, depth) pairs in depth-first order, children in list order under their parent, with every item exactly once. It is stdlib only, because the CLI imports it.\n- Depth is capped at MAX_DEPTH = 4 (agents/core/todo_tree.py:30); a deeper item is drawn at depth 4, under its parent.\n- An item whose parent is missing, itself, or not an id at all is drawn at depth 0 in its place (agents/core/todo_tree.py:65). ref() accepts only text or whole numbers as ids; a bool, a fractional float, a list or a dict is no id, and a whole-valued float is its number, as JSON's 1.0 is 1 to the HUD (agents/core/todo_tree.py:33). When two items share an id, the first holds it. Anything that is not a list is an empty tree.\n- Cycle members, and anything under them, are reached from no root, so they are appended flat at depth 0 in list order (agents/core/todo_tree.py:78). A getter that raises counts as no parent. The walk uses an explicit stack, so a 5,000-item chain costs no recursion.\n- The HUD's twin is frontend/src/todo-tree.ts todoTree() (frontend/src/todo-tree.ts:28), with the same rules. Both suites read one shared file of 47 cases, frontend/src/test/todo-tree-cases.json (hand-written shapes plus seeded random ones over text, number, whole and fractional float, bool, null, list and dict ids and parents), and assert the same drawn order and depths. The review's fuzz had found the twins differing on whole-valued floats; that is fixed and pinned.\n\nThe todo tool:\n- An item may carry parent: the id of the item it sits under. It is an allowed item field (agents/core/todo_tool.py:84) and is in the schema as a string of at most MAX_ID (agents/core/todo_tool.py:102); the description tells the model how to nest and un-nest.\n- _clean_parent (agents/core/todo_tool.py:197) cleans it like an id. Empty or whitespace-only text means no parent, as Hermes clears it. Anything else that is not an id is refused as todo_bad_parent, with a sentence the model can act on, and changes nothing.\n- A parent need not name an item in the list: a dangling, self or cyclic parent is stored and drawn at the top, never refused and never lost.\n- On a merge, parent null means not sent (as for content and status), and \"\" clears it. A changed parent counts as a write, so the plan cap applies. A parent moved by an untrusted turn taints the item, as a status does. Re-sending the same parent changes nothing: no taint, and the plan's labels stay (agents/core/todo_tool.py:396).\n- model_items answers the parent only when it is set (agents/core/todo_tool.py:227), so a flat list answers exactly as before and plan_bytes counts a parent's bytes.\n\nMission plan steps:\n- MissionStore.create (agents/core/autonomy/missions.py:203) gives every step a nullable parent. _plan_step (agents/core/autonomy/missions.py:390) reads each entry.\n  - A title, or any other value, is a top-level step with its own text, as before; a mapping without title or parent is still stringified.\n  - {title, parent?} may sit under an earlier step: parent is that step's index, and only an earlier one. A plan is therefore a forest by construction.\n  - Anything else is refused as bad_plan_step: a self, later, out-of-range, negative, bool, text or float parent, a missing or blank title, or an unknown key.\n- POST /api/missions (agents/core/routers/missions.py:50) accepts such a plan. A bad step answers 400 with one fixed sentence and code bad_plan_step (agents/core/routers/missions.py:73); no request data reaches the body.\n- The build-queue plan kept out-of-range and self parents on mission steps and let the tree degrade them. The store refuses them instead: a mission plan is written once, by its creator, so a bad parent there is a caller's mistake worth a 400. The tree still degrades any step the store did not check, such as a row written before this change, which has no parent key. A legacy entry {title, <other key>} is now refused too; nothing in the repo sends one.\n- finish_step budget charging and the completion gates are unchanged. A child step is charged like any step, closing a child does not close its parent, and exhausting the budget still auto-fails the mission.\n\nRendering:\n- nerva todo draws the tree through todo_tree, indented two spaces a level (agents/cli/nerva.py:1200).\n- The Decision Inbox's plans in flight (frontend/src/panels/plans.tsx) orders items through todoTree and indents each row 14 px a level, with data-depth (frontend/src/panels/plans.tsx:78). ITEMS_SHOWN counts rows in tree order.\n- MissionCanvasPanel draws plan steps through todoTree, the tree keyed by each step's idx (frontend/src/panels/mission-canvas.tsx:248). The finish controls name the step's own idx, not its drawn position: the test clicks done in a nested row drawn third and asserts it posts that step's idx.\n\nTests:\n- tests/test_h666_subtasks.py (39 cases):\n  - the tree: DFS order, a child listed before its parent, the depth cap, dangling, self and cyclic parents, non-id parents, duplicate ids, a getter that raises, and a long chain;\n  - todo parents: storage, merge, clearing, cleaning, refusal, the cap, labels, taint, the schema and the tool answer;\n  - mission step parents in the store and through POST /api/missions, with the refusal cases, budget charging on a child step, and nerva todo indentation.\n- Vitest: frontend/src/test/todo-tree.test.ts (9, including the shared cases), plus one case each in the plans-in-flight and mission-canvas suites (indentation, dangling or cyclic parents kept in view, and the finish control's idx).\n- 43 mutants of the new guards were all killed (four survivors of the first run were killed by added cases). One unreachable guard, a placed-twice check in the walk, was removed. The review's 51 mutants left three survivors: two (a boolean read as an id in the TS twin, a finish control addressing its drawn position) are now killed, and the third (the tree keyed by position) is equivalent, since a step's idx is its position. Six mutants of the fix round's guards were all killed.",
+      "summary": "Built in #1207 and fixed after one adversarial review (review-H666: no major; five minors and eight nits, all fixed). Hermes nests the agent's subtasks with one optional parent on each todo item (the id of another item) instead of a nested array, so merge-by-id keeps working, and draws the list through one defensive tree builder. Nerva now does both, for the todo tool's items and for mission plan steps.\n\nThe tree builder:\n- agents/core/todo_tree.py tree() (agents/core/todo_tree.py:48) returns (item, depth) pairs in depth-first order, children in list order under their parent, with every item exactly once. It is stdlib only, because the CLI imports it.\n- Depth is capped at MAX_DEPTH = 4 (agents/core/todo_tree.py:30); a deeper item is drawn at depth 4, under its parent.\n- An item whose parent is missing, itself, or not an id at all is drawn at depth 0 in its place (agents/core/todo_tree.py:65). ref() accepts only text or whole numbers as ids; a bool, a fractional float, a list or a dict is no id, and a whole-valued float is its number, as JSON's 1.0 is 1 to the HUD (agents/core/todo_tree.py:33). When two items share an id, the first holds it. Anything that is not a list is an empty tree.\n- Cycle members, and anything under them, are reached from no root, so they are appended flat at depth 0 in list order (agents/core/todo_tree.py:78). A getter that raises counts as no parent. The walk uses an explicit stack, so a 5,000-item chain costs no recursion.\n- The HUD's twin is frontend/src/todo-tree.ts todoTree() (frontend/src/todo-tree.ts:28), with the same rules. Both suites read one shared file of 47 cases, frontend/src/test/todo-tree-cases.json (hand-written shapes plus seeded random ones over text, number, whole and fractional float, bool, null, list and dict ids and parents), and assert the same drawn order and depths. The review's fuzz had found the twins differing on whole-valued floats; that is fixed and pinned.\n\nThe todo tool:\n- An item may carry parent: the id of the item it sits under. It is an allowed item field (agents/core/todo_tool.py:84) and is in the schema as a string of at most MAX_ID (agents/core/todo_tool.py:102); the description tells the model how to nest and un-nest.\n- _clean_parent (agents/core/todo_tool.py:197) cleans it like an id. Empty or whitespace-only text means no parent, as Hermes clears it. Anything else that is not an id is refused as todo_bad_parent, with a sentence the model can act on, and changes nothing.\n- A parent need not name an item in the list: a dangling, self or cyclic parent is stored and drawn at the top, never refused and never lost.\n- On a merge, parent null means not sent (as for content and status), and \"\" clears it. A changed parent counts as a write, so the plan cap applies. A parent moved by an untrusted turn taints the item, as a status does. Re-sending the same parent changes nothing: no taint, and the plan's labels stay (agents/core/todo_tool.py:400).\n- model_items answers the parent only when it is set (agents/core/todo_tool.py:227), so a flat list answers exactly as before and plan_bytes counts a parent's bytes.\n\nMission plan steps:\n- MissionStore.create (agents/core/autonomy/missions.py:203) gives every step a nullable parent. _plan_step (agents/core/autonomy/missions.py:390) reads each entry.\n  - A title, or any other value, is a top-level step with its own text, as before; a mapping without title or parent is still stringified.\n  - {title, parent?} may sit under an earlier step: parent is that step's index, and only an earlier one. A plan is therefore a forest by construction.\n  - Anything else is refused as bad_plan_step: a self, later, out-of-range, negative, bool, text or float parent, a missing or blank title, or an unknown key.\n- POST /api/missions (agents/core/routers/missions.py:50) accepts such a plan. A bad step answers 400 with one fixed sentence and code bad_plan_step (agents/core/routers/missions.py:73); no request data reaches the body.\n- The build-queue plan kept out-of-range and self parents on mission steps and let the tree degrade them. The store refuses them instead: a mission plan is written once, by its creator, so a bad parent there is a caller's mistake worth a 400. The tree still degrades any step the store did not check, such as a row written before this change, which has no parent key. A legacy entry {title, <other key>} is now refused too; nothing in the repo sends one.\n- finish_step budget charging and the completion gates are unchanged. A child step is charged like any step, closing a child does not close its parent, and exhausting the budget still auto-fails the mission.\n\nRendering:\n- nerva todo draws the tree through todo_tree, indented two spaces a level (agents/cli/nerva.py:1200).\n- The Decision Inbox's plans in flight (frontend/src/panels/plans.tsx) orders items through todoTree and indents each row 14 px a level, with data-depth (frontend/src/panels/plans.tsx:78). ITEMS_SHOWN counts rows in tree order.\n- MissionCanvasPanel draws plan steps through todoTree, the tree keyed by each step's idx (frontend/src/panels/mission-canvas.tsx:248). The finish controls name the step's own idx, not its drawn position: the test clicks done in a nested row drawn third and asserts it posts that step's idx.\n\nTests:\n- tests/test_h666_subtasks.py (39 cases):\n  - the tree: DFS order, a child listed before its parent, the depth cap, dangling, self and cyclic parents, non-id parents, duplicate ids, a getter that raises, and a long chain;\n  - todo parents: storage, merge, clearing, cleaning, refusal, the cap, labels, taint, the schema and the tool answer;\n  - mission step parents in the store and through POST /api/missions, with the refusal cases, budget charging on a child step, and nerva todo indentation.\n- Vitest: frontend/src/test/todo-tree.test.ts (9, including the shared cases), plus one case each in the plans-in-flight and mission-canvas suites (indentation, dangling or cyclic parents kept in view, and the finish control's idx).\n- 43 mutants of the new guards were all killed (four survivors of the first run were killed by added cases). One unreachable guard, a placed-twice check in the walk, was removed. The review's 51 mutants left three survivors: two (a boolean read as an id in the TS twin, a finish control addressing its drawn position) are now killed, and the third (the tree keyed by position) is equivalent, since a step's idx is its position. Six mutants of the fix round's guards were all killed.",
       "remaining": "",
       "evidence": [
         {
@@ -8850,7 +8854,7 @@
         },
         {
           "path": "agents/core/todo_tool.py",
-          "sha256": "7cefd68cb9491986c1562e01f5f17c20100e927e3f989089d77d749c25363b91"
+          "sha256": "3bef3408de08c011a1b7a96d06d1ae8ae95f55b7bfd2a223ea32d99d06de783e"
         },
         {
           "path": "agents/core/autonomy/missions.py",
@@ -9065,7 +9069,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_compaction_clock.py",
@@ -9134,7 +9138,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -9475,7 +9479,7 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "5ad8b9292b1d5df2bb1a2798e7a34df44adcf7a80286f5edd2e50de4baca7d01"
+          "sha256": "7a211a3a1c7aea3f2c2b35d14e4a3e17703c2cd29d85dd2ec23562b71b59a476"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
