@@ -352,14 +352,14 @@ describe('Action Approvals — skill changes', () => {
 // H318 (review-H318f V4): a change the hub will refuse (a bundled skill, a rename) offers
 // Reject only, even beside its diff.
 describe('Action Approvals — a refused change', () => {
-  it('disables Approve for a change the hub will refuse', async () => {
+  it.each([['a bundled skill: it cannot be changed here'], ['renames the skill']])('disables Approve for a change the hub will refuse (%s)', async (flag) => {
     env.cleanup();
     const fetch = vi.fn((url) => {
       if (url === '/api/actions/pending') {
         return json({ actions: [{ id: 'c9', tool: 'skill.patch_proposal', summary: 'bundled change' }] });
       }
       if (url.startsWith('/api/skills/proposals')) {
-        return json({ proposals: [{ id: 'p9', card: 'c9', skill: 'core', diff: '-a\n+b', flags: ['bundled skill: the hub refuses it'] }],
+        return json({ proposals: [{ id: 'p9', card: 'c9', skill: 'core', diff: '-a\n+b', flags: [flag] }],
                       cards: ['c9'] });
       }
       return json({});

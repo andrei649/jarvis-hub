@@ -1199,14 +1199,21 @@ def register(skill):
         bytes. ``key_missing``: a keyed SKILL.sig the missing key cannot renew. ``snapshot``:
         the one read of the tree all of these judged, which a renewal must match (m-1)."""
         path = Path(skill.path)
+        unreadable = False
         try:
             snapshot = signing.source_snapshot(path)
             _, reason = signing.verify_skill(path, snapshot=snapshot)
-        except (OSError, ValueError):                 # a SKILL.sig that is not UTF-8 too
+        except ValueError:                            # a SKILL.sig that is not UTF-8
             snapshot, reason = None, "unreadable"
+        except OSError:
+            # Could not read, which is not "unsigned": a sharing violation or an EIO for a
+            # moment would otherwise void both vouches over an applied change
+            # (review-H318g m-1). The caller retries.
+            snapshot, reason, unreadable = None, "unreadable", True
         approved = (snapshot is not None
                     and self._approval_store.approved_snapshot(path, snapshot=snapshot) is not None)
         return {
+            "unreadable": unreadable,
             "bundled": not getattr(skill, "external", True) or _shipped_location(path),
             "signed": reason in ("signed", "integrity-only"),
             "approved": approved,

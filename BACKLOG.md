@@ -14,6 +14,22 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318g found no major, two minors and five nits; the sixth round's fix held (a crash's leftover beside the skill is picked up by nothing):
+  - **A standing that could not be read for a moment read as unsigned (m-1, older than this round).** The change was then applied with nothing to renew, and a shown skill went hidden while the outcome said applied. `owner_standing` now keeps "could not read" apart from "unsigned" (a SKILL.sig that is not UTF-8 still reads as unsigned), and the apply answers `unreadable_signature` and retries at the next decision.
+  - **The crash-safety claim was wider than the code (m-2).** The signature's own renewal stages its file inside the skill (a leftover fails the signature closed), and a crash between the rename and the renewal leaves the skill sandboxed and reported as drifted. The row says so now, instead of "never inside it".
+  - **Nits:** where the temporary file cannot sit beside the folder (the folder linked onto another filesystem, a root the hub cannot write) the folder itself is used instead of failing forever; the staged file is created with the file's mode, so it is never readable wider; a signature that stays unreadable is warned about once per proposal; /v1's reject-only is pinned for a rename and a bundled skill with the hub's own flag texts; the write no longer buffers (the survivor about the flush is gone) and a failed replace leaves no temporary file anywhere; the records' wording is corrected.
+
+  Mutation: this round's 8 mutants were all caught, one after it was rebuilt.
+
+  Records:
+  - H318 rewritten;
+  - 14 drifted rows re-read and re-stamped;
+  - GOV-256 names the new tests.
+
+  Tests: backend 14,904 → 14,911 (`tests/test_h318h_skill_review.py` 7); vitest unchanged at 1,462; `tests/frontend/tools.test.js` +1.
+
 - 2026-09-25 H315 eighth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315i found no major, four minors and four nits; the seventh round's fixes held and its eleven survivors are killed:

@@ -14,6 +14,7 @@ is reversible.
 from __future__ import annotations
 
 import difflib
+import errno
 import logging
 import os
 import threading
@@ -102,21 +103,40 @@ def _only_manifest_changed(before, after, proposed: bytes) -> bool:
 
 def _write_atomic(path: Path, data: bytes) -> None:
     """Replace ``path`` with ``data`` whole, or leave it as it was: written to a temporary
-    file beside the skill's folder (same filesystem, never inside it, where a file left
-    by a crash would count as a member of the skill and void its signature: review-H318f
-    m-1), flushed to disk, then renamed over it, keeping the old file's mode (n-2)."""
-    tmp = path.parent.parent / f".{path.parent.name}.{path.name}.{uuid.uuid4().hex[:8]}.tmp"
+    file created with the old file's mode (never readable wider, even for a moment:
+    review-H318g n-2), flushed to disk, then renamed over it.
+
+    The temporary file is made beside the skill's folder, where one a crash leaves is not
+    a member of the skill (review-H318f m-1). Where that cannot be (the folder is linked
+    onto another filesystem, or the root is not writable: review-H318g n-1), it is made in
+    the folder itself: a leftover there fails the skill's signature closed (untrusted, never
+    trusted), as a leftover of the signature's own renewal does."""
     try:
         mode = os.stat(path).st_mode & 0o7777
     except OSError:
-        mode = None
+        mode = 0o644
+    name = f"{path.name}.{uuid.uuid4().hex[:8]}.tmp"
+    for tmp in (path.parent.parent / f".{path.parent.name}.{name}", path.parent / f".{name}"):
+        try:
+            _write_via(tmp, path, data, mode)
+            return
+        except OSError as exc:
+            if tmp.parent == path.parent or exc.errno not in (errno.EXDEV, errno.EACCES, errno.EPERM,
+                                                               errno.EROFS):
+                raise
+
+
+def _write_via(tmp: Path, path: Path, data: bytes, mode: int) -> None:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode & 0o777)
     try:
-        with open(tmp, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-        if mode is not None:
-            os.chmod(tmp, mode)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -129,6 +149,7 @@ class SkillProposalStore(JsonStore):
     def __init__(self, path: str | Path | None = None) -> None:
         super().__init__(path)
         self._card_lock = threading.Lock()
+        self._warned_unreadable: set[str] = set()
 
     def _serialize(self):
         return {"proposals": self._items}
@@ -300,6 +321,8 @@ class SkillProposalStore(JsonStore):
             # pass's (review-H318d n-4).
             logger.warning("skill '%s': its standing could not be read", rec["skill"], exc_info=True)
             return {"ok": False, "reason": "unreadable_skill"}
+        if standing.get("unreadable"):
+            return self._unreadable_signature(proposal_id, rec["skill"])
         if standing.get("bundled"):
             self.mark(proposal_id, STATUS_REJECTED, reason="bundled")
             return {"ok": False, "reason": "bundled_skill"}
@@ -330,9 +353,7 @@ class SkillProposalStore(JsonStore):
             # pass, as a failed write is: it does not make the change stale (review-H318f n-1).
             old_sig = sig.read_bytes() if sig.is_file() else None
         except Exception:
-            logger.warning("skill '%s': its SKILL.sig could not be read; retried next pass",
-                           rec["skill"], exc_info=True)
-            return {"ok": False, "reason": "unreadable_signature"}
+            return self._unreadable_signature(proposal_id, rec["skill"])
         proposed_raw = rec["proposed"].encode("utf-8")
         if manifest_hash(current) != rec["original_hash"]:
             self.mark(proposal_id, STATUS_STALE)
@@ -411,6 +432,16 @@ class SkillProposalStore(JsonStore):
         logger.info("Skill '%s' patched via approved proposal %s (backup: %s, now %s)",
                     rec["skill"], proposal_id, backup, state)
         return {"ok": True, "skill": rec["skill"], "backup": str(backup), "state": state}
+
+    def _unreadable_signature(self, proposal_id: str, skill: str) -> dict:
+        """A standing or SKILL.sig that could not be read just now: nothing is changed and
+        the proposal stays approved, tried again at the next decision. Warned once per
+        proposal, not at every pass (review-H318g n-3)."""
+        if proposal_id not in self._warned_unreadable:
+            self._warned_unreadable.add(proposal_id)
+            logger.warning("skill '%s': its signature could not be read; proposal %s is tried "
+                           "again at the next decision", skill, proposal_id, exc_info=True)
+        return {"ok": False, "reason": "unreadable_signature"}
 
     def stats(self) -> dict:
         with self._lock:
