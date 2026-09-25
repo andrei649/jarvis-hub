@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "b414da6cb452e5eacb7e2031cbf26effb10209be",
-  "assessed_at": "2026-09-25T03:37:39Z",
+  "base_sha": "b2799b3c3d40180f31c6295224e18e82830b48ec",
+  "assessed_at": "2026-09-25T03:39:37Z",
   "reviews": [
     {
       "id": "H001",
@@ -6339,7 +6339,7 @@
         },
         {
           "path": "tests/test_h465_refine.py",
-          "sha256": "c9ef2ebe9bc60bd50d2f431e7cbcc2247c7546b7a7a4a4f8477800659425f312"
+          "sha256": "c6facf3195400a6c28c5008af6fbb86977e0c26c81700e479f8235fa29d30939"
         },
         {
           "path": "tests/test_slash_commands.py",
