@@ -184,6 +184,7 @@ async def test_the_scan_runs_on_its_own_thread_never_the_default_pool(monkeypatc
             return super().submit(fn, *args, **kwargs)
 
     monkeypatch.setattr(tool_rpc_runtime, "_SCAN_POOL", Spy(max_workers=1))
+    monkeypatch.setattr(tool_rpc_runtime, "_small", lambda value: False)   # a large answer (review-H315g m2)
     from tests.test_h315d_todo_review import _broker, _in_its_own_context
 
     broker = _broker(_fetching_server(TodoStore()))

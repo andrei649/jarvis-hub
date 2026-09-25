@@ -129,22 +129,38 @@ def _hold_owner_lock(owner_dir: Path):
     """Take this manager's owner lock and keep it for the process's life: an exclusive
     ``flock`` on ``<owner>/.lock``. The kernel drops it when the process ends, however it
     ends, and it means the same in every pid namespace that shares the data root, where a
-    pid does not (review-H315f m1: a hub is PID 1 in every container start)."""
+    pid does not (review-H315f m1: a hub is PID 1 in every container start).
+
+    The directory is built under a temporary name the sweep never takes for an owner's,
+    locked there, and only then renamed into place: another start never sees the owner
+    directory with a lock nobody holds, so it can neither take the lock nor remove the
+    directory while this one is being made (review-H315g m1)."""
     if _fcntl is None:
         return None
+    staging = owner_dir.with_name(f".{owner_dir.name}-{secrets.token_hex(4)}.tmp")
+    fd = None
     try:
-        owner_dir.mkdir(parents=True, exist_ok=True)
-        fd = os.open(owner_dir / _OWNER_LOCK, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        staging.mkdir(parents=True, exist_ok=False)
+        fd = os.open(staging / _OWNER_LOCK, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        os.rename(staging, owner_dir)
     except OSError:
+        if fd is not None:
+            os.close(fd)
+        shutil.rmtree(staging, ignore_errors=True)
         logger.warning("session kernel owner lock unavailable", exc_info=True)
         return None
-    try:
-        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-    except OSError:
-        os.close(fd)
-        logger.warning("session kernel owner lock already held", exc_info=True)
-        return None
     return fd
+
+
+def _lock_intact(owner_dir: Path, fd) -> bool:
+    """The lock this manager holds is still the one at ``<owner>/.lock``: nothing removed
+    the directory or replaced the file under it."""
+    try:
+        held, there = os.fstat(fd), os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
+    except (OSError, TypeError):
+        return False
+    return (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev)
 
 
 def _owner_alive(owner_dir: Path) -> bool | None:
@@ -847,7 +863,12 @@ class SessionKernelManager:
                 await asyncio.sleep(self._poll_interval)
             if record.quarantined or self._records.get(record.key) is not record:
                 raise KernelRefused(CRASHED)
-            return await task
+            payload = await task
+            if isinstance(payload, dict) and store is not None:
+                # The calls the host served, not the count the kernel reports: a cell can
+                # set its own counter to anything (review-H315g n1).
+                payload = {**payload, "tool_calls": len(served)}
+            return payload
         finally:
             active = False
             pending = [item for item in (task, service) if item is not None]
@@ -1008,6 +1029,16 @@ class SessionKernelManager:
         every interpreter, never one an earlier interpreter of the same key wrote in."""
         if self._rpc_root is None:
             return {}
+        if _fcntl is not None and not _lock_intact(self._rpc_root / self._owner, self._owner_fd):
+            # The directory went, or its lock was replaced: a mount there would have no
+            # holder, and the next start would remove it live. Take a new directory; with no
+            # lock to be had, give no mount at all (review-H315g m1).
+            if self._owner_fd is not None:
+                os.close(self._owner_fd)
+            self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
+            self._owner_fd = _hold_owner_lock(self._rpc_root / self._owner)
+            if self._owner_fd is None:
+                return {}
         host = self._rpc_root / self._owner / f"{key.token}-{secrets.token_hex(8)}"
         try:
             host.mkdir(parents=True, exist_ok=False)
@@ -1034,7 +1065,8 @@ class SessionKernelManager:
         process that has ended, in any pid namespace sharing the root. A pid is not asked:
         in a container the hub is PID 1 on every start (review-H315f m1). A directory with
         no lock (the older layouts, or no flock) is removed once it is older than the idle
-        expiry, which no live interpreter's is."""
+        expiry, which no live interpreter's is; an owner directory's age is its newest
+        interpreter's."""
         if self._rpc_root is None or not self._rpc_root.is_dir():
             return
         for entry in self._rpc_root.iterdir():
@@ -1045,7 +1077,14 @@ class SessionKernelManager:
                 continue
             if alive is None:
                 try:
-                    age = time.time() - entry.stat().st_mtime
+                    newest = entry.stat().st_mtime
+                    if _OWNER_DIR.fullmatch(entry.name):
+                        # An owner directory's own time moves only when an interpreter's
+                        # directory is made or removed in it; a busy interpreter moves its
+                        # own directory's (review-H315g m1).
+                        newest = max([newest, *(child.stat().st_mtime for child in entry.iterdir()
+                                                if child.is_dir() and not child.is_symlink())])
+                    age = time.time() - newest
                 except OSError:
                     continue
                 if age < self._idle_ttl:

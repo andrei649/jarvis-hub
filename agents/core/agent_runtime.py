@@ -125,6 +125,10 @@ _DUPLICATE_NOTICE = (
 _ALWAYS_RESTATED = frozenset({"todo"})
 #: Tools that run a script able to call other tools behind the model's back (H315).
 _SCRIPT_TOOLS = frozenset({"execute_code"})
+#: execute_code's refusals before any script runs (agents/core/code_tools.py: DISABLED,
+#: SANDBOX_UNAVAILABLE, NOT_ISOLATED, AUTHORITY_UNAVAILABLE): nothing can have changed.
+_SCRIPT_REFUSALS = frozenset({"code_execution_disabled", "sandbox_unavailable",
+                              "sandbox_not_isolated", "authority_unavailable"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -1560,13 +1564,17 @@ def _script_revision_due(tool: str, result: Any) -> bool:
     made tool calls of its own, or it is a script that ran and did not finish cleanly (a
     crash reports no calls, review-H315e M1). A script that ran cleanly with no calls, or
     one the server refused and never ran (no answer of its own), changed nothing, so the
-    repeat stop still holds across it (review-H315f n2)."""
+    repeat stop still holds across it (review-H315f n2). A handler that raised may have
+    raised after its script ran, so it opens one; execute_code's own refusals before any
+    script (switched off, no sandbox, not isolated, no authority) do not (review-H315g n1)."""
     if _made_nested_calls(result):
         return True
     if tool not in _SCRIPT_TOOLS:
         return False
+    if isinstance(result, Mapping) and result.get("ok") is False and result.get("reason") == "tool_error":
+        return True
     inner = result.get("result") if isinstance(result, Mapping) else None
-    if not isinstance(inner, Mapping):
+    if not isinstance(inner, Mapping) or inner.get("reason") in _SCRIPT_REFUSALS:
         return False
     return inner.get("ok") is False or bool(inner.get("timed_out"))
 

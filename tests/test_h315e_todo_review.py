@@ -109,6 +109,7 @@ def test_a_start_removes_only_a_dead_processs_mounts(tmp_path):
     fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
     past = time.time() - 3_600
     os.utime(old_flat, (past, past))
+    os.utime(old_unlocked, (past, past))                  # an owner's age is its newest interpreter's
     os.utime(old_unlocked.parent, (past, past))
     try:
         _manager(root)
@@ -187,6 +188,7 @@ async def test_the_broker_scans_off_the_loop_and_not_at_all_once_tainted(monkeyp
         return real(response)
 
     monkeypatch.setattr(tool_rpc_runtime, "_flagged", spy)
+    monkeypatch.setattr(tool_rpc_runtime, "_small", lambda value: False)   # a large answer
     await broker.call("clock", {})
     assert seen == [False]                   # scanned in a worker thread, not on the loop
     broker.tainted = True

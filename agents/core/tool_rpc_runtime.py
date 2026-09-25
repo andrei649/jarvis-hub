@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import uuid
 from collections.abc import Callable
@@ -102,8 +103,7 @@ class ToolCallBroker:
         # injection deep in it counts), in chunks on a thread of its own.
         if self.tainted or _origin_untrusted():
             self.tainted = True
-        elif ((untrusted and _answered_ok(response)) or _declares_taint(response)
-                or await asyncio.get_running_loop().run_in_executor(_SCAN_POOL, _flagged, response)):
+        elif (untrusted and _answered_ok(response)) or _declares_taint(response) or await _scan(response):
             self.tainted = True
             mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
@@ -121,9 +121,61 @@ def _answered_ok(response: Any) -> bool:
     return not (isinstance(inner, dict) and inner.get("ok") is False)
 
 
-#: The scan's own thread: never the loop's default pool, which scans of many concurrent
-#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3).
-_SCAN_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tool-rpc-scan")
+#: The scan's own threads: never the loop's default pool, which scans of many concurrent
+#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3). A
+#: few of them, and only for large answers: with one, every script's small calls queued
+#: behind other scripts' multi-megabyte scans (review-H315g m2).
+_SCAN_WORKERS = 4
+
+
+def _new_scan_pool() -> ThreadPoolExecutor:
+    return ThreadPoolExecutor(max_workers=_SCAN_WORKERS, thread_name_prefix="tool-rpc-scan")
+
+
+_SCAN_POOL = _new_scan_pool()
+
+
+def _rebuild_scan_pool_after_fork() -> None:
+    """A forked child inherits the pool without its threads, and its scans would hang
+    (review-H315g n3)."""
+    global _SCAN_POOL
+    _SCAN_POOL = _new_scan_pool()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_rebuild_scan_pool_after_fork)
+
+#: An answer this small is scanned inline, where it costs microseconds: sending it to a
+#: thread would only queue it behind other scripts' large scans.
+_SCAN_INLINE_BYTES = 16 * 1024
+
+
+def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
+    """Whether ``value`` is under ``budget`` characters of text, counted until it is not:
+    the walk costs at most ``budget``, whatever the answer's size."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (str, bytes)):
+            budget -= len(item) + 2
+        elif isinstance(item, dict):
+            budget -= 2 * len(item) + 2
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            budget -= len(item) + 2
+            stack.extend(item)
+        else:
+            budget -= 24
+        if budget < 0:
+            return False
+    return True
+
+
+async def _scan(response: Any) -> bool:
+    if _small(response):
+        return _flagged(response)
+    return await asyncio.get_running_loop().run_in_executor(_SCAN_POOL, _flagged, response)
 #: The answer is scanned in slices of this many characters, overlapping by
 #: _SCAN_OVERLAP, so no single regex call holds the interpreter lock for a whole 2 MB
 #: answer (the loop stalls while it does); the overlap keeps a pattern that straddles two
@@ -155,7 +207,13 @@ def _flagged(response: Any) -> bool:
     if FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded:
         return True
     for start in range(0, max(1, len(encoded)), _SCAN_CHUNK):
-        if detect_injection(encoded[start:start + _SCAN_CHUNK + _SCAN_OVERLAP]):
+        end = start + _SCAN_CHUNK + _SCAN_OVERLAP
+        # A slice never ends inside a word: a pattern's closing \b would match at the cut
+        # ("you are now|here"), which the whole answer does not (review-H315g n2).
+        stop = min(len(encoded), end + 256)
+        while end < stop and (encoded[end].isalnum() or encoded[end] == "_"):
+            end += 1
+        if detect_injection(encoded[start:end]):
             return True
     return False
 

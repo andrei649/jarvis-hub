@@ -236,7 +236,26 @@ class Sandbox:
         sinks are the separate, complete copy, written as the streams arrive so
         nothing is ever held whole. Every fallback below re-routes at spawn time,
         before a byte has been read, so a sink can never receive two runs' output.
+
+        Each run writes a file of its own (``script-<random>.py`` for ``script.py``) and
+        removes it afterwards: the orchestrator shares one Sandbox across every turn, and
+        two runs that wrote one name overwrote each other's code, so one ran the other's
+        script, against the other's tool-RPC mailbox, and answered it to the wrong
+        caller (review-H315g).
         """
+        stem, dot, ext = filename.rpartition(".")
+        run_name = (f"{stem}-{secrets.token_hex(8)}.{ext}" if dot and stem
+                    else f"{filename}-{secrets.token_hex(8)}")
+        try:
+            return await self._execute_python_file(code, run_name, writable_paths=writable_paths,
+                                                   sinks=sinks)
+        finally:
+            with contextlib.suppress(OSError):
+                (self.work_dir / run_name).unlink()
+
+    async def _execute_python_file(self, code: str, filename: str,
+                                   writable_paths: list[str | Path] | None = None,
+                                   sinks=None) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_python(
                 code,

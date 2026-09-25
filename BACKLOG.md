@@ -14,6 +14,29 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315g found no major, three minors, five nits, and one older defect outside the row:
+  - **Two runs on the shared sandbox ran each other's code (older than H315).** Every run on the orchestrator's one Sandbox wrote the same `script.py`, so two concurrent `execute_code` runs overwrote each other: one ran the other's script against the other's tool-RPC mailbox and answered it to the wrong caller, possibly across sessions. Each run now writes a file of its own (`script-<random>.py`) and removes it.
+  - **The owner lock could be lost (m1).** Between the `.lock` file's creation and its `flock`, another start could take it and remove the directory; and a lockless owner directory was aged on its own time, which a busy interpreter never moves. The directory is now made and locked under a temporary name and renamed into place; before each mount the manager checks that its lock is still the file there, takes a new directory if not, and gives no mount without a lock; a lockless owner is aged on its newest interpreter.
+  - **One scan worker served every script (m2).** Small answers (under 16 KiB, by a walk that stops at the bound) are scanned inline; large ones go to a pool of four of the scan's own threads.
+  - **Six survivors (m3):** a clean rewrite of a clean item, a refused script between reads, the rewriting turn's own read, a symlinked lock, two lock errors. Each has a case.
+  - **Nits:**
+    - a handler that raised after its script ran opens a plan revision; execute_code's own refusals before any script do not; a K2 cell's call count is the host's, not the kernel's word;
+    - a scan slice never ends inside a word (`you are now|here`);
+    - a forked child rebuilds the scan pool;
+    - the fifth round's records: 30 re-stamped rows, h315d's 27 cases, the escaped backticks;
+    - the lock's other limits (another user's lock is kept; Docker Desktop bind mounts) are in GOV-258.
+
+  Mutation: this round's 16 mutants were all caught, two after their cases were added (a replaced lock file, a cell that zeroes its count).
+
+  Records:
+  - H315 rewritten;
+  - 30 drifted rows re-read and re-stamped;
+  - GOV-258 extended (simultaneous starts, two chats' scripts at once).
+
+  Tests: backend 14,663 → 14,689 (`tests/test_h315g_todo_review.py` 26); vitest unchanged at 1,458.
+
 - 2026-09-25 H273 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H273f found one major (older than H273), four minors and eight nits:
@@ -87,7 +110,7 @@
 - 2026-09-25 H315 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315f found four minors and four nits:
-  - **Liveness was a pid (m1).** A pid means nothing across pid namespaces. In the shipped image the hub is PID 1 on every start, so a dead container's kernel directories looked alive forever, and a container took a live host process's directories for dead. Each manager now holds an exclusive \`flock\` on its owner directory's \`.lock\` for its process's life. A start removes a directory whose lock it can take. A directory with no lock (an older layout) ages out. This also ends the out-of-range pid crash (n1).
+  - **Liveness was a pid (m1).** A pid means nothing across pid namespaces. In the shipped image the hub is PID 1 on every start, so a dead container's kernel directories looked alive forever, and a container took a live host process's directories for dead. Each manager now holds an exclusive `flock` on its owner directory's `.lock` for its process's life. A start removes a directory whose lock it can take. A directory with no lock (an older layout) ages out. This also ends the out-of-range pid crash (n1).
   - **A read beside a script (m2).** A plan read in the same step as a script answered the plan from before it, then overwrote the script's revision, so the next read was refused. Script revisions are now applied after the step's reads.
   - **The broker's scan (m3).** The K1 loop builds a broker per request, so "skip once tainted" never applied there. The scan now also skips once the context's origin is untrusted. It runs on a thread of its own, never the default pool, and still covers the whole answer, in overlapping 64 KiB slices, so no single regex call holds the loop.
   - **Mutation (m4).** Seven survivors are now covered. Four have tests: an untrusted replace that changes the text, an untrusted re-parent, the fence's open marker and a cancelled start. The two per-key and refused-start survivors of the last round have tests, and so does a crashed K2 cell. The EPERM case is gone with the pid check. The two moved-item-turn survivors are left: they change only whether the moving turn's own later read is fenced.
@@ -100,10 +123,10 @@
 
   Records:
   - H315 rewritten;
-  - 29 drifted rows re-read and re-stamped;
+  - 30 drifted rows re-read and re-stamped;
   - GOV-258 extended to the container restart.
 
-  Tests: backend 14,518 → 14,539 (\`tests/test_h315f_todo_review.py\` 20; one h315d case split in two); vitest unchanged at 1,456.
+  Tests: backend 14,518 → 14,539 (`tests/test_h315f_todo_review.py` 20; one h315d case split in two); vitest unchanged at 1,456.
 
 - 2026-09-25 H465 second adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
