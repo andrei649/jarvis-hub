@@ -14,6 +14,23 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 ninth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315j found no major, three minors and four nits; multi-line answers scan inline again (1–1.7 ms p50 under load, from about 3.4 s) and the other-user start holds:
+  - **A gone fd broke every kernel start (m2, a regression of the eighth round).** With the manager's lock fd closed behind it, the lock read as lost and `_mount` closed the dead fd, raising EBADF on every start. The close tolerates it; only EBADF from `fstat` reads as lost, and any other `fstat` error keeps the lock.
+  - **An orphaned lock file could still cost live mounts (m1).** A start that opened `.lock` before a relock locked the old, orphaned file afterwards and removed the live directory. `_owner_alive` now checks that the file it locked is still the one at `.lock`, and reads the owner as alive otherwise.
+  - **Survivors (m3):** ELOOP, a failed relock's staging file, a root that cannot be listed, non-ASCII text counted once, bytes as `str()` spells them. Each has a case.
+  - **Nits:** strings are sized with the encoder's own function (6–9× cheaper than a `json.dumps` each); separators are counted; a root this user cannot search gives no mount instead of raising; GOV-258 says the shared root must be writable by both users.
+
+  Mutation: this round's 10 mutants were all caught, one after its case was tightened.
+
+  Records:
+  - H315 rewritten;
+  - drifted rows re-read and re-stamped;
+  - GOV-258 extended.
+
+  Tests: backend 14,911 → 14,921 (`tests/test_h315j_todo_review.py` 10); vitest unchanged at 1,462.
+
 - 2026-09-25 H318 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H318g found no major, two minors and five nits; the sixth round's fix held (a crash's leftover beside the skill is picked up by nothing):

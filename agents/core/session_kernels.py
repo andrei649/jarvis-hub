@@ -169,8 +169,10 @@ def _lock_state(owner_dir: Path, fd) -> str:
         return LOCK_LOST
     try:
         held = os.fstat(fd)
-    except OSError:
-        return LOCK_LOST
+    except OSError as exc:
+        # EBADF: the fd is gone, and so is the lock. Anything else (ENOMEM) says nothing
+        # about it, and it is kept (review-H315j m2).
+        return LOCK_LOST if exc.errno == errno.EBADF else LOCK_UNKNOWN
     try:
         there = os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
     except (FileNotFoundError, NotADirectoryError):
@@ -188,7 +190,10 @@ def _relock_in_place(owner_dir: Path):
     (review-H315i m2); a ``.lock`` that is there is held while that happens. None when
     the directory is gone or a link, or someone else holds the file there (a start
     judging the directory, which will remove it)."""
-    if _fcntl is None or owner_dir.is_symlink() or not owner_dir.is_dir():
+    try:
+        if _fcntl is None or owner_dir.is_symlink() or not owner_dir.is_dir():
+            return None
+    except OSError:                      # a root this user cannot search (review-H315j n3)
         return None
     lock = owner_dir / _OWNER_LOCK
     nofollow = getattr(os, "O_NOFOLLOW", 0)
@@ -244,6 +249,12 @@ def _owner_alive(owner_dir: Path) -> bool | None:
         return True
     try:
         _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        # The file locked must still be the one at .lock: an owner that relocked in the
+        # meantime renamed a new, held file over it, and the file taken here is an orphan
+        # that says nothing about the owner (review-H315j m1).
+        held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
+        if (held.st_ino, held.st_dev) != (there.st_ino, there.st_dev):
+            return True
     except BlockingIOError:
         return True
     except OSError:
@@ -1107,7 +1118,8 @@ class SessionKernelManager:
                 # when that cannot be had, take a new directory, and with no lock at all,
                 # give no mount (review-H315g m1, review-H315h m1).
                 if self._owner_fd is not None:
-                    os.close(self._owner_fd)
+                    with contextlib.suppress(OSError):   # an fd already gone (review-H315j m2)
+                        os.close(self._owner_fd)
                 self._owner_fd = _relock_in_place(owner_dir)
                 if self._owner_fd is None:
                     self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"

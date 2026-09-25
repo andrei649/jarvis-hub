@@ -152,6 +152,9 @@ if hasattr(os, "register_at_fork"):
 _SCAN_INLINE_BYTES = 16 * 1024
 
 
+_encode_string = json.encoder.encode_basestring   # the C encoder when there is one
+
+
 def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
     """Whether ``value`` encodes to under ``budget`` characters, counted until it does not:
     a container wider than what is left is refused before its items are listed, and a
@@ -171,15 +174,17 @@ def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
             text = item if isinstance(item, str) else str(item)
             if len(text) > 4 * budget:
                 return False
-            budget -= len(json.dumps(text, ensure_ascii=False))
+            # What json.dumps(ensure_ascii=False) writes for a string, without its
+            # machinery: the size walk runs on the loop for every call (review-H315j n1).
+            budget -= len(_encode_string(text))
         elif isinstance(item, dict):
-            budget -= 2 * len(item) + 2
+            budget -= 4 * len(item) + 2          # ": " and ", " per pair (review-H315j n2)
             if budget < 0:
                 return False
             stack.extend(item.keys())
             stack.extend(item.values())
         elif isinstance(item, (list, tuple)):
-            budget -= len(item) + 2
+            budget -= 2 * len(item) + 2          # ", " per item
             if budget < 0:
                 return False
             stack.extend(item)
