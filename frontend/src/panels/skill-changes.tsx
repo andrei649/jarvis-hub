@@ -55,6 +55,9 @@ export function decisionOutcome(reply: any, proposalId: string, approved: boolea
     changed_during_apply: 'the skill\'s files changed while it was applied: nothing was kept',
     standing_not_renewed: 'its signature or approval could not be renewed: nothing was kept',
     signing_key_missing: 'its signing key is not configured: it waits until the key is back',
+    rollback_failed: 'its signature or approval could not be renewed and the old text could not be put back: the new text stays, the old one is in the backup',
+    unreadable_skill: 'the skill cannot be read',
+    apply_error: 'the change could not be applied',
   };
   return `not applied · ${why[mine.reason] || mine.reason || 'refused'}`;
 }

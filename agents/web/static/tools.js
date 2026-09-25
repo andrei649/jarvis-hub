@@ -80,20 +80,27 @@
     // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub
     // from the proposal ledger (never from the card's own args), before Approve.
     const _c = useApi('/api/skills/proposals', true, true), changes = _c[0], reloadChanges = _c[1];
-    const byCard = {};
+    const byCard = {}, owned = {};
     ((changes.data && changes.data.proposals) || []).forEach(function (p) { if (p.card) byCard[p.card] = p; });
+    // Every pending proposal's card, the page's and beyond it (review-H318d m-4).
+    ((changes.data && changes.data.cards) || []).forEach(function (c) { owned[c] = true; });
     function decide(id, ok) {
       adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(function () { reload(); reloadChanges(); }).catch(function (e) { alert(e.message); });
     }
     // Only once the proposals answered can a card be said not to be one's own: while they
     // load, or when the fetch failed, the panel says so and Approve waits (review-H318c m-2).
     function unknownYet() { return changes.loading || !!changes.err || !changes.data; }
+    // The proposals call may re-bind a lost card: the action list is re-read once it answers,
+    // so the new card shows and a withdrawn one goes (review-H318d n-6).
+    const seenChanges = useRef(null);
+    useEffect(function () { if (changes.data && seenChanges.current !== changes.data) { seenChanges.current = changes.data; reload(); } }, [changes.data]);
     // A change the hub will refuse (a bundled skill, a rename) offers Reject only (n-7).
     function refused(p) { return (p.flags || []).some(function (f) { return /bundled skill|renames the skill/.test(f); }); }
     function skillChange(a) {
       if (a.tool !== 'skill.patch_proposal') return null;
       if (unknownYet()) return h('div', { className: 'tool-card-text' }, changes.err ? '⚠ the proposed change could not be loaded: ' + changes.err : 'Loading the proposed change…');
       const p = byCard[a.id];
+      if (!p && owned[a.id]) return h('div', { className: 'tool-card-text' }, 'This change is beyond the page loaded here: decide the ones above first, or read it in the Decision Inbox.');
       if (!p) return h('div', { className: 'tool-card-text' }, 'This card is not a proposal\'s own approval card: approving it changes no skill.');
       return h('div', null,
         (p.flags || []).concat(p.drifted ? ['the skill changed since: approving applies nothing'] : []).map(function (f) { return h('div', { key: f, className: 'tool-card-text' }, '⚠ ' + f); }),
@@ -106,7 +113,7 @@
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
         skillChange(a),
         h('div', { className: 'tool-actions' },
-          (a.tool === 'skill.patch_proposal' && (unknownYet() || (byCard[a.id] && refused(byCard[a.id]))))
+          (a.tool === 'skill.patch_proposal' && (unknownYet() || (byCard[a.id] && refused(byCard[a.id])) || (!byCard[a.id] && owned[a.id])))
             ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
             : Btn('Approve', function () { decide(a.id, true); }, 'ok'),
           Btn('Reject', function () { decide(a.id, false); }, 'bad')));

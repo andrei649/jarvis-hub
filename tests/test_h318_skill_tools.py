@@ -479,7 +479,10 @@ def test_view_edges_nul_bom_description_and_the_declared_budget(installed):
     assert _call(server, TOOL_VIEW, {"name": "e", "file": "bom.md"})["content"] == "hello\n"
     loader.skills["e"].manifest["description"] = "two\nlines   here"
     assert _call(server, TOOL_VIEW, {"name": "e"})["description"] == "two lines here"
-    assert server.declared_result_bytes(TOOL_VIEW) == MAX_FILE_BYTES + MAX_LISTED_BYTES + 4096
+    from agents.core.skills.tools import MAX_DESCRIPTION_BYTES, MAX_ENCODED_BYTES
+
+    assert server.declared_result_bytes(TOOL_VIEW) == (MAX_ENCODED_BYTES + MAX_LISTED_BYTES
+                                                       + MAX_DESCRIPTION_BYTES + 4096)   # review-H318d m-3
 
 
 def test_the_list_pages_end_exactly_and_caps_commands(installed):

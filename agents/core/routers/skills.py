@@ -615,7 +615,8 @@ async def skill_proposals():
     queue = getattr(orch, "action_approvals", None)
     out = []
     pending = store.list("pending")
-    for rec in pending[:PROPOSALS_SHOWN]:
+    cards = []
+    for index, rec in enumerate(pending):
         if queue is not None:
             # A proposal from before cards were bound gets its card here, and so does one
             # whose card is gone from the queue (review-H318c m-6).
@@ -625,6 +626,12 @@ async def skill_proposals():
                 rec = store.get(rec["id"]) or rec
             except Exception:
                 logger.warning("skill proposal %s: its card could not be queued", rec.get("id"), exc_info=True)
-        out.append(store.describe(rec, loader))
-    return JSONResponse({"proposals": out, "count": len(out), "more": max(0, len(pending) - len(out))},
-                        headers={"Cache-Control": "no-store"})
+        if rec.get("card"):
+            cards.append(rec["card"])
+        if index < PROPOSALS_SHOWN:
+            out.append(store.describe(rec, loader))
+    # Every pending proposal's card is re-bound and named, the page's and the rest's: a
+    # console can then hold a card it has no diff for instead of calling it inert
+    # (review-H318d m-4).
+    return JSONResponse({"proposals": out, "count": len(out), "more": max(0, len(pending) - len(out)),
+                         "cards": cards}, headers={"Cache-Control": "no-store"})

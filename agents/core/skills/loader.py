@@ -1202,7 +1202,7 @@ def register(skill):
         try:
             snapshot = signing.source_snapshot(path)
             _, reason = signing.verify_skill(path, snapshot=snapshot)
-        except OSError:
+        except (OSError, ValueError):                 # a SKILL.sig that is not UTF-8 too
             snapshot, reason = None, "unreadable"
         approved = (snapshot is not None
                     and self._approval_store.approved_snapshot(path, snapshot=snapshot) is not None)

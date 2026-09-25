@@ -365,22 +365,21 @@ class SkillMarketplace:
         # vouching for it, and a keyed SKILL.sig written in place would make an imported,
         # unvouched skill load as owner-vouched.
         #
-        # The walk never follows or packs a link (H503), and a skill that holds one is
-        # refused, as signing the source tree refused it: packing only its regular files
-        # would ship a signed package without the file the link stood for (review-H318c
-        # m-7). The staged copy is walked again, so a link planted after this check
-        # still cannot pull an arbitrary file into a package that leaves the machine.
+        # The package is built from one snapshot of the source (review-H318d m-2): it
+        # refuses a skill whose folder is a link, a member that is a link or not a regular
+        # file, and a file that changed while it was read, as signing the source tree did,
+        # and what is packed is the bytes it read, never a second read a link planted after
+        # the check could redirect. The control markers it leaves out never ship.
         zip_buffer = io.BytesIO()
         with tempfile.TemporaryDirectory(prefix="nerva-publish-") as staging:
             staged = Path(staging) / skill_path.name
-            source_files, links = archive_safe.collect_regular_files(skill_path)
-            if links:
-                raise signing.SkillSourceSnapshotError(
-                    f"linked skill artifact refused: {skill_name} holds {links} link(s)")
-            for file_path in source_files:
-                dest = staged / file_path.relative_to(skill_path)
+            snapshot = signing.source_snapshot(skill_path)
+            for item in snapshot.files:
+                if item.kind != "file":
+                    continue
+                dest = staged / item.relative_path
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(file_path, dest)
+                dest.write_bytes(item.content)
             staged.mkdir(parents=True, exist_ok=True)
             signature = signing.sign_skill(staged)
             files, _links = archive_safe.collect_regular_files(staged)

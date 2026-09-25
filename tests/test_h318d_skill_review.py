@@ -92,7 +92,8 @@ def test_a_failed_renewal_keeps_the_old_text_and_its_standing(hub):
     out = hub.curator.apply_decisions()
     assert out["outcomes"][0]["reason"] == "standing_not_renewed"
     assert (path / "SKILL.md").read_text() == current and hub.registry.is_approved(path) is True
-    assert hub.proposals.get(rec["id"])["status"] == "approved"             # it can be retried
+    assert (hub.proposals.get(rec["id"])["status"], hub.proposals.get(rec["id"])["reason"]) == \
+        ("stale", "standing_not_renewed")                        # not retried every pass (review-H318d n-1)
 
 
 # ── m-4: a keyed signature whose key is missing waits for the key ─────────────────
@@ -126,7 +127,7 @@ def test_the_file_list_is_bounded_in_the_bytes_the_answer_carries(hub):
 
 
 def test_a_file_whose_escapes_pass_the_limit_is_refused(hub):
-    hub.write("quotes", files={"ref.md": '"' * (MAX_FILE_BYTES // 2 + 1)})
+    hub.write("quotes", files={"ref.md": "\x01" * (MAX_FILE_BYTES // 2)})    # 6 bytes each once escaped
     hub.load()
     got = _call(hub.server, TOOL_VIEW, {"name": "quotes", "file": "ref.md"})
     assert got["ok"] is False and got["reason"] == "skill_file_too_large"

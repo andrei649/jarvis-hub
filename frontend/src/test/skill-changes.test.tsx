@@ -117,5 +117,7 @@ describe('SkillChangesInbox, the third review', () => {
     expect(decisionOutcome(reply('changed_during_apply'), 'p', true)).toMatch(/files changed while it was applied/);
     expect(decisionOutcome(reply('standing_not_renewed'), 'p', true)).toMatch(/could not be renewed/);
     expect(decisionOutcome(reply('signing_key_missing'), 'p', true)).toMatch(/signing key/);
+    // review-H318d n-2: a rollback that failed says the new text stays
+    expect(decisionOutcome(reply('rollback_failed'), 'p', true)).toMatch(/the new text stays/);
   });
 });

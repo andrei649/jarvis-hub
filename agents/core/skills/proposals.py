@@ -88,14 +88,15 @@ def _snapshot(path: Path):
     return source_snapshot(path)
 
 
-def _only_manifest_changed(before, after, proposed: str) -> bool:
-    """``after`` is ``before`` with SKILL.md replaced by ``proposed``, and nothing else."""
+def _only_manifest_changed(before, after, proposed: bytes) -> bool:
+    """``after`` is ``before`` with SKILL.md replaced by the ``proposed`` bytes, and nothing
+    else."""
     if before is None or after is None:
         return False
     old = {f.relative_path: (f.kind, f.content) for f in before.files if f.relative_path != "SKILL.md"}
     new = {f.relative_path: (f.kind, f.content) for f in after.files if f.relative_path != "SKILL.md"}
     manifest = [f.content for f in after.files if f.relative_path == "SKILL.md"]
-    return old == new and manifest == [proposed.encode("utf-8")]
+    return old == new and manifest == [proposed]
 
 
 class SkillProposalStore(JsonStore):
@@ -200,13 +201,16 @@ class SkillProposalStore(JsonStore):
                     _withdraw(queue, other)
             return card
 
-    def supersede_older(self, record: dict, queue=None) -> None:
+    def supersede_older(self, record: dict, queue=None, origin: str | None = None) -> None:
         """One pending change per skill per origin: ``record`` supersedes the older ones
         its origin proposed for the same skill (review-H318 m-3), whichever path proposed
         it, the tool, the background review or /refine (review-H318c n-2)."""
+        # The caller's origin: a re-sent text returns the record another origin proposed
+        # first, and the caller's own older proposal must still go (review-H318d n-3).
+        origin = record.get("origin") if origin is None else origin
         for older in self.list(STATUS_PENDING):
             if (older.get("id") != record.get("id") and older.get("skill") == record.get("skill")
-                    and older.get("origin") == record.get("origin")):
+                    and older.get("origin") == origin):
                 self.supersede(older["id"], queue)
 
     def supersede(self, proposal_id: str, queue=None) -> None:
@@ -265,7 +269,13 @@ class SkillProposalStore(JsonStore):
         # A bundled skill is product source: an edit would unbundle it, and with its code
         # it would stop loading (review-H318b M-1). It is refused, never half-applied.
         standing_of = getattr(loader, "owner_standing", None)
-        standing = standing_of(skill) if callable(standing_of) else {}
+        try:
+            standing = standing_of(skill) if callable(standing_of) else {}
+        except Exception:
+            # An unreadable SKILL.sig (not UTF-8, say) is this proposal's trouble, never the
+            # pass's (review-H318d n-4).
+            logger.warning("skill '%s': its standing could not be read", rec["skill"], exc_info=True)
+            return {"ok": False, "reason": "unreadable_skill"}
         if standing.get("bundled"):
             self.mark(proposal_id, STATUS_REJECTED, reason="bundled")
             return {"ok": False, "reason": "bundled_skill"}
@@ -279,11 +289,16 @@ class SkillProposalStore(JsonStore):
             self.mark(proposal_id, STATUS_REJECTED, reason="renames")
             return {"ok": False, "reason": "renames_skill"}
         skill_md = Path(skill.path) / "SKILL.md"
+        # Bytes in and out, never text mode: Windows would write "\r\n" for "\n", so the
+        # bytes on disk would never equal the approved text, and a rollback would rewrite
+        # the old file's line ends and break the signature it restores (review-H318d MAJOR-1).
         try:
-            current = skill_md.read_text(encoding="utf-8")
+            current_raw = skill_md.read_bytes()
+            current = current_raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         except Exception:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "unreadable_skill"}
+        proposed_raw = rec["proposed"].encode("utf-8")
         if manifest_hash(current) != rec["original_hash"]:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "drifted_since_proposal"}
@@ -294,8 +309,8 @@ class SkillProposalStore(JsonStore):
             # Named by the skill's directory, never its manifest name (review-H318b m-5: a
             # name like ../../x escaped the archive), and unique within the second.
             backup = backup_root / f"{Path(skill.path).name}-{stamp}-{uuid.uuid4().hex[:6]}.SKILL.md"
-            backup.write_text(current, encoding="utf-8")
-            skill_md.write_text(rec["proposed"], encoding="utf-8")
+            backup.write_bytes(current_raw)
+            skill_md.write_bytes(proposed_raw)
         except Exception:
             logger.warning("proposal apply failed for %s", rec["skill"], exc_info=True)
             return {"ok": False, "reason": "write_failed"}
@@ -303,13 +318,17 @@ class SkillProposalStore(JsonStore):
         if callable(restore) and (standing.get("signed") or standing.get("approved")):
             # The renewal covers the bytes checked here, never a later read: the tree after
             # the write must be the tree the standing was judged on with only SKILL.md
-            # replaced by the approved text, or a write in between would ride into the vouch
-            # (review-H318c m-1). A failed or refused renewal puts the old text back, whose
-            # signature and approval still hold, and says why (m-3).
+            # replaced by the approved bytes, or a write in between would ride into the
+            # vouch (review-H318c m-1). A failed or refused renewal puts back the old
+            # SKILL.md and the old SKILL.sig, whose signature and approval still hold, and
+            # says why (m-3; review-H318d m-1: a signature renewed before the approval failed
+            # was left over the old text). The proposal is then stale, not retried every pass.
+            sig = Path(skill.path) / "SKILL.sig"
+            old_sig = sig.read_bytes() if sig.is_file() else None
             reason = ""
             try:
                 after = _snapshot(Path(skill.path))
-                if not _only_manifest_changed(standing.get("snapshot"), after, rec["proposed"]):
+                if not _only_manifest_changed(standing.get("snapshot"), after, proposed_raw):
                     reason = "changed_during_apply"
                 else:
                     restore(Path(skill.path), standing, snapshot=after)
@@ -319,10 +338,17 @@ class SkillProposalStore(JsonStore):
                 reason = "standing_not_renewed"
             if reason:
                 try:
-                    skill_md.write_text(current, encoding="utf-8")
+                    skill_md.write_bytes(current_raw)
+                    if old_sig is None:
+                        sig.unlink(missing_ok=True)
+                    else:
+                        sig.write_bytes(old_sig)
                 except Exception:
+                    # The new text stays: say so, with where the old one is (review-H318d n-2).
                     logger.warning("skill '%s': the old SKILL.md could not be put back (backup: %s)",
                                    rec["skill"], backup, exc_info=True)
+                    reason = "rollback_failed"
+                self.mark(proposal_id, STATUS_STALE, reason=reason)
                 logger.warning("approved proposal %s for skill '%s' not applied: %s",
                                proposal_id, rec["skill"], reason)
                 return {"ok": False, "reason": reason, "backup": str(backup)}

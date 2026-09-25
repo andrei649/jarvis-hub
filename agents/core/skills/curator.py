@@ -163,7 +163,12 @@ class SkillCurator:
         applied, went_stale, failed, outcomes = [], [], [], []
         backup_dir = self._archive_dir or Path(".")
         for rec in self._proposals.list(STATUS_APPROVED):
-            out = self._proposals.apply(rec["id"], self._loader, backup_dir)
+            try:
+                out = self._proposals.apply(rec["id"], self._loader, backup_dir)
+            except Exception:
+                # One proposal's failure never stops the others' (review-H318d n-4).
+                logger.warning("skill proposal %s could not be applied", rec["id"], exc_info=True)
+                out = {"ok": False, "reason": "apply_error"}
             # Every outcome is reported, with the state the skill is left in (review-H318b
             # M-1, n-3): "applied" alone hid a skill the change had sandboxed or hidden.
             outcomes.append({"skill": rec["skill"], "proposal_id": rec["id"],

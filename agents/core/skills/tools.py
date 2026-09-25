@@ -88,6 +88,20 @@ _COMMAND = re.compile(r"\w+")
 
 _SKILL_FILE = "SKILL.md"
 
+#: What a file or body may take once escaped for the answer: twice its size on disk, so
+#: every ordinary file within MAX_FILE_BYTES fits (a line break costs two bytes there),
+#: and the description beside a body, in escaped bytes. Both are in the declared budget.
+MAX_ENCODED_BYTES = 2 * MAX_FILE_BYTES
+MAX_DESCRIPTION_BYTES = 2 * 1024
+
+
+def _cut_encoded(text: str, limit: int) -> str:
+    """``text`` cut until its escaped bytes fit ``limit``."""
+    while text and _json_bytes(text) > limit:
+        text = text[: max(0, len(text) - max(1, (_json_bytes(text) - limit) // 6))]
+    return text
+
+
 def _json_bytes(text: str) -> int:
     """The bytes ``text`` takes inside the tool's JSON answer: its escapes counted (a
     quote costs two bytes there, a control character six), its own two quotes not."""
@@ -306,11 +320,13 @@ def register_skill_tools(
             return _refuse("skill_file_binary", "the file is not text")
         if "\x00" in text:
             return _refuse("skill_file_binary", "the file is not text")
-        if file is not None and _json_bytes(text) > MAX_FILE_BYTES:
-            # Measured as the answer carries it: a quote costs two bytes there, a control
-            # character six (review-H318c m-5), and the declared budget must hold.
-            return _refuse("skill_file_too_large", f"the file is over {MAX_FILE_BYTES:,} bytes as the "
-                                                   "answer carries it")
+        if file is not None and _json_bytes(text) > MAX_ENCODED_BYTES:
+            # A file within MAX_FILE_BYTES is served, as it always was; only one whose escapes
+            # (a quote costs two bytes in the answer, a control character six) pass the
+            # declared ceiling is refused, so the declared budget holds (review-H318d m-3).
+            return _refuse("skill_file_too_large", f"the file is {_json_bytes(text):,} bytes once escaped "
+                                                   f"for the answer; skill_view carries at most "
+                                                   f"{MAX_ENCODED_BYTES:,}")
         if file is None:
             head, body = split_frontmatter(text)
             body = text if head is None else body
@@ -322,11 +338,12 @@ def register_skill_tools(
                 variables = {}
             body = render_skill_body(body, skill_dir=str(Path(skill.path).resolve()),
                                      session_id=str(session_id() or ""), template_vars=variables)
-            if _json_bytes(body) > MAX_FILE_BYTES:
+            if len(body.encode("utf-8")) > MAX_FILE_BYTES or _json_bytes(body) > MAX_ENCODED_BYTES:
                 # The bound is on what reaches the model, so it holds after the variables.
                 return _refuse("skill_file_too_large", f"the body is over {MAX_FILE_BYTES:,} bytes once its "
-                                                       "variables are rendered")
-            description = _one_line(skill.description, 1024)
+                                                       "variables are rendered, or over "
+                                                       f"{MAX_ENCODED_BYTES:,} once escaped")
+            description = _cut_encoded(_one_line(skill.description, 1024), MAX_DESCRIPTION_BYTES)
             shown_files, used = [], 0
             for path in listed:
                 used += _json_bytes(path) + 4                   # as encoded, its quotes, a comma and space
@@ -436,7 +453,7 @@ def register_skill_tools(
         # One pending change per skill per agent: a newer proposal supersedes the older one
         # rather than queueing beside it (review-H318 m-3).
         queue = approvals()
-        store.supersede_older(record, queue)
+        store.supersede_older(record, queue, origin=origin_label)
         if queue is not None:
             try:
                 store.queue_card(record["id"], queue, agent=actor,
@@ -452,7 +469,7 @@ def register_skill_tools(
                          input_schema=LIST_SCHEMA, capability_id="tool:skills_list")
     server.register_tool(TOOL_VIEW, _view, gated=False, description=VIEW_DESCRIPTION,
                          input_schema=VIEW_SCHEMA, capability_id="tool:skill_view",
-                         max_result_bytes=MAX_FILE_BYTES + MAX_LISTED_BYTES + 4096)
+                         max_result_bytes=MAX_ENCODED_BYTES + MAX_LISTED_BYTES + MAX_DESCRIPTION_BYTES + 4096)
     server.register_tool(TOOL_PROPOSE, _propose, gated=False, description=PROPOSE_DESCRIPTION,
                          input_schema=PROPOSE_SCHEMA, capability_id="tool:skill_propose")
     return TOOL_LIST, TOOL_VIEW, TOOL_PROPOSE

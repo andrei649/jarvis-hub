@@ -14,6 +14,32 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318d found one major, five minors and six nits:
+  - **On Windows, every approved change to a vouched skill failed (MAJOR-1).** `SKILL.md` was written and read in text mode against a byte-exact check, so Windows' `\r\n` never matched the approved text, and a rollback rewrote a CRLF file's line ends and broke the standing it meant to restore. The apply now reads and writes bytes.
+  - **A partial renewal left a new signature over the old text (m-1).** The old `SKILL.sig` is put back with the old `SKILL.md`, or the new one removed if there was none.
+  - **Publish still followed a link planted after its check (m-2).** The package is built from the bytes of one source snapshot, which refuses a linked folder, a link or FIFO member and a file that changed while read.
+  - **skill_view's budget left out the description, and refused files it used to serve (m-3).** A file within 64 KiB on disk is served as before; only escapes past 128 KiB are refused; the description is cut to 2 KiB escaped; the declared budget counts all of it.
+  - **Cards beyond the route's page were called inert in /v1 (m-4).** The route re-binds and names every pending card (`cards`); /v1 holds a card it has no diff for.
+  - **Five survivors (m-5):** a `SKILL.md` swapped after the write, an integrity-only signature with a key configured, a re-bind touching other proposals' cards, the publish route's 422, a body's escapes. Each has a case.
+  - **Nits:**
+    - a refused apply is marked stale with its reason instead of retried every pass;
+    - a failed rollback says `rollback_failed` and that the new text stays;
+    - the tool supersedes by its own origin;
+    - an unreadable `SKILL.sig` reads as unsigned, and one failing proposal never stops the pass;
+    - H318's bound text updated;
+    - /v1 re-reads the action list once the proposals answer.
+
+  Mutation: this round's 17 mutants were all caught, two after their cases were corrected (a file of short lines, a standing that raises).
+
+  Records:
+  - H318 rewritten; H503's publish sentence rewritten;
+  - 21 drifted rows re-read and re-stamped;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,748 → 14,769 (`tests/test_h318e_skill_review.py` 21); vitest unchanged at 1,461.
+
 - 2026-09-25 H465 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H465d found no major, two minors and seven nits:

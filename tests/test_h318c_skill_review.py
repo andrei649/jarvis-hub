@@ -385,7 +385,10 @@ def test_a_skill_with_thousands_of_files_answers_within_its_budget(hub):
     assert got["ok"] is True and got["files_more"] == 2_000 - len(got["files"]) > 0
     assert sum(len(f.encode()) + 4 for f in got["files"]) <= MAX_LISTED_BYTES
     assert len(json.dumps(got).encode()) <= server.declared_result_bytes(TOOL_VIEW)
-    assert server.declared_result_bytes(TOOL_VIEW) == MAX_FILE_BYTES + MAX_LISTED_BYTES + 4096
+    from agents.core.skills.tools import MAX_DESCRIPTION_BYTES, MAX_ENCODED_BYTES
+
+    assert server.declared_result_bytes(TOOL_VIEW) == (MAX_ENCODED_BYTES + MAX_LISTED_BYTES
+                                                       + MAX_DESCRIPTION_BYTES + 4096)   # review-H318d m-3
     last = f"ref/file_{1_999:04d}.md"                   # a file not listed is still readable
     assert _call(server, TOOL_VIEW, {"name": "many", "file": last})["content"] == "x"
 
