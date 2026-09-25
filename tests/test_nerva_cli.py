@@ -419,7 +419,7 @@ def test_an_unreachable_hub_is_exit_3_with_the_next_step():
 def test_a_missing_credential_is_exit_4_with_how_to_mint_one():
     hub = _FakeHub(raise_with=HubError(401, "admin token required"))
     code, _out, err, _hub = _run(["approvals", "list"], hub)
-    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_store issue admin" in err
+    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_recover.py issue admin" in err
 
 
 def test_any_other_hub_error_is_exit_1():

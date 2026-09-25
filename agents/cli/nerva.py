@@ -567,10 +567,38 @@ def _named(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _runnable_line(verdict: Mapping[str, Any]) -> str:
+def _withheld_admin(client: Any) -> bool:
+    """The admin token is set and this client keeps it back: plain http off this machine
+    would carry it in clear text (review-H273f m2)."""
+    sends = getattr(client, "_sends_admin_token", None)
+    return bool(getattr(client, "admin_token", "")) and callable(sends) and not sends()
+
+
+def _auth_hint(client: Any) -> str:
+    """What to do about a 401/403, for the client that was refused. The withheld admin
+    token is named as one possible cause, beside the user token, never as the only one:
+    a hub with no admin credential, or a stale user token, refuses for other reasons
+    (review-H273g m3). It never asks for a token that is set."""
+    if _withheld_admin(client):
+        return (f"JARVIS_ADMIN_TOKEN is set but was withheld from {client.base_url}: plain http to "
+                "another machine would carry it in clear text. If this needs the admin token, point "
+                "NERVA_HUB_URL at an https address or run it on the hub itself; otherwise set "
+                "JARVIS_USER_TOKEN, or check that it is current.")
+    return ("Set JARVIS_ADMIN_TOKEN (mint one on the box: python scripts/token_recover.py issue admin) "
+            "or JARVIS_USER_TOKEN.")
+
+
+def _read_hint(client: Any) -> str:
+    """The status lines' version of the hint, for a read the hub refused."""
+    if _withheld_admin(client):
+        return "(needs JARVIS_USER_TOKEN to read here: JARVIS_ADMIN_TOKEN is withheld over plain http)"
+    return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
+
+
+def _runnable_line(verdict: Mapping[str, Any], client: Any = None) -> str:
     reason = verdict.get("reason")
     if reason == "needs_token":
-        return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
+        return _read_hint(client)
     if reason in ("command_center_unavailable", "malformed_reply", "hub_unreachable"):
         error = verdict.get("error")
         return f"unknown — {reason}" + (f" ({error})" if error else "")
@@ -608,7 +636,7 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         f"  model:       {status.get('loaded_model') or status.get('configured_model') or '—'}"
         f" ({_MODEL_STATE_WORDS.get(state, state)})"
     )
-    ctx.say(f"  runnable:    {_runnable_line(runnable)}")
+    ctx.say(f"  runnable:    {_runnable_line(runnable, client)}")
     ctx.say(f"  agents:      {status.get('agents_online', 0)}/{status.get('agents_total', len(agents))} busy")
     channels = status.get("channels") or []
     names = ", ".join(
@@ -622,7 +650,7 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say("  e-stop:      not engaged")
     else:
-        ctx.say("  e-stop:      (needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)")
+        ctx.say(f"  e-stop:      {_read_hint(client)}")
     return EXIT_OK
 
 
@@ -2066,20 +2094,7 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
         return EXIT_NO_HUB
     except HubError as exc:
         if exc.status in (401, 403):
-            hub = HubClient.from_env(ctx.environ)
-            if hub.admin_token and not hub._sends_admin_token():
-                # The token is set and was kept back on purpose (review-H273f m2): say so,
-                # rather than ask the owner to set what they already have.
-                ctx.err.write(
-                    f"{exc.reason}. JARVIS_ADMIN_TOKEN is set but was withheld from {hub.base_url}: "
-                    "plain http to another machine would carry it in clear text. Point NERVA_HUB_URL "
-                    "at an https address, or run the verb on the hub itself.\n"
-                )
-                return EXIT_AUTH
-            ctx.err.write(
-                f"{exc.reason}. Set JARVIS_ADMIN_TOKEN (mint one on the box: "
-                "python -m agents.core.security.token_store issue admin) or JARVIS_USER_TOKEN.\n"
-            )
+            ctx.err.write(f"{exc.reason}. {_auth_hint(ctx.client())}\n")
             return EXIT_AUTH
         ctx.err.write(f"{exc}\n")
         return EXIT_FAILED

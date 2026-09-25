@@ -83,6 +83,20 @@ def _append_supervisor_event(event: str, **fields) -> None:
         pass  # the run-log is observability, never a reason to fail the supervisor
 
 
+def _child_env() -> dict[str, str]:
+    """The child's environment: this process's, with the run-log path this supervisor
+    chose. The coordinator loads the .env files without overriding the process, so it
+    writes where the supervisor does even when that path came from a layer only one of
+    them can read (a named-pipe .env, which this process never reads: review-H273g m4)."""
+    return {**os.environ, "JARVIS_RUNTIME_LOG": str(_log_path())}
+
+
+def _spawn() -> subprocess.Popen:
+    # Fixed argv (this interpreter + a repo-relative script path) — no shell,
+    # no untrusted input; matches the repo's other internal subprocess seams.
+    return subprocess.Popen([sys.executable, _COORDINATOR], env=_child_env())  # noqa: S603  # nosec B603
+
+
 def main() -> int:
     starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
     backoff = starting_delay
@@ -94,9 +108,7 @@ def main() -> int:
         if child.poll() is None:
             child.send_signal(signum)
 
-    # Fixed argv (this interpreter + a repo-relative script path) — no shell,
-    # no untrusted input; matches the repo's other internal subprocess seams.
-    child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+    child = _spawn()
     started_at = time.monotonic()
     _append_supervisor_event("spawned", pid=child.pid)
     signal.signal(signal.SIGTERM, _request_stop)
@@ -113,7 +125,7 @@ def main() -> int:
                 backoff = starting_delay
             time.sleep(backoff)
             backoff = min(MAX_BACKOFF_SECONDS, backoff * 2)
-            child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+            child = _spawn()
             started_at = time.monotonic()
             _append_supervisor_event("respawned", pid=child.pid)
     finally:

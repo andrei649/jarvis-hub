@@ -10,6 +10,7 @@ import re
 import secrets
 import sys
 import time
+import weakref
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
@@ -73,8 +74,10 @@ DEV_MODE = env_flag("DEV_MODE")
 #   - Issued tokens (TTL / rotation / hash-at-rest) are first-class admin creds.
 #   - With no admin credential configured at all, a direct-localhost origin is
 #     trusted (dev posture); a Pi/LAN deployment is locked down.
-#   - Lost every token? The offline CLI `python -m agents.core.security.token_store
-#     rotate admin` mints a fresh one from the machine itself — no HTTP, no lockout.
+#   - Lost every token? `python scripts/token_recover.py rotate admin` mints a fresh
+#     one from the machine itself, in the store this hub reads (it loads the hub's .env
+#     first) — no HTTP. A packaged build ships no Python to run it: remove
+#     security/tokens.db under the data home instead (review-H273g m2).
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -107,18 +110,38 @@ def _ever_configured(scope: str) -> bool:
     rotation or a revoke with ``--revoke-env`` left its persistent ``revoked:<scope>``
     flag, or an issued token is still on file, live or expired (the hub never purges
     expired rows). An issued token deleted by a revoke without ``--revoke-env`` leaves no
-    trace; that residual is recorded under H273's Known limits."""
+    trace; that residual is recorded under H273's Known limits.
+
+    Once true for a store it stays true for that store, without listing its table again:
+    this runs on every guarded request, and the table only grows through ``issue``
+    (review-H273g n1). A store emptied later (``purge_expired``, a deleted file under a
+    running hub) therefore keeps the hub locked until it restarts."""
     store = get_token_store()
-    return store.env_revoked(scope) or any(row["scope"] == scope for row in store.list_tokens())
+    try:
+        seen = _CONFIGURED_SCOPES.setdefault(store, set())
+    except TypeError:                   # a store that cannot be weakly referenced: no memo
+        seen = set()
+    if scope in seen:
+        return True
+    if store.env_revoked(scope) or any(row["scope"] == scope for row in store.list_tokens()):
+        seen.add(scope)
+        return True
+    return False
+
+
+#: Scopes each token store has shown configured, kept for as long as the store lives.
+_CONFIGURED_SCOPES: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def _admin_configured() -> bool:
     """Whether an admin credential was ever configured: an env token (active, or
     superseded by a rotation), or one the store shows (``_ever_configured``). Drives the
     localhost fallback: only a box that never had an admin credential trusts a direct
-    localhost origin, so it can mint its first token. Once every credential is revoked
-    or has expired, no local process mints a fresh one over HTTP (review-H273f MAJOR-1);
-    recovery is the offline ``token_store rotate admin`` on the box."""
+    localhost origin, so it can mint its first token. Once an admin credential was
+    configured and every one is revoked or has expired, no local process mints a fresh one
+    over HTTP (review-H273f MAJOR-1); recovery is ``scripts/token_recover.py rotate admin``
+    on the box. A box that never had an admin credential keeps trusting a direct
+    localhost caller as admin, whatever happened to its user tokens (review-H273g m1)."""
     return bool(_admin_env_token()) or _ever_configured("admin")
 
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
@@ -268,9 +291,11 @@ def _user_credential_required() -> bool:
     away or revoked, and so does one the store shows was configured (``_ever_configured``:
     a rotation, a revoke with ``--revoke-env``, an issued token live or expired). Then
     nothing valid may remain and every caller without a credential is refused, rather
-    than the hub falling back to the no-credential localhost posture; the admin tier
-    asks the same question (``_admin_configured``), so no local process mints its way
-    back in (review-H273f MAJOR-1)."""
+    than the hub falling back to the no-credential localhost posture. The admin tier asks
+    the same question for its own credentials (``_admin_configured``): where an admin
+    credential was ever configured, no local process mints its way back in (review-H273f
+    MAJOR-1); where none was, a direct localhost caller is still admin and can mint a user
+    token, so this lock binds remote callers only (review-H273g m1)."""
     return bool(_user_env_token()) or _ever_configured("user")
 
 

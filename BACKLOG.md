@@ -14,6 +14,25 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273g found no major, five minors and six nits; the fifth round's fixes held:
+  - **"No local process mints its way back in" was too wide (m1).** It holds where an admin credential was ever configured. A box that only ever had a user token keeps trusting this machine as admin, so after `revoke user --revoke-env` a local process still mints a user token; the user-token lock binds callers from other machines. The docstrings, the row, ENV-159 and PHONE_ACCESS.md now say so, and a test pins it as deliberate.
+  - **The offline recovery could write the wrong store (m2).** Run bare, the store's CLI reads only the process environment, so with the data home named only in a `.env` it wrote a `tokens.db` the hub never read. `scripts/token_recover.py` loads the hub's `.env` files first and says which store it wrote; the CLI hint, INSTALL.md and ENV-131 name it. A packaged build has no Python to run it: PACKAGING.md documents removing `memory/security/tokens.db` instead. (`agents/core/security/**` is the owner's lane, so the store's own CLI is unchanged.)
+  - **The CLI's "withheld" message fired when withholding was not why (m3).** It now names the withheld admin token as one possible cause beside the user token, is built for the client that was refused, and `nerva status` says the same on its `runnable` and `e-stop` lines instead of asking for the admin token that is set.
+  - **A named-pipe `.env` still split the run-log (m4).** The supervisor hands the path it chose to its child, whose load does not override the process, so both write one file; a path set only in a pipe is not honoured under the supervisor (Known limits).
+  - **Nine real survivors (m5):** an issued-only admin token, the generic hint, two `hub_value` layer rules, the supervisor run as a script and an empty run-log value have cases now; the three bare-IPv6 spellings err in the safe direction.
+  - **Nits:** the configured-scope check lists the token table once per store (it stays locked for that store even if the table is later emptied); nothing in the hub calls the store's `purge_expired`, and everything that empties the store is in Known limits; H510's two `web.py` pointers land on the registration comment and the probe-path exemption; an empty `JARVIS_RUNTIME_LOG` is unset on both ends; the hint uses the context's client.
+
+  Mutation: this round's 13 mutants were all caught, one after its case was added (the e-stop status line).
+
+  Records:
+  - H273 rewritten; H510's and H456's `web.py` shorthands remapped by content;
+  - 68 drifted rows re-read and re-stamped;
+  - ENV-131, ENV-159, ENV-162 and ENV-164 updated; `channel_inbox` re-pinned to `web.py:483`.
+
+  Tests: backend 14,847 → 14,865 (`tests/test_h273g_provenance_review.py` 18); vitest unchanged at 1,462.
+
 - 2026-09-25 H318 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H318e found no major, two minors and seven nits:

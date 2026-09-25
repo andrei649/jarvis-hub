@@ -95,6 +95,15 @@ python -m agents.core.security.token_store revoke all --revoke-env
 python -m agents.core.security.token_store list
 ```
 
+When the hub's data root is set only in a `.env` (`JARVIS_USER_HOME` or `JARVIS_HOME`), run the
+same verbs through `python scripts/token_recover.py …`: it loads the hub's `.env` files first, so
+it writes the `tokens.db` the hub reads, and says which one on stderr. A packaged build ships no
+Python to run either: to recover from a lost or expired admin token there, stop the app and remove
+`security/tokens.db` under its data home (the app then trusts this machine again until a new token
+is minted). With no admin token ever configured, a caller on this machine stays admin whatever
+happens to the user tokens: the user-token lock binds callers from other machines (`revoke all
+--revoke-env` closes it for this machine too).
+
 If every token is lost, that offline CLI on the box (filesystem access) is the root of
 trust — there is no network recovery path, by design.
 
