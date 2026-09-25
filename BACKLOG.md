@@ -14,6 +14,40 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 third adversarial review round (partial → equivalent, #1207). **H153 back to partial** after its fourth review and **H315 back to partial** after its third (headline 139 → 138/697).
+
+  The review found two majors, both fixed:
+  - **The start read 31 more names before any `.env` was loaded.** The lifespan ran the boot guards, logging, the orchestrator (audit log, memory, budget ledger) and the router's `detect()` before `plugin_manager.build` loaded the files. So ten `.env` knobs showed as in effect while they were not, among them the audit key and the public-profile gate. Now the hub loads its `.env` files first, once per process (`load_hub_env`): serve.py before it builds the server, the lifespan before its boot guards, and the plugin manager and `agents/run.py` too. A named pipe is read once.
+  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only, so the stores can no longer split between two roots. Log redaction is imported first, so a `.env` cannot switch it off.
+  - Both lists are measured, not declared. A subprocess spy covers the import and the whole start up to the load, with and without `JARVIS_HOME`; a second spy checks that every read-again name is read after the load and no before-load name is.
+  - **Two read-again entries were false, and the MCP transport ignored a user token kept in `.env`.** The bind guard now sees the loaded tokens. The OAuth routes use the plugin manager's copy of the OAuth module, which re-reads the client ids after the load. The MCP transport asks `_user_token_required()`, as the guard does.
+
+  Minors, fixed:
+  - the doctor sends the admin token only to a hub on this machine, decided by address (127.0.0.2, 127.1, `localhost.` and `::ffff:127.0.0.1` count), `runtime_resolves` included;
+  - every printed name passes the shape check, so control characters never reach the report, and a name shaped like a digest, a seed or an access key id is counted whatever follows its `=`;
+  - hub mode on this machine reads the files the hub names; for a hub on another machine it shows only the names Nerva knows and says why; an empty placeholder is a name;
+  - the shell view sees the five names Nerva reads through a pool, a descriptor or a private constant;
+  - the `nerva` CLI's client refuses a redirect, skips the proxy for a hub on this machine and speaks http(s) only;
+  - the reviewer's twelve surviving mutants are each caught.
+
+  Nits, fixed: bindings resolved in file order as `load_dotenv` resolves them; one parse and one warning per file; the parse cache keyed on inode and ctime too; a `file:` hub address refused by name; a timeout on every hub request; the doctor's check table; the HUD shows the note.
+
+  Mutation: 46 mutants of the new guards (44 Python, 2 HUD), 45 caught. The survivor drops the IPv4-mapped loopback check, which is equivalent on this interpreter.
+
+  H153 is back to partial after its fourth review (review-H153d). A push renders the whole text with `to_plain` before cutting it, and `to_plain` is quadratic on one long line, so one GitHub-sized body freezes the hub for about 40 s. Five minors come with it. Its fix round is next.
+
+  H315 is back to partial after its third review (review-H315d). A script or kernel cell that prints a page and then fails hands the page to a clean turn unfenced: the loop fences only a result that is ok, and the taint the broker and the kernel raise stays in the handler's own task. What the model plans from the page is then stored clean. The kernel's writable mount also outlives a reset, and eleven mutants are not caught. Its fix round follows.
+
+  Records:
+  - H273 rewritten and closed;
+  - H153 and H315 set to partial, with their gaps in `remaining`;
+  - 43 drifted rows re-read and re-stamped. H510 and H691 are rewritten for the single boot pass, H008 and H242 name where the admin token goes, H008 counts `config_sources`, and H557's two stale citations are fixed;
+  - the binding-writer inventory re-pinned for the moved lines;
+  - build-queue notes; test manual ENV-039.
+
+  Tests:
+  - backend 14,148 → 14,222 (`tests/test_h273d_provenance_review.py` 74);
+  - vitest 1,427 → 1,428 (`env-sources` 3 → 4).
 - 2026-09-24 H315 second adversarial review round (stays equivalent after the fixes, #1207). **H273 back to partial** after its third review (headline 140 → 139/697).
 
   The review found one major, fixed:

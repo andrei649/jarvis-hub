@@ -13,8 +13,9 @@ wins (python-dotenv's ``override=False``):
 ``load_dotenv`` calls, and records which layer supplied each key and which lower
 layers also defined it (``shadowed``: their value is ignored). The table holds key
 names and layer labels only, never a value. Each file is read once, a named pipe
-included (python-dotenv reads FIFOs, which is how 1Password mounts a ``.env``), and
-the same parse sets the variables and names the keys. The data home can be given as
+included (python-dotenv reads FIFOs, which is how 1Password mounts a ``.env``): the
+text read is what ``load_dotenv`` loads and what python-dotenv's own parser names the
+keys from, silently, so a bad line is warned about once. The data home can be given as
 a callable, resolved after the repo layer is loaded, so a ``JARVIS_USER_HOME`` set
 in the repo ``.env`` names it, as it did before.
 
@@ -46,25 +47,40 @@ LABELS = {
     RUNTIME: "set while running",
 }
 
-# The hub reads these while it starts, before the lifespan loads any .env file: serve.py
-# builds the server from the first four, and importing agents.web freezes the rest into
-# module constants (the ASGI root path, the rate limit, CORS, CSP, the router's auto-deep
-# switch, the analytics cap, the graph's Neo4j defaults) or resolves paths with them. A
-# .env value for them is recorded but not in effect: they belong in the process
-# environment. The list is measured, not remembered: tests/test_h273c_provenance_review.py
-# spies on the environment while the hub is imported and fails on a Nerva name that is
-# in neither this list nor READ_AGAIN_AFTER_LOAD.
+# The hub loads its .env files before anything else it starts (``load_hub_env``: serve.py
+# before it builds the server, the lifespan before its boot guards), so only what is read
+# while agents.web is imported comes first. Importing it freezes these into module
+# constants (the ASGI root path, the rate limit, CORS, CSP, the router's auto-deep switch,
+# the analytics cap, the graph's Neo4j defaults) or locates the hub's own files with them.
+# Log redaction is decided before the load on purpose: only the boot environment can lower
+# it. A .env value for any of them is recorded but not in effect: they belong in the
+# process environment. The list is measured, not remembered: the H273 review tests spy on
+# the environment while the hub is imported and started, and fail on a Nerva name read
+# before the load that is in none of these lists.
 READ_BEFORE_LOAD = frozenset({
-    "JARVIS_HOST", "JARVIS_PORT", "JARVIS_LOG_LEVEL", "JARVIS_SHUTDOWN_TIMEOUT",
-    "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_ROOT_PATH",
+    "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_ROOT_PATH",
     "JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_CSP", "JARVIS_DISABLE_CSP",
     "JARVIS_AUTO_DEEP", "JARVIS_ANALYTICS_MAX_EVENTS",
-    "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD",
+    "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD", "JARVIS_LOG_REDACTION",
 })
+# What locates the hub's own files. A file cannot move them: the stores opened while the
+# hub was imported would stay under one root and the rest would follow the file, so a .env
+# value is recorded, with the note, and never put in the environment.
+FROM_PROCESS_ONLY = frozenset({"JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR"})
+# A name a file may set that the hub also reads before any file can: the file's value
+# reaches only what runs after the load.
+SPLIT_NOTES = {
+    "JARVIS_USER_HOME": ("it names the data home and its .env, but when JARVIS_HOME is not set the stores "
+                         "the hub opened while it was imported stay under the default root: set it in the "
+                         "process environment"),
+}
 # Read while the hub is imported and read again once the .env files are loaded, so a .env
-# value is in effect: DEV_MODE (app_state.dev_mode, ENV-039), the admin and user tokens,
-# the OAuth client ids (PluginManager.build calls oauth.init_from_env after the load) and
-# the trusted proxies (proxy_trust.trusted_proxies reads the environment on every call).
+# value is in effect: DEV_MODE (app_state.dev_mode, ENV-039), the admin and user tokens
+# (every guard reads them per request, the MCP transport too, and the bind guard runs after
+# the load), the OAuth client ids (PluginManager.build calls oauth.init_from_env after the
+# load, on the module the OAuth routes use) and the trusted proxies (proxy_trust reads the
+# environment on every call). Measured too: each is read after the load, and no name in
+# READ_BEFORE_LOAD is (tests/test_h273d_provenance_review.py).
 READ_AGAIN_AFTER_LOAD = frozenset({
     "DEV_MODE", "JARVIS_ADMIN_TOKEN", "JARVIS_USER_TOKEN",
     "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
@@ -75,6 +91,7 @@ BEFORE_LOAD_NOTE = ("the hub reads it before the .env files are loaded: the .env
 
 _TABLE: dict[str, dict] = {}
 _FILES: dict[str, dict] = {}   # what the last load read, per layer: {"path", "kind", "present", "read"}
+_NOT_SET: set[str] = set()     # FROM_PROCESS_ONLY names a file set and the load took back out
 # Per key a load set: the layer and a digest of the value it set (never the value). A
 # later load keeps that attribution only while the environment still holds that value.
 _LOADED: dict[str, tuple[str, str]] = {}
@@ -150,15 +167,33 @@ def _port_keys(text: str) -> list[str]:
     return [key for key, has_value in last_has_value.items() if has_value]
 
 
+def _bindings(text: str) -> tuple:
+    """Every binding of a ``.env`` text in file order, a rebound key each time it is bound:
+    ``(key, raw value or None)``. python-dotenv's own ``parse_stream``, which the load
+    resolves in this order and which logs nothing (``load_dotenv`` warns on a bad line
+    once). Raises ImportError without python-dotenv."""
+    from dotenv.parser import parse_stream
+
+    return tuple((binding.key, binding.value) for binding in parse_stream(io.StringIO(text))
+                 if binding.key is not None)
+
+
+def _set_keys(bindings) -> list[str]:
+    """The keys the bindings leave set, in first-binding order (as python-dotenv's dict
+    keeps them): a key's last binding decides, and one without ``=`` sets nothing."""
+    last: dict = {}
+    for key, value in bindings:
+        last[key] = value
+    return [key for key, value in last.items() if value is not None]
+
+
 def text_keys(text: str) -> list[str]:
     """The keys a ``.env`` text sets, in python-dotenv's order, without their values:
     python-dotenv's own parse when it can be imported, else the stdlib port."""
     try:
-        from dotenv import dotenv_values
-    except Exception:
+        return _set_keys(_bindings(text))
+    except ImportError:
         return _port_keys(text)
-    return [key for key, value in dotenv_values(stream=io.StringIO(text), interpolate=False).items()
-            if value is not None]
 
 
 def is_file_or_fifo(path) -> bool:
@@ -185,7 +220,7 @@ def env_file_keys(path) -> list[str]:
 
 
 @functools.lru_cache(maxsize=16)
-def _parse_cached(path: str, mtime_ns: int, size: int):
+def _parse_cached(path: str, mtime_ns: int, size: int, inode: int, ctime_ns: int):
     """One parse per file content: its keys (python-dotenv's, else the stdlib port's)
     and its raw bindings (``None`` without python-dotenv, which alone knows values)."""
     try:
@@ -193,11 +228,10 @@ def _parse_cached(path: str, mtime_ns: int, size: int):
     except (OSError, UnicodeDecodeError):
         return None
     try:
-        from dotenv import dotenv_values
-    except Exception:
+        raw = _bindings(text)
+    except ImportError:
         return tuple(_port_keys(text)), None
-    raw = tuple(dotenv_values(stream=io.StringIO(text), interpolate=False).items())
-    return tuple(key for key, value in raw if value is not None), raw
+    return tuple(_set_keys(raw)), raw
 
 
 def _file_bindings(path):
@@ -210,7 +244,9 @@ def _file_bindings(path):
         real = os.path.realpath(path)
     except (OSError, ValueError, TypeError):
         return None
-    return _parse_cached(real, info.st_mtime_ns, info.st_size)
+    # A rewrite can keep the size and put the mtime back; the inode and the change time
+    # still move, so the key holds them too.
+    return _parse_cached(real, info.st_mtime_ns, info.st_size, info.st_ino, info.st_ctime_ns)
 
 
 def _same_file(a, b) -> bool:
@@ -249,10 +285,14 @@ def hub_values(raw, environ: Mapping[str, str]) -> dict[str, str]:
     file's earlier values (python-dotenv's order when it does not override)."""
     seen: dict[str, str | None] = {}
     out: dict[str, str] = {}
-    for key, value in raw:
+    for key, value in raw:                       # every binding in file order, rebinds too
         resolved = None if value is None else _interpolate(value, {**seen, **environ})
         seen[key] = resolved
-        if resolved is not None and key not in environ:
+        if key in environ:
+            continue
+        if resolved is None:
+            out.pop(key, None)                   # a last binding without "=" sets nothing
+        else:
             out[key] = resolved
     return out
 
@@ -267,7 +307,8 @@ def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
     parsed = _file_bindings(repo_env)
     if parsed is None or parsed[1] is None:
         return merged
-    merged.update(hub_values(parsed[1], merged))
+    merged.update({key: value for key, value in hub_values(parsed[1], merged).items()
+                   if key not in FROM_PROCESS_ONLY})
     return merged
 
 
@@ -319,10 +360,11 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
     what the files shadow is worked out afresh from the files as they are now. The load
     itself is python-dotenv's public ``load_dotenv``, which checks its switch on every
     call, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the next layer."""
-    from dotenv import dotenv_values, load_dotenv
+    from dotenv import load_dotenv
 
     table: dict[str, dict] = {}
     loaded: dict[str, tuple[str, str]] = {}
+    not_set: set[str] = set()
     for key, value in os.environ.items():
         prior = _LOADED.get(key)
         if prior is not None and prior[1] == _digest(value):
@@ -356,23 +398,58 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
         load_dotenv(stream=io.StringIO(text), override=False, interpolate=True)
         now = dict(os.environ)
         for key in now.keys() - before:
+            if key in FROM_PROCESS_ONLY:
+                os.environ.pop(key, None)       # recorded, never in effect (see FROM_PROCESS_ONLY)
+                not_set.add(key)
+                table.setdefault(key, {"layer": layer, "shadowed": []})
+                continue
             table[key] = {"layer": layer, "shadowed": []}
             loaded[key] = (layer, _digest(now[key]))
-        _shadow(table, layer, [key for key, value in
-                               dotenv_values(stream=io.StringIO(text), interpolate=False).items()
-                               if value is not None])
+        _shadow(table, layer, _set_keys(_bindings(text)))    # parsed without a second warning
     _TABLE.clear()
     _TABLE.update({key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in table.items()})
     _FILES.clear()
     _FILES.update(files)
     _LOADED.clear()
     _LOADED.update(loaded)
+    _NOT_SET.clear()
+    _NOT_SET.update(not_set)
     return {key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in _TABLE.items()}
+
+
+#: The hub's own .env files: the repo's (a development checkout) and the data home's,
+#: named when the load reaches it.
+REPO_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+_HUB_LOADED: dict[str, dict] | None = None
+
+
+def _hub_home_env():
+    from .paths import ensure_user_home
+
+    home = ensure_user_home()         # a first-run home is scaffolded before its .env is read
+    return home / ".env" if home is not None else None
+
+
+def load_hub_env() -> dict[str, dict]:
+    """The hub's own load of its .env files, before anything else it starts reads.
+
+    serve.py calls it before it builds the server and runs its guards, the lifespan
+    before its boot guards, and ``PluginManager.build`` for any other entry. The first
+    call in a process loads and the others return its table: a named pipe is read once.
+    Log redaction is imported first, so its switch stays the boot environment's."""
+    global _HUB_LOADED
+    if _HUB_LOADED is None:
+        from .security import log_redaction  # noqa: F401  (snapshots JARVIS_LOG_REDACTION)
+
+        _HUB_LOADED = load_layered_env(REPO_ENV_FILE, _hub_home_env)
+    return _HUB_LOADED
 
 
 def note_for(key: str, layer: str) -> str:
     """Why a row's layer is not the whole story, or ""."""
-    return BEFORE_LOAD_NOTE if key in READ_BEFORE_LOAD and layer in (REPO_ENV, USER_ENV) else ""
+    if layer not in (REPO_ENV, USER_ENV):
+        return ""
+    return BEFORE_LOAD_NOTE if key in READ_BEFORE_LOAD else SPLIT_NOTES.get(key, "")
 
 
 def files() -> dict[str, dict]:
@@ -386,15 +463,19 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
     environ = os.environ if environ is None else environ
     out = {}
     for key in environ:
-        row = _TABLE.get(key)
+        row = None if key in _NOT_SET else _TABLE.get(key)
         out[key] = ({"layer": row["layer"], "shadowed": list(row["shadowed"])} if row is not None
                     else {"layer": RUNTIME, "shadowed": []})
+    for key in _NOT_SET - set(out):         # a file named it; the load kept it out
+        row = _TABLE[key]
+        out[key] = {"layer": row["layer"], "shadowed": list(row["shadowed"])}
     return out
 
 
 __all__ = [
-    "LABELS", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV", "RUNTIME", "USER_ENV",
-    "after_repo_layer", "derive", "dotenv_disabled", "env_file_keys", "files", "hub_values",
-    "is_fifo", "is_file_or_fifo", "load_layered_env", "note_for", "provenance", "raw_values", "text_keys",
+    "FROM_PROCESS_ONLY", "LABELS", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
+    "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
+    "env_file_keys", "files", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env", "load_layered_env",
+    "note_for", "provenance", "raw_values", "text_keys",
 ]
 

@@ -26,7 +26,20 @@ The row stays closed.
 
 **Reviewed and fixed in #1207** (2026-09-24): H273, a second time. The review found three problems: the doctor sent the admin credential through a redirect or a proxy; more keys than serve.py's four are read before any .env is loaded; and a one-case line of value material could still be printed as a name. Fixed: the credential goes only to a loopback hub and never through a redirect or a proxy; the before-load list is measured by spying on the hub's import; and the doctor prints a name only when the hub reads it, it is prefixed or declared, or it is a plain name with a real value. The nits are fixed too. The row stays closed.
 
+**Reviewed and fixed in #1207** (2026-09-24): H273, a third time. The review found three problems. The start read 31 more names before any .env was loaded, so ten .env knobs showed as in effect while they were not; the audit key and the public-profile gate were among them. Two read-again entries were false: the tokens in the bind guard, and the OAuth ids behind a second module copy. And the MCP transport checked a user token frozen at import. Fixed:
+- the hub loads its .env files first, once per process, in serve.py, the lifespan and the plugin manager;
+- what locates its files is taken from the process environment only;
+- log redaction stays the boot environment's alone;
+- the MCP transport and the OAuth routes read after the load;
+- both lists are measured by where each name is used, over the whole start.
+
+The doctor now keeps the admin token on this machine, decided by address; reads a local hub's own files; withholds value-shaped names; and scans pools, descriptors and private constants. The nerva CLI got the doctor's transport rules. The row was partial for one commit and is closed again.
+
 **Re-opened and closed again in #1207** (2026-09-24): H153, by its third review. Deliver to reached none of the owner's channels as shipped: a push to telegram, voice or ntfy answered 500 after the turn, web has no receiver, and ntfy refused the label. Fixed with a real send on each channel, tested down to the adapter: the quiet-hours rule imports the right function and runs on a fixed clock in the tests, a delivery that fails is recorded and never a 500 after the turn, web is refused by name, ntfy gets an ASCII title, the text goes as plain text (Telegram: no markup, link preview or voice note), each hook pushes at most 30 times an hour, the hook and the receiver are read again after the turn, deliver-only needs a channel, and a workflow delivers its last step or nothing. H153 closed a fourth time.
+
+**Re-opened in #1207** (2026-09-25): H315, by its third review (review-H315d). The second round fixed a script or cell that writes the plan itself, but not what a script prints. A script or cell that prints a page and then fails answers not ok, and the loop fences only a result that is ok. The taint the broker and the kernel raise stays in the handler's own task. So the page reaches a clean turn as plain text, and what the model plans from it is stored clean. The minors: the kernel's writable mount outlives a reset, a crash and a restart, while its taint lives on the record; and eleven of the review's 76 mutants are not caught. The row is partial until the fix round.
+
+**Re-opened in #1207** (2026-09-24): H153, by its fourth review (review-H153d). The two majors of the third are fixed on the real path. The review found a new major and five minors. The major: a push renders the whole text with to_plain before cutting it, and to_plain is quadratic on one long line and holds every thread, so one GitHub-sized body freezes the hub for about 40 s. The minors: to_plain rewrites addresses and file names; a workflow hook can answer 500 after its push; a burst after a start is refused while the receiver's first read runs; useApi starves a slow poller; and three behaviours are unpinned. The row is partial until the fix round, which is next.
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|

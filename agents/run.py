@@ -21,6 +21,9 @@ setup_logging()
 
 
 async def main():
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()                     # H273: the .env files before the orchestrator reads anything
     config = JarvisConfig()
     orch = Orchestrator(config)
     await orch.load_agents()

@@ -407,6 +407,12 @@ def _telegram_allowed_user_ids() -> list[int]:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global orch, gateway
+    # H273: the .env files come first, before anything the start reads (the boot
+    # guards, the data home, logging, the orchestrator with its audit log, memory and
+    # router), so a value there is in effect for all of it. serve.py has already loaded
+    # them when it is the entry; the first load in a process is the only one.
+    from agents.core.env_provenance import load_hub_env
+    load_hub_env()
     # O26-P0.6 (F6): the fail-closed boot guards (unauthenticated external
     # bind, hardened-profile preconditions) used to run only in serve.py — a
     # raw `python -m uvicorn agents.web:app` start silently skipped them.
@@ -449,13 +455,6 @@ async def lifespan(application: FastAPI):
 
     await orch.load_agents()
 
-    # Hermes absorption 5b: the early guard ran before the repo/user .env files were
-    # read (PluginManager.build loads them inside load_agents), so a bot token, a
-    # JARVIS_CHANNEL_PAIRING=0 or a proxy/host list that lives only there was invisible
-    # to it. Re-check the front door over the environment as it is now, before any
-    # channel is wired — a refusal here is the same SystemExit the early pass raises.
-    from core.boot_guards import assert_front_door
-    assert_front_door()
     # H691: say which proxies ended up trusted — Nerva's list with its warnings, and
     # uvicorn's own proxy-header layer when it believes anyone. The import-time read
     # is silent (setup_logging() did not exist yet); the environment is now final

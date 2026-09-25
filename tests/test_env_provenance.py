@@ -165,8 +165,9 @@ def test_derive_matches_the_load_without_touching_the_environment(layers):
 
 
 def test_the_plugin_manager_loads_through_the_provenance_table(monkeypatch, tmp_path):
-    """PluginManager.build no longer calls load_dotenv itself, and it resolves the data
-    home after the repo layer is loaded: a JARVIS_USER_HOME set in the repo .env names it."""
+    """PluginManager.build no longer calls load_dotenv itself: it asks for the hub's one
+    load, which resolves the data home after the repo layer is loaded, so a
+    JARVIS_USER_HOME set in the repo .env names it."""
     import agents.core.plugin_manager as pm
 
     seen = []
@@ -177,7 +178,8 @@ def test_the_plugin_manager_loads_through_the_provenance_table(monkeypatch, tmp_
         seen.append((repo, home() if callable(home) else home))
         return {}
 
-    monkeypatch.setattr(pm, "load_layered_env", load)
+    monkeypatch.setattr(ep, "load_layered_env", load)
+    monkeypatch.setattr(ep, "_HUB_LOADED", None)
     monkeypatch.setenv("JARVIS_USER_HOME", str(tmp_path))
     _write(tmp_path / ".env", "PROV_HOME_ONLY=1\n")
 
@@ -226,15 +228,15 @@ def test_the_doctor_names_each_configuration_keys_layer(tmp_path, monkeypatch):
     from scripts import doctor
 
     root = tmp_path / "repo"
-    _write(root / ".env", f"JARVIS_PORT=8081\nOPENAI_API_KEY={SECRET_VALUE}\n")
+    _write(root / ".env", f"JARVIS_PORT=8081\nJARVIS_RATE_LIMIT=5\nOPENAI_API_KEY={SECRET_VALUE}\n")
     home = tmp_path / "home"
     _write(home / ".env", "JARVIS_PORT=9000\nTELEGRAM_BOT_TOKEN=tg-home-value-51c9\n")
     env = {"JARVIS_USER_HOME": str(home), "OPENAI_API_KEY": "from-shell", "PATH": "/usr/bin"}
     check = doctor.check_config_sources(root, env)
     assert check.status == doctor.OK
     rows = {row["key"]: row for row in check.data["sources"]}
-    assert rows["JARVIS_PORT"] == {"key": "JARVIS_PORT", "layer": "repo_env", "shadowed": ["user_env"],
-                                   "note": ep.BEFORE_LOAD_NOTE}          # serve.py reads it first
+    assert rows["JARVIS_PORT"] == {"key": "JARVIS_PORT", "layer": "repo_env", "shadowed": ["user_env"]}
+    assert rows["JARVIS_RATE_LIMIT"]["note"] == ep.BEFORE_LOAD_NOTE   # importing the hub freezes it
     assert rows["OPENAI_API_KEY"] == {"key": "OPENAI_API_KEY", "layer": "process",
                                       "shadowed": ["repo_env"]}
     assert rows["TELEGRAM_BOT_TOKEN"]["layer"] == "user_env"              # the data-home layer is read
@@ -395,16 +397,17 @@ def test_python_dotenv_disabled_loads_nothing_and_derive_agrees(tmp_path, monkey
     assert "PROV_DISABLED" in ep.derive(repo, None, {"PYTHON_DOTENV_DISABLED": "0"})
 
 
-def test_the_route_flags_a_key_serve_reads_first_and_names_the_files_read(admin, tmp_path, monkeypatch, scrub):
-    repo = _write(tmp_path / ".env", "JARVIS_PORT=9123\nPROV_ROUTE_KEY=1\n")
-    monkeypatch.delenv("JARVIS_PORT", raising=False)
-    scrub.extend(["JARVIS_PORT", "PROV_ROUTE_KEY"])
+def test_the_route_flags_a_key_the_import_reads_first_and_names_the_files_read(admin, tmp_path, monkeypatch,
+                                                                                scrub):
+    repo = _write(tmp_path / ".env", "JARVIS_RATE_LIMIT=9123\nPROV_ROUTE_KEY=1\n")
+    monkeypatch.delenv("JARVIS_RATE_LIMIT", raising=False)
+    scrub.extend(["JARVIS_RATE_LIMIT", "PROV_ROUTE_KEY"])
     os.environ.pop("PROV_ROUTE_KEY", None)
     monkeypatch.setenv("_PROV_PRIVATE", "1")
     ep.load_layered_env(repo, tmp_path / "missing-home" / ".env")
     reply = admin.get("/api/admin/env/sources", headers={"X-Admin-Token": "prov-admin"}).json()
     rows = {row["key"]: row for row in reply["sources"]}
-    assert rows["JARVIS_PORT"]["note"] == ep.BEFORE_LOAD_NOTE
+    assert rows["JARVIS_RATE_LIMIT"]["note"] == ep.BEFORE_LOAD_NOTE
     assert "note" not in rows["PROV_ROUTE_KEY"]
     assert "_PROV_PRIVATE" not in rows
     assert reply["files"]["repo_env"] == {"path": str(repo), "present": True, "kind": "file", "read": True}
@@ -506,7 +509,7 @@ def test_the_doctor_reads_the_running_hubs_own_table(tmp_path):
     payload = {"sources": [
         {"key": "OPENAI_API_KEY", "layer": "process", "shadowed": ["repo_env"], "label": "process environment"},
         {"key": "JARVIS_MODEL", "layer": "user_env", "shadowed": [], "label": "data-home .env"},
-        {"key": "JARVIS_PORT", "layer": "repo_env", "shadowed": [], "label": "repo .env"},
+        {"key": "JARVIS_RATE_LIMIT", "layer": "repo_env", "shadowed": [], "label": "repo .env"},
         {"key": "JARVIS_HOST", "layer": "process", "shadowed": [], "label": "process environment"},
     ], "files": {"repo_env": {"path": "/srv/nerva/.env", "present": True, "kind": "file", "read": True}}}
     opener = _hub(payload, seen=seen, token="adm-7c1")
@@ -516,7 +519,7 @@ def test_the_doctor_reads_the_running_hubs_own_table(tmp_path):
     rows = {row["key"]: row for row in check.data["sources"]}
     assert rows["JARVIS_MODEL"]["layer"] == "user_env"          # the shell does not have it; the hub does
     assert rows["OPENAI_API_KEY"]["shadowed"] == ["repo_env"]
-    assert rows["JARVIS_PORT"]["note"] == ep.BEFORE_LOAD_NOTE
+    assert rows["JARVIS_RATE_LIMIT"]["note"] == ep.BEFORE_LOAD_NOTE
     assert "note" not in rows["JARVIS_HOST"]                         # from the process: it is in effect
     assert check.detail.startswith("read from the running hub at http://127.0.0.1:8080")
     assert "/srv/nerva/.env (file)" in check.detail

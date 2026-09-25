@@ -29,9 +29,11 @@ config_sources      advisory   informational: which layer supplied each configur
                                (process environment > repo .env > data-home .env, first
                                wins) and which .env values a higher layer overrides — names
                                only, never a value (H273). Read from the running hub when it
-                               answers with the admin token, else predicted from this shell;
-                               warns when a .env line yields a name that is not an identifier
-                               (a mis-quoted multi-line value), which it never prints
+                               answers (asked without a credential first; the admin token
+                               follows a refusal only to a hub on this machine), else
+                               predicted from this shell; warns when it withholds a .env name
+                               that may be value material (a mis-quoted multi-line value),
+                               which it never prints
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
 ==================  =========  ==========================================================
 
@@ -40,15 +42,17 @@ The hub's address is the one ``nerva status`` reads (``hub_url``: ``NERVA_HUB_UR
 ``runtime_resolves`` and ``config_sources`` share it, and every request to it goes through
 ``hub_open``, which never follows a redirect and never goes through a proxy to a hub on
 this machine — so what answered ``/readyz`` is what the credential reaches. The admin
-credential goes only to a loopback hub, and only after the route refused the request
-without it (H273 second review, A1).
+credential goes only to a hub on this machine, decided by its address rather than its
+spelling: ``config_sources`` sends it only after the route refused the request without it,
+``runtime_resolves`` only when no user token is set (H273 second and third reviews, A1).
 
 ``runtime_resolves`` is the strict check (Hermes ``setup.runtime_check``, ledger H242):
 ``runtimes`` proves something listens, this proves the configured route is runnable. It
 reads the ``model`` block of ``GET /api/onboarding/command-center`` — the hub's own
 ``select_backend`` + residency verdict (``agents/core/routers/onboarding._model_snapshot``)
-— with one credential when set: ``JARVIS_USER_TOKEN``, else ``JARVIS_ADMIN_TOKEN`` (the
-route is user-guarded; the admin token is never sent when a user token will do). One GET;
+— with one credential when set: ``JARVIS_USER_TOKEN``, else ``JARVIS_ADMIN_TOKEN`` to a hub
+on this machine (the route is user-guarded; the admin token is never sent when a user token
+will do, nor to another machine). One GET;
 it starts, loads and uploads nothing. It is ``ok`` only on ``ready: true`` naming the
 route, provider and model; a reply it could not read is ``hub_unreachable`` /
 ``malformed_reply`` / ``needs_token`` / ``command_center_status:<code>``, never a pass.
@@ -65,9 +69,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import urllib.error
@@ -278,35 +284,58 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def is_loopback_url(url: str) -> bool:
-    """Whether *url* names this machine (``LOOPBACK_HOSTS``)."""
+    """Whether *url* names this machine, decided by address rather than by spelling: the
+    name ``localhost`` (a trailing dot too) or any loopback address, however it is written
+    (``127.0.0.2``, ``127.1``, ``2130706433``, ``::1``, ``::ffff:127.0.0.1``). Each of those
+    reaches this machine's listener; a list of spellings let the others through a proxy. A
+    URL with no host (``file:``, ``data:``) names no machine."""
     try:
-        host = (urllib.parse.urlsplit(url).hostname or "").strip("[]").lower()
+        host = urllib.parse.urlsplit(url).hostname or ""
     except ValueError:
         return False
-    return host in LOOPBACK_HOSTS
+    host = host.strip("[]").rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            address = ipaddress.IPv4Address(socket.inet_aton(host))   # 127.1, 2130706433 …
+        except OSError:
+            return False
+    # An IPv4-mapped loopback (::ffff:127.0.0.1): the patched ipaddress counts it as
+    # loopback, the 3.12 releases before that fix do not.
+    mapped = getattr(address, "ipv4_mapped", None)
+    return bool(address.is_loopback or (mapped is not None and mapped.is_loopback))
 
 
-def hub_open(request, timeout=None):
-    """Open a request to the hub: never follows a redirect, and never goes through a proxy
-    to a loopback hub (an ``http_proxy`` with no ``no_proxy`` entry would otherwise answer
-    ``/readyz`` itself and receive the credential in clear text)."""
-    url = getattr(request, "full_url", request)
+def hub_open(request, timeout: float = 10.0):
+    """Open a request to the hub over http or https: never follows a redirect, and never
+    goes through a proxy to a hub on this machine (an ``http_proxy`` with no ``no_proxy``
+    entry would otherwise answer ``/readyz`` itself and receive the credential in clear
+    text). Any other scheme (``file:``, ``data:``) is a ``ValueError``, which the checks
+    name ``hub_url_invalid``; there is always a timeout."""
+    url = str(getattr(request, "full_url", request))
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"the hub address is not http or https ({scheme or 'no scheme'})")
     handlers = [_RefuseRedirects()]
-    if is_loopback_url(str(url)):
+    if is_loopback_url(url):
         handlers.append(urllib.request.ProxyHandler({}))
     return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
 
 
-def _hub_headers(env) -> dict:
-    """The least-privileged local credential that opens the (user-guarded) route read:
-    ``JARVIS_USER_TOKEN`` when set, else ``JARVIS_ADMIN_TOKEN`` — never both, so the
-    admin token stays home whenever a user token will do. Never printed."""
+def _hub_headers(env, url: str = "") -> dict:
+    """The least-privileged local credential that opens the (user-guarded) route read at
+    *url*: ``JARVIS_USER_TOKEN`` when set, else ``JARVIS_ADMIN_TOKEN``, and that one only
+    to a hub on this machine (``is_loopback_url``) — never both, so the admin token stays
+    home whenever a user token will do, and never leaves this machine. Never printed."""
     headers = {"Accept": "application/json"}
     user = (env.get("JARVIS_USER_TOKEN") or "").strip()
     admin = (env.get("JARVIS_ADMIN_TOKEN") or "").strip()
     if user:
         headers["x-user-token"] = user
-    elif admin:
+    elif admin and is_loopback_url(url):
         headers["x-admin-token"] = admin
     return headers
 
@@ -341,7 +370,7 @@ def check_runtime_resolves(opener=None, *, readyz: Check | None = None,
     env = os.environ if env is None else env
     url = url or hub_url(env) + COMMAND_CENTER_PATH
     opener = opener or hub_open
-    headers = _hub_headers(env)
+    headers = _hub_headers(env, url)
     try:
         request = urllib.request.Request(url, headers=headers, method="GET")
         resp = opener(request, timeout=timeout)
@@ -354,10 +383,14 @@ def check_runtime_resolves(opener=None, *, readyz: Check | None = None,
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             sent = next((h for h in ("x-user-token", "x-admin-token") if h in headers), None)
-            hint = ("set JARVIS_USER_TOKEN (or JARVIS_ADMIN_TOKEN) to read the route"
-                    if sent is None else
-                    f"the hub refused the {sent} sent — check JARVIS_USER_TOKEN / "
-                    "JARVIS_ADMIN_TOKEN")
+            if sent is not None:
+                hint = (f"the hub refused the {sent} sent — check JARVIS_USER_TOKEN / "
+                        "JARVIS_ADMIN_TOKEN")
+            elif (env.get("JARVIS_ADMIN_TOKEN") or "").strip():
+                hint = ("the admin token is sent only to a hub on this machine: set "
+                        "JARVIS_USER_TOKEN to read the route of this one")
+            else:
+                hint = "set JARVIS_USER_TOKEN (or JARVIS_ADMIN_TOKEN) to read the route"
             return _result(name, False, "needs_token", hint)
         return _result(name, False, f"command_center_status:{exc.code}")
     except (ValueError, http.client.InvalidURL):
@@ -410,25 +443,36 @@ OS_NAMES = frozenset({
 })
 # A read of the environment in the hub's code: through os.environ or a helper, through
 # a mapping bound to it (``env.get(...)``, as GroupPolicy.from_env reads its group
-# allowlist), or a module constant naming a variable (``*_ENV = "..."``, as proxy_trust
-# names uvicorn's forwarding knobs).
+# allowlist), a module constant naming a variable (``*_ENV = "..."``, private ones too, as
+# proxy_trust names uvicorn's forwarding knobs and http_client its CA bundle), a pool's
+# ``from_env("NAME", "NAMES")`` or a descriptor's ``*_env="NAME"`` keyword (the providers'
+# keys and base URLs).
 _ENV_READ = re.compile(
     r"""(?:os\.environ\.get|os\.getenv|environ\.get|\benv\.get|env_str|env_int|env_flag|env_float|env_list"""
     r"""|env_json_object|env_int_map)\(\s*["']([A-Z][A-Z0-9_]+)["']"""
     r"""|environ\[\s*["']([A-Z][A-Z0-9_]+)["']\s*\]"""
-    r"""|^[ \t]*[A-Z][A-Z0-9_]*_ENV[ \t]*=[ \t]*["']([A-Z][A-Z0-9_]+)["']""", re.M)
+    r"""|^[ \t]*_?[A-Z][A-Z0-9_]*_ENV[ \t]*=[ \t]*["']([A-Z][A-Z0-9_]+)["']"""
+    r"""|\bfrom_env\(\s*["']([A-Z][A-Z0-9_]+)["'](?:\s*,\s*["']([A-Z][A-Z0-9_]+)["'])?"""
+    r"""|\b[a-z_]*_env\s*=\s*["']([A-Z][A-Z0-9_]+)["']""", re.M)
 # A name from a .env file the doctor prints although nothing declares it: an identifier
 # in one case, and only when python-dotenv gives it a real value. A mis-quoted
 # multi-line value turns its lines into "keys": a PEM or base64 line is mixed case, and
 # a base32 seed or a hex digest line is one case but its "value" is only "=" padding or
 # nothing. Those are counted instead of printed.
 _SHOWN_NAME = re.compile(r"(?:[A-Z_][A-Z0-9_]*|[a-z_][a-z0-9_]*)\Z")
+# Every name the doctor prints is an identifier: a known prefix admits any suffix, and a
+# suffix can carry terminal control characters (a title change, a screen clear).
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+# A long run of hex digits, or of base32's alphabet, with a digit in it and no underscore
+# is value material, not a name: a digest, a TOTP seed, an access key id.
+_VALUE_SHAPED = re.compile(r"(?=[A-Za-z0-9]*[0-9])(?:[0-9a-f]{16,}|[A-Z2-7]{16,})\Z")
 ENV_SOURCES_PATH = "/api/admin/env/sources"
 
 
 def names_read_in(text: str) -> set:
-    """The environment names one source file reads (see ``_ENV_READ``)."""
-    return {next(group for group in m.groups() if group) for m in _ENV_READ.finditer(text)}
+    """The environment names one source file reads (see ``_ENV_READ``); a pool read names
+    two (``from_env("GEMINI_API_KEY", "GEMINI_API_KEYS")``)."""
+    return {group for m in _ENV_READ.finditer(text) for group in m.groups() if group}
 
 
 def _code_base(root: Path) -> Path:
@@ -559,7 +603,7 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         return _result("config_sources", False, "provenance_unavailable", type(exc).__name__)
     hub, why = _hub_sources(env, opener, readyz)
     unreadable: list = []
-    values: dict = {}
+    values: dict | None = {}
     if hub is not None:
         table = {row["key"]: {"layer": row.get("layer"), "shadowed": _layers(row.get("shadowed"))}
                  for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
@@ -567,6 +611,16 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         where = f"read from the running hub at {hub_url(env)}"
         detail = "; ".join(f"{ep.LABELS.get(layer, layer)} {info.get('path')} ({info.get('kind') or ('present' if info.get('present') else 'absent')})"
                            for layer, info in files.items() if isinstance(info, dict))
+        if is_loopback_url(hub_url(env)):
+            # The hub is on this machine: its files are here, and their values tell a name
+            # from value material as they do in a prediction (the repo's value wins).
+            for layer in (ep.USER_ENV, ep.REPO_ENV):
+                info = files.get(layer)
+                path = info.get("path") if isinstance(info, dict) else None
+                if isinstance(path, str) and path:
+                    values.update(ep.raw_values(path))
+        else:
+            values = None      # another machine's files: only names Nerva knows are shown
     else:
         repo_env = root / ".env"
         table = ep.derive(repo_env, _home_env, env)
@@ -582,11 +636,15 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
             detail += "; PYTHON_DOTENV_DISABLED is set: no .env file is loaded"
     names = hub_env_names(root)
     declared = declared_env_names(root)
-    rows, withheld = [], 0
+    rows, withheld, unseen = [], 0, 0
     for key, row in sorted(table.items()):
-        known = key in names or key in declared or key.startswith(CONFIG_PREFIXES)
+        known = key in names or key in declared or (key.startswith(CONFIG_PREFIXES)
+                                                     and bool(_IDENTIFIER.match(key)))
         in_file = row["layer"] in (ep.REPO_ENV, ep.USER_ENV) or bool(row["shadowed"])
         if not (in_file or known):
+            continue
+        if not known and values is None:
+            unseen += 1
             continue
         if not known and not _plain_name(key, values.get(key)):
             withheld += 1
@@ -602,6 +660,9 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
               f"{counts[ep.REPO_ENV]} repo .env, {counts[ep.USER_ENV]} data-home .env")
     if counts[ep.RUNTIME]:
         reason += f", {counts[ep.RUNTIME]} set while running"
+    if unseen:
+        reason += (f"; {unseen} other .env key{'s' if unseen != 1 else ''} not shown: the hub is on "
+                   f"another machine, so only names Nerva knows are shown")
     overriding = sum(1 for row in rows if row["layer"] == ep.PROCESS and row["shadowed"])
     if overriding:
         reason += (f"; {overriding} key{'s' if overriding != 1 else ''} set in the process environment "
@@ -625,9 +686,14 @@ def _layers(value) -> list:
 
 
 def _plain_name(key: str, value) -> bool:
-    """An undeclared .env key the doctor may print: a one-case identifier whose value
-    is real, not empty and not only ``=`` padding (the tail of a base32 or base64 line)."""
-    return bool(_SHOWN_NAME.match(key)) and isinstance(value, str) and value.strip("=") != ""
+    """An undeclared .env key the doctor may print: a one-case identifier with a value,
+    an empty one included (a placeholder for another tool). What looks like value
+    material is counted instead: a key shaped like a digest or a seed (``_VALUE_SHAPED``),
+    a value that is only ``=`` padding (the tail of a base32 or base64 line), and a key
+    with no ``=`` at all."""
+    if not (_SHOWN_NAME.match(key) and isinstance(value, str)) or _VALUE_SHAPED.match(key):
+        return False
+    return value == "" or value.strip("=") != ""
 
 
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:

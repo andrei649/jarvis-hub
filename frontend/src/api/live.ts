@@ -213,7 +213,11 @@ export function hydrateAdminKeys(env: any, sources?: any) {
     // "why is my .env value not the one in use?": name the layers this one overrides
     const over = (Array.isArray(row.shadowed) ? row.shadowed : [])
       .map((id: any) => LAYER_LABELS[String(id)]).filter(Boolean);
-    layer[row.key] = over.length ? `${row.label}, overriding ${over.join(' and ')}` : row.label;
+    const named = over.length ? `${row.label}, overriding ${over.join(' and ')}` : row.label;
+    // H273 third review: a .env value the hub read before its files were loaded is not in
+    // effect, and the row must say so rather than name the layer alone.
+    const note = typeof row.note === 'string' && row.note.trim() ? row.note.trim() : '';
+    layer[row.key] = note ? `${named} (${note})` : named;
   }
   return Object.entries(env)
     .filter(([name]) => SECRET_NAME_HINTS.some((h) => name.toLowerCase().includes(h)))

@@ -216,6 +216,12 @@ def probe_bind(host: str, port: int) -> None:
 
 def main():
     import uvicorn
+
+    from agents.core.env_provenance import load_hub_env
+
+    # H273: the .env files come first, so the server, the posture guards and the bind
+    # guard see a value there (a token in .env is one); the lifespan's load is then a no-op.
+    load_hub_env()
     config = server_config()
     assert_parseable_posture_flags()  # fail-closed on a mistyped posture flag (H23.30)
     assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind

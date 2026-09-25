@@ -13,8 +13,8 @@ What changes, each pinned here:
   console line. The refusal names the channel and the remedies, never the token.
   The guard reads everything — tokens, allowlist and both flags — from ONE mapping,
   so a caller holding a loaded ``.env`` gets that environment's verdict.
-  ``assert_front_door`` is the same check for a caller that runs after ``.env`` is
-  loaded, because the lifespan's early pass runs before it.
+  ``assert_front_door`` is the same check over a mapping the caller holds (the
+  lifespan loads ``.env`` before the boot guards run, H273).
 * The owner's own allowlisted ids compose with pairing instead of being held by it,
   so an install that upgrades with ``TELEGRAM_ALLOWED_USER_IDS`` set keeps its bot.
 * Wrong pairing-code guesses are throttled store-wide, because sender ids on a
@@ -283,8 +283,8 @@ def test_the_channel_flags_are_parse_critical():
 # ── assert_front_door: the pass that runs after .env is loaded ───────────────
 
 def test_front_door_guard_sees_a_dotenv_only_configuration():
-    """The lifespan's early pass runs before the .env files load, so a bot token that
-    lives only there boots open; the late pass over the loaded mapping refuses it."""
+    """A caller holding a loaded .env mapping gets that mapping's verdict: a bot token
+    that lives only there refuses, whatever the process environment says."""
     dotenv = {"TELEGRAM_BOT_TOKEN": TOKEN, **PAIRING_OFF}
     boot_guards.enforce_boot_posture()  # the process env is empty: nothing to see
     with pytest.raises(SystemExit) as excinfo:

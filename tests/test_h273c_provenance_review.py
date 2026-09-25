@@ -84,8 +84,7 @@ def test_every_nerva_name_read_while_the_hub_is_imported_is_classified(tmp_path)
     hub_names = doctor.hub_env_names(ROOT)
     owned = {name for name in read if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
              or name in _declared_in_example() or name in hub_names}
-    serve = doctor.names_read_in((ROOT / "serve.py").read_text(encoding="utf-8"))
-    assert read >= ep.READ_AGAIN_AFTER_LOAD and ep.READ_BEFORE_LOAD - serve <= read   # no stale entry
+    assert read >= ep.READ_AGAIN_AFTER_LOAD           # stale READ_BEFORE_LOAD entries: the start test (H273d)
     unclassified = owned - ep.READ_BEFORE_LOAD - ep.READ_AGAIN_AFTER_LOAD
     assert not unclassified, (
         f"{sorted(unclassified)} are read while the hub is imported, before any .env is loaded. "
@@ -94,16 +93,18 @@ def test_every_nerva_name_read_while_the_hub_is_imported_is_classified(tmp_path)
     assert not ep.READ_BEFORE_LOAD & ep.READ_AGAIN_AFTER_LOAD
 
 
-def test_serve_py_reads_only_names_listed_as_read_before_load():
+def test_serve_py_reads_its_names_after_the_env_files_are_loaded():
+    """serve.py loads the .env files before it builds the server (H273 third review), so
+    what it reads is in effect from a file: none of it is listed as read before the load."""
     from scripts import doctor
 
     names = doctor.names_read_in((ROOT / "serve.py").read_text(encoding="utf-8"))
     assert {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_LOG_LEVEL", "JARVIS_SHUTDOWN_TIMEOUT"} <= names
-    assert names <= ep.READ_BEFORE_LOAD
+    assert names.isdisjoint(ep.READ_BEFORE_LOAD) and ep.note_for("JARVIS_PORT", ep.REPO_ENV) == ""
 
 
 @pytest.mark.parametrize("key", ["JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_AUTO_DEEP", "NEO4J_URL",
-                                 "JARVIS_PORT"])
+                                 "JARVIS_ROOT_PATH"])
 def test_the_note_says_the_hub_reads_it_before_the_load(key):
     note = ep.note_for(key, ep.REPO_ENV)
     assert "before the .env files are loaded" in note and "serve.py" not in note
@@ -373,15 +374,20 @@ def test_odd_hub_payloads_keep_the_table(tmp_path):
     assert "1 set while running" in check.reason and check.reason.startswith("3 keys:")
 
 
-def test_the_doctor_parses_each_env_file_once(tmp_path, caplog):
+def test_the_doctor_parses_each_env_file_once(tmp_path, caplog, monkeypatch):
+    """Once, and silently: python-dotenv's own parser names the keys (the hub's load is
+    where a bad line is warned about, once; H273 third review)."""
     from scripts import doctor
 
+    parses = []
+    real = ep._bindings
+    monkeypatch.setattr(ep, "_bindings", lambda text: parses.append(text) or real(text))
     root = tmp_path / "repo"
     _write(root / ".env", "GOOD=1\nthis line cannot parse ' \nALSO_GOOD=2\n")
     with caplog.at_level(logging.WARNING):
-        doctor.check_config_sources(root, {})
-    parse_warnings = [r for r in caplog.records if "could not parse" in r.getMessage()]
-    assert len(parse_warnings) == 1
+        check = doctor.check_config_sources(root, {})
+    assert len(parses) == 1 and not [r for r in caplog.records if "could not parse" in r.getMessage()]
+    assert {"GOOD", "ALSO_GOOD"} <= {row["key"] for row in check.data["sources"]}
 
 
 def test_a_data_home_built_from_a_shell_variable_follows_the_hubs_order(tmp_path):
@@ -427,7 +433,7 @@ def test_the_load_needs_no_private_python_dotenv_api(tmp_path, scrub):
     import inspect
 
     source = inspect.getsource(ep)
-    assert "DotEnv" not in source and "dotenv.main" not in source         # load_dotenv / dotenv_values only
+    assert "DotEnv" not in source and "dotenv.main" not in source   # load_dotenv and dotenv.parser only
     repo = _write(tmp_path / ".env", "PROV_C10=1\n")
     scrub.append("PROV_C10")
     os.environ.pop("PROV_C10", None)
@@ -460,9 +466,9 @@ def test_the_route_with_no_load_says_what_it_would_read(tmp_path, monkeypatch):
     monkeypatch.setattr(ep, "_FILES", {})
     home = tmp_path / "home-without-env"
     home.mkdir()
-    monkeypatch.setattr(paths, "user_home", lambda: home)
     with TestClient(web.app) as client:
         monkeypatch.setattr(ep, "_FILES", {})            # the lifespan's own load, forgotten
+        monkeypatch.setattr(paths, "user_home", lambda: home)     # a home the start did not scaffold
         files = client.get("/api/admin/env/sources", headers={"X-Admin-Token": "prov-admin"}).json()["files"]
     assert files["user_env"] == {"path": str(home / ".env"), "present": False, "read": False}
     assert files["repo_env"]["present"] is (ROOT / ".env").exists() and files["repo_env"]["read"] is False

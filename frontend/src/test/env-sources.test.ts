@@ -33,3 +33,16 @@ it('names every layer a key overrides, and only known layers', () => {
   expect(keys[0].source).toBe('process environment, overriding repo .env and data-home .env');
   expect(keys[1].source).toBe('repo .env');
 });
+
+it('says when the value a key was given in a .env file is not in effect', () => {
+  const env = { NEO4J_PASSWORD: '****', OPENAI_API_KEY: 'sk-…ab' };
+  const note = 'the hub reads it before the .env files are loaded: the .env value is not in effect, '
+    + 'so set it in the process environment';
+  const sources = { sources: [
+    { key: 'NEO4J_PASSWORD', layer: 'repo_env', label: 'repo .env', shadowed: [], note },
+    { key: 'OPENAI_API_KEY', layer: 'repo_env', label: 'repo .env', shadowed: [], note: '  ' },
+  ] };
+  const keys = hydrateAdminKeys(env, sources);
+  expect(keys[0].source).toBe(`repo .env (${note})`);
+  expect(keys[1].source).toBe('repo .env');
+});

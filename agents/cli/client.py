@@ -8,9 +8,12 @@ exactly what the HUD can do and nothing more. Stdlib only so it runs in a broken
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import os
+import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -55,6 +58,52 @@ def hub_url(environ: Mapping[str, str] | None = None) -> str:
     return f"http://{host}:{port}"
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is refused: the 3xx stays an error. urllib carries every header but
+    the content ones to wherever a redirect points, both tokens included."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def is_loopback_url(url: str) -> bool:
+    """Whether *url* names this machine, by address rather than spelling: ``localhost``
+    (a trailing dot too) or any loopback address (``127.0.0.2``, ``127.1``, ``::1`` …).
+    ``scripts/doctor.py`` keeps the same rule in its own stdlib-only copy."""
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        return False
+    host = host.strip("[]").rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            address = ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return False
+    # An IPv4-mapped loopback (::ffff:127.0.0.1): the patched ipaddress counts it as
+    # loopback, the 3.12 releases before that fix do not.
+    mapped = getattr(address, "ipv4_mapped", None)
+    return bool(address.is_loopback or (mapped is not None and mapped.is_loopback))
+
+
+def hub_open(request, timeout: float = 30.0):
+    """Open a request to the hub over http or https (H273 third review, the doctor's A1
+    for the CLI): a redirect is refused, and a hub on this machine is never reached
+    through a proxy (an ``http_proxy`` with no ``no_proxy`` entry would otherwise receive
+    the tokens in clear text). Any other scheme is a ``ValueError``."""
+    url = str(getattr(request, "full_url", request))
+    if urllib.parse.urlsplit(url).scheme.lower() not in ("http", "https"):
+        raise ValueError("the hub address is not http or https")
+    handlers: list = [_RefuseRedirects()]
+    if is_loopback_url(url):
+        handlers.append(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
+
+
 class HubClient:
     def __init__(
         self,
@@ -62,7 +111,7 @@ class HubClient:
         *,
         admin_token: str = "",
         user_token: str = "",
-        opener: Callable[..., Any] = urllib.request.urlopen,
+        opener: Callable[..., Any] = hub_open,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -99,9 +148,10 @@ class HubClient:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raise HubError(exc.code, _error_reason(exc)) from None
-        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as exc:
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
             # HTTPException: a reply cut off mid-body (IncompleteRead) or a garbled
-            # status line is the hub being unreachable, not a crash in the verb.
+            # status line is the hub being unreachable, not a crash in the verb; a
+            # ValueError is an address that is not an http(s) URL.
             raise HubUnavailable(self.base_url, str(getattr(exc, "reason", exc))) from None
         if not raw:
             return None

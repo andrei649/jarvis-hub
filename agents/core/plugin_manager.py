@@ -15,9 +15,8 @@ No top-level import of Orchestrator — no import cycle.
 """
 
 import logging
-from pathlib import Path
 
-from agents.core.env_provenance import load_layered_env
+from agents.core.env_provenance import load_hub_env
 
 from .argus import ArgusInterface
 from .env_config import env_str
@@ -70,21 +69,15 @@ class PluginManager:
         self.plugins["weather"] = WeatherPlugin()
         self.plugins["news"] = NewsPlugin()
         self.plugins["stock-quotes"] = StockQuotesPlugin()
-        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
         # Packaged installs / $JARVIS_USER_HOME: the owner's config lives in
         # <Documents/Jarvis>/.env. Loaded second with override=False, so a repo
         # .env (dev) keeps precedence and only unset keys are filled — in a frozen
         # install there is no repo .env, making this the config source. H273: the
         # load records which layer supplied each key (names only), for the admin
-        # route, the doctor and the HUD. The data home is resolved after the repo
-        # layer is loaded, so a JARVIS_USER_HOME set in the repo .env still names it.
-        from agents.core.paths import user_home
-
-        def home_env():
-            home = user_home()
-            return home / ".env" if home is not None else None
-
-        load_layered_env(env_path, home_env)
+        # route, the doctor and the HUD. The hub's entries (serve.py, the lifespan)
+        # have loaded the files before anything they read, so this is their table; an
+        # entry that did not (agents/run.py before its main) loads here, once.
+        load_hub_env()
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=env_str("ANTHROPIC_API_KEY"),
             openai_key=env_str("OPENAI_API_KEY"),

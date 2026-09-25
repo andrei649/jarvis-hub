@@ -193,7 +193,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | ENV-036 | External bind refuses without auth | `JARVIS_HOST=0.0.0.0 python serve.py` with no tokens | `SystemExit` printing `Refusing to bind to non-loopback host '0.0.0.0' without authentication.` + the two remedies | BLOCKER if it binds | ✅`tests/test_o26_f6_boot_guards.py::test_external_bind_without_auth_refuses_to_start` |
 | ENV-037 | External bind allowed with a token | `JARVIS_HOST=0.0.0.0 JARVIS_USER_TOKEN=devuser python serve.py` | Boots and prints `[SECURITY] binding to non-loopback host '0.0.0.0' — public routes are reachable from the network (authenticated).` | MAJOR | ✅ same file |
 | ENV-038 | External bind with explicit ack | `JARVIS_HOST=0.0.0.0 JARVIS_ALLOW_INSECURE_BIND=1 python serve.py` | Boots; the same line ends `(INSECURE, acknowledged).` | MAJOR | ✅ same file |
-| ENV-039 | **Tokens set only in `.env` are ignored** 🔑 | Put `JARVIS_ADMIN_TOKEN=fromdotenv` in `.env` only (not exported), boot, then `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/api/admin/settings -H "X-Admin-Token: fromdotenv"` from **another LAN host** | Document the real behaviour. `ADMIN_TOKEN` is read at `agents/web.py:62` (import), before dotenv loads at `plugin_manager.py:72`, so the token does **not** activate | MAJOR — the runbook tells the owner to "pre-set the keys/tokens in `.env`" (`docs/COWORK_QA_RUNBOOK.md` §8 notes) | ❌ |
+| ENV-039 | **Tokens set only in `.env` are in effect** 🔑 | Put `JARVIS_ADMIN_TOKEN=fromdotenv` and `JARVIS_USER_TOKEN=userfromdotenv` in `.env` only (not exported), set `JARVIS_HOST=0.0.0.0` in the shell, start with `python serve.py`, then from **another LAN host** run `curl -s -o /dev/null -w "%{http_code}" http://<hub>:8080/api/admin/settings -H "X-Admin-Token: fromdotenv"` | The hub starts (the bind guard runs after the `.env` files are loaded, H273), the admin route answers 200 with the token and 401 without, and with `mcp.server_enabled` on the MCP transport needs the user token from every origin | MAJOR — the runbook tells the owner to "pre-set the keys/tokens in `.env`" (`docs/COWORK_QA_RUNBOOK.md` §8 notes) | ✅tests/test_h273d_provenance_review.py |
 | ENV-040 | Cloud keys **do** work from `.env` 🔑 | Put `GEMINI_API_KEY` in `.env` only, boot, `curl -s :8080/status \| grep llm_backend` | `llm_backend` gains `+gemini` — provider keys are read *after* dotenv, unlike the tokens | MAJOR | ⚠️`tests/test_o26_p2_env_config.py` |
 | ENV-041 | Hardened profile precondition | `JARVIS_HARDENED=1 python serve.py` with no `JARVIS_AUDIT_KEY` | `SystemExit`: `Refusing to start with JARVIS_HARDENED=1:` + the missing-audit-key bullet | BLOCKER if it starts | ✅`tests/test_o26_f6_boot_guards.py`, `tests/test_cdx12_hardened_profile.py` |
 | ENV-042 | Hardened profile boots with the key | add `JARVIS_AUDIT_KEY=…`, retry; then `GET /api/security/posture` (admin) | Boots; `hardened` block reports enabled and the forced toggles | MAJOR | ✅ same |
@@ -508,7 +508,7 @@ poller of the second instance must not open a tab pointed at the first).
 | 01.1 Windows install | 14 (ENV-001..014) | 🖥 clean Win 11 VM, winget, ⏱ | 1 partial (`test_compatibility.py` presence checks) | No test executes any installer script — the whole group is real-world only |
 | 01.2 Linux/macOS install | 10 (ENV-015..024) | shell, Node 22 for WorldView | 3 (`test_o26_p2_install_smoke.py`, `test_o26_f6_boot_guards.py`, `test_compatibility.py`) | `install.sh --dev` path untested offline |
 | 01.3 Container & service | 7 (ENV-025..031) | 🔑 Docker, 🖥 for the exe build | 2 partial (`test_release_build.py`, `test_user_home_packaging.py`) | Compose posture (0.0.0.0 bind) is a documented residual |
-| 01.4 Environment matrix | 17 (ENV-032..048) + a 40-row table | 🌐 for ENV-039 | 8 (`test_o26_p2_env_config.py`, `test_o26_f6_boot_guards.py`, `test_user_home_packaging.py`, `test_cdx12_hardened_profile.py`) | ENV-039 (`.env` vs import-time tokens) has no coverage |
+| 01.4 Environment matrix | 17 (ENV-032..048) + a 40-row table | 🌐 for ENV-039 | 9 (`test_o26_p2_env_config.py`, `test_o26_f6_boot_guards.py`, `test_user_home_packaging.py`, `test_cdx12_hardened_profile.py`, `test_h273d_provenance_review.py`) | ENV-039 (`.env` tokens) is covered offline; the LAN host is the real-world half |
 | 01.5 Model backends | 15 (ENV-049..060, ENV-143..145) | 🤖🖥 LM Studio + Ollama + cloud keys | 7 (`test_local_model_status.py`, `test_llm_status_api.py`, `test_llm_control_status_model.py`, `frontend .../local-models.test.tsx`) | Residency-vs-catalog logic is well covered offline; the real probes are not. **ENV-143 is regression R4** and the only RO+EN chat case in this section |
 | 01.6 Boot & readiness | 16 (ENV-061..076) | 🖥 for GPU telemetry, 🌐 for ENV-069 | 9 (`test_h2311_operability.py` heavily, `test_hud_security_headers.py`, `test_rate_limit_hf2.py`) | ENV-063 (`_sys_info` on real hardware) has **no** offline equivalent and is the anti-fabrication anchor |
 | 01.7 Posture & watcher | 15 (ENV-077..085, ENV-146..149) | admin token, ⏱ 35 s | 9 (`test_o26_p2_product_posture.py`, `test_admin_settings_mutations.py`, `test_o26_f2_settings_seed.py`, `test_cdx12_hardened_profile.py`, `test_settings_integrity.py`, `test_settings_secret_encryption.py`) | The 30 s watcher tick itself is timing-dependent, manual only. ENV-146 is the declared-vs-runtime cross-check |
@@ -522,7 +522,11 @@ poller of the second instance must not open a tab pointed at the first).
 
 ## Open gaps found while writing
 
-1. **`.env` cannot supply `JARVIS_ADMIN_TOKEN` / `JARVIS_USER_TOKEN` / `DEV_MODE`.** `ADMIN_TOKEN`
+1. **Closed (H273, 2026-09-24):** the hub now loads its `.env` files before anything it starts reads
+   (serve.py before it builds the server, the lifespan before its boot guards), the guards read the
+   tokens at call time, and the MCP transport too; `nerva doctor` names each key's layer and says when a
+   `.env` value is not in effect. The original observation, kept for the record:
+   **`.env` cannot supply `JARVIS_ADMIN_TOKEN` / `JARVIS_USER_TOKEN` / `DEV_MODE`.** `ADMIN_TOKEN`
    (`agents/web.py:62`), `USER_TOKEN` (`agents/web.py:147`), `RATE_LIMIT_PER_MIN`
    (`agents/web.py:218`) and `DEV_MODE` (`agents/web.py:48`) are evaluated at **module import**, while
    `load_dotenv` runs much later inside `PluginManager.build()`
@@ -530,10 +534,10 @@ poller of the second instance must not open a tab pointed at the first).
    written only into `.env` therefore never activates — the hub silently stays in the localhost-only
    dev posture. `docs/COWORK_QA_RUNBOOK.md` §8 explicitly advises "pre-set the keys/tokens in `.env`".
    Observation only; ENV-039 measures it.
-2. **`settings_db.DB_PATH` is bound at import** (`agents/core/settings_db.py:30` —
-   `DB_PATH = data_path("settings.db")`). Combined with (1), a `JARVIS_HOME` set only in `.env` cannot
-   relocate `settings.db`, so state can split across two roots. Worth an explicit test on the owner's
-   box before trusting any `.env`-driven relocation.
+2. **Closed (H273, 2026-09-24): a `JARVIS_HOME` set only in `.env` is never applied.** `settings_db.DB_PATH`
+   is bound at import (`DB_PATH = data_path("settings.db")`), so a `.env` value split the state across two
+   roots. The load now records `JARVIS_HOME`, `JARVIS_MEMORY_DIR` and `JARVIS_APP_ROOT` from a file with a
+   note and keeps them out of the environment: set them in the process environment.
 3. **No installer enforces the declared Python 3.12 floor.** `docs/COMPATIBILITY.md` calls 3.12 a
    *hard* floor, but `install.sh:13-17` only checks that `python3` exists and then prints the version;
    `install.ps1:22-28` does the same; `INSTALL.bat:28-48` installs Python 3.12 via winget **only when
@@ -552,7 +556,8 @@ poller of the second instance must not open a tab pointed at the first).
    residual `agents/core/boot_guards.py:12-15` documents as invisible to the guard. The container is
    therefore network-exposed with no bind-guard warning, and (per gap 1) tokens supplied only via
    `.env` inside the image would not activate — though compose's `env_file` does inject them as real
-   env vars, so ENV-027 should pass while ENV-039 fails.
+   env vars, so ENV-027 should pass. (Gap 1 is closed since H273: a `.env` read by the hub itself now
+   supplies the tokens too, ENV-039.)
 7. **`INSTALL.bat` clones from a hardcoded repo URL** (`INSTALL.bat:21`,
    `https://github.com/andrei649/jarvis-hub.git`). If the repo is renamed as part of the Nerva rename
    (CLAUDE.md notes the rename is an owner task), the one-click Windows installer breaks silently.
