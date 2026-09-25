@@ -400,6 +400,73 @@ def soul_path_for(agent_id: str):
     return next((c for c in candidates if c.exists()), candidates[-1])
 
 
+#: H670 — the SoulVersionStore key the shared behaviour contract is versioned under, beside
+#: each agent's own persona (``/api/admin/prompts/_identity/...``).
+IDENTITY_KEY = "_identity"
+_IDENTITY_CACHE: dict = {}
+
+
+def identity_path():
+    """The behaviour contract every agent's system prompt starts with (H670): the one
+    shared band under each persona. Precedence as ``soul_path_for``: the data home's
+    ``souls/IDENTITY.local.md`` → a repo-local ``agents/_identity/IDENTITY.local.md`` → the
+    shipped ``agents/_identity/IDENTITY.md``."""
+    from .paths import app_root, user_souls_dir
+    candidates = []
+    souls_home = user_souls_dir()
+    if souls_home is not None:
+        candidates.append(souls_home / "IDENTITY.local.md")
+    candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.local.md")
+    candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.md")
+    return next((c for c in candidates if c.exists()), candidates[-1])
+
+
+def _strip_maintainer_note(text: str) -> str:
+    """The file's leading ``<!-- … -->`` note is for maintainers, never the model."""
+    stripped = text.lstrip()
+    if stripped.startswith("<!--") and "-->" in stripped:
+        return stripped.split("-->", 1)[1].lstrip("\n")
+    return text
+
+
+def read_identity(path=None) -> dict:
+    """Read, scan and cap the shared contract through the same H387 builder helpers as a
+    persona: ``{content, path, flags, blocked, truncated}``, ``content`` "" when there is
+    no file. Read once per file signature for the whole process, so eighteen agents
+    loading it read (and announce a verdict on) it once."""
+    path = identity_path() if path is None else path
+    empty = {"content": "", "path": path, "flags": [], "blocked": False, "truncated": False}
+    try:
+        signature = _soul_signature(path)
+    except FileNotFoundError:
+        return empty
+    key = (str(path), signature)
+    if signature is not None and key in _IDENTITY_CACHE:
+        return dict(_IDENTITY_CACHE[key])
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return empty
+    body = _strip_maintainer_note(raw)
+    body, flags, blocked = _scan_soul_body(body, path.name, _body_line_offset(raw, body))
+    truncated = False
+    if not blocked:
+        body, truncated = _cap_soul_body(body, path.name, _soul_max_chars())
+    out = {"content": body.strip(), "path": path, "flags": flags, "blocked": blocked,
+           "truncated": truncated}
+    if flags:
+        logger.error("identity contract %s flagged by the injection scan — %s; matched: %s",
+                     path, "contract dropped" if blocked else "flagged lines quarantined",
+                     ", ".join(flags))
+    if truncated:
+        logger.warning("identity contract exceeds the %d-char cap and was truncated: %s",
+                       _soul_max_chars(), path)
+    if signature is not None:
+        _IDENTITY_CACHE.clear()
+        _IDENTITY_CACHE[key] = dict(out)
+    return out
+
+
 class Agent:
     def __init__(self, agent_id: str, config: dict, llm_router: HybridRouter = None, permission_gate=None):
         self.id = agent_id
@@ -428,6 +495,50 @@ class Agent:
         self._last_latency = 0.0
         self._checkpoint_manager = None
         self._load_soul()
+        self._load_identity()
+
+    def system_prompt(self) -> str:
+        """What the model is given as the system prompt (H670): the shared behaviour
+        contract, then this agent's persona. Either may be empty."""
+        identity = (getattr(self, "identity", None) or {}).get("content", "")
+        persona = (self.soul or {}).get("content", "")
+        return "\n\n".join(part for part in (identity, persona) if part)
+
+    def _load_identity(self) -> None:
+        path = identity_path()
+        try:
+            self._identity_stamp = _soul_signature(path)
+        except FileNotFoundError:
+            self._identity_stamp = None
+        self.identity = read_identity(path)
+
+    def _refresh_identity(self) -> bool:
+        """Re-read the shared contract at a compaction boundary, as the persona is: one
+        ``os.stat`` when it is unchanged; a read that fails keeps the last-good one.
+        True when the text the model is given moved."""
+        path = identity_path()
+        try:
+            signature = _soul_signature(path)
+        except FileNotFoundError:
+            signature = None
+        in_force = getattr(self, "identity", None) or {}
+        if (signature is not None and signature == getattr(self, "_identity_stamp", None)
+                and path == in_force.get("path")):
+            return False
+        try:
+            fresh = read_identity(path)
+        except Exception:
+            logger.warning("identity contract could not be re-read at a compaction boundary; "
+                           "keeping the last-good one", exc_info=True)
+            return False
+        self._identity_stamp = signature
+        moved = fresh["content"] != in_force.get("content", "")
+        self.identity = fresh
+        if moved:
+            logger.info("identity contract for agent %s rebuilt at a compaction boundary "
+                        "(%d chars; flags=%s, blocked=%s)", self.id, len(fresh["content"]),
+                        fresh["flags"], fresh["blocked"])
+        return moved
 
     def _read_soul(self, *, quiet: bool = False, path=None) -> dict:
         """Read, scan and cap the SOUL the model will be given — touching nothing on ``self``.
@@ -511,6 +622,18 @@ class Agent:
             logger.warning(f"SOUL.md not found for {self.id}")
 
     def refresh_soul(self):
+        """H672 — re-read the persona, and (H670) the shared contract above it, at a
+        compaction boundary; see ``_refresh_persona``. A contract that moved while the
+        persona did not is reported as rebuilt, so the boundary names the change."""
+        identity_moved = self._refresh_identity()
+        out = self._refresh_persona()
+        if identity_moved and not out.changed:
+            from .session_refresh import PromptRefresh
+
+            return PromptRefresh(text=out.text, changed=True, reason="rebuilt")
+        return out
+
+    def _refresh_persona(self):
         """H672 — re-read the persona at a compaction boundary; fails OPEN.
 
         Nerva re-resolves tools, skills and the plugin block every turn; the one
@@ -762,7 +885,7 @@ class Agent:
             return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
-        system_prompt = self.soul.get("content", "")
+        system_prompt = self.system_prompt()
         model = self.default_model()
 
         if not self.llm_router:
@@ -912,7 +1035,7 @@ class Agent:
             return " | ".join(parts) if parts else "Done, sir."
 
         model = self.config.get("model", "google/gemma-4-31b-a4b")
-        system_prompt = self.soul.get("content", "")
+        system_prompt = self.system_prompt()
 
         if in_character:
             directive = (

@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H670 one shared behaviour contract under every persona (partial → equivalent, #1207; headline 147 → 148/697).
+
+  The mechanism (SOUL = system prompt, the H387 scan and cap, versions, the compaction re-read) was there; the shared content was not: every SOUL described character, none specified behaviour. Now:
+  - **`agents/_identity/IDENTITY.md`** is the contract every agent's system prompt starts with: size the reply to the weight of the ask; earn depth; no filler, no restating the request, no re-summarizing, no narrating visible tool calls; agree because it is right, not because the owner said it; say when you do not know. Its maintainer note (never sent to the model) says never to add "be targeted and efficient in your exploration", and why. The repo-root `SOUL.md` mirrors it; a test keeps them equal.
+  - **Loaded like a persona:** the same H387 scan and cap, read once per file signature, re-read at a compaction boundary (one stat when unchanged; the last-good text kept on a failed read), overridable per install (`<data home>/souls/IDENTITY.local.md`, or a gitignored `agents/_identity/IDENTITY.local.md`).
+  - **`Agent.system_prompt()`** = contract, then persona, used at all four places a system prompt is built (two in the agent, two in the orchestrator); an agent without a SOUL still gets it. Personas and `Persona.prompt_block` stay the character layer.
+  - **Versioned** as `_identity` in the prompt VC at start (a no-op when unchanged): `/api/admin/prompts/_identity/...` diffs, rolls back and A/B-tests it. The prompt-size report counts it as shared per call; the packaged build ships it through its `agents/*/*.md` glob.
+  - It lives in its own `agents/_identity/`, since `agents/_system/` holds only the roster (a guard test).
+  Test manual: CHT-117; `docs/ARCHITECTURE.md` names the band. 17 mutants, all caught but one equivalent. 47 rows re-stamped (H427's `publish()` range by hand).
+  Tests: backend 15,087 → 15,105 (`tests/test_identity_contract.py` 18); vitest unchanged at 1,462.
+
 - 2026-09-25 H273 eighth adversarial review round (stays equivalent, #1207; headline stays 147/697).
 
   review-H273i found no major, three minors and six nits (the named-pipe run-log, the survivors and the records held; real supervisor, coordinator and hub in seven postures):

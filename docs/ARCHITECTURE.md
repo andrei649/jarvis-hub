@@ -714,6 +714,14 @@ template, personalize, restart. One-time migration after the 2026-06-10 templati
 `python scripts/restore_personal_souls.py` (restores the pre-templating personalized souls
 from git history into `*.local.md`).
 
+Above every persona sits one shared **behaviour contract**, `agents/_identity/IDENTITY.md` (H670):
+reply sizing, earned depth, the named prohibitions and the anti-sycophancy line. Every agent's
+system prompt starts with it (`Agent.system_prompt()`); it goes through the same injection scan
+and cap as a SOUL, is re-read at a compaction boundary, is versioned in the prompt VC as
+`_identity`, and is overridden per install by `<data home>/souls/IDENTITY.local.md` (or a
+gitignored `agents/_identity/IDENTITY.local.md`). The repo-root `SOUL.md` mirrors it. Personas keep
+the character; the contract keeps the behaviour.
+
 ### Add a new agent (active)
 
 1. Create `agents/<agent_id>/SOUL.md` — start from `agents/_templates/SOUL.template.md` (Identity / Mission / Voice & Tone sections). Keep it generic; personal details go in `SOUL.local.md` (above). Fill in the `personality` front-matter block: without it the agent inherits the shared default traits and has no character of its own, and `tests/test_persona_roster.py` fails. Traits derive from the Voice & Tone prose — μ ≤ 0.3 or ≥ 0.7 becomes a behavioral directive in the per-turn persona block, mid-band traits stay silent, and every agent must sit ≥ 0.1 from every other in trait space.

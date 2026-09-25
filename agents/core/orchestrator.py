@@ -375,6 +375,30 @@ def _refresh_souls_at_boundary(orchestrator) -> list[str]:
     return notes
 
 
+def _record_identity_version(orchestrator) -> None:
+    """H670 — the shared contract in force at start is a version of ``_identity`` in the
+    prompt VC (SoulVersionStore), so it is diffed, rolled back and A/B-tested beside the
+    personas (``/api/admin/prompts/_identity/...``). A no-op when it is unchanged."""
+    try:
+        from .agent import IDENTITY_KEY, read_identity
+
+        text = read_identity().get("content", "")
+        store = getattr(orchestrator, "soul_versions", None)
+        if text and store is not None:
+            store.commit(IDENTITY_KEY, text, message="in force at start", author="hub")
+    except Exception:
+        logger.warning("the identity contract's version could not be recorded", exc_info=True)
+
+
+def _system_prompt_of(agent) -> str:
+    """The agent's system prompt (H670: the shared contract, then its persona); a stand-in
+    agent without the method is its persona alone."""
+    build = getattr(agent, "system_prompt", None)
+    if callable(build):
+        return build()
+    return (getattr(agent, "soul", None) or {}).get("content", "")
+
+
 class Orchestrator:
     # DRA-08: the reply-target resolver is pure and stateless (no per-instance
     # config), so it lives on the class. That also keeps `channel_handler`
@@ -886,6 +910,7 @@ class Orchestrator:
                 logger.info(f"Loaded: {agent_id}")
 
         self._configure_cognition_roster()
+        _record_identity_version(self)
 
         # K2: issue a least-privilege capability token per agent, derived from its declared
         # config (plugins/channel/policy). Inert until the per-action enforcement waves
@@ -2074,7 +2099,7 @@ class Orchestrator:
                 # date schedules "tomorrow" against the wrong day. Same-day
                 # sessions render byte-identically bar the start line, so the
                 # cached prefix (H363) survives.
-                system_prompt = agent.soul.get("content", "")
+                system_prompt = _system_prompt_of(agent)
                 turn_text = await self._build_agent_turn_text(
                     agent_id,
                     text,
@@ -3563,7 +3588,7 @@ class Orchestrator:
                     checkpoint = self.checkpoints.load(aid, self.session_id)
                     if checkpoint:
                         prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
-                system = render_snapshot(agent.soul.get("content", ""), prompt_clock.get())
+                system = render_snapshot(_system_prompt_of(agent), prompt_clock.get())
                 overhead = max(0, estimate_tokens(prompt) - estimate_tokens(value)) + estimate_tokens(system) + 64
                 # The accepted rebuild may add the second clock line after planning.
                 runtime = getattr(agent, "tool_runtime", None)
