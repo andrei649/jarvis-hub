@@ -8,11 +8,14 @@
 
 The verbs are ``agents.core.security.token_store``'s own. What this adds is the hub's
 view of where that store lives: the hub loads its .env files before it opens
-``security/tokens.db``, so a ``JARVIS_USER_HOME`` or ``JARVIS_HOME`` set only in one of them
-moves the store. Run bare, the store's CLI reads only the process environment, and a
-token rotated there lands in a file the hub never reads (review-H273g m2). This loads the
-same .env files first, then says on stderr which file it wrote. Filesystem access to the
-box is the root of trust, as for the store's own CLI.
+``security/tokens.db``, so a ``JARVIS_USER_HOME`` set only in one of them moves the store
+(``JARVIS_HOME`` is read from the process environment only, by the hub and here alike).
+Run bare, the store's CLI reads only the process environment, and a token rotated there
+lands in a file the hub never reads (review-H273g m2). This loads the same .env files
+first, then says on stderr which file it wrote: check that path, since like the hub it
+creates the data home (its folders, a README and a .env) where none is, and a mistyped
+``JARVIS_USER_HOME`` gets a new, empty home. Filesystem access to the box is the root of
+trust, as for the store's own CLI.
 """
 
 from __future__ import annotations

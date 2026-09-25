@@ -61,15 +61,21 @@ def _log_path() -> Path:
     # child as the process environment's): one run-log for both (review-H273f m3).
     value = os.environ.get("JARVIS_RUNTIME_LOG")
     if value is None:
-        try:
-            if str(_REPO_ROOT) not in sys.path:
-                sys.path.insert(0, str(_REPO_ROOT))
-            from agents.core.env_provenance import hub_value
-
-            value = hub_value("JARVIS_RUNTIME_LOG")
-        except Exception:  # noqa: BLE001  (the app package may not import: keep the default)
-            value = None
+        value = _file_run_log()
     return Path(value or "logs/runtime.jsonl")
+
+
+def _file_run_log() -> str | None:
+    """The run-log path a regular .env file names, read the way the hub reads it; None
+    when none does, or the app package cannot be imported (keep the default)."""
+    try:
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        from agents.core.env_provenance import hub_value
+
+        return hub_value("JARVIS_RUNTIME_LOG") or None
+    except Exception:  # noqa: BLE001  (the app package may not import: nothing to hand down)
+        return None
 
 
 def _append_supervisor_event(event: str, **fields) -> None:
@@ -85,10 +91,16 @@ def _append_supervisor_event(event: str, **fields) -> None:
 
 def _child_env() -> dict[str, str]:
     """The child's environment: this process's, with the run-log path this supervisor
-    chose. The coordinator loads the .env files without overriding the process, so it
-    writes where the supervisor does even when that path came from a layer only one of
-    them can read (a named-pipe .env, which this process never reads: review-H273g m4)."""
-    return {**os.environ, "JARVIS_RUNTIME_LOG": str(_log_path())}
+    found in a regular .env file (the coordinator loads the .env files without
+    overriding the process, so both write that one run-log: review-H273g m4). A path this
+    process found nowhere is not handed down: the child then reads it where it can, a
+    named-pipe .env included, and writes where the hub reads the cycles; only the
+    supervisor's own respawn events stay in the default file (review-H273h m1)."""
+    env = dict(os.environ)
+    found = os.environ.get("JARVIS_RUNTIME_LOG") or _file_run_log()
+    if found:
+        env["JARVIS_RUNTIME_LOG"] = found
+    return env
 
 
 def _spawn() -> subprocess.Popen:

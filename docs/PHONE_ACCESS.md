@@ -89,20 +89,27 @@ Static env tokens are the bootstrap credential. Managed tokens (issued, rotated,
 revoked, with TTLs) live in the token store and supersede them once rotated:
 
 ```bash
-python -m agents.core.security.token_store issue  user  30     # 30-day user token, shown once
-python -m agents.core.security.token_store rotate admin
-python -m agents.core.security.token_store revoke all --revoke-env
-python -m agents.core.security.token_store list
+python scripts/token_recover.py issue  user  30     # 30-day user token, shown once
+python scripts/token_recover.py rotate admin
+python scripts/token_recover.py revoke all --revoke-env
+python scripts/token_recover.py list
 ```
 
-When the hub's data root is set only in a `.env` (`JARVIS_USER_HOME` or `JARVIS_HOME`), run the
-same verbs through `python scripts/token_recover.py …`: it loads the hub's `.env` files first, so
-it writes the `tokens.db` the hub reads, and says which one on stderr. A packaged build ships no
-Python to run either: to recover from a lost or expired admin token there, stop the app and remove
-`security/tokens.db` under its data home (the app then trusts this machine again until a new token
-is minted). With no admin token ever configured, a caller on this machine stays admin whatever
-happens to the user tokens: the user-token lock binds callers from other machines (`revoke all
---revoke-env` closes it for this machine too).
+These are the token store's own verbs (`python -m agents.core.security.token_store …`), run
+after the hub's `.env` files are loaded: when the data folder is moved only in a `.env`
+(`JARVIS_USER_HOME`; `JARVIS_HOME` is read from the process environment only), the bare store
+CLI would write a `tokens.db` the hub never reads. The script names on stderr the file it
+wrote; check that path, since a mistyped `JARVIS_USER_HOME` gets a new, empty data home.
+
+A packaged build ships no Python to run either. To recover from a lost or expired admin token
+there, stop the app, **first** remove every `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` line from
+`Documents/Nerva/.env`, then remove `security/tokens.db` under the data root (steps in
+`docs/PACKAGING.md` → "Recovering a lost admin token"). The order matters: that file also
+records which env tokens were rotated away or revoked, and without it they work again, a lost
+phone's included (review-H273h m2). With no admin token left, the app then trusts this machine
+again until a new one is minted. With no admin token ever configured, a caller on this machine
+stays admin whatever happens to the user tokens: the user-token lock binds callers from other
+machines (`revoke all --revoke-env` closes it for this machine too).
 
 If every token is lost, that offline CLI on the box (filesystem access) is the root of
 trust — there is no network recovery path, by design.

@@ -77,11 +77,20 @@ is committed), so no Node toolchain is needed at package time.
 ## Recovering a lost admin token
 
 A packaged install ships only the app, not the Python that runs
-`scripts/token_recover.py`. If its admin token is lost, or a rotated one has expired, stop
-the app and remove `memory/security/tokens.db` under the data home
-(`~/Documents/Nerva/memory/security/tokens.db` by default). On the next start the app trusts
-this machine again, as on a fresh install, until a new admin token is minted from the HUD.
-Any issued user tokens go with the file: mint them again (review-H273g m2).
+`scripts/token_recover.py`. If a `JARVIS_ADMIN_TOKEN` line in `Documents/Nerva/.env` still
+works, there is nothing to recover: use it. Otherwise, with the app stopped:
+
+1. **First** delete from `Documents/Nerva/.env` (and from the app's environment, if a wrapper
+   sets them) every `JARVIS_ADMIN_TOKEN` and `JARVIS_USER_TOKEN` line. The file removed in
+   step 2 is also what records that those tokens were rotated away or revoked: without it a
+   rotated or revoked env token, such as a lost phone's, works again (review-H273h m2).
+2. Remove `security/tokens.db` under the data root: `~/Documents/Nerva/memory/security/tokens.db`
+   by default, `<JARVIS_USER_HOME>/memory/security/tokens.db` when the data folder is moved,
+   and `$JARVIS_HOME/security/tokens.db` when `JARVIS_HOME` is set (see Relocating data).
+
+On the next start, with no admin token left anywhere, the app trusts this machine again, as on a
+fresh install, until a new admin token is minted from the HUD. Every issued user token goes
+with the file, so mint the phones' tokens again (review-H273g m2).
 
 ## Relocating data
 

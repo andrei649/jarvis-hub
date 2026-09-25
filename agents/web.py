@@ -114,8 +114,8 @@ def _ever_configured(scope: str) -> bool:
 
     Once true for a store it stays true for that store, without listing its table again:
     this runs on every guarded request, and the table only grows through ``issue``
-    (review-H273g n1). A store emptied later (``purge_expired``, a deleted file under a
-    running hub) therefore keeps the hub locked until it restarts."""
+    (review-H273g n1). A store emptied later (``purge_expired``, a revoke of the only issued
+    token, a deleted file) therefore keeps a running hub locked until it restarts."""
     store = get_token_store()
     try:
         seen = _CONFIGURED_SCOPES.setdefault(store, set())

@@ -578,12 +578,21 @@ def _auth_hint(client: Any) -> str:
     """What to do about a 401/403, for the client that was refused. The withheld admin
     token is named as one possible cause, beside the user token, never as the only one:
     a hub with no admin credential, or a stale user token, refuses for other reasons
-    (review-H273g m3). It never asks for a token that is set."""
+    (review-H273g m3). A token that is set and was sent is named as refused, never asked
+    for again (review-H273h m3)."""
     if _withheld_admin(client):
         return (f"JARVIS_ADMIN_TOKEN is set but was withheld from {client.base_url}: plain http to "
                 "another machine would carry it in clear text. If this needs the admin token, point "
                 "NERVA_HUB_URL at an https address or run it on the hub itself; otherwise set "
                 "JARVIS_USER_TOKEN, or check that it is current.")
+    sent = [name for name, value in (("JARVIS_ADMIN_TOKEN", getattr(client, "admin_token", "")),
+                                     ("JARVIS_USER_TOKEN", getattr(client, "user_token", ""))) if value]
+    if sent:
+        # A token that is set and was sent was refused: stale, revoked, or of the wrong
+        # tier. Asking for it again would ask for what is set (review-H273h m3).
+        return (f"The hub refused {' and '.join(sent)}: it may be expired, revoked or rotated, or this "
+                "needs the other tier. Mint a fresh one on the box: python scripts/token_recover.py "
+                "rotate admin (or issue user).")
     return ("Set JARVIS_ADMIN_TOKEN (mint one on the box: python scripts/token_recover.py issue admin) "
             "or JARVIS_USER_TOKEN.")
 
@@ -591,7 +600,12 @@ def _auth_hint(client: Any) -> str:
 def _read_hint(client: Any) -> str:
     """The status lines' version of the hint, for a read the hub refused."""
     if _withheld_admin(client):
+        if getattr(client, "user_token", ""):
+            return ("(refused: JARVIS_ADMIN_TOKEN is withheld over plain http, and JARVIS_USER_TOKEN "
+                    "may be expired or revoked)")
         return "(needs JARVIS_USER_TOKEN to read here: JARVIS_ADMIN_TOKEN is withheld over plain http)"
+    if getattr(client, "admin_token", "") or getattr(client, "user_token", ""):
+        return "(refused: the token set may be expired, revoked or of the other tier)"
     return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
 
 

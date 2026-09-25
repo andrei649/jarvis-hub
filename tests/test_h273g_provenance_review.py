@@ -159,8 +159,9 @@ def test_a_withheld_admin_token_is_one_cause_the_user_token_the_other(monkeypatc
 
 
 def test_with_no_admin_token_set_the_hint_is_the_generic_one(monkeypatch):
+    # A user token that is set is named as refused, never asked for (review-H273h m3).
     said = _refused_hint(monkeypatch, {"NERVA_HUB_URL": "http://192.0.2.2:8080", "JARVIS_USER_TOKEN": "u"})
-    assert "withheld" not in said and "Set JARVIS_ADMIN_TOKEN" in said and "token_recover.py" in said
+    assert "withheld" not in said and "refused JARVIS_USER_TOKEN" in said and "token_recover.py" in said
 
 
 def test_the_hint_is_built_for_the_client_that_was_refused(monkeypatch):
@@ -203,9 +204,10 @@ def test_a_named_pipe_env_leaves_one_run_log(tmp_path, monkeypatch):
     monkeypatch.delenv("JARVIS_RUNTIME_LOG", raising=False)
     monkeypatch.delenv("JARVIS_USER_HOME", raising=False)
     child = runtime_supervisor._child_env()
-    assert child["JARVIS_RUNTIME_LOG"] == str(runtime_supervisor._log_path())
-    monkeypatch.setenv("JARVIS_RUNTIME_LOG", child["JARVIS_RUNTIME_LOG"])        # as the child sees it
-    assert runtime_log.default_log_path() == runtime_supervisor._log_path()
+    # The child reads the pipe itself, as the hub does: nothing is handed down, and the
+    # two agree (tests/test_h273h_provenance_review.py; review-H273h m1).
+    assert "JARVIS_RUNTIME_LOG" not in child
+    assert str(runtime_supervisor._log_path()) == runtime_log.DEFAULT_LOG_PATH
 
 
 def test_the_child_is_told_the_path_a_env_file_names(tmp_path, monkeypatch):

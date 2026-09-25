@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273h found no major, four minors and five nits; the sixth round's fixes held (the memo cannot open access; the recovery writes the hub's store in six postures):
+  - **The named-pipe run-log moved to the reader (m1).** The supervisor told its child the default path, so with the path in a named-pipe `.env` the coordinator wrote there while the brief read the pipe's path, and the brief showed no runtime. The supervisor now hands down only a path it found (the process, or a regular `.env`); with a pipe the child reads it as the hub does, and only the supervisor's own events stay in `logs/runtime.jsonl` (Known limits, ENV-164).
+  - **The packaged recovery revived rotated and revoked env tokens (m2).** Deleting `tokens.db` also forgot which `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` values had been superseded, a lost phone's included. PACKAGING.md, PHONE_ACCESS.md and ENV-131 now remove those `.env` lines first, name the `$JARVIS_HOME` path, and say to use a working admin token when there is one.
+  - **The CLI still asked for a token that was set (m3).** A token that was sent and refused is named as refused (expired, revoked or rotated, or the other tier), with the `token_recover.py` verb, on the verbs and on `nerva status`.
+  - **Survivors (m4).** `scripts/token_recover.py` run as documented, as a script, and both spawn sites in the supervisor's `main()` now have cases. The supervisor's two `.env` readers are one.
+  - **Nits.** The revoke residual depends on uptime (ENV-159, `_ever_configured`); `JARVIS_HOME` is process-only (the script's docstring, PHONE_ACCESS); the script's scaffolding and "check the path it prints"; ENV-159 and PHONE_ACCESS use `token_recover.py`; one stale H456 citation fixed (`nerva.py:1025-1031`).
+  Mutation: 12 mutants, all caught (one after the readers merged). Re-stamped 67 rows whose evidence moved (9 with text: `nerva.py` lines, the `web.py` docstring, the test manual).
+  Tests: backend 14,921 → 14,935 (`tests/test_h273h_provenance_review.py` 14); vitest unchanged at 1,462.
+
 - 2026-09-25 H315 ninth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315j found no major, three minors and four nits; multi-line answers scan inline again (1–1.7 ms p50 under load, from about 3.4 s) and the other-user start holds:
