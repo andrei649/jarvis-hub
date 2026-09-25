@@ -55,6 +55,8 @@ def hub_url(environ: Mapping[str, str] | None = None) -> str:
     port = (env.get("JARVIS_PORT") or "8080").strip() or "8080"
     if host in WILDCARD_HOSTS:
         host = "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"  # an IPv6 literal (::1): unbracketed, the URL has no host
     return f"http://{host}:{port}"
 
 
@@ -66,12 +68,24 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _dialled_host(url: str) -> str:
+    """The host urllib dials for *url*. A bare IPv6 netloc (``http://::1:8080``) has no
+    ``hostname`` for ``urlsplit``, yet http.client dials it, splitting the port at the
+    last colon after any ``]``; the same split is made here."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname:
+        return parts.hostname
+    netloc = parts.netloc.rpartition("@")[2]
+    colon, bracket = netloc.rfind(":"), netloc.rfind("]")
+    return netloc[:colon] if colon > bracket else netloc
+
+
 def is_loopback_url(url: str) -> bool:
     """Whether *url* names this machine, by address rather than spelling: ``localhost``
     (a trailing dot too) or any loopback address (``127.0.0.2``, ``127.1``, ``::1`` …).
     ``scripts/doctor.py`` keeps the same rule in its own stdlib-only copy."""
     try:
-        host = urllib.parse.urlsplit(url).hostname or ""
+        host = _dialled_host(url)
     except ValueError:
         return False
     host = host.strip("[]").rstrip(".").lower()
@@ -130,9 +144,20 @@ class HubClient:
             **kwargs,
         )
 
+    def _sends_admin_token(self) -> bool:
+        """The admin token goes to a hub on this machine, or over https to one the owner
+        named. Never in clear text off this machine: plain http to another host is read
+        by every hop (and proxy) on the way."""
+        if is_loopback_url(self.base_url):
+            return True
+        try:
+            return urllib.parse.urlsplit(self.base_url).scheme.lower() == "https"
+        except ValueError:
+            return False
+
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        if self.admin_token:
+        if self.admin_token and self._sends_admin_token():
             headers["x-admin-token"] = self.admin_token
         if self.user_token:
             headers["x-user-token"] = self.user_token

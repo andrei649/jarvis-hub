@@ -257,6 +257,18 @@ def _user_token_required() -> bool:
     return _env_user_active() or get_token_store().has_scope("user")
 
 
+def _user_credential_required() -> bool:
+    """Whether a user-tier caller must present a credential: one was ever configured.
+
+    The single predicate the HTTP user guard, the MCP transport and the MCP identity
+    gate share (review-H273e M1). A token in the environment counts even once rotated
+    away or revoked: then nothing valid remains and every caller is refused, rather
+    than the hub falling back to the no-credential localhost posture. A token issued
+    into the store counts too, with no env token at all. Only a hub that never had a
+    user credential trusts a localhost origin without one."""
+    return bool(_user_env_token()) or _user_token_required()
+
+
 def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
     """Validate a presented user credential the SAME way ``_user_guard`` does.
 
@@ -284,7 +296,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
-    if _user_env_token():
+    if _user_credential_required():
         if _user_credential_ok(
             user_supplied=request.headers.get("x-user-token", ""),
             admin_supplied=request.headers.get("x-admin-token", ""),
@@ -1894,7 +1906,7 @@ def _mcp_identity_check(token: Optional[str]) -> bool:
       * If it is SET → require a credential that matches ``JARVIS_USER_TOKEN`` (or
         a matching ``JARVIS_ADMIN_TOKEN``, admin ⊇ user), exactly as the HTTP 401
         path checks it."""
-    if not _user_token_required():
+    if not _user_credential_required():
         return True
     return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
 

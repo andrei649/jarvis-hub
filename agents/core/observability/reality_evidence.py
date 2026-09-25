@@ -178,6 +178,9 @@ class RealityEvidenceLedger:
 async def _run_and_record(args) -> dict:
     # Boot the same fixture the readiness tests use: a real orchestrator with
     # discovered skills, so the derived plugin/component/skill cases exist.
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()          # as the hub does, so the evidence describes the configured hub
     from agents.core.config import JarvisConfig
     from agents.core.observability.reality_harness import (
         all_reality_cases,
@@ -185,7 +188,6 @@ async def _run_and_record(args) -> dict:
         run_reality,
     )
     from agents.core.orchestrator import Orchestrator
-
     started = _now_iso()
     orch = Orchestrator(JarvisConfig())
     # Discovery lives on the orchestrator's SkillLoader (the package exposes no

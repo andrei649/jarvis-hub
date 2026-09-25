@@ -350,9 +350,9 @@ async def mcp_server_rpc(message: dict, request: Request):
         # JARVIS_USER_TOKEN is set, else localhost-only (fail closed behind an untrusted
         # proxy, HF-7). Without this gate a REMOTE caller could reach the read tools
         # (dashboard/memory) over the MCP transport even though the HTTP routes are guarded.
-        # The credential is read the way the guard reads it (H273): a token from .env, or
-        # one issued into the store, counts, not only the one frozen at import.
-        if w._user_token_required():
+        # The credential is required exactly when the guard requires it (H273, review-H273e
+        # M1): one predicate, so a lapsed or revoked credential locks MCP as it locks HTTP.
+        if w._user_credential_required():
             if not w._request_is_authed(request):
                 return JSONResponse(
                     {"error": "unauthorized: user token required"}, status_code=401)

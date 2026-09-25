@@ -88,6 +88,9 @@ READ_AGAIN_AFTER_LOAD = frozenset({
 })
 BEFORE_LOAD_NOTE = ("the hub reads it before the .env files are loaded: the .env value is not in effect, "
                     "so set it in the process environment")
+PROCESS_ONLY_NOTE = ("it locates the hub's own files, so the load leaves a .env value out on purpose (the "
+                     "stores would split between two roots): the .env value is not in effect, so set it in "
+                     "the process environment")
 
 _TABLE: dict[str, dict] = {}
 _FILES: dict[str, dict] = {}   # what the last load read, per layer: {"path", "kind", "present", "read"}
@@ -434,7 +437,10 @@ def load_hub_env() -> dict[str, dict]:
     """The hub's own load of its .env files, before anything else it starts reads.
 
     serve.py calls it before it builds the server and runs its guards, the lifespan
-    before its boot guards, and ``PluginManager.build`` for any other entry. The first
+    before its boot guards, the coordinator (``scripts/coordinator.py``, the systemd
+    ``jarvis-runtime`` unit) before it builds its Orchestrator, the reality-evidence
+    harness before its own, and ``PluginManager.build`` for any other entry.
+    ``scripts/install_smoke.py`` does not: it builds an isolated hub on purpose. The first
     call in a process loads and the others return its table: a named pipe is read once.
     Log redaction is imported first, so its switch stays the boot environment's."""
     global _HUB_LOADED
@@ -449,6 +455,8 @@ def note_for(key: str, layer: str) -> str:
     """Why a row's layer is not the whole story, or ""."""
     if layer not in (REPO_ENV, USER_ENV):
         return ""
+    if key in FROM_PROCESS_ONLY:
+        return PROCESS_ONLY_NOTE
     return BEFORE_LOAD_NOTE if key in READ_BEFORE_LOAD else SPLIT_NOTES.get(key, "")
 
 
@@ -473,7 +481,7 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 
 __all__ = [
-    "FROM_PROCESS_ONLY", "LABELS", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
+    "FROM_PROCESS_ONLY", "LABELS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
     "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
     "env_file_keys", "files", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env", "load_layered_env",
     "note_for", "provenance", "raw_values", "text_keys",

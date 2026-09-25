@@ -245,6 +245,8 @@ def hub_url(env=None) -> str:
     port = (env.get("JARVIS_PORT") or "8080").strip() or "8080"
     if host in WILDCARD_HOSTS:
         host = "127.0.0.1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"  # an IPv6 literal (::1): unbracketed, the URL has no host
     return f"http://{host}:{port}"
 
 
@@ -283,6 +285,18 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _dialled_host(url: str) -> str:
+    """The host urllib dials for *url*. A bare IPv6 netloc (``http://::1:8080``) has no
+    ``hostname`` for ``urlsplit``, yet http.client dials it, splitting the port at the
+    last colon after any ``]``; the same split is made here."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname:
+        return parts.hostname
+    netloc = parts.netloc.rpartition("@")[2]
+    colon, bracket = netloc.rfind(":"), netloc.rfind("]")
+    return netloc[:colon] if colon > bracket else netloc
+
+
 def is_loopback_url(url: str) -> bool:
     """Whether *url* names this machine, decided by address rather than by spelling: the
     name ``localhost`` (a trailing dot too) or any loopback address, however it is written
@@ -290,7 +304,7 @@ def is_loopback_url(url: str) -> bool:
     reaches this machine's listener; a list of spellings let the others through a proxy. A
     URL with no host (``file:``, ``data:``) names no machine."""
     try:
-        host = urllib.parse.urlsplit(url).hostname or ""
+        host = _dialled_host(url)
     except ValueError:
         return False
     host = host.strip("[]").rstrip(".").lower()

@@ -33,8 +33,8 @@ Din acestea, **36** au fost reevaluate pe cod în această livrare; **108** păs
 | desktop | 54 | 7 | 31 | 10 | 6 | 0 |
 | tui | 25 | 2 | 12 | 2 | 9 | 0 |
 | config | 18 | 4 | 10 | 3 | 1 | 0 |
-| env | 28 | 2 | 19 | 2 | 5 | 0 |
-| tools — the agent-callable surface | 32 | 11 | 16 | 3 | 2 | 0 |
+| env | 28 | 3 | 18 | 2 | 5 | 0 |
+| tools — the agent-callable surface | 32 | 10 | 17 | 3 | 2 | 0 |
 | skills | 33 | 10 | 10 | 5 | 8 | 0 |
 | providers | 27 | 5 | 12 | 3 | 7 | 0 |
 | agent-core | 36 | 8 | 15 | 9 | 4 | 0 |
@@ -49,7 +49,7 @@ Din acestea, **36** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-09-25T03:49:04Z`. Cod inspectat: `1c37703c43c36643bba4cbc33c1da18dd4b1c592`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-25T04:12:28Z`. Cod inspectat: `2add070eaec421ba3cc69b39b6480258f4fa44b8`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

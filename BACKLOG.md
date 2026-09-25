@@ -14,6 +14,28 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 fourth adversarial review round (partial → equivalent, #1207). **H318 back to partial** after its second review (headline stays 144/697).
+
+  review-H273e found two majors, four minors and ten nits:
+  - **A lapsed user credential opened MCP (M1, a regression).** The MCP gate asked `_user_token_required()` while the HTTP guard asked `_user_env_token()`. With the env token rotated away and the managed one expired, or everything revoked, every route answered 401 and MCP `tools/list` answered 200 to a local caller with no token. Now one predicate, `_user_credential_required()`, decides the HTTP guard, the MCP transport and MCP's per-tool identity check. Every credential posture is pinned: rotated and expired, revoked, a managed token alone, never configured.
+  - **The coordinator built before the load (M2).** `scripts/coordinator.py` (systemd `jarvis-runtime`) built its Orchestrator before any `.env` load, so with `JARVIS_AUDIT_KEY` only in `.env` its audit rows went unkeyed beside the hub's keyed ones and the shared chain read as tampered. It loads first now, as does the reality-evidence harness.
+  - **`JARVIS_HOST=::1` (m1).** Both `hub_url`s built `http://::1:8080`, which no loopback check recognised, so the doctor and the CLI sent tokens through an `http_proxy`. The address is bracketed now, and an unbracketed IPv6 host is read the way urllib dials it.
+  - **The CLI's admin token (m2).** The CLI sends it only to a hub on this machine or over https, never in clear text to another host.
+  - **`JARVIS_USER_HOME` from a `.env` (m3).** It still splits the stores when `JARVIS_HOME` is unset; moving either half would move an install's history. The earlier bullet's "can no longer split" is corrected, and H273 names it under Known limits.
+  - **Mutation (m4).** The three survivors are pinned: the MCP gate's predicate, and the CLI's trailing-dot and `127.1` spellings. One table of spellings now pins the CLI's loopback rule equal to the doctor's.
+  - **Nits.** The REPL loads `.env` before its logging and imports. A refused root's note gives the real reason. H510's shorthand citations name `agents/web.py`.
+
+  Mutation: this round's 20 mutants were all caught, one after a case was added (the identity check).
+
+  H318's second review (review-H318b) found two majors, so H318 goes back to partial with both in `remaining`. Approving a proposal disables a signed or code-carrying skill, and no approval surface shows the diff. H340 and H351 stay equivalent. H465's second review found no major; its minors are next.
+
+  Records:
+  - H273 rewritten and closed; H318 set partial;
+  - 38 drifted rows re-read and re-stamped;
+  - test manual ENV-159..161.
+
+  Tests: backend 14,439 → 14,487 (`tests/test_h273e_provenance_review.py` 48); vitest unchanged at 1,447.
+
 - 2026-09-25 H315 fourth adversarial review round (partial → equivalent, #1207; headline 143 → 144/697).
 
   review-H315e found one MAJOR (a regression), three minors and four nits. All are fixed:
@@ -189,9 +211,9 @@
 
   The review found two majors, both fixed:
   - **The start read 31 more names before any `.env` was loaded.** The lifespan ran the boot guards, logging, the orchestrator (audit log, memory, budget ledger) and the router's `detect()` before `plugin_manager.build` loaded the files. So ten `.env` knobs showed as in effect while they were not, among them the audit key and the public-profile gate. Now the hub loads its `.env` files first, once per process (`load_hub_env`): serve.py before it builds the server, the lifespan before its boot guards, and the plugin manager and `agents/run.py` too. A named pipe is read once.
-  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only, so the stores can no longer split between two roots. Log redaction is imported first, so a `.env` cannot switch it off.
+  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only. *(Fourth review: that does not stop a split. `JARVIS_USER_HOME` set only in a `.env`, with no `JARVIS_HOME`, still leaves the import-time stores under the default root and the rest under the home. The note says so, and H273 `remaining` records it.)* Log redaction is imported first, so a `.env` cannot switch it off.
   - Both lists are measured, not declared. A subprocess spy covers the import and the whole start up to the load, with and without `JARVIS_HOME`; a second spy checks that every read-again name is read after the load and no before-load name is.
-  - **Two read-again entries were false, and the MCP transport ignored a user token kept in `.env`.** The bind guard now sees the loaded tokens. The OAuth routes use the plugin manager's copy of the OAuth module, which re-reads the client ids after the load. The MCP transport asks `_user_token_required()`, as the guard does.
+  - **Two read-again entries were false, and the MCP transport ignored a user token kept in `.env`.** The bind guard now sees the loaded tokens. The OAuth routes use the plugin manager's copy of the OAuth module, which re-reads the client ids after the load. The MCP transport asks `_user_token_required()`. *(Fourth review: the guard asks for more than that, so a lapsed credential opened the transport. Both now ask `_user_credential_required()`.)*
 
   Minors, fixed:
   - the doctor sends the admin token only to a hub on this machine, decided by address (127.0.0.2, 127.1, `localhost.` and `::ffff:127.0.0.1` count), `runtime_resolves` included;

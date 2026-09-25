@@ -13,17 +13,22 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agents.core.config import JarvisConfig
-from agents.core.log import setup_logging
-from agents.core.orchestrator import Orchestrator
+# H273: the .env files load before anything reads them: the log file and level
+# (setup_logging) and the scanner's extra patterns (read when the orchestrator's
+# modules are imported) included, as serve.py does.
+from agents.core.env_provenance import load_hub_env  # noqa: E402
+
+load_hub_env()
+
+from agents.core.config import JarvisConfig  # noqa: E402
+from agents.core.log import setup_logging  # noqa: E402
+from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 setup_logging()
 
 
 async def main():
-    from agents.core.env_provenance import load_hub_env
-
-    load_hub_env()                     # H273: the .env files before the orchestrator reads anything
+    load_hub_env()                     # once per process: the import above already loaded
     config = JarvisConfig()
     orch = Orchestrator(config)
     await orch.load_agents()
