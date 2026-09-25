@@ -172,7 +172,8 @@ def _help(ctx: CommandContext) -> str:
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
     lines = [command.summary for command in commands]
     if not ctx.principal.admin:
-        lines.append("Owner commands (/pause, /resume, /stop) answer only the owner's channel.")
+        lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
+                     "the owner's channel.")
     return "\n".join(lines) if lines else "No commands are registered."
 
 
@@ -317,6 +318,8 @@ _REFINE_REFUSALS = {
     "daily_budget": "Today's review budget (learning.review_daily_budget) is spent; try again tomorrow.",
     "llm_error": ("The review could not run: it needs a local model, and none answered "
                   "(reviews never leave this machine)."),
+    "llm_timeout": ("The local model did not finish the review in time; nothing was kept. "
+                    "Try again, or with a narrower focus."),
     "empty_conversation": "There is no conversation here to review yet.",
     "unavailable": "The learning reviewer is not available on this hub.",
 }
@@ -324,8 +327,10 @@ _REFINE_REFUSALS = {
 
 async def _refine(ctx: CommandContext) -> str:
     """H465 — Hermes' ``/refine [focus]``: review this conversation for durable memories
-    and skill changes now, and say what was kept. New and changed skills are proposals
-    that wait for the owner's approval; facts land in the living memory."""
+    and skill changes now, and say what was kept. A changed skill is a proposal that waits
+    in the Decision Inbox, a new one waits in the pending skills list; facts land in the
+    living memory (the reply says so when it is off). It runs whether or not the per-turn
+    learning loop is on."""
     refine = getattr(ctx.orch, "refine", None)
     if refine is None:
         return _REFINE_REFUSALS["unavailable"]
@@ -338,8 +343,10 @@ async def _refine(ctx: CommandContext) -> str:
         return "Reviewed this conversation: nothing worth keeping."
     head = f"Reviewed this conversation (focus: {focus}):" if focus else "Reviewed this conversation:"
     lines = [head, *[f"- {a}" for a in actions]]
-    if any("pending" in a or "quarantined" in a for a in actions):
-        lines.append("Skill changes wait for your approval in the Decision Inbox.")
+    if any("patch proposed" in a for a in actions):
+        lines.append("A skill change waits for your approval in the Decision Inbox.")
+    if any("quarantined" in a for a in actions):
+        lines.append("A new skill waits in the pending skills list (SELF-IMPROVEMENT) until you approve it.")
     return "\n".join(lines)
 
 

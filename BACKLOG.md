@@ -14,6 +14,35 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 adversarial review round (stays equivalent, #1207). **H273 back to partial** after its fourth review (headline 144 → 143/697).
+
+  review-H465 found one MAJOR, seven minors and seven nits. All are fixed:
+  - **A down model is no review (M-1).** LM Studio and Ollama answer a degraded string rather than raising, so `/refine` said "nothing worth keeping" and spent budget. A degraded reply is now `llm_error` ("reviews never leave this machine") and is refunded, as is a timeout.
+  - **In flight, as it really is.** Every path that dispatches `/refine` holds the turn lease, so a mid-turn `/refine` waits for the turn and then reviews. The records said it refused, and now say it waits. The review is bounded at 150 s, below the lease's 180 s wait.
+  - **The snapshot leaves out commands and their replies and stays contiguous**, so a chat of commands only has nothing to review.
+  - **Living memory off.** Facts found with living memory off are reported, not dropped. `/refine` runs whether or not the learning loop is on, and the records now say so.
+  - **Where approvals wait.** A new skill is said to wait in the pending skills list, and a patch in the Decision Inbox.
+  - **Nits.**
+    - An on-demand review neither resets the per-turn cadence nor runs beside a per-turn review.
+    - Its proposals are labelled `refine`.
+    - An injected correction is not recorded, on both paths.
+    - A refusal does not overwrite the last result.
+    - The guest `/help` hint names `/refine`.
+    - The critic notes no longer link the removed plan.
+    - GOV-257 is rewritten.
+    - The H465 bullet's re-stamp count is corrected to 54.
+
+  Mutation: the review's four real survivors are caught, and this round's 19 mutants were all caught.
+
+  The fourth review of H273 (review-H273e, of `6daa71c1`) re-opens it with two MAJORs:
+  - **The MCP gate opens once the user token lapses.** It asks a different question from the HTTP guard, so while `JARVIS_USER_TOKEN` is set but no valid token remains, MCP answers a local caller.
+  - **The coordinator reads config before the `.env` load.** `scripts/coordinator.py` builds its Orchestrator first, so its audit rows are unsigned while the hub's are signed, and the chain reads as broken.
+
+  It also found four minors. H273 is partial until its fix round.
+
+  Records: H465 rewritten; 53 drifted rows re-read and re-stamped (H427's `publish()` range corrected by hand); GOV-257.
+
+  Tests: backend 14,413 → 14,426; vitest unchanged at 1,447.
 - 2026-09-25 H318 adversarial review round (H318 and H351 partial → equivalent, H340 stays equivalent, #1207; headline 142 → 144/697).
 
   review-H318 found two MAJORs, six minors and nine nits. All are fixed except one nit, kept by decision:
@@ -69,7 +98,7 @@
 
   Also in this change: `orchestrator_bindings.py`'s writer inventory is re-pinned. The H318 insert in `autonomy_coordinator.py` shifted 12 pinned lines, a failure the loaded local run had hidden behind a worker timeout.
 
-  Records: H465 closed; 53 drifted rows re-read and re-stamped (H427's `publish()` range and H288's GOV-224 citation corrected by hand); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
+  Records: H465 closed; 54 drifted rows re-read (first recorded as 53) and re-stamped (H427's `publish()` range and H288's GOV-224 citation corrected by hand); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
 
   Tests: backend 14,373 → 14,395 (`tests/test_h465_refine.py` 22); vitest unchanged at 1,444.
 - 2026-09-25 H318 + H340 the model lists, reads and proposes its own skills (H318 partial → equivalent, H340 missing → equivalent, H351 partial → equivalent, #1207; headline 141 → 144/697).

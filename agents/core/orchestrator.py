@@ -3037,11 +3037,16 @@ class Orchestrator:
     async def refine(self, focus: str = "", session_id: Optional[str] = None) -> dict:
         """H465 — review this conversation now (``/refine [focus]``), as Hermes' /refine does.
 
-        The review reads a snapshot of the session's history (the newest turns, bounded)
-        and never writes to it, so the live conversation is untouched. It refuses while
-        another turn holds the session's lease — busy means the lease is held and not by
-        this very context, so the /refine command's own turn, which holds it, is not
-        refused (critic note 1). Returns the reviewer's result; the command reports it."""
+        The review reads a snapshot of the session's history (the newest turns, bounded;
+        commands and their replies left out) and never writes to it. Every path that
+        dispatches /refine holds the session's turn lease first, so a /refine sent while
+        another turn runs waits for that turn (up to the lease's bound) and then reviews
+        the conversation as it stands; the review itself is bounded below that wait
+        (``REFINE_TIMEOUT_S``). A direct caller that holds no lease while another turn
+        does is refused ``turn_in_flight`` — the lease is held and not by this context
+        (critic note 1). It runs whether or not the per-turn learning loop
+        (``cognition.review_enabled``) is on: the owner asked. Returns the reviewer's
+        result; the command reports it."""
         from .learning.background_review import conversation_snapshot
 
         reviewer = getattr(self, "reviewer", None)

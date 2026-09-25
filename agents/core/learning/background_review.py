@@ -29,6 +29,7 @@ loader, clock and settings are all injected.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -86,6 +87,10 @@ Set "nothing": true (with empty lists) when there is no real signal."""
 REFINE_SNAPSHOT_CHARS = 12_000
 REFINE_TURN_CHARS = 2_000
 REFINE_FOCUS_CHARS = 200
+#: An on-demand review runs inside the /refine command's turn, which holds the session's
+#: turn lease: it is bounded below the lease's wait (180 s), so a message sent meanwhile
+#: is answered busy for at most this long, never forever (review-H465 m-5).
+REFINE_TIMEOUT_S = 150.0
 
 
 def conversation_snapshot(turns, limit: int = REFINE_SNAPSHOT_CHARS,
@@ -93,8 +98,13 @@ def conversation_snapshot(turns, limit: int = REFINE_SNAPSHOT_CHARS,
     """A conversation as ``role: content`` lines for an on-demand review (H465).
 
     The newest turns are kept first, each cut at ``per_turn`` characters, until the next
-    one would pass ``limit``; they are returned oldest first. A copy: the session is only
-    read, never changed."""
+    one would pass ``limit``; they are returned oldest first, contiguous (a turn too long
+    for what is left ends the snapshot rather than being skipped). Slash commands and the
+    hub's replies to them are not conversation, so neither is kept: ``/refine`` on a chat
+    of commands only has nothing to review. A copy: the session is only read, never
+    changed."""
+    from ..commands import CommandRegistry
+
     lines: list[str] = []
     used = 0
     for turn in reversed(list(turns or [])):
@@ -102,6 +112,9 @@ def conversation_snapshot(turns, limit: int = REFINE_SNAPSHOT_CHARS,
             continue
         content = turn.get("content")
         if content is None or not str(content).strip():
+            continue
+        if turn.get("agent_id") == "commands" or (
+                turn.get("role") == "user" and CommandRegistry.parse(str(content).strip()) is not None):
             continue
         line = f"{turn.get('role') or '?'}: {str(content)[:per_turn]}"
         sep = 1 if lines else 0
@@ -115,6 +128,12 @@ def conversation_snapshot(turns, limit: int = REFINE_SNAPSHOT_CHARS,
 def _focus_line(focus: str) -> str:
     text = " ".join(str(focus or "").split())[:REFINE_FOCUS_CHARS]
     return f"Focus for this review: {text}\n\n" if text else ""
+
+
+def _degraded(raw: object) -> bool:
+    from ..llm.base import is_degraded_reply
+
+    return is_degraded_reply(raw)
 
 
 def _default_detect(text: str) -> list:
@@ -203,6 +222,9 @@ class BackgroundReviewer:
         self._day = ""
         self._day_count = 0
         self._on_demand = False
+        self._in_flight = 0
+        #: Who the review's proposals and approval cards name ("refine" for /refine).
+        self._label = "background_review"
         self.last_result: dict | None = None
 
     # ── cadence / budget gate ────────────────────────────────────────────────
@@ -210,6 +232,8 @@ class BackgroundReviewer:
     def should_run(self) -> tuple[bool, str]:
         """Local-GPU cost policy: cadence knob + a per-day review budget."""
         self._turns_since += 1
+        if self._on_demand:
+            return False, "on_demand"
         today = date.today().isoformat()
         if today != self._day:
             self._day, self._day_count = today, 0
@@ -235,7 +259,7 @@ class BackgroundReviewer:
         It skips the cadence gate (the owner asked now) but spends the daily budget like
         any pass, keeps the strict-local model, and runs one at a time: a second request
         while one runs is refused ``busy``, not queued."""
-        if self._on_demand:
+        if self._on_demand or self._in_flight:
             return {"ran": False, "reason": "busy", "actions": []}
         today = date.today().isoformat()
         if today != self._day:
@@ -244,17 +268,42 @@ class BackgroundReviewer:
         if self._day_count >= budget:
             return {"ran": False, "reason": "daily_budget", "actions": []}
         self._on_demand = True
+        self._label = "refine"
         try:
-            return await self.run("", "", history=history, focus=focus,
-                                  context_chars=REFINE_SNAPSHOT_CHARS)
+            limit = float(self._get("learning.refine_timeout_s", REFINE_TIMEOUT_S) or REFINE_TIMEOUT_S)
+        except (TypeError, ValueError):
+            limit = REFINE_TIMEOUT_S
+        try:
+            # The per-turn cadence is the per-turn reviews' own: an owner's /refine
+            # neither resets it nor delays the next one (review-H465 nit 3).
+            return await asyncio.wait_for(
+                self.run("", "", history=history, focus=focus, context_chars=REFINE_SNAPSHOT_CHARS,
+                         cadence=False),
+                timeout=max(1.0, min(limit, REFINE_TIMEOUT_S)))
+        except TimeoutError:
+            self._day_count = max(0, self._day_count - 1)   # no review was had
+            result = {"ran": False, "reason": "llm_timeout", "actions": []}
+            self.last_result = result
+            return result
         finally:
             self._on_demand = False
+            self._label = "background_review"
 
     async def run(self, user_text: str, assistant_text: str, history: str = "", *,
-                  focus: str = "", context_chars: int = 6000) -> dict:
+                  focus: str = "", context_chars: int = 6000, cadence: bool = True) -> dict:
         """One review pass. Never raises — failures return a summary dict."""
-        self._turns_since = 0
-        self._last_run_ts = self._now()
+        self._in_flight += 1
+        try:
+            return await self._run(user_text, assistant_text, history, focus=focus,
+                                   context_chars=context_chars, cadence=cadence)
+        finally:
+            self._in_flight -= 1
+
+    async def _run(self, user_text: str, assistant_text: str, history: str, *,
+                   focus: str, context_chars: int, cadence: bool) -> dict:
+        if cadence:
+            self._turns_since = 0
+            self._last_run_ts = self._now()
         self._day_count += 1
         context = "\n".join(part for part in (
             history.strip(),
@@ -269,6 +318,11 @@ class BackgroundReviewer:
             raw = await self._llm(prompt)
         except Exception as e:
             logger.debug("background review LLM call failed: %s", e)
+            raw = None
+        if raw is None or _degraded(raw):
+            # A local backend that is configured but down answers with a degraded reply
+            # instead of raising: that is no review, and it costs no budget (review-H465 M-1).
+            self._day_count = max(0, self._day_count - 1)
             result = {"ran": False, "reason": "llm_error", "actions": []}
             self.last_result = result
             return result
@@ -280,6 +334,11 @@ class BackgroundReviewer:
         max_facts = max(0, int(self._get("learning.review_max_facts", 3) or 3))
 
         living = self._living() if callable(self._living) else self._living
+        found = len(review["user_facts"][:max_facts]) + len(review["agent_facts"][:max_facts])
+        if living is None and found:
+            # Said, not dropped silently (review-H465 m-3).
+            actions.append(f"{found} fact(s) found but not kept: living memory is off "
+                           "(cognition.memory_enabled)")
         self._put_facts(review["user_facts"][:max_facts],
                         getattr(living, "user_core", None),
                         "User profile", actions, counts)
@@ -288,6 +347,9 @@ class BackgroundReviewer:
                         "Core memory", actions, counts)
 
         for corr in review["corrections"][:max_facts]:
+            if self._detect(f"{corr['original']} {corr['corrected']}"):
+                counts["blocked"] += 1          # an injected "correction" is no correction
+                continue
             try:
                 if self._learning is not None:
                     self._learning.record_correction(corr["original"], corr["corrected"])
@@ -347,7 +409,7 @@ class BackgroundReviewer:
             return False
         try:
             name = self._skills.generate_skill(
-                "background_review", update["task"], update["steps"] or ["(captured from review)"])
+                self._label, update["task"], update["steps"] or ["(captured from review)"])
             if name:
                 actions.append(f"Skill '{name}' proposed (quarantined, pending review)")
                 return True
@@ -374,7 +436,7 @@ class BackgroundReviewer:
             return False
         try:
             prop = self._proposals.propose(name, current, update["content"],
-                                           origin="background_review")
+                                           origin=self._label)
             if prop is None:
                 return False
             if self._approvals is not None:
@@ -384,8 +446,9 @@ class BackgroundReviewer:
                     self._approvals.request({
                         "tool": "skill.patch_proposal",
                         "args": {"skill": name, "proposal_id": prop["id"]},
-                        "agent": "background_review",
-                        "summary": f"Background review proposes a patch to skill '{name}'",
+                        "agent": self._label,
+                        "summary": (f"/refine proposes a patch to skill '{name}'" if self._label == "refine"
+                                    else f"Background review proposes a patch to skill '{name}'"),
                     })
                 except Exception:
                     logger.debug("approval request for patch skipped", exc_info=True)

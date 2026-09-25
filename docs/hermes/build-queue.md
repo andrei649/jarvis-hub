@@ -720,7 +720,7 @@ Cross-row findings over the plans above. Rows named without a link (H068, H071, 
 
 ### Critic note 1
 
-Rows: [H461](#h461), [H465](#h465), [H117](#h117), [H677](#h677).
+Rows: [H461](#h461), H465 (closed in #1207), [H117](#h117), [H677](#h677).
 
 H461 and H465 both state that the orchestrator has no per-session turn-in-flight marker, and their gap_specs add a new in-flight set to Orchestrator.process. H117 and H677 cite the marker that already exists. Orchestrator.turn_lease (agents/core/orchestrator.py:1444) keeps a per-session asyncio.Lock table (_turn_leases, keyed by _lease_key) with a re-entrant held set (_held_turn_leases). It is taken by channel turns (_channel_turn, :1402), by /chat and /chat/stream (agents/web.py:1094, :1147) and by session_continuation.py:354. Process() is not keyed by session at all. A naive lock.locked() check would also always refuse /refine, because slash commands dispatch inside handle_input (orchestrator.py:1687), which already holds that session's lease.
 
@@ -738,7 +738,7 @@ Both gap_specs run the injected or wake turn with orchestrator.process in the ta
 
 ### Critic note 3
 
-Rows: [H461](#h461), [H465](#h465), [H472](#h472), [H441](#h441).
+Rows: [H461](#h461), H465 (closed in #1207), [H472](#h472), [H441](#h441).
 
 H461's summary says CommandContext (commands.py:50) 'carries no session or chat identity', and step 2 adds channel/chat to it. CommandContext.principal is already a Principal with channel and chat (agents/core/commands.py Principal, used by /voice). ctx.orch.session_id already resolves to the bound channel session, because channel_handler sets _active_session before handle_input dispatches commands (orchestrator.py:1687). H461, H465 and H472 each plan the same CommandContext change separately.
 

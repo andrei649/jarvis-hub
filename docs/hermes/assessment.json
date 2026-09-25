@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "da47b583bcc0cb025f368870d7758dafcecd8b38",
-  "assessed_at": "2026-09-25T03:28:00Z",
+  "base_sha": "b414da6cb452e5eacb7e2031cbf26effb10209be",
+  "assessed_at": "2026-09-25T03:37:39Z",
   "reviews": [
     {
       "id": "H001",
@@ -22,7 +22,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -387,7 +387,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -412,7 +412,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -441,16 +441,16 @@
       "id": "H060",
       "row_sha256": "8a5b5673d2277756f7f2b075ce42c12806c7ea99151a0450f910a8f522a79758",
       "status": "partial",
-      "summary": "A message that arrives while a turn runs on the same session waits for that session's turn lease (`Orchestrator.turn_lease`, agents/core/orchestrator.py:1547, taken by `_channel_turn` at agents/core/orchestrator.py:1505 and by the web /chat path at agents/web.py:1149). After `_TURN_LEASE_MAX_WAIT_SECONDS` (180 s, agents/core/orchestrator.py:242) it gets the single busy string `TURN_BUSY_REPLY` (agents/core/orchestrator.py:244) and no second turn starts on that transcript (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118). `/pause` and `/stop` are owner-only (ADMIN tier) slash commands that engage the e-stop (agents/core/commands.py:351, agents/core/commands.py:352). They say plainly that work already in flight finishes (agents/core/commands.py:227, tests/test_slash_commands.py:124).",
-      "remaining": "No busy-input semantics. A mid-turn message cannot redirect or interrupt the running turn. There is no explicit FIFO `/queue`, no `/steer` into the running turn and no configurable mode between these with downgrades. `/stop` is not a hard kill: it engages the e-stop but does not cancel the running turn or unlock the session. It is also dispatched inside `handle_input` (agents/core/orchestrator.py:1794), so it waits behind the same lease. While a turn holds the lease past the wait bound, `/stop` itself is answered with `TURN_BUSY_REPLY` (named at agents/core/orchestrator.py:3214). There is one busy string, not a set of acks saying whether a message was queued, steered or interrupted. None of the protective demotions exist (running subagent, in-flight compression, photo burst, very fast follow-up merged as the same intent). The lease is the only slot reservation; there is no pending-agent sentinel. `SlashCommand` (agents/core/commands.py:61) carries no `busy_policy`.",
+      "summary": "A message that arrives while a turn runs on the same session waits for that session's turn lease (`Orchestrator.turn_lease`, agents/core/orchestrator.py:1547, taken by `_channel_turn` at agents/core/orchestrator.py:1505 and by the web /chat path at agents/web.py:1149). After `_TURN_LEASE_MAX_WAIT_SECONDS` (180 s, agents/core/orchestrator.py:242) it gets the single busy string `TURN_BUSY_REPLY` (agents/core/orchestrator.py:244) and no second turn starts on that transcript (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118). `/pause` and `/stop` are owner-only (ADMIN tier) slash commands that engage the e-stop (agents/core/commands.py:358, agents/core/commands.py:359). They say plainly that work already in flight finishes (agents/core/commands.py:228, tests/test_slash_commands.py:124).",
+      "remaining": "No busy-input semantics. A mid-turn message cannot redirect or interrupt the running turn. There is no explicit FIFO `/queue`, no `/steer` into the running turn and no configurable mode between these with downgrades. `/stop` is not a hard kill: it engages the e-stop but does not cancel the running turn or unlock the session. It is also dispatched inside `handle_input` (agents/core/orchestrator.py:1794), so it waits behind the same lease. While a turn holds the lease past the wait bound, `/stop` itself is answered with `TURN_BUSY_REPLY` (named at agents/core/orchestrator.py:3219). There is one busy string, not a set of acks saying whether a message was queued, steered or interrupted. None of the protective demotions exist (running subagent, in-flight compression, photo burst, very fast follow-up merged as the same intent). The lease is the only slot reservation; there is no pending-agent sentinel. `SlashCommand` (agents/core/commands.py:61) carries no `busy_policy`.",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/web.py",
@@ -471,15 +471,15 @@
       "row_sha256": "ec64075ea64d379a130a6d03fe73c4865c2b7f3886d90e3284377c0e55c88718",
       "status": "partial",
       "summary": "Turns are serialized per resolved session. `Orchestrator.turn_lease` (agents/core/orchestrator.py:1547) holds one asyncio.Lock per key, and `_lease_key` (agents/core/orchestrator.py:1537) follows `_resolve_session`'s order, so the lease names the session the turn will actually use rather than the routing key. It is taken by channel turns (agents/core/orchestrator.py:1505) and the web /chat path (agents/web.py:1149), and it is re-entrant within one turn. After 180 s a waiting message is answered `TURN_BUSY_REPLY` instead of starting (tests/test_turn_lease.py:72, tests/test_turn_lease.py:118, tests/test_turn_lease.py:104). The lease table is capped at 1024 entries and prunes unlocked locks when full (agents/core/orchestrator.py:1566, tests/test_turn_lease.py:163). The `_active_session` ContextVar (agents/core/orchestrator.py:274) keeps concurrent turns from reading or writing each other's session (tests/test_concurrent_session_isolation.py:93).",
-      "remaining": "No run generation lets a late callback from an abandoned turn detect that it no longer owns the session. The only compare-and-set is the checkpoint-clock commit of a compaction (agents/core/orchestrator.py:3494), and it guards a summary, not turn ownership. There is no active-session slot claimed before the first await and no `max_concurrent_sessions` cap: turns on different sessions run concurrently without bound (tests/test_turn_lease.py:88). No watchdog evicts a session whose turn is wedged: its lease stays held until the turn ends, and later messages only get the busy reply. There is no eviction of an in-memory slot whose durable routing row ended, and no single per-session `SessionState` object with explicit lifetimes. There is no per-session warm agent cache and no memory-pressure eviction. Agents are process-wide: every session shares `orchestrator.agents`, which the compaction-boundary persona refresh walks as a whole (agents/core/orchestrator.py:357).",
+      "remaining": "No run generation lets a late callback from an abandoned turn detect that it no longer owns the session. The only compare-and-set is the checkpoint-clock commit of a compaction (agents/core/orchestrator.py:3499), and it guards a summary, not turn ownership. There is no active-session slot claimed before the first await and no `max_concurrent_sessions` cap: turns on different sessions run concurrently without bound (tests/test_turn_lease.py:88). No watchdog evicts a session whose turn is wedged: its lease stays held until the turn ends, and later messages only get the busy reply. There is no eviction of an in-memory slot whose durable routing row ended, and no single per-session `SessionState` object with explicit lifetimes. There is no per-session warm agent cache and no memory-pressure eviction. Agents are process-wide: every session shares `orchestrator.agents`, which the compaction-boundary persona refresh walks as a whole (agents/core/orchestrator.py:357).",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/web.py",
@@ -512,7 +512,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/conversation_clock.py",
@@ -553,7 +553,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -594,7 +594,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -602,7 +602,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/core/autonomy/inbox.py",
@@ -639,7 +639,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_inbound_voice_read.py",
@@ -676,7 +676,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -875,7 +875,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -991,7 +991,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -1045,7 +1045,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_turn_lease.py",
@@ -1668,7 +1668,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -1849,7 +1849,7 @@
       "id": "H156",
       "row_sha256": "eb2ba54183f6a6ec85a8aad0651bf8a100fde466e4849249556bf579a2bd7d37",
       "status": "partial",
-      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2684) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:428, agents/core/routers/admin.py:455, agents/core/routers/admin.py:503), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:326) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3505). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
+      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:374) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:432) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2684) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:428, agents/core/routers/admin.py:455, agents/core/routers/admin.py:503), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:501) is called only from `Agent.__init__` (agents/core/agent.py:430). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:513) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:326) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3510). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
       "remaining": "(1) No write path to the live persona. Nothing writes a committed or rolled-back version into the SOUL.local.md that `soul_path_for` resolves. A commit in PromptsPanel still changes nothing the agent says until someone edits the file by hand. The H672 refresh reads only that file, never the version store. It fires only when a session's context compaction commits, so it is not a reload the editor can trigger; with no compaction, the edit still waits for a restart. (2) The version store is not seeded from the on-disk SOUL, so its history is empty for any persona never committed through the panel. (3) The commit and rollback routes write no audit event, but the governance requires SOUL edits in the audit log. (4) No description editor and no Auto-generate. `PUT /api/admin/agents/{agent_id}` (agents/core/routers/admin.py:530) only stores display overrides in an in-memory dict, and nothing drafts a description with a model for the owner to accept. (5) The Dossier has no Edit action that opens the current SOUL in the versioned editor.",
       "evidence": [
         {
@@ -1862,7 +1862,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/soul_versioning.py",
@@ -1960,7 +1960,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/routers/dashboard.py",
@@ -2252,7 +2252,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/kernel/registry.py",
@@ -3004,9 +3004,9 @@
     {
       "id": "H273",
       "row_sha256": "64e7c9f4b15b679d32350fe499c618fbc1d57a203ce0c1c11afcdbe1defcd4b3",
-      "status": "equivalent",
+      "status": "partial",
       "summary": "Built in #1207, then fixed after three adversarial reviews. The first found the stdlib parser was python-dotenv's pre-1.2.3 grammar, while the lock pins 1.2.3: the doctor could print value material as key names, a named-pipe .env was no longer loaded, and a data home named in the repo .env was no longer followed. The second found that the doctor sent the admin credential to whatever answered at the hub address, that more keys than serve.py's four were read before any .env was loaded, and that a one-case line of value material could still be printed as a name. The third found that the start itself read 31 more names before the load (so ten .env knobs, the audit key and the public-profile gate among them, were shown as in effect and were not), that two read-again entries were false, and that the MCP transport ignored a user token kept in .env. Every effective configuration key now carries the layer that supplied it, the note says when a .env value is not in effect, and every surface the row names reports names and layers only.\n\nThe table. load_layered_env (agents/core/env_provenance.py:353) loads the files. Precedence: the process environment (the shell, a systemd EnvironmentFile, docker -e), then the repo .env, then the data-home .env, and the first layer to set a key wins (override=False). It keeps python-dotenv's behaviour:\n- Each file is read once, whether a regular file or a named pipe, the way python-dotenv reads it. 1Password mounts a .env as a FIFO.\n- The load is python-dotenv's public load_dotenv on the text that was read. The names come from python-dotenv's own parser (dotenv.parser.parse_stream), which logs nothing, so a bad line is warned about once. No private python-dotenv API is used.\n- PYTHON_DOTENV_DISABLED is checked before each layer, as python-dotenv checks it on every call, so a repo .env that sets it stops the data-home layer. Its spellings are python-dotenv's own, kept in env_config.py, the repo's one home for env-flag parsing (agents/core/env_config.py:112); a parity test pins them against python-dotenv's own switch.\n- The data home is a callable resolved after the repo layer is loaded, so a JARVIS_USER_HOME set in the repo .env names it, as before. A first-run home is scaffolded before its .env is read.\n- A second load in one process keeps a file's attribution only while the environment still holds the value that load set (a private digest, never the value), and works out afresh what the files shadow. The same file as both layers is read once.\n- It records which layer supplied each key, by diffing the environment around each file, and the lower layers that also define it (shadowed: their value is ignored). That answers \"why is my .env change not applied?\".\n- files() records what the load did with each file: its kind (file, fifo, absent, the same file as the repo .env, or disabled), whether it is present, and whether it was read.\n\nprovenance() (agents/core/env_provenance.py:460) is the queryable in-process table; a key that appeared after the load reads as set while running.\n\nThe hub loads first. load_hub_env (agents/core/env_provenance.py:433) is the hub's own load, once per process, so a named pipe is read once:\n- serve.py calls it before it builds the server and runs its guards (serve.py:224). The server's host, port, log level and shutdown timeout, the posture guards and the bind guard see a .env value, so a token in .env satisfies the bind guard.\n- The lifespan calls it before its boot guards (agents/web.py:415). The data home, logging, the orchestrator with its audit log, memory and budget ledger, and the router's detect() all read after it: the audit key, the public-profile seed gate, turn embeddings, the budget, the router's URLs and cloud keys in a .env are in effect. The boot guards, the front door among them, judge the loaded environment, so the late re-check was removed.\n- PluginManager.build asks for it too (agents/core/plugin_manager.py:80), and so does agents/run.py before its orchestrator.\n- Log redaction is imported first, so its switch stays the boot environment's alone: a .env cannot turn it off.\n\nKeys read before the load. note_for (agents/core/env_provenance.py:448) flags what is still read before any file can be. That is what importing agents.web freezes or resolves: the ASGI root path, the rate limit, CORS, CSP, the router's auto-deep switch, the analytics cap, the graph's Neo4j defaults, the app and data roots, and the log-redaction switch (agents/core/env_provenance.py:60). A .env value for them is recorded but not in effect, and the note says to set it in the process environment.\n- What locates the hub's own files (JARVIS_APP_ROOT, JARVIS_HOME, JARVIS_MEMORY_DIR) is never taken from a file (agents/core/env_provenance.py:69). A .env value would have split the stores between two roots. It is recorded, with the note, and kept out of the environment.\n- JARVIS_USER_HOME from the repo .env names the data home and its .env. When JARVIS_HOME is not set, the stores opened while the hub was imported stay under the default root, and its note says so (agents/core/env_provenance.py:72).\n- Read again after the load, so a .env value is in effect (agents/core/env_provenance.py:84): DEV_MODE; the admin and user tokens (every guard reads them per request, the MCP transport included); the OAuth client ids; the trusted proxies.\n\nThe lists are measured, not declared:\n- A test spies on the environment in a subprocess across the import and the whole start up to the load, with the data root set either way. Every Nerva name read there must be listed, and every listed name must be read there.\n- A second spy runs the start and a few requests. Every read-again name must be read after the load, and no name listed as read before the load may be (tests/test_h273d_provenance_review.py:666).\n\nThe two false read-again entries are fixed:\n- The MCP transport reads the user token the way the guard does (agents/core/routers/mcp.py:355), so a token from .env guards it on this machine and lets a remote client in.\n- The OAuth routes use the plugin manager's copy of the OAuth module (agents/core/routers/oauth.py:33), which re-reads the client ids after the load.\n\nKey names come from python-dotenv itself whenever it can be imported (text_keys, agents/core/env_provenance.py:190): every binding in file order, a rebound key each time. The stdlib port (_port_keys, agents/core/env_provenance.py:131) is 1.2.3's grammar and is the fallback for a broken install. A parity test pins it on 25 edge cases, including the BOM, escaped backslashes and a key rebound without \"=\". A seeded differential fuzz of 4,000 random files pins it too.\n\nderive (agents/core/env_provenance.py:315) builds the same table offline. It follows a data home named in the repo .env, or built from ${VAR}, resolving every binding in file order as load_dotenv does: the environment wins over the file's earlier values, a rebound key takes its last value, and a last binding without \"=\" sets nothing (agents/core/env_provenance.py:282). It parses each file once, keyed on its size, times and inode, and never opens a named pipe.\n\nSurfaces:\n- GET /api/admin/env/sources (agents/core/routers/admin.py:220) is admin-guarded and no-store, at the same boundary as GET /api/admin/env. Each key comes with its layer, a label, the layers it overrides, whether /api/admin/env masks its value, and its note. It also names what the load did with each file (path, kind, present, read); values are never included.\n- `nerva doctor`'s advisory config_sources check (scripts/doctor.py:582):\n  - Reading the hub. It reads the running hub's own table when /readyz is ok, asking without a credential first. Every request to the hub goes over http or https, has a timeout, refuses a redirect, and never goes through a proxy to a hub on this machine (scripts/doctor.py:312). The admin credential goes only to a hub on this machine, decided by its address rather than its spelling (127.0.0.2, 127.1, localhost. and ::ffff:127.0.0.1 count; scripts/doctor.py:286). config_sources sends it only after a refusal, and runtime_resolves only when no user token is set (scripts/doctor.py:328). Otherwise the doctor predicts the table from its own shell and says which of the two it did and why.\n  - Which keys. It shows every key a .env file sets, and the shell's keys that the hub's code reads or that carry Nerva's prefixes. The hub's reads are found by reading agents/ and serve.py: helper calls, a bound mapping, *_ENV constants (private ones too), a pool's from_env names and a descriptor's *_env keyword (scripts/doctor.py:450).\n  - Which names are printed. A .env name is printed when the hub reads it, .env.example declares it, it is an identifier with Nerva's prefix, or it is a plain one-case name with a value, an empty placeholder included (scripts/doctor.py:688). Any other name is counted, never printed (withheld_env_names). That includes a name shaped like a digest, a seed or an access key id, whatever follows its \"=\" (scripts/doctor.py:468); a value that is only = padding; a PEM line; a mixed-case name; and a name with control characters.\n  - Hub mode. On this machine it reads the files the hub names to tell names from value material. For a hub on another machine it shows only the names Nerva knows, and says why.\n  - Other reports. It names a .env that is not UTF-8, which the hub's load fails on (env_not_utf8), and a named pipe it does not open. For each key it prints the .env values a higher layer overrides and the note. Any failure inside the check becomes a named reason, never a crash.\n- The `nerva` CLI's client (agents/cli/client.py:93) follows the same transport rules: no redirect (urllib carried both tokens to wherever one pointed), no proxy to a hub on this machine, and http or https only.\n- The settings plane: every row says default, set, undeclared, or unreadable (an encrypted secret whose key is lost) (value_source, agents/core/settings_db.py:493). A value a selected product posture puts in effect is named beside the stored one (in_effect, overlay). An unknown or unreadable stored posture is off, and the posture is read in the listing's own connection. `nerva config list` prints both (agents/cli/nerva.py:667).\n- The HUD's Admin \"API keys & secrets\" list shows each key's layer, the layers it overrides and its note (hydrateAdminKeys, frontend/src/api/live.ts:205; frontend/src/modes3.tsx:256).\n\nHermes records provenance only for vault-supplied names, and its own notes ask for this per-key table; Nerva has it. Nerva has no managed or secret-source layer in the environment: vault secrets are injected at action time, not loaded into the environment.\n\nKnown limits:\n- On Windows, key names are compared case-sensitively although the environment is not; that case is theoretical and not handled.\n- A raw uvicorn start binds where uvicorn's own flags say. JARVIS_HOST there, from a file or from the shell alike, reaches the Host-header guard and the boot guard's bind check, which judges that value rather than the address uvicorn bound.\n- In a process that loads more than once (tests), a value equal to one an earlier load set keeps that load's attribution. The hub loads once.\n\nTests:\n- tests/test_env_provenance.py (61 cases): parity and fuzz (tests/test_env_provenance.py:130), the named pipe, the plugin manager's order and the posture overlay.\n- tests/test_doctor_hub_credential.py (8): a real redirect and a real proxy, pinning where the credential goes (tests/test_doctor_hub_credential.py:93).\n- tests/test_h273c_provenance_review.py (56): the import, the names withheld, the bound-mapping scan and the second round's nits.\n- tests/test_h273d_provenance_review.py (74 cases, the third round):\n  - the start measured and the lists by where they are used (tests/test_h273d_provenance_review.py:119);\n  - knobs the start reads, in effect from a .env (tests/test_h273d_provenance_review.py:158);\n  - the bind guard through serve.py and the lifespan, the redaction floor, one load per process, the refused roots;\n  - the MCP transport, the OAuth routes, and the doctor's and CLI's transport rules;\n  - hub mode, the names withheld, the widened scan, the reviewer's survivors and the nits.\n- tests/test_doctor.py keeps the JSON contract, and frontend/src/test/env-sources.test.ts the HUD mapping and its note.\n\nMutation:\n- The first round's 41 mutants and the second's 29 were each caught, as were the second review's twelve survivors.\n- The third review's own 67 independent mutants left 16 survivors, four of them equivalent. Each of the other twelve now has a test: the lists' classification, a mixed-case name, a missing value, the data home's values, the cache key, a commented declaration, a 403, a posture that is not JSON, a third load, and the same-file order. Re-run against the new tests, all twelve are caught.\n- This round's 46 mutants (44 Python, 2 HUD) were each run against their own suites: 45 are caught. The survivor drops the IPv4-mapped check in the loopback test. It is equivalent on the test interpreter, whose patched ipaddress already counts ::ffff:127.0.0.1 as loopback, and the check stays for the 3.12 releases before that fix.",
-      "remaining": "",
+      "remaining": "Re-opened by its fourth review (review-H273e, of 6daa71c1): two MAJOR, four MINOR, ten NIT.\n- MAJOR: the MCP transport's gate now asks _user_token_required() while the HTTP guard asks _user_env_token(). When JARVIS_USER_TOKEN is still set but no valid token remains (a rotated token past its TTL, or revoke all --revoke-env), every HTTP route answers 401 but MCP tools/list answers 200 to a local caller with no token. The parent answered 401. No test covers these token states.\n- MAJOR: scripts/coordinator.py (the jarvis-runtime unit) builds its Orchestrator before any .env load. With JARVIS_AUDIT_KEY only in .env, the hub signs its audit rows and the coordinator does not, and the hub's verify_chain() then reports the chain broken. The public-profile gate is also ignored in the coordinator.\n- MINOR: JARVIS_HOST=::1 builds an unbracketed URL, so both loopback checks say \"not this machine\", and the doctor and the CLI send tokens through an http_proxy.\n- MINOR: the CLI still sends the admin token to a hub on another machine; this residual is not recorded.\n- MINOR: JARVIS_USER_HOME in the repo .env still splits the data across two roots (autonomy.db opens under both).\n- MINOR: three mutation survivors: the MCP gate's choice between the two checks, and two loopback spellings in the CLI's is_loopback_url.",
       "evidence": [
         {
           "path": "agents/core/env_provenance.py",
@@ -3102,7 +3102,7 @@
       "id": "H275",
       "row_sha256": "aff2a4fa6dd456d07b37cdb5b29a29509d517ab11755f23c72f7992c2498ad93",
       "status": "missing",
-      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:64).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:465).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:971). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:601).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:326) at each compaction commit (agents/core/orchestrator.py:3505), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
+      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:64).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:465).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:971). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:601).\n- Agent._load_soul (agents/core/agent.py:501) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:374: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:513) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:326) at each compaction commit (agents/core/orchestrator.py:3510), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
       "remaining": "The whole feature is missing. It needs:\n1. A single boot flag (e.g. JARVIS_SAFE_MODE=1 plus a serve.py/`nerva` switch that sets it) that skips data-home and generated skills (bundled tree only), skips persisted MCP servers without erasing their saved config, skips owner-activated plugins/extensions, and ignores SOUL.local.md/HEARTBEAT.local.md overlays in favour of the shipped templates, both at construction and at the H672 compaction-boundary refresh (refresh_soul), so a safe-mode session cannot pick an overlay back up mid-conversation.\n2. A visible indicator that safe mode is on (status/readyz field and a HUD banner).\n3. A fail-closed guarantee that safe mode only removes capability: no kernel mediation, approval floor, plugin gate or egress policy relaxes.\n4. Tests for each skipped layer and for the no-relaxation property.",
       "evidence": [
         {
@@ -3115,7 +3115,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/skills/loader.py",
@@ -3193,7 +3193,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "deploy/systemd/jarvis-hub.service",
@@ -3336,7 +3336,7 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:337, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:640). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:260, validated at :667; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1153-1156). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:337, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:278-283), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:636). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:260, validated at :667; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1153-1156). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
       "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1598-1631) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:44-59) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1153-1156). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:652-655). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
@@ -3413,7 +3413,7 @@
         },
         {
           "path": "docs/test-manual/07-autonomy-governance.md",
-          "sha256": "ef609c3849a75c5f710ce352bb1152a1bc8f7177ad18dbbab82f5fd1a8321e75"
+          "sha256": "21b79e572b4dad6dcf81b2636a984d59416540a446e3637ce5e842751ba48efa"
         }
       ]
     },
@@ -3536,7 +3536,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -3888,7 +3888,7 @@
       "id": "H314",
       "row_sha256": "7860e6f3e6bf4876303a01eb54d102c0eea8fe600adaf2c12cb6fce859f795b9",
       "status": "partial",
-      "summary": "The read half has shipped. register_search_memory (agents/core/memory/rag_tool.py:446) registers `search_memory` ungated (agents/core/memory/rag_tool.py:489), and AutonomyCoordinator wires it over orch.memory.recall (agents/core/autonomy_coordinator.py:827). It appears in the resolved owner, inbound-owner and internal tool profiles (tests/_snapshots/tool_profiles.json). Every hit is injection-scanned, flagged hits are redacted, and `tainted` raises the turn's recall taint. Hermes's two injected stores exist as the LivingMemory `core` (agent facts) and `user_core` (user profile) rings in agents/core/cognition/memory.py. render_core_block (agents/core/learning/core_block.py:54) renders them into every prompt, and Orchestrator._living_core_memory_block freezes them per session. The model decides writes only indirectly: the post-turn BackgroundReviewer (wired at agents/core/orchestrator.py:1007, off by default via cognition.review_enabled) makes one structured local LLM call. Code then writes up to learning.review_max_facts facts per store through _put_facts (agents/core/learning/background_review.py:321) after an injection scan. The only memory-write tool is the MCP-server route tool `memory_remember` (agents/core/mcp/route_tools.py:534), which is offered to external MCP clients and not to Nerva's own tool loop.",
+      "summary": "The read half has shipped. register_search_memory (agents/core/memory/rag_tool.py:446) registers `search_memory` ungated (agents/core/memory/rag_tool.py:489), and AutonomyCoordinator wires it over orch.memory.recall (agents/core/autonomy_coordinator.py:827). It appears in the resolved owner, inbound-owner and internal tool profiles (tests/_snapshots/tool_profiles.json). Every hit is injection-scanned, flagged hits are redacted, and `tainted` raises the turn's recall taint. Hermes's two injected stores exist as the LivingMemory `core` (agent facts) and `user_core` (user profile) rings in agents/core/cognition/memory.py. render_core_block (agents/core/learning/core_block.py:54) renders them into every prompt, and Orchestrator._living_core_memory_block freezes them per session. The model decides writes only indirectly: the post-turn BackgroundReviewer (wired at agents/core/orchestrator.py:1007, off by default via cognition.review_enabled) makes one structured local LLM call. Code then writes up to learning.review_max_facts facts per store through _put_facts (agents/core/learning/background_review.py:383) after an injection scan. The only memory-write tool is the MCP-server route tool `memory_remember` (agents/core/mcp/route_tools.py:534), which is offered to external MCP clients and not to Nerva's own tool loop.",
       "remaining": "The model is offered no memory-write tool during a turn. The ToolRPC registry holds search_memory and session_search, but nothing that adds or removes a core or user-profile fact or stores a vector note. The accepted adaptation requires a model-initiated write that is reversible-tier and visible. That means an operations array applied atomically to the stores that are actually enabled (the target enum narrowed to those stores), injection-scanned text, an audit-chain record for each write carrying what is needed to undo it, and any graph write crossing the kernel-mediated `kg.write`. BackgroundReviewer._put_facts calls CoreMemory.put with no audit record and is off by default, so it does not meet this.",
       "evidence": [
         {
@@ -3909,11 +3909,11 @@
         },
         {
           "path": "agents/core/learning/background_review.py",
-          "sha256": "805ebcd00761863d69553cd8ee47a41d573424a6db9a21a10f43e1916ecfc2a4"
+          "sha256": "0185a15df46a0d09574f4106f642b89c6fba3e699588c461458c7bb324e03483"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/mcp/route_tools.py",
@@ -3962,7 +3962,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -4145,7 +4145,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_h318_skill_tools.py",
@@ -4547,7 +4547,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4688,7 +4688,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5109,7 +5109,7 @@
       "id": "H396",
       "row_sha256": "763dc96cf8172d031098611b5bd1dc3c84957702549d3aa9fe59a9078e2453e3",
       "status": "partial",
-      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:692-700). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:574). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:550, agents/core/agent_runtime.py:569). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:286-287) and `nerva tools` (agents/cli/nerva.py:739). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3722, agents/core/orchestrator.py:3724) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2349). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:322), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1237). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
+      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:692-700). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:574). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:550, agents/core/agent_runtime.py:569). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:286-287) and `nerva tools` (agents/cli/nerva.py:739). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:3727, agents/core/orchestrator.py:3729) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2349). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:322), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text and pending_approvals (agents/web.py:1237). No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
       "remaining": "(1) A typed turn exit-reason vocabulary (completed, approval_required, deadline, context_budget, tools_withdrawn, window_invalid, repeated_call, failing_tool, iteration_limit, no_tools, no_capability, agent_timeout), returned with the reply from AgentToolRuntime.run and carried to ChatResponse and the SSE end event. (2) One diagnostic log line per turn naming the reason: INFO normally, WARNING when the loop stopped with a tool result the model never answered. (3) A consolidated user-facing completion explainer that the HUD renders from that reason, replacing the fixed strings. (4) The file-mutation footer: file_write/file_delete calls that failed this turn and were never superseded by a later success on the same path, appended to the reply so the model cannot claim every file was edited. (5) A per-turn accounting line (tool calls, failures, tokens) and cumulative output tokens shown in the HUD.",
       "evidence": [
         {
@@ -5130,7 +5130,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/web.py",
@@ -5184,7 +5184,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -5323,7 +5323,7 @@
       "id": "H416",
       "row_sha256": "c0d5a3625cdb3959ada7e5ca5d061ad00fe2787c12b37da82b35fc8c8167318c",
       "status": "partial",
-      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:506). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:692-700). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:3190) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3696). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:369-373), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1238), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:195), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
+      "summary": "IterationBudget (agents/core/iteration_budget.py) is still only a counter. AgentToolRuntime._run_loop consumes one unit per model turn (agents/core/agent_runtime.py:506). On exhaustion it emits tool_loop_exhausted and returns a fixed safety-limit string (agents/core/agent_runtime.py:692-700). Since the audit, Hermes absorption 5c has coordinated two of the scattered clocks. orchestrator._agent_call_timeout (agents/core/orchestrator.py:3195) picks a flat or reasoning ceiling per agent and hands it to the agent as wall_seconds (agents/core/orchestrator.py:3701). run() then clamps it into the tool-loop deadline (agents/core/agent_runtime.py:369-373), which tests/test_reasoning_timeout.py pins. There is still no single bounded-execution primitive or timeout resolver. The tool-call timeout (agents/core/agent_runtime.py:1238), the sandbox file-RPC deadline (agents/core/tool_rpc_runtime.py:195), the per-attempt retry timeout (agents/core/resilience.py:28) and the per-plugin deadline (agents/core/plugin_gatherer.py:151) are each site-local. There is no 80%-spent wrap-up nudge and no iteration-budget exhaustion protocol.",
       "remaining": "(1) One deadline/budget primitive that extends iteration_budget.py, as the 2026-08-28 delta doc chose: a wall-clock deadline plus an iteration count, remaining and fraction-spent readings, and a timeout resolver per call kind. The orchestrator turn, the tool loop, tool calls, ToolRPC and plugin gathering derive their timeouts from it instead of their own constants. (2) An 80%-spent wrap-up nudge, injected once into the tool-loop transcript, asking the model to deliver from what it has. (3) The exhaustion protocol: tell the model exactly once, grant one final tool-less call, and force a summary from the transcript if that call yields no text, instead of returning the fixed safety-limit string. (4) Deadline and budget stops reported through the H396 exit-reason vocabulary.",
       "evidence": [
         {
@@ -5336,7 +5336,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/tool_rpc_runtime.py",
@@ -5385,7 +5385,7 @@
       "id": "H425",
       "row_sha256": "a8b11916b6ae9169691c139182508a6e627a760e0613699cdfd2ce3c8af5bdb6",
       "status": "partial",
-      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:575), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:190) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:292).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:589). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:3135, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
+      "summary": "The per-item cascade algorithm exists. DecayMemory.forget() (agents/core/memory/decay.py:112) walks _dependents() (:109) and removes the item plus its transitive dependents. It is exposed as POST /api/memory/decay/forget (agents/core/routers/memory_kg.py:575), which two HUD controls call: KgPanel's forget box (frontend/src/gap.tsx:190) and MemoryHygienePanel's per-row ✕ (frontend/src/gap.tsx:292).\n\nThe whole-store forget is governed. POST /api/admin/forget (agents/core/routers/backup.py:99) is admin-guarded and requires {\"confirm\":\"FORGET\"} (:115). It checks the data.purge contract, backs up first by default and reports not_erased when something survived.\n\nThe accepted adaptation for the per-item path is not built. The route crosses only user_guard and calls d.forget directly (memory_kg.py:589). There is no memory.forget kind in ACTION_REGISTRY; agents/core/kernel/registry.py:73 still lists /decay/forget as out of kernel scope. There is also no cascade preview, no approval card and no audit row: one click deletes irreversibly.\n\nThe cascade also retracts less than its name says. The ids it deletes are the decay tracker's activation entries: LivingMemory turn ids registered at agents/core/orchestrator.py:3140, and ambient situation ids. The route never calls LivingMemory.forget() (agents/core/cognition/memory.py:194) or any vector/KG delete. The LivingMemory record with the same id survives a per-item forget.",
       "remaining": "Add a memory.forget kind at the irreversible tier. POST /api/memory/decay/forget must return the transitive dependent list as a preview and queue an approval card carrying that list instead of deleting on the spot. The cascade runs only from the approved task and writes an audit row with the removed ids. KgPanel and MemoryHygienePanel show the preview and the pending state. The executed cascade must also retract the records the ids name (at least LivingMemory.forget for turn ids), not only the decay tracker's activation entries.",
       "evidence": [
         {
@@ -5406,7 +5406,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/cognition/memory.py",
@@ -5434,7 +5434,7 @@
       "id": "H427",
       "row_sha256": "18c182802a8899f4c56187f7fce8d6c19961b80909cff40dfd95d47f121aea8b",
       "status": "missing",
-      "summary": "No pre-compression checkpoint exists. ContextCompressor.compact() (agents/core/context_compressor.py:400) drops older images, then summarises the middle through compress() (:496, :519). It records a lineage_row() (:277) that carries the summary hash. Its only production caller, Orchestrator._history_for_prompt (agents/core/orchestrator.py:3482), commits the result through the conversation-clock CAS in publish() (:3490-3494). After a committed compaction, publish() now also calls _refresh_souls_at_boundary (agents/core/orchestrator.py:3505, defined at :326). That call re-reads agent personas and does nothing with the evicted turns.\n\nNothing mines the turns about to be summarised away before the summary replaces them. There is no checkpoint provider interface, no checkpoint-required setting, no fail-closed path that keeps the uncompressed transcript, and no audit row for a checkpoint or an abort. A grep for pre_compress|require_checkpoint|checkpoint_required over agents/ finds only an unrelated ComfyUI error string.\n\nCompaction only rewrites the prompt history; the raw turns stay in the conversation store. Extraction happens per turn at record time (_record_living_memory_after_turn, _record_interactions). But nothing at the compaction boundary checks that extraction landed for the evicted turns, which is the interlock this row accepts.",
+      "summary": "No pre-compression checkpoint exists. ContextCompressor.compact() (agents/core/context_compressor.py:400) drops older images, then summarises the middle through compress() (:496, :519). It records a lineage_row() (:277) that carries the summary hash. Its only production caller, Orchestrator._history_for_prompt (agents/core/orchestrator.py:3487), commits the result through the conversation-clock CAS in publish() (:3495-3499). After a committed compaction, publish() now also calls _refresh_souls_at_boundary (agents/core/orchestrator.py:3510, defined at :326). That call re-reads agent personas and does nothing with the evicted turns.\n\nNothing mines the turns about to be summarised away before the summary replaces them. There is no checkpoint provider interface, no checkpoint-required setting, no fail-closed path that keeps the uncompressed transcript, and no audit row for a checkpoint or an abort. A grep for pre_compress|require_checkpoint|checkpoint_required over agents/ finds only an unrelated ComfyUI error string.\n\nCompaction only rewrites the prompt history; the raw turns stay in the conversation store. Extraction happens per turn at record time (_record_living_memory_after_turn, _record_interactions). But nothing at the compaction boundary checks that extraction landed for the evicted turns, which is the interlock this row accepts.",
       "remaining": "Add the following at the compaction boundary:\n- a versioned pre-compress checkpoint hook on ContextCompressor.compact, called with exactly the turns about to be summarised and before compress()\n- a synchronous provider that durably writes their extraction (episodes/consolidation or LivingMemory)\n- a memory.compression_checkpoint_required setting\n- a fail-closed path: when a required checkpoint raises or no provider succeeds, keep the uncompressed transcript, or refuse the turn if the prompt would exceed the window\n- an audit row on every checkpoint and every abort.",
       "evidence": [
         {
@@ -5443,7 +5443,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_context_compaction_policy.py",
@@ -5468,7 +5468,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/memory/manager.py",
@@ -5509,7 +5509,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -5641,7 +5641,7 @@
       "id": "H441",
       "row_sha256": "69ff8f2c2f54e232b60f154dde5168e63bf3565c2cd881f7bff60a3ac91c7fa2",
       "status": "partial",
-      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:60) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:80-81). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2379) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:346, build_default_registry) offers /sessions (agents/core/commands.py:350), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
+      "summary": "Resume exists but returns the raw transcript, and there is no recap. POST /sessions/resume (agents/core/routers/sessions.py:60) validates the id, switches the orchestrator session and returns the last 20 raw turns (agents/core/routers/sessions.py:80-81). No summary is built and no model is called. The mobile SessionsModal passes those turns to ChatScreen onResumed (mobile/src/screens/ChatScreen.tsx:159), which replaces the chat thread with them unchanged. The HUD SessionsPanel resume button (frontend/src/gap.tsx:2379) posts the request without a result callback, so the owner sees nothing of the resumed conversation. The slash-command registry (agents/core/commands.py:353, build_default_registry) offers /sessions (agents/core/commands.py:357), which lists five session ids with their start times. It has no /recap. The larger did-and-learned story Nerva already has is build_unified_digest (agents/core/memory/timeline.py:43). Turns persist only role/content/agent_id/timestamp/token_count (agents/core/memory/conversation.py:37), so no tool-call data exists to collapse.",
       "remaining": "There is no bounded local recap renderer: nothing formats the last N exchanges with truncated turns and tool calls collapsed to a count. The resume response carries no recap field. There is no /recap command in agents/core/commands.py, so Telegram and other chat channels cannot ask for one. The HUD SessionsPanel shows nothing after a resume and has no recap control. Tool calls are not recorded on turns, so the collapsed '[k tool calls: …]' line cannot be produced from today's turn list. No test asserts that a recap is produced without any model call.",
       "evidence": [
         {
@@ -5650,7 +5650,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/core/memory/timeline.py",
@@ -5845,7 +5845,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_job_model_pins.py",
@@ -5921,7 +5921,7 @@
       "id": "H450",
       "row_sha256": "dfd92874050486e9e3edbf496dd5dc6727e7f0cc18b5adda8505189638ab3ac3",
       "status": "partial",
-      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:232) takes a raw five-field cron (jobs.py:237) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:696), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:254, registered at commands.py:355), `nerva jobs create --when` (agents/cli/nerva.py:172), POST /api/jobs (agents/core/routers/jobs.py:93) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:399-401). Job.runnable honours the count (jobs.py:132) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1214). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:975). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
+      "summary": "The parser now has a real job store behind it. resolve_schedule (agents/core/autonomy/jobs.py:232) takes a raw five-field cron (jobs.py:237) or plain words through nl_schedule.parse_schedule (agents/core/autonomy/nl_schedule.py:49; EN+RO weekday/weekend/named days, `every N minutes/hours`, hourly, am/pm and 24h). It enforces a floor of one firing per 5 minutes and validates the result with APScheduler's CronTrigger. JobStore.create calls it (jobs.py:696), and the edit path does too. Owners reach it through /remind <when> | <message> (agents/core/commands.py:255, registered at commands.py:362), `nerva jobs create --when` (agents/cli/nerva.py:172), POST /api/jobs (agents/core/routers/jobs.py:93) and the HUD jobs panel/job builder. Repeat counts are an integer options.repeat from 1 to 10000 (jobs.py:399-401). Job.runnable honours the count (jobs.py:132) and _fire_once skips with 'repeat limit exhausted' (jobs.py:1214). The HUD 'Maximum attempts' field treats a blank as unlimited. Cron slots are evaluated in scheduler_timezone() (jobs.py:975). Tests: tests/test_h10_27_nl_schedule.py, tests/test_owner_jobs.py, tests/test_jobs_advanced.py and tests/test_jobs_routes.py all pass. A probe of resolve_schedule shows `every 2h`, `every 30m`, `2h`, `in 30m`, `in 30 minutes` and `2026-10-01T09:00` are all refused ('could not find a time').",
       "remaining": "Four accepted schedule families are missing. (1) One-shot delays: `in 30m` / `in 2 hours` are refused, and there is no run-at/date trigger in the job store; every job is a cron. (2) ISO timestamps anchored to the configured timezone are missing. Worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` are silently armed as a DAILY recurring cron `0 9 * * *`, because _parse_time takes the HH:MM and a bare time falls through to daily (nl_schedule.py:96-97). (3) Compact intervals and bare durations as recurring schedules (`every 2h`, `every 30m`, `2h`) are missing. (4) There is no single repeat normaliser that coerces `forever|once|1x|N`: options.repeat only accepts an integer or null. (5) When the one-shot family lands, it must stay out of H687's automatic first run: first_run_decision (agents/core/autonomy/jobs.py:507) fires an agent-instruction job on an interval cadence at creation; a run-at job is no interval, but it needs its own refusal and a test, because one fired early would spend its only run and skip the slot the owner asked for.",
       "evidence": [
         {
@@ -5934,7 +5934,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -6261,11 +6261,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_heartbeat.py",
@@ -6322,24 +6322,24 @@
       "id": "H465",
       "row_sha256": "fe09446527aedbbb2a2cee4c011f797a1d5558e3854817d29ddeb204165d28f9",
       "status": "equivalent",
-      "summary": "Built in #1207. Hermes' /refine [focus] forks the background memory and skill review against a snapshot of the conversation, so the live session is untouched. It refuses while a turn is in flight and reports the new or updated memories and skills back into the chat. Nerva's review engine is the per-turn BackgroundReviewer (strict-local, budgeted); it now also runs on demand.\n\nThe command:\n- /refine [focus] is an owner command (agents/core/commands.py:325, registered at agents/core/commands.py:357). It answers from any channel's owner, and a guest is refused like any owner command.\n- The focus is one line of at most 200 characters.\n- It replies with what the review kept, one line per action (profile or core memory updated, corrections recorded, skill patch proposed, new skill quarantined), and says when skill changes wait for approval in the Decision Inbox.\n- Every non-run is named: a turn in flight, a review already running, the daily budget spent, no local model answering (reviews never leave the machine), an empty conversation, no reviewer.\n\nOrchestrator.refine (agents/core/orchestrator.py:3037):\n- It reads a snapshot of the session's history and never writes to it.\n- The snapshot is conversation_snapshot (agents/core/learning/background_review.py:91): the newest turns whole, each cut at 2,000 characters, up to 12,000 characters in all. This replaces the per-turn review's last-6-turns, 300-character window for this path.\n- It refuses turn_in_flight when the session's turn lease is held by another turn: the lock is locked and the key is not among this context's held leases (agents/core/orchestrator.py:3052). The /refine command's own turn, which holds the lease, is therefore not refused (critic note 1: the marker exists as turn_lease, and no new in-flight set was added).\n- A run is stored as last_learning_review, so GET /api/cognition/learning shows it, and each action is logged.\n\nBackgroundReviewer.run_on_demand (agents/core/learning/background_review.py:232):\n- It skips the cadence gate but spends the daily budget, rolling over at midnight. It keeps the strict-local model.\n- It runs one at a time: a second request while one runs is refused busy.\n- run gains a focus slot in REVIEW_PROMPT (\"Focus for this review: …\", absent when there is none, so the per-turn prompt is byte-identical) and a context bound, which this path sets to the snapshot's.\n\nTests: tests/test_h465_refine.py (22 cases), and tests/test_slash_commands.py pins the command in the owner's list. They cover:\n- the focus slot and its bound;\n- cadence skipped while the budget is spent, and the day's rollover;\n- one review at a time, and facts written;\n- the snapshot's bound, order, cutting and junk;\n- a whole snapshot reaching the prompt;\n- the reviewer receiving this session's snapshot while the session stays unchanged;\n- busy while another turn holds the lease, and not busy inside the command's own lease;\n- the empty and unavailable cases;\n- the owner-only command and its report, each named refusal, and /help.\n\nMutation: 20 mutants; 18 were caught at once, and the other two after cases were added (the snapshot's bound reaching the prompt, the day rollover).",
+      "summary": "Built in #1207 and fixed after one adversarial review (review-H465: one major, seven minors, seven nits, all fixed). Hermes' /refine [focus] forks the background memory and skill review against a snapshot of the conversation, so the live session is untouched. It refuses while a turn is in flight and reports the new or updated memories and skills back into the chat. Nerva's review engine is the per-turn BackgroundReviewer (strict-local, budgeted); it now also runs on demand.\n\nThe command:\n- /refine [focus] is an owner command (agents/core/commands.py:328, registered at agents/core/commands.py:364). It answers from any channel's owner, and a guest is refused like any owner command.\n- The focus is one line of at most 200 characters.\n- It replies with what the review kept, one line per action (profile or core memory updated, corrections recorded, skill patch proposed, new skill quarantined, facts found but not kept because living memory is off). A skill change is said to wait in the Decision Inbox, and a new skill in the pending skills list.\n- Every non-run is named: a review already running, the daily budget spent, no local model answering (reviews never leave the machine), the review outlasting its bound, nothing to review, no reviewer.\n- A local backend that is configured but down answers with a degraded string rather than raising. That is no review: it is reported as no local model and costs no budget (review-H465 M-1).\n- It runs whether or not the per-turn learning loop (cognition.review_enabled) is on: the owner asked, as Hermes' manual /refine does.\n\nOrchestrator.refine (agents/core/orchestrator.py:3037):\n- It reads a snapshot of the session's history and never writes to it.\n- The snapshot is conversation_snapshot (agents/core/learning/background_review.py:96): the newest turns whole and contiguous, each cut at 2,000 characters, up to 12,000 characters in all. Slash commands and the hub's replies to them are left out, so a chat of commands only has nothing to review. This replaces the per-turn review's last-6-turns, 300-character window for this path.\n- In flight, as it really behaves: every path that dispatches /refine holds the session's turn lease first. A /refine sent while another turn runs therefore waits for that turn (up to the lease's 180-second bound) and then reviews the conversation as it stands; it is not refused (review-H465 m-1 corrected the earlier claim). The review itself is bounded at 150 seconds (REFINE_TIMEOUT_S), below that wait, so the chat is busy for at most that long.\n- A direct caller holding no lease while another turn does is refused turn_in_flight: the lock is locked and the key is not among this context's held leases (agents/core/orchestrator.py:3057). No new in-flight set was added (critic note 1).\n- A run is stored as last_learning_review, so GET /api/cognition/learning shows it; a refusal does not overwrite it. Each action is logged.\n\nBackgroundReviewer.run_on_demand (agents/core/learning/background_review.py:256):\n- It skips the cadence gate but spends the daily budget, rolling over at midnight, and refunds it when no review was had (a model down, a timeout). It keeps the strict-local model.\n- It neither resets nor delays the per-turn cadence. It runs one at a time and never beside a per-turn review: either one running makes the other wait its turn (busy, or should_run's on_demand). A cancelled review leaves no busy flag.\n- Its proposals and approval cards are labelled refine, not background_review, and an injection-flagged correction is not recorded (on both paths).\n- run gains a focus slot in REVIEW_PROMPT (\"Focus for this review: …\", absent when there is none, so the per-turn prompt is byte-identical) and a context bound, which this path sets to the snapshot's.\n\nTests: tests/test_h465_refine.py (35 cases), and tests/test_slash_commands.py pins the command in the owner's list. They cover:\n- the focus slot and its bound;\n- cadence skipped while the budget is spent, and the day's rollover;\n- one review at a time, and facts written;\n- the snapshot's bound, order, cutting and junk;\n- a whole snapshot reaching the prompt;\n- the reviewer receiving this session's snapshot while the session stays unchanged;\n- busy while another turn holds the lease, and not busy inside the command's own lease;\n- the empty and unavailable cases;\n- the owner-only command and its report, each named refusal, and /help;\n- the review's cases: a degraded reply is no review and costs no budget; the timeout; a cancelled review; mutual exclusion and the cadence kept; facts found with living memory off; an injected correction; the refine label; commands left out and contiguity; a chat of commands only; a refusal keeping the last result; the focus cut and where a new skill waits; a guest told /refine is the owner's.\n\nMutation: 20 mutants; 18 were caught at once, and the other two after cases were added (the snapshot's bound reaching the prompt, the day rollover). The review's 28 mutants left four real survivors (a cancelled review's flag, the snapshot's contiguity, a refusal overwriting the last result, the focus cut); all are now caught. This round's 19 mutants were all caught.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/learning/background_review.py",
-          "sha256": "805ebcd00761863d69553cd8ee47a41d573424a6db9a21a10f43e1916ecfc2a4"
+          "sha256": "0185a15df46a0d09574f4106f642b89c6fba3e699588c461458c7bb324e03483"
         },
         {
           "path": "tests/test_h465_refine.py",
-          "sha256": "4fd6e4fcea57837a0d0bcb8ae08e1dcfd2be5688add0c590b468b92dda6842ec"
+          "sha256": "c9ef2ebe9bc60bd50d2f431e7cbcc2247c7546b7a7a4a4f8477800659425f312"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -6708,7 +6708,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/agent.py",
@@ -7827,7 +7827,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         }
       ]
     },
@@ -8156,7 +8156,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/security/recall_taint.py",
@@ -8859,7 +8859,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/environments/__init__.py",
@@ -8896,7 +8896,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/cognition/persona.py",
@@ -8981,7 +8981,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -9086,7 +9086,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "tests/test_session_refresh.py",
@@ -9151,7 +9151,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -9283,7 +9283,7 @@
       "id": "H674",
       "row_sha256": "4f6ddf38cfec1e8c825af0306c3b7ccc2ffa62c622e4ab045029b4063693362e",
       "status": "partial",
-      "summary": "The failure semantics and derived thresholds are in place. ContextCompressor.compress falls back to _fallback_digest over the whole older window when the summarizer raises or returns nothing (agents/core/context_compressor.py:541-548). CompactionPolicy derives soft/hard triggers from each model's window (0.6/0.85 at agents/core/context_compressor.py:210-211). _history_for_prompt clamps the window to the Ollama-reported ceiling or the pinned job selection. The summary output budget is a setting (memory.compression_summary_max_tokens, agents/core/settings_db.py:229). The timing discipline the rationale accepted is missing. Compaction runs inline in the arriving turn: _history_for_prompt awaits compressor.compact with no bound (agents/core/orchestrator.py:3482). The strict-local summarizer built by _compression_summarizer (agents/core/orchestrator.py:3274) awaits a non-streaming backend.generate (agents/core/orchestrator.py:3298-3301). Its only limit is the httpx read timeout from local_read_timeout (agents/core/llm/base.py:59; 120s for Ollama at agents/core/llm/base.py:699), which for a non-streaming call is a total-duration wait, not an inactivity deadline. A scratch probe with a summarizer that never returns kept ContextCompressor.compress pending past an external 3s wait_for. Nothing separates how long the summary may run from how long it may delay the user, and no notice is shown.",
+      "summary": "The failure semantics and derived thresholds are in place. ContextCompressor.compress falls back to _fallback_digest over the whole older window when the summarizer raises or returns nothing (agents/core/context_compressor.py:541-548). CompactionPolicy derives soft/hard triggers from each model's window (0.6/0.85 at agents/core/context_compressor.py:210-211). _history_for_prompt clamps the window to the Ollama-reported ceiling or the pinned job selection. The summary output budget is a setting (memory.compression_summary_max_tokens, agents/core/settings_db.py:229). The timing discipline the rationale accepted is missing. Compaction runs inline in the arriving turn: _history_for_prompt awaits compressor.compact with no bound (agents/core/orchestrator.py:3487). The strict-local summarizer built by _compression_summarizer (agents/core/orchestrator.py:3279) awaits a non-streaming backend.generate (agents/core/orchestrator.py:3303-3306). Its only limit is the httpx read timeout from local_read_timeout (agents/core/llm/base.py:59; 120s for Ollama at agents/core/llm/base.py:699), which for a non-streaming call is a total-duration wait, not an inactivity deadline. A scratch probe with a summarizer that never returns kept ContextCompressor.compress pending past an external 3s wait_for. Nothing separates how long the summary may run from how long it may delay the user, and no notice is shown.",
       "remaining": "(1) Bounded hold: an arriving turn waits at most a configurable memory.compression_max_turn_hold_seconds (default about 10s) for an LLM summary. On expiry it proceeds with the deterministic digest, or verbatim turns when within the window, and shows a visible notice that the summary was deferred. The summary then finishes in the background and seeds _ctx_summary_cache for the next turn, without publishing through the compaction-clock CAS for the turn that did not use it. (2) Inactivity deadline: the summarizer streams and falls back to the digest after N seconds with no tokens (default 60) instead of holding the full read budget; a slow-but-alive stream is not killed. (3) Tests: a hanging summarizer returns within the hold; a trickling summarizer survives; a silent one is cut at the inactivity deadline.",
       "evidence": [
         {
@@ -9292,7 +9292,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -9362,7 +9362,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/llm/router.py",
@@ -9496,7 +9496,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -9565,7 +9565,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/llm/job_selection.py",
@@ -9610,7 +9610,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "tests/test_slash_commands.py",
@@ -9651,7 +9651,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/core/channels/base.py",
@@ -9736,12 +9736,12 @@
       "id": "H686",
       "row_sha256": "727b9de7f7857d8894c9d54f8a14f4e278b4590ca5c61376b098c7caa4d38090",
       "status": "partial",
-      "summary": "The per-turn data exists on the server. TokenUsage carries provider cache_read/cache_write (agents/core/llm/tool_protocol.py:70-72). The stream path sums provider usage per agent (agents/core/orchestrator.py:2248). The post-turn record writes input, output and cached tokens, a per-turn cache_hit boolean and usage_source into the learning ledger (agents/core/orchestrator.py:3943-3946). Aggregate readouts exist: /api/metrics/north-star (agents/core/routers/analytics.py:166) with %-local and p95 turn latency, shown as a HUD stat card (frontend/src/modes2.tsx:214), and the bench computes a chars/sec throughput (agents/core/bench.py:79). None of it reaches the chat surface live. The /chat/stream end event carries only agent, text and pending_approvals (agents/web.py:1237), and ChatResponse (agents/web.py:1000) has reply and pending_approvals only. No HUD component shows tokens/sec, latency, context % or cache hit for the current turn. There is no field-selection setting. Cache hit is not computed as a delta since the last invalidating event: the stored cache_hit is a per-turn boolean that does not reset on model switch or compaction. Nothing hides the readout when there are no cache reads.",
+      "summary": "The per-turn data exists on the server. TokenUsage carries provider cache_read/cache_write (agents/core/llm/tool_protocol.py:70-72). The stream path sums provider usage per agent (agents/core/orchestrator.py:2248). The post-turn record writes input, output and cached tokens, a per-turn cache_hit boolean and usage_source into the learning ledger (agents/core/orchestrator.py:3948-3951). Aggregate readouts exist: /api/metrics/north-star (agents/core/routers/analytics.py:166) with %-local and p95 turn latency, shown as a HUD stat card (frontend/src/modes2.tsx:214), and the bench computes a chars/sec throughput (agents/core/bench.py:79). None of it reaches the chat surface live. The /chat/stream end event carries only agent, text and pending_approvals (agents/web.py:1237), and ChatResponse (agents/web.py:1000) has reply and pending_approvals only. No HUD component shows tokens/sec, latency, context % or cache hit for the current turn. There is no field-selection setting. Cache hit is not computed as a delta since the last invalidating event: the stored cache_hit is a per-turn boolean that does not reset on model switch or compaction. Nothing hides the readout when there are no cache reads.",
       "remaining": "(1) Compute a per-turn readout: wall latency; output tokens/sec over generation time; context % of the resolved model window; compressions count; and cache hit as a delta since the last cache-invalidating event (model switch or accepted compaction), omitted when there were zero cache reads. Attach it to the /chat/stream end event and the /chat response, leaving fields absent when there is no data. (2) Add a display.status_bar_fields setting with a fixed field vocabulary shared by backend and HUD. (3) Add a HUD status strip on the chat surface that renders only the selected fields, hides omitted ones and colours cache hit at the 70/40 thresholds. (4) Backend and frontend tests.",
       "evidence": [
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "980993190c2246dad84454b0233f46ae1083b63de5b68dc67cb175a2d3bb7c49"
+          "sha256": "9987ff1db23ade07317252b3bec364b0384e3f894d94ef00d424ead6d1210487"
         },
         {
           "path": "agents/web.py",
@@ -9785,7 +9785,7 @@
       "id": "H687",
       "row_sha256": "2de11ca878088fadad4274ae450dd68ad2f84531b03f1f961f89cafa9549984a",
       "status": "equivalent",
-      "summary": "Built on this branch and reworked after two reviews. A recurring instruction now runs once when it is created, then on its cadence, with Hermes' split kept:\n- Hermes' /loop is an interval. LoopManager.set() starts it with next_due_at=now (hermes_cli/loops.py:466), and the reply says the first wakeup fires now.\n- A Hermes cron job waits for its first computed run.\n\nNerva applies the /loop behaviour to its cron-style jobs where the schedule is an interval. Before this change, a new Nerva job always waited for its first slot, and every confirmation named only the schedule.\n\nEvery creation surface goes through JobRunner.arm (agents/core/autonomy/jobs.py:1187):\n- POST /api/jobs (agents/core/routers/jobs.py:109);\n- the /remind slash command (agents/core/commands.py:263);\n- `nerva jobs create`, which posts to that route and prints the hub's confirmation (agents/cli/nerva.py:1048);\n- the HUD arm and JobCreateDialog notes (armNote, frontend/src/panels/jobs.tsx:29, used at frontend/src/panels/jobs.tsx:142 and frontend/src/panels/jobs.tsx:299).\nJobRunner.create is a thin wrapper around it (agents/core/autonomy/jobs.py:1185).\n\nfirst_run_policy (agents/core/autonomy/jobs.py:472) decides what runs before its first slot. Only an agent-instruction job does (ask, brief or task, or a script or monitor source), and only on an interval cadence. is_interval_cron (agents/core/autonomy/jobs.py:446) reads what the cron fires on, not how it is written: every hour with one minute or the minutes of a `*/N`, or one minute in the hours of a `*/N`, with no weekday, day or month restriction. So '0 0-23/2' and '0 0,12' count as '0 */2' and '0 */12', while two times of day ('0 9,21') and '*/5 */2' (only in even hours) are calendar schedules. These wait for their first slot:\n- a calendar schedule (a 07:00 morning brief armed in the evening, a weekday job armed on Saturday);\n- a reminder;\n- a repeat-limited job, whose early run would spend one of its few attempts (critic note 15);\n- anything during quiet hours, whose output would be held and delivered after the next fresh run's;\n- anything whose first slot is near (first_run_margin, agents/core/autonomy/jobs.py:467): nearer than two minutes or than a quarter of the cadence (agents/core/autonomy/jobs.py:414-415), read from the real cron in the scheduler's timezone (slot_timing, agents/core/autonomy/jobs.py:1221). \"every 12 hours\" armed 45 minutes before its noon slot waits for it instead of running twice within the hour.\n\nfirst_run_decision (agents/core/autonomy/jobs.py:507) applies it at creation. A paused or disabled job never fires, and the create call's `first_run` (StrictBool, agents/core/routers/jobs.py:34; `--first-run/--no-first-run`, agents/cli/nerva.py:175) overrides the policy either way. It is a creation-time choice, never a stored option: validate_options refuses it, so PATCH cannot store it and no rollback trips on it.\n\nThe first run is a dispatch request drained by _fire_once (agents/core/autonomy/jobs.py:1335) under the shared job gate (agents/core/autonomy/jobs.py:1212; ORIGINS and the column at agents/core/autonomy/jobs_dispatch.py:12 and agents/core/autonomy/jobs_dispatch.py:40). Its origin is 'first_run' when the policy chose it and 'first_run_asked' when the create call asked for it.\n- The request is durable, so the drain checks a policy first run against first_run_policy again when it comes to run (first_run_due, agents/core/autonomy/jobs.py:1238; agents/core/autonomy/jobs_dispatch.py:214). By then the job may have been edited into a calendar schedule, a reminder or a repeat-limited job, quiet hours may have begun, or a scheduler that was down may have left its first slot near. The request is then cancelled and names the reason. An asked first run is not second-guessed.\n- The drain runs both with force=False (agents/core/autonomy/jobs_dispatch.py:223), so _fire_once applies the pause check (agents/core/autonomy/jobs.py:1348), the emergency stop (agents/core/autonomy/jobs.py:1353), option and action validation, the repeat reservation (agents/core/autonomy/jobs.py:1367; for scripts, agents/core/autonomy/jobs_scripts.py:123-124) and the quiet-hours hold on delivery (agents/core/autonomy/jobs.py:1588; for scripts, agents/core/autonomy/jobs_scripts.py:433-435).\n- Only the owner's own ▶ now runs a paused job. When ▶ now folds into a queued first run, it makes that request manual (agents/core/autonomy/jobs_dispatch.py:86).\n- Pausing cancels a not-yet-claimed first run of either origin (cancel_queued, agents/core/autonomy/jobs_dispatch.py:107, called at agents/core/autonomy/jobs.py:1307).\n- An edit that changes what runs (action or options) queues the first run again for the edited job, keeping its origin, instead of letting the claim's identity check drop it (agents/core/autonomy/jobs.py:1286; _requeue_first_run, agents/core/autonomy/jobs.py:1290). A rename or a new schedule leaves it queued. Either way a policy first run meets the policy again at the drain. If the queue refuses the new request, the edit is still saved and says why in the log.\n\nIf the enqueue is refused at creation (the queue is at capacity, or the database is locked), the answer is still 201 with first_run null and 'first run not queued (…)', because the job is armed and a retry would duplicate it.\n\nPOST /api/jobs returns the receipt as first_run, or null, plus one confirmation built by arm_confirmation (agents/core/autonomy/jobs.py:527):\n- 'first run now, then <schedule> (<cron>)', or 'first run queued, then …' with a note that nothing fires while the scheduler is not running (agents/core/autonomy/jobs.py:532);\n- '<schedule> (<cron>), on its cadence', with the quiet-hours or near-slot reason when that was the cause.\n/remind, the CLI and the HUD print it.\n\nTests:\n- tests/test_job_first_run.py, 74 cases (41 before the second review). 28 of them fail on ccdd7161, with its fixture pointed at that commit's slot helper:\n  - an interval ask job is queued and drained into one run before any slot (tests/test_job_first_run.py:109);\n  - a calendar schedule waits (tests/test_job_first_run.py:123);\n  - the emergency stop (tests/test_job_first_run.py:133);\n  - pause cancels the first run, and one that slips past the pause is still skipped (tests/test_job_first_run.py:143, tests/test_job_first_run.py:155), an asked one too (tests/test_job_first_run.py:451);\n  - ▶ now keeps its force (tests/test_job_first_run.py:164);\n  - edits: one to the action runs the edited job (tests/test_job_first_run.py:176), one the policy would not fire drops it (tests/test_job_first_run.py:387), an asked one survives (tests/test_job_first_run.py:439), a rename leaves it alone (tests/test_job_first_run.py:473), and a refused re-queue still saves (tests/test_job_first_run.py:483);\n  - at the drain: quiet hours that began (tests/test_job_first_run.py:402), a slot now near (tests/test_job_first_run.py:416), and an asked first run that runs anyway (tests/test_job_first_run.py:429);\n  - first_run is a creation choice, never stored (tests/test_job_first_run.py:210);\n  - a refused enqueue and a locked database (tests/test_job_first_run.py:229, tests/test_job_first_run.py:499);\n  - quiet hours, the near slot, a long cadence near its slot and no scheduler (tests/test_job_first_run.py:242, tests/test_job_first_run.py:251, tests/test_job_first_run.py:462, tests/test_job_first_run.py:261);\n  - an interval script job submits its first run (tests/test_job_first_run.py:273);\n  - the interval table, the decision table and the slot timing on the real cron (tests/test_job_first_run.py:306, tests/test_job_first_run.py:339, tests/test_job_first_run.py:520);\n  - both CLI flags (tests/test_job_first_run.py:353, tests/test_job_first_run.py:363).\n- tests/test_nerva_cli.py:1223 and tests/test_slash_commands.py:317.\n- frontend/src/test/jobs-first-run.test.ts (armNote).\n- tests/test_jobs_routes.py: a new reminder still sends nothing until /run, and the script job's /run is again a fresh manual request.\nEvery guard added in the second review was mutated out one at a time, and a test failed each time. 656 job, dispatch, command, CLI and schedule tests pass.\n\nScope note: one-shot run_at jobs do not exist yet (H450). The H450 row says they must stay out of the first run. A known pre-existing gap outside this row: parse_schedule drops a window or day qualifier after an interval (\"every 30 minutes between 9 and 17\" becomes '*/30 * * * *'), so such a job runs all day and counts as an interval.",
+      "summary": "Built on this branch and reworked after two reviews. A recurring instruction now runs once when it is created, then on its cadence, with Hermes' split kept:\n- Hermes' /loop is an interval. LoopManager.set() starts it with next_due_at=now (hermes_cli/loops.py:466), and the reply says the first wakeup fires now.\n- A Hermes cron job waits for its first computed run.\n\nNerva applies the /loop behaviour to its cron-style jobs where the schedule is an interval. Before this change, a new Nerva job always waited for its first slot, and every confirmation named only the schedule.\n\nEvery creation surface goes through JobRunner.arm (agents/core/autonomy/jobs.py:1187):\n- POST /api/jobs (agents/core/routers/jobs.py:109);\n- the /remind slash command (agents/core/commands.py:264);\n- `nerva jobs create`, which posts to that route and prints the hub's confirmation (agents/cli/nerva.py:1048);\n- the HUD arm and JobCreateDialog notes (armNote, frontend/src/panels/jobs.tsx:29, used at frontend/src/panels/jobs.tsx:142 and frontend/src/panels/jobs.tsx:299).\nJobRunner.create is a thin wrapper around it (agents/core/autonomy/jobs.py:1185).\n\nfirst_run_policy (agents/core/autonomy/jobs.py:472) decides what runs before its first slot. Only an agent-instruction job does (ask, brief or task, or a script or monitor source), and only on an interval cadence. is_interval_cron (agents/core/autonomy/jobs.py:446) reads what the cron fires on, not how it is written: every hour with one minute or the minutes of a `*/N`, or one minute in the hours of a `*/N`, with no weekday, day or month restriction. So '0 0-23/2' and '0 0,12' count as '0 */2' and '0 */12', while two times of day ('0 9,21') and '*/5 */2' (only in even hours) are calendar schedules. These wait for their first slot:\n- a calendar schedule (a 07:00 morning brief armed in the evening, a weekday job armed on Saturday);\n- a reminder;\n- a repeat-limited job, whose early run would spend one of its few attempts (critic note 15);\n- anything during quiet hours, whose output would be held and delivered after the next fresh run's;\n- anything whose first slot is near (first_run_margin, agents/core/autonomy/jobs.py:467): nearer than two minutes or than a quarter of the cadence (agents/core/autonomy/jobs.py:414-415), read from the real cron in the scheduler's timezone (slot_timing, agents/core/autonomy/jobs.py:1221). \"every 12 hours\" armed 45 minutes before its noon slot waits for it instead of running twice within the hour.\n\nfirst_run_decision (agents/core/autonomy/jobs.py:507) applies it at creation. A paused or disabled job never fires, and the create call's `first_run` (StrictBool, agents/core/routers/jobs.py:34; `--first-run/--no-first-run`, agents/cli/nerva.py:175) overrides the policy either way. It is a creation-time choice, never a stored option: validate_options refuses it, so PATCH cannot store it and no rollback trips on it.\n\nThe first run is a dispatch request drained by _fire_once (agents/core/autonomy/jobs.py:1335) under the shared job gate (agents/core/autonomy/jobs.py:1212; ORIGINS and the column at agents/core/autonomy/jobs_dispatch.py:12 and agents/core/autonomy/jobs_dispatch.py:40). Its origin is 'first_run' when the policy chose it and 'first_run_asked' when the create call asked for it.\n- The request is durable, so the drain checks a policy first run against first_run_policy again when it comes to run (first_run_due, agents/core/autonomy/jobs.py:1238; agents/core/autonomy/jobs_dispatch.py:214). By then the job may have been edited into a calendar schedule, a reminder or a repeat-limited job, quiet hours may have begun, or a scheduler that was down may have left its first slot near. The request is then cancelled and names the reason. An asked first run is not second-guessed.\n- The drain runs both with force=False (agents/core/autonomy/jobs_dispatch.py:223), so _fire_once applies the pause check (agents/core/autonomy/jobs.py:1348), the emergency stop (agents/core/autonomy/jobs.py:1353), option and action validation, the repeat reservation (agents/core/autonomy/jobs.py:1367; for scripts, agents/core/autonomy/jobs_scripts.py:123-124) and the quiet-hours hold on delivery (agents/core/autonomy/jobs.py:1588; for scripts, agents/core/autonomy/jobs_scripts.py:433-435).\n- Only the owner's own ▶ now runs a paused job. When ▶ now folds into a queued first run, it makes that request manual (agents/core/autonomy/jobs_dispatch.py:86).\n- Pausing cancels a not-yet-claimed first run of either origin (cancel_queued, agents/core/autonomy/jobs_dispatch.py:107, called at agents/core/autonomy/jobs.py:1307).\n- An edit that changes what runs (action or options) queues the first run again for the edited job, keeping its origin, instead of letting the claim's identity check drop it (agents/core/autonomy/jobs.py:1286; _requeue_first_run, agents/core/autonomy/jobs.py:1290). A rename or a new schedule leaves it queued. Either way a policy first run meets the policy again at the drain. If the queue refuses the new request, the edit is still saved and says why in the log.\n\nIf the enqueue is refused at creation (the queue is at capacity, or the database is locked), the answer is still 201 with first_run null and 'first run not queued (…)', because the job is armed and a retry would duplicate it.\n\nPOST /api/jobs returns the receipt as first_run, or null, plus one confirmation built by arm_confirmation (agents/core/autonomy/jobs.py:527):\n- 'first run now, then <schedule> (<cron>)', or 'first run queued, then …' with a note that nothing fires while the scheduler is not running (agents/core/autonomy/jobs.py:532);\n- '<schedule> (<cron>), on its cadence', with the quiet-hours or near-slot reason when that was the cause.\n/remind, the CLI and the HUD print it.\n\nTests:\n- tests/test_job_first_run.py, 74 cases (41 before the second review). 28 of them fail on ccdd7161, with its fixture pointed at that commit's slot helper:\n  - an interval ask job is queued and drained into one run before any slot (tests/test_job_first_run.py:109);\n  - a calendar schedule waits (tests/test_job_first_run.py:123);\n  - the emergency stop (tests/test_job_first_run.py:133);\n  - pause cancels the first run, and one that slips past the pause is still skipped (tests/test_job_first_run.py:143, tests/test_job_first_run.py:155), an asked one too (tests/test_job_first_run.py:451);\n  - ▶ now keeps its force (tests/test_job_first_run.py:164);\n  - edits: one to the action runs the edited job (tests/test_job_first_run.py:176), one the policy would not fire drops it (tests/test_job_first_run.py:387), an asked one survives (tests/test_job_first_run.py:439), a rename leaves it alone (tests/test_job_first_run.py:473), and a refused re-queue still saves (tests/test_job_first_run.py:483);\n  - at the drain: quiet hours that began (tests/test_job_first_run.py:402), a slot now near (tests/test_job_first_run.py:416), and an asked first run that runs anyway (tests/test_job_first_run.py:429);\n  - first_run is a creation choice, never stored (tests/test_job_first_run.py:210);\n  - a refused enqueue and a locked database (tests/test_job_first_run.py:229, tests/test_job_first_run.py:499);\n  - quiet hours, the near slot, a long cadence near its slot and no scheduler (tests/test_job_first_run.py:242, tests/test_job_first_run.py:251, tests/test_job_first_run.py:462, tests/test_job_first_run.py:261);\n  - an interval script job submits its first run (tests/test_job_first_run.py:273);\n  - the interval table, the decision table and the slot timing on the real cron (tests/test_job_first_run.py:306, tests/test_job_first_run.py:339, tests/test_job_first_run.py:520);\n  - both CLI flags (tests/test_job_first_run.py:353, tests/test_job_first_run.py:363).\n- tests/test_nerva_cli.py:1223 and tests/test_slash_commands.py:317.\n- frontend/src/test/jobs-first-run.test.ts (armNote).\n- tests/test_jobs_routes.py: a new reminder still sends nothing until /run, and the script job's /run is again a fresh manual request.\nEvery guard added in the second review was mutated out one at a time, and a test failed each time. 656 job, dispatch, command, CLI and schedule tests pass.\n\nScope note: one-shot run_at jobs do not exist yet (H450). The H450 row says they must stay out of the first run. A known pre-existing gap outside this row: parse_schedule drops a window or day qualifier after an interval (\"every 30 minutes between 9 and 17\" becomes '*/30 * * * *'), so such a job runs all day and counts as an interval.",
       "remaining": "",
       "evidence": [
         {
@@ -9806,7 +9806,7 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "afc1d428e124b771bbf62e8aa86c7f2eb8a3bdcef543bc3d05294fad5bb0ccd3"
+          "sha256": "24a08895947021f001d3571a56f71db518eb642c8e3a9ff457787572cd2560c5"
         },
         {
           "path": "agents/cli/nerva.py",
