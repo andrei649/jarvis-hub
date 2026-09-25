@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H285 the owner declares which skills, plugins and MCP servers load, and a plugin toggle survives a restart (partial → equivalent, #1207; headline 155 → 156/697).
+
+  A plugin toggle flipped an in-memory flag a restart forgot, an MCP server could only be disconnected or deleted, and a skill could not be switched off. Now (`agents/core/load_set.py`):
+  - **The lists.** Six declared settings rows, `loadset.{skills,plugins,mcp}_{disabled,only}`, comma lists editable from Settings and `nerva config set`. The settings page's `plugins.<id>` switches, which nothing read, now count.
+  - **Read at boot.** `SkillLoader.discover` does not register a switched-off skill (by name or folder); `PermissionGate` switches off the named plugins, and each gate now holds its own manifest copies; the MCP load registers only permitted saved servers.
+  - **Kept.** The plugin toggle writes the lists (`persisted` in its answer). A switched-off MCP server stays in the saved configuration: every save writes it back, and adding or removing it answers 409 `switched_off`.
+  - **Narrowing only.** Nothing is installed, approved or registered; a name that matches nothing is reported as unknown. `/skills`, `/plugins` and `/api/admin/mcp` return `load_set` (lists, switched off, unknown).
+
+  33 mutants, all caught. Test manual: ENV-169, ENV-170.
+  Tests: backend 15,545 → 15,579 (`tests/test_h285_load_set.py` 34).
+
 - 2026-09-25 H275 safe mode: the hub boots without the owner's customizations, and relaxes nothing (missing → equivalent, #1207; headline 154 → 155/697).
 
   There was no way to start a hub broken by something the owner added. Now `JARVIS_SAFE_MODE=1`, or `python serve.py --safe-mode`, leaves out seven layers (`agents/core/safe_mode.py`):

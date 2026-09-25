@@ -1708,7 +1708,20 @@ def _save_mcp_config():
         logger.warning("Safe mode: the MCP server configuration is not rewritten")
         return
     config = orch.mcp.to_config()
+    # H285: a saved server the load set switched off is not in the manager; it is kept
+    # in the saved list exactly as it was, so switching it back on finds it again.
+    live = {row.get("name") for row in config}
+    config += [dict(row) for row in _MCP_HELD if row.get("name") not in live]
     put_category("mcp", {"servers": config})  # return value intentionally unused
+
+
+#: H285 — saved MCP servers the owner's load set switched off at boot: not registered,
+#: written back unchanged by every save.
+_MCP_HELD: list[dict] = []
+
+
+def mcp_held_names() -> set[str]:
+    return {str(row.get("name")) for row in _MCP_HELD}
 
 
 def _load_mcp_config():
@@ -1723,8 +1736,17 @@ def _load_mcp_config():
                 safe_mode.note("mcp_servers")
                 logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"] or []))
                 return
-            orch.mcp.load_from_config(item["value"])
-            logger.info(f"Loaded {len(item['value'])} MCP servers from settings")
+            from agents.core import load_set
+            rows = [row for row in (item["value"] or []) if isinstance(row, dict)]
+            lists = load_set.declared("mcp")
+            load_set.begin("mcp")
+            kept = [row for row in rows if load_set.permits("mcp", str(row.get("name") or ""), lists=lists)]
+            _MCP_HELD[:] = [row for row in rows if row not in kept]
+            for row in _MCP_HELD:
+                load_set.note_skipped("mcp", str(row.get("name") or ""))
+            load_set.finish("mcp", {str(row.get("name") or "") for row in rows}, lists=lists)
+            orch.mcp.load_from_config(kept)
+            logger.info(f"Loaded {len(kept)} MCP servers from settings ({len(_MCP_HELD)} switched off)")
             return
     logger.info("No MCP servers configured in settings")
 

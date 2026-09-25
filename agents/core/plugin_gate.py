@@ -6,6 +6,7 @@ and which agents it serves. The core blocks any request outside the
 declared permissions.
 """
 
+import dataclasses
 import logging
 import time
 from dataclasses import dataclass, field
@@ -635,10 +636,27 @@ class PermissionGate:
         )
         self._grants: dict[str, set[str]] = grants_from_env()
         self._load_builtins()
+        self.apply_load_set()
 
     def _load_builtins(self):
+        # H285: each gate holds its own copies, so switching a plugin off here (the
+        # load set, a toggle) never reaches the module table or another gate.
         for plugin_id, manifest in BUILTIN_PLUGINS.items():
-            self.register(manifest)
+            self.register(dataclasses.replace(manifest))
+
+    def apply_load_set(self) -> None:
+        """H285: switch off the plugins the owner's load set names (``loadset.plugins_*``
+        and the ``plugins.<id>`` switches). It only disables: a name that is not a
+        registered plugin is reported, and nothing is enabled or registered here."""
+        from agents.core import load_set
+
+        lists = load_set.declared("plugins")
+        load_set.begin("plugins")
+        for plugin_id, manifest in self.plugins.items():
+            if not load_set.permits("plugins", plugin_id, lists=lists):
+                manifest.enabled = False
+                load_set.note_skipped("plugins", plugin_id)
+        load_set.finish("plugins", set(self.plugins), lists=lists)
 
     def register(self, manifest: PluginManifest):
         self.plugins[manifest.id] = manifest

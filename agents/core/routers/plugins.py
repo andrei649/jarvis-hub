@@ -82,7 +82,15 @@ async def list_plugins():
         # At-a-glance honesty rollup for the HUD: how many plugins are actually
         # live vs still running in a mock/degraded fallback awaiting config.
         "honesty_summary": {"live": live, "needs_config": len(plugins) - live},
+        # H285: the plugins the owner's load set switched off at boot.
+        "load_set": _load_set_status(),
     })
+
+
+def _load_set_status() -> dict:
+    from agents.core import load_set
+
+    return load_set.status("plugins")
 
 
 @router.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(admin_guard)])
@@ -98,8 +106,16 @@ async def toggle_plugin(plugin_id: str):
     else:
         orch.permission_gate.enable(plugin_id)
         action = "enabled"
+    # H285: kept across a restart, in the owner's load set.
+    from agents.core import load_set
+
+    try:
+        persisted = load_set.persist_plugin(plugin_id, manifest.enabled)
+    except Exception:  # noqa: BLE001 - the live toggle stands; say it was not kept
+        logger.warning("Plugin %s toggle not persisted", log_safe(plugin_id), exc_info=True)
+        persisted = False
     logger.info("Plugin %s %s", log_safe(plugin_id), action)
-    return nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
+    return nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action, "persisted": persisted})
 
 
 @router.get("/api/plugins/extensions", dependencies=[Depends(user_guard)])

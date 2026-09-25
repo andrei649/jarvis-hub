@@ -340,6 +340,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
+    # H285 — the owner's load set: comma lists of names read at boot (agents/core/load_set.py).
+    # A "disabled" name does not load; a non-empty "only" list loads only what it names.
+    # They only narrow: a name that is not installed is reported, never installed.
+    dict(category="loadset", key="skills_disabled",  value="", label="Skills that do not load (comma list)", kind="text"),
+    dict(category="loadset", key="skills_only",      value="", label="Load only these skills (comma list; empty = all)", kind="text"),
+    dict(category="loadset", key="plugins_disabled", value="", label="Plugins switched off (comma list; the plugin toggle writes it)", kind="text"),
+    dict(category="loadset", key="plugins_only",     value="", label="Enable only these plugins (comma list; empty = all)", kind="text"),
+    dict(category="loadset", key="mcp_disabled",     value="", label="Saved MCP servers that do not load (comma list; their config is kept)", kind="text"),
+    dict(category="loadset", key="mcp_only",         value="", label="Load only these saved MCP servers (comma list; empty = all)", kind="text"),
     # autonomy — Proactive Cortex (ORIZONT 6)
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),

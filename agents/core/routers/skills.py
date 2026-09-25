@@ -48,7 +48,10 @@ async def list_skills():
             "agents": skill.agents,
             "commands": skill.commands_meta,
         }
-    return {"skills": result}
+    from agents.core import load_set
+
+    # H285: what the owner's load set switched off at discovery, and what it names in vain.
+    return {"skills": result, "load_set": load_set.status("skills")}
 
 
 @router.get("/sandbox/status")
