@@ -1,5 +1,8 @@
 """Action-Level Approval endpoints (H10.18) — extracted from web.py (CLN-3)."""
 
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
 
@@ -9,6 +12,8 @@ from agents.core.routers._component import require_component
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
 
+
+logger = logging.getLogger("jarvis.web")
 
 router = APIRouter(tags=["actions"])
 
@@ -63,4 +68,13 @@ async def actions_decide(action_id: str, req: Request):
     item = q.decide(action_id, bool(body["approved"]), by=(body or {}).get("by", "user"))
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    if item.get("tool") == "skill.patch_proposal":
+        # H318 review — a decided skill change lands now, not at the curator's next night
+        # (which never comes while the learning loop is off, the default).
+        curator = getattr(get_orch(), "curator", None)
+        if curator is not None and hasattr(curator, "apply_decisions"):
+            try:
+                item = {**item, "applied": await asyncio.to_thread(curator.apply_decisions)}
+            except Exception:
+                logger.warning("skill proposal apply after decision failed", exc_info=True)
     return nocache_json({"ok": True, "action": item})

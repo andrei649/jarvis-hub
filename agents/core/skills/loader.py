@@ -313,6 +313,28 @@ def _external_skill_may_import(
     )
 
 
+#: What skill_view may keep of a skill (H318): a file up to VIEW_FILE_BYTES is kept as
+#: bytes, and at most VIEW_SKILL_BYTES of a skill in all; any other file is kept as its
+#: size, so it is listed and refused as too large rather than held in memory.
+VIEW_FILE_BYTES = 64 * 1024
+VIEW_SKILL_BYTES = 1024 * 1024
+
+
+def _view_files(snapshot: "signing.SkillSourceSnapshot | None") -> dict[str, "bytes | int"]:
+    out: dict[str, bytes | int] = {}
+    kept = 0
+    for item in getattr(snapshot, "files", ()) or ():
+        if item.kind != "file":
+            continue
+        size = len(item.content)
+        if size <= VIEW_FILE_BYTES and kept + size <= VIEW_SKILL_BYTES:
+            out[item.relative_path] = bytes(item.content)
+            kept += size
+        else:
+            out[item.relative_path] = size
+    return out
+
+
 def _materialize_source_snapshot(
     snapshot: signing.SkillSourceSnapshot,
 ) -> tuple[tempfile.TemporaryDirectory, Path]:
@@ -428,11 +450,17 @@ class Skill:
         # H20.5 — best-effort usage-telemetry hook (set by SkillLoader.attach_usage);
         # None keeps execute() byte-identical to today's behavior.
         self.usage_hook: Optional[Callable] = None
-        # H318 — the exact bytes the trust checks ran on, which skill_view serves (a later
-        # edit on disk is not what was verified), and whether the source is from outside
-        # the product (an import, the owner's own tree).
-        self.snapshot: signing.SkillSourceSnapshot | None = None
+        # H318 — what skill_view serves: the files of the snapshot the trust checks ran on
+        # (a later edit on disk is not what was verified), each kept as bytes when it is
+        # small enough to serve and as its size otherwise (VIEW_FILE_BYTES each,
+        # VIEW_SKILL_BYTES a skill), so a skill's assets are not held for the process's life.
+        self.view_files: dict[str, bytes | int] = {}
+        # Whether the source is from outside the product (an import, the owner's own tree),
+        # and whether the owner vouched for it: a keyed signature or an owner approval of
+        # these exact bytes. An unkeyed SKILL.sig is a sha256 anyone can compute, so it is
+        # not a vouch (review-H318 M-1, SEC-B2). A bundled skill is the product's own.
         self.external: bool = True
+        self.owner_vouched: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -637,7 +665,6 @@ class SkillLoader:
         manifest = self._parse_manifest(skill_file, source_bytes=snapshot_manifest)
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
-        skill.snapshot = snapshot
         skill.external = bool(external)
         if self._usage is not None:
             store = self._usage
@@ -686,6 +713,8 @@ class SkillLoader:
             self._approval_store,
             snapshot,
         )
+        skill.owner_vouched = bool(external_import_allowed)
+        skill.view_files = _view_files(snapshot)
         if py_exists and ((require_signed and not skill.trusted) or not external_import_allowed):
             # Strict mode: refuse to exec untrusted code in-process. The skill is
             # flagged sandboxed; the HUD/executor can run it via the Sandbox.
@@ -1146,7 +1175,9 @@ def register(skill):
         if skill is None:
             return None
         line = signing.sign_skill(skill.path)
-        skill.trusted, skill.signature_reason = signing.verify_skill(skill.path)
+        # Load it again, so its trust, its vouch and what skill_view serves all describe
+        # the bytes just signed, not the ones seen at start (review-H318 n-1).
+        self._load_skill(Path(skill.path), discovery_root=Path(skill.path).parent)
         return line
 
     def _name_from_task(self, task: str) -> str:

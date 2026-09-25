@@ -137,6 +137,14 @@ class SkillCurator:
 
     # ── pass 2: apply owner decisions on patch proposals ─────────────────────
 
+    def apply_decisions(self) -> dict:
+        """Apply the owner's decisions on skill patch proposals now (H318 review).
+
+        The approval route calls this when a ``skill.patch_proposal`` card is decided, so
+        an approved change lands at once. It is not gated by the learning loop's flag or
+        the night window, which gate the curator's own lifecycle pass: the owner asked."""
+        return self._proposals_pass()
+
     def _proposals_pass(self) -> dict:
         if self._proposals is None:
             return {"applied": [], "rejected": [], "stale": []}

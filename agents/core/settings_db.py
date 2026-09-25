@@ -713,9 +713,24 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             errors.append(f"{key}: value is not JSON-serializable")
             continue
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
+        if err is None and (cat, key) == ("skills", "template_vars"):
+            err = _template_vars_problem(value)
         if err:
             errors.append(err)
     return errors
+
+
+def _template_vars_problem(value: Any) -> str | None:
+    """H340 review: ``skills.template_vars`` is refused on write unless every entry is one
+    ``skill_view`` would render, so an owner never saves a variable that silently does
+    nothing (a string, an env pointer, a too-long value)."""
+    from .skills.template_vars import MAX_VALUE, MAX_VARS, clean_template_vars
+
+    if not isinstance(value, dict) or clean_template_vars(value) != value:
+        return (f"template_vars: a JSON map of names to plain text — a name is an identifier, a value "
+                f"one line of at most {MAX_VALUE} characters with no '$', env: or secret:, at most "
+                f"{MAX_VARS} entries, and no fixed name (NERVA_/HERMES_SKILL_DIR, _SESSION_ID)")
+    return None
 
 
 def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:

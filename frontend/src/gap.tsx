@@ -2634,6 +2634,10 @@ function settingsField(it, val, on) {
     case 'select': return <select value={val} onChange={(e) => on(e.target.value)} style={ip}>{(it.opts || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>;
     case 'number': case 'slider': return <input type="number" value={val} onChange={(e) => on(e.target.value === '' ? '' : Number(e.target.value))} style={{ ...ip, width: 84 }} />;
     case 'tags': return <input value={Array.isArray(val) ? val.join(', ') : (val || '')} onChange={(e) => on(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} style={{ ...ip, width: 150 }} />;
+    // A JSON setting is edited as JSON and saved parsed (H340 review: skills.template_vars
+    // saved from a text box was a string the hub ignored). Text that does not parse is sent
+    // as typed, so the hub's refusal names what is wrong.
+    case 'json': return <textarea aria-label={'json value of ' + it.key} defaultValue={typeof val === 'string' ? val : JSON.stringify(val ?? {})} onChange={(e) => { try { on(JSON.parse(e.target.value)); } catch { on(e.target.value); } }} rows={2} style={{ ...ip, width: 220 }} />;
     default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
   }
 }

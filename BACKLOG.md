@@ -14,6 +14,30 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 adversarial review round (H318 and H351 partial → equivalent, H340 stays equivalent, #1207; headline 142 → 144/697).
+
+  review-H318 found two MAJORs, six minors and nine nits. All are fixed except one nit, kept by decision:
+  - **A self-signed import is still data (M-1).** `skill_view` now rests the "owner's own" reading on `Skill.owner_vouched`: a bundled skill, a keyed signature, or the owner's approval of these exact bytes — the same rule that lets a skill's code load in-process. An unkeyed `SKILL.sig` is a sha256 anyone can compute (SEC-B2); it verifies as integrity-only and vouches for nothing. The flag also scans the description.
+  - **An approved proposal lands (M-2).** Deciding a `skill.patch_proposal` card through `POST /api/actions/{id}/decide` runs `SkillCurator.apply_decisions` at once, whatever the learning-loop flag or the hour. The card carries a unified diff, so the owner sees what they approve.
+  - **Minors.**
+    - The 64 KiB bound holds after the template variables render.
+    - A skill keeps only what a view can serve (`Skill.view_files`: 64 KiB a file, 1 MiB a skill, other files as sizes).
+    - `skill_propose` takes at most 10 proposals a day per process, and a newer proposal from the same agent supersedes its older one.
+    - `skills.template_vars` is refused on write unless every entry would render, and the HUD edits a JSON setting as JSON.
+    - The review's seven real mutation survivors are pinned.
+  - **Nits.**
+    - Signing a skill reloads what `skill_view` serves.
+    - H204's doubled class name is fixed.
+    - The list caps commands at 120 characters, matching the catalog's `\w+`.
+    - A card that failed to queue is queued by the retry.
+    - GOV-254 and GOV-256 cover the self-signed case and the approval, and GOV-256 says an inbound guest is not offered the tool.
+    - Kept by decision: `skill_propose` is still offered where it always refuses.
+
+  Mutation: this round's 25 mutants were all caught, two after a case was added.
+
+  Records: H318, H340 and H351 rewritten (H318 and H351 closed again); 58 drifted rows re-read and re-stamped; test manual GOV-254 and GOV-256.
+
+  Tests: backend 14,397 → 14,413; vitest 1,445 → 1,447 (`settings-json-field.test.tsx` 2).
 - 2026-09-25 H666 adversarial review round (stays equivalent, #1207). **H315 back to partial** after its fourth review, and **H318 and H351 back to partial** after H318's first (headline 145 → 142/697).
 
   review-H666 found no major, five minors and eight nits. All are fixed:

@@ -9,7 +9,8 @@ only through the post-turn background review, off by default.
 Three ToolRPC tools, all ungated:
 
 ``skills_list {query?, offset?, limit?}``
-    The skills the prompt catalog would advertise to the calling agent — the same gate
+    The skills that pass the prompt catalog's gate for the calling agent (a skill with no
+    commands is listed too: its instructions are still readable) — the same gate
     (:meth:`SkillLoader.catalog_gate`: nothing sandboxed or quarantined, no signature that
     fails to verify, a skill declared for other agents stays theirs) — with a one-line
     description and the command names. A row whose text is injection-flagged is left out,
@@ -24,15 +25,21 @@ Three ToolRPC tools, all ungated:
     snapshot refuses links when it is taken). Text only, at most :data:`MAX_FILE_BYTES`.
     An unknown skill and one this agent is not shown answer alike. The answer says
     ``tainted`` — the loop fences it as DATA and raises the turn's taint — when the text is
-    injection-flagged, or when the skill comes from outside the product and is not
-    trusted here (an unsigned import, a skill copied in by hand): a skill the owner signed
-    or approved reads as the owner's own. A tainted answer also carries ``warning``, the
-    sentence saying why, next to the content (H351).
+    injection-flagged (body or description), or when the skill comes from outside the
+    product and the owner has not vouched for it: only a keyed signature or the owner's
+    approval of these exact bytes is a vouch (``Skill.owner_vouched``). An unkeyed
+    ``SKILL.sig`` is a sha256 anyone can compute, so a self-signed import stays data
+    (review-H318 M-1, SEC-B2). A tainted answer also carries ``warning``, the sentence
+    saying why, next to the content (H351). The bound holds after the variables render,
+    and only what a view can serve is kept in memory (``Skill.view_files``).
 
 ``skill_propose``
     Authoring, governed: ``{name, content}`` proposes a new SKILL.md for an existing skill
-    as a pending :class:`SkillProposalStore` proposal with an approval card, exactly as
-    the background review does; ``{description, steps}`` asks for a new skill, which
+    as a pending :class:`SkillProposalStore` proposal with an approval card that shows the
+    diff; the owner's decision on the card applies it at once (``routers/actions.py``, not
+    the curator's night). A newer proposal from the same agent supersedes its older one,
+    and a process takes at most :data:`MAX_PROPOSALS_PER_DAY` a day.
+    ``{description, steps}`` asks for a new skill, which
     ``SkillLoader.generate_skill`` writes into CDX-8 quarantine (``PENDING_REVIEW``, never
     executed until the owner approves). Nothing here writes a live SKILL.md. Only an
     owner's turn that has read nothing untrusted may propose (a guest, a household member,
@@ -45,8 +52,11 @@ names them in ``llm.guest_tools`` (critic note 22).
 
 from __future__ import annotations
 
+import difflib
 import logging
 import posixpath
+import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -69,6 +79,10 @@ MAX_FILE_BYTES = 64 * 1024
 MAX_PROPOSAL = 16 * 1024
 MAX_STEPS = 20
 MAX_STEP = 300
+MAX_COMMAND = 120
+MAX_DIFF = 4_000
+MAX_PROPOSALS_PER_DAY = 10
+_COMMAND = re.compile(r"\w+")
 
 _SKILL_FILE = "SKILL.md"
 
@@ -139,6 +153,14 @@ def _unknown(name: str) -> dict:
     return _refuse("skill_unknown", f"no skill named {name!r} is available to you: call skills_list")
 
 
+def _diff(before: str, after: str) -> str:
+    """What the owner approves, on the card: a unified diff, cut at MAX_DIFF characters."""
+    lines = difflib.unified_diff(before.splitlines(), after.splitlines(), "SKILL.md (now)",
+                                 "SKILL.md (proposed)", lineterm="")
+    text = "\n".join(lines)
+    return text if len(text) <= MAX_DIFF else text[:MAX_DIFF] + "\n… (cut; the whole proposal is in the ledger)"
+
+
 def _clean_path(raw: str) -> str | None:
     """A relative POSIX path inside the skill, normalised; None when it would leave it."""
     if "\\" in raw or "\x00" in raw or raw.startswith("/") or not raw.isprintable():
@@ -163,6 +185,17 @@ def register_skill_tools(
     """Expose the three tools. Every getter is read per call, so a reload, a new session
     or a changed setting is seen by the next call."""
     from ..security.taint import is_untrusted_source
+    from .proposals import STATUS_PENDING, STATUS_STALE
+
+    # Proposals made today (one entry, keyed by the day) and the proposals that already
+    # have an approval card: a retry after a failed card queues one, a repeat does not.
+    spent: dict[str, int] = {}
+    carded: set[str] = set()
+
+    def _spend(today: str) -> None:
+        count = spent.get(today, 0) + 1
+        spent.clear()                  # only today's count is kept
+        spent[today] = count
 
     def _origin() -> str:
         if origin is not None:
@@ -190,8 +223,9 @@ def register_skill_tools(
         from ..security import quarantine
 
         reasons = []
-        if bool(getattr(skill, "external", True)) and not getattr(skill, "trusted", False):
-            reasons.append("this skill comes from outside Nerva and is not signed or approved here")
+        if not getattr(skill, "owner_vouched", False):
+            reasons.append("this skill comes from outside Nerva and the owner has not vouched for it "
+                           "(no keyed signature or approval of these bytes)")
         flags = _flags(text)
         if flags:
             reasons.append("its text matches injection patterns ("
@@ -222,9 +256,9 @@ def register_skill_tools(
             if target.catalog_gate(skill, agent):
                 continue
             description = _one_line(skill.description, MAX_DESCRIPTION)
-            commands = [m["command"] for m in skill.commands_meta
+            commands = [m["command"][:MAX_COMMAND] for m in skill.commands_meta
                         if isinstance(m, dict) and isinstance(m.get("command"), str)
-                        and m["command"].isidentifier()][:20]
+                        and _COMMAND.fullmatch(m["command"])][:20]
             if _flags(f"{name}: {description} {' '.join(commands)}"):
                 logger.warning("Skill '%s' is left out of skills_list: its row is injection-flagged", name)
                 continue
@@ -245,13 +279,12 @@ def register_skill_tools(
         if file is not None and (not isinstance(file, str) or not file or len(file) > MAX_PATH):
             return _refuse("skill_bad_file", f"file is a path inside the skill, at most {MAX_PATH} characters")
         skill = _skill(name)
-        snapshot = getattr(skill, "snapshot", None)
-        if skill is None or snapshot is None:
+        files = getattr(skill, "view_files", None) or {}
+        if skill is None or _SKILL_FILE not in files:
             return _unknown(name)
-        listed = sorted(item.relative_path for item in snapshot.files
-                        if item.kind == "file" and item.relative_path != _SKILL_FILE)
+        listed = sorted(path for path in files if path != _SKILL_FILE)
         if file is None:
-            data = snapshot.read_bytes(_SKILL_FILE) or b""
+            data = files[_SKILL_FILE]
         else:
             rel = _clean_path(file)
             if rel is None:
@@ -260,10 +293,14 @@ def register_skill_tools(
             if rel not in listed:
                 return _refuse("skill_file_unknown", f"{name!r} has no file {rel!r}: its files are listed "
                                                      "by skill_view without file")
-            data = snapshot.read_bytes(rel) or b""
-        if len(data) > MAX_FILE_BYTES:
-            return _refuse("skill_file_too_large", f"the file is {len(data):,} bytes; skill_view reads at "
+            data = files[rel]
+        size = data if isinstance(data, int) else len(data)
+        if size > MAX_FILE_BYTES:
+            return _refuse("skill_file_too_large", f"the file is {size:,} bytes; skill_view reads at "
                                                    f"most {MAX_FILE_BYTES:,}")
+        if isinstance(data, int):
+            return _refuse("skill_file_too_large", "this skill's files together are more than skill_view "
+                                                   "keeps of one skill (1 MiB), and this one was not kept")
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -281,9 +318,13 @@ def register_skill_tools(
                 variables = {}
             body = render_skill_body(body, skill_dir=str(Path(skill.path).resolve()),
                                      session_id=str(session_id() or ""), template_vars=variables)
-            reply = {"ok": True, "name": skill.name, "description": _one_line(skill.description, 1024),
-                     "body": body, "files": listed}
-            shown = body
+            if len(body.encode("utf-8")) > MAX_FILE_BYTES:
+                # The bound is on what reaches the model, so it holds after the variables.
+                return _refuse("skill_file_too_large", f"the body is over {MAX_FILE_BYTES:,} bytes once its "
+                                                       "variables are rendered")
+            description = _one_line(skill.description, 1024)
+            reply = {"ok": True, "name": skill.name, "description": description, "body": body, "files": listed}
+            shown = f"{description}\n{body}"
         else:
             reply = {"ok": True, "name": skill.name, "file": rel, "content": text}
             shown = text
@@ -337,6 +378,10 @@ def register_skill_tools(
         store = proposals()
         if target is None or (patch and store is None):
             return _refuse("skill_propose_unavailable", "skill proposals are not available on this hub")
+        today = time.strftime("%Y-%m-%d")
+        if spent.get(today, 0) >= MAX_PROPOSALS_PER_DAY:
+            return _refuse("skill_propose_limit", f"at most {MAX_PROPOSALS_PER_DAY} skill proposals a day: "
+                                                  "the owner has enough to review")
         actor = _actor() or "agent"
         if not patch:
             try:
@@ -347,30 +392,42 @@ def register_skill_tools(
             if not created:
                 return _refuse("skill_propose_refused", "no new skill was written: one of that name exists, "
                                                         "or the skill-generation contract refused it")
+            _spend(today)
             return {"ok": True, "kind": "new", "skill": created, "pending": True,
                     "detail": "written to quarantine; the owner reviews it before it can run"}
         skill = _skill(name)
-        snapshot = getattr(skill, "snapshot", None)
-        if skill is None or snapshot is None:
+        files = getattr(skill, "view_files", None) or {}
+        current = files.get(_SKILL_FILE) if skill is not None else None
+        if not isinstance(current, bytes):
             return _unknown(name)
-        current = (snapshot.read_bytes(_SKILL_FILE) or b"").decode("utf-8", errors="replace")
-        before = {row.get("id") for row in store.list("pending")} if hasattr(store, "list") else set()
-        record = store.propose(skill.name, current, content, origin=f"agent:{actor}")
+        current_text = current.decode("utf-8", errors="replace")
+        origin_label = f"agent:{actor}"
+        record = store.propose(skill.name, current_text, content, origin=origin_label)
         if record is None:
             return _refuse("skill_propose_no_change", "that is the skill's current SKILL.md")
+        # One pending change per skill per agent: a newer proposal supersedes the older one
+        # rather than queueing beside it (review-H318 m-3).
+        for older in store.list(STATUS_PENDING) if hasattr(store, "list") else ():
+            if (older.get("id") != record["id"] and older.get("skill") == skill.name
+                    and older.get("origin") == origin_label):
+                store.mark(older["id"], STATUS_STALE)
         queue = approvals()
-        if record.get("id") not in before and queue is not None:
+        if record["id"] not in carded and queue is not None:
             try:
                 queue.request({
                     "tool": "skill.patch_proposal",
-                    "args": {"skill": skill.name, "proposal_id": record["id"]},
+                    "args": {"skill": skill.name, "proposal_id": record["id"],
+                             "diff": _diff(current_text, content)},
                     "agent": actor,
                     "summary": f"The agent proposes a change to skill '{skill.name}'",
                 })
+                carded.add(record["id"])
             except Exception:
                 logger.warning("skill_propose: the approval card could not be queued", exc_info=True)
+        _spend(today)
         return {"ok": True, "kind": "patch", "skill": skill.name, "proposal_id": record["id"],
-                "pending": True, "detail": "the owner reviews the change before it replaces the skill"}
+                "pending": True,
+                "detail": "the change replaces the skill when the owner approves it in the Decision Inbox"}
 
     server.register_tool(TOOL_LIST, _list, gated=False, description=LIST_DESCRIPTION,
                          input_schema=LIST_SCHEMA, capability_id="tool:skills_list")
