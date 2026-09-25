@@ -44,7 +44,7 @@ def _publish(marketplace: SkillMarketplace, name: str) -> None:
     skill_dir = marketplace.skills_dir / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(
-        f"# {name}\n\nA test skill.\n", encoding="utf-8"
+        f"# {name}\n\n> A test skill.\n", encoding="utf-8"
     )
     marketplace.publish_skill(name)
 

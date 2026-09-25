@@ -32,6 +32,7 @@ from agents.core.persistence.migrations import apply_migrations
 from . import signing
 from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
 from .skill_history import SkillHistory
+from .validate import require_valid
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -375,6 +376,8 @@ class SkillMarketplace:
             manifest_bytes = snapshot.read_bytes("SKILL.md")
             if manifest_bytes is None:
                 raise FileNotFoundError(f"SKILL.md manifest missing in: {skill_path}")
+            # H350 — a package ships only a SKILL.md every hub reads as intended.
+            require_valid(manifest_bytes)
             manifest = SkillLoader()._parse_manifest(skill_file, source_bytes=manifest_bytes)
             for item in snapshot.files:
                 if item.kind != "file":
@@ -811,7 +814,10 @@ class SkillMarketplace:
             written = archive_safe.extract_zip_bytes(zip_bytes, package,
                                                      limits=SKILL_PACKAGE_LIMITS)
             manifest_parts = self._find_manifest(written)
-            skill_md_content = package.joinpath(*manifest_parts).read_text(encoding="utf-8")
+            skill_md_bytes = package.joinpath(*manifest_parts).read_bytes()
+            # H350 — checked before its name picks a folder or anything is placed.
+            require_valid(skill_md_bytes)
+            skill_md_content = skill_md_bytes.decode("utf-8")
 
             skill_name = None
             for line in skill_md_content.split("\n"):

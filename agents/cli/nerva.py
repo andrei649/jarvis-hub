@@ -159,6 +159,15 @@ def build_parser() -> argparse.ArgumentParser:
                             "and redacted (offline; -n counts records, a traceback is one)")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
+    skills = verbs.add_parser("skills", help="skill authoring tools (offline)")
+    skills_verbs = skills.add_subparsers(dest="action", required=True, metavar="action")
+    skills_lint = skills_verbs.add_parser(
+        "lint", help="check SKILL.md files: an error is what every write refuses, advice is not enforced")
+    skills_lint.add_argument("paths", nargs="+", metavar="path",
+                             help="a SKILL.md, a skill folder, or a folder of skill folders")
+    skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
+    skills_lint.add_argument("--json", action="store_true")
+
     estop = verbs.add_parser("estop", help="the global emergency stop")
     estop_verbs = estop.add_subparsers(dest="action", required=True, metavar="action")
     estop_verbs.add_parser("status", help="is it engaged, since when, why")
@@ -1025,6 +1034,68 @@ def log_path(environ: Mapping[str, str]) -> Path:
     from agents.core.paths import data_path
 
     return data_path("logs", "jarvis.log")
+
+
+def _skill_files(raw: str) -> list[Path] | None:
+    """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
+    path = Path(raw)
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        return None
+    if (path / "SKILL.md").is_file():
+        return [path / "SKILL.md"]
+    return sorted(p for p in path.glob("*/SKILL.md") if p.is_file())
+
+
+def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
+    """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice."""
+    from agents.core.skills.validate import (
+        MAX_SKILL_MD_BYTES,
+        Problem,
+        lint_skill_md,
+        validate_skill_md,
+    )
+
+    files: list[Path] = []
+    for raw in ns.paths:
+        found = _skill_files(raw)
+        if found is None:
+            ctx.err.write(f"no such file or folder: {raw}\n")
+            return EXIT_USAGE
+        if not found:
+            ctx.err.write(f"no SKILL.md in {raw} or in the folders directly under it\n")
+            return EXIT_USAGE
+        files.extend(found)
+    report, errors, advice = [], 0, 0
+    for path in dict.fromkeys(files):
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read(MAX_SKILL_MD_BYTES + 1)     # past the cap is an error anyway
+        except OSError as exc:
+            problems, findings = [Problem("document", f"cannot be read ({exc.strerror or exc})")], []
+        else:
+            problems = validate_skill_md(data)
+            findings = lint_skill_md(data, folder=path.parent.name)
+        errors += len(problems)
+        advice += len(findings)
+        report.append({"path": str(path), "errors": [p.as_dict() for p in problems],
+                       "advice": [p.as_dict() for p in findings]})
+    if ns.json:
+        ctx.dump(report)
+    else:
+        for entry in report:
+            if not entry["errors"] and not entry["advice"]:
+                ctx.out.write(f"{entry['path']}: ok\n")
+                continue
+            ctx.out.write(f"{entry['path']}:\n")
+            for kind, items in (("error ", entry["errors"]), ("advice", entry["advice"])):
+                for item in items:
+                    line = f" (line {item['line']})" if "line" in item else ""
+                    ctx.out.write(f"  {kind} {item['field']}: {item['message']}{line}\n")
+        ctx.out.write(f"{len(report)} file{'s' if len(report) != 1 else ''}: {errors} error"
+                      f"{'s' if errors != 1 else ''}, {advice} advice\n")
+    return EXIT_FAILED if errors or (ns.strict and advice) else EXIT_OK
 
 
 def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
@@ -2549,6 +2620,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "kernel": cmd_kernel,
     "tools": cmd_tools,
     "logs": cmd_logs,
+    "skills": cmd_skills,
     "estop": cmd_estop,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,

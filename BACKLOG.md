@@ -14,6 +14,20 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H350 a SKILL.md is checked at every write, and `nerva skills lint` advises the rest (missing → equivalent, #1207; headline 150 → 151/697).
+
+  A malformed SKILL.md used to fall through to the heading parser and register under its folder's name with an empty description. `agents/core/skills/validate.py` now checks both dialects the loader reads:
+  - **Frontmatter** (agentskills.io / Hermes): a closed fence, a YAML mapping, a folder-safe `name` of at most 64 characters, a `description` of at most 1,024, and a body.
+  - **Headings** (Nerva's code-skill format): `# Name` and a `> description`, and never a second of either, since the loader takes the last one. A body is advised, not required: the commands may live in `main.py`.
+  - **Every document**: at most 64 KiB (what `skill_view` serves), UTF-8, no NUL.
+  - **Every write path runs it** and names each problem with its field and line: the import (GitHub, manifest and local, dry runs included, before any backup or marker), marketplace publish and zip install (422 `invalid_skill_md`), `generate_skill`, `skill_propose` (`skill_propose_invalid`), the background review, and the apply of a proposal recorded before the check.
+  - **`nerva skills lint PATH…`** adds advice: unknown keys, a short or "when"-less description, name vs folder, a long body, no section, an open fence, trailing spaces, home-folder paths. It exits 1 on an error (or on advice with `--strict`), and `--json` is available.
+  - **Found on the way:** a generated skill's name had no length cap, so one long word in the task text made a folder name the filesystem refused. It is capped at 48 characters before its stamp.
+  - **Fixtures:** those that wrote a SKILL.md with no description, or proposed a whole file with no frontmatter, now write real documents.
+
+  46 mutants, 45 caught (five after cases were added), one equivalent. 74 rows re-stamped; H456's list and H477's `(:341)` recomputed by hand. Test manual: GOV-259, GOV-260.
+  Tests: backend 15,371 → 15,426 (`tests/test_h350_skill_validator.py` 54, `test_h318c` +1).
+
 - 2026-09-25 H157 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
 
   review-H157 found two majors, seven minors and twelve nits (the validation, the all-or-nothing write and the route order held):

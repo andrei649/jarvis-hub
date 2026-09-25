@@ -64,6 +64,7 @@ from typing import Any
 from .frontmatter import split_frontmatter
 from .template_vars import SETTING as TEMPLATE_VARS_SETTING
 from .template_vars import render_skill_body
+from .validate import validate_skill_md
 
 logger = logging.getLogger("jarvis.skills.tools")
 
@@ -420,6 +421,12 @@ def register_skill_tools(
                 logger.warning("skill_propose: generate_skill failed", exc_info=True)
                 created = None
             if not created:
+                problems = list(getattr(target, "last_generation_problems", None) or [])
+                if problems:
+                    refused = _refuse("skill_propose_invalid", "no new skill was written: its SKILL.md "
+                                      "would not be valid: " + "; ".join(str(p) for p in problems))
+                    refused["problems"] = [p.as_dict() for p in problems]
+                    return refused
                 return _refuse("skill_propose_refused", "no new skill was written: one of that name exists, "
                                                         "or the skill-generation contract refused it")
             _spend(today)
@@ -446,6 +453,14 @@ def register_skill_tools(
         if renamed:
             # A rename would leave the old entry serving the old text (review-H318b n-2).
             return _refuse("skill_propose_rename", f"the new SKILL.md must keep the skill's name, {skill.name!r}")
+        # H350 — the text the owner would approve must be a SKILL.md the loader reads as
+        # intended; the model gets every problem, with its field, to correct in one go.
+        problems = validate_skill_md(content.strip())
+        if problems:
+            refused = _refuse("skill_propose_invalid", "the new SKILL.md is not valid: "
+                                                       + "; ".join(str(p) for p in problems))
+            refused["problems"] = [p.as_dict() for p in problems]
+            return refused
         origin_label = f"agent:{actor}"
         record = store.propose(skill.name, current_text, content, origin=origin_label)
         if record is None:

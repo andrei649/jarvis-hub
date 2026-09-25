@@ -172,7 +172,7 @@ class SkillCurator:
             # Every outcome is reported, with the state the skill is left in (review-H318b
             # M-1, n-3): "applied" alone hid a skill the change had sandboxed or hidden.
             outcomes.append({"skill": rec["skill"], "proposal_id": rec["id"],
-                             **{k: out[k] for k in ("ok", "reason", "state") if k in out}})
+                             **{k: out[k] for k in ("ok", "reason", "state", "problems") if k in out}})
             if out.get("ok"):
                 applied.append(rec["skill"])
                 if self._usage is not None:

@@ -570,6 +570,8 @@ class Skill:
 class SkillLoader:
     def __init__(self, approval_store: SkillApprovalStore | None = None):
         self.skills: dict[str, Skill] = {}
+        # H350 — why the last generate_skill refused its document (empty when it did not).
+        self.last_generation_problems: list = []
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
@@ -1009,8 +1011,6 @@ class SkillLoader:
         # bare identifier.
         cmd = _safe_command_name(cmd, skill_name)
 
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
         steps_text = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(solution_steps))
 
         skill_md = f"""# {skill_name.replace("_", " ").title()}
@@ -1036,6 +1036,17 @@ Agent-generated skill from successful task completion.
         if output:
             skill_md += f"\n## Example Output\n```\n{output}\n```\n"
 
+        # H350 — the generated document passes the same check as any other write, before
+        # its folder exists: a description past 1,024 characters, a second '# ' line from
+        # the task text, and the like, are refused with the field and the reason.
+        from .validate import validate_skill_md
+
+        self.last_generation_problems = validate_skill_md(skill_md)
+        if self.last_generation_problems:
+            logger.warning("Skill generation refused: %s",
+                           "; ".join(str(p) for p in self.last_generation_problems))
+            return None
+        skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
 
         # The shape below is the loader's contract, not decoration:
@@ -1245,7 +1256,9 @@ def register(skill):
         ]
         if not important:
             important = ["custom"]
-        name = "_".join(important[:4])
+        # At most 48 characters before the stamp: the name is a folder and the heading, and
+        # one long word from the task once made a folder name the filesystem refused (H350).
+        name = "_".join(important[:4])[:48].rstrip("_") or "custom"
         timestamp = datetime.now(timezone.utc).strftime("%H%M%S")
         return f"{name}_{timestamp}"
 

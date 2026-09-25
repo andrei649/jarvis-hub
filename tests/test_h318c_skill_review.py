@@ -397,16 +397,31 @@ def test_a_skill_with_thousands_of_files_answers_within_its_budget(hub):
 # ── m-5: the backup is named by the directory, uniquely ───────────────────────────
 
 def test_the_backup_is_named_by_the_directory_and_never_overwritten(hub):
+    hub.write("plan", title="Plan Helper")
+    loader = hub.load()
+    assert "Plan Helper" in loader.skills
+    for body in ("One.\n", "Two.\n"):
+        current = (hub.root / "plan" / "SKILL.md").read_text()
+        rec = hub.proposals.propose("Plan Helper", current, _new_text("Plan Helper", body), origin="r")
+        hub.queue.decide(hub.proposals.queue_card(rec["id"], hub.queue, agent="r", summary="s"), True)
+        assert hub.curator.apply_decisions()["applied"] == ["Plan Helper"]
+    backups = sorted(p.name for p in hub.archive.iterdir())
+    assert len(backups) == 2 and all(name.startswith("plan-") for name in backups)
+
+
+def test_a_name_that_is_a_path_is_never_applied_or_backed_up(hub):
+    # A skill already on disk under a name like ../../escaped can no longer be changed:
+    # the new text keeps its name, and a name that is a path fails the H350 check.
     hub.write("plan", title="../../escaped")
     loader = hub.load()
     assert "../../escaped" in loader.skills
-    for body in ("One.\n", "Two.\n"):
-        current = (hub.root / "plan" / "SKILL.md").read_text()
-        rec = hub.proposals.propose("../../escaped", current, _new_text("../../escaped", body), origin="r")
-        hub.queue.decide(hub.proposals.queue_card(rec["id"], hub.queue, agent="r", summary="s"), True)
-        assert hub.curator.apply_decisions()["applied"] == ["../../escaped"]
-    backups = sorted(p.name for p in hub.archive.iterdir())
-    assert len(backups) == 2 and all(name.startswith("plan-") for name in backups)
+    current = (hub.root / "plan" / "SKILL.md").read_text()
+    rec = hub.proposals.propose("../../escaped", current, _new_text("../../escaped", "One.\n"), origin="r")
+    hub.queue.decide(hub.proposals.queue_card(rec["id"], hub.queue, agent="r", summary="s"), True)
+    out = hub.curator.apply_decisions()
+    assert out["applied"] == [] and out["outcomes"][0]["reason"] == "invalid_skill_md"
+    assert (hub.root / "plan" / "SKILL.md").read_text() == current
+    assert not hub.archive.exists() or not any(hub.archive.iterdir())
     assert not any(hub.archive.parent.parent.glob("escaped-*"))
 
 
@@ -419,7 +434,7 @@ def test_publishing_with_a_key_does_not_vouch_for_the_source(tmp_path, monkeypat
     mk = SkillMarketplace(skills_dir=str(tmp_path / "skills"), db_path=str(tmp_path / "mk.db"))
     source = mk.skills_dir / "imported"
     source.mkdir(parents=True)
-    (source / "SKILL.md").write_text("# Imported\nversion: 1.0\n", encoding="utf-8")
+    (source / "SKILL.md").write_text("# Imported\n> An imported skill.\nversion: 1.0\n", encoding="utf-8")
     (source / "main.py").write_text(CODE, encoding="utf-8")
     mk.publish_skill("imported")
     assert not (source / "SKILL.sig").exists()

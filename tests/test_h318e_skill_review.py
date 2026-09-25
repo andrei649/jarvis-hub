@@ -159,7 +159,7 @@ def test_the_package_holds_the_bytes_the_snapshot_read(tmp_path, monkeypatch):
     mk = _market(tmp_path)
     source = mk.skills_dir / "notes"
     source.mkdir(parents=True)
-    (source / "SKILL.md").write_bytes(b"# Notes\nversion: 1.0\n")
+    (source / "SKILL.md").write_bytes(b"# Notes\n> Plain notes.\nversion: 1.0\n")
     (source / "notes.md").write_bytes(b"plain notes\n")                  # bytes: the Windows lane too
     (tmp_path / "id_rsa").write_text("-----BEGIN PRIVATE KEY----- SECRET\n", encoding="utf-8")
     real = signing.source_snapshot

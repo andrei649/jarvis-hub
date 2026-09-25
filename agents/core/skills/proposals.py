@@ -335,6 +335,14 @@ class SkillProposalStore(JsonStore):
         if callable(naming) and naming(Path(skill.path), rec["proposed"]) != rec["skill"]:
             self.mark(proposal_id, STATUS_REJECTED, reason="renames")
             return {"ok": False, "reason": "renames_skill"}
+        # H350 — a proposal recorded before the check (or by a path that skipped it) is
+        # refused here, never written: the owner approved a change, not a broken file.
+        from .validate import validate_skill_md
+
+        problems = validate_skill_md(rec["proposed"])
+        if problems:
+            self.mark(proposal_id, STATUS_REJECTED, reason="invalid_skill_md")
+            return {"ok": False, "reason": "invalid_skill_md", "problems": [p.as_dict() for p in problems]}
         skill_md = Path(skill.path) / "SKILL.md"
         # Bytes in and out, never text mode: Windows would write "\r\n" for "\n", so the
         # bytes on disk would never equal the approved text, and a rollback would rewrite

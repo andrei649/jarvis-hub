@@ -400,7 +400,9 @@ def test_proposals_from_refine_are_labelled_refine(tmp_path):
 
     proposals = SkillProposalStore(path=str(tmp_path / "p.json"))
     cards = Cards()
-    llm = _LLM('{"skill_updates": [{"kind": "patch", "name": "deploy", "content": "New steps."}]}')
+    # A whole SKILL.md, as a patch replaces the file (H350 refuses one without a description).
+    llm = _LLM('{"skill_updates": [{"kind": "patch", "name": "deploy", '
+               '"content": "# deploy\\n> Ship a release.\\n\\nNew steps."}]}')
     reviewer = BackgroundReviewer(llm, living=_Living(), skills=Loader(), proposals=proposals, approvals=cards,
                                   get_setting=lambda k, d=None: d)
     asyncio.run(reviewer.run_on_demand("user: x"))

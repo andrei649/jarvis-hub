@@ -593,6 +593,14 @@ class BackgroundReviewer:
         if self._detect(update["content"]):
             logger.warning("review skill patch blocked (injection-flagged): %s", name)
             return False
+        from ..skills.validate import validate_skill_md
+
+        problems = validate_skill_md(str(update["content"] or "").strip())
+        if problems:
+            # H350 — never a card for a change the apply would refuse.
+            logger.info("review skill patch for %s skipped: not a valid SKILL.md (%s)", name,
+                        "; ".join(str(p) for p in problems))
+            return False
         try:
             current = (skill.path / "SKILL.md").read_text(encoding="utf-8")
         except Exception:

@@ -22,9 +22,16 @@ from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
 from agents.core.skills.signing import SkillSourceSnapshotError
+from agents.core.skills.validate import SkillDocumentInvalid
 
 
 router = APIRouter(tags=["skills"])
+
+
+def _invalid_skill_md(exc: SkillDocumentInvalid, message: str) -> JSONResponse:
+    """H350 — a SKILL.md a write refused: 422, with every problem and its field."""
+    return JSONResponse({"error": message, "reason": "invalid_skill_md", "problems": exc.as_list()},
+                        status_code=422)
 
 
 @router.get("/skills")
@@ -406,6 +413,8 @@ async def marketplace_publish(body: PublishSkillBody):
     try:
         res = orch.marketplace.publish_skill(body.name)
         return {"ok": True, "published": res}
+    except SkillDocumentInvalid as e:
+        return _invalid_skill_md(e, f"skill '{body.name}' has a SKILL.md that is not valid, and was not published")
     except PermissionError:
         logger.warning("Skill publish blocked by supply-chain contract")
         return JSONResponse({"error": f"skill '{body.name}' blocked by supply-chain contract"},
@@ -480,6 +489,8 @@ async def marketplace_install_zip(body: InstallZipBody):
             orch.skills.discover()
             return {"ok": True}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
+    except SkillDocumentInvalid as e:
+        return _invalid_skill_md(e, "the package's SKILL.md is not valid, and nothing was installed")
     except (PermissionError, ValueError):
         # Rejected by the zip-slip guard or the signature gate (H12.12).
         logger.warning("Skill zip install rejected (unsafe path or signature policy)")

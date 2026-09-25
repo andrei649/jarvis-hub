@@ -199,7 +199,7 @@ def test_a_normal_import_still_lands_in_the_skills_directory():
     with tempfile.TemporaryDirectory() as tmp:
         skills = Path(tmp) / "skills"
         importer = SkillImporter(str(skills))
-        ok = asyncio.run(importer._save_skill("Weather Bot", "test", skill_md_text="# x"))
+        ok = asyncio.run(importer._save_skill("Weather Bot", "test", skill_md_text="# x\n> A weather bot.\n"))
         assert ok is True
-        assert (skills / "weather-bot" / "SKILL.md").read_text(encoding="utf-8") == "# x"
+        assert (skills / "weather-bot" / "SKILL.md").read_text(encoding="utf-8") == "# x\n> A weather bot.\n"
         assert (skills / "weather-bot" / "manifest.json").exists()

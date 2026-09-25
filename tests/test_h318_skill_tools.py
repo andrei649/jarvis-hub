@@ -73,6 +73,11 @@ def bundled(monkeypatch):
     return loader
 
 
+def _plan(body: str) -> str:
+    """A whole SKILL.md for the ``plan`` skill: a proposal replaces the file (H350 checks it)."""
+    return f"---\nname: plan\ndescription: plan helper\n---\n{body}"
+
+
 def _write_skill(root: Path, name: str, body: str, *, frontmatter: str = "", files=None) -> Path:
     path = root / name
     path.mkdir(parents=True)
@@ -523,13 +528,13 @@ def test_a_newer_proposal_supersedes_the_older_one_and_a_day_has_a_limit(install
     proposals = SkillProposalStore(path=str(tmp_path / "p.json"))
     approvals = _Approvals()
     server = _server(loader, proposals=proposals, approvals=approvals)
-    first = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "One.\n"})
-    second = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "Two.\n"})
+    first = _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("One.\n")})
+    second = _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("Two.\n")})
     assert [p["id"] for p in proposals.list("pending")] == [second["proposal_id"]]
     assert proposals.get(first["proposal_id"])["status"] == "superseded"
     for i in range(8):
-        assert _call(server, TOOL_PROPOSE, {"name": "plan", "content": f"More {i}.\n"})["ok"] is True
-    limited = _call(server, TOOL_PROPOSE, {"name": "plan", "content": "Eleventh.\n"})
+        assert _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan(f"More {i}.\n")})["ok"] is True
+    limited = _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("Eleventh.\n")})
     assert limited["reason"] == "skill_propose_limit"
 
 
@@ -549,11 +554,11 @@ def test_a_card_that_failed_to_queue_is_queued_by_the_retry(installed, tmp_path)
 
     approvals = Flaky()
     server = _server(loader, proposals=SkillProposalStore(path=str(tmp_path / "p.json")), approvals=approvals)
-    _call(server, TOOL_PROPOSE, {"name": "plan", "content": "New.\n"})
+    _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("New.\n")})
     assert approvals.requests == []
-    _call(server, TOOL_PROPOSE, {"name": "plan", "content": "New.\n"})
+    _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("New.\n")})
     assert len(approvals.requests) == 1
-    _call(server, TOOL_PROPOSE, {"name": "plan", "content": "New.\n"})
+    _call(server, TOOL_PROPOSE, {"name": "plan", "content": _plan("New.\n")})
     assert len(approvals.requests) == 1
 
 
