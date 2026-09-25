@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Webhooks — a workflow hook's answer no longer carries `result` (H153)
+
+A workflow-target webhook answers `{"ok", "steps", "delivery"}`: each step with whether it ran, and
+what the push did. The run's whole context is no longer echoed back to the sender as `result`
+(it could hold what other steps read, and a value JSON cannot carry made the answer a 500 after
+the push). A CI script that read a workflow's output from the webhook response should read it
+from the owner's side instead (the delivery is in the session, or in the hook's delivery log).
+The test manual's CHN-183 documents the shape.
+
 ### Hermes sprint — an MCP server is no longer handed the owner's keys by default (H502)
 
 **BREAKING (security default).** A stdio MCP server is a third-party binary the owner

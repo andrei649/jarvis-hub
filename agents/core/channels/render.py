@@ -46,6 +46,17 @@ _ITALIC_UNDERSCORE_RE = re.compile(rf"(?<![\w_])_(?=[^\s_])(.{{1,{_SPAN}}}?)(?<=
 _LINK_RE = re.compile(rf"\[([^\]\n]{{1,{_SPAN}}})\]\((https?://[^\s)]{{1,{_URL}}})\)")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 _CODE_PLACEHOLDER = "\x00code{}\x00"
+_CODE_PLACEHOLDER_RE = re.compile("\x00code(\\d+)\x00")
+
+
+def _restore_codes(out: str, codes: list[str]) -> str:
+    """Put the stashed inline code spans back in one pass: a ``replace`` per span over the
+    whole text cost spans x length, quadratic on a line of many spans (review-H153e
+    MINOR-1). A placeholder that names no span (the text spelled one out) is left as is."""
+    if not codes:
+        return out
+    return _CODE_PLACEHOLDER_RE.sub(
+        lambda m: codes[int(m.group(1))] if int(m.group(1)) < len(codes) else m.group(0), out)
 
 
 def _heading(line: str):
@@ -91,9 +102,7 @@ def _inline_html(text: str) -> str:
         heading = _heading(line)
         lines.append(f"<b>{heading.group(2)}</b>" if heading else line)
     out = "\n".join(lines)
-    for index, code in enumerate(codes):
-        out = out.replace(_CODE_PLACEHOLDER.format(index), code)
-    return out
+    return _restore_codes(out, codes)
 
 
 def to_telegram_html(text: str) -> str:
@@ -148,9 +157,7 @@ def _inline_mrkdwn(text: str) -> str:
         heading = _heading(line)
         lines.append(f"*{heading.group(2)}*" if heading else line)
     out = "\n".join(lines)
-    for index, code in enumerate(codes):
-        out = out.replace(_CODE_PLACEHOLDER.format(index), code)
-    return out
+    return _restore_codes(out, codes)
 
 
 def to_slack_mrkdwn(text: str) -> str:

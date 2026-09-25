@@ -395,14 +395,14 @@ def test_a_receiver_that_cannot_be_read_after_the_turn_stops_the_push(owner, mon
 
     (client, _events, turns), adapters = owner
     hook = _hook(client, deliver="telegram")
-    real = webhooks.RECEIVER.state
+    real = webhooks.RECEIVER.astate
     reads = []
 
-    def state():
+    async def astate():
         reads.append(1)
-        return None if len(reads) >= 3 else real()     # the read after the turn cannot be made
+        return None if len(reads) >= 3 else await real()   # the read after the turn cannot be made
 
-    monkeypatch.setattr(webhooks.RECEIVER, "state", state)
+    monkeypatch.setattr(webhooks.RECEIVER, "astate", astate)
     reply = _post(client, hook, {"text": "hi"})
     assert reply.status_code == 200 and turns == ["hi"]
     assert reply.json()["delivery"] == {"channel": "telegram", "ok": False,

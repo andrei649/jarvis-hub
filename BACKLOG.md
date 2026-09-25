@@ -14,6 +14,27 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H153 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H153e found no major, three minors and six nits:
+  - **Inline code spans were quadratic (MINOR-1).** `to_telegram_html` and `to_slack_mrkdwn` put each code span back with a `replace` over the whole text: 256,000 characters of `` `a` `` took 52 s, and a code-heavy 40,000-character Slack chunk about 1 s on the loop. The spans now go back in one pass (256,000 characters: 0.2 s). The test measures scaling, not an absolute bar.
+  - **The first-read waiters held worker threads (MINOR-2).** Every caller waiting for a fresh receiver's first read parked a thread of the default executor, and the wait comes before authentication. The router now awaits `RECEIVER.astate()`: who reads is decided on the loop, only the read runs on a thread, and a waiter holds none. So a start-up burst is still served and the pool stays free. A thread caller waits in its thread, at most four at once; a write, a reset or another store wakes the waiters (NIT-2).
+  - **Unpinned behaviours (MINOR-3, NIT-1).** A push now strips every format and control character but a newline, a tab, ZWJ and ZWNJ: the TAG plane ("ASCII smuggling"), invisible operators, the interlinear and musical format characters included. It also strips the blank characters (the Hangul fillers, CGJ, the Mongolian selectors, blank braille), and a subdivision flag emoji stays. The cut boundary, the router's quiet-hours end and the link bound have tests.
+  - **Nits:**
+    - an answer JSON cannot carry is answered as its text;
+    - the mutation record reads "all 40";
+    - a poller's failed read shows even while a newer request is out (`State`);
+    - the CHANGELOG notes that a workflow hook's answer no longer carries `result`.
+
+  Mutation: this round's 13 mutants (12 Python, 1 HUD) were all caught.
+
+  Records:
+  - H153 updated;
+  - 7 drifted rows re-read and re-stamped;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,539 → 14,588 (`tests/test_h153e_webhook_review.py` 49); vitest 1,456 → 1,458 (`panel-state` 2).
+
 - 2026-09-25 H315 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315f found four minors and four nits:

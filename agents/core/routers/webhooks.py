@@ -241,7 +241,7 @@ async def _receiver_refusal():
     off, and a store that cannot be read, both refuse. The refusal, or None to go on."""
     from agents.core.webhooks import RECEIVER
 
-    state = await asyncio.to_thread(RECEIVER.state)
+    state = await RECEIVER.astate()
     if state is True:
         return None
     if state is None:
@@ -295,19 +295,45 @@ def _ascii_title(text: str) -> str:
     return "".join(ch if ch.isascii() else "?" for ch in folded if not unicodedata.combining(ch))
 
 
-#: What changes how a pushed line reads without showing itself: bidi overrides, isolates
-#: and marks, the zero-width space, word joiners and invisible operators, the soft
-#: hyphen, the BOM, and every control character but a newline and a tab. A zero-width
-#: joiner and non-joiner stay (an emoji sequence, a Persian word).
-_HIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b\u200e\u200f"
-                     "\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
+#: Characters that render as nothing but are not format or control characters: the
+#: combining grapheme joiner, the Hangul fillers, Mongolian variation selectors and the
+#: blank braille pattern (review-H153e NIT-1).
+_BLANKS = "\u034f\u115f\u1160\u180b\u180c\u180d\u180f\u2800\u3164\uffa0"
+#: A zero-width joiner and non-joiner stay (an emoji sequence, a Persian word), and so do
+#: a newline and a tab.
+_KEPT_FORMAT = "\n\t\u200c\u200d"
+
+
+def _hidden_class() -> str:
+    """Every format (Cf) and control (Cc) character but :data:`_KEPT_FORMAT`, plus
+    :data:`_BLANKS`, as one regex character class of ranges: the bidi controls and marks,
+    zero-width spaces, word joiners, invisible operators, the soft hyphen, the BOM, the
+    interlinear annotation and musical format characters, and the TAG plane (the "ASCII
+    smuggling" alphabet). Planes 0, 1 and 14 hold every one of them."""
+    points = [cp for plane in (range(0x0000, 0x20000), range(0xE0000, 0xF0000)) for cp in plane
+              if (unicodedata.category(chr(cp)) in ("Cf", "Cc") and chr(cp) not in _KEPT_FORMAT)
+              or chr(cp) in _BLANKS]
+    ranges, start = [], None
+    for index, cp in enumerate(points):
+        if start is None:
+            start = cp
+        if index + 1 == len(points) or points[index + 1] != cp + 1:
+            ranges.append(re.escape(chr(start)) + ("" if start == cp else "-" + re.escape(chr(cp))))
+            start = None
+    return "[" + "".join(ranges) + "]"
+
+
+#: A subdivision flag emoji (🏴, TAG letters, CANCEL TAG: England, Scotland, Wales) is
+#: ordinary text, as heartbeat reads it; any other TAG character hides text.
+_FLAG_EMOJI = "\U0001F3F4[\U000E0030-\U000E0039\U000E0061-\U000E007A]{1,8}\U000E007F"
+_HIDDEN = re.compile(f"({_FLAG_EMOJI})|{_hidden_class()}")
 _SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def _visible(text: str) -> str:
     """*text* as the owner will read it: nothing hidden, and a lone surrogate (which no
     transport can encode) as U+FFFD. Linear time: no markup is rendered."""
-    return _SURROGATE.sub("\ufffd", _HIDDEN.sub("", text))
+    return _SURROGATE.sub("\ufffd", _HIDDEN.sub(lambda m: m.group(1) or "", text))
 
 
 def _record(store, hook_id: str, channel: str, ok: bool, reason: str = "") -> dict:
@@ -351,7 +377,7 @@ async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: b
         return _record(store, hook_id, channel, True)
     if not store.is_enabled(live):
         return _record(store, hook_id, channel, False, "the hook was switched off before its delivery: not sent")
-    receiver = await asyncio.to_thread(RECEIVER.state)
+    receiver = await RECEIVER.astate()
     if receiver is not True:
         return _record(store, hook_id, channel, False,
                        "the webhook receiver was switched off before this delivery: not sent" if receiver is False
@@ -442,7 +468,16 @@ def _encodable(value):
         return {_encodable(str(key)): _encodable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_encodable(item) for item in value]
-    return value
+    if value is None or isinstance(value, (bool, float)):
+        return value
+    if isinstance(value, int) and abs(value) < 10 ** 4000:
+        return value
+    # Anything else JSON cannot carry (a date, bytes, a set, an object, an int past the
+    # interpreter's digit limit) is answered as its text (review-H153e NIT-3).
+    try:
+        return _SURROGATE.sub("\ufffd", str(value))
+    except Exception:
+        return None
 
 
 def _answer(content: dict, status_code: int = 200):

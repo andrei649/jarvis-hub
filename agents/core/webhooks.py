@@ -240,6 +240,11 @@ RECEIVER_TTL = 1.0   # seconds a state read from the store is used without re-re
 #: Seconds a caller with nothing known waits for the read that is running (the first one
 #: after a start). A burst that arrives while it runs waits for its answer instead of
 #: being refused (H153 fourth review); a read slower than this still refuses, closed.
+#: At most this many callers wait for a receiver's first read at a time; the rest are
+#: refused, closed, at once, so a burst on a slow fresh receiver cannot park every worker
+#: thread of the default executor (review-H153e MINOR-2). The wait comes before any
+#: authentication, so the waiters can be anyone.
+RECEIVER_FIRST_READ_WAITERS = 4
 RECEIVER_FIRST_READ_WAIT = 2.0
 
 
@@ -262,9 +267,14 @@ class ReceiverSwitch:
       SQLite's busy timeout), every other caller gets the last state at once instead of
       reading too, so a burst of deliveries cannot hold every worker thread; a caller
       with no state known yet (the first read after a start) waits for that read, at
-      most :attr:`first_read_wait` seconds, and is refused, closed, after that;
+      most :attr:`first_read_wait` seconds, and is refused, closed, after that; at most
+      :data:`RECEIVER_FIRST_READ_WAITERS` threads wait at once, and any other is refused,
+      closed, at once; :meth:`astate`, which the router uses, waits on the event loop and
+      holds no thread, so a burst of deliveries at start waits for the read and is served;
+    - a write, a reset or another store wakes the waiters: the state is known (or not
+      theirs to wait for) without the read;
     - a read that a write, a reset or another store overtook while it ran is dropped;
-    - :meth:`state` blocks on SQLite: call it off the event loop.
+    - :meth:`state` blocks on SQLite: call it off the event loop, or await :meth:`astate`.
     """
 
     def __init__(self, ttl: float = RECEIVER_TTL, clock=time.monotonic) -> None:
@@ -274,6 +284,7 @@ class ReceiverSwitch:
         self._generation = 0
         self._reader: Optional[object] = None
         self._landed = threading.Event()
+        self._waiting = 0
         self.first_read_wait = RECEIVER_FIRST_READ_WAIT
         self.reset()
 
@@ -285,6 +296,7 @@ class ReceiverSwitch:
             self._generation += 1
             self._reader = None
             self._source = ""
+            self._landed.set()                    # a waiter has nothing left to wait for
 
     def expire(self) -> None:
         """The next :meth:`state` reads the store; the last state stays the fallback, and a
@@ -300,6 +312,7 @@ class ReceiverSwitch:
             self._generation += 1
             self._fresh_until = self._clock() + self._ttl
             self._source = self._store_path()
+            self._landed.set()                    # the state is known: wake the waiters
 
     @staticmethod
     def _store_path() -> str:
@@ -307,31 +320,35 @@ class ReceiverSwitch:
 
         return str(getattr(settings_db, "DB_PATH", ""))
 
-    def state(self) -> Optional[bool]:
-        """True on, False off, None never read and unreadable now (or its first read did
-        not land within :attr:`first_read_wait`)."""
-        from agents.core import settings_db
-
+    def _claim(self, *, count_waiter: bool):
+        """What a caller does now, decided under the lock with no I/O: ``("known", state)``,
+        ``("wait", event)`` (nothing known, a read is running) or ``("read", ticket)`` (this
+        caller reads the store). A sync waiter past :data:`RECEIVER_FIRST_READ_WAITERS` is
+        answered ``("known", None)``: refused, closed, at once."""
         source = self._store_path()
         with self._lock:
             if source != self._source:            # another settings store: nothing known
                 self._known, self._fresh_until, self._source = None, float("-inf"), source
                 self._generation += 1             # a read of the old store must not land
+                self._landed.set()                # nor keep anyone waiting on it
             if self._clock() < self._fresh_until:
-                return self._known
+                return "known", self._known
             if self._reader is not None:
                 if self._known is not None:
-                    return self._known            # the last state, at once
-                landed = self._landed             # nothing known: wait for the running read
-            else:
-                landed = None
-                generation = self._generation
-                reader = self._reader = object()
-                done = self._landed = threading.Event()
-        if landed is not None:
-            landed.wait(self.first_read_wait)
-            with self._lock:
-                return self._known
+                    return "known", self._known   # the last state, at once
+                if count_waiter:
+                    if self._waiting >= RECEIVER_FIRST_READ_WAITERS:
+                        return "known", None      # enough threads wait already: closed
+                    self._waiting += 1
+                return "wait", self._landed       # nothing known: wait for the running read
+            reader = self._reader = object()
+            done = self._landed = threading.Event()
+            return "read", (self._generation, reader, done)
+
+    def _run_read(self, ticket) -> Optional[bool]:
+        from agents.core import settings_db
+
+        generation, reader, done = ticket
         try:
             return self._read(settings_db, generation)
         finally:
@@ -339,6 +356,41 @@ class ReceiverSwitch:
                 if self._reader is reader:
                     self._reader = None
             done.set()
+
+    def state(self) -> Optional[bool]:
+        """True on, False off, None never read and unreadable now (or its first read did
+        not land within :attr:`first_read_wait`). Blocks: call it off the event loop, or
+        use :meth:`astate`."""
+        kind, value = self._claim(count_waiter=True)
+        if kind == "known":
+            return value
+        if kind == "read":
+            return self._run_read(value)
+        try:
+            value.wait(self.first_read_wait)
+        finally:
+            with self._lock:
+                self._waiting -= 1
+        with self._lock:
+            return self._known
+
+    async def astate(self) -> Optional[bool]:
+        """:meth:`state` for the event loop. The claim is made on the loop, so a burst that
+        arrives together has one reader, and a caller waiting for the first read waits on
+        the loop, holding no worker thread (review-H153e MINOR-2): only the read itself runs
+        off it."""
+        import asyncio
+
+        kind, value = self._claim(count_waiter=False)
+        if kind == "known":
+            return value
+        if kind == "read":
+            return await asyncio.to_thread(self._run_read, value)
+        deadline = time.monotonic() + self.first_read_wait
+        while not value.is_set() and time.monotonic() < deadline:
+            await asyncio.sleep(0.02)
+        with self._lock:
+            return self._known
 
     def _read(self, settings_db, generation: int) -> Optional[bool]:
         try:

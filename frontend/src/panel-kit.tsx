@@ -96,8 +96,10 @@ export function Card({ title, sub, live, onReload, children }: { title?: any; su
     </div>
   );
 }
-export const State = ({ e, loading, n }) => (loading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>loading…</div>
-  : e ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>offline · {e}</div>
+// An error shows even while a newer request is out: a poller slower than its interval is
+// always loading, and hid every failed poll behind "loading…" (review-H153e NIT-5).
+export const State = ({ e, loading, n }) => (e ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>offline · {e}</div>
+  : loading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>loading…</div>
   : n === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>nothing yet</div> : null);
 export const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
 /* --ink-2, not --ink-3, as the uncoloured default. Computed from the tokens:
