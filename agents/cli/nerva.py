@@ -246,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
                "  nerva chat -z \"what is on my calendar?\"\n"
                "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
                "  nerva chat -z -f prompt.txt --agent athena\n"
+               "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
@@ -266,6 +267,15 @@ def build_parser() -> argparse.ArgumentParser:
                       help="reasoning effort for this invocation only")
     chat.add_argument("--session", help="explicit existing conversation session")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("--image", action="append", metavar="PATH",
+                      help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
+                           "each); the turn goes to the hub's vision model only, never to an agent")
+    chat.add_argument("--clipboard-image", action="store_true",
+                      help="attach the image on the clipboard (wl-paste, xclip, pngpaste or "
+                           "PowerShell), as --image does")
+    chat.add_argument("--remote-vision", metavar="URL",
+                      help="acknowledge that the images go to this vision destination off this "
+                           "machine; it must match the destination the hub reports")
 
     send = verbs.add_parser(
         "send",
@@ -1570,6 +1580,9 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
 
+    if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
+        return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+
     body: dict[str, Any] = {"message": message}
     if ns.agent:
         body["agent"] = ns.agent
@@ -1640,6 +1653,183 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
 
     _write_answer(ctx, answer)
     return finish(EXIT_OK, status="completed", pending=pending)
+
+
+#: What one vision turn carries (agents/core/routers/composer_vision.py, the HUD's
+#: composer alike): up to eight rasters of up to 4 MiB each, and a 4 000-character question.
+VISION_MAX_IMAGES = 8
+VISION_MAX_BYTES = 4 * 1024 * 1024
+VISION_MAX_PROMPT = 4_000
+_RASTER_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_mime(raw: bytes) -> str | None:
+    """The raster type the bytes are, by their signature, never by a file name."""
+    for magic, mime in _RASTER_MAGIC:
+        if raw.startswith(magic):
+            return mime
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _read_image(path: str) -> tuple[bytes | None, str]:
+    """``(bytes, "")`` for a raster file of at most 4 MiB, else ``(None, why)``."""
+    target = Path(path).expanduser()
+    try:
+        if not target.is_file():
+            return None, f"--image {path}: not a file"
+        with target.open("rb") as fh:
+            raw = fh.read(VISION_MAX_BYTES + 1)
+    except OSError as exc:
+        return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
+    if len(raw) > VISION_MAX_BYTES:
+        return None, f"--image {path}: larger than 4 MiB"
+    if _image_mime(raw) is None:
+        return None, f"--image {path}: not a PNG, JPEG, GIF or WebP image"
+    return raw, ""
+
+
+def _clipboard_command(platform: str, environ: Mapping[str, str],
+                       which: Callable[[str], str | None]) -> list[str] | None:
+    """The fixed argv that prints the clipboard's image as PNG on this machine, or None."""
+    if platform == "darwin":
+        return ["pngpaste", "-"] if which("pngpaste") else None
+    if platform.startswith("win"):
+        exe = which("powershell") or which("pwsh")
+        if not exe:
+            return None
+        script = ("Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+                  "$i=[System.Windows.Forms.Clipboard]::GetImage();"
+                  "if($i){$m=New-Object System.IO.MemoryStream;"
+                  "$i.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);"
+                  "$o=[Console]::OpenStandardOutput();$o.Write($m.ToArray(),0,[int]$m.Length);$o.Flush()}")
+        return [exe, "-NoProfile", "-STA", "-Command", script]
+    if environ.get("WAYLAND_DISPLAY") and which("wl-paste"):
+        return ["wl-paste", "--no-newline", "--type", "image/png"]
+    if environ.get("DISPLAY") and which("xclip"):
+        return ["xclip", "-selection", "clipboard", "-target", "image/png", "-out"]
+    return None
+
+
+def _clipboard_image(environ: Mapping[str, str]) -> tuple[bytes | None, str]:
+    """``(bytes, "")`` for the clipboard's image, else ``(None, why)``. Nothing but the
+    platform's own clipboard reader runs, with a fixed argv and no shell."""
+    import shutil
+    import subprocess  # nosec B404  (a fixed argv, never a shell)
+
+    argv = _clipboard_command(sys.platform, environ, shutil.which)
+    if argv is None:
+        return None, ("--clipboard-image: no clipboard reader found (wl-paste or xclip on "
+                      "Linux, pngpaste on macOS, PowerShell on Windows); save the image and "
+                      "pass --image PATH")
+    try:
+        done = subprocess.run(argv, capture_output=True, timeout=10, check=False)  # noqa: S603  # nosec B603
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, f"--clipboard-image: {argv[0]} failed ({exc.__class__.__name__})"
+    raw = done.stdout or b""
+    if done.returncode != 0 or not raw:
+        return None, "--clipboard-image: the clipboard holds no image"
+    if len(raw) > VISION_MAX_BYTES:
+        return None, "--clipboard-image: the image is larger than 4 MiB"
+    if _image_mime(raw) is None:
+        return None, "--clipboard-image: the clipboard's content is not a PNG, JPEG, GIF or WebP image"
+    return raw, ""
+
+
+def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
+                 finish: Callable[..., int], oneshot: bool) -> int:
+    """H586 — the terminal's image turn: the HUD composer's, over the same route.
+
+    The images and the question go to POST /api/vlm/composer/describe, the configured
+    vision model's route, and never to /chat: no agent, session or tool plan sees them,
+    as in the HUD. The destination the hub reports is bound into the request, so a model
+    changed in between is refused (409), and a destination off this machine is used only
+    when --remote-vision names it (the HUD's per-destination acknowledgement)."""
+    import base64
+
+    def usage(why: str) -> int:
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
+
+    for flag, given in (("--agent", ns.agent), ("--session", getattr(ns, "session", None)),
+                        ("--reasoning", getattr(ns, "reasoning", None))):
+        if given:
+            return usage(f"{flag} does not apply to an image turn: it goes to the vision model "
+                         "only, never to an agent or a conversation")
+    if len(message) > VISION_MAX_PROMPT:
+        return usage(f"the question is {len(message):,} characters, and an image turn carries "
+                     f"up to {VISION_MAX_PROMPT:,}")
+    paths = list(getattr(ns, "image", None) or [])
+    count = len(paths) + (1 if getattr(ns, "clipboard_image", False) else 0)
+    if count > VISION_MAX_IMAGES:
+        return usage(f"{count} images given; one turn carries up to {VISION_MAX_IMAGES}")
+    images: list[str] = []
+    for path in paths:
+        raw, why = _read_image(path)
+        if raw is None:
+            return usage(why)
+        images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")
+    if getattr(ns, "clipboard_image", False):
+        raw, why = _clipboard_image(ctx.environ)
+        if raw is None:
+            return usage(why)
+        images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")
+
+    client = ctx.client()
+    try:
+        status = client.get("/api/vlm/composer/status")
+        if not isinstance(status, dict) or status.get("configured") is not True:
+            why = "no vision model is configured on the hub (Admin → vision model)"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_FAILED, status="failed", reason=why)
+        destination, binding = status.get("destination"), status.get("binding")
+        if not isinstance(destination, str) or not isinstance(binding, str):
+            why = "the hub's vision status is missing its destination"
+            ctx.err.write(f"{why}\n")
+            return finish(EXIT_FAILED, status="failed", reason=why)
+        local = status.get("local") is True
+        acknowledged = getattr(ns, "remote_vision", None)
+        if not local and acknowledged != destination:
+            return usage(f"the vision model is at {_plain(destination, 200)}, off this machine; "
+                         "the images go there only with --remote-vision set to that address")
+        where = "on this machine" if local else "off this machine"
+        ctx.err.write(f"asking {_plain(str(status.get('model') or '?'), 80)} at "
+                      f"{_plain(destination, 200)} ({where}) about {len(images)} image(s)\n")
+        reply = client.post("/api/vlm/composer/describe", {
+            "prompt": message, "images": images, "expected_destination": destination,
+            "expected_binding": binding, "remote_ack": not local,
+        })
+    except KeyboardInterrupt:
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        raise
+    except HubUnavailable:
+        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+        raise
+    except HubError as exc:
+        if exc.status == 401 or (exc.status == 403 and not exc.reason.startswith("Acknowledge")):
+            finish(EXIT_AUTH, status="unauthorised", reason=str(exc))
+            raise
+        ctx.err.write(f"{exc.reason}\n")
+        return finish(EXIT_FAILED, status="failed", reason=str(exc))
+
+    answer = _answer_text((reply or {}).get("response", "") if isinstance(reply, dict) else "")
+    if ns.json:
+        ctx.dump(reply)
+        return finish(EXIT_OK if answer.strip() else EXIT_FAILED,
+                      status="completed" if answer.strip() else "refused")
+    if not answer.strip():
+        why = "the vision model returned an empty answer"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_FAILED if oneshot else EXIT_OK, status="refused", reason=why,
+                      completed=False)
+    _write_answer(ctx, answer)
+    return finish(EXIT_OK, status="completed")
 
 
 #: What one send carries, subject included — the outbound seam's own bound.

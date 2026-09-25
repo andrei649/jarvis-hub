@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H586 image input from the terminal: `nerva chat --image PATH` / `--clipboard-image` (partial → equivalent, #1207; headline 145 → 146/697).
+
+  The HUD half (paste, drop and choose, the destination-bound vision route) was already in; the terminal had no image path. Now:
+  - **`nerva chat --image PATH`** (repeatable, up to eight, 4 MiB each) and **`--clipboard-image`** send the images and the question to the hub's vision route (`POST /api/vlm/composer/describe`), the HUD composer's own, and **never to `/chat`**: no agent, session or tool plan sees them, so `--agent`, `--session` and `--reasoning` are refused with images. A file is sent by the type its bytes say, never its name.
+  - **The destination is bound and acknowledged.** The verb reads the hub's vision status and sends its destination and binding with the images (a model changed in between is refused, 409). A destination off this machine is used only when `--remote-vision URL` names it, the terminal's form of the HUD's per-destination acknowledgement.
+  - **The clipboard** is read by the platform's own reader with a fixed argv, no shell and a 10 s timeout: wl-paste (Wayland), xclip (X11), pngpaste (macOS), PowerShell (Windows); with none, the verb says to save the image and pass `--image`.
+  - `-z`, `--json` and `--usage-file` keep their meaning. Test manual: CHT-115, CHT-116. 20 mutants, all caught (two after their cases were added: a clipboard reader that fails but prints, a RIFF file that is not WebP). The HUD composer's two vitest files (10 cases) now run here too.
+  Tests: backend 14,935 → 14,965 (`tests/test_nerva_chat_image.py` 30); vitest unchanged at 1,462.
+
 - 2026-09-25 H273 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H273h found no major, four minors and five nits; the sixth round's fixes held (the memo cannot open access; the recovery writes the hub's store in six postures):

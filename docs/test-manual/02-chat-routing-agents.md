@@ -76,6 +76,18 @@
 - **Also acceptable:** a new empty session on boot **plus** the old one resumable. Silent loss of the old session is the failure.
 - **FAIL if:** the pre-restart session is neither listed nor resumable → **MAJOR**.
 
+#### CHT-115 — A terminal image turn goes to the vision model only
+- **Surface:** `nerva chat --image PATH` / `--clipboard-image` → `GET /api/vlm/composer/status` + `POST /api/vlm/composer/describe` · **Auto:** ✅tests/test_nerva_chat_image.py
+- **Steps:** 1) with a local vision model configured (Admin → vision model), save a screenshot as `shot.png`; 2) `nerva chat -z --image shot.png "what does this error say?"`; 3) copy an image to the clipboard and run `nerva chat -z --clipboard-image "what is this?"`; 4) `nerva chat -z --image shot.png --agent athena "x"`; 5) rename a text file to `notes.png` and pass it.
+- **Expected:** 2 and 3 print only the vision model's answer on stdout, exit 0, and stderr names the model and its destination (`on this machine`); the hub log shows no `/chat` request for these turns and the session transcript gains nothing. 4 exits 2 (an image turn takes no agent, session or reasoning); 5 exits 2 (`not a PNG, JPEG, GIF or WebP image`), with no request made.
+- **FAIL if:** an image or its question reaches `/chat`, an agent or a session, or a file is sent by its name rather than its bytes → **MAJOR**.
+
+#### CHT-116 — A remote vision destination needs its acknowledgement
+- **Surface:** `nerva chat --image PATH --remote-vision URL` · **Auto:** ✅tests/test_nerva_chat_image.py
+- **Steps:** 1) configure a vision model off this machine; 2) `nerva chat -z --image shot.png "x"`; 3) the same with `--remote-vision https://other.example/v1`; 4) the same with `--remote-vision` set to the destination step 2 printed.
+- **Expected:** 2 and 3 exit 2 naming the destination and `--remote-vision`, and send nothing; 4 answers and stderr says `off this machine`. Changing the model between the status read and the send is refused by the route (409, exit 1).
+- **FAIL if:** an image leaves the machine without an acknowledgement naming that destination → **BLOCKER**.
+
 ---
 
 ## 02.2 Per-turn provenance metadata — the fabrication tell
