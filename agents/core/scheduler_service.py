@@ -39,6 +39,7 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
+        self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
         self.schedule_llm_backend_refresh()
@@ -183,6 +184,24 @@ class SchedulerService:
             logger.info("Scheduled data-retention sweep: 03:30 daily (no-op unless retention.enabled)")
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
+
+    def schedule_exec_cache_prune(self):
+        """Hourly prune of the sandbox's managed run-directory cache (H667).
+
+        Always on: the cache is the hub's own (``<data root>/cache/exec``), and a run
+        directory is removed only when its newest file is older than
+        ``security.sandbox_temp_max_age_hours`` (72 by default) and no sandbox holds it.
+        A root the owner chose (``JARVIS_EXEC_TEMP_DIR``, ``security.sandbox_temp_dir``)
+        is never pruned.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_exec_cache_prune, "interval", hours=1,
+                          id="exec-cache-prune", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the sandbox cache prune: {e}")
 
     def schedule_memory_maintenance(self):
         """Nightly LivingMemory consolidation + decay inspection (O26-P2.2).
@@ -458,6 +477,21 @@ class SchedulerService:
             decay_summary.get("candidates"),
         )
         return result
+
+    async def run_exec_cache_prune(self):
+        """Prune the managed sandbox cache off the event loop; the live sandbox is kept."""
+        from agents.core import exec_cache
+
+        try:
+            root, managed = exec_cache.resolve_root()
+            sandbox = getattr(self._orch, "sandbox", None)
+            live = [sandbox.work_dir] if getattr(sandbox, "work_dir", None) else []
+            return await asyncio.to_thread(
+                exec_cache.prune, root, managed=managed,
+                max_age_hours=exec_cache.max_age_hours(), live=live)
+        except Exception as e:
+            logger.warning(f"Sandbox cache prune failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_retention_purge(self):
         """Run the retention sweep off the event loop (file + SQLite I/O)."""

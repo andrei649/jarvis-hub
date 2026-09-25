@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H667 sandbox files off `/tmp`, and a prune that touches only its own cache (missing → equivalent, #1207; headline 146 → 147/697).
+
+  The sandbox made its run directory with `tempfile.mkdtemp()` (the system temp root, tmpfs on many distributions) and nothing ever removed it. Now:
+  - **Where:** `JARVIS_EXEC_TEMP_DIR`, then Admin → `security.sandbox_temp_dir` (absolute paths), else the managed cache `<data root>/cache/exec`; each run directory is a private `sandbox-*` (0700). An unusable root falls back to the system temp for that run, with a warning, unmanaged (`agents/core/exec_cache.py`).
+  - **The prune:** hourly (`exec-cache-prune`), managed cache only. A run directory is aged as one group (its newest file anywhere inside), removed after `security.sandbox_temp_max_age_hours` (72 by default) only when no sandbox holds its lock (flock on POSIX, an open handle on Windows) and it is not the hub's own. It is claimed by a rename first, so nothing is half-deleted; links are never followed; entries it did not name are never touched; a root the owner chose is never bulk-deleted.
+  - Not taken: collision-safe task-id directory names (no persistent per-task sandboxes exist; mkdtemp names are unique).
+  Test manual: PNB-167, PNB-168. 25 mutants, all caught (four after their cases were added: a link's old target, a deep fresh file under old directories, an unopenable lock, the registration at start). Records: 36 rows re-stamped; H288's bare `:699` corrected to `:701` by hand; the two scheduler binding pins moved (`orchestrator_bindings.py`).
+  Tests: backend 14,965 → 14,997 (`tests/test_exec_cache.py` 32); vitest unchanged at 1,462.
+
 - 2026-09-25 H586 image input from the terminal: `nerva chat --image PATH` / `--clipboard-image` (partial → equivalent, #1207; headline 145 → 146/697).
 
   The HUD half (paste, drop and choose, the destination-bound vision route) was already in; the terminal had no image path. Now:

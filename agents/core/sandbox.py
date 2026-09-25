@@ -14,8 +14,8 @@ import os
 import platform
 import secrets
 import sys
-import tempfile
 import time
+import weakref
 from pathlib import Path, PurePath, PurePosixPath
 
 logger = logging.getLogger("jarvis.sandbox")
@@ -57,7 +57,20 @@ class Sandbox:
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.max_output_bytes = max(8, int(max_output_bytes))
-        self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
+        # H667: a run directory under the managed cache (<data root>/cache/exec), or the
+        # owner's chosen root, never the system temp root (tmpfs on many distros). Its
+        # lock, held while this sandbox lives, keeps the cache's prune away from it.
+        self._work_lock = None
+        self.work_dir_managed = False
+        if work_dir:
+            self.work_dir = Path(work_dir)
+        else:
+            from . import exec_cache
+
+            self.work_dir, self.work_dir_managed = exec_cache.new_work_dir()
+            self._work_lock = exec_cache.hold(self.work_dir)
+            if self._work_lock is not None:
+                weakref.finalize(self, os.close, self._work_lock)
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
         # H11.4 — WASM (wasmtime) backend: isolation without a Docker daemon.

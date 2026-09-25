@@ -203,6 +203,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
     dict(category="security",key="sandbox_timeout",  value=30,                    label="Sandbox timeout (s)",kind="number"),
     dict(category="security",key="sandbox_memory",   value=256,                   label="Sandbox max memory (MB)",kind="number"),
+    dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; empty = the managed cache under the data root, pruned after the age below; a directory you choose is never pruned)", kind="text"),
+    dict(category="security",key="sandbox_temp_max_age_hours", value=72,          label="Prune the managed sandbox cache's idle run directories after (hours)", kind="number"),
     # memory
     dict(category="memory",  key="max_turns",        value=100,                   label="Max turns per session",kind="number"),
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
