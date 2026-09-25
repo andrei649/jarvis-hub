@@ -747,8 +747,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
         settings.put_category(category, {key: value})
-        # A stored secret is echoed masked, as `config get` shows it: never into the
-        # terminal's scrollback (review-H465e nit 3).
+        # A stored secret is echoed back masked, as `config get` shows it (review-H465e
+        # nit 3); the value typed on this command line is the shell's to keep or not.
         shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
         ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  (a running hub picks it up within 30 s)")
         return EXIT_OK

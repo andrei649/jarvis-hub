@@ -76,7 +76,7 @@ def test_the_cut_off_refusal_needs_most_of_the_day(replies, reason):
 
 def test_the_cut_off_refusal_does_not_state_a_cut_off_as_fact():
     text = _REFINE_REFUSALS["daily_budget_cut_off"]
-    assert text.startswith("Most of today's") and "if they were cut off" in text
+    assert text.startswith("At least half of today's") and "if they were cut off" in text
 
 
 # ── m-2: the survivors ───────────────────────────────────────────────────────────
@@ -229,8 +229,10 @@ def test_a_burst_of_turns_keeps_the_cadence():
         return await asyncio.gather(*(reviewer.run("hi", "hello") for _ in range(4)))
 
     results = asyncio.run(burst())
-    assert len(llm.prompts) == 1
-    assert [r["reason"] for r in results if not r["ran"]] == ["cadence_n"] * 3
+    # Two passes, as six turns one at a time give: a pass uses up only the turns that
+    # admitted it (review-H465f nit 2).
+    assert len(llm.prompts) == 2
+    assert [r["reason"] for r in results if not r["ran"]] == ["cadence_n"] * 2
 
 
 def test_an_idle_gap_burst_runs_once():

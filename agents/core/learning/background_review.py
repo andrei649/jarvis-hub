@@ -136,9 +136,10 @@ def _focus_line(focus: str) -> str:
 #: review_max_facts of 0 also switched corrections off, and the reply said "nothing").
 MAX_CORRECTIONS = 3
 
-#: A bracketed ``[… error …]``, closed: an unclosed ``[Note: I hit an error …`` is prose
-#: (review-H465e nit 7).
-_BACKEND_ERROR = re.compile(r'\[(?:[A-Za-z][^\]\[{"\n]{0,80})?error[^\]]*\]', re.IGNORECASE)
+#: A bracketed ``[… error …]``, closed on its own line and by its own bracket: an unclosed
+#: ``[Note: I hit an error …``, or one a later ``[1]`` or link would close, is prose
+#: (review-H465e nit 7, review-H465f nit 3).
+_BACKEND_ERROR = re.compile(r'\[(?:[A-Za-z][^\]\[{"\n]{0,80})?error[^\]\[\n]*\]', re.IGNORECASE)
 
 
 def _shipped(path) -> bool:
@@ -262,6 +263,7 @@ class BackgroundReviewer:
         self._warned_budget: object = None
         self._quiet_day = ""          # the day a per-turn cut-off was last logged
         self._day_cut_offs = 0        # today's per-turn passes the model cut off
+        self._demand_unit_day: str | None = None
 
     def _budget(self) -> int:
         """The day's review budget. 0 means no reviews. A value that is not a number, or
@@ -273,6 +275,13 @@ class BackgroundReviewer:
         if raw is None or raw == "":
             return 20
         value = bounded_learning_int("review_daily_budget", raw, -1)
+        if value == 0:
+            try:
+                zero = float(raw) == 0
+            except (TypeError, ValueError):
+                zero = True
+            if not zero:                 # a hand-edited -0.5 or 0.9 is not "reviews off"
+                value = -1               # (review-H465f nit 5)
         if value < 0:
             if self._warned_budget != repr(raw):      # once per value (NaN != NaN, its repr is equal)
                 self._warned_budget = repr(raw)
@@ -346,7 +355,7 @@ class BackgroundReviewer:
             reason = "daily_budget_cut_off" if cut and 2 * cut >= self._day_count else "daily_budget"
             return {"ran": False, "reason": reason, "actions": []}
         self._on_demand = True
-        spent_before, spent_day = self._day_count, self._day
+        self._demand_unit_day = None      # set by _run on the day it spends the unit
         try:
             # The per-turn cadence is the per-turn reviews' own: an owner's /refine
             # neither resets it nor delays the next one (review-H465 nit 3).
@@ -355,17 +364,23 @@ class BackgroundReviewer:
                          cadence=False, on_demand=True),
                 timeout=REFINE_TIMEOUT_S)
         except TimeoutError:
-            if self._day == spent_day:                             # a unit of that day
-                self._day_count = min(self._day_count, spent_before)   # no review was had
+            self._refund_demand_unit()                              # no review was had
             result = {"ran": False, "reason": "llm_timeout", "actions": []}
             self.last_result = result
             return result
         except asyncio.CancelledError:
-            if self._day == spent_day:
-                self._day_count = min(self._day_count, spent_before)   # review-H465b nit 6
+            self._refund_demand_unit()                              # review-H465b nit 6
             raise
         finally:
             self._on_demand = False
+
+    def _refund_demand_unit(self) -> None:
+        """Give back the unit a /refine that timed out or was cancelled spent, on the day
+        _run spent it: never one it did not spend, never the next day's (review-H465f
+        nit 1: the day taken before _run rolled could only differ where it was wrong)."""
+        day, self._demand_unit_day = self._demand_unit_day, None
+        if day is not None and day == self._day:
+            self._day_count = max(0, self._day_count - 1)
 
     async def run(self, user_text: str, assistant_text: str, history: str = "", *,
                   focus: str = "", context_chars: int = 6000, cadence: bool = True,
@@ -397,9 +412,15 @@ class BackgroundReviewer:
         if cadence and (refused := self._cadence_refusal()):
             return {"ran": False, "reason": refused, "actions": []}
         if cadence:
-            self._turns_since = 0
+            # A pass uses up the turns that admitted it and no more: in a burst, the turns
+            # after it still count toward the next pass (review-H465f nit 2).
+            every_n = str(self._get("learning.review_cadence", "every_turn") or "") == "every_n_turns"
+            self._turns_since = (max(0, self._turns_since - self._number("learning.review_every_n", 3))
+                                 if every_n else 0)
             self._last_run_ts = self._now()
         self._day_count += 1
+        if on_demand:
+            self._demand_unit_day = self._day
         # The day this pass spent its unit on: a pass still waiting on the model at
         # midnight refunds or counts against that day, never the next (review-H465e nit 4).
         spent_day = self._day

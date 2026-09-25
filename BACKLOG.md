@@ -14,6 +14,27 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465f found no major, no minor and seven nits; the fifth round's fixes held and its nine survivors are killed:
+  - a `/refine` that times out or is cancelled refunds its unit on the day `_run` spent it (the day taken before `_run` rolled could only differ where it was wrong);
+  - a pass uses up only the turns that admitted it, so a burst of turns gets the passes the same turns one at a time would (2 for 6 turns at every 3, not 1);
+  - an `[… error` closed only by a later `[1]` or link is prose, not "no local model";
+  - the refusal says "at least half", as the rule is;
+  - a hand-edited budget fraction below one (-0.5, 0.9) is not "reviews off": it warns once and 20 is used;
+  - the `config set` comment claims only what the code does (the typed value is the shell's);
+  - the H465f bullet's H456 wording is corrected (two of the three citations were stale).
+  - Older, outside the row: `mcp.servers` headers (bearer tokens) print in the clear through `nerva config`; noted for the MCP row.
+
+  Mutation: this round's 6 mutants: four caught, two equivalent (the refund's day check and its reset).
+
+  Records:
+  - H465 rewritten;
+  - 57 drifted rows re-read and re-stamped;
+  - GOV-257 names the new tests.
+
+  Tests: backend 14,865 → 14,883 (`tests/test_h465g_refine_review.py` 18); vitest unchanged at 1,462.
+
 - 2026-09-25 H273 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H273g found no major, five minors and six nits; the fifth round's fixes held:
@@ -75,7 +96,7 @@
 
   Records:
   - H465 rewritten;
-  - 87 drifted rows re-read and re-stamped; H456's CLI citations (already stale) pointed at the `--toolsets` lines;
+  - 87 drifted rows re-read and re-stamped; H456's CLI citations pointed at the `--toolsets` lines (two of the three were already stale);
   - GOV-257 extended.
 
   Tests: backend 14,803 → 14,837 (`tests/test_h465f_refine_review.py` 34); vitest unchanged at 1,461.
