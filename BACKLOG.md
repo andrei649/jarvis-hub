@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H586 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H586 found no major, six minors and nine nits (no leak to /chat, the acknowledgement and the 409 held):
+  - **A slow model read as "no hub" (m1).** The describe call used the client's 30 s; it now waits 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn (exit 1), not a missing hub.
+  - **The clipboard was buffered whole (m2).** The reader's output is read no further than 4 MiB (+1) within 10 s; a reader that says more or hangs is killed.
+  - **A refused raster lost its reason (m3).** The vision route answers a refused body with its first reason as `{error, reason}`, never FastAPI's 422 that echoed the images back (11 MB for two), and the CLI client reads a validation reason too.
+  - **PowerShell from the current directory (m4).** Windows PowerShell comes from the system directory, else a PATH search that leaves out `.` and the working directory.
+  - **Survivors (m5)** pinned: a status without local/destination/binding, the bounded read, exactly 4 MiB, GIF87a, `~`, receipts on no-hub and interrupt, `--json`/plain empty answers, the argv per platform (the PowerShell script's PNG and -STA).
+  - **Platforms (m6).** macOS without pngpaste reads the clipboard through osascript (`«data PNGf…»`); WSL through Windows PowerShell interop.
+  - **Nits.** `--remote-vision` alone is refused; the address is compared as the hub names it (case, default port, trailing slash); "the hub's machine"; the reply is checked like the HUD's (ok, a string of at most 128 KiB); a file is opened once without blocking (a FIFO never hangs). Known limits: the receipt's model stays null; the route's own 403 is told apart by its message.
+  35 mutants, all caught (one after its case was added: a reader that says too much and keeps its pipe open). Test manual: CHT-115, CHT-116 updated. 49 rows re-stamped.
+  Tests: backend 14,997 → 15,047 (`tests/test_h586b_image_review.py` 50); vitest unchanged at 1,462.
+
 - 2026-09-25 H667 sandbox files off `/tmp`, and a prune that touches only its own cache (missing → equivalent, #1207; headline 146 → 147/697).
 
   The sandbox made its run directory with `tempfile.mkdtemp()` (the system temp root, tmpfs on many distributions) and nothing ever removed it. Now:

@@ -10,13 +10,38 @@ import sqlite3
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
 
-router = APIRouter(tags=["multimodal"], dependencies=[Depends(user_guard)])
+
+class _BoundedValidationRoute(APIRoute):
+    """A refused body is answered with its first reason, never FastAPI's default 422,
+    which echoes every rejected image back (megabytes) and hides the reason under
+    ``detail[0].msg`` (review-H586 m3). The HUD and the CLI both read ``error``."""
+
+    def get_route_handler(self):
+        route_handler = super().get_route_handler()
+
+        async def bounded_route_handler(request: Request):
+            try:
+                return await route_handler(request)
+            except RequestValidationError as exc:
+                errors = exc.errors()
+                first = errors[0].get("msg", "") if errors and isinstance(errors[0], dict) else ""
+                reason = str(first).removeprefix("Value error, ")[:200] or "invalid request"
+                return nocache_json({"error": reason, "reason": "vlm_invalid_request"},
+                                    status_code=422)
+
+        return bounded_route_handler
+
+
+router = APIRouter(tags=["multimodal"], dependencies=[Depends(user_guard)],
+                   route_class=_BoundedValidationRoute)
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_URI = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 32
 # Accept ordinary 4K screenshots/panoramas, bound decode before allocation, then

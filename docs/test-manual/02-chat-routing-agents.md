@@ -77,15 +77,15 @@
 - **FAIL if:** the pre-restart session is neither listed nor resumable → **MAJOR**.
 
 #### CHT-115 — A terminal image turn goes to the vision model only
-- **Surface:** `nerva chat --image PATH` / `--clipboard-image` → `GET /api/vlm/composer/status` + `POST /api/vlm/composer/describe` · **Auto:** ✅tests/test_nerva_chat_image.py
+- **Surface:** `nerva chat --image PATH` / `--clipboard-image` → `GET /api/vlm/composer/status` + `POST /api/vlm/composer/describe` · **Auto:** ✅tests/test_nerva_chat_image.py, tests/test_h586b_image_review.py
 - **Steps:** 1) with a local vision model configured (Admin → vision model), save a screenshot as `shot.png`; 2) `nerva chat -z --image shot.png "what does this error say?"`; 3) copy an image to the clipboard and run `nerva chat -z --clipboard-image "what is this?"`; 4) `nerva chat -z --image shot.png --agent athena "x"`; 5) rename a text file to `notes.png` and pass it.
-- **Expected:** 2 and 3 print only the vision model's answer on stdout, exit 0, and stderr names the model and its destination (`on this machine`); the hub log shows no `/chat` request for these turns and the session transcript gains nothing. 4 exits 2 (an image turn takes no agent, session or reasoning); 5 exits 2 (`not a PNG, JPEG, GIF or WebP image`), with no request made.
+- **Expected:** 2 and 3 print only the vision model's answer on stdout, exit 0, and stderr names the model and its destination (`on the hub's machine`); the hub log shows no `/chat` request for these turns and the session transcript gains nothing. 4 exits 2 (an image turn takes no agent, session or reasoning); 5 exits 2 (`not a PNG, JPEG, GIF or WebP image`), with no request made. A file whose signature passes but the hub refuses (a truncated PNG, wider than 8192 px) exits 1 with the hub's reason (`invalid, animated or excessive raster image`), and the hub's answer never echoes the image back. A slow local model (over 30 s) still answers: the turn waits up to 240 s, and a model slower than that is a failed turn (exit 1), never `no hub` (exit 3). On macOS without pngpaste the clipboard is read through osascript; under WSL through Windows PowerShell.
 - **FAIL if:** an image or its question reaches `/chat`, an agent or a session, or a file is sent by its name rather than its bytes → **MAJOR**.
 
 #### CHT-116 — A remote vision destination needs its acknowledgement
-- **Surface:** `nerva chat --image PATH --remote-vision URL` · **Auto:** ✅tests/test_nerva_chat_image.py
+- **Surface:** `nerva chat --image PATH --remote-vision URL` · **Auto:** ✅tests/test_nerva_chat_image.py, tests/test_h586b_image_review.py
 - **Steps:** 1) configure a vision model off this machine; 2) `nerva chat -z --image shot.png "x"`; 3) the same with `--remote-vision https://other.example/v1`; 4) the same with `--remote-vision` set to the destination step 2 printed.
-- **Expected:** 2 and 3 exit 2 naming the destination and `--remote-vision`, and send nothing; 4 answers and stderr says `off this machine`. Changing the model between the status read and the send is refused by the route (409, exit 1).
+- **Expected:** 2 and 3 exit 2 naming the destination and `--remote-vision`, and send nothing; 4 answers and stderr says `off the hub's machine`. The address is compared as the hub names it: a trailing slash, the scheme or host in capitals, or the default port spelled out still match; another path, scheme or port does not. `--remote-vision` without an image is refused (exit 2). Changing the model between the status read and the send is refused by the route (409, exit 1).
 - **FAIL if:** an image leaves the machine without an acknowledgement naming that destination → **BLOCKER**.
 
 ---

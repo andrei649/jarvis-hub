@@ -39,8 +39,9 @@ class Fake:
         self.calls.append(("GET", path, None))
         return self.status
 
-    def post(self, path, body=None):
+    def post(self, path, body=None, *, timeout=None):
         self.calls.append(("POST", path, body))
+        self.timeout = timeout
         if self.error:
             raise self.error
         return {"ok": True, "response": self.answer, "model": "vision-test", "local": True}
@@ -61,7 +62,7 @@ class Routed:
         self.paths.append(path)
         return self._answer(self.client.get(path))
 
-    def post(self, path, body=None):
+    def post(self, path, body=None, *, timeout=None):
         self.paths.append(path)
         return self._answer(self.client.post(path, json=body))
 
@@ -92,7 +93,8 @@ def test_an_image_turn_goes_to_the_vision_route_never_to_chat(png):
     assert body["images"] == [PNG] and body["prompt"] == "what is shown?"
     assert body["expected_destination"] == LOCAL["destination"] and body["expected_binding"] == "b" * 64
     assert body["remote_ack"] is False
-    assert "vision-test" in err and "on this machine" in err
+    assert "vision-test" in err and "on the hub's machine" in err
+    assert hub.timeout == nerva.VISION_TIMEOUT
 
 
 def test_the_real_route_answers_the_cli(setup, png):  # noqa: F811
@@ -147,7 +149,7 @@ def test_a_remote_acknowledgement_names_the_destination(png):
     assert code == nerva.EXIT_USAGE and len(hub.calls) == 1
     code, out, err = _run(["-z", "--image", str(png), "--remote-vision", "https://vision.example/v1",
                            "what?"], hub)
-    assert code == nerva.EXIT_OK and out == "A screenshot.\n" and "off this machine" in err
+    assert code == nerva.EXIT_OK and out == "A screenshot.\n" and "off the hub's machine" in err
     assert hub.calls[-1][2]["remote_ack"] is True
 
 
@@ -229,30 +231,32 @@ def test_the_receipt_and_json(png, tmp_path):
 
 @pytest.mark.parametrize("platform,environ,tools,first", [
     ("darwin", {}, {"pngpaste"}, "pngpaste"),
-    ("win32", {}, {"powershell"}, "powershell"),
+    ("win32", {"PATH": "/opt/ps"}, {"powershell"}, "powershell"),
     ("linux", {"WAYLAND_DISPLAY": "wayland-0"}, {"wl-paste", "xclip"}, "wl-paste"),
     ("linux", {"DISPLAY": ":0"}, {"wl-paste", "xclip"}, "xclip"),
     ("linux", {}, {"wl-paste", "xclip"}, None),
     ("darwin", {}, set(), None),
 ])
 def test_the_clipboard_reader_is_the_platforms_own(platform, environ, tools, first):
-    argv = nerva._clipboard_command(platform, environ, lambda name: f"/bin/{name}" if name in tools else None)
+    argv = nerva._clipboard_command(platform, environ,
+                                    lambda name, path=None: f"/bin/{name}" if name in tools else None,
+                                    exists=lambda path: False)
     assert (argv[0].rsplit("/", 1)[-1] if argv else None) == first
 
 
 def _clipboard(monkeypatch, stdout, returncode=0):
     import shutil
-    import subprocess
 
     ran = []
 
-    def run(argv, **kwargs):
-        ran.append((argv, kwargs))
-        return SimpleNamespace(stdout=stdout, returncode=returncode)
+    def reader(argv, limit, deadline=10.0):
+        ran.append((argv, limit, deadline))
+        return returncode, stdout[: limit + 1], ""
 
     monkeypatch.setattr(nerva.sys, "platform", "linux")
-    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(nerva, "_is_wsl", lambda: False)
+    monkeypatch.setattr(shutil, "which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(nerva, "_run_reader", reader)
     return ran
 
 
@@ -262,8 +266,9 @@ def test_the_clipboard_image_is_attached(monkeypatch):
     code, out, _err = _run(["-z", "--clipboard-image", "what?"], hub, environ={"DISPLAY": ":0"})
     assert code == nerva.EXIT_OK and out == "A screenshot.\n"
     assert hub.calls[1][2]["images"] == [PNG]
-    argv, kwargs = ran[0]
-    assert argv[0] == "xclip" and kwargs.get("timeout") and "shell" not in kwargs
+    argv, limit, deadline = ran[0]
+    assert argv == ["xclip", "-selection", "clipboard", "-target", "image/png", "-out"]
+    assert limit == nerva.VISION_MAX_BYTES and deadline == 10.0
 
 
 @pytest.mark.parametrize("stdout,returncode,said", [
@@ -283,14 +288,15 @@ def test_no_clipboard_reader_says_what_to_do(monkeypatch):
     import shutil
 
     monkeypatch.setattr(nerva.sys, "platform", "linux")
-    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(nerva, "_is_wsl", lambda: False)
+    monkeypatch.setattr(shutil, "which", lambda name, path=None: None)
     code, _out, err = _run(["-z", "--clipboard-image", "what?"], Fake(), environ={})
     assert code == nerva.EXIT_USAGE and "--image PATH" in err
 
 
 def test_a_turn_without_images_is_unchanged():
     class Chat(Fake):
-        def post(self, path, body=None):
+        def post(self, path, body=None, *, timeout=None):
             self.calls.append(("POST", path, body))
             return {"reply": "hello"}
 

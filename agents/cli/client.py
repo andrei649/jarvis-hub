@@ -167,13 +167,14 @@ class HubClient:
             headers["x-user-token"] = self.user_token
         return headers
 
-    def request(self, method: str, path: str, body: Any = None) -> Any:
+    def request(self, method: str, path: str, body: Any = None, *,
+                timeout: float | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}{path}", data=data, method=method, headers=self._headers()
         )
         try:
-            with self._opener(request, timeout=self._timeout) as response:
+            with self._opener(request, timeout=self._timeout if timeout is None else timeout) as response:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raise HubError(exc.code, _error_reason(exc)) from None
@@ -192,8 +193,10 @@ class HubClient:
     def get(self, path: str) -> Any:
         return self.request("GET", path)
 
-    def post(self, path: str, body: Any = None) -> Any:
-        return self.request("POST", path, body if body is not None else {})
+    def post(self, path: str, body: Any = None, *, timeout: float | None = None) -> Any:
+        """*timeout* is this call's own, for a route that waits on a model longer than
+        the client's default (the vision turn: review-H586 m1)."""
+        return self.request("POST", path, body if body is not None else {}, timeout=timeout)
 
 
 def _error_reason(exc: urllib.error.HTTPError) -> str:
@@ -206,4 +209,10 @@ def _error_reason(exc: urllib.error.HTTPError) -> str:
             value = payload.get(key)
             if isinstance(value, str) and value:
                 return value
+        # FastAPI's validation answer: the first reason, never the rejected input.
+        detail = payload.get("detail")
+        if isinstance(detail, list) and detail and isinstance(detail[0], dict):
+            msg = detail[0].get("msg")
+            if isinstance(msg, str) and msg:
+                return msg.removeprefix("Value error, ")[:200]
     return exc.reason if isinstance(exc.reason, str) else str(exc.code)

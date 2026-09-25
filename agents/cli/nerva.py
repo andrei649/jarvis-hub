@@ -271,11 +271,11 @@ def build_parser() -> argparse.ArgumentParser:
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
                            "each); the turn goes to the hub's vision model only, never to an agent")
     chat.add_argument("--clipboard-image", action="store_true",
-                      help="attach the image on the clipboard (wl-paste, xclip, pngpaste or "
-                           "PowerShell), as --image does")
+                      help="attach the image on the clipboard (wl-paste, xclip, pngpaste, "
+                           "osascript, or PowerShell on Windows and WSL), as --image does")
     chat.add_argument("--remote-vision", metavar="URL",
-                      help="acknowledge that the images go to this vision destination off this "
-                           "machine; it must match the destination the hub reports")
+                      help="acknowledge that the images go to this vision destination off the "
+                           "hub's machine; it must name the destination the hub reports")
 
     send = verbs.add_parser(
         "send",
@@ -1582,6 +1582,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
 
     if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
         return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+    if getattr(ns, "remote_vision", None) is not None:
+        why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
 
     body: dict[str, Any] = {"message": message}
     if ns.agent:
@@ -1679,15 +1683,31 @@ def _image_mime(raw: bytes) -> str | None:
 
 
 def _read_image(path: str) -> tuple[bytes | None, str]:
-    """``(bytes, "")`` for a raster file of at most 4 MiB, else ``(None, why)``."""
+    """``(bytes, "")`` for a regular raster file of at most 4 MiB, else ``(None, why)``.
+    The file is opened once, without blocking, and judged by what was opened: a path
+    swapped for a pipe between a check and the read never hangs the verb."""
+    import stat
+
     target = Path(path).expanduser()
     try:
-        if not target.is_file():
+        fd = os.open(target, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    except FileNotFoundError:
+        return None, f"--image {path}: not a file"
+    except OSError as exc:
+        if isinstance(exc, IsADirectoryError):
             return None, f"--image {path}: not a file"
-        with target.open("rb") as fh:
+        return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, f"--image {path}: not a file"
+        with os.fdopen(fd, "rb") as fh:
+            fd = -1
             raw = fh.read(VISION_MAX_BYTES + 1)
     except OSError as exc:
         return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
+    finally:
+        if fd >= 0:
+            os.close(fd)
     if len(raw) > VISION_MAX_BYTES:
         return None, f"--image {path}: larger than 4 MiB"
     if _image_mime(raw) is None:
@@ -1695,51 +1715,161 @@ def _read_image(path: str) -> tuple[bytes | None, str]:
     return raw, ""
 
 
+#: PowerShell's own clipboard reader: the image as PNG on binary stdout, nothing else.
+_POWERSHELL_CLIPBOARD = (
+    "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+    "$i=[System.Windows.Forms.Clipboard]::GetImage();"
+    "if($i){$m=New-Object System.IO.MemoryStream;"
+    "$i.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);"
+    "$o=[Console]::OpenStandardOutput();$o.Write($m.ToArray(),0,[int]$m.Length);$o.Flush()}")
+#: macOS without pngpaste: AppleScript prints the clipboard's PNG as «data PNGf<hex>».
+_OSASCRIPT_CLIPBOARD = "the clipboard as «class PNGf»"
+_WSL_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+
+
+def _is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="replace").lower()
+    except OSError:
+        return False
+
+
+def _windows_powershell(environ: Mapping[str, str], which: Callable[..., str | None],
+                        exists: Callable[[str], bool]) -> str | None:
+    """Windows PowerShell from the system directory, else a PATH lookup that leaves out
+    the current directory, which Windows searches first (review-H586 m4)."""
+    system = os.path.join(environ.get("SystemRoot") or "C:\\Windows", "System32",
+                          "WindowsPowerShell", "v1.0", "powershell.exe")
+    if exists(system):
+        return system
+    cwd = os.path.normcase(os.path.abspath(os.getcwd()))
+    entries = [e for e in (environ.get("PATH") or "").split(os.pathsep)
+               if e and e != "." and os.path.isabs(e) and os.path.normcase(os.path.abspath(e)) != cwd]
+    search = os.pathsep.join(entries)
+    return (which("powershell", path=search) or which("pwsh", path=search)) if search else None
+
+
 def _clipboard_command(platform: str, environ: Mapping[str, str],
-                       which: Callable[[str], str | None]) -> list[str] | None:
-    """The fixed argv that prints the clipboard's image as PNG on this machine, or None."""
+                       which: Callable[..., str | None], *, wsl: bool = False,
+                       exists: Callable[[str], bool] = os.path.isfile) -> list[str] | None:
+    """The fixed argv that prints the clipboard's image on this machine, or None:
+    pngpaste, else osascript (macOS); PowerShell (Windows); wl-paste (Wayland), xclip
+    (X11), else Windows PowerShell through WSL interop."""
     if platform == "darwin":
-        return ["pngpaste", "-"] if which("pngpaste") else None
+        if which("pngpaste"):
+            return ["pngpaste", "-"]
+        return ["osascript", "-e", _OSASCRIPT_CLIPBOARD] if which("osascript") else None
     if platform.startswith("win"):
-        exe = which("powershell") or which("pwsh")
-        if not exe:
-            return None
-        script = ("Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
-                  "$i=[System.Windows.Forms.Clipboard]::GetImage();"
-                  "if($i){$m=New-Object System.IO.MemoryStream;"
-                  "$i.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);"
-                  "$o=[Console]::OpenStandardOutput();$o.Write($m.ToArray(),0,[int]$m.Length);$o.Flush()}")
-        return [exe, "-NoProfile", "-STA", "-Command", script]
+        exe = _windows_powershell(environ, which, exists)
+        return [exe, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD] if exe else None
     if environ.get("WAYLAND_DISPLAY") and which("wl-paste"):
         return ["wl-paste", "--no-newline", "--type", "image/png"]
     if environ.get("DISPLAY") and which("xclip"):
         return ["xclip", "-selection", "clipboard", "-target", "image/png", "-out"]
+    if wsl and exists(_WSL_POWERSHELL):
+        return [_WSL_POWERSHELL, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD]
     return None
+
+
+def _run_reader(argv: list[str], limit: int, deadline: float = 10.0) -> tuple[int | None, bytes, str]:
+    """``(exit code, stdout, why)``: the reader's output, read up to *limit* + 1 bytes
+    and never more, within *deadline* seconds; a reader that says more, or takes
+    longer, is killed (review-H586 m2)."""
+    import subprocess  # nosec B404  (a fixed argv, never a shell)
+    import threading
+
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,  # noqa: S603  # nosec B603
+                                stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        return None, b"", f"{argv[0]} failed ({exc.__class__.__name__})"
+    box: dict[str, bytes] = {}
+    pump = threading.Thread(target=lambda: box.setdefault("out", proc.stdout.read(limit + 1)),
+                            daemon=True)
+    pump.start()
+    pump.join(deadline)
+    try:
+        if pump.is_alive():
+            proc.kill()
+            pump.join(2)
+            return None, b"", f"{argv[0]} did not answer within {deadline:g} s"
+        out = box.get("out", b"")
+        if len(out) > limit:
+            proc.kill()
+            return None, out[: limit + 1], ""
+        try:
+            code = proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            code = None
+        return code, out, ""
+    finally:
+        with _suppressed():
+            proc.stdout.close()
+        with _suppressed():
+            proc.wait(timeout=2)
+
+
+def _suppressed():
+    import contextlib
+
+    return contextlib.suppress(Exception)
 
 
 def _clipboard_image(environ: Mapping[str, str]) -> tuple[bytes | None, str]:
     """``(bytes, "")`` for the clipboard's image, else ``(None, why)``. Nothing but the
-    platform's own clipboard reader runs, with a fixed argv and no shell."""
+    platform's own clipboard reader runs, with a fixed argv and no shell, its output
+    bounded while it is read."""
+    import binascii
     import shutil
-    import subprocess  # nosec B404  (a fixed argv, never a shell)
 
-    argv = _clipboard_command(sys.platform, environ, shutil.which)
+    argv = _clipboard_command(sys.platform, environ, shutil.which, wsl=_is_wsl())
     if argv is None:
         return None, ("--clipboard-image: no clipboard reader found (wl-paste or xclip on "
-                      "Linux, pngpaste on macOS, PowerShell on Windows); save the image and "
-                      "pass --image PATH")
-    try:
-        done = subprocess.run(argv, capture_output=True, timeout=10, check=False)  # noqa: S603  # nosec B603
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return None, f"--clipboard-image: {argv[0]} failed ({exc.__class__.__name__})"
-    raw = done.stdout or b""
-    if done.returncode != 0 or not raw:
+                      "Linux, pngpaste or osascript on macOS, PowerShell on Windows and WSL); "
+                      "save the image and pass --image PATH")
+    hexed = argv[0] == "osascript"
+    code, raw, why = _run_reader(argv, 2 * VISION_MAX_BYTES + 64 if hexed else VISION_MAX_BYTES)
+    if why:
+        return None, f"--clipboard-image: {why}"
+    if hexed and code == 0 and raw:
+        text = raw.decode("utf-8", errors="replace").strip()
+        head, _, body = text.partition("«data PNGf")
+        try:
+            raw = binascii.unhexlify(body.removesuffix("»")) if body and not head else b""
+        except (binascii.Error, ValueError):
+            raw = b""
+    if code != 0 or not raw:
         return None, "--clipboard-image: the clipboard holds no image"
     if len(raw) > VISION_MAX_BYTES:
         return None, "--clipboard-image: the image is larger than 4 MiB"
     if _image_mime(raw) is None:
         return None, "--clipboard-image: the clipboard's content is not a PNG, JPEG, GIF or WebP image"
     return raw, ""
+
+
+#: How long an image turn waits for the vision model: the hub gives it 180 s.
+VISION_TIMEOUT = 240.0
+#: The longest vision answer printed, as the HUD's own display limit.
+VISION_MAX_ANSWER = 128 * 1024
+
+
+def _destination_key(url: str) -> tuple[str, str, int | None, str] | None:
+    """A destination as the hub names it (public_config): scheme and host in any case,
+    the default port spelled or not, a trailing slash or not — one key."""
+    import urllib.parse
+
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https") or not parts.hostname:
+        return None
+    if port == {"http": 80, "https": 443}[scheme]:
+        port = None
+    return scheme, parts.hostname.lower(), port, parts.path.rstrip("/")
 
 
 def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
@@ -1749,13 +1879,17 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
     The images and the question go to POST /api/vlm/composer/describe, the configured
     vision model's route, and never to /chat: no agent, session or tool plan sees them,
     as in the HUD. The destination the hub reports is bound into the request, so a model
-    changed in between is refused (409), and a destination off this machine is used only
-    when --remote-vision names it (the HUD's per-destination acknowledgement)."""
+    changed in between is refused (409), and a destination off the hub's machine is used
+    only when --remote-vision names it (the HUD's per-destination acknowledgement)."""
     import base64
 
     def usage(why: str) -> int:
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
+
+    def failed(why: str) -> int:
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_FAILED, status="failed", reason=why)
 
     for flag, given in (("--agent", ns.agent), ("--session", getattr(ns, "session", None)),
                         ("--reasoning", getattr(ns, "reasoning", None))):
@@ -1769,6 +1903,9 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
     count = len(paths) + (1 if getattr(ns, "clipboard_image", False) else 0)
     if count > VISION_MAX_IMAGES:
         return usage(f"{count} images given; one turn carries up to {VISION_MAX_IMAGES}")
+    acknowledged = getattr(ns, "remote_vision", None)
+    if acknowledged is not None and _destination_key(acknowledged) is None:
+        return usage(f"--remote-vision {_plain(acknowledged, 200)}: not an http(s) address")
     images: list[str] = []
     for path in paths:
         raw, why = _read_image(path)
@@ -1785,26 +1922,21 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
     try:
         status = client.get("/api/vlm/composer/status")
         if not isinstance(status, dict) or status.get("configured") is not True:
-            why = "no vision model is configured on the hub (Admin → vision model)"
-            ctx.err.write(f"{why}\n")
-            return finish(EXIT_FAILED, status="failed", reason=why)
-        destination, binding = status.get("destination"), status.get("binding")
-        if not isinstance(destination, str) or not isinstance(binding, str):
-            why = "the hub's vision status is missing its destination"
-            ctx.err.write(f"{why}\n")
-            return finish(EXIT_FAILED, status="failed", reason=why)
-        local = status.get("local") is True
-        acknowledged = getattr(ns, "remote_vision", None)
-        if not local and acknowledged != destination:
-            return usage(f"the vision model is at {_plain(destination, 200)}, off this machine; "
+            return failed("no vision model is configured on the hub (Admin → vision model)")
+        destination, binding, local = status.get("destination"), status.get("binding"), status.get("local")
+        if not isinstance(destination, str) or not isinstance(binding, str) or not isinstance(local, bool):
+            return failed("the hub's vision status is incomplete (destination, binding or local "
+                          "missing); nothing was sent")
+        if local and acknowledged is not None:
+            ctx.err.write("--remote-vision is not needed: the vision model is on the hub's machine\n")
+        if not local and (acknowledged is None
+                          or _destination_key(acknowledged) != _destination_key(destination)):
+            return usage(f"the vision model is at {_plain(destination, 200)}, off the hub's machine; "
                          "the images go there only with --remote-vision set to that address")
-        where = "on this machine" if local else "off this machine"
-        ctx.err.write(f"asking {_plain(str(status.get('model') or '?'), 80)} at "
-                      f"{_plain(destination, 200)} ({where}) about {len(images)} image(s)\n")
-        reply = client.post("/api/vlm/composer/describe", {
-            "prompt": message, "images": images, "expected_destination": destination,
-            "expected_binding": binding, "remote_ack": not local,
-        })
+        where = "on the hub's machine" if local else "off the hub's machine"
+        model = _plain(str(status.get("model") or "?"), 80)
+        ctx.err.write(f"asking {model} at {_plain(destination, 200)} ({where}) about "
+                      f"{len(images)} image(s)\n")
     except KeyboardInterrupt:
         finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
         raise
@@ -1812,17 +1944,40 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
         finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
         raise
     except HubError as exc:
+        if exc.status in (401, 403):
+            finish(EXIT_AUTH, status="unauthorised", reason=str(exc))
+            raise
+        return failed(exc.reason)
+    try:
+        reply = client.post("/api/vlm/composer/describe", {
+            "prompt": message, "images": images, "expected_destination": destination,
+            "expected_binding": binding, "remote_ack": not local,
+        }, timeout=VISION_TIMEOUT)
+    except KeyboardInterrupt:
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        raise
+    except HubUnavailable as exc:
+        if "timed out" in str(exc):
+            # The hub answered the status a moment ago: the model is what is slow.
+            return failed(f"the vision model did not answer within {VISION_TIMEOUT:g} s")
+        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+        raise
+    except HubError as exc:
         if exc.status == 401 or (exc.status == 403 and not exc.reason.startswith("Acknowledge")):
             finish(EXIT_AUTH, status="unauthorised", reason=str(exc))
             raise
-        ctx.err.write(f"{exc.reason}\n")
-        return finish(EXIT_FAILED, status="failed", reason=str(exc))
+        return failed(exc.reason)
 
-    answer = _answer_text((reply or {}).get("response", "") if isinstance(reply, dict) else "")
+    if (not isinstance(reply, dict) or reply.get("ok") is not True
+            or not isinstance(reply.get("response"), str)):
+        return failed("the hub's vision reply is malformed")
+    if len(reply["response"]) > VISION_MAX_ANSWER:
+        return failed("the vision answer is longer than 128 KiB, the display limit")
+    answer = _answer_text(reply["response"])
     if ns.json:
         ctx.dump(reply)
-        return finish(EXIT_OK if answer.strip() else EXIT_FAILED,
-                      status="completed" if answer.strip() else "refused")
+        return finish(EXIT_OK, status="completed" if answer.strip() else "refused",
+                      completed=bool(answer.strip()))
     if not answer.strip():
         why = "the vision model returned an empty answer"
         ctx.err.write(f"{why}\n")
