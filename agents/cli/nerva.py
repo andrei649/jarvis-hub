@@ -552,7 +552,7 @@ def _runnable(client: HubClient) -> dict:
         return {"ready": None, "reason": "hub_unreachable", "error": exc.reason}
     except HubError as exc:
         if exc.status in (401, 403):
-            return {"ready": None, "reason": "needs_token"}
+            return {"ready": None, "reason": "needs_token", "error": exc.reason}
         return {"ready": None, "reason": "command_center_unavailable",
                 "error": f"HTTP {exc.status}: {exc.reason}"}
     model = center.get("model") if isinstance(center, dict) else None
@@ -588,45 +588,83 @@ def _withheld_admin(client: Any) -> bool:
     return bool(getattr(client, "admin_token", "")) and callable(sends) and not sends()
 
 
-def _auth_hint(client: Any) -> str:
-    """What to do about a 401/403, for the client that was refused. The withheld admin
-    token is named as one possible cause, beside the user token, never as the only one:
-    a hub with no admin credential, or a stale user token, refuses for other reasons
-    (review-H273g m3). A token that is set and was sent is named as refused, never asked
-    for again (review-H273h m3)."""
+def _refusal_tier(reason: str) -> str | None:
+    """The tier the hub's refusal asked for, read from its own reason (agents/web.py's
+    guards): "admin", "user", or None when the reason does not say."""
+    text = (reason or "").lower()
+    if "admin token required" in text or text.startswith("admin disabled from network"):
+        return "admin"
+    if "user token required" in text or "disabled from network" in text:
+        return "user"
+    return None
+
+
+def _auth_hint(client: Any, reason: str = "") -> str:
+    """What to do about a 401/403, for the client that was refused and the hub's own
+    reason. The withheld admin token is named as one possible cause, beside the user
+    token, never as the only one (review-H273g m3). The reason says which tier the hub
+    wanted: only a token of that tier that was sent is called refused, and a verb that
+    needs the admin tier asks for the admin token when only the user token is set
+    (review-H273i m2). Recovery is the additive ``issue``; ``rotate`` revokes every
+    token of the tier, so it is named only for a leaked one."""
     if _withheld_admin(client):
         return (f"JARVIS_ADMIN_TOKEN is set but was withheld from {client.base_url}: plain http to "
                 "another machine would carry it in clear text. If this needs the admin token, point "
                 "NERVA_HUB_URL at an https address or run it on the hub itself; otherwise set "
                 "JARVIS_USER_TOKEN, or check that it is current.")
-    sent = [name for name, value in (("JARVIS_ADMIN_TOKEN", getattr(client, "admin_token", "")),
-                                     ("JARVIS_USER_TOKEN", getattr(client, "user_token", ""))) if value]
+    admin_set = bool(getattr(client, "admin_token", ""))
+    user_set = bool(getattr(client, "user_token", ""))
+    tier = _refusal_tier(reason)
+    if "disabled from network" in (reason or "").lower():
+        name = "JARVIS_ADMIN_TOKEN" if tier == "admin" else "JARVIS_USER_TOKEN"
+        return (f"The hub has no {name} configured, so it refuses this from another machine "
+                f"whatever is sent: set {name} on the hub (mint one there: python "
+                f"scripts/token_recover.py issue {tier or 'user'}) and use it here, or run the verb "
+                "on the hub itself.")
+    if tier == "admin":
+        if not admin_set:
+            also = " (JARVIS_USER_TOKEN is not enough)" if user_set else ""
+            return (f"This needs JARVIS_ADMIN_TOKEN{also}. Mint one on the box: python "
+                    "scripts/token_recover.py issue admin.")
+        return ("The hub refused JARVIS_ADMIN_TOKEN: it may be expired or revoked. Mint another on "
+                "the box: python scripts/token_recover.py issue admin (rotate admin only if it "
+                "leaked: rotating revokes every admin token).")
+    sent = [name for name, value in (("JARVIS_ADMIN_TOKEN", admin_set),
+                                     ("JARVIS_USER_TOKEN", user_set)) if value]
+    if tier == "user":
+        if not sent:
+            return ("Set JARVIS_USER_TOKEN (mint one on the box: python scripts/token_recover.py "
+                    "issue user) or JARVIS_ADMIN_TOKEN.")
+        return (f"The hub refused {' and '.join(sent)}: it may be expired or revoked. Mint another "
+                "on the box: python scripts/token_recover.py issue user.")
     if sent:
-        # A token that is set and was sent was refused: stale, revoked, or of the wrong
-        # tier. Asking for it again would ask for what is set (review-H273h m3).
-        return (f"The hub refused {' and '.join(sent)}: it may be expired, revoked or rotated, or this "
-                "needs the other tier. Mint a fresh one on the box: python scripts/token_recover.py "
-                "rotate admin (or issue user).")
+        return (f"The hub refused {' and '.join(sent)}: it may be expired or revoked, or this needs "
+                "the other tier. Mint another on the box: python scripts/token_recover.py issue "
+                "admin (or issue user).")
     return ("Set JARVIS_ADMIN_TOKEN (mint one on the box: python scripts/token_recover.py issue admin) "
             "or JARVIS_USER_TOKEN.")
 
 
-def _read_hint(client: Any) -> str:
-    """The status lines' version of the hint, for a read the hub refused."""
+def _read_hint(client: Any, reason: str = "") -> str:
+    """The status lines' version of the hint, for a read the hub refused (a user-tier
+    read). The hub's reason rules causes out: a hub with no user token configured
+    refuses every read from the network, whatever is sent (review-H273i n4)."""
+    if "disabled from network" in (reason or "").lower():
+        return "(refused from the network: the hub has no JARVIS_USER_TOKEN configured)"
     if _withheld_admin(client):
         if getattr(client, "user_token", ""):
             return ("(refused: JARVIS_ADMIN_TOKEN is withheld over plain http, and JARVIS_USER_TOKEN "
                     "may be expired or revoked)")
         return "(needs JARVIS_USER_TOKEN to read here: JARVIS_ADMIN_TOKEN is withheld over plain http)"
     if getattr(client, "admin_token", "") or getattr(client, "user_token", ""):
-        return "(refused: the token set may be expired, revoked or of the other tier)"
+        return "(refused: the token set may be expired or revoked)"
     return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
 
 
 def _runnable_line(verdict: Mapping[str, Any], client: Any = None) -> str:
     reason = verdict.get("reason")
     if reason == "needs_token":
-        return _read_hint(client)
+        return _read_hint(client, str(verdict.get("error") or ""))
     if reason in ("command_center_unavailable", "malformed_reply", "hub_unreachable"):
         error = verdict.get("error")
         return f"unknown — {reason}" + (f" ({error})" if error else "")
@@ -647,11 +685,13 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     if not isinstance(status, dict):
         raise HubError(0, "malformed /status reply")
     estop = None
+    estop_refused = ""
     try:
         estop = client.get("/api/ops/estop")
     except HubError as exc:
         if exc.status not in (401, 403):
             raise
+        estop_refused = exc.reason
     runnable = _runnable(client)
     if ns.json:
         ctx.dump({"status": status, "estop": estop, "runnable": runnable})
@@ -678,7 +718,7 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say("  e-stop:      not engaged")
     else:
-        ctx.say(f"  e-stop:      {_read_hint(client)}")
+        ctx.say(f"  e-stop:      {_read_hint(client, estop_refused)}")
     return EXIT_OK
 
 
@@ -2459,7 +2499,7 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
         return EXIT_NO_HUB
     except HubError as exc:
         if exc.status in (401, 403):
-            ctx.err.write(f"{exc.reason}. {_auth_hint(ctx.client())}\n")
+            ctx.err.write(f"{exc.reason}. {_auth_hint(ctx.client(), exc.reason)}\n")
             return EXIT_AUTH
         ctx.err.write(f"{exc}\n")
         return EXIT_FAILED

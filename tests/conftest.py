@@ -172,8 +172,15 @@ def _fresh_hub_env_load():
         yield
         return
     env_provenance._HUB_LOADED = None
+    # What the loads recorded is put back as it was, so a test that loads a .env of its own
+    # (a named pipe included) leaves no record of it for the next test (review-H273i n6).
+    files, loaded = dict(env_provenance._FILES), dict(env_provenance._LOADED)
     yield
     env_provenance._HUB_LOADED = None
+    env_provenance._FILES.clear()
+    env_provenance._FILES.update(files)
+    env_provenance._LOADED.clear()
+    env_provenance._LOADED.update(loaded)
 
 
 @pytest.fixture(autouse=True)

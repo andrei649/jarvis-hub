@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 eighth adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H273i found no major, three minors and six nits (the named-pipe run-log, the survivors and the records held; real supervisor, coordinator and hub in seven postures):
+  - **The packaged recovery still missed places (m1).** A token in the start environment (where PHONE_ACCESS puts the phone's) or in a moved data home came back after the recovery, and a LAN-bound app with no token left refused to start. PACKAGING and PHONE_ACCESS now remove the tokens from the data home's `.env` wherever it is **and** from the environment the app starts from, unset `JARVIS_HOST` for the restart and set it back after the new tokens, and name `JARVIS_MEMORY_DIR` (n3); ENV-131 follows.
+  - **The hint's advice was wrong and destructive (m2).** A valid user token on an admin verb was "refused", and `rotate admin` revoked the owner's working admin token. The hint now reads the hub's reason for the tier it wanted: it asks for `JARVIS_ADMIN_TOKEN` there, calls refused only a token of the wanted tier, names a hub with no token of the tier, and offers the additive `issue` (`rotate` only for a leaked token). `nerva status` reads the same reason (n4).
+  - **Mutation (m3).** The child's whole environment (M06) and the hint's verb (M12) are pinned.
+  - **Nits.** The supervisor's docstring names the named-pipe limit (n1); ENV-163 and SEC-055 run `token_recover.py` (n2); the seventh bullet's re-stamp note corrected (n5); the test fixture puts back what a load recorded (n6); ENV-069's stale `web.py:483,489` now `:724,730`.
+  12 mutants, all caught. 50 rows re-stamped; H456's range recomputed from the code.
+  Tests: backend 15,075 → 15,087 (`tests/test_h273i_provenance_review.py` 12); vitest unchanged at 1,462.
+
 - 2026-09-25 H667 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
 
   review-H667 found no major, eight minors and nine nits (no live run, no owner root, nothing outside the cache was ever deleted):
@@ -66,7 +76,7 @@
   - **The CLI still asked for a token that was set (m3).** A token that was sent and refused is named as refused (expired, revoked or rotated, or the other tier), with the `token_recover.py` verb, on the verbs and on `nerva status`.
   - **Survivors (m4).** `scripts/token_recover.py` run as documented, as a script, and both spawn sites in the supervisor's `main()` now have cases. The supervisor's two `.env` readers are one.
   - **Nits.** The revoke residual depends on uptime (ENV-159, `_ever_configured`); `JARVIS_HOME` is process-only (the script's docstring, PHONE_ACCESS); the script's scaffolding and "check the path it prints"; ENV-159 and PHONE_ACCESS use `token_recover.py`; one stale H456 citation fixed (`nerva.py:1025-1031`).
-  Mutation: 12 mutants, all caught (one after the readers merged). Re-stamped 67 rows whose evidence moved (9 with text: `nerva.py` lines, the `web.py` docstring, the test manual).
+  Mutation: 12 mutants, all caught (one after the readers merged). Re-stamped 67 rows whose evidence moved (10 with text, all `nerva.py` line shifts, H456's hand-corrected citation among them; corrected by review-H273i n5).
   Tests: backend 14,921 → 14,935 (`tests/test_h273h_provenance_review.py` 14); vitest unchanged at 1,462.
 
 - 2026-09-25 H315 ninth adversarial review round (stays equivalent, #1207; headline stays 145/697).

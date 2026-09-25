@@ -6,8 +6,10 @@ wired for real — see that module's docstring) as a child process and
 respawns it immediately if it dies for any reason, including ``SIGKILL``: a
 process cannot recover itself from ``kill -9``, so a killed coordinator's
 recovery is this parent's job. Every respawn is appended to the same
-``logs/runtime.jsonl`` the coordinator writes to, so a crash-and-recover is
-visible in the run-log the morning brief reads, not just in stderr.
+run-log the coordinator writes to (``logs/runtime.jsonl`` by default), so a
+crash-and-recover is visible in the run-log the morning brief reads, not just in
+stderr — apart from a path only a named-pipe .env names, which this process never
+reads: its own events then stay in the default file (H273's Known limits).
 
 This is what ``deploy/systemd/jarvis-runtime.service`` and the
 ``runtime-coordinator`` docker-compose service both run. Layering systemd/

@@ -102,12 +102,15 @@ CLI would write a `tokens.db` the hub never reads. The script names on stderr th
 wrote; check that path, since a mistyped `JARVIS_USER_HOME` gets a new, empty data home.
 
 A packaged build ships no Python to run either. To recover from a lost or expired admin token
-there, stop the app, **first** remove every `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` line from
-`Documents/Nerva/.env`, then remove `security/tokens.db` under the data root (steps in
-`docs/PACKAGING.md` → "Recovering a lost admin token"). The order matters: that file also
-records which env tokens were rotated away or revoked, and without it they work again, a lost
-phone's included (review-H273h m2). With no admin token left, the app then trusts this machine
-again until a new one is minted. With no admin token ever configured, a caller on this machine
+there, stop the app and follow `docs/PACKAGING.md` → "Recovering a lost admin token": **first**
+remove every `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` from the data home's `.env`
+(`~/Documents/Nerva/.env`, or `<JARVIS_USER_HOME>/.env`) **and from the environment the app
+starts from** (step 2 above puts the phone's token there), unset `JARVIS_HOST` for the restart,
+then remove `security/tokens.db` under the data root. The order matters: that file also records
+which env tokens were rotated away or revoked, and a token left in either place works again
+without it, a lost phone's included (review-H273h m2, review-H273i m1). With no admin token
+left, the app trusts this machine again until a new one is minted; mint the phones' tokens
+again, then set the bind back. With no admin token ever configured, a caller on this machine
 stays admin whatever happens to the user tokens: the user-token lock binds callers from other
 machines (`revoke all --revoke-env` closes it for this machine too).
 
