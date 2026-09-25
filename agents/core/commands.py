@@ -317,9 +317,9 @@ _REFINE_REFUSALS = {
     "busy": "A review is already running; try again in a moment.",
     "daily_budget": "Today's review budget (learning.review_daily_budget) is spent; try again tomorrow.",
     "reviews_off": "Reviews are switched off: learning.review_daily_budget is 0.",
-    "daily_budget_cut_off": ("Today's review budget went to reviews the local model cut off or could not "
-                             "finish; raise learning.review_max_tokens rather than the budget, or try "
-                             "again tomorrow."),
+    "daily_budget_cut_off": ("Most of today's review budget went to reviews the local model cut off or "
+                             "left malformed; if they were cut off, raise learning.review_max_tokens "
+                             "rather than the budget, or try again tomorrow."),
     "llm_error": ("The review could not run: it needs a local model, and none answered "
                   "(reviews never leave this machine)."),
     "llm_timeout": ("The local model did not finish the review in time; nothing was kept. "

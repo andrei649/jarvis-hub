@@ -983,26 +983,6 @@ class Orchestrator:
             self.skill_proposals = SkillProposalStore(
                 path=_dp("learning", "skill_proposals.json"))
 
-            async def _review_llm(prompt: str) -> str:
-                router = self.llm_router
-                # STRICT-LOCAL by construction: `local_backend` fails closed —
-                # never the HybridRouter `.backend` property, which prefers
-                # cloud Claude/Gemini when keys are configured. Review prompts
-                # embed raw conversation content and must not egress; no local
-                # backend up ⇒ RuntimeError ⇒ this review pass is skipped.
-                backend = router.local_backend
-                model = router.active_model or "google/gemma-4-31b-a4b"
-                from .settings_db import bounded_learning_int
-
-                # Within its bounds even for a row that predates them: -1 would mean
-                # "until the context is full" to a local backend (review-H465d nit 4).
-                max_tokens = bounded_learning_int(
-                    "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
-                return await backend.generate(
-                    model=model, prompt=prompt,
-                    system="You are a precise background reviewer. Output only JSON.",
-                    max_tokens=max_tokens, temperature=0.2)
-
             def _review_living():
                 cog = getattr(self, "cognition", None)
                 if cog is None or not cog.sub_enabled("memory_enabled"):
@@ -1010,7 +990,7 @@ class Orchestrator:
                 return cog.module("memory")
 
             self.reviewer = BackgroundReviewer(
-                _review_llm,
+                self._review_llm,
                 living=_review_living,
                 skills=self.skills,
                 learning=(self.cognition.module("learning")
@@ -3073,6 +3053,26 @@ class Orchestrator:
         for action in result.get("actions", []):
             logger.info("learning review (on demand): %s", action)
         return result
+
+    async def _review_llm(self, prompt: str) -> str:
+        """The background reviewer's model call. STRICT-LOCAL by construction:
+        ``local_backend`` fails closed, never the HybridRouter ``.backend`` property,
+        which prefers cloud Claude/Gemini when keys are configured. Review prompts embed
+        raw conversation content and must not egress; no local backend up means a
+        RuntimeError, and the review pass is skipped."""
+        from .settings_db import bounded_learning_int
+
+        router = self.llm_router
+        backend = router.local_backend
+        model = router.active_model or "google/gemma-4-31b-a4b"
+        # Within its bounds even for a row that predates them: -1 would mean "until the
+        # context is full" to a local backend (review-H465d nit 4).
+        max_tokens = bounded_learning_int(
+            "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
+        return await backend.generate(
+            model=model, prompt=prompt,
+            system="You are a precise background reviewer. Output only JSON.",
+            max_tokens=max_tokens, temperature=0.2)
 
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""

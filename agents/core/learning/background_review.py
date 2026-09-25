@@ -136,7 +136,9 @@ def _focus_line(focus: str) -> str:
 #: review_max_facts of 0 also switched corrections off, and the reply said "nothing").
 MAX_CORRECTIONS = 3
 
-_BACKEND_ERROR = re.compile(r'\[(?:[A-Za-z][^\]\[{"\n]{0,80})?error', re.IGNORECASE)
+#: A bracketed ``[… error …]``, closed: an unclosed ``[Note: I hit an error …`` is prose
+#: (review-H465e nit 7).
+_BACKEND_ERROR = re.compile(r'\[(?:[A-Za-z][^\]\[{"\n]{0,80})?error[^\]]*\]', re.IGNORECASE)
 
 
 def _shipped(path) -> bool:
@@ -262,20 +264,22 @@ class BackgroundReviewer:
         self._day_cut_offs = 0        # today's per-turn passes the model cut off
 
     def _budget(self) -> int:
-        """The day's review budget. 0 means no reviews; a value that is not a number is
-        named in the log and the default used (review-H465 nit 4), never a crash."""
+        """The day's review budget. 0 means no reviews. A value that is not a number, or
+        is outside the declared 0..1000 (a hand-edited -3 is not "reviews off"), is named
+        in the log once and the default used (review-H465 nit 4, review-H465e nit 2)."""
+        from agents.core.settings_db import bounded_learning_int
+
         raw = self._get("learning.review_daily_budget", 20)
         if raw is None or raw == "":
             return 20
-        try:
-            if isinstance(raw, bool):
-                raise TypeError("a boolean is not a budget")
-            return max(0, int(float(raw)))
-        except (TypeError, ValueError, OverflowError):
+        value = bounded_learning_int("review_daily_budget", raw, -1)
+        if value < 0:
             if self._warned_budget != repr(raw):      # once per value (NaN != NaN, its repr is equal)
                 self._warned_budget = repr(raw)
-                logger.warning("learning.review_daily_budget %r is not a number; 20 is used", raw)
+                logger.warning("learning.review_daily_budget %r is not a number from 0 to 1000; "
+                               "20 is used", raw)
             return 20
+        return value
 
     def _number(self, key: str, default: int) -> int:
         """A declared learning knob whose 0 is a real value (no facts kept, no idle gap):
@@ -298,21 +302,24 @@ class BackgroundReviewer:
         self._turns_since += 1
         if self._on_demand:
             return False, "on_demand"
-        today = date.today().isoformat()
-        if today != self._day:
-            self._day, self._day_count, self._day_cut_offs = today, 0, 0
+        self._roll_day()
         if self._day_count >= self._budget():
             return False, "daily_budget"
+        return (False, refused) if (refused := self._cadence_refusal()) else (True, "ok")
+
+    def _cadence_refusal(self) -> str:
+        """Why the per-turn cadence says not yet, or "". Asked where a turn is admitted and
+        again where its pass starts: turns that end in one burst were all admitted before
+        any pass reset the count (review-H465e nit 6)."""
         cadence = str(self._get("learning.review_cadence", "every_turn") or "every_turn")
         if cadence == "every_n_turns":
-            n = self._number("learning.review_every_n", 3)
-            if self._turns_since < n:
-                return False, "cadence_n"
+            if self._turns_since < self._number("learning.review_every_n", 3):
+                return "cadence_n"
         elif cadence == "idle_gap":
             gap = self._number("learning.review_idle_gap_s", 90)
             if self._last_run_ts is not None and (self._now() - self._last_run_ts) < gap:
-                return False, "cadence_idle"
-        return True, "ok"
+                return "cadence_idle"
+        return ""
 
     # ── the review pass ──────────────────────────────────────────────────────
 
@@ -327,19 +334,19 @@ class BackgroundReviewer:
         cancelled costs no budget."""
         if self._on_demand or self._in_flight:
             return {"ran": False, "reason": "busy", "actions": []}
-        today = date.today().isoformat()
-        if today != self._day:
-            self._day, self._day_count, self._day_cut_offs = today, 0, 0
+        self._roll_day()
         budget = self._budget()
         if budget == 0:
             return {"ran": False, "reason": "reviews_off", "actions": []}
         if self._day_count >= budget:
-            # When per-turn passes the model cut off spent the day, the budget is not what
-            # to raise: the reply names the token cap (review-H465d m-1).
-            reason = "daily_budget_cut_off" if self._day_cut_offs else "daily_budget"
+            # When per-turn passes the model cut off spent most of the day, the budget is
+            # not what to raise: the reply names the token cap (review-H465d m-1). One
+            # cut-off among real reviews is not that (review-H465e m-1).
+            cut = self._day_cut_offs
+            reason = "daily_budget_cut_off" if cut and 2 * cut >= self._day_count else "daily_budget"
             return {"ran": False, "reason": reason, "actions": []}
         self._on_demand = True
-        spent_before = self._day_count
+        spent_before, spent_day = self._day_count, self._day
         try:
             # The per-turn cadence is the per-turn reviews' own: an owner's /refine
             # neither resets it nor delays the next one (review-H465 nit 3).
@@ -348,12 +355,14 @@ class BackgroundReviewer:
                          cadence=False, on_demand=True),
                 timeout=REFINE_TIMEOUT_S)
         except TimeoutError:
-            self._day_count = min(self._day_count, spent_before)   # no review was had
+            if self._day == spent_day:                             # a unit of that day
+                self._day_count = min(self._day_count, spent_before)   # no review was had
             result = {"ran": False, "reason": "llm_timeout", "actions": []}
             self.last_result = result
             return result
         except asyncio.CancelledError:
-            self._day_count = min(self._day_count, spent_before)   # review-H465b nit 6
+            if self._day == spent_day:
+                self._day_count = min(self._day_count, spent_before)   # review-H465b nit 6
             raise
         finally:
             self._on_demand = False
@@ -385,10 +394,15 @@ class BackgroundReviewer:
             # Checked again where the unit is spent: passes spawned in one burst all saw
             # budget left in should_run (review-H465d nit 6).
             return {"ran": False, "reason": "daily_budget", "actions": []}
+        if cadence and (refused := self._cadence_refusal()):
+            return {"ran": False, "reason": refused, "actions": []}
         if cadence:
             self._turns_since = 0
             self._last_run_ts = self._now()
         self._day_count += 1
+        # The day this pass spent its unit on: a pass still waiting on the model at
+        # midnight refunds or counts against that day, never the next (review-H465e nit 4).
+        spent_day = self._day
         context = "\n".join(part for part in (
             history.strip(),
             f"user: {user_text.strip()}" if user_text else "",
@@ -406,14 +420,15 @@ class BackgroundReviewer:
         if _thinking_exhausted(raw):
             # The model answered but spent its tokens thinking: that is not "no model"
             # (review-H465b m-2).
-            return self._cut_off("review_cut_off", on_demand)
+            return self._cut_off("review_cut_off", on_demand, spent_day)
         review = parse_review_json(raw) if isinstance(raw, str) else None
         if raw is None or review is None or (_degraded(raw) and review.get("unparsed")):
             # A local backend that is configured but down answers with a degraded reply
             # instead of raising: that is no review, and it costs no budget (review-H465 M-1).
             # A reply that parses as a review is the model's answer, whatever it opens
             # with (review-H465d nit 1: "[{... error ...}]" is a review).
-            self._day_count = max(0, self._day_count - 1)
+            if self._day == spent_day:
+                self._day_count = max(0, self._day_count - 1)
             result = {"ran": False, "reason": "llm_error", "actions": []}
             self.last_result = result
             return result
@@ -421,7 +436,7 @@ class BackgroundReviewer:
         if review.get("unparsed"):
             # Cut off by the token cap or malformed: nothing can be kept, and it is not
             # "nothing worth keeping" (review-H465b m-2).
-            return self._cut_off("review_unparsed", on_demand)
+            return self._cut_off("review_unparsed", on_demand, spent_day)
         actions: list[str] = []
         counts = {"facts": 0, "blocked": 0, "corrections": 0,
                   "skills_new": 0, "skill_patches": 0}
@@ -474,22 +489,23 @@ class BackgroundReviewer:
         self.last_result = result
         return result
 
-    def _cut_off(self, reason: str, on_demand: bool) -> dict:
+    def _cut_off(self, reason: str, on_demand: bool, spent_day: str) -> dict:
         """A generation that ran and gave no usable review. The owner who asked (/refine)
         gets the unit back; a per-turn pass spends it, since the model did run to its
         token cap, so the daily budget still caps local GPU use when a model always
         truncates (review-H465c m-1). The per-turn case is logged once a day."""
-        if on_demand:
-            self._day_count = max(0, self._day_count - 1)
-        else:
-            self._day_cut_offs += 1
-            if self._quiet_day != self._day:
-                self._quiet_day = self._day
-                logger.info("learning review: %s (logged once a day)",
-                            "the local model spent its answer thinking; raise learning.review_max_tokens"
-                            if reason == "review_cut_off" else
-                            "the local model's review was cut off or malformed; if it was cut off, "
-                            "raise learning.review_max_tokens")
+        if self._day == spent_day:            # a day that is over has nothing left to count
+            if on_demand:
+                self._day_count = max(0, self._day_count - 1)
+            else:
+                self._day_cut_offs += 1
+                if self._quiet_day != self._day:
+                    self._quiet_day = self._day
+                    logger.info("learning review: %s (logged once a day)",
+                                "the local model spent its answer thinking; raise learning.review_max_tokens"
+                                if reason == "review_cut_off" else
+                                "the local model's review was cut off or malformed; if it was cut off, "
+                                "raise learning.review_max_tokens")
         result = {"ran": False, "reason": reason, "actions": []}
         self.last_result = result
         return result

@@ -14,6 +14,29 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465e found no major, two minors and seven nits:
+  - **One cut-off among real reviews named the wrong setting (m-1).** `/refine` said the budget went to cut-offs whenever one per-turn pass had been cut off, even on a day of mostly real reviews, and even when the model had answered prose. It now answers `daily_budget_cut_off` only when cut-offs are at least half of the day's spent units, and says "if they were cut off".
+  - **Nine real survivors (m-2):** the refusal's threshold, which pass logs the day's line, the orchestrator's bounded token cap (its model call is now a method, `Orchestrator._review_llm`, so it can be tested), the rollover of `cut_offs_today` in both entry points (both now use `_roll_day`), a `/refine` cut-off counted among them, the corrections cap, and the found-not-kept count against injected and agent facts. Each has a case.
+  - **Nits:**
+    - "masks a model id" was not true: a model id is masked only under a hinted name, and the comment says so;
+    - the daily budget reads within its declared 0–1000 (a hand-edited -3 is no longer "reviews off"), warning once;
+    - `nerva config set` echoed a stored secret (the GA4 private key) into the terminal; it is echoed masked now;
+    - a pass waiting on the model at midnight refunds or counts against the day it spent its unit on;
+    - GOV-257's step turns on `cognition.review_enabled`, and adds a day of real reviews;
+    - the cadence is checked again where a pass starts, so a burst of turns runs one pass, not four;
+    - only a closed `[… error …]` is a backend failure; an unclosed `[Note: … error` is prose.
+
+  Mutation: this round's 20 mutants were all caught.
+
+  Records:
+  - H465 rewritten;
+  - 87 drifted rows re-read and re-stamped; H456's CLI citations (already stale) pointed at the `--toolsets` lines;
+  - GOV-257 extended.
+
+  Tests: backend 14,803 → 14,837 (`tests/test_h465f_refine_review.py` 34); vitest unchanged at 1,461.
+
 - 2026-09-25 H315 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315h found no major, three minors and four nits:

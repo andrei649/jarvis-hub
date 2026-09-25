@@ -42,7 +42,8 @@ _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
 #: Kinds that hold no credential whatever their name: ``llm.max_tokens`` and
 #: ``learning.review_max_tokens`` are budgets, and /refine tells the owner to raise one.
-#: A model id is left out: a typed one can carry a credential (routers/admin.py).
+#: A model id (``model-select``) is not listed, so a hinted name would be masked; the one
+#: model row, ``llm.default_model``, has no hint and shows as typed (review-H465e nit 1).
 _PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider"})
 _TIER_NAMES = {0: "READ_ONLY", 1: "REVERSIBLE", 2: "EXTERNAL", 3: "IRREVERSIBLE_OR_MONEY"}
 
@@ -718,7 +719,10 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
         settings.put_category(category, {key: value})
-        ctx.say(f"{ns.name} = {json.dumps(value)}  (a running hub picks it up within 30 s)")
+        # A stored secret is echoed masked, as `config get` shows it: never into the
+        # terminal's scrollback (review-H465e nit 3).
+        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
+        ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  (a running hub picks it up within 30 s)")
         return EXIT_OK
     if ns.action == "check":
         problems: list[str] = []
