@@ -109,8 +109,8 @@ def test_each_offered_channel_receives_the_reply(owner, channel):
     assert reply.json()["delivery"] == {"channel": channel, "ok": True}
     assert [name for name, adapter in adapters.items() if adapter.sent] == [channel]
     sent = adapters[channel].sent
-    if channel == "ntfy":                   # a native title
-        assert sent == [{"text": "done", "title": "Webhook ci - check_run"}]
+    if channel == "ntfy":                   # a native title, the text as written
+        assert sent == [{"text": "done", "title": "Webhook ci - check_run", "plain": True}]
     elif channel == "telegram":             # the owner's chat, as plain text, never spoken
         assert sent == [{"text": "Webhook ci - check_run\n\ndone", "chat_id": 4242, "plain": True, "voice": False}]
     else:                                   # ChannelManager hands the voice adapter the text alone
@@ -200,13 +200,15 @@ def test_an_ntfy_title_is_printable_ascii_whatever_the_hook_and_event_are_called
 
 
 def test_a_senders_link_arrives_with_its_address_never_as_markup(owner):
+    """The sender's text is shown as written (H153 fourth review: nothing rendered and
+    nothing rewritten), so a Markdown link is its literal source, address in view."""
     (client, _events, _turns), adapters = owner
     hook = _hook(client, name="issues", deliver="telegram", deliver_only=True, prompt="{title}")
     _post(client, hook, {"title": "**Nerva notice** [Sign in](https://nerva-login.example/owner)"},
           **{"X-GitHub-Event": "issues"})
     sent = adapters["telegram"].sent[0]
     assert sent["plain"] is True and sent["voice"] is False
-    assert sent["text"] == "Webhook issues - issues\n\nNerva notice Sign in (https://nerva-login.example/owner)"
+    assert sent["text"] == "Webhook issues - issues\n\n**Nerva notice** [Sign in](https://nerva-login.example/owner)"
 
 
 class _TelegramHttp:
@@ -629,8 +631,10 @@ def test_the_receiver_is_read_by_one_request_at_a_time(receiver, monkeypatch):
 
 
 def test_a_receiver_never_read_is_unreadable_while_its_first_read_runs(receiver, monkeypatch):
+    """Past the wait for its first read (H153 fourth review), it is refused, closed."""
     from agents.core import settings_db, webhooks
 
+    monkeypatch.setattr(webhooks.RECEIVER, "first_read_wait", 0.1)
     started, release = threading.Event(), threading.Event()
     real = settings_db.read_setting
 

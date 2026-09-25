@@ -77,6 +77,19 @@ QUIET_START_SETTING = "ambient.quiet_hours_start"
 QUIET_END_SETTING = "ambient.quiet_hours_end"
 DEFAULT_QUIET_START = 22
 DEFAULT_QUIET_END = 7
+
+
+def setting_hour(orch, key: str, default: int) -> int:
+    """An hour-of-day setting, modulo 24, or *default* when it is not a number that has
+    one (an infinity, NaN, text, a list): quiet hours then keep their defaults."""
+    get_setting = getattr(orch, "get_setting", None)
+    try:
+        value = get_setting(key, default) if callable(get_setting) else default
+        return int(value) % 24
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 _CRON_RE = re.compile(r"^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$")
 _DOW_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -1511,19 +1524,10 @@ class JobRunner:
                 return False
         from .schedule_runtime import is_night
 
-        get_setting = getattr(self._orch, "get_setting", None)
-
-        def _hour(key: str, default: int) -> int:
-            try:
-                value = get_setting(key, default) if callable(get_setting) else default
-                return int(value) % 24
-            except (TypeError, ValueError):
-                return default
-
         return is_night(
             time.localtime(self._now()).tm_hour,
-            start=_hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
-            end=_hour(QUIET_END_SETTING, DEFAULT_QUIET_END),
+            start=setting_hour(self._orch, QUIET_START_SETTING, DEFAULT_QUIET_START),
+            end=setting_hour(self._orch, QUIET_END_SETTING, DEFAULT_QUIET_END),
         )
 
     def _spend_interrupt(self, job: Job) -> bool:

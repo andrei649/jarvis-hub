@@ -629,7 +629,7 @@ describe('WebhooksPanel — the third H153 round', () => {
     expect(container.textContent).not.toContain('→ log');
     expect(screen.getByText('→ telegram')).toBeTruthy();
     fireEvent.click(screen.getByText('pager'));
-    expect(screen.getByText(/A push is plain text .* not sent in quiet hours, and a hook sends at most 30 an hour/)).toBeTruthy();
+    expect(screen.getByText(/A push is the text as written .* not sent in quiet hours, and a hook makes at most 30 push attempts an hour/)).toBeTruthy();
   });
 
   it('opens the editor at the hook’s own destination, so an unedited save keeps it', async () => {
@@ -752,5 +752,36 @@ describe('WebhooksPanel — the third H153 round', () => {
     fireEvent.click(screen.getByRole('button', { name: 'delete ci for good' }));
     await waitFor(() => expect(screen.queryByText('ci')).toBeNull());
     await waitFor(() => expect(document.activeElement.getAttribute('aria-label')).toBe('webhook name'));
+  });
+});
+
+/* H153 fourth review: the push note sits on push hooks only and says what it counts; a
+   404 that is not the hub's own "unknown category" is a failed read, not a missing row. */
+describe('WebhooksPanel after the fourth review', () => {
+  it('shows the push note on a hook that pushes and not on one that logs', async () => {
+    hooks = [
+      { ...hooks[0], id: 'hk1', name: 'ci', deliver: 'telegram' },
+      { ...hooks[0], id: 'hk3', name: 'logger', deliver: 'log' },
+    ];
+    const { container } = render(<WebhooksPanel />);
+    await waitFor(() => expect(screen.getByText('logger')).toBeTruthy());
+    fireEvent.click(screen.getByText('logger'));
+    expect(container.textContent).toContain('the reply goes to log');
+    expect(container.textContent).not.toContain('push attempts');
+    fireEvent.click(screen.getByText('ci'));
+    expect(container.textContent).toContain('the reply goes to telegram');
+    expect(container.textContent).toContain('A push is the text as written');
+    expect(container.textContent).toContain('at most 30 push attempts an hour (one the channel refused counts)');
+  });
+
+  it('reads a 404 that is not the hub\'s own answer as a failed read', async () => {
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init = {}) => (String(url).endsWith('/api/admin/settings/webhooks')
+      ? Promise.resolve(reply(404, { detail: 'Not Found' }))              // a proxy's, or FastAPI's own
+      : real(url, init)));
+    render(<WebhooksPanel />);
+    await waitFor(() => expect(screen.getByText(/^not read/)).toBeTruthy());
+    expect(screen.queryByText('on · not stored (the default)')).toBeNull();
+    expect(screen.getByRole('button', { name: 'receiver state not read' }).disabled).toBe(true);
   });
 });

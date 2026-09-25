@@ -11,25 +11,42 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiGet, apiPost } from './api/client';
 
-/** One GET, reloadable. Only the newest request's answer is kept: a slow answer to an
-    earlier read never overwrites a newer one (H153 review: a stale "on"). `status` is
-    the failed read's HTTP status (0 when it never reached the hub). */
+/** One GET, reloadable. An answer is shown unless a newer one already is: a slow
+    answer to an earlier read never overwrites a newer one (H153 review: a stale "on"),
+    and a poller slower than its interval still sees every answer that is the newest so
+    far (H153 fourth review: keeping only the newest request's answer starved it).
+    `loading` stays true until the newest request is answered. `status` is the failed
+    read's HTTP status (0 when it never reached the hub) and `refusal` its JSON body. */
 export function useApi(path, auto = true, admin = false) {
   const [d, setD] = useState(null);
   const [e, setE] = useState(null);
   const [status, setStatus] = useState(0);
+  const [refusal, setRefusal] = useState(null);
   const [loading, setLoading] = useState(false);
-  const latest = useRef(0);
+  const latest = useRef(0);    // the newest request started
+  const shown = useRef(0);     // the request whose answer is shown
   const reload = useCallback(() => {
     const mine = ++latest.current;
     setLoading(true);
+    const land = (show) => {
+      if (mine > shown.current) {
+        shown.current = mine;
+        show();
+      }
+      if (mine === latest.current) setLoading(false);
+    };
     apiGet(path, admin ? { admin: true } : undefined)
-      .then((r) => { if (mine === latest.current) { setD(r); setE(null); setStatus(0); } })
-      .catch((err) => { if (mine === latest.current) { setE(err?.message || 'offline'); setStatus(Number(err?.status) || 0); } })
-      .finally(() => { if (mine === latest.current) setLoading(false); });
+      .then((r) => land(() => { setD(r); setE(null); setStatus(0); setRefusal(null); }))
+      .catch((err) => land(() => {
+        setE(err?.message || 'offline');
+        setStatus(Number(err?.status) || 0);
+        setRefusal(err?.body ?? null);
+      }));
   }, [path, admin]);
+  // Another address or credential: an answer to a request made before it is never shown.
+  useEffect(() => { shown.current = latest.current; }, [path, admin]);
   useEffect(() => { if (auto) reload(); }, [auto, reload]);
-  return { d, e, status, loading, reload };
+  return { d, e, status, refusal, loading, reload };
 }
 export const arr = (x, ...k) => (Array.isArray(x) ? x : (k.map((kk) => x && x[kk]).find(Array.isArray) || []));
 export const mono = { fontFamily: 'var(--font-mono)', fontSize: 11 };

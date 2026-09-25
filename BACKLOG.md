@@ -14,6 +14,28 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H153 fourth adversarial review round (partial → equivalent, #1207; headline 138 → 139/697).
+
+  The review found one major, fixed:
+  - **One delivery could freeze the hub.** A push rendered the whole untrimmed text with `to_plain` and only then cut it. The renderer's regexes are quadratic on one long line and hold the GIL on the event loop, so one GitHub issue of 65,536 `[` froze the whole hub for about 40 s, and a 5 MiB body for hours. Now a push is the text as written: nothing is rendered and nothing is rewritten, so it costs linear time and is cut before it is sent. Telegram sends it with no parse mode or link preview, ntfy unrendered (a new `plain` send), and voice speaks it without the markup.
+  - Every renderer the rest of the hub uses (a model's reply, a streamed preview) bounds its marker spans at 500 characters, and a heading line too, so one long line renders in linear time. A longer span is left as written.
+
+  Minors, fixed:
+  - **The sender's text arrives as written.** `pkg/__init__.py`, an address with `*` or `_`, and a Markdown link are no longer rewritten. What hides or reorders text is dropped instead: bidi overrides and isolates, zero-width spaces, word joiners, the soft hyphen, the BOM, control characters but a newline and a tab. A lone surrogate becomes U+FFFD.
+  - **A burst after a start is answered.** A caller with no receiver state known yet waits for the running first read, at most two seconds, instead of being refused. A slower read still refuses, closed.
+  - **A workflow hook's answer.** It carries ok, the steps that ran and the delivery. It no longer echoes the run's context, which held the sender's text and every step's output. Every answer is encodable (a lone surrogate becomes U+FFFD, a NaN or an infinity null), so a delivery is never a 500 after its push. An output the router cannot read, or an error list that is not a list, is recorded instead.
+  - **`useApi` shows an answer unless a newer one is shown.** A poller slower than its interval (ModelSetupPanel) was starved; `loading` stays until the newest answer lands, and an answer to a request for an earlier address is never shown. A GET's refusal body now rides on its error, so the Webhooks panel reads only the hub's own "unknown category" 404 as a missing row.
+  - The review's twelve unpinned mutants each got a test: the receiver unreadable after the turn, a Telegram refusal of a push, the hour of the allowance, quiet hours and the allowance, the live label, a non-dict workflow result, an overtaken failed read, a slider's audited value, the push note and `loading`.
+
+  Nits, fixed: the last step is the last to run, not the last listed; an hour setting that is not a number (an infinity) keeps its default, for the jobs too; `web` is not listed as ready while no client is connected; the push note says a refused attempt counts; test manual CHN-173 (the 30 s settings reload) and CHN-178 (an early stop pushes the guard's output), and CHN-180 to 184 are new; H153's reseed citation, its mutation record and H200's test split.
+
+  Mutation: 40 mutants of the new guards (32 Python, 8 HUD), each run against its own suites. 39 were caught, and the last (the answer's dict keys) by a test added for it. Four were first written malformed and were rewritten before they counted.
+
+  Records: H153 rewritten and closed; H018's remaining names web's readiness; H200's test split; 31 drifted rows re-read and re-stamped (H288's comma-continued ranges and H456's `validate_action` shorthand by hand); the build-queue note; `docs/ARCHITECTURE.md` notes the bounded spans.
+
+  Tests:
+  - backend 14,222 → 14,283 (`tests/test_h153d_webhook_review.py` 61);
+  - vitest 1,428 → 1,434 (`use-api-sequence` 4, `webhooks-panel` 53 → 55).
 - 2026-09-25 H273 third adversarial review round (partial → equivalent, #1207). **H153 back to partial** after its fourth review and **H315 back to partial** after its third (headline 139 → 138/697).
 
   The review found two majors, both fixed:

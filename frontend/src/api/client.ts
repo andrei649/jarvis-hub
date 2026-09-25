@@ -123,7 +123,13 @@ async function failMutation(method: string, path: string, res: Response): Promis
 
 export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
   const res = await request('GET', path, undefined, opts);
-  if (!res.ok) throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status });
+  if (!res.ok) {
+    // The refusal body rides along (`err.body`), as it does for a mutation: a caller can
+    // tell the hub's own answer from a proxy's. A non-JSON body leaves it undefined.
+    let body: unknown;
+    try { body = await res.json(); } catch { /* non-JSON, empty, or already-consumed body */ }
+    throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status, body });
+  }
   return res.json() as Promise<T>;
 }
 

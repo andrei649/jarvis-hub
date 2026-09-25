@@ -39,8 +39,8 @@ const RECEIVER_PATH = '/api/admin/settings/webhooks';
     receives. The web channel is not one: nothing in the hub receives a push there. */
 export const DESTINATIONS = ['log', 'telegram', 'voice', 'ntfy'];
 export const DELIVER_ONLY_NEEDS_A_CHANNEL = 'deliver only needs a channel: with log the sender’s text would go nowhere';
-const PUSH_NOTE = 'A push is plain text (no formatting; a link shows its address), is not sent in quiet hours, '
-  + 'and a hook sends at most 30 an hour.';
+const PUSH_NOTE = 'A push is the text as written (nothing is formatted; a link shows its address), is not sent '
+  + 'in quiet hours, and a hook makes at most 30 push attempts an hour (one the channel refused counts).';
 const RECEIVER = ':receiver';   // its pending key; hook ids are URL-safe and never start with ':'
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const SR_ONLY: React.CSSProperties = {
@@ -190,9 +190,11 @@ export function WebhooksPanel() {
   // A failed re-read drops what was read before: a stale "on" is not shown as the state.
   const receiverRow = receiver.e ? undefined
     : arr(receiver.d, 'webhooks').find((row: any) => row && row.key === 'receiver_enabled');
-  // The store holds no row for it (404): the hub reads the declared default, on, and a
-  // write creates the row, so switching it off is offered.
-  const receiverMissing = !!receiver.e && receiver.status === 404;
+  // The store holds no row for it: the hub's own 404 names the category. The hub reads
+  // the declared default, on, and a write creates the row, so switching it off is
+  // offered. Any other 404 (a proxy's, a route that is not there) is a failed read.
+  const receiverMissing = !!receiver.e && receiver.status === 404
+    && (receiver.refusal as any)?.error === 'unknown category: webhooks';
   // The hub treats only a literal true as on (it fails closed), and so does this row.
   const receiverOn: boolean | null = receiverRow ? receiverRow.value === true
     : receiverMissing ? true : null;   // null: not read

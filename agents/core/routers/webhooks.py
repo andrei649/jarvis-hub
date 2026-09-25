@@ -22,6 +22,8 @@ receiver are read again after the turn, before anything is pushed.
 import asyncio
 import json
 import logging
+import math
+import re
 import time
 import unicodedata
 
@@ -270,20 +272,12 @@ def _quiet_hours(orch) -> bool:
     ``ambient.quiet_hours_end`` (22 to 7 by default), hours taken modulo 24, on the
     router's clock."""
     from agents.core.autonomy.jobs import (
-        DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING)
+        DEFAULT_QUIET_END, DEFAULT_QUIET_START, QUIET_END_SETTING, QUIET_START_SETTING, setting_hour)
     from agents.core.autonomy.schedule_runtime import is_night
 
-    get_setting = getattr(orch, "get_setting", None)
-
-    def hour(key, default):
-        try:
-            value = get_setting(key, default) if callable(get_setting) else default
-            return int(value) % 24
-        except (TypeError, ValueError):
-            return default
-
-    return is_night(time.localtime(_now()).tm_hour, start=hour(QUIET_START_SETTING, DEFAULT_QUIET_START),
-                    end=hour(QUIET_END_SETTING, DEFAULT_QUIET_END))
+    return is_night(time.localtime(_now()).tm_hour,
+                    start=setting_hour(orch, QUIET_START_SETTING, DEFAULT_QUIET_START),
+                    end=setting_hour(orch, QUIET_END_SETTING, DEFAULT_QUIET_END))
 
 
 #: Where the whole text of a delivery is kept, by what produced it: ``(the quiet-hours
@@ -299,6 +293,21 @@ def _ascii_title(text: str) -> str:
     """*text* as printable ASCII (a letter keeps its base, anything else is "?")."""
     folded = unicodedata.normalize("NFKD", text)
     return "".join(ch if ch.isascii() else "?" for ch in folded if not unicodedata.combining(ch))
+
+
+#: What changes how a pushed line reads without showing itself: bidi overrides, isolates
+#: and marks, the zero-width space, word joiners and invisible operators, the soft
+#: hyphen, the BOM, and every control character but a newline and a tab. A zero-width
+#: joiner and non-joiner stay (an emoji sequence, a Persian word).
+_HIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u00ad\u061c\u180e\u200b\u200e\u200f"
+                     "\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _visible(text: str) -> str:
+    """*text* as the owner will read it: nothing hidden, and a lone surrogate (which no
+    transport can encode) as U+FFFD. Linear time: no markup is rendered."""
+    return _SURROGATE.sub("\ufffd", _HIDDEN.sub("", text))
 
 
 def _record(store, hook_id: str, channel: str, ok: bool, reason: str = "") -> dict:
@@ -325,7 +334,6 @@ async def _deliver(orch, store, hook: dict, text: str, event: str, *, in_session
 
 async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: bool) -> dict:
     from agents.core.channels import outbound
-    from agents.core.channels.render import to_plain
     from agents.core.webhooks import DELIVER_LOG, PUSH_CHANNELS, PUSHES, RECEIVER, _event_name
 
     hook_id = hook["id"]
@@ -358,9 +366,11 @@ async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: b
     subject = f"Webhook {label}" + (f" - {_event_name(event, 64)}" if event else "")
     if channel == "ntfy":                        # a title is an HTTP header: printable ASCII
         subject = _ascii_title(subject)[:outbound.NTFY_TITLE_CHARS]   # send_to_target strips it
-    # Plain text: the sender wrote it, or steered the turn that did, so no markup is
-    # rendered and a link shows its address.
-    body = to_plain(str(text or ""))
+    # The text as written: the sender wrote it, or steered the turn that did, so no
+    # markup is rendered (a link shows its address) and nothing is rewritten. Rendering
+    # it here cost quadratic time on one long line of a 5 MiB body, on the event loop
+    # (H153 fourth review); what is left is linear and cut before it is sent.
+    body = _visible(str(text or ""))
     room = outbound.MAX_TEXT_CHARS - len(subject) - 2
     if len(body) > room:
         note = f"… (cut: {rest})"
@@ -369,6 +379,30 @@ async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: b
                                            plain=True)
     ok = bool(result.get("ok"))
     return _record(store, hook_id, channel, ok, "" if ok else str(result.get("reason") or "not delivered"))
+
+
+def _run_order(pipeline) -> list:
+    """The pipeline's steps in the order they run (its batches, in turn), or as listed
+    when the order cannot be worked out: a pipeline listed out of dependency order still
+    ends with the step that ran last."""
+    steps = list(getattr(pipeline, "steps", None) or [])
+    batches = getattr(pipeline, "execution_batches", None)
+    if callable(batches):
+        try:
+            ordered = [step for batch in batches() for step in batch]
+        except Exception:        # a cycle: the engine refused to run it anyway
+            return steps
+        if len(ordered) == len(steps):
+            return ordered
+    return steps
+
+
+def _steps_that_ran(pipeline, result) -> list[str]:
+    """The ids of the steps that left an output, in the order they ran."""
+    if not isinstance(result, dict):
+        return []
+    return [step.id for step in _run_order(pipeline)
+            if isinstance(getattr(step, "id", None), str) and result.get(step.id) is not None]
 
 
 def _workflow_output(pipeline, result) -> tuple[str, str]:
@@ -381,9 +415,10 @@ def _workflow_output(pipeline, result) -> tuple[str, str]:
     if not isinstance(result, dict):
         return "", "the workflow returned no result"
     if result.get("_ok") is False:
-        failed = [_event_name(step, 64) for step in result.get("_errors") or [] if isinstance(step, str)]
+        errors = result.get("_errors")
+        failed = [_event_name(step, 64) for step in errors if isinstance(step, str)] if isinstance(errors, list) else []
         return "", "the workflow run failed" + (f" at {', '.join(failed)}" if failed else "") + ": nothing delivered"
-    for step in reversed(list(getattr(pipeline, "steps", None) or [])):
+    for step in reversed(_run_order(pipeline)):
         out = result.get(getattr(step, "id", None))
         if out is None:
             continue
@@ -393,6 +428,25 @@ def _workflow_output(pipeline, result) -> tuple[str, str]:
             return out, ""
         return "", "the workflow's last step produced no text"
     return "", "the workflow produced no text"
+
+
+def _encodable(value):
+    """*value* as JSON can carry it: a lone surrogate becomes U+FFFD and a number JSON
+    has no spelling for (NaN, an infinity) becomes null. The answer to a sender is
+    written after its turn ran and its push went out; it must never fail to encode."""
+    if isinstance(value, str):
+        return _SURROGATE.sub("\ufffd", value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {_encodable(str(key)): _encodable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_encodable(item) for item in value]
+    return value
+
+
+def _answer(content: dict, status_code: int = 200):
+    return nocache_json(_encodable(content), status_code=status_code)
 
 
 def _skipped(store, hook_id: str, event: str, reason: str):
@@ -474,7 +528,7 @@ async def trigger_webhook(hook_id: str, request: Request):
     if store.delivers_only(live):
         # Deliver only: the rendered text goes where the hook says, and no turn runs.
         delivery = await _deliver(orch, store, live, text, event, in_session=False)
-        return nocache_json({"ok": True, "target": hook["target"], "delivery": delivery})
+        return _answer({"ok": True, "target": hook["target"], "delivery": delivery})
 
     if hook["target_type"] == "agent":
         try:
@@ -485,7 +539,7 @@ async def trigger_webhook(hook_id: str, request: Request):
             raise
         delivery = await _deliver(orch, store, live, reply if isinstance(reply, str) else str(reply), event,
                                   in_session=True)
-        return nocache_json({"ok": True, "target": hook["target"], "response": reply, "delivery": delivery})
+        return _answer({"ok": True, "target": hook["target"], "response": reply, "delivery": delivery})
 
     # workflow target (requires the workflow engine)
     engine = getattr(orch, "workflow_engine", None)
@@ -513,8 +567,15 @@ async def trigger_webhook(hook_id: str, request: Request):
         return error_json(exc, 200, "workflow run failed", extra={"ok": False, "target": hook["target"]})
     finally:
         reset_action_origin(origin_token)
-    out, why = _workflow_output(pipeline, result)
+    try:
+        out, why = _workflow_output(pipeline, result)
+    except Exception:
+        logger.warning("webhook %s: the workflow's output could not be read", hook_id, exc_info=True)
+        out, why = "", "the workflow's output could not be read: nothing delivered"
     delivery = (await _deliver(orch, store, live, out, event, in_session=False) if out
                 else _record(store, hook_id, channel, False, why))
-    ran_ok = result.get("_ok", True) if isinstance(result, dict) else False
-    return nocache_json({"ok": ran_ok, "target": hook["target"], "result": result, "delivery": delivery})
+    ran_ok = result.get("_ok", True) is not False if isinstance(result, dict) else False
+    # The steps that ran, never the run's context: it holds the sender's text and every
+    # step's output (what the owner's tools returned), and the sender is not the owner.
+    return _answer({"ok": ran_ok, "target": hook["target"], "steps": _steps_that_ran(pipeline, result),
+                    "delivery": delivery})

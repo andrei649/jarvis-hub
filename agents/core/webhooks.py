@@ -237,6 +237,10 @@ def extract_input(payload) -> str:
 
 
 RECEIVER_TTL = 1.0   # seconds a state read from the store is used without re-reading
+#: Seconds a caller with nothing known waits for the read that is running (the first one
+#: after a start). A burst that arrives while it runs waits for its answer instead of
+#: being refused (H153 fourth review); a read slower than this still refuses, closed.
+RECEIVER_FIRST_READ_WAIT = 2.0
 
 
 class ReceiverSwitch:
@@ -256,7 +260,9 @@ class ReceiverSwitch:
       another process (``nerva config set``) within the TTL;
     - the store is read by one caller at a time: while a read runs (a locked store takes
       SQLite's busy timeout), every other caller gets the last state at once instead of
-      reading too, so a burst of deliveries cannot hold every worker thread;
+      reading too, so a burst of deliveries cannot hold every worker thread; a caller
+      with no state known yet (the first read after a start) waits for that read, at
+      most :attr:`first_read_wait` seconds, and is refused, closed, after that;
     - a read that a write, a reset or another store overtook while it ran is dropped;
     - :meth:`state` blocks on SQLite: call it off the event loop.
     """
@@ -267,6 +273,8 @@ class ReceiverSwitch:
         self._lock = threading.Lock()
         self._generation = 0
         self._reader: Optional[object] = None
+        self._landed = threading.Event()
+        self.first_read_wait = RECEIVER_FIRST_READ_WAIT
         self.reset()
 
     def reset(self) -> None:
@@ -300,8 +308,8 @@ class ReceiverSwitch:
         return str(getattr(settings_db, "DB_PATH", ""))
 
     def state(self) -> Optional[bool]:
-        """True on, False off, None never read and unreadable now (or its first read is
-        still running)."""
+        """True on, False off, None never read and unreadable now (or its first read did
+        not land within :attr:`first_read_wait`)."""
         from agents.core import settings_db
 
         source = self._store_path()
@@ -309,16 +317,28 @@ class ReceiverSwitch:
             if source != self._source:            # another settings store: nothing known
                 self._known, self._fresh_until, self._source = None, float("-inf"), source
                 self._generation += 1             # a read of the old store must not land
-            if self._clock() < self._fresh_until or self._reader is not None:
+            if self._clock() < self._fresh_until:
                 return self._known
-            generation = self._generation
-            reader = self._reader = object()
+            if self._reader is not None:
+                if self._known is not None:
+                    return self._known            # the last state, at once
+                landed = self._landed             # nothing known: wait for the running read
+            else:
+                landed = None
+                generation = self._generation
+                reader = self._reader = object()
+                done = self._landed = threading.Event()
+        if landed is not None:
+            landed.wait(self.first_read_wait)
+            with self._lock:
+                return self._known
         try:
             return self._read(settings_db, generation)
         finally:
             with self._lock:
                 if self._reader is reader:
                     self._reader = None
+            done.set()
 
     def _read(self, settings_db, generation: int) -> Optional[bool]:
         try:

@@ -41,6 +41,8 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 **Re-opened in #1207** (2026-09-24): H153, by its fourth review (review-H153d). The two majors of the third are fixed on the real path. The review found a new major and five minors. The major: a push renders the whole text with to_plain before cutting it, and to_plain is quadratic on one long line and holds every thread, so one GitHub-sized body freezes the hub for about 40 s. The minors: to_plain rewrites addresses and file names; a workflow hook can answer 500 after its push; a burst after a start is refused while the receiver's first read runs; useApi starves a slow poller; and three behaviours are unpinned. The row is partial until the fix round, which is next.
 
+**Closed again in #1207** (2026-09-25): H153, after the fourth review's fix round. A push is the text as written: nothing is rendered or rewritten, what hides or reorders text is dropped, and it is cut before it is sent, so a delivery costs linear time. Every renderer the hub uses bounds its marker spans, so one long line renders in linear time too. A burst after a start waits for the receiver's first read. A workflow hook answers with the steps that ran, never the run's context, and every answer is encodable. useApi shows an answer unless a newer one is shown. The twelve unpinned behaviours each have a test, and the nits are fixed or recorded. H153 closed a fifth time.
+
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
