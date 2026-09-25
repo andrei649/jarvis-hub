@@ -11,3 +11,7 @@
 ## 2026-04-02 - Per-frame Canvas Text Layout Measurements (ctx.measureText) and O(N*M) Roster Scans
 **Learning:** Calling `ctx.measureText()` inside Canvas 2D `requestAnimationFrame` loops at 60 FPS triggers browser font layout engine calculations on every frame. Additionally, resolving task-to-tier mappings via nested `Array.includes()` scans creates O(Tasks * Tiers * Agents) work on state updates.
 **Action:** Cache `ctx.measureText` results on cluster/node state objects until text strings actually change, and build an `agentToTier` `Map` during roster indexing to keep task resolution O(1).
+
+## 2026-04-03 - Isolating High-Frequency Animation State in SVG/React Visualizers
+**Learning:** In SVG/React visualizer components (such as `NetworkBrain` in `frontend/src/network.tsx`), managing high-frequency animation ticks (e.g. `setInterval` every 60ms) at the top component level triggers full React reconciliation re-renders of the entire SVG element tree (~50+ SVG nodes and React hooks).
+**Action:** Isolate high-frequency animation state into a dedicated child subcomponent (e.g., `<LivePackets>`) so interval ticks only re-render the animated elements (`<circle>`), leaving parent component state and SVG DOM nodes untouched.

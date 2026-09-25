@@ -3,12 +3,41 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { V2 } from './data';
 
+/* Bolt Optimization: Isolated subcomponent for packet animations so 60ms interval ticks only re-render
+   the packet circles rather than re-rendering NetworkBrain and its entire SVG element tree (~50+ nodes). */
+function LivePackets({ livePackets, layout, dimLink, motion, CX, CY }) {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (motion === 'calm') return;
+    const i = setInterval(() => setTick(x => x + 1), 60);
+    return () => clearInterval(i);
+  }, [motion]);
+
+  if (motion === 'calm' || !livePackets.length) return null;
+
+  return (
+    <g>
+      {livePackets.map((l, i) => {
+        const prog = ((tick * 1.4 + i * 22) % 100) / 100;
+        const p = layout[l.a], q = layout[l.b];
+        if (!p || !q) return null;
+        const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+        const cx = mx + (CX - mx) * 0.32, cy = my + (CY - my) * 0.32;
+        const u = 1 - prog;
+        const x = u * u * p.x + 2 * u * prog * cx + prog * prog * q.x;
+        const y = u * u * p.y + 2 * u * prog * cy + prog * prog * q.y;
+        return <circle key={i} className={'pkt' + (dimLink(l) ? ' net-dim' : '')} cx={x} cy={y} r="1.8" opacity={Math.sin(prog * Math.PI)} />;
+      })}
+    </g>
+  );
+}
+
 function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocusId, motion, t }) {
   const W = 640, H = 460, CX = W/2, CY = H/2;
   const R_TASK = 250; // outer ring where per-agent task nodes sit (V1's task-fan)
   const [hover, setHover] = useState(null);
   const [tip, setTip] = useState(null);
-  const [tick, setTick] = useState(0);
 
   // layout: 4 tiers on concentric rings
   const layout = useMemo(() => {
@@ -40,13 +69,6 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     const cx = mx + (CX-mx)*0.32, cy = my + (CY-my)*0.32;
     return { a, b, d:`M${p.x},${p.y} Q${cx},${cy} ${q.x},${q.y}` };
   }), [layout]);
-
-  // packet animation tick
-  useEffect(() => {
-    if (motion === 'calm') return;
-    const i = setInterval(() => setTick(x => x+1), 60);
-    return () => clearInterval(i);
-  }, [motion]);
 
   // which packets are live (a few links pulse)
   const livePackets = useMemo(() => {
@@ -148,18 +170,8 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
           })}
         </g>
 
-        {/* live packets */}
-        {motion!=='calm' && livePackets.map((l,i)=>{
-          const prog = ((tick*1.4 + i*22) % 100)/100;
-          // approximate point on quadratic bezier
-          const p=layout[l.a], q=layout[l.b];
-          const mx=(p.x+q.x)/2, my=(p.y+q.y)/2;
-          const cx=mx+(CX-mx)*0.32, cy=my+(CY-my)*0.32;
-          const u=1-prog;
-          const x=u*u*p.x+2*u*prog*cx+prog*prog*q.x;
-          const y=u*u*p.y+2*u*prog*cy+prog*prog*q.y;
-          return <circle key={i} className={'pkt'+(dimLink(l)?' net-dim':'')} cx={x} cy={y} r="1.8" opacity={Math.sin(prog*Math.PI)}/>;
-        })}
+        {/* live packets (isolated subcomponent to prevent whole NetworkBrain re-renders on 60ms tick) */}
+        <LivePackets livePackets={livePackets} layout={layout} dimLink={dimLink} motion={motion} CX={CX} CY={CY} />
 
         {/* TASK-FAN — real /tasks per owner (V1 parity). Spoke from owner → task node. */}
         {drawTasks.length>0 && (
