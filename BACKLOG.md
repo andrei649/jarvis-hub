@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H667 third adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H667c found no major, three minors and eight nits (every review-2 finding fixed on the production paths; no live flock holder, owner root or outside file deleted):
+  - **A filesystem that refuses flock read as busy (m1).** ENOLCK, EOPNOTSUPP or EINVAL kept a dead owner's directory forever; only EWOULDBLOCK is busy now, and any other error reads the record.
+  - **Backups dropped any folder starting with the prefix (m2)**, anywhere in the data root (`workspace/nerva-sandbox-plans/`). Only a run directory exactly as mkdtemp names it, in the managed cache or directly under the root the owner chose, is left out.
+  - **Survivors (m3)** pinned: another kernel's record under a free flock, a reboot, a failed GetExitCodeProcess, a cache that does not exist yet, nested run files, an owner-root directory made again, a staged record on the error path, a root we do not own.
+  - **Nits.** A record from before a reboot or before the flag is free under a free flock (1); the record names its pid namespace and a pid is read only in its own (2); stale staged records are cleaned and an interrupt leaks nothing (3); an odd pid never stops the sweep and ages out (4); a first lock that failed is taken later (5); ctypes loaded lazily with declared types (6); only a junction or symlink reparse point is a link, not a cloud placeholder (7); the label and PNB-167 say JARVIS_EXEC_TEMP_DIR makes a root the owner keeps, and a pruned cache moves with the data root (8).
+  18 mutants, all caught but three equivalent (three after their cases were added). 34 rows re-stamped.
+  Tests: backend 15,279 → 15,309 (`tests/test_h667d_exec_cache_review.py` 30); vitest unchanged at 1,479.
+
 - 2026-09-25 H157 every configuration key from the UI: search, export, import, per-category reset (partial → equivalent, #1207; headline 149 → 150/697).
 
   The backend was already strong (typed validation before a write, an audit row per write); the UI lacked a search across categories, a way to move a configuration to another box, and any reset smaller than the global reseed. Now:

@@ -101,17 +101,19 @@ class Sandbox:
         """A run directory removed under a live sandbox is made again private (0700),
         and its lock taken again, never re-created world-readable (review-H667 m6). A
         managed one that is there without its lock, or wider than 0700 (made again by
-        another path first: review-H667b m2), is made right too."""
+        another path first: review-H667b m2), is made right too, and so is one whose
+        first lock could not be taken."""
         missing = not self.work_dir.is_dir()
         if missing:
             self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if self._work_lock is None:
+        if not self.work_dir_managed:
             return
         from . import exec_cache
 
         with contextlib.suppress(OSError):
             if stat.S_IMODE(os.stat(self.work_dir).st_mode) & 0o077:
                 os.chmod(self.work_dir, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        # A lock that is not there (never taken, or removed) is taken now (review-H667c nit 5).
         if missing or not exec_cache._lock_path(self.work_dir).is_file():
             self._release.detach()
             exec_cache.release(self._work_lock, self.work_dir)

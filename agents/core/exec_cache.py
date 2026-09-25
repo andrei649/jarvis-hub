@@ -28,17 +28,24 @@ forge it (review-H667 m6). The lock is an flock (POSIX) and records its owner: h
 pid, whether the flock was taken, the kernel's boot id and the pid's start time. The
 record is written before the lock has its name, so a lock is never seen empty.
 
-Whether a lock is held (review-H667b m1, M1):
+Whether a lock is held (review-H667b m1, M1; review-H667c):
 
+- a probe that finds the flock busy is the answer: held. Any other flock error (a
+  filesystem that refuses flock) reads the record instead of guessing;
 - on the kernel that wrote it (same boot id, or same host where there is no boot id),
   a record whose writer took the flock is held exactly while the flock is: a crashed
-  sandbox whose pid came back (the hub is pid 1 in a container) is free;
+  sandbox whose pid came back (the hub is pid 1 in a container) is free. So is one
+  from before a reboot of this host, and one from before the flag existed (its writer
+  always took the flock), when the probe gets the flock;
 - a record written without a flock (Windows, a filesystem without flock) is held while
-  its pid is alive with the same start time; on Windows the process table is asked,
-  never ``os.kill(pid, 0)`` (signal 0 is CTRL_C_EVENT there);
-- another host's record is kept until its directory (or the orphan lock) is ten times
-  the age limit old: nothing here can tell whether it is alive, and a recreated
-  container on another kernel must not keep it forever.
+  its pid is alive with the same start time, and only when it was numbered in this pid
+  namespace; on Windows the process table is asked, never ``os.kill(pid, 0)`` (signal 0
+  is CTRL_C_EVENT there);
+- another host's record, a record from another pid namespace, a record whose writer
+  held a flock the probe could not test, and a record with a pid no hold writes are
+  kept until the directory (or the orphan lock) is ten times the age limit old: nothing
+  here can tell whether they are alive, and nothing may keep a directory forever. A
+  lock that cannot be judged at all is kept and logged; the sweep goes on.
 
 Only directories this module named (``nerva-sandbox-*``) are considered, in a managed
 root that is a real directory owned by this user and not writable by others. To move
@@ -49,7 +56,6 @@ a managed cache that is itself a link is never pruned.
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import logging
 import os
 import secrets
@@ -73,6 +79,10 @@ LOCKS = ".locks"
 CLAIM = ".pruning-"
 FOREIGN_FACTOR = 10          # another host's record is kept until 10x the age limit
 _WINDOWS = os.name == "nt"
+_PID_LIMIT = 2 ** 32 if _WINDOWS else 2 ** 22   # Linux's pid_max ceiling
+#: Reparse tags that make a directory a link: a junction (mount point) and a symlink. A
+#: cloud placeholder (OneDrive) carries another tag and is a real directory.
+_LINK_REPARSE_TAGS = frozenset({0xA0000003, 0xA000000C})
 
 try:  # POSIX: a run directory's lock is an flock held for the sandbox's lifetime
     import fcntl as _fcntl
@@ -207,10 +217,19 @@ def _start_token(pid: int) -> str:
     return fields[19] if len(fields) > 19 else ""       # field 22, starttime
 
 
+def _pid_ns() -> str:
+    """This process's pid namespace (Linux: the inode of ``/proc/self/ns/pid``), or "":
+    a pid means something only in the namespace that numbered it (review-H667c nit 2)."""
+    try:
+        return str(os.stat("/proc/self/ns/pid").st_ino)
+    except OSError:
+        return ""
+
+
 def _record(flocked: bool) -> bytes:
     pid = os.getpid()
     return (f"{socket.gethostname()} {pid} flock={int(flocked)} boot={_boot_id()} "
-            f"start={_start_token(pid)}\n").encode()
+            f"start={_start_token(pid)} ns={_pid_ns()}\n").encode()
 
 
 def _parse(text: str) -> dict:
@@ -264,6 +283,13 @@ def hold(work_dir: Path) -> int | None:
             logger.warning("sandbox run directory %s: flock unavailable (%s); its owner "
                            "record still protects it on this host", work_dir.name,
                            exc.strerror or exc)
+    def abandon() -> None:
+        with contextlib.suppress(OSError):
+            if fd >= 0:
+                os.close(fd)
+        with contextlib.suppress(OSError):
+            staged.unlink()
+
     try:
         os.write(fd, _record(flocked))
         if _WINDOWS:                    # an open file cannot be renamed there
@@ -275,12 +301,11 @@ def hold(work_dir: Path) -> int | None:
     except OSError as exc:
         logger.warning("sandbox run directory %s has no lock (%s): only its age protects it "
                        "from another process's prune", work_dir.name, exc.strerror or exc)
-        with contextlib.suppress(OSError):
-            if fd >= 0:
-                os.close(fd)
-        with contextlib.suppress(OSError):
-            staged.unlink()
+        abandon()
         return None
+    except BaseException:               # an interrupt: no descriptor or staged file left behind
+        abandon()
+        raise
     return fd
 
 
@@ -311,17 +336,42 @@ def _newest(path: Path) -> float:
     return newest
 
 
+_KERNEL32 = None
+
+
 def _kernel32():  # pragma: no cover - Windows
-    return ctypes.WinDLL("kernel32", use_last_error=True)
+    """kernel32 with the argument and return types of the calls made here declared, so
+    a HANDLE is never truncated to a C int (review-H667c nit 6). Built once."""
+    global _KERNEL32
+    if _KERNEL32 is None:
+        import ctypes
+        from ctypes import wintypes
+
+        dll = ctypes.WinDLL("kernel32", use_last_error=True)
+        dll.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        dll.OpenProcess.restype = wintypes.HANDLE
+        dll.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        dll.GetExitCodeProcess.restype = wintypes.BOOL
+        filetime = ctypes.POINTER(ctypes.c_ulonglong)
+        dll.GetProcessTimes.argtypes = [wintypes.HANDLE, filetime, filetime, filetime, filetime]
+        dll.GetProcessTimes.restype = wintypes.BOOL
+        dll.CloseHandle.argtypes = [wintypes.HANDLE]
+        dll.CloseHandle.restype = wintypes.BOOL
+        _KERNEL32 = dll
+    return _KERNEL32
 
 
 def _last_error() -> int:  # pragma: no cover - Windows
+    import ctypes
+
     return ctypes.get_last_error()
 
 
 def _windows_process(pid: int) -> tuple[bool, str] | None:
     """``(alive, creation time)`` from the process table, or None for no such process.
     Access denied (another user's process) reads as alive."""
+    import ctypes
+
     kernel = _kernel32()
     handle = kernel.OpenProcess(0x1000, False, pid)        # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
@@ -375,25 +425,53 @@ def _held(lock: Path, *, foreign_expired: bool = False) -> bool:
             try:
                 _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
                 probed = True
+            except BlockingIOError:
+                return True                   # busy: its writer holds it
             except OSError:
-                return True
+                probed = False                # a filesystem that refuses flock: read the record
         try:
             record = _parse(os.read(fd, 512).decode("utf-8", "replace"))
         except OSError:
             return True
         if not record["host"]:
             return False
-        boot = _boot_id()
-        this_kernel = (record.get("boot") == boot) if boot and record.get("boot") else (
-            record["host"] == socket.gethostname())
-        if this_kernel and probed and record.get("flock") == "1":
-            return False                      # its writer's flock is gone: nobody holds it
-        if not this_kernel and record["host"] != socket.gethostname():
+        boot, rec_boot = _boot_id(), record.get("boot", "")
+        same_host = record["host"] == socket.gethostname()
+        if boot and rec_boot:
+            this_kernel = rec_boot == boot
+            rebooted = same_host and not this_kernel
+        else:
+            this_kernel, rebooted = same_host, False
+        flocked = record.get("flock")
+        if probed and ((this_kernel and flocked == "1") or rebooted
+                       or (same_host and flocked is None)):
+            # Its writer's flock is gone, or its writer's kernel is (a reboot), or it is a
+            # record from before the flag, whose writer always took the flock.
+            return False
+        if not this_kernel and not same_host:
             return not foreign_expired        # another host's: nothing here can tell
+        if flocked == "1":
+            return not foreign_expired        # its writer held a flock this probe could not test
+        ns, mine = record.get("ns", ""), _pid_ns()
+        if ns and mine and ns != mine:
+            return not foreign_expired        # another pid namespace: its pid means nothing here
         pid = record["pid"]
-        return pid.isdigit() and _pid_alive(int(pid), record.get("start", ""))
+        if not (pid.isascii() and pid.isdigit()) or int(pid) >= _PID_LIMIT:
+            return not foreign_expired        # a record no hold wrote: unknown, aged out
+        return _pid_alive(int(pid), record.get("start", ""))
     finally:
         os.close(fd)                          # closing drops the probe's own lock
+
+
+def _held_safely(lock: Path, **kwargs) -> bool:
+    """``_held``, where anything unexpected reads as held and is logged: one odd lock
+    never stops the whole sweep (review-H667c nit 4)."""
+    try:
+        return _held(lock, **kwargs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sandbox lock %s could not be judged (%s); kept", lock.name,
+                       exc.__class__.__name__)
+        return True
 
 
 def _root_problem(root: Path) -> str | None:
@@ -404,8 +482,10 @@ def _root_problem(root: Path) -> str | None:
         return "missing"
     except OSError as exc:
         return f"unreadable ({exc.strerror or exc.__class__.__name__})"
-    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
-        return "a link"                       # 0x400: a Windows reparse point (junction)
+    reparse = getattr(info, "st_file_attributes", 0) & 0x400      # a Windows reparse point
+    if stat.S_ISLNK(info.st_mode) or (
+            reparse and getattr(info, "st_reparse_tag", 0xA0000003) in _LINK_REPARSE_TAGS):
+        return "a link"
     if not stat.S_ISDIR(info.st_mode):
         return "not a directory"
     if hasattr(os, "getuid"):
@@ -453,7 +533,7 @@ def prune(root: Path | None = None, *, managed: bool = True,
         try:
             if (not entry.name.startswith(PREFIX) or entry.is_symlink() or not entry.is_dir()
                     or entry.resolve() in keep or (newest := _newest(entry)) >= cutoff
-                    or _held(_lock_path(entry), foreign_expired=newest < foreign_cutoff)):
+                    or _held_safely(_lock_path(entry), foreign_expired=newest < foreign_cutoff)):
                 report["kept"] += 1
                 continue
             # Claim it under another name first: a sandbox that holds a file open
@@ -497,12 +577,19 @@ def _drop_orphan_locks(root: Path, foreign_cutoff: float) -> None:
     with contextlib.suppress(OSError):
         if locks.is_symlink() or not locks.is_dir():
             return
+        stale_staged = time.time() - 3600
         for lock in locks.iterdir():
+            if lock.name.startswith("." + PREFIX) and lock.name.endswith(".tmp"):
+                # a record staged by a hold that never finished (review-H667c nit 3)
+                with contextlib.suppress(OSError):
+                    if _date(lock.lstat()) < stale_staged:
+                        lock.unlink()
+                continue
             name = lock.name.removesuffix(".lock")
             if not name.startswith(PREFIX) or (root / name).exists():
                 continue
             with contextlib.suppress(OSError):
-                if not _held(lock, foreign_expired=_date(lock.lstat()) < foreign_cutoff):
+                if not _held_safely(lock, foreign_expired=_date(lock.lstat()) < foreign_cutoff):
                     lock.unlink()
 
 

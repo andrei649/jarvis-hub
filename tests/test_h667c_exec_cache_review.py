@@ -416,7 +416,7 @@ def test_a_linked_locks_directory_is_never_emptied(root, tmp_path):
     assert victim.exists()
 
 
-def test_a_backup_keeps_the_rest_of_the_cache(tmp_path):
+def test_a_backup_keeps_the_rest_of_the_cache(tmp_path, monkeypatch):
     import tarfile
 
     from agents.core import backup
@@ -426,8 +426,9 @@ def test_a_backup_keeps_the_rest_of_the_cache(tmp_path):
     (src / "cache" / "exec" / f"{P}x" / "script.py").write_text("secret")
     (src / "cache" / "other").mkdir(parents=True)
     (src / "cache" / "other" / "keep.bin").write_text("keep")
-    (src / "mytmp" / f"{P}y").mkdir(parents=True)
-    (src / "mytmp" / f"{P}y" / "script.py").write_text("secret")    # nit 3
+    (src / "mytmp" / f"{P}ab12cd34").mkdir(parents=True)             # nit 3: the owner's root
+    (src / "mytmp" / f"{P}ab12cd34" / "script.py").write_text("secret")
+    monkeypatch.setenv(exec_cache.ENV_KEY, str(src / "mytmp"))
     backup.create_backup(str(src), out_dir=str(tmp_path / "out"), encrypt=False)
     with tarfile.open(next((tmp_path / "out").glob("*.tar.gz"))) as tar:
         names = tar.getnames()
