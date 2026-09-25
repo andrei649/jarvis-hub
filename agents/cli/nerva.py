@@ -1034,9 +1034,17 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
             "(`nerva config set system.log_to_file on`) or JARVIS_LOG_FILE is set\n"
         )
         return EXIT_FAILED
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    for line in lines[-max(0, ns.lines):]:
-        ctx.say(line)
+    # H145: read from the end within a byte budget and redacted again, as the HUD's log
+    # page reads it; a multi-gigabyte log costs the same as a small one.
+    from agents.core import log_tail
+
+    if ns.lines <= 0:
+        return EXIT_OK
+    tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+    for entry in tail["entries"]:
+        ctx.say(entry["text"])
+    if tail["truncated"] and len(tail["entries"]) < ns.lines:
+        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
     return EXIT_OK
 
 

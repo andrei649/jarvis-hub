@@ -14,6 +14,14 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H145 read the hub's own log from the UI (missing → equivalent, #1207; headline 148 → 149/697).
+
+  When something misbehaves (a channel crash-looping, a provider refusing every call), the audit chain and the traces say what Nerva decided and how it routed, not what the process logged; that needed a shell on the box. Now:
+  - **`GET /api/admin/logs`** (admin, read-only) tails the log file the hub writes and its numbered rotations, and nothing else (a file is chosen by a listed name; a path, another file, a pipe or a directory is refused with 400). It reads backwards within 4 MiB, returns at most 500 records, keeps a traceback with its error, filters by File / minimum Level / Component (a logger and its children) / Lines, and re-applies the H495 secret redactor as it reads, since rotated files and older lines never went through it. With file logging off (the default) it says so and how to turn it on, instead of an empty log.
+  - **Console → Observe → Logs** has the four filters, level colours, newest-first records shown as text, a 5 s auto-refresh with the LIVE badge, and honest empty, partial-read and refusal states. `nerva logs -n N` reads the same bounded, redacted tail instead of the whole file.
+  29 mutants, all caught but one equivalent (two after their cases were added). Test manual: PNB-169, PNB-170; the API sweep lists the route; the desktop HUD allowlist gains `/v2/console/logs`. 81 rows re-stamped; H456's `nerva.py` range recomputed by hand.
+  Tests: backend 15,204 → 15,237 (`tests/test_log_tail.py` 33); vitest 1,462 → 1,471 (`logs-panel.test.tsx` 9).
+
 - 2026-09-25 H670 first adversarial review round (stays equivalent, #1207; headline stays 148/697).
 
   review-H670 found one major, seven minors and six nits (every agent-facing prompt carries the contract; the note hides nothing from the scan; the H363 prefix holds):

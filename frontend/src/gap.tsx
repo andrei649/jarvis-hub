@@ -14,6 +14,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
+import { LogsPanel } from './panels/logs';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -4785,6 +4786,7 @@ const PANEL_COMPONENTS = {
   ModelSetupPanel,
   DocsPanel,
   WebhooksPanel,
+  LogsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
   HousePanel,

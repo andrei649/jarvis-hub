@@ -170,6 +170,8 @@
     "/v2/console/quality/",
     "/v2/console/apm",
     "/v2/console/apm/",
+    "/v2/console/logs",
+    "/v2/console/logs/",
     "/v2/console/model-info",
     "/v2/console/model-info/",
     "/v2/console/design-manifest",

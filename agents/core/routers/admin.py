@@ -298,6 +298,23 @@ async def admin_tool_events(limit: int = Query(100, ge=1, le=500)):
     return nocache_json({"events": TOOL_EVENTS.snapshot(limit), "counts": TOOL_EVENTS.counts()})
 
 
+@router.get("/api/admin/logs", dependencies=[Depends(admin_guard)])
+async def admin_logs(file: str = Query("", max_length=128), level: str = Query("", max_length=16),
+                     component: str = Query("", max_length=200), lines: int = Query(200)):
+    """H145 — the hub's own log, from the UI: the newest records of the log file or one of
+    its rotations, read backwards within a byte budget (at most 500 records), filtered by
+    file, minimum level and component, and redacted again as they are read. Admin-only and
+    read-only; when file logging is off the answer says so (``enabled``, ``note``)."""
+    from agents.core import log_tail
+
+    try:
+        out = await asyncio.to_thread(log_tail.read_log, file=file or None, level=level,
+                                      component=component, lines=lines)
+    except log_tail.LogRequestError as exc:
+        return JSONResponse({"error": "bad_request", "reason": str(exc)}, status_code=400)
+    return nocache_json(out)
+
+
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
 async def admin_get_audit(page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200)):
     db = data_path("security/audit.db")

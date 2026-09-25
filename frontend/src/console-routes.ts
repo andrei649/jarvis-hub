@@ -65,6 +65,7 @@ export const CONSOLE_PANELS = [
   {"id": "arena", "label": "Arena", "group": "Observe", "component": "ArenaPanel"},
   {"id": "quality", "label": "Quality", "group": "Observe", "component": "QualityPanel"},
   {"id": "apm", "label": "APM", "group": "Observe", "component": "APMPanel"},
+  {"id": "logs", "label": "Logs", "group": "Observe", "component": "LogsPanel"},
   {"id": "model-info", "label": "Model Info", "group": "Observe", "component": "ModelInfoPanel"},
   {"id": "design-manifest", "label": "Design Manifest", "group": "Observe", "component": "DesignManifestPanel"},
   {"id": "feedback", "label": "Feedback", "group": "Observe", "component": "FeedbackPanel"},
