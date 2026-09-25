@@ -866,11 +866,21 @@ class Agent:
         Resolved per call rather than at construction so a test's sink, or a tracer
         wired later in a boot, is honoured without re-creating the agent.
         """
-        if self.tool_event_sink is not None:
-            return self.tool_event_sink
-        from .observability.tool_events import TOOL_EVENTS
+        from .memory import turn_tools
 
-        return TOOL_EVENTS.record
+        if self.tool_event_sink is not None:
+            sink = self.tool_event_sink
+        else:
+            from .observability.tool_events import TOOL_EVENTS
+
+            sink = TOOL_EVENTS.record
+
+        def record(event):
+            # H441 — the turn's own list of tool names, for the recap; then the trail.
+            turn_tools.note(event)
+            return sink(event)
+
+        return record
 
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,

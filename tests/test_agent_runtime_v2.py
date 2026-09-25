@@ -1354,7 +1354,9 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
     assert len(runtime.calls) == 1
     from agents.core.observability.tool_events import TOOL_EVENTS
 
-    assert runtime.calls[0] == {
+    call = dict(runtime.calls[0])
+    sink = call.pop("event_sink")
+    assert call == {
         "agent_id": "jarvis",
         "backend": backend,
         "model": "tool-model",
@@ -1362,9 +1364,11 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
         "system": "system",
         "max_tokens": 400,
         "temperature": 0.1,
-        # The loop used to be run with no sink, so every event it emitted was dropped.
-        "event_sink": TOOL_EVENTS.record,
     }
+    # The loop used to be run with no sink, so every event it emitted was dropped. The
+    # sink lands every event in the trail (and, since H441, notes the turn's tools).
+    sink({"event": "tool_result", "tool": "probe_h441"})
+    assert TOOL_EVENTS.snapshot(1)[-1]["tool"] == "probe_h441"
 
 
 @pytest.mark.parametrize("runtime_response", ["", " \t "])

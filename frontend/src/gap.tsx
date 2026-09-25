@@ -15,6 +15,7 @@ import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
 import { LogsPanel } from './panels/logs';
+import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
@@ -2374,15 +2375,6 @@ export function LearningPanel() {
     </div>
   </Card>;
 }
-function SessionsPanel() {
-  const { d, e, loading, reload } = useApi('/sessions');
-  const list = arr(d, 'sessions');
-  return <Card title="SESSIONS" live={asLive(d)} sub={list.length} onReload={reload}>
-    <State e={e} loading={loading} n={list.length} />
-    {list.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.session_id || s.id || s}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s.turns ?? s.count ?? ''}</span>{(s.session_id || s.id) && <button className="tool-btn" onClick={() => act('/sessions/resume', { session_id: s.session_id || s.id })}>resume</button>}</Row>)}
-  </Card>;
-}
-
 /* ── Admin ─────────────────────────────────────────────── */
 export function LMStudioPanel() {
   const { d, e, loading, reload } = useApi('/api/models/local', true, true);

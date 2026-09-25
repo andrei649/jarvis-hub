@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H441 a free recap when you come back to a conversation (partial → equivalent, #1207; headline 151 → 152/697).
+
+  Resuming a session used to return its last 20 raw turns and nothing else. There was no `/recap`, and the HUD showed nothing after a resume. Now:
+  - **The recap.** `agents/core/memory/recap.py` renders the last exchanges (10 by default, at most 50), each turn one bounded line of plain text, with a reply's tools collapsed to `[3 tool calls: web_search, web_fetch]`. It never calls a model: Hermes' rule, since a generated recap costs a cache miss for no accuracy gain.
+  - **Tools on turns.** The orchestrator opens a per-turn collection (`memory/turn_tools.py`, a context variable, so concurrent sessions never mix). The agent's tool-event sink notes each finished call's tool, and the reply that closes the turn stores the names on `Turn.tools`. They are persisted and survive a reload or a resume.
+  - **Everywhere.** `POST /sessions/resume` returns `recap` beside the raw turns. `/recap [n]` answers in every channel from that chat's own session and leaves out its own line. The HUD Sessions panel (`frontend/src/panels/sessions.tsx`) shows the recap after a resume and names a refused one.
+  - **Tests:** three tests that pinned the tool-event sink's identity now check that it forwards every event to the trail.
+
+  28 mutants (24 Python, 4 HUD), all caught, three after their cases were added. 82 rows re-stamped; H427's publish() range and its `:327`, and the SessionsPanel citations of H218, H413 and H440 (moved to `panels/sessions.tsx`), fixed by hand. Test manual: CHT-118 (CHT-011 names the recap).
+  Tests: backend 15,426 → 15,442 (`tests/test_h441_session_recap.py` 16); vitest 1,488 → 1,491 (`sessions-recap.test.tsx` 3).
+
 - 2026-09-25 H350 a SKILL.md is checked at every write, and `nerva skills lint` advises the rest (missing → equivalent, #1207; headline 150 → 151/697).
 
   A malformed SKILL.md used to fall through to the heading parser and register under its folder's name with an empty description. `agents/core/skills/validate.py` now checks both dialects the loader reads:

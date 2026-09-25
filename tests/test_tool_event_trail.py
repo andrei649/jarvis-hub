@@ -144,14 +144,19 @@ async def test_the_agent_hands_the_loop_a_sink_and_the_default_is_the_shared_log
     await agent.generate_response(
         backend=object(), model="m", prompt="p", system="s", max_tokens=64, temperature=0.1,
     )
-    assert seen[0]["event_sink"] == TOOL_EVENTS.record
+    # The sink forwards every event to the shared log (since H441 it also notes the
+    # turn's tools for the recap, so it is a wrapper rather than the bound method).
+    seen[0]["event_sink"]({"event": "tool_result", "tool": "trail_probe_default"})
+    assert TOOL_EVENTS.snapshot(1)[-1]["tool"] == "trail_probe_default"
 
     own = ToolEventLog()
     agent.tool_event_sink = own.record
     await agent.generate_response(
         backend=object(), model="m", prompt="p", system="s", max_tokens=64, temperature=0.1,
     )
-    assert seen[1]["event_sink"] == own.record, "an injected sink wins over the default"
+    seen[1]["event_sink"]({"event": "tool_result", "tool": "trail_probe_own"})
+    assert own.snapshot(1)[-1]["tool"] == "trail_probe_own", "an injected sink wins over the default"
+    assert TOOL_EVENTS.snapshot(1)[-1]["tool"] != "trail_probe_own"
 
 
 # ── end to end: the fence's own event lands in the log ───────────────────────

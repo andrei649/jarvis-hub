@@ -358,11 +358,32 @@ async def _refine(ctx: CommandContext) -> str:
     return "\n".join(lines)
 
 
+async def _recap(ctx: CommandContext) -> str:
+    """H441 — Hermes' ``/recap``: this conversation's last exchanges, rendered from the
+    stored turns with no model call; tools a reply used show as a count. ``/recap 20``
+    shows more exchanges (at most 50)."""
+    orch = ctx.orch
+    memory = getattr(orch, "memory", None)
+    session = getattr(orch, "session_id", None)
+    if memory is None or not session:
+        return "There is no conversation here to recap yet."
+    from agents.core.memory.recap import DEFAULT_EXCHANGES, render_recap
+
+    arg = (ctx.args or "").strip()
+    exchanges = int(arg) if arg.isdigit() and int(arg) > 0 else DEFAULT_EXCHANGES
+    turns = await memory.get_history(session)
+    # The /recap line itself is the conversation's newest turn: it is not recapped.
+    if turns and turns[-1].get("role") == "user" and str(turns[-1].get("content", "")).lstrip().startswith("/recap"):
+        turns = turns[:-1]
+    return render_recap(turns, exchanges=exchanges)["text"]
+
+
 def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
+    registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))

@@ -32,6 +32,7 @@ from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
 from .conversation_clock import CONTEXT_REFUSED_REPLY, CompactionClockRefused, capture_clock, prompt_clock
 from .llm.tokenizer import estimate_tokens
+from .memory import turn_tools
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
@@ -1803,6 +1804,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        turn_tools.begin()          # H441: the reply records the tools this turn calls
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -1978,6 +1980,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        turn_tools.begin()          # H441: the reply records the tools this turn calls
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -3194,7 +3197,12 @@ class Orchestrator:
         t_synthesize: int,
     ) -> None:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
-        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+        called = turn_tools.collected()
+        if called:
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
+                                       tools=called)
+        else:
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
         await asyncio.to_thread(

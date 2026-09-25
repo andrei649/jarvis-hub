@@ -77,8 +77,13 @@ async def resume_session(req: Request):
     if not ok:
         return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
     orch.session_id = sid
-    history = await orch.memory.get_history(sid, last_n=20)
-    return JSONResponse({"ok": True, "session": sid, "turns": history})
+    history = await orch.memory.get_history(sid)
+    from agents.core.memory.recap import render_recap
+
+    # H441 — the recap is rendered from the stored turns, never by a model; "turns"
+    # stays the last 20 raw turns for the clients that replay them.
+    return JSONResponse({"ok": True, "session": sid, "turns": history[-20:],
+                         "recap": render_recap(history)})
 
 
 class ContinueSessionRequest(BaseModel):
