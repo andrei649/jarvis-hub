@@ -156,19 +156,22 @@ def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
     """Whether ``value`` encodes to under ``budget`` characters, counted until it does not:
     a container wider than what is left is refused before its items are listed, and a
     string longer than it before it is looked at, so the walk costs at most ``budget``
-    whatever the answer's size (review-H315h n1). Text counts as it encodes: a control
-    character is six (``\\u0000``), a byte of ``bytes`` up to five (``\\\\x00``). A value
-    JSON spells through ``str()`` (a huge int, any object) has a size nobody knows until it
-    is spelled, so it is never small."""
+    whatever the answer's size (review-H315h n1). A string that fits is counted as it
+    encodes, exactly, so a newline costs two, not the whole string six times over (a
+    multi-line log answer queued behind large scans again: review-H315i m1), and a quote
+    two, not one (n4). ``bytes`` count as ``str()`` spells them, as the encoder does. A
+    value JSON spells through ``str()`` otherwise (a huge int, any object) has a size
+    nobody knows until it is spelled, so it is never small."""
     stack = [value]
     while stack:
         item = stack.pop()
-        if isinstance(item, str):
+        if isinstance(item, (str, bytes, bytearray)):
             if len(item) > budget:
                 return False
-            budget -= (len(item) if item.isprintable() else 6 * len(item)) + 2
-        elif isinstance(item, (bytes, bytearray)):
-            budget -= 5 * len(item) + 2
+            text = item if isinstance(item, str) else str(item)
+            if len(text) > 4 * budget:
+                return False
+            budget -= len(json.dumps(text, ensure_ascii=False))
         elif isinstance(item, dict):
             budget -= 2 * len(item) + 2
             if budget < 0:

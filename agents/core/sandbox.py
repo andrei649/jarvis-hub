@@ -246,6 +246,9 @@ class Sandbox:
         # The suffix comes off the file's own name only: a dot in a directory ("a.d/run")
         # made a new directory per run, left behind (review-H315h n4).
         path = PurePath(filename)
+        if not path.name:
+            # "", "." or "/": no name to keep; the default one runs (review-H315i n3).
+            path = PurePath("script.py")
         stem, dot, ext = path.name.rpartition(".")
         name = (f"{stem}-{secrets.token_hex(8)}.{ext}" if dot and stem
                 else f"{path.name}-{secrets.token_hex(8)}")

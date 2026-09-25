@@ -14,6 +14,24 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H315 eighth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315i found no major, four minors and four nits; the seventh round's fixes held and its eleven survivors are killed:
+  - **Small multi-line answers queued again (m1).** `_small` charged a string six times its length for any non-printable character, a newline included, so 3–16 KiB log answers went to the single scan thread (a 4 KB answer's p50 rose to 3.5 s under load). It counts the exact encoding now, which also counts a quote or backslash at two (n4).
+  - **The relock left a gap (m2).** It made `.lock` and only then locked it; a start in between took the unheld file and removed the live mounts (157 in 5,235 relocks). The new lock is made and locked under a staging name, then renamed over `.lock`, and a `.lock` that is there is held meanwhile.
+  - **Another user's hub could not start (m3).** Under umask 077, looking into another user's owner directory raised out of the start. Such a directory reads as alive, and one unreadable entry never stops a sweep or a start. GOV-258 now runs the step as a non-root user with `UMask=0077` and expects what really happens (the kernel opened while the directory was unreadable runs without tool calls).
+  - **Six survivors (m4):** a stat error that persists, no lock at start, the walk's two early exits, an owner directory replaced by a link, a huge negative int. Each has a case.
+  - **Nits:** an owner path that is no longer a directory, or an fd that is gone, reads as lost (not "unknown" forever); an empty file name (`""`, `.`, `/`) runs as the default one instead of raising.
+
+  Mutation: this round's 14 mutants were all caught.
+
+  Records:
+  - H315 rewritten;
+  - 12 drifted rows re-read and re-stamped;
+  - GOV-258's step and its expectation corrected.
+
+  Tests: backend 14,888 → 14,904 (`tests/test_h315i_todo_review.py` 16); vitest unchanged at 1,462.
+
 - 2026-09-25 H318 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H318f found no major, one minor and four nits; the fifth round's two minors and seven nits held:

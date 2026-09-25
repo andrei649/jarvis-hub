@@ -18,6 +18,7 @@ from __future__ import annotations
 import errno
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -88,20 +89,20 @@ def test_a_lock_file_that_went_is_held_again_where_the_mounts_live(tmp_path, how
 
 
 def test_a_lock_file_replaced_while_it_is_being_locked_is_not_taken(tmp_path, monkeypatch):
-    """Between the open and the flock another file takes the name: the fd locks a file
-    that is no longer at the path, which holds nothing up."""
+    """Between the rename into place and the re-check another file takes the name: the
+    fd locks a file that is no longer at the path, which holds nothing up."""
     from agents.core import session_kernels as sk
 
     owner = tmp_path / "p1-0badc0de"
     owner.mkdir()
-    real = sk._fcntl.flock
+    real = os.replace
 
-    def flock(fd, op):
-        (owner / ".lock").unlink()
-        (owner / ".lock").write_text("")
-        return real(fd, op)
+    def replace(src, dst):
+        real(src, dst)
+        Path(dst).unlink()
+        Path(dst).write_text("")
 
-    monkeypatch.setattr(sk._fcntl, "flock", flock)
+    monkeypatch.setattr(sk.os, "replace", replace)
     assert sk._relock_in_place(owner) is None
 
 
@@ -209,7 +210,7 @@ def test_bytes_count_as_they_encode():
     from agents.core import tool_rpc_runtime as rt
 
     assert rt._small(b"x" * 1000) is True
-    assert rt._small(b"x" * 4000) is False                # 4 000 bytes spell over 16 KiB
+    assert rt._small(b"\x00" * 4000) is False            # spelt "\\x00" each: over 16 KiB
 
 
 def test_a_long_dict_key_counts():

@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import hashlib
 import json
 import logging
@@ -159,42 +160,70 @@ LOCK_HELD, LOCK_UNKNOWN, LOCK_LOST = "held", "unknown", "lost"
 def _lock_state(owner_dir: Path, fd) -> str:
     """Whether the lock this manager holds is still the one at ``<owner>/.lock``.
 
-    Only a ``.lock`` that is gone, or one that is another file now, reads as lost. Any
-    other error (ESTALE, EACCES, ENOMEM) says nothing about the lock, which is kept: a
-    manager that gave up an intact lock over its live mounts let the next start remove
-    them (review-H315h m1)."""
+    A ``.lock`` that is gone or is another file reads as lost, and so does an owner path
+    that is no longer a directory (ENOTDIR, a symlink loop) or an fd the manager no longer
+    has (review-H315i n1). Any other error (ESTALE, EACCES, ENOMEM) says nothing about the
+    lock, which is kept: a manager that gave up an intact lock over its live mounts let
+    the next start remove them (review-H315h m1)."""
     if fd is None:
         return LOCK_LOST
     try:
         held = os.fstat(fd)
-        there = os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
-    except FileNotFoundError:
-        return LOCK_LOST
     except OSError:
-        return LOCK_UNKNOWN
+        return LOCK_LOST
+    try:
+        there = os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return LOCK_LOST
+    except OSError as exc:
+        return LOCK_LOST if exc.errno == errno.ELOOP else LOCK_UNKNOWN
     return LOCK_HELD if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev) else LOCK_LOST
 
 
 def _relock_in_place(owner_dir: Path):
     """Hold ``<owner>/.lock`` again in a directory this manager still owns, whose lock file
     went or was replaced: its live mounts keep a holder, so no other start removes them
-    (review-H315h m1). None when the directory is gone, or someone else holds the file."""
+    (review-H315h m1). A new lock file is made and locked under a staging name and only
+    then renamed over ``.lock``, so the name never holds a file nobody has locked
+    (review-H315i m2); a ``.lock`` that is there is held while that happens. None when
+    the directory is gone or a link, or someone else holds the file there (a start
+    judging the directory, which will remove it)."""
     if _fcntl is None or owner_dir.is_symlink() or not owner_dir.is_dir():
         return None
     lock = owner_dir / _OWNER_LOCK
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        old = os.open(lock, os.O_RDWR | nofollow)
+    except FileNotFoundError:
+        old = None
     except OSError:
         return None
     try:
-        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-        held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
-        if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev):
-            return fd
-    except OSError:
-        pass
-    os.close(fd)
-    return None
+        if old is not None:
+            try:
+                _fcntl.flock(old, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except OSError:
+                return None
+        staged = owner_dir / f"{_OWNER_LOCK}.{secrets.token_hex(4)}.tmp"
+        try:
+            fd = os.open(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+        except OSError:
+            return None
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            os.replace(staged, lock)
+            held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
+            if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev):
+                return fd
+        except OSError:
+            pass
+        os.close(fd)
+        with contextlib.suppress(OSError):
+            staged.unlink()
+        return None
+    finally:
+        if old is not None:
+            os.close(old)
 
 
 def _owner_alive(owner_dir: Path) -> bool | None:
@@ -202,8 +231,13 @@ def _owner_alive(owner_dir: Path) -> bool | None:
     that cannot be told (no lock file: a directory from before the lock, or no flock), so
     the caller falls back to the directory's age. An error reads as alive."""
     lock = owner_dir / _OWNER_LOCK
-    if _fcntl is None or lock.is_symlink() or not lock.is_file():
-        return None
+    try:
+        if _fcntl is None or lock.is_symlink() or not lock.is_file():
+            return None
+    except OSError:
+        # Another user's directory (umask 077) cannot even be looked into: whatever runs
+        # there, it is not this process's to remove (review-H315i m3).
+        return True
     try:
         fd = os.open(lock, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
@@ -1110,27 +1144,41 @@ class SessionKernelManager:
         interpreter's."""
         if self._rpc_root is None or not self._rpc_root.is_dir():
             return
-        for entry in self._rpc_root.iterdir():
-            if not entry.is_dir() or entry.is_symlink() or entry.name == self._owner:
-                continue
-            alive = _owner_alive(entry) if _OWNER_DIR.fullmatch(entry.name) else None
-            if alive:
-                continue
-            if alive is None:
-                try:
-                    newest = entry.stat().st_mtime
-                    if _OWNER_DIR.fullmatch(entry.name):
-                        # An owner directory's own time moves only when an interpreter's
-                        # directory is made or removed in it; a busy interpreter moves its
-                        # own directory's (review-H315g m1).
-                        newest = max([newest, *(child.stat().st_mtime for child in entry.iterdir()
-                                                if child.is_dir() and not child.is_symlink())])
-                    age = time.time() - newest
-                except OSError:
-                    continue
-                if age < self._idle_ttl:
-                    continue
-            shutil.rmtree(entry, ignore_errors=True)
+        try:
+            entries = list(self._rpc_root.iterdir())
+        except OSError:
+            logger.warning("session kernel rpc root could not be listed", exc_info=True)
+            return
+        for entry in entries:
+            try:
+                self._clear_one(entry)
+            except OSError:
+                # One unreadable entry (another user's) never stops the sweep, let alone
+                # the start (review-H315i m3): it is left.
+                logger.debug("session kernel mount %s left", entry.name, exc_info=True)
+
+    def _clear_one(self, entry: Path) -> None:
+        """Remove one entry under the root if its process is gone (see _clear_stale_mounts)."""
+        if not entry.is_dir() or entry.is_symlink() or entry.name == self._owner:
+            return
+        alive = _owner_alive(entry) if _OWNER_DIR.fullmatch(entry.name) else None
+        if alive:
+            return
+        if alive is None:
+            try:
+                newest = entry.stat().st_mtime
+                if _OWNER_DIR.fullmatch(entry.name):
+                    # An owner directory's own time moves only when an interpreter's
+                    # directory is made or removed in it; a busy interpreter moves its
+                    # own directory's (review-H315g m1).
+                    newest = max([newest, *(child.stat().st_mtime for child in entry.iterdir()
+                                            if child.is_dir() and not child.is_symlink())])
+                age = time.time() - newest
+            except OSError:
+                return
+            if age < self._idle_ttl:
+                return
+        shutil.rmtree(entry, ignore_errors=True)
 
     async def _reap(self) -> None:
         cutoff = self._clock() - self._idle_ttl
