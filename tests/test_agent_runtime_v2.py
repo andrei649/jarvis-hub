@@ -1874,6 +1874,12 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
+    from agents.core.skills.tools import LIST_DESCRIPTION as SKILLS_LIST_DESCRIPTION
+    from agents.core.skills.tools import LIST_SCHEMA as SKILLS_LIST_SCHEMA
+    from agents.core.skills.tools import PROPOSE_DESCRIPTION as SKILL_PROPOSE_DESCRIPTION
+    from agents.core.skills.tools import PROPOSE_SCHEMA as SKILL_PROPOSE_SCHEMA
+    from agents.core.skills.tools import VIEW_DESCRIPTION as SKILL_VIEW_DESCRIPTION
+    from agents.core.skills.tools import VIEW_SCHEMA as SKILL_VIEW_SCHEMA
     from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
     from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
     assert orch.tool_rpc.tools() == [
@@ -2035,6 +2041,27 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                 "additionalProperties": False,
             },
             "capability_id": "tool:session_search",
+        },
+        {
+            "name": "skill_propose",
+            "gated": False,
+            "description": SKILL_PROPOSE_DESCRIPTION,
+            "input_schema": SKILL_PROPOSE_SCHEMA,
+            "capability_id": "tool:skill_propose",
+        },
+        {
+            "name": "skill_view",
+            "gated": False,
+            "description": SKILL_VIEW_DESCRIPTION,
+            "input_schema": SKILL_VIEW_SCHEMA,
+            "capability_id": "tool:skill_view",
+        },
+        {
+            "name": "skills_list",
+            "gated": False,
+            "description": SKILLS_LIST_DESCRIPTION,
+            "input_schema": SKILLS_LIST_SCHEMA,
+            "capability_id": "tool:skills_list",
         },
         {
             "name": "terminal_run",

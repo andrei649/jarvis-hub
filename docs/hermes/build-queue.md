@@ -6,7 +6,7 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315, and on 2026-09-25 H666 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 75 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315, and on 2026-09-25 H666 and H318 + H340 (built once, per critic note 21) — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 73 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
@@ -47,7 +47,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
 | [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
 | [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
@@ -58,7 +57,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H285](#h285) | Choose which skills, plugins and MCP servers load at startup | partial | 6 | [8](#critic-note-8), [24](#critic-note-24) |
 | [H296](#h296) | Adapt a tool's advertised schema to the live configuration | missing | 6 |  |
 | [H314](#h314) | Let the model decide what to remember | partial | 6 | [22](#critic-note-22) |
-| [H340](#h340) | Skill body preprocessing: template variables | missing | 6 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H350](#h350) | Skill authoring linter and validator | missing | 6 |  |
 | [H441](#h441) | Getting back into a conversation: continue, resume, and a free recap | partial | 6 | [3](#critic-note-3), [4](#critic-note-4) |
 | [H501](#h501) | Warn about a dangerous deployment posture before it becomes an incident | partial | 6 |  |
@@ -122,14 +120,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
 | [H545](#h545) | Let the editor hand the agent MCP servers that exist only for that session | missing | 16 |  |
-
-## H318
-
-**List, read and author the agent's own skills** (tools — the agent-callable surface) — partial, ~5 h. Critic notes: [21](#critic-note-21), [22](#critic-note-22).
-
-Files: `agents/core/skills/tools.py`, `agents/core/skills/loader.py`, `agents/core/autonomy_coordinator.py`, `tests/_snapshots/tool_profiles.json`, `tests/test_skill_tools.py`
-
-Plan: Add agents/core/skills/tools.py with register_skill_tools(server, loader_getter, proposals_getter). skills_list takes {agent?, query?}. It returns name, description and commands for the skills prompt_catalog would advertise, sharing one gate helper that factors the sandbox, signature and injection checks out of prompt_catalog, with limit and offset. skill_view takes {name, file?}. It returns the SKILL.md body, or a file under the skill directory. Refuse `..`, absolute paths, symlinks (reuse _crosses_link_boundary) and files over 64 KB. Scan the body with detect_injection_normalized and set tainted:true on a hit so the loop fences it. Unknown or unadvertised skills get a named refusal. Optionally add skill_propose {name, content}, which calls SkillProposalStore.propose for an existing skill or generate_skill quarantine for a new one and never writes SKILL.md. Register all of them ungated in AutonomyCoordinator (skill_propose gated or proposal-only) and update the snapshot. First red test, in tests/test_skill_tools.py: skill_view returns a bundled skill's body. Then test path-traversal refusal, that a quarantined or signature-mismatched skill is invisible, that an injected body is tainted, and that skill_propose leaves the live SKILL.md byte-identical.
 
 ## H465
 
@@ -212,14 +202,6 @@ Plan: agents/core/tool_rpc.py register_tool: add schema_override: Callable[[], d
 Files: `agents/core/memory/write_tool.py`, `agents/core/autonomy_coordinator.py`, `agents/core/cognition/memory.py`, `tests/_snapshots/tool_profiles.json`, `tests/test_memory_write_tool.py`
 
 Plan: Add agents/core/memory/write_tool.py with register_memory_write(server, living_getter, memory_getter, audit_getter, kernel_getter). The tool is `memory`, with schema {operations: array maxItems 8 of {target: enum, action: add|remove, text: string maxLength 300}}. At call time, narrow the target enum and the description to the stores that are enabled: core and user when cognition memory_enabled is on, note when orch.memory.remember exists. Preflight injection-scans every text (quarantine.detect_injection_normalized) and refuses the whole batch on any flag or invalid op, so nothing partial is applied. Apply the ops by adding a CoreMemory.remove(fact) alongside put, or through memory.remember for notes. Append one SecurityEvent per op to the audit chain (orch.intent_log / AuditLogger) holding the store, action and a hash of the text, so the write can be undone. Graph edges are out of scope unless they go through the kernel-mediated kg.write with a capability token. Return the full current contents of each touched store. Register it next to register_search_memory as ungated (reversible tier), withhold it from inbound/guest postures in tool_profiles, and update the snapshot. First red test, in tests/test_memory_write_tool.py: `memory` is in the registry. Then test that the target enum is narrowed when cognition memory is off, that a flagged op rejects the whole batch, that each applied op writes an audit row, and that remove undoes add.
-
-## H340
-
-**Skill body preprocessing: template variables** (skills) — missing, ~6 h. Critic notes: [21](#critic-note-21), [22](#critic-note-22).
-
-Files: `agents/core/skills/template_vars.py`, `agents/core/skills/loader.py`, `agents/core/autonomy_coordinator.py`, `tests/test_skill_template_vars.py`
-
-Plan: Add agents/core/skills/template_vars.py with render_skill_body(body, *, skill_dir, session_id, template_vars) -> str. It replaces only the fixed set ${NERVA_SKILL_DIR}, ${NERVA_SESSION_ID}, ${HERMES_SKILL_DIR} and ${HERMES_SESSION_ID}, plus keys from the 'skills.template_vars' setting. Validate those settings: identifier keys; string values of at most 256 chars; refuse any value that starts with '$' or names an env var or secret-broker key; never read os.environ. Leave unknown ${...} tokens literal. In agents/core/skills/loader.py, keep the body on the Skill from both the frontmatter and heading dialects, and add SkillLoader.render_body(name, *, session_id). Give it a real consumer: a read-only, ungated 'skill_view' ToolRPC tool (args: name) registered alongside the other read-only tools. It returns the rendered body, bounded, and applies the same trust and injection gates as prompt_catalog. Red-first tests in tests/test_skill_template_vars.py: ${HERMES_SKILL_DIR}/scripts/x.sh renders to the absolute skill dir; ${HERMES_SESSION_ID} renders to the active session id; a template_vars value naming an env var is refused; ${UNKNOWN} stays literal; 'skill_view' is in the offered tool list and returns the rendered body.
 
 ## H350
 
@@ -911,21 +893,23 @@ The H071 and H130 keep verdicts retain Romanian summary/remaining, while the led
 
 ### Critic note 21
 
-Rows: [H318](#h318), [H340](#h340), [H696](#h696).
+Rows: H318 and H340 (both closed in #1207), [H696](#h696).
 
 Both rows add a `skill_view` ToolRPC tool. H318 puts it in agents/core/skills/tools.py with args {name, file?}, trust gates and taint; H340 registers it in autonomy_coordinator with {name} and returns loader.render_body with template substitution. Built separately, the two definitions collide. H696's reference files are what H318's `file` argument reads.
 
 **Fix.** Build one skill_view in H318's module that returns H340's rendered body under H318's gates, and close H340 with that PR. Make `file` read the H696-imported references, confined to the skill directory.
 
+**Done in #1207 (2026-09-25).** One `skill_view` in agents/core/skills/tools.py returns H340's rendered body under the catalog's gates, and H340 closed with it. `file` reads any file of the skill as captured at load, so H696's imported references will be readable once H696 imports them.
+
 ### Critic note 22
 
-Rows: [H309](#h309), H313 (closed in lot 1), [H314](#h314), H315 (closed in #1207), [H318](#h318), [H340](#h340).
+Rows: [H309](#h309), H313 (closed in lot 1), [H314](#h314), H315, H318 and H340 (closed in #1207).
 
 Six rows register new ToolRPC tools and each regenerates tests/_snapshots/tool_profiles.json, with inconsistent posture rules. H315 offers todo in every posture. H313 limits speak to operator/owner. H314 withholds memory from inbound/guest. H309 adds ui_point to the 'default tool profile', which would let an inbound Telegram sender post HUD canvas pointers. H318 and H340 leave skills_list/skill_view posture unspecified, so skill bodies would be exposed to inbound turns.
 
 **Fix.** Decide one posture table for all six tools in agents/core/tool_profiles.py (at least ui_point, skills_list and skill_view withheld from inbound/guest), write it into each gap_spec, and regenerate the snapshot once.
 
-**Done in #1207 (2026-09-24), in part:** H315 wrote the rule into agents/core/tool_profiles.py. Its review corrected the first version, which had made `todo` "session-local" (offered in every posture because its only effect was the calling session's own list). A turn with no session of its own runs on the owner's shared session, so that premise was false. `todo` is now an ordinary ungated tool that reaches inbound/guest through the default `llm.guest_tools` (echo, time, todo). An install seeded by an earlier build gets that default once, at start, and an owner's own list is left alone. It is session-scoped (`SESSION_SCOPED_TOOLS`): on the shared session only an owner's turn is offered it, a script's reach is narrowed the same way, and the tool refuses anyone else. Any tool that acts on the owner's HUD, memory or skills (ui_point, a memory write, skills_list, skill_view) stays off inbound/guest unless the owner names it in `llm.guest_tools`. `speak` is gated and follows the gated rows. H309, H314, H318 and H340 should follow this rule when they are built, and each regenerates the snapshot.
+**Done in #1207 (2026-09-24), in part:** H315 wrote the rule into agents/core/tool_profiles.py. Its review corrected the first version, which had made `todo` "session-local" (offered in every posture because its only effect was the calling session's own list). A turn with no session of its own runs on the owner's shared session, so that premise was false. `todo` is now an ordinary ungated tool that reaches inbound/guest through the default `llm.guest_tools` (echo, time, todo). An install seeded by an earlier build gets that default once, at start, and an owner's own list is left alone. It is session-scoped (`SESSION_SCOPED_TOOLS`): on the shared session only an owner's turn is offered it, a script's reach is narrowed the same way, and the tool refuses anyone else. Any tool that acts on the owner's HUD, memory or skills (ui_point, a memory write, skills_list, skill_view) stays off inbound/guest unless the owner names it in `llm.guest_tools`. `speak` is gated and follows the gated rows. H309, H314, H318 and H340 should follow this rule when they are built, and each regenerates the snapshot. H318 and H340 did (2026-09-25): `skills_list`, `skill_view` and `skill_propose` are ungated, off inbound/guest unless named in `llm.guest_tools`, and `skill_propose` refuses any turn that is not the owner's.
 
 ### Critic note 23
 

@@ -264,6 +264,8 @@ inspection; all extension callables remain empty. See [`EXTENSIONS.md`](EXTENSIO
 | `agents/core/skills/importer.py` | Import from Hermes/OpenClaw/GitHub | `SkillImporter.import_from_hermes` |
 | `agents/core/skills/marketplace.py` | Local marketplace (install/publish/zip + 0.58 uninstall/remove) | `SkillMarketplace`, `uninstall_skill`, `remove_from_registry` |
 | `agents/core/skills/signing.py` | Skill signature (SKILL.sig) — sign/verify, `JARVIS_REQUIRE_SIGNED_SKILLS` | `sign_skill`, `verify_skill`, `require_signed` |
+| `agents/core/skills/tools.py` | The model's own skills as tools (H318): `skills_list` (the catalog's gate, paged), `skill_view` (the SKILL.md body rendered with its template variables, or one of the skill's files, from the bytes captured at load; tainted with a `warning` when the skill is an untrusted outsider or its text is injection-flagged, H351) and `skill_propose` (a pending proposal + approval card, or a quarantined new skill; owner's clean turns only; never writes a live SKILL.md) | `register_skill_tools` |
+| `agents/core/skills/template_vars.py` | Skill body variables (H340): `${NERVA_SKILL_DIR}`/`${HERMES_SKILL_DIR}`, `${NERVA_SESSION_ID}`/`${HERMES_SESSION_ID}` and the owner's literal `skills.template_vars`, one pass, never the environment | `render_skill_body`, `clean_template_vars` |
 | `skills/<name>/SKILL.md` | Skill manifest (version, agents, commands) | — |
 | `skills/<name>/main.py` | Skill logic; must expose `handle(cmd, args, ctx)` or `get_commands()` | — |
 

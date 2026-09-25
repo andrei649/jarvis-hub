@@ -428,6 +428,11 @@ class Skill:
         # H20.5 — best-effort usage-telemetry hook (set by SkillLoader.attach_usage);
         # None keeps execute() byte-identical to today's behavior.
         self.usage_hook: Optional[Callable] = None
+        # H318 — the exact bytes the trust checks ran on, which skill_view serves (a later
+        # edit on disk is not what was verified), and whether the source is from outside
+        # the product (an import, the owner's own tree).
+        self.snapshot: signing.SkillSourceSnapshot | None = None
+        self.external: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -632,6 +637,8 @@ class SkillLoader:
         manifest = self._parse_manifest(skill_file, source_bytes=snapshot_manifest)
         name = manifest.get("name", path.name)
         skill = Skill(name, path, manifest)
+        skill.snapshot = snapshot
+        skill.external = bool(external)
         if self._usage is not None:
             store = self._usage
             skill.usage_hook = lambda n, kind: store.bump(n, kind)
@@ -1161,6 +1168,21 @@ def register(skill):
     def get_skills_for_agent(self, agent_id: str) -> list[Skill]:
         return [s for s in self.skills.values() if agent_id in s.agents or "all" in s.agents]
 
+    @staticmethod
+    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None) -> str:
+        """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``sandboxed``,
+        ``untrusted`` (a signature that does not verify here) or ``agent`` (declared for
+        other agents). The catalog, ``skills_list`` and ``skill_view`` share it (H318)."""
+        if skill.sandboxed:
+            return "sandboxed"
+        reason = str(getattr(skill, "signature_reason", "") or "")
+        if not getattr(skill, "trusted", False) and reason not in CATALOG_TOLERATED_UNTRUSTED_REASONS:
+            return "untrusted"
+        declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
+        if agent_id and declared and agent_id not in declared and "all" not in declared:
+            return "agent"
+        return ""
+
     def prompt_catalog(
         self,
         agent_id: Optional[str] = None,
@@ -1229,22 +1251,16 @@ def register(skill):
         chars = max(0, int(description_chars))
         for name in sorted(self.skills):
             skill = self.skills[name]
-            if skill.sandboxed:
-                continue
-            reason = str(getattr(skill, "signature_reason", "") or "")
-            if (
-                not getattr(skill, "trusted", False)
-                and reason not in CATALOG_TOLERATED_UNTRUSTED_REASONS
-            ):
+            gate = self.catalog_gate(skill, agent_id)
+            if gate == "untrusted":
                 dropped_untrusted.append(skill.name)
                 logger.warning(
                     "Skill '%s' is NOT advertised to the model — signature %s",
                     skill.name,
-                    reason or "unknown",
+                    str(getattr(skill, "signature_reason", "") or "") or "unknown",
                 )
                 continue
-            declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
-            if agent_id and declared and agent_id not in declared and "all" not in declared:
+            if gate:
                 continue
             for meta in skill.commands_meta:
                 if not isinstance(meta, dict):

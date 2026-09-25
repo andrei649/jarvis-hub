@@ -914,6 +914,20 @@ class AutonomyCoordinator:
             posture=lambda: tool_profile.posture().key,
             shared_session=_on_shared_session,
         )
+        # H318 + H340 — the model lists and reads its skills under the catalog's trust
+        # gates (the body rendered with its template variables) and proposes changes into
+        # the governed pipeline; nothing here writes a live SKILL.md.
+        from .skills.tools import register_skill_tools
+
+        register_skill_tools(
+            server,
+            loader=lambda: getattr(self._orch, "skills", None),
+            proposals=lambda: getattr(self._orch, "skill_proposals", None),
+            approvals=lambda: getattr(self._orch, "action_approvals", None),
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+            settings=_get_setting,
+        )
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the

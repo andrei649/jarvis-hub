@@ -308,6 +308,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="skills",  key="sandbox_enabled",  value=True,                  label="Sandbox execution",  kind="toggle"),
     dict(category="skills",  key="max_skills",       value=50,                    label="Max stored skills",  kind="number"),
     dict(category="skills",  key="import_source",    value="hermes",              label="Import source",      kind="select", opts=["hermes","openclaw","none"]),
+    # H340 — literal text a skill body may name as ${key} (skill_view renders it); never a
+    # secret or an environment variable: a value holding "$", "env:" or "secret:" is ignored.
+    dict(category="skills",  key="template_vars",    value={},                    label="Skill template variables — JSON {\"name\": \"literal text\"}, used as ${name} in a skill body", kind="json"),
     # H32 governed acquisition — an independent owner switch. Product Posture
     # intentionally does not enable this capability.
     dict(category="acquisition", key="enabled", value=False, label="Governed capability acquisition", kind="toggle"),

@@ -14,6 +14,22 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 + H340 the model lists, reads and proposes its own skills (H318 partial → equivalent, H340 missing → equivalent, H351 partial → equivalent, #1207; headline 141 → 144/697).
+
+  Built as one change, per critic note 21 (one `skill_view`). Hermes' `skills_list` / `skill_view` / `skill_manage` become three ungated ToolRPC tools in `agents/core/skills/tools.py`:
+  - **`skills_list`** lists what the prompt catalog would show this agent. The catalog's gate is factored into `SkillLoader.catalog_gate` and shared, so a quarantined, sandboxed or signature-mismatched skill, or one declared for other agents, never appears. Injection-flagged rows are left out; the list is paged and filterable.
+  - **`skill_view`** returns the SKILL.md body with its template variables rendered, or one of the skill's files. It reads from the bytes the trust checks ran on at load (`Skill.snapshot`), never the disk now: relative paths inside the skill only, text only, 64 KiB at most. An unknown skill and a hidden one answer alike. The answer is tainted, with a `warning` next to the content (H351), when the skill comes from outside the product and is not trusted here, or its text is injection-flagged.
+  - **`skill_propose`** is authoring as a proposal: a pending `SkillProposalStore` proposal with an approval card, or a new skill written into CDX-8 quarantine. It never writes a live SKILL.md, and accepts only an owner's turn that has read nothing untrusted.
+  - **Template variables (H340)** — `agents/core/skills/template_vars.py` renders `${NERVA_SKILL_DIR}`/`${HERMES_SKILL_DIR}`, `${NERVA_SESSION_ID}`/`${HERMES_SESSION_ID}` and the owner's literal `skills.template_vars` (seeded `{}`) in one pass. It never reads the environment; a value holding `$`, `env:` or `secret:` is dropped.
+  - Posture: all three stay off inbound/guest unless named in `llm.guest_tools` (critic note 22); the tool-profile snapshot and the live tool list are regenerated.
+
+  H326 stays partial, with the disclosure ladder now present; what is left is a category-grouped index, a prompt cache and cross-turn load dedup. A local finding fixed on the way: `test_the_start_reads_nothing_of_its_own_before_the_env_files_are_loaded` (two whole hub starts) gets its own 240 s ceiling. Under a loaded parallel run it crossed the suite's 30 s thread-method timeout, which takes the xdist worker down.
+
+  Mutation: 41 mutants; 33 caught at once. Four survivors were caught after cases were added or fixed (one test was vacuous, its two fixtures on different skill roots). One malformed mutant was rewritten and caught. One guard was redundant and removed. Two added mutants were caught.
+
+  Records: H318, H340 and H351 closed; H326 rewritten (partial); 52 drifted rows re-read and re-stamped (H204's gate citation now names `catalog_gate`); the build queue drops both plans (73 rows remain) and marks critic notes 21 and 22 done for these rows; test manual GOV-253..256; `docs/ARCHITECTURE.md`.
+
+  Tests: backend 14,346 → 14,373 (`tests/test_h318_skill_tools.py` 27); vitest unchanged at 1,444.
 - 2026-09-25 H666 subtasks under a parent (partial → equivalent, #1207; headline 140 → 141/697).
 
   Hermes nests the agent's subtasks with one optional `parent` per todo item (another item's id, so merge-by-id keeps working) and draws the list through one defensive tree builder. Nerva now does both:

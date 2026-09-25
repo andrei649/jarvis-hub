@@ -113,6 +113,9 @@ def _reads_before_the_load(tmp_path, data_root: str) -> tuple[set[str], set[str]
     return set(reads["before"]), set(reads["after"])
 
 
+# Two whole hub starts in subprocesses: ~16 s alone, past the suite's 30 s backstop on a
+# loaded machine (the thread-method timeout then takes the xdist worker down with it).
+@pytest.mark.timeout(240)
 def test_the_start_reads_nothing_of_its_own_before_the_env_files_are_loaded(tmp_path):
     """The whole start is measured, not only the import: the lifespan up to the load, with
     the data root set either way (without JARVIS_HOME the import reads the data home's
