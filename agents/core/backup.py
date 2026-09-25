@@ -324,6 +324,13 @@ _STALE_AFTER_SECONDS = 2 * 86_400.0
 
 
 # ── create ────────────────────────────────────────────────────────
+def _in_exec_cache(path: Path, root: Path) -> bool:
+    try:
+        return Path(path).relative_to(root).parts[:2] == ("cache", "exec")
+    except ValueError:
+        return False
+
+
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
                   label: str = "", encrypt: Optional[bool] = None,
                   key: Optional[str] = None) -> dict:
@@ -363,6 +370,9 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # and not followed (H503): a link planted in the data root must not pull an
     # arbitrary file into an archive that may leave the machine.
     files, manifest["skipped_links"] = archive_safe.collect_regular_files(src)
+    # The sandbox's run directories are a disposable cache, not the owner's data: model-
+    # written scripts and tool-call mailboxes stay out of an archive (review-H667 m3).
+    files = [f for f in files if not _in_exec_cache(f, src)]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         if do_encrypt:

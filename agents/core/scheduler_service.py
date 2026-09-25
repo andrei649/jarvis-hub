@@ -191,8 +191,8 @@ class SchedulerService:
         Always on: the cache is the hub's own (``<data root>/cache/exec``), and a run
         directory is removed only when its newest file is older than
         ``security.sandbox_temp_max_age_hours`` (72 by default) and no sandbox holds it.
-        A root the owner chose (``JARVIS_EXEC_TEMP_DIR``, ``security.sandbox_temp_dir``)
-        is never pruned.
+        It is pruned whatever root is chosen now; a root the owner chose
+        (``JARVIS_EXEC_TEMP_DIR``, ``security.sandbox_temp_dir``) is never pruned.
         """
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
@@ -479,15 +479,17 @@ class SchedulerService:
         return result
 
     async def run_exec_cache_prune(self):
-        """Prune the managed sandbox cache off the event loop; the live sandbox is kept."""
+        """Prune the managed sandbox cache off the event loop; the live sandbox is kept.
+        Never raises into the scheduler: a failure is reported as its status."""
         from agents.core import exec_cache
 
         try:
-            root, managed = exec_cache.resolve_root()
+            # The managed cache is the hub's own whatever root is chosen now: a choice
+            # made after start never strands what is already there (review-H667 m5).
             sandbox = getattr(self._orch, "sandbox", None)
             live = [sandbox.work_dir] if getattr(sandbox, "work_dir", None) else []
             return await asyncio.to_thread(
-                exec_cache.prune, root, managed=managed,
+                exec_cache.prune, exec_cache.managed_root(), managed=True,
                 max_age_hours=exec_cache.max_age_hours(), live=live)
         except Exception as e:
             logger.warning(f"Sandbox cache prune failed: {e}")

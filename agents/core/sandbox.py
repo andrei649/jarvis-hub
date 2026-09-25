@@ -25,6 +25,19 @@ class SandboxError(Exception):
     pass
 
 
+def _bind_mount(source: str, target: str, *, readonly: bool) -> list[str]:
+    """A Docker bind mount as ``--mount``, never ``-v``: a ``:`` in the host path (a data
+    root such as ``/srv/a:b``) split ``-v`` into the wrong fields (review-H667 nit 4).
+    Each field is CSV-quoted, so a ``,`` or ``"`` in the path is data, not syntax."""
+    def field(text: str) -> str:
+        if "," in text or '"' in text:
+            return '"' + text.replace('"', '""') + '"'
+        return text
+
+    fields = ["type=bind", f"src={source}", f"dst={target}"] + (["readonly"] if readonly else [])
+    return ["--mount", ",".join(field(f) for f in fields)]
+
+
 class SandboxResult:
     def __init__(self, stdout: str = "", stderr: str = "", exit_code: int = -1, duration: float = 0.0):
         self.stdout = stdout
@@ -68,9 +81,10 @@ class Sandbox:
             from . import exec_cache
 
             self.work_dir, self.work_dir_managed = exec_cache.new_work_dir()
-            self._work_lock = exec_cache.hold(self.work_dir)
-            if self._work_lock is not None:
-                weakref.finalize(self, os.close, self._work_lock)
+            # Only the managed cache is pruned, so only its run directories take a lock.
+            self._work_lock = exec_cache.hold(self.work_dir) if self.work_dir_managed else None
+            self._release = weakref.finalize(self, exec_cache.release, self._work_lock,
+                                             self.work_dir)
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
         # H11.4 — WASM (wasmtime) backend: isolation without a Docker daemon.
@@ -80,6 +94,21 @@ class Sandbox:
         self.allow_wasm = allow_wasm
         self.wasm_runtime = wasm_runtime or os.environ.get("JARVIS_WASM_PYTHON", "")
         self._has_wasmtime = self._check_wasmtime() if allow_wasm else False
+
+    def _ensure_work_dir(self) -> None:
+        """A run directory removed under a live sandbox is made again private (0700),
+        and its lock taken again, never re-created world-readable (review-H667 m6)."""
+        if self.work_dir.is_dir():
+            return
+        self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self._work_lock is not None:
+            from . import exec_cache
+
+            self._release.detach()
+            exec_cache.release(self._work_lock, self.work_dir)
+            self._work_lock = exec_cache.hold(self.work_dir)
+            self._release = weakref.finalize(self, exec_cache.release, self._work_lock,
+                                             self.work_dir)
 
     @staticmethod
     def _probe_binary(argv: list[str], missing_note: str) -> bool:
@@ -296,6 +325,7 @@ class Sandbox:
     async def _execute_wasm_python(self, code: str, filename: str,
                                    sinks=None) -> SandboxResult:
         start = time.monotonic()
+        self._ensure_work_dir()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(code, encoding="utf-8")
@@ -373,6 +403,7 @@ class Sandbox:
         # the same second would otherwise collide on --name and the second
         # `docker run` would fail with a daemon name-conflict.
         container_name = f"cabinet-sandbox-{int(time.time())}-{secrets.token_hex(4)}"
+        self._ensure_work_dir()
         workdir_path = str(self.work_dir)
 
         for fname, content in (files or {}).items():
@@ -389,7 +420,7 @@ class Sandbox:
             "--cpus", "1",
             "--pids-limit", "50",
             "--read-only",
-            "-v", f"{workdir_path}:/workspace:ro",
+            *_bind_mount(workdir_path, "/workspace", readonly=True),
             *self._docker_writable_mount_args(writable_paths),
             "-w", "/workspace",
             self.docker_image,
@@ -493,7 +524,7 @@ class Sandbox:
 
             host_path.mkdir(parents=True, exist_ok=True)
             target = PurePosixPath("/workspace", *rel.parts).as_posix()
-            args.extend(["-v", f"{host_path}:{target}:rw"])
+            args.extend(_bind_mount(str(host_path), target, readonly=False))
 
         return args
 
@@ -502,6 +533,7 @@ class Sandbox:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
                        "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
+        self._ensure_work_dir()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(code, encoding="utf-8")

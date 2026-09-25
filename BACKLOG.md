@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H667 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H667 found no major, eight minors and nine nits (no live run, no owner root, nothing outside the cache was ever deleted):
+  - **A bad setting stopped the hub (m1).** `~nosuchuser/x` or a NUL byte in `security.sandbox_temp_dir` made `Sandbox()` raise at start. Such a value is skipped with a warning, the setting refuses it on write (and an age outside 1–8760 h), and any other failure falls back to the system temp.
+  - **A relative data root broke execution (m2).** Run directories are absolute.
+  - **Backups took the cache (m3).** `cache/exec` is left out of backups.
+  - **Health said ok (m4), a later choice stranded the cache (m5).** An unreadable, linked, foreign or world-writable managed root is reported failed to the scheduler; the hourly job prunes the managed cache whatever root is chosen now.
+  - **Lock and mtime games (m6), no flock (m7).** The lock moved out of the run directory, to `<root>/.locks/<name>.lock`, where code in the directory cannot touch it; it records `host pid`, so where flock does not work a live pid on this host, or another host, still keeps the directory. A file is dated by the older of mtime and ctime, so a future date keeps nothing forever. A directory removed under a live sandbox comes back 0700 with its lock.
+  - **Test gaps (m8)** filled: the scheduler reads the owner's age, runs off the loop, never raises; the directory's own and subdirectory dates; the 1-hour floor; a lock that is not a file; the probe's descriptors; `~` and whitespace.
+  - **Nits.** A Nerva-specific `nerva-sandbox-` prefix; a directory swapped for a link is only unlinked; a stale claim link is removed; the managed root is made 0700 when ours; Docker binds with `--mount` (a `:` in the data root); `nerva config set` says the root needs a restart; orphan locks are removed.
+  31 mutants (two after their cases were added: orphan locks, the Docker path's re-creation), all caught but three equivalent. PNB-167/168 rewritten. 75 rows re-stamped; H456's range `1041-1047` corrected by hand.
+  Tests: backend 15,047 → 15,075 (`tests/test_exec_cache.py` 32 → 60); vitest unchanged at 1,462.
+
 - 2026-09-25 H586 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
 
   review-H586 found no major, six minors and nine nits (no leak to /chat, the acknowledgement and the 409 held):
