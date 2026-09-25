@@ -75,6 +75,19 @@ async def admin_get_all():
     return get_all()
 
 
+@router.get("/api/admin/settings/export", dependencies=[Depends(admin_guard)])
+async def admin_export_settings():
+    """H157 — the declared settings as JSON for another box. Secrets, values that look
+    like credentials and settings that hold credentials by design are left out and
+    named in ``excluded``. Registered before ``/{category}`` so it is never read as one."""
+    from agents.core import settings_db
+
+    doc = await asyncio.to_thread(settings_db.export_settings)
+    resp = nocache_json(doc)
+    resp.headers["Content-Disposition"] = 'attachment; filename="nerva-settings.json"'
+    return resp
+
+
 @router.get("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
 async def admin_get_category(category: str):
     items = get_category(category)
@@ -156,6 +169,53 @@ async def admin_put_category(category: str, body: AdminPutBody):
     if skipped:
         resp["skipped"] = skipped
     return resp
+
+
+@router.post("/api/admin/settings/import", dependencies=[Depends(admin_guard)])
+async def admin_import_settings(request: Request):
+    """H157 — import a settings document (an export, or any ``{"settings": {category:
+    {key: value}}}``). Every key must be declared and passes the same validation a single
+    write does; one refusal and nothing is written (422 with every reason). The write is
+    one transaction with one audit row. ``"dry_run": true`` answers what would change."""
+    from agents.core import settings_db
+
+    raw = await request.body()
+    if len(raw) > 1_000_000:
+        return JSONResponse({"error": "invalid settings", "details": ["the document is over 1 MB"]},
+                            status_code=413)
+    try:
+        doc = json.loads(raw or b"{}")
+    except ValueError:
+        return JSONResponse({"error": "invalid settings", "details": ["the document is not JSON"]},
+                            status_code=422)
+    dry_run = bool(doc.pop("dry_run", False)) if isinstance(doc, dict) else False
+    changes, errors = await asyncio.to_thread(settings_db.plan_import, doc)
+    if errors:
+        return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
+    preview = await asyncio.to_thread(settings_db.describe_changes, changes)
+    if dry_run:
+        return nocache_json({"dry_run": True, "count": len(preview), "changes": preview})
+    written = await asyncio.to_thread(settings_db.apply_import, changes) if changes else 0
+    if written:
+        names = [f"{cat}.{key}" for cat in sorted(changes) for key in sorted(changes[cat])]
+        shown = " ".join(filter(None, (_audited_values(cat, changes[cat]) for cat in sorted(changes))))
+        await _audit_row(f"settings imported: {written} setting(s): {names}" + (f" · {shown}" if shown else ""),
+                         "settings_import", "import")
+    return nocache_json({"ok": True, "updated": written, "changes": preview})
+
+
+@router.post("/api/admin/settings/{category}/reset", dependencies=[Depends(admin_guard)])
+async def admin_reset_category(category: str):
+    """H157 — put one category back to its declared values (the global reseed was the only
+    reset). Audited, naming the keys that moved."""
+    from agents.core import settings_db
+
+    moved = await asyncio.to_thread(settings_db.reset_category, category)
+    if moved is None:
+        return JSONResponse({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+    if moved:
+        await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
+    return {"ok": True, "category": category, "reset": moved}
 
 
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])

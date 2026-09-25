@@ -6,6 +6,7 @@ Seeds defaults from agents.yaml on first init.
 import json
 import logging
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -819,3 +820,180 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     return updated, skipped
 
 # ── init on first use (via _ensure_init) — NOT at import ─────────
+
+
+# ── H157: export, import, per-category reset ──────────────────────
+
+EXPORT_FORMAT = "nerva-settings/1"
+MAX_IMPORT_KEYS = 1000
+#: Declared settings an export never carries: they hold credentials by design (an MCP
+#: server's headers and env), even when the value scan finds nothing it recognises.
+EXPORT_EXCLUDED = frozenset({("mcp", "servers")})
+#: Kinds whose value is a pick (a switch, a list choice, a number): never a credential.
+_CHOICE_KINDS = frozenset({"toggle", "select", "number", "slider"})
+_CREDENTIAL_NAME = re.compile(r"(token|secret|password|passwd|client_id|api_key|apikey)$")
+
+
+def is_secret_setting(category: str, key: str) -> bool:
+    """A setting whose value is a credential: encrypted at rest, or named like one."""
+    return key in SECRET_KEYS or bool(_CREDENTIAL_NAME.search(key))
+
+
+def _looks_like_credential(value: Any) -> bool:
+    """Whether the secret scanner masks anything in the value (a token in a template
+    variable, a key pasted into free text)."""
+    if value in (None, "", [], {}) or isinstance(value, (bool, int, float)):
+        return False
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        from .security.log_redaction import SecretRedactionFilter
+
+        return SecretRedactionFilter().redact_text(text) != text
+    except Exception:  # noqa: BLE001 (no scanner: leave it out rather than risk it)
+        return True
+
+
+def _stored_values(conn: sqlite3.Connection) -> dict[tuple[str, str], Any]:
+    rows = conn.execute("SELECT category, key, value FROM settings").fetchall()
+    return {(r["category"], r["key"]): _decrypt_if_secret(json.loads(r["value"])) for r in rows}
+
+
+def export_settings() -> dict:
+    """The declared settings as a document another box can import: ``settings`` by
+    category, and ``excluded`` naming what was left out and why (a secret, a value that
+    looks like a credential, a setting that holds credentials by design)."""
+    _ensure_init()
+    conn = get_conn()
+    try:
+        stored = _stored_values(conn)
+    finally:
+        conn.close()
+    settings: dict[str, dict[str, Any]] = {}
+    excluded: list[dict[str, str]] = []
+    for spec in DEFAULTS:
+        cat, key = spec["category"], spec["key"]
+        value = stored.get((cat, key), spec["value"])
+        reason = None
+        if (cat, key) in EXPORT_EXCLUDED:
+            reason = "holds credentials by design"
+        elif is_secret_setting(cat, key):
+            reason = "a secret"
+        elif spec.get("kind") not in _CHOICE_KINDS and _looks_like_credential(value):
+            reason = "the value looks like it holds a credential"
+        if reason:
+            excluded.append({"setting": f"{cat}.{key}", "reason": reason})
+            continue
+        settings.setdefault(cat, {})[key] = value
+    return {"format": EXPORT_FORMAT, "exported_at": int(time.time()), "settings": settings,
+            "excluded": excluded}
+
+
+def plan_import(doc: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """``(changes, errors)`` for an import document: every key declared and validated
+    exactly as a single write would be, and only the keys whose value differs. Any error
+    means nothing may be written."""
+    errors: list[str] = []
+    if not isinstance(doc, dict):
+        return {}, ["the document: expected an object with a 'settings' object"]
+    if "format" in doc and doc["format"] != EXPORT_FORMAT:
+        errors.append(f"format: expected {EXPORT_FORMAT!r}")
+    settings = doc.get("settings")
+    if not isinstance(settings, dict):
+        return {}, errors + ["settings: expected an object of categories"]
+    total = sum(len(v) for v in settings.values() if isinstance(v, dict))
+    if total > MAX_IMPORT_KEYS:
+        return {}, errors + [f"too many settings ({total}; at most {MAX_IMPORT_KEYS})"]
+    wanted: dict[str, dict[str, Any]] = {}
+    for cat, values in settings.items():
+        if not isinstance(values, dict):
+            errors.append(f"{cat}: expected an object of settings")
+            continue
+        for key, value in values.items():
+            if (cat, key) not in _SPEC:
+                errors.append(f"{cat}.{key}: unknown setting")
+                continue
+            wanted.setdefault(cat, {})[key] = value
+        errors.extend(f"{cat}.{err}" for err in validate_category(cat, wanted.get(cat, {})))
+    if errors:
+        return {}, errors
+    _ensure_init()
+    conn = get_conn()
+    try:
+        stored = _stored_values(conn)
+    finally:
+        conn.close()
+    changes: dict[str, dict[str, Any]] = {}
+    for cat, values in wanted.items():
+        for key, value in values.items():
+            current = stored.get((cat, key), _SPEC[(cat, key)]["value"])
+            if value != current or type(value) is not type(current):
+                changes.setdefault(cat, {})[key] = value
+    return changes, []
+
+
+def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """``[{setting, from, to}]`` for a preview; a secret's values are never shown."""
+    _ensure_init()
+    conn = get_conn()
+    try:
+        stored = _stored_values(conn)
+    finally:
+        conn.close()
+    out = []
+    for cat in sorted(changes):
+        for key in sorted(changes[cat]):
+            if is_secret_setting(cat, key):
+                out.append({"setting": f"{cat}.{key}", "from": "(secret)", "to": "(secret)"})
+                continue
+            out.append({"setting": f"{cat}.{key}",
+                        "from": stored.get((cat, key), _SPEC[(cat, key)]["value"]),
+                        "to": changes[cat][key]})
+    return out
+
+
+def apply_import(changes: dict[str, dict[str, Any]]) -> int:
+    """Write *changes* (already planned) in one transaction: all of it or none of it.
+    Returns how many settings were written."""
+    _ensure_init()
+    conn = get_conn()
+    written = 0
+    try:
+        with conn:
+            for cat, values in changes.items():
+                for key, value in values.items():
+                    spec = _SPEC[(cat, key)]
+                    stored = json.dumps(_encrypt_if_secret(key, value))
+                    cur = conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?",
+                                       (stored, cat, key))
+                    if cur.rowcount == 0:
+                        conn.execute(
+                            "INSERT INTO settings (category, key, value, label, kind, opts) "
+                            "VALUES (?,?,?,?,?,?)",
+                            (cat, key, stored, spec["label"], spec["kind"],
+                             json.dumps(spec.get("opts", []))))
+                    written += 1
+    finally:
+        conn.close()
+    for cat, values in changes.items():
+        if values:
+            _changed(cat, dict(values))
+    return written
+
+
+def reset_category(cat: str) -> list[str] | None:
+    """Put every declared setting of *cat* back to its declared value; the keys that
+    moved (``[]`` when none did), or None for a category nothing declares."""
+    specs = [spec for spec in DEFAULTS if spec["category"] == cat]
+    if not specs:
+        return None
+    _ensure_init()
+    conn = get_conn()
+    try:
+        stored = _stored_values(conn)
+    finally:
+        conn.close()
+    moved = {spec["key"]: spec["value"] for spec in specs
+             if (cat, spec["key"]) not in stored or stored[(cat, spec["key"])] != spec["value"]}
+    if moved:
+        apply_import({cat: moved})
+    return sorted(moved)

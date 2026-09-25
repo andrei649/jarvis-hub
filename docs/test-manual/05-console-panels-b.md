@@ -325,6 +325,18 @@ LOCAL MODELS · CLOUD AUTH PROFILES · SYSTEM PROFILE`. Seven of the ten routes 
 - **Redaction:** `GET /api/admin/settings` returns **decrypted** secret values (`agents/core/settings_db.py:378`) and the panel renders them in a plain visible text input. Screenshot this card only with secrets blurred, or not at all.
 - **Evidence to capture:** the two `PUT` requests from the Network tab, the `updated N` line, and the timestamped runtime poll that flipped.
 
+#### PNB-171 — SETTINGS DB: search every key, reset one category (H157)
+- **Surface:** Console → Admin → **SETTINGS DB** · **Tier:** admin (`POST /api/admin/settings/{category}/reset`) · **Auto:** ✅tests/test_settings_transfer.py, ✅frontend/src/test/settings-tools.test.tsx
+- **Steps:** 1) Type `openrouter` in **search every setting**. 2) Type `zzz`. 3) Change `system.log_level`, save, then click **reset** on the SYSTEM heading, then **reset system to defaults?**. 4) Read `GET /api/admin/audit`.
+- **Expected:** 1) only matching rows remain, across every category, with `N matches`; 2) `no setting matches "zzz"`. 3) nothing is sent on the first click; the second resets only that category (`reset N`, or `already the defaults`), other categories keep their values. 4) one row `settings.system reset to defaults: [...]`.
+- **FAIL if:** reset runs on the first click, touches another category, or leaves no audit row → **MAJOR**.
+
+#### PNB-172 — SETTINGS DB: export and import a configuration (H157)  🔒
+- **Surface:** Console → Admin → **SETTINGS DB** → MOVE A CONFIGURATION · **Tier:** admin (`GET /api/admin/settings/export`, `POST /api/admin/settings/import`) · **Auto:** ✅tests/test_settings_transfer.py, ✅frontend/src/test/settings-tools.test.tsx
+- **Steps:** 1) Set a plugin secret (e.g. `plugins.tuya_secret`) and put a token-shaped value into `skills.template_vars`; click **⬇ export JSON** and open the file. 2) On a second box (or after changing two settings), paste the file, **preview import**, then **apply N changes**. 3) Paste a document with an unknown key and an out-of-range value (`security.sandbox_temp_max_age_hours: 0`), preview. 4) Read `GET /api/admin/audit`.
+- **Expected:** 1) the file has `"format": "nerva-settings/1"` and no secret, no client id, no `mcp.servers` and no token-shaped value; the panel names each left-out setting with its reason. 2) the preview lists each change `category.key: old → new` (a secret shows `(secret)`), nothing is written until **apply**, then `imported N settings`. 3) every reason is listed and nothing is written (all or nothing). 4) one `settings imported: N setting(s): [...]` row.
+- **FAIL if:** the export carries a secret or a credential-shaped value → **BLOCKER**; a partially applied import, or an import that skips validation (e.g. an unknown `product.posture`) → **BLOCKER**.
+
 #### PNB-082 — PROMPT VERSIONS: diff, A/B, edit→preview→commit, rollback  👁
 - **Surface:** Console → Admin → **PROMPT VERSIONS** · **Tier:** all **admin** — `GET …/{agent_id}/history`, `…/diff`, `…/ab`, `…/version/{version}`, `POST …/ab`, `…/rollback`, `…/preview`, `…/commit` · **Auto:** ✅tests/test_h10_22_prompt_versioning.py, ✅tests/test_h10_28_config_preview.py
 - **Why it matters:** editing an agent's SOUL is the highest-leverage change in the system — and run 1's root cause was SOUL text. Non-destructive versioning is the safety net.

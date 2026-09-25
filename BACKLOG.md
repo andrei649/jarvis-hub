@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H157 every configuration key from the UI: search, export, import, per-category reset (partial → equivalent, #1207; headline 149 → 150/697).
+
+  The backend was already strong (typed validation before a write, an audit row per write); the UI lacked a search across categories, a way to move a configuration to another box, and any reset smaller than the global reseed. Now:
+  - **Search** in SettingsPanel matches a setting's category.key or label across every category, with a match count.
+  - **Export** (`GET /api/admin/settings/export`) is a `nerva-settings/1` document that leaves out every secret (encrypted at rest, or named like a token, secret, password, client id or API key), `mcp.servers` (credentials by design) and any free-form value the secret scanner would mask, and names each left-out setting with its reason.
+  - **Import** (`POST /api/admin/settings/import`) runs every key through the same `validate_category` a single write uses and refuses an unknown key: one refusal writes nothing (422 with every reason). The write is one transaction, secrets encrypted, one audit row; `dry_run` shows each change (a secret as `(secret)`), and the panel applies only on a second step.
+  - **Reset one category** (`POST /api/admin/settings/{category}/reset`) puts it back to its declared values, audited; the panel asks first.
+  25 backend mutants, all caught (one after its case was added). Test manual: PNB-171, PNB-172; the API sweep lists the three routes. 57 rows re-stamped; H288's bare `settings_db.py` citations recomputed by hand.
+  Tests: backend 15,251 → 15,279 (`tests/test_settings_transfer.py` 28); vitest 1,471 → 1,479 (`settings-tools.test.tsx` 8).
+
 - 2026-09-25 H670 second adversarial review round (stays equivalent, #1207; headline stays 149/697).
 
   review-H670b found no major, three minors and eight nits (the instruction-file class holds on the real approval path, in any casing and through a link):

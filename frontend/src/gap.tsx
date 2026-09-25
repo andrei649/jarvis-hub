@@ -15,6 +15,7 @@ import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
 import { LogsPanel } from './panels/logs';
+import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -2650,7 +2651,14 @@ export function SettingsPanel() {
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
   const [refused, setRefused] = useState<string[]>([]);
+  // H157 — one search across every category (key or label), a reset per category, and a
+  // configuration moved between boxes as JSON (SettingsTransfer).
+  const [query, setQuery] = useState('');
   const cats = d && typeof d === 'object' ? d : {};
+  const shownCats = Object.entries(cats)
+    .map(([cat, items]: [string, any]) => [cat, (items || []).filter((it) => settingMatches(cat, it, query))] as [string, any[]])
+    .filter(([, items]) => items.length > 0);
+  const nMatches = shownCats.reduce((n, [, items]) => n + items.length, 0);
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
@@ -2668,10 +2676,15 @@ export function SettingsPanel() {
   };
   return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
+    <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
+    {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
-      {Object.entries(cats).map(([cat, items]: [string, any]) => (
+      {shownCats.map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px' }}>{String(cat).toUpperCase()}</div>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{String(cat).toUpperCase()}</span>
+            <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} onDone={reload} /></span>
+          </div>
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
@@ -2688,6 +2701,7 @@ export function SettingsPanel() {
     {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
     {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    <SettingsTransfer onDone={reload} />
   </Card>;
 }
 function PromptsPanel() {
