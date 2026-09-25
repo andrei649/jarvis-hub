@@ -131,7 +131,7 @@ def _secure_managed(root: Path) -> None:
     with contextlib.suppress(OSError, AttributeError):
         info = os.lstat(root)
         if stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and info.st_mode & 0o077:
-            os.chmod(root, 0o700)
+            os.chmod(root, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
 
 
 def new_work_dir(environ: Mapping[str, str] | None = None,
