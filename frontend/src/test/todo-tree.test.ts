@@ -1,6 +1,8 @@
-/* H666 — the HUD's tree builder, pinned to the same shapes as tests/test_h666_subtasks.py. */
+/* H666 — the HUD's tree builder. The shared cases in todo-tree-cases.json pin it to the
+   Python twin (agents/core/todo_tree.py); tests/test_h666_subtasks.py reads the same file. */
 import { describe, it, expect } from 'vitest';
 import { MAX_DEPTH, todoTree } from '../todo-tree';
+import shared from './todo-tree-cases.json';
 
 type Row = { id: unknown; parent?: unknown };
 const rows = (...pairs: Array<[unknown, unknown]>): Row[] => pairs.map(([id, parent]) => ({ id, parent }));
@@ -38,10 +40,11 @@ describe('todoTree (H666)', () => {
   });
 
   it('reads only text or whole numbers as ids: a boolean, a float or a string index is no parent', () => {
-    const steps = [{ idx: 0, parent: null }, { idx: 1, parent: true }, { idx: 2, parent: 0.5 },
-      { idx: 3, parent: '0' }, { idx: 4, parent: 0 }];
+    // The boolean sits on step 2: read as 1 it would nest under step 1, so the case tells.
+    const steps = [{ idx: 0, parent: null }, { idx: 1, parent: null }, { idx: 2, parent: true },
+      { idx: 3, parent: 0.5 }, { idx: 4, parent: '0' }, { idx: 5, parent: 0 }];
     expect(todoTree(steps, (s) => s.idx, (s) => s.parent).map(([s, d]) => [s.idx, d]))
-      .toEqual([[0, 0], [4, 1], [1, 0], [2, 0], [3, 0]]);
+      .toEqual([[0, 0], [5, 1], [1, 0], [2, 0], [3, 0], [4, 0]]);
     // a float is no id as a key either
     const floats = [{ idx: 0.5, parent: null }, { idx: 1, parent: 0.5 }];
     expect(todoTree(floats, (s) => s.idx, (s) => s.parent).map(([, d]) => d)).toEqual([0, 0]);
@@ -59,5 +62,14 @@ describe('todoTree (H666)', () => {
     const got = shape(chain);
     expect(got.length).toBe(5000);
     expect(got[4999]).toEqual(['n4999', MAX_DEPTH]);
+  });
+
+  it('draws every shared case exactly as the Python twin does', () => {
+    const cases = (shared as { cases: Array<{ name: string; items: Row[]; expected: number[][] }> }).cases;
+    expect(cases.length).toBeGreaterThanOrEqual(40);
+    for (const c of cases) {
+      const got = todoTree(c.items, (r) => r.id, (r) => r.parent).map(([r, d]) => [c.items.indexOf(r), d]);
+      expect(got, c.name).toEqual(c.expected);
+    }
   });
 });

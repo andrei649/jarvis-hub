@@ -195,10 +195,11 @@ def _clean_content(raw: Any, item_id: str) -> str:
 
 
 def _clean_parent(raw: Any, item_id: str) -> str | None:
-    """The id of the item this one sits under (H666), cleaned like an id; ``""`` is none.
-    It need not name an item in the list: a parent that is missing, the item itself or
-    part of a cycle is drawn at the top (``todo_tree``), never refused and never lost."""
-    if raw == "":
+    """The id of the item this one sits under (H666), cleaned like an id. Text that is
+    empty or only whitespace is none, as Hermes clears it. It need not name an item in
+    the list: a parent that is missing, the item itself or part of a cycle is drawn at
+    the top (``todo_tree``), never refused and never lost."""
+    if isinstance(raw, str) and not raw.strip():
         return None
     try:
         return _clean_id(raw)
@@ -342,7 +343,7 @@ class TodoStore:
                 unknown = sorted(str(key) for key in raw if key not in _ITEM_FIELDS)
                 if unknown:
                     raise TodoError("todo_unknown_field",
-                                    f"an item has id, content and status only, not {unknown[0]!r}")
+                                    f"an item has id, content, status and parent only, not {unknown[0]!r}")
                 item_id = _clean_id(raw.get("id"))
                 if item_id in seen:
                     raise TodoError("todo_duplicate_id", f"id {item_id!r} appears twice in one call")

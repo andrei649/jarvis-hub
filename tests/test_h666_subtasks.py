@@ -70,12 +70,13 @@ def test_nothing_disappears_and_nothing_repeats_on_any_shape():
 
 def test_a_parent_that_is_not_an_id_is_no_parent():
     # A bool is not an index (True == 1), a list is not hashable, a dict is not an id, and
-    # neither is a float, as a key or as a parent.
+    # neither is a fractional float, as a key or as a parent. A whole float is its number
+    # (JSON's 0.0 is 0 to the HUD's twin), so step 5 sits under step 0.
     rows = [{"idx": 0, "parent": None}, {"idx": 1, "parent": None}, {"idx": 2, "parent": True},
             {"idx": 3, "parent": [0]}, {"idx": 4, "parent": {"x": 0}}, {"idx": 5, "parent": 0.0},
             {"idx": 0.5, "parent": None}, {"idx": 7, "parent": 0.5}]
     got = [(s["idx"], d) for s, d in tree(rows, lambda s: s["idx"], lambda s: s["parent"])]
-    assert got == [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (0.5, 0), (7, 0)]
+    assert got == [(0, 0), (5, 1), (1, 0), (2, 0), (3, 0), (4, 0), (0.5, 0), (7, 0)]
 
 
 def test_two_items_sharing_an_id_the_first_holds_it():
@@ -123,6 +124,9 @@ def test_a_merge_moves_an_item_under_a_parent_and_clears_it_with_an_empty_id():
     assert kept["todos"][1]["parent"] == "1"                  # null is "not sent", like content
     cleared = _write(store, [{"id": "2", "parent": ""}], merge=True)
     assert "parent" not in cleared["todos"][1]
+    _write(store, [{"id": "2", "parent": "1"}], merge=True)
+    spaced = _write(store, [{"id": "2", "parent": "  \t "}], merge=True)
+    assert "parent" not in spaced["todos"][1]            # only whitespace clears too, as in Hermes
 
 
 def test_a_parent_is_cleaned_like_an_id_and_refused_with_its_own_reason():
@@ -307,3 +311,24 @@ def test_nerva_todo_indents_subtasks_and_keeps_every_item():
     assert main(["todo", "s1"], context=ctx) == 0, err.getvalue()
     lines = out.getvalue().splitlines()[1:]
     assert lines == ["  [>] ship", "    [x] tests", "  [ ] orphan", "  [ ] loop b", "  [ ] loop a"]
+
+
+def test_the_twin_draws_every_shared_case_the_same():
+    """The HUD's twin (frontend/src/todo-tree.ts) is pinned to the same file of cases."""
+    import json
+    from pathlib import Path
+
+    shared = json.loads((Path(__file__).resolve().parent.parent / "frontend/src/test/todo-tree-cases.json")
+                        .read_text(encoding="utf-8"))
+    assert len(shared["cases"]) >= 40
+    for case in shared["cases"]:
+        items = case["items"]
+        got = tree(items, lambda r: r["id"], lambda r: r["parent"])
+        where = {id(item): pos for pos, item in enumerate(items)}
+        assert [[where[id(item)], depth] for item, depth in got] == case["expected"], case["name"]
+
+
+def test_tree_of_something_that_is_not_a_list_is_empty():
+    assert tree(None, lambda r: r, lambda r: r) == []
+    assert tree(5, lambda r: r, lambda r: r) == []
+    assert tree("abc", lambda r: r, lambda r: r) == []

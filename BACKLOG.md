@@ -14,6 +14,25 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H666 adversarial review round (stays equivalent, #1207). **H315 back to partial** after its fourth review, and **H318 and H351 back to partial** after H318's first (headline 145 → 142/697).
+
+  review-H666 found no major, five minors and eight nits. All are fixed:
+  - **The twins agree.** The fuzz found the Python and TS tree builders differing on a whole-valued float id or parent (JSON's `1.0` is `1` in JS). `ref()` now reads it as its number, and both suites read one shared file of 47 cases (`frontend/src/test/todo-tree-cases.json`), so the twins cannot drift apart.
+  - **Pinned in tests.** The mission canvas test clicks done inside a nested row and asserts the step's own idx is posted. The TS boolean case now sits where reading `true` as `1` would show.
+  - **Records.** H288's GOV-224 citation points at GOV-224 again. `frontend/src/api/schema.gen.ts` is regenerated, which also fixes the older `/sessions/todo` drift that made the post-merge `openapi-types` job red.
+  - **Nits.** `tree()` of a non-list is empty. A whitespace-only parent clears, as in Hermes. The refusal sentence names `parent`. GOV-252 starts the mission before looking for finish controls. The docstring names the real twin path. `Mission.plan`'s comment lists `parent`. The H666 bullet's re-stamp count is corrected to 50.
+
+  Mutation: of the review's 51 mutants, three survived; two are now killed and the third is equivalent (a step's idx is its position). Six mutants of this round's guards were all killed.
+
+  The fourth review of H315 (review-H315e, of `dc327354`) re-opens it: one MAJOR, a regression. After a script, every plan read is keyed the same, so the third read after scripts is refused as a repeat and the fourth ends the turn. There are also three minors (the start sweep deletes another process's live kernel mounts; the broker's scan runs unbounded on the event loop; mutation survivors) and four nits. H315 is partial until its fix round.
+
+  The first review of H318 (review-H318, of `3f7dca99`) re-opens H318 and H351 with two MAJORs:
+  - **A self-signed outside skill reads as trusted.** An unkeyed SKILL.sig is a plain sha256, so an outside skill's body goes unfenced.
+  - **An approved `skill_propose` patch is never applied at default settings.** Only the curator applies it, and the curator is off by default and runs only overnight. The owner also approves a card that does not show the change.
+
+  The review also found six minors and nine nits. H340 stays equivalent; its unbounded rendering is one of those minors and is fixed in the same round.
+
+  Tests: backend 14,395 → 14,397; vitest 1,444 → 1,445.
 - 2026-09-25 H465 `/refine [focus]`: the self-improvement review runs on demand (partial → equivalent, #1207; headline 144 → 145/697).
 
   Hermes' `/refine` forks the memory/skill review against a conversation snapshot, refuses while a turn is in flight and reports back into the chat. Nerva now does the same with its strict-local `BackgroundReviewer`:
@@ -55,7 +74,7 @@
 
   Mutation: 43 mutants of the new guards; 39 caught at once, the other four after cases were added. One unreachable guard was removed.
 
-  Records: H666 closed; 30 drifted rows re-read and re-stamped (H315's schema line gains `parent?`); its plan left the build queue (75 rows remain); test manual GOV-250..252; `docs/ARCHITECTURE.md`.
+  Records: H666 closed; 50 drifted rows re-read and re-stamped (47 of them for `agents/cli/nerva.py`; first recorded as 30) (H315's schema line gains `parent?`); its plan left the build queue (75 rows remain); test manual GOV-250..252; `docs/ARCHITECTURE.md`.
 
   Tests: backend 14,309 → 14,346 (`tests/test_h666_subtasks.py` 37); vitest 1,434 → 1,444 (`todo-tree.test.ts` 8, plans in flight +1, mission canvas +1).
 - 2026-09-25 H315 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).

@@ -4455,7 +4455,8 @@ export interface paths {
         put?: never;
         /**
          * Missions Create
-         * @description Create a workspace. Body: {title, goal?, plan?:[step titles], max_steps?, max_seconds?}.
+         * @description Create a workspace. Body: {title, goal?, plan?, max_steps?, max_seconds?}; a plan
+         *     entry is a step title or {title, parent?}, parent the index of an earlier step (H666).
          */
         post: operations["missions_create_api_missions_post"];
         delete?: never;
@@ -8217,7 +8218,8 @@ export interface paths {
         };
         /**
          * Get Recent Plans
-         * @description H315 — the checklists the agent keeps, most recently updated first.
+         * @description H315 — the checklists the agent keeps, the one it most recently wrote or read
+         *     first (each carries ``updated_at``, when its list last changed).
          */
         get: operations["get_recent_plans_sessions_todo_get"];
         put?: never;

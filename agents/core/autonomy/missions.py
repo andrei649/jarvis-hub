@@ -107,7 +107,7 @@ class Mission:
     title: str
     goal: str
     status: str
-    plan: list[dict]          # [{idx, title, status, result, started_at, ended_at}]
+    plan: list[dict]          # [{idx, title, parent, status, result, started_at, ended_at}]; parent: an earlier idx or None (H666)
     max_steps: int
     max_seconds: int
     steps_used: int
