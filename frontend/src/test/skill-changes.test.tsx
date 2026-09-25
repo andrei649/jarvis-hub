@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { SkillChangesInbox, decisionOutcome, originLabel, SKILL_CHANGES_SHOWN } from '../panels/skill-changes';
+import { SkillChangesInbox, decisionOutcome, originLabel, refusedByHub, SKILL_CHANGES_SHOWN } from '../panels/skill-changes';
 import { DecisionInboxPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); localStorage.setItem('hud.admin_token', 'admin'); } catch { /* ignore */ } });
@@ -91,5 +91,31 @@ describe('DecisionInboxPanel reads the skill changes', () => {
     const call = fn.mock.calls.find((c) => String(c[0]).includes('/api/skills/proposals'));
     const headers = call[1]?.headers || {};
     expect(headers['X-Admin-Token'] || headers['x-admin-token']).toBe('admin');
+  });
+});
+
+// review-H318c: a refused change offers reject only; the hub's page counts the rest;
+// the apply's new reasons are named.
+describe('SkillChangesInbox, the third review', () => {
+  it('offers reject only for a change the hub will refuse', () => {
+    expect(refusedByHub({ flags: ['a bundled skill: it cannot be changed here'] })).toBe(true);
+    expect(refusedByHub({ flags: ['renames the skill'] })).toBe(true);
+    expect(refusedByHub({ flags: [] })).toBe(false);
+    render(<SkillChangesInbox reply={{ proposals: [{ ...change, flags: ['renames the skill'] }] }} />);
+    expect(screen.getByTitle(/the hub will refuse this change/).disabled).toBe(true);
+    expect(screen.getByTitle('reject skill change').disabled).toBe(false);
+  });
+
+  it('counts the proposals the hub did not send', () => {
+    render(<SkillChangesInbox reply={{ proposals: [change], more: 7 }} />);
+    expect(screen.getByText(/SKILL CHANGES · 8 awaiting you/)).toBeTruthy();
+    expect(screen.getByText(/7 more after these are decided/)).toBeTruthy();
+  });
+
+  it('names a renewal that failed or a missing key', () => {
+    const reply = (reason) => ({ action: { applied: { outcomes: [{ proposal_id: 'p', ok: false, reason }] } } });
+    expect(decisionOutcome(reply('changed_during_apply'), 'p', true)).toMatch(/files changed while it was applied/);
+    expect(decisionOutcome(reply('standing_not_renewed'), 'p', true)).toMatch(/could not be renewed/);
+    expect(decisionOutcome(reply('signing_key_missing'), 'p', true)).toMatch(/signing key/);
   });
 });

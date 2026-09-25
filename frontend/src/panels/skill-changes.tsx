@@ -31,6 +31,12 @@ export function originLabel(origin: unknown): string {
   return text || 'unknown';
 }
 
+/** A change the hub will refuse whatever the decision (a bundled skill, a rename): it
+    offers reject only (review-H318c n-7). */
+export function refusedByHub(p: { flags?: string[] }): boolean {
+  return (p.flags || []).some((f) => /bundled skill|renames the skill/.test(String(f)));
+}
+
 /** What a decision did, from the decide route's answer, for one proposal. */
 export function decisionOutcome(reply: any, proposalId: string, approved: boolean): string {
   const action = reply && reply.action;
@@ -46,6 +52,9 @@ export function decisionOutcome(reply: any, proposalId: string, approved: boolea
     renames_skill: 'the change renames the skill',
     write_failed: 'the file could not be written',
     skill_missing: 'the skill is gone',
+    changed_during_apply: 'the skill\'s files changed while it was applied: nothing was kept',
+    standing_not_renewed: 'its signature or approval could not be renewed: nothing was kept',
+    signing_key_missing: 'its signing key is not configured: it waits until the key is back',
   };
   return `not applied · ${why[mine.reason] || mine.reason || 'refused'}`;
 }
@@ -71,6 +80,8 @@ export function SkillChangesInbox({ reply, error, onDecided }:
   }
   const rows: Proposal[] = arr(reply, 'proposals');
   if (!rows.length) return null;
+  // The hub sends at most a page of proposals and counts the rest (review-H318c n-2).
+  const total = rows.length + (Number(reply && reply.more) || 0);
   const decide = (p: Proposal, approved: boolean) => {
     const id = String(p.id || '');
     setOutcome((o) => ({ ...o, [id]: approved ? 'applying…' : 'rejecting…' }));
@@ -81,7 +92,7 @@ export function SkillChangesInbox({ reply, error, onDecided }:
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', letterSpacing: 1 }}>
-        SKILL CHANGES · {rows.length} awaiting you
+        SKILL CHANGES · {total} awaiting you
       </div>
       {rows.slice(0, SKILL_CHANGES_SHOWN).map((p, i) => (
         <div key={p.id || i} data-testid="skill-change">
@@ -91,7 +102,8 @@ export function SkillChangesInbox({ reply, error, onDecided }:
               <Tag>{originLabel(p.origin)}</Tag>
               {(p.flags || []).map((f) => <Tag key={f} c="var(--red)">{f}</Tag>)}
               {p.drifted && <Tag c="var(--amber)">the skill changed since · approving applies nothing</Tag>}
-              <button className="tool-btn" title="approve skill change" disabled={!p.card}
+              <button className="tool-btn" title={refusedByHub(p) ? 'the hub will refuse this change: reject it'
+                : 'approve skill change'} disabled={!p.card || refusedByHub(p)}
                 onClick={() => decide(p, true)}>✓</button>
               <button className="tool-btn" title="reject skill change" disabled={!p.card}
                 onClick={() => decide(p, false)}>✕</button>
@@ -106,8 +118,8 @@ export function SkillChangesInbox({ reply, error, onDecided }:
           </div>}
         </div>
       ))}
-      {rows.length > SKILL_CHANGES_SHOWN && <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
-        {rows.length - SKILL_CHANGES_SHOWN} more after these are decided
+      {total > SKILL_CHANGES_SHOWN && <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+        {total - Math.min(rows.length, SKILL_CHANGES_SHOWN)} more after these are decided
       </div>}
     </div>
   );

@@ -85,8 +85,14 @@
     function decide(id, ok) {
       adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(function () { reload(); reloadChanges(); }).catch(function (e) { alert(e.message); });
     }
+    // Only once the proposals answered can a card be said not to be one's own: while they
+    // load, or when the fetch failed, the panel says so and Approve waits (review-H318c m-2).
+    function unknownYet() { return changes.loading || !!changes.err || !changes.data; }
+    // A change the hub will refuse (a bundled skill, a rename) offers Reject only (n-7).
+    function refused(p) { return (p.flags || []).some(function (f) { return /bundled skill|renames the skill/.test(f); }); }
     function skillChange(a) {
       if (a.tool !== 'skill.patch_proposal') return null;
+      if (unknownYet()) return h('div', { className: 'tool-card-text' }, changes.err ? '⚠ the proposed change could not be loaded: ' + changes.err : 'Loading the proposed change…');
       const p = byCard[a.id];
       if (!p) return h('div', { className: 'tool-card-text' }, 'This card is not a proposal\'s own approval card: approving it changes no skill.');
       return h('div', null,
@@ -99,7 +105,11 @@
       return h('div', { key: a.id, className: 'tool-card' },
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
         skillChange(a),
-        h('div', { className: 'tool-actions' }, Btn('Approve', function () { decide(a.id, true); }, 'ok'), Btn('Reject', function () { decide(a.id, false); }, 'bad')));
+        h('div', { className: 'tool-actions' },
+          (a.tool === 'skill.patch_proposal' && (unknownYet() || (byCard[a.id] && refused(byCard[a.id]))))
+            ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
+            : Btn('Approve', function () { decide(a.id, true); }, 'ok'),
+          Btn('Reject', function () { decide(a.id, false); }, 'bad')));
     }) : Empty('No pending tool-calls.'); }
     return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', function () { reload(); reloadChanges(); }));
   }

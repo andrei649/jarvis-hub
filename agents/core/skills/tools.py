@@ -52,6 +52,7 @@ names them in ``llm.guest_tools`` (critic note 22).
 
 from __future__ import annotations
 
+import json
 import logging
 import posixpath
 import re
@@ -86,6 +87,12 @@ MAX_LISTED_BYTES = 3 * 1024
 _COMMAND = re.compile(r"\w+")
 
 _SKILL_FILE = "SKILL.md"
+
+def _json_bytes(text: str) -> int:
+    """The bytes ``text`` takes inside the tool's JSON answer: its escapes counted (a
+    quote costs two bytes there, a control character six), its own two quotes not."""
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-8")) - 2
+
 
 LIST_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -178,7 +185,6 @@ def register_skill_tools(
     """Expose the three tools. Every getter is read per call, so a reload, a new session
     or a changed setting is seen by the next call."""
     from ..security.taint import is_untrusted_source
-    from .proposals import STATUS_PENDING
 
     # Proposals made today (one entry, keyed by the day). A proposal's approval card is
     # bound to it in the ledger (queue_card): a retry after a failed card queues one, a
@@ -300,6 +306,11 @@ def register_skill_tools(
             return _refuse("skill_file_binary", "the file is not text")
         if "\x00" in text:
             return _refuse("skill_file_binary", "the file is not text")
+        if file is not None and _json_bytes(text) > MAX_FILE_BYTES:
+            # Measured as the answer carries it: a quote costs two bytes there, a control
+            # character six (review-H318c m-5), and the declared budget must hold.
+            return _refuse("skill_file_too_large", f"the file is over {MAX_FILE_BYTES:,} bytes as the "
+                                                   "answer carries it")
         if file is None:
             head, body = split_frontmatter(text)
             body = text if head is None else body
@@ -311,14 +322,14 @@ def register_skill_tools(
                 variables = {}
             body = render_skill_body(body, skill_dir=str(Path(skill.path).resolve()),
                                      session_id=str(session_id() or ""), template_vars=variables)
-            if len(body.encode("utf-8")) > MAX_FILE_BYTES:
+            if _json_bytes(body) > MAX_FILE_BYTES:
                 # The bound is on what reaches the model, so it holds after the variables.
                 return _refuse("skill_file_too_large", f"the body is over {MAX_FILE_BYTES:,} bytes once its "
                                                        "variables are rendered")
             description = _one_line(skill.description, 1024)
             shown_files, used = [], 0
             for path in listed:
-                used += len(path.encode("utf-8")) + 4          # the name, its quotes and a comma
+                used += _json_bytes(path) + 4                   # as encoded, its quotes, a comma and space
                 if used > MAX_LISTED_BYTES:
                     break
                 shown_files.append(path)
@@ -410,7 +421,9 @@ def register_skill_tools(
         current_text = current.decode("utf-8", errors="replace")
         naming = getattr(target, "manifest_name", None)
         try:
-            renamed = callable(naming) and naming(Path(skill.path), content) != skill.name
+            # The store keeps the text stripped, and the apply parses that: so is it parsed
+            # here (review-H318c n-5: a leading blank line hid a rename until the apply).
+            renamed = callable(naming) and naming(Path(skill.path), content.strip()) != skill.name
         except Exception:
             renamed = True
         if renamed:
@@ -423,10 +436,7 @@ def register_skill_tools(
         # One pending change per skill per agent: a newer proposal supersedes the older one
         # rather than queueing beside it (review-H318 m-3).
         queue = approvals()
-        for older in store.list(STATUS_PENDING) if hasattr(store, "list") else ():
-            if (older.get("id") != record["id"] and older.get("skill") == skill.name
-                    and older.get("origin") == origin_label):
-                store.supersede(older["id"], queue)
+        store.supersede_older(record, queue)
         if queue is not None:
             try:
                 store.queue_card(record["id"], queue, agent=actor,

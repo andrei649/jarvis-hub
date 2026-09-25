@@ -147,10 +147,16 @@ class SkillCurator:
         the night window, which gate the curator's own lifecycle pass: the owner asked.
         One pass at a time (review-H318b n-1): two overlapping decisions no longer report
         a change the other applied as stale."""
-        with self._apply_lock:
-            return self._proposals_pass()
+        return self._proposals_pass()
 
     def _proposals_pass(self) -> dict:
+        # The nightly run and a decision's apply both come here, so both take the lock:
+        # the night pass took none, and a decision beside it saw the change the night
+        # applied reported as not approved (review-H318c n-1).
+        with self._apply_lock:
+            return self._proposals_pass_locked()
+
+    def _proposals_pass_locked(self) -> dict:
         if self._proposals is None:
             return {"applied": [], "rejected": [], "stale": [], "failed": [], "outcomes": []}
         self._sync_approval_decisions()

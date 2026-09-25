@@ -43,6 +43,61 @@ def unified_diff(current: str, proposed: str, name: str = "SKILL.md") -> str:
                                         fromfile=f"{name} (now)", tofile=f"{name} (proposed)"))
 
 
+def _shipped(path) -> bool:
+    """Where a shipped skill lives (review-H318c n-6), as the apply refuses it."""
+    try:
+        from agents.core.skills.loader import _shipped_location
+
+        return _shipped_location(Path(path))
+    except Exception:
+        return False
+
+
+def _card_exists(queue, card: str) -> bool:
+    getter = getattr(queue, "get", None)
+    if not callable(getter):
+        return True                      # a queue that cannot say keeps the card it has
+    try:
+        return getter(card) is not None
+    except Exception:
+        return True
+
+
+def _pending_cards(queue, proposal_id: str) -> list[str]:
+    lister = getattr(queue, "list", None)
+    if not callable(lister):
+        return []
+    try:
+        items = lister("pending")
+    except Exception:
+        return []
+    return [str(i.get("id")) for i in items
+            if i.get("tool") == CARD_TOOL and (i.get("args") or {}).get("proposal_id") == proposal_id]
+
+
+def _withdraw(queue, card: str) -> None:
+    try:
+        queue.decide(card, False, by="superseded")
+    except Exception:
+        logger.debug("card %s not withdrawn", card, exc_info=True)
+
+
+def _snapshot(path: Path):
+    from agents.core.skills.signing import source_snapshot
+
+    return source_snapshot(path)
+
+
+def _only_manifest_changed(before, after, proposed: str) -> bool:
+    """``after`` is ``before`` with SKILL.md replaced by ``proposed``, and nothing else."""
+    if before is None or after is None:
+        return False
+    old = {f.relative_path: (f.kind, f.content) for f in before.files if f.relative_path != "SKILL.md"}
+    new = {f.relative_path: (f.kind, f.content) for f in after.files if f.relative_path != "SKILL.md"}
+    manifest = [f.content for f in after.files if f.relative_path == "SKILL.md"]
+    return old == new and manifest == [proposed.encode("utf-8")]
+
+
 class SkillProposalStore(JsonStore):
     """Durable ledger of skill-patch proposals."""
 
@@ -114,13 +169,17 @@ class SkillProposalStore(JsonStore):
 
         Only the bound card decides the proposal (review-H318b m-6: any user token can
         queue a card naming a proposal id). A proposal that already has its card gets no
-        second one, whoever proposed the same text (m-1). The card carries no diff: what
-        the owner reviews is built from the ledger (``describe``)."""
+        second one, whoever proposed the same text (m-1), unless that card is gone from
+        the queue (a reset or cleared queue): then it gets a new one, or it could never be
+        decided (review-H318c m-6). Binding a card withdraws the unbound cards naming the
+        proposal (n-3), and a proposal superseded while its card was queued gets that card
+        withdrawn, not bound (n-4). The card carries no diff: what the owner reviews is
+        built from the ledger (``describe``)."""
         with self._card_lock:
             rec = self.get(proposal_id)
             if rec is None or rec.get("status") != STATUS_PENDING:
                 return None
-            if rec.get("card"):
+            if rec.get("card") and _card_exists(queue, rec["card"]):
                 return rec["card"]
             item = queue.request({"tool": CARD_TOOL, "agent": agent, "summary": summary,
                                   "args": {"skill": rec["skill"], "proposal_id": proposal_id}})
@@ -129,10 +188,26 @@ class SkillProposalStore(JsonStore):
                 return None
             with self._lock:
                 live = self._items.get(proposal_id)
-                if live is not None:
+                bound = live is not None and live.get("status") == STATUS_PENDING
+                if bound:
                     live["card"] = card
                     self._save()
+            if not bound:
+                _withdraw(queue, card)
+                return None
+            for other in _pending_cards(queue, proposal_id):
+                if other != card:
+                    _withdraw(queue, other)
             return card
+
+    def supersede_older(self, record: dict, queue=None) -> None:
+        """One pending change per skill per origin: ``record`` supersedes the older ones
+        its origin proposed for the same skill (review-H318 m-3), whichever path proposed
+        it, the tool, the background review or /refine (review-H318c n-2)."""
+        for older in self.list(STATUS_PENDING):
+            if (older.get("id") != record.get("id") and older.get("skill") == record.get("skill")
+                    and older.get("origin") == record.get("origin")):
+                self.supersede(older["id"], queue)
 
     def supersede(self, proposal_id: str, queue=None) -> None:
         """A newer proposal replaces this one: marked superseded, its card withdrawn, so
@@ -164,7 +239,7 @@ class SkillProposalStore(JsonStore):
                     flags.append("renames the skill")
             except Exception:
                 flags.append("its header cannot be read")
-        if not getattr(skill, "external", True):
+        if not getattr(skill, "external", True) or _shipped(skill.path):
             flags.append("a bundled skill: it cannot be changed here")
         return {**out, "diff": unified_diff(current, rec.get("proposed", "")),
                 "drifted": manifest_hash(current) != rec.get("original_hash"), "flags": flags}
@@ -194,6 +269,11 @@ class SkillProposalStore(JsonStore):
         if standing.get("bundled"):
             self.mark(proposal_id, STATUS_REJECTED, reason="bundled")
             return {"ok": False, "reason": "bundled_skill"}
+        if standing.get("key_missing"):
+            # A keyed SKILL.sig the missing key cannot renew: applying would leave it over
+            # new bytes, and the skill would fail as tampered once the key is back
+            # (review-H318c m-4). The proposal stays approved for when the key is present.
+            return {"ok": False, "reason": "signing_key_missing"}
         naming = getattr(loader, "manifest_name", None)
         if callable(naming) and naming(Path(skill.path), rec["proposed"]) != rec["skill"]:
             self.mark(proposal_id, STATUS_REJECTED, reason="renames")
@@ -220,12 +300,32 @@ class SkillProposalStore(JsonStore):
             logger.warning("proposal apply failed for %s", rec["skill"], exc_info=True)
             return {"ok": False, "reason": "write_failed"}
         restore = getattr(loader, "restore_standing", None)
-        if callable(restore):
+        if callable(restore) and (standing.get("signed") or standing.get("approved")):
+            # The renewal covers the bytes checked here, never a later read: the tree after
+            # the write must be the tree the standing was judged on with only SKILL.md
+            # replaced by the approved text, or a write in between would ride into the vouch
+            # (review-H318c m-1). A failed or refused renewal puts the old text back, whose
+            # signature and approval still hold, and says why (m-3).
+            reason = ""
             try:
-                restore(Path(skill.path), standing)
+                after = _snapshot(Path(skill.path))
+                if not _only_manifest_changed(standing.get("snapshot"), after, rec["proposed"]):
+                    reason = "changed_during_apply"
+                else:
+                    restore(Path(skill.path), standing, snapshot=after)
             except Exception:
-                logger.warning("skill '%s' patched, but its signature or approval could not be renewed",
+                logger.warning("skill '%s': its signature or approval could not be renewed",
                                rec["skill"], exc_info=True)
+                reason = "standing_not_renewed"
+            if reason:
+                try:
+                    skill_md.write_text(current, encoding="utf-8")
+                except Exception:
+                    logger.warning("skill '%s': the old SKILL.md could not be put back (backup: %s)",
+                                   rec["skill"], backup, exc_info=True)
+                logger.warning("approved proposal %s for skill '%s' not applied: %s",
+                               proposal_id, rec["skill"], reason)
+                return {"ok": False, "reason": reason, "backup": str(backup)}
         try:
             loader._load_skill(Path(skill.path), discovery_root=Path(skill.path).parent)
         except Exception:

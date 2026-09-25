@@ -36,6 +36,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import date
+from pathlib import Path
 
 logger = logging.getLogger("jarvis.learning.review")
 
@@ -132,6 +133,15 @@ def _focus_line(focus: str) -> str:
 
 
 _BACKEND_ERROR = re.compile(r"\[[^\]\n]{0,80}error", re.IGNORECASE)
+
+
+def _shipped(path) -> bool:
+    try:
+        from agents.core.skills.loader import _shipped_location
+
+        return bool(path) and _shipped_location(Path(path))
+    except Exception:
+        return False
 
 
 def _degraded(raw: object) -> bool:
@@ -510,8 +520,9 @@ class BackgroundReviewer:
         if skill is None:
             logger.debug("review patch for unknown skill %r skipped", name)
             return False
-        if not getattr(skill, "external", True):
-            # A bundled skill is product source; the apply refuses it (review-H318b M-1).
+        if not getattr(skill, "external", True) or _shipped(getattr(skill, "path", "")):
+            # A bundled skill is product source, by its load or by where it lives; the apply
+            # refuses it (review-H318b M-1, review-H318c n-6).
             logger.debug("review patch for bundled skill %r skipped", name)
             return False
         if self._detect(update["content"]):
@@ -527,6 +538,9 @@ class BackgroundReviewer:
                                            origin=label)
             if prop is None:
                 return False
+            supersede = getattr(self._proposals, "supersede_older", None)
+            if callable(supersede):
+                supersede(prop, self._approvals)
             if self._approvals is not None:
                 try:
                     # The proposal's one card, bound to it in the ledger: only that card's

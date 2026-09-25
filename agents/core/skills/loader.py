@@ -224,6 +224,16 @@ def _matches_bundled_source(path: Path, root: Path) -> bool:
     return _snapshot_matches_bundled(snapshot, path.name)
 
 
+def _shipped_location(path: Path) -> bool:
+    """``path`` is where a shipped skill lives: directly under the product's skills tree,
+    under a shipped skill's name. Its bytes may have drifted (so it loads as external),
+    but it is still product source, never a place a patch writes (review-H318c n-6)."""
+    try:
+        return Path(path).resolve().parent == SKILLS_DIR.resolve() and Path(path).name in _BUNDLED_SKILL_MANIFEST
+    except OSError:
+        return False
+
+
 def _snapshot_matches_bundled(
     snapshot: signing.SkillSourceSnapshot,
     skill_name: str,
@@ -1183,28 +1193,36 @@ def register(skill):
     def owner_standing(self, skill: "Skill") -> dict:
         """What vouches for ``skill``'s bytes as they are on disk now (review-H318b M-1).
 
-        ``bundled``: it ships with Nerva. ``signed``: its SKILL.sig verifies. ``approved``:
-        the owner approved these exact bytes. Read fresh, never from the load, so a change
-        made on disk since the load cannot ride an approved patch into a new vouch."""
+        ``bundled``: it ships with Nerva, by its load or by where it lives (review-H318c
+        n-6: a shipped skill whose bytes drifted loads as external, yet is product source).
+        ``signed``: its SKILL.sig verifies. ``approved``: the owner approved these exact
+        bytes. ``key_missing``: a keyed SKILL.sig the missing key cannot renew. ``snapshot``:
+        the one read of the tree all of these judged, which a renewal must match (m-1)."""
         path = Path(skill.path)
         try:
-            _, reason = signing.verify_skill(path)
+            snapshot = signing.source_snapshot(path)
+            _, reason = signing.verify_skill(path, snapshot=snapshot)
         except OSError:
-            reason = "unreadable"
+            snapshot, reason = None, "unreadable"
+        approved = (snapshot is not None
+                    and self._approval_store.approved_snapshot(path, snapshot=snapshot) is not None)
         return {
-            "bundled": not getattr(skill, "external", True),
+            "bundled": not getattr(skill, "external", True) or _shipped_location(path),
             "signed": reason in ("signed", "integrity-only"),
-            "approved": self._approval_store.is_approved(path),
+            "approved": approved,
+            "key_missing": reason == "algo-mismatch" and signing._signing_key() is None,
+            "snapshot": snapshot,
         }
 
-    def restore_standing(self, path: Path, standing: dict) -> None:
+    def restore_standing(self, path: Path, standing: dict, snapshot=None) -> None:
         """Give an approved patch's bytes the standing the replaced bytes had: re-sign what
-        verified and re-approve what the owner had approved. The owner approved this
-        change, and only SKILL.md changed; a skill nothing vouched for gains no vouch."""
+        verified and re-approve what the owner had approved, over ``snapshot`` (the bytes
+        the caller checked) when given. The owner approved this change, and only SKILL.md
+        changed; a skill nothing vouched for gains no vouch."""
         if standing.get("signed"):
-            signing.sign_skill(path)
+            signing.sign_skill(path, snapshot=snapshot)
         if standing.get("approved"):
-            self._approval_store.approve(path)
+            self._approval_store.approve(path, snapshot=snapshot)
 
     def manifest_name(self, path: Path, text: str) -> str:
         """The registry name a SKILL.md text would give the skill at ``path``."""

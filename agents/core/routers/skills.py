@@ -21,6 +21,7 @@ from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
+from agents.core.skills.signing import SkillSourceSnapshotError
 
 
 router = APIRouter(tags=["skills"])
@@ -411,6 +412,10 @@ async def marketplace_publish(body: PublishSkillBody):
                             status_code=403)
     except FileNotFoundError as e:
         return error_json(e, 404, "skill not found")
+    except SkillSourceSnapshotError:
+        # A link, or a file that changed while it was read: nothing was packed (review-H318c m-7).
+        return JSONResponse({"error": f"skill '{body.name}' holds a link or unstable file and was not "
+                                      "published", "reason": "skill_source_refused"}, status_code=422)
     except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
@@ -589,6 +594,11 @@ async def approve_generated_skill(name: str):
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
+#: Proposals one answer carries, whole diffs included (review-H318c n-2: forty review
+#: proposals of a large skill made an 8 MB answer). The rest are counted in ``more``.
+PROPOSALS_SHOWN = 20
+
+
 @router.get("/api/skills/proposals", dependencies=[Depends(admin_guard)])
 async def skill_proposals():
     """The skill changes awaiting the owner, as they review them (review-H318b M-2): each
@@ -604,8 +614,11 @@ async def skill_proposals():
     loader = getattr(orch, "skills", None)
     queue = getattr(orch, "action_approvals", None)
     out = []
-    for rec in store.list("pending"):
-        if not rec.get("card") and queue is not None:
+    pending = store.list("pending")
+    for rec in pending[:PROPOSALS_SHOWN]:
+        if queue is not None:
+            # A proposal from before cards were bound gets its card here, and so does one
+            # whose card is gone from the queue (review-H318c m-6).
             try:
                 store.queue_card(rec["id"], queue, agent=str(rec.get("origin") or "agent"),
                                  summary=f"A change to skill '{rec.get('skill')}' is proposed")
@@ -613,4 +626,5 @@ async def skill_proposals():
             except Exception:
                 logger.warning("skill proposal %s: its card could not be queued", rec.get("id"), exc_info=True)
         out.append(store.describe(rec, loader))
-    return JSONResponse({"proposals": out, "count": len(out)}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"proposals": out, "count": len(out), "more": max(0, len(pending) - len(out))},
+                        headers={"Cache-Control": "no-store"})

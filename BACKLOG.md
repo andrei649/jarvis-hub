@@ -14,6 +14,35 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318c found one records major (the stale evidence hash, fixed at 0a941f64), eight minors and seven nits:
+  - **A write between the standing read and the renewal rode into the vouch (m-1).** The standing is now judged on one snapshot of the tree read before the write. After the write, the tree must be that snapshot with only `SKILL.md` replaced by the approved text; the signature or the owner's approval is renewed over exactly those checked bytes (`sign_skill` and `approve` take the snapshot), never a later read.
+  - **A failed renewal was reported as applied (m-3).** The old `SKILL.md` is put back, where the old signature and approval still hold, and the outcome says `changed_during_apply` or `standing_not_renewed`; the proposal stays approved.
+  - **A keyed signature was overwritten while its key was missing (m-4).** The change waits (`signing_key_missing`) and applies once the key is back.
+  - **The /v1 panel called a real card inert while loading (m-2).** It says the change is loading or could not be read, and holds Approve until it knows.
+  - **The file-list bound counted raw bytes (m-5).** `skill_view` counts the bytes the answer carries (escapes included) for the list, a file and the body.
+  - **A proposal whose card was gone could never be decided (m-6).** The route re-binds it.
+  - **Publishing a skill that holds a link silently dropped the file (m-7).** It is refused again (422 `skill_source_refused`).
+  - **Four survivors (m-8):** a bundled flag in `describe`, a gone skill, the pending-only filter, the review's bundled skip. Each has a case.
+  - **Nits:**
+    - the nightly curator pass takes the apply lock;
+    - every origin supersedes its older proposal for a skill (the background review and /refine too), and the route sends a page of 20 with `more` counting the rest;
+    - binding a card withdraws the unbound cards naming the proposal, and a proposal superseded mid-bind gets no card;
+    - the propose-time rename check parses the stripped text the apply parses;
+    - a shipped skill is known by where it lives too, so a drifted one is still refused (tool, review and apply);
+    - both consoles offer reject only for a change the hub will refuse.
+
+  Mutation: this round's 28 mutants (25 Python, 3 HUD) were all caught, four after their cases were added (a renewal over a later read, for an approval and a signature; a drifted shipped skill in `describe` and in the review).
+
+  Records:
+  - H318 rewritten; H503's publish sentence corrected;
+  - 25 drifted rows re-read and re-stamped (H477's `:333` remapped by content);
+  - GOV-256 extended (a missing signing key, a linked publish);
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,689 → 14,711 (`tests/test_h318d_skill_review.py` 22); vitest 1,458 → 1,461 (`skill-changes` 3).
+
 - 2026-09-25 H315 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H315g found no major, three minors, five nits, and one older defect outside the row:
