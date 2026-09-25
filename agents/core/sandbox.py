@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import secrets
+import stat
 import sys
 import time
 import weakref
@@ -28,9 +29,10 @@ class SandboxError(Exception):
 def _bind_mount(source: str, target: str, *, readonly: bool) -> list[str]:
     """A Docker bind mount as ``--mount``, never ``-v``: a ``:`` in the host path (a data
     root such as ``/srv/a:b``) split ``-v`` into the wrong fields (review-H667 nit 4).
-    Each field is CSV-quoted, so a ``,`` or ``"`` in the path is data, not syntax."""
+    Each field is CSV-quoted, so a ``,``, ``"`` or line break in the path is data, not
+    syntax (review-H667b nit 1)."""
     def field(text: str) -> str:
-        if "," in text or '"' in text:
+        if any(ch in text for ch in ',"\n\r'):
             return '"' + text.replace('"', '""') + '"'
         return text
 
@@ -95,20 +97,29 @@ class Sandbox:
         self.wasm_runtime = wasm_runtime or os.environ.get("JARVIS_WASM_PYTHON", "")
         self._has_wasmtime = self._check_wasmtime() if allow_wasm else False
 
-    def _ensure_work_dir(self) -> None:
+    def ensure_work_dir(self) -> None:
         """A run directory removed under a live sandbox is made again private (0700),
-        and its lock taken again, never re-created world-readable (review-H667 m6)."""
-        if self.work_dir.is_dir():
+        and its lock taken again, never re-created world-readable (review-H667 m6). A
+        managed one that is there without its lock, or wider than 0700 (made again by
+        another path first: review-H667b m2), is made right too."""
+        missing = not self.work_dir.is_dir()
+        if missing:
+            self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self._work_lock is None:
             return
-        self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if self._work_lock is not None:
-            from . import exec_cache
+        from . import exec_cache
 
+        with contextlib.suppress(OSError):
+            if stat.S_IMODE(os.stat(self.work_dir).st_mode) & 0o077:
+                os.chmod(self.work_dir, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        if missing or not exec_cache._lock_path(self.work_dir).is_file():
             self._release.detach()
             exec_cache.release(self._work_lock, self.work_dir)
             self._work_lock = exec_cache.hold(self.work_dir)
             self._release = weakref.finalize(self, exec_cache.release, self._work_lock,
                                              self.work_dir)
+
+    _ensure_work_dir = ensure_work_dir
 
     @staticmethod
     def _probe_binary(argv: list[str], missing_note: str) -> bool:

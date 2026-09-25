@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H667 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H667b found one major, four minors and seven nits (on POSIX no live run, owner root or outside file was ever deleted):
+  - **Windows never pruned (M1).** `os.kill(pid, 0)` is a console Ctrl+C there and never says "no such process", and an open lock cannot be removed, so every directory was kept. Liveness now asks the process table (OpenProcess / GetExitCodeProcess, with the creation time), and `release` closes before it unlinks.
+  - **The record overrode a working flock (m1).** A crashed sandbox whose pid came back (the hub is pid 1 in a container) kept its directory forever. The record says whether its writer took the flock and names the kernel's boot id: on the same kernel a free flock is the answer; the pid (with its start time, so a reused pid is dead) is asked only for a record written without a flock; another host's record ages out at ten times the limit.
+  - **The tool-RPC path (m2).** Its mailbox made the run directory again with the umask's mode and no lock; the runtime asks the sandbox first, and a directory there without its lock or wider than `0700` is made right.
+  - **The managed cache spelled another way (m3)** through a link or a `..` took no lock yet was pruned; roots are compared by identity.
+  - **Survivors (m4)** pinned: EPERM, the empty record, the uid and group-writable checks, a linked root, `RuntimeError`/`ValueError` at resolve, a fresh directory's lock, a linked `.locks`, the backup's reach, the mount's quoting, a planted link, the private `.locks`, a lock that is a link to a live record, a long host name.
+  - **Nits.** Control characters are no root and the mount quotes line breaks (n1); run directories under a root chosen inside the data root stay out of backups (n3); a Windows junction is a link (n4); the label and PNB-167 say to move the cache with `JARVIS_EXEC_TEMP_DIR` (n5); a real tree ages with the production date (n6); the record is written under a temporary name and renamed into place, never seen empty (n7). Known limit (n2): where flock does not work, another pid namespace under the same host name is read by its pid.
+  36 mutants, all caught but two equivalent ones (a .locks mkdir mode the chmod repairs, samefile behind resolve), five after their cases were added (a probe that took no flock, the start tick's field, a wide .locks, the mailbox made after the repair, a file named like a run directory). PNB-167/168 updated. 40 rows re-stamped.
+  Tests: backend 15,128 → 15,183 (`tests/test_h667c_exec_cache_review.py` 55); vitest unchanged at 1,462.
+
 - 2026-09-25 H586 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
 
   review-H586b found no major, four minors and eight nits (the slow-model, refusal and memory fixes held live; no image reached /chat):

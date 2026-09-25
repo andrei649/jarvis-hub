@@ -190,7 +190,7 @@ def test_the_lock_lives_outside_the_run_directory_and_names_its_owner(monkeypatc
     sandbox = Sandbox()
     lock = sandbox.work_dir.parent / exec_cache.LOCKS / f"{sandbox.work_dir.name}.lock"
     assert lock.is_file() and list(sandbox.work_dir.iterdir()) == []
-    assert lock.read_text().split() == [socket.gethostname(), str(os.getpid())]
+    assert lock.read_text().split()[:2] == [socket.gethostname(), str(os.getpid())]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="flock")

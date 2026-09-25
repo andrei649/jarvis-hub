@@ -376,6 +376,11 @@ class ToolRPCSandboxRuntime:
         while the child runs and has no business deciding what happens to its output.
         """
         run_id = uuid.uuid4().hex
+        # The sandbox makes its run directory right (0700, its lock) before the RPC
+        # mailbox inside it would make it again with the umask's mode (review-H667b m2).
+        ensure = getattr(self.sandbox, "ensure_work_dir", None)
+        if ensure is not None:
+            ensure()
         rpc_dir = self.sandbox.work_dir / ".jarvis_file_rpc" / run_id
         store = FileRPCStore(rpc_dir, max_tool_calls=self.max_tool_calls)
         child_rpc_dir = self._child_rpc_dir(run_id)

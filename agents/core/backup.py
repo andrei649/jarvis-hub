@@ -325,10 +325,16 @@ _STALE_AFTER_SECONDS = 2 * 86_400.0
 
 # ── create ────────────────────────────────────────────────────────
 def _in_exec_cache(path: Path, root: Path) -> bool:
+    """The sandbox's files stay out of a backup: the managed cache, and a run directory
+    (``nerva-sandbox-*``) under a root the owner put inside the data root
+    (review-H667b nit 3)."""
+    from .exec_cache import PREFIX
+
     try:
-        return Path(path).relative_to(root).parts[:2] == ("cache", "exec")
+        parts = Path(path).relative_to(root).parts
     except ValueError:
         return False
+    return parts[:2] == ("cache", "exec") or any(p.startswith(PREFIX) for p in parts[:-1])
 
 
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,

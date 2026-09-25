@@ -24,16 +24,32 @@ keeps a directory forever (the kernel sets the ctime; review-H667 m6).
 
 A live sandbox holds its directory's lock, which lives OUTSIDE the run directory, in
 ``<root>/.locks/<name>.lock``: code run in the directory cannot remove, replace or
-forge it (review-H667 m6). The lock is an flock and records the owner's host and pid,
-so where flock does not work (some network filesystems), a lock whose pid is alive on
-this host still reads as held, and one from another host is kept (review-H667 m7).
+forge it (review-H667 m6). The lock is an flock (POSIX) and records its owner: host,
+pid, whether the flock was taken, the kernel's boot id and the pid's start time. The
+record is written before the lock has its name, so a lock is never seen empty.
+
+Whether a lock is held (review-H667b m1, M1):
+
+- on the kernel that wrote it (same boot id, or same host where there is no boot id),
+  a record whose writer took the flock is held exactly while the flock is: a crashed
+  sandbox whose pid came back (the hub is pid 1 in a container) is free;
+- a record written without a flock (Windows, a filesystem without flock) is held while
+  its pid is alive with the same start time; on Windows the process table is asked,
+  never ``os.kill(pid, 0)`` (signal 0 is CTRL_C_EVENT there);
+- another host's record is kept until its directory (or the orphan lock) is ten times
+  the age limit old: nothing here can tell whether it is alive, and a recreated
+  container on another kernel must not keep it forever.
+
 Only directories this module named (``nerva-sandbox-*``) are considered, in a managed
-root that is a real directory owned by this user and not writable by others.
+root that is a real directory owned by this user and not writable by others. To move
+the managed cache, set ``JARVIS_EXEC_TEMP_DIR`` (an owner-pointed root, never pruned);
+a managed cache that is itself a link is never pruned.
 """
 
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import logging
 import os
 import secrets
@@ -55,6 +71,8 @@ MIN_AGE_HOURS = 1.0
 PREFIX = "nerva-sandbox-"
 LOCKS = ".locks"
 CLAIM = ".pruning-"
+FOREIGN_FACTOR = 10          # another host's record is kept until 10x the age limit
+_WINDOWS = os.name == "nt"
 
 try:  # POSIX: a run directory's lock is an flock held for the sandbox's lifetime
     import fcntl as _fcntl
@@ -87,8 +105,9 @@ def _owner_setting(get_value: Getter | None) -> str:
 
 
 def _as_root(raw: str) -> Path | None:
-    """An absolute root from *raw*, or None when it is not one."""
-    if "\x00" in raw:
+    """An absolute root from *raw*, or None when it is not one (a control character,
+    a NUL or a newline, is never part of one: review-H667b nit 1)."""
+    if any(ord(ch) < 0x20 or ch == "\x7f" for ch in raw):
         return None
     try:
         chosen = Path(raw).expanduser()
@@ -106,6 +125,17 @@ def choice_problem(raw: object) -> str | None:
     return None
 
 
+def _same_dir(a: Path, b: Path) -> bool:
+    """Whether two spellings name one directory: by identity when both exist, else by
+    their resolved paths (review-H667b m3: a link or a ``..`` is the same cache)."""
+    with contextlib.suppress(OSError):
+        return os.path.samefile(a, b)
+    try:
+        return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
+    except (OSError, RuntimeError):
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
 def resolve_root(environ: Mapping[str, str] | None = None,
                  get_value: Getter | None = None) -> tuple[Path, bool]:
     """``(root, managed)``: the directory run directories are made in, and whether it is
@@ -120,7 +150,7 @@ def resolve_root(environ: Mapping[str, str] | None = None,
         if chosen is None:
             logger.warning("%s is not an absolute path (%r); skipped", source, raw)
             continue
-        if os.path.normcase(os.path.abspath(chosen)) == os.path.normcase(str(managed)):
+        if _same_dir(chosen, managed):
             return managed, True
         return chosen, False
     return managed, True
@@ -155,40 +185,114 @@ def _lock_path(work_dir: Path) -> Path:
     return work_dir.parent / LOCKS / f"{work_dir.name}.lock"
 
 
+def _boot_id() -> str:
+    """This kernel's boot id (Linux), or ""."""
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _start_token(pid: int) -> str:
+    """What tells this pid from a later process given the same number: the start tick
+    since boot on Linux, the creation time on Windows, or "" when unknown."""
+    if _WINDOWS:
+        process = _windows_process(pid)
+        return process[1] if process else ""
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+    except (OSError, ValueError):
+        return ""
+    fields = text.rpartition(")")[2].split()
+    return fields[19] if len(fields) > 19 else ""       # field 22, starttime
+
+
+def _record(flocked: bool) -> bytes:
+    pid = os.getpid()
+    return (f"{socket.gethostname()} {pid} flock={int(flocked)} boot={_boot_id()} "
+            f"start={_start_token(pid)}\n").encode()
+
+
+def _parse(text: str) -> dict:
+    words = text.split()
+    record = {"host": words[0] if words else "", "pid": words[1] if len(words) > 1 else ""}
+    for word in words[2:]:
+        key, sep, value = word.partition("=")
+        if sep:
+            record[key] = value
+    return record
+
+
+def _locks_dir(work_dir: Path) -> Path | None:
+    """``<root>/.locks``, made private; None when it is a link or not a directory."""
+    locks = work_dir.parent / LOCKS
+    locks.mkdir(mode=0o700, exist_ok=True)
+    info = os.lstat(locks)
+    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        return None
+    if hasattr(os, "getuid") and info.st_uid == os.getuid() and info.st_mode & 0o077:
+        os.chmod(locks, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    return locks
+
+
 def hold(work_dir: Path) -> int | None:
     """Take the run directory's lock for the sandbox's lifetime: an open descriptor on
-    ``<root>/.locks/<name>.lock``, flocked on POSIX, holding ``host pid`` (on Windows,
-    with no flock, that record alone protects it). None when it cannot be made
-    (logged: then only age and the live list protect the directory)."""
+    ``<root>/.locks/<name>.lock``, flocked on POSIX, holding the owner record. The record
+    is written to a private temporary name and then renamed into place, so the lock is
+    never seen empty (review-H667b nit 7) and a link planted at its name is replaced,
+    never written through. None when it cannot be made (logged: then only age and the
+    live list protect the directory)."""
     lock = _lock_path(work_dir)
+    staged = None
     try:
-        lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        locks = _locks_dir(work_dir)
+        if locks is None:
+            raise OSError(0, "the locks directory is a link or not a directory")
+        staged = locks / f".{work_dir.name}.{secrets.token_hex(4)}.tmp"
+        fd = os.open(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
     except OSError as exc:
         logger.warning("sandbox run directory %s has no lock (%s): only its age protects it "
                        "from another process's prune", work_dir.name, exc.strerror or exc)
         return None
+    flocked = False
     if _fcntl is not None:
         try:
             _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            flocked = True
         except OSError as exc:
             logger.warning("sandbox run directory %s: flock unavailable (%s); its owner "
                            "record still protects it on this host", work_dir.name,
                            exc.strerror or exc)
-    with contextlib.suppress(OSError):
-        os.ftruncate(fd, 0)
-        os.write(fd, f"{socket.gethostname()} {os.getpid()}\n".encode())
+    try:
+        os.write(fd, _record(flocked))
+        if _WINDOWS:                    # an open file cannot be renamed there
+            os.close(fd)
+            fd = -1
+        os.replace(staged, lock)
+        if fd < 0:
+            fd = os.open(lock, os.O_RDWR)
+    except OSError as exc:
+        logger.warning("sandbox run directory %s has no lock (%s): only its age protects it "
+                       "from another process's prune", work_dir.name, exc.strerror or exc)
+        with contextlib.suppress(OSError):
+            if fd >= 0:
+                os.close(fd)
+        with contextlib.suppress(OSError):
+            staged.unlink()
+        return None
     return fd
 
 
 def release(fd: int | None, work_dir: Path) -> None:
-    """A sandbox that is gone drops its lock: the descriptor and the lock file."""
+    """A sandbox that is gone drops its lock: the descriptor, then the lock file (an
+    open file cannot be removed on Windows: review-H667b M1)."""
     if fd is None:
         return
     with contextlib.suppress(OSError):
-        _lock_path(work_dir).unlink()
-    with contextlib.suppress(OSError):
         os.close(fd)
+    with contextlib.suppress(OSError):
+        _lock_path(work_dir).unlink()
 
 
 def _date(info: os.stat_result) -> float:
@@ -207,18 +311,52 @@ def _newest(path: Path) -> float:
     return newest
 
 
-def _pid_alive(pid: int) -> bool:
+def _kernel32():  # pragma: no cover - Windows
+    return ctypes.WinDLL("kernel32", use_last_error=True)
+
+
+def _last_error() -> int:  # pragma: no cover - Windows
+    return ctypes.get_last_error()
+
+
+def _windows_process(pid: int) -> tuple[bool, str] | None:
+    """``(alive, creation time)`` from the process table, or None for no such process.
+    Access denied (another user's process) reads as alive."""
+    kernel = _kernel32()
+    handle = kernel.OpenProcess(0x1000, False, pid)        # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return None if _last_error() == 87 else (True, "")  # ERROR_INVALID_PARAMETER
+    try:
+        code = ctypes.c_ulong()
+        alive = not kernel.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value == 259
+        created, exited, kernel_time, user_time = (ctypes.c_ulonglong() for _ in range(4))
+        ok = kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
+                                    ctypes.byref(kernel_time), ctypes.byref(user_time))
+        return alive, (str(created.value) if ok else "")
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _pid_alive(pid: int, start: str = "") -> bool:
+    """Whether *pid* is a live process, and the same one as at *start* when given."""
+    if _WINDOWS:
+        process = _windows_process(pid)
+        if process is None or not process[0]:
+            return False
+        return not (start and process[1] and process[1] != start)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except (PermissionError, OSError):
         return True
-    return True
+    now = _start_token(pid)
+    return not (start and now and now != start)
 
 
-def _held(lock: Path) -> bool:
-    """Whether a live sandbox holds this lock. Unknown reads as held."""
+def _held(lock: Path, *, foreign_expired: bool = False) -> bool:
+    """Whether a live sandbox holds this lock. Unknown reads as held; another host's
+    record is held until *foreign_expired*."""
     try:
         info = os.lstat(lock)
     except FileNotFoundError:
@@ -232,20 +370,28 @@ def _held(lock: Path) -> bool:
     except OSError:
         return True
     try:
+        probed = False
         if _fcntl is not None:
             try:
                 _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                probed = True
             except OSError:
                 return True
         try:
-            host, _, pid = os.read(fd, 256).decode("utf-8", "replace").strip().partition(" ")
+            record = _parse(os.read(fd, 512).decode("utf-8", "replace"))
         except OSError:
             return True
-        if not host:
+        if not record["host"]:
             return False
-        if host != socket.gethostname():
-            return True                       # another host's: nothing here can tell
-        return pid.isdigit() and _pid_alive(int(pid))
+        boot = _boot_id()
+        this_kernel = (record.get("boot") == boot) if boot and record.get("boot") else (
+            record["host"] == socket.gethostname())
+        if this_kernel and probed and record.get("flock") == "1":
+            return False                      # its writer's flock is gone: nobody holds it
+        if not this_kernel and record["host"] != socket.gethostname():
+            return not foreign_expired        # another host's: nothing here can tell
+        pid = record["pid"]
+        return pid.isdigit() and _pid_alive(int(pid), record.get("start", ""))
     finally:
         os.close(fd)                          # closing drops the probe's own lock
 
@@ -258,8 +404,8 @@ def _root_problem(root: Path) -> str | None:
         return "missing"
     except OSError as exc:
         return f"unreadable ({exc.strerror or exc.__class__.__name__})"
-    if stat.S_ISLNK(info.st_mode):
-        return "a link"
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+        return "a link"                       # 0x400: a Windows reparse point (junction)
     if not stat.S_ISDIR(info.st_mode):
         return "not a directory"
     if hasattr(os, "getuid"):
@@ -295,7 +441,10 @@ def prune(root: Path | None = None, *, managed: bool = True,
         report.update(skipped=f"unreadable ({exc.strerror or exc.__class__.__name__})",
                       _scheduler_status="failed")
         return report
-    cutoff = (time.time() if now is None else now) - max(MIN_AGE_HOURS, float(max_age_hours)) * 3600
+    now = time.time() if now is None else now
+    hours = max(MIN_AGE_HOURS, float(max_age_hours))
+    cutoff = now - hours * 3600
+    foreign_cutoff = now - FOREIGN_FACTOR * hours * 3600
     keep = set()
     for path in live:
         with contextlib.suppress(OSError, RuntimeError):
@@ -303,8 +452,8 @@ def prune(root: Path | None = None, *, managed: bool = True,
     for entry in entries:
         try:
             if (not entry.name.startswith(PREFIX) or entry.is_symlink() or not entry.is_dir()
-                    or entry.resolve() in keep or _newest(entry) >= cutoff
-                    or _held(_lock_path(entry))):
+                    or entry.resolve() in keep or (newest := _newest(entry)) >= cutoff
+                    or _held(_lock_path(entry), foreign_expired=newest < foreign_cutoff)):
                 report["kept"] += 1
                 continue
             # Claim it under another name first: a sandbox that holds a file open
@@ -324,7 +473,7 @@ def prune(root: Path | None = None, *, managed: bool = True,
             _lock_path(entry).unlink()
         report["deleted"].append(entry.name)
     _finish_claims(root)
-    _drop_orphan_locks(root)
+    _drop_orphan_locks(root, foreign_cutoff)
     if report["deleted"]:
         logger.info("sandbox cache: %d run director(y/ies) pruned, %d kept",
                     len(report["deleted"]), report["kept"])
@@ -341,16 +490,19 @@ def _finish_claims(root: Path) -> None:
         shutil.rmtree(stale, ignore_errors=True)
 
 
-def _drop_orphan_locks(root: Path) -> None:
-    """A lock whose run directory is gone, and that nobody holds, is removed."""
+def _drop_orphan_locks(root: Path, foreign_cutoff: float) -> None:
+    """A lock whose run directory is gone, and that nobody holds, is removed; another
+    host's once the lock itself is older than *foreign_cutoff*."""
     locks = root / LOCKS
     with contextlib.suppress(OSError):
         if locks.is_symlink() or not locks.is_dir():
             return
         for lock in locks.iterdir():
             name = lock.name.removesuffix(".lock")
-            if name.startswith(PREFIX) and not (root / name).exists() and not _held(lock):
-                with contextlib.suppress(OSError):
+            if not name.startswith(PREFIX) or (root / name).exists():
+                continue
+            with contextlib.suppress(OSError):
+                if not _held(lock, foreign_expired=_date(lock.lstat()) < foreign_cutoff):
                     lock.unlink()
 
 

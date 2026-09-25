@@ -49,7 +49,7 @@ Din acestea, **40** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-09-25T11:55:20Z`. Cod inspectat: `a8dabe100eeca8af2eddfbacb46510cf8236c7f6`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-25T12:08:13Z`. Cod inspectat: `e1b027800cadfa4eaf5fff879ffa459e9fffcd9a`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
