@@ -207,6 +207,7 @@
   "GET /api/skills/marketplace": "marketplace_list_api_skills_marketplace_get",
   "GET /api/skills/marketplace/history": "marketplace_history_api_skills_marketplace_history_get",
   "GET /api/skills/pending": "list_pending_skills_api_skills_pending_get",
+  "GET /api/skills/proposals": "skill_proposals_api_skills_proposals_get",
   "GET /api/status": "api_status_api_status_get",
   "GET /api/subagents": "subagents_list_api_subagents_get",
   "GET /api/support/bundle": "support_bundle_api_support_bundle_get",
