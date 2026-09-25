@@ -14,6 +14,32 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H273 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273f found one major (older than H273), four minors and eight nits:
+  - **A local process could mint its way back in after the owner revoked everything (MAJOR-1).** The admin guard still trusted a loopback caller once no admin credential was *active*. After `revoke all --revoke-env`, or once a rotated admin token expired, a caller with no token called `POST /api/admin/rotate-tokens`, got a fresh user token and reopened every user route and MCP. The admin tier now asks what the user tier asks: was a credential of the tier ever configured (an env token, a rotation or a revoke with `--revoke-env`, which leave the store's persistent flag, or an issued token, live or expired). The owner flag on `/chat` follows it. Only a box that never had an admin credential mints its first from loopback; recovery is the offline `token_store rotate admin`.
+  - **An expired managed user token counted as never configured (m1).** An expired row stays in the store, and it counts now. A token issued with `issue` and deleted by a revoke without `--revoke-env` leaves no trace; that residual is under H273's Known limits (closing it needs a flag in `token_store`, the owner's security lane).
+  - **The CLI asked for a token it had withheld (m2).** Against a plain-http hub on another machine, a refused admin verb now says the admin token was withheld and why, and points at https or at running the verb on the hub (ENV-162).
+  - **The supervisor's run-log split from the coordinator's (m3).** With `JARVIS_RUNTIME_LOG` only in a `.env`, the supervisor now reads it through `hub_value`, the value the files give without loading them (loading would make its child read every file key as the process environment's).
+  - **Four survivors (m4):** an admin-only CLI environment, the loopback spellings for the admin token, the coordinator's `run()` load and the reality-evidence harness's load. Each has a case.
+  - **Nits:**
+    - a bare IPv6 hub whose first group is not empty (`0:0:0:0:0:0:0:1`) is read the way http.client dials it;
+    - the `install_smoke` wording says it loads after it builds, through `PluginManager.build`;
+    - the older BACKLOG correction names Known limits, not `remaining`;
+    - H318's `remaining` count is moot (the row is equivalent, `remaining` empty);
+    - the fourth review's unrecorded nits (uvicorn's proxy knobs, a trailing-dot name, the value-material shape, the scaffold before the guards, hub mode in a container, computed names) and `hub_url`'s wildcard binds are under Known limits;
+    - the managed-only behaviour change has its own row (ENV-163);
+    - the coordinator's pre-load logging stays under H410.
+
+  Mutation: this round's 15 mutants: 13 caught at once, one (the admin rule ignoring the env token) after its case was added, one equivalent (`hub_value`'s early process-environment return).
+
+  Records:
+  - H273 rewritten (credential sentence, supervisor, install_smoke, Known limits);
+  - ENV-159 extended to the admin tier; ENV-162..164 added;
+  - 71 drifted rows re-read and re-stamped (H456's `:1213` and three H510 shorthands remapped by content); the `channel_inbox` binding re-pinned to `web.py:458`.
+
+  Tests: backend 14,620 → 14,663 (`tests/test_h273f_provenance_review.py` 43); vitest unchanged at 1,458.
+
 - 2026-09-25 H465 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H465c found no major, three minors and six nits:
@@ -334,7 +360,7 @@
 
   The review found two majors, both fixed:
   - **The start read 31 more names before any `.env` was loaded.** The lifespan ran the boot guards, logging, the orchestrator (audit log, memory, budget ledger) and the router's `detect()` before `plugin_manager.build` loaded the files. So ten `.env` knobs showed as in effect while they were not, among them the audit key and the public-profile gate. Now the hub loads its `.env` files first, once per process (`load_hub_env`): serve.py before it builds the server, the lifespan before its boot guards, and the plugin manager and `agents/run.py` too. A named pipe is read once.
-  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only. *(Fourth review: that does not stop a split. `JARVIS_USER_HOME` set only in a `.env`, with no `JARVIS_HOME`, still leaves the import-time stores under the default root and the rest under the home. The note says so, and H273 `remaining` records it.)* Log redaction is imported first, so a `.env` cannot switch it off.
+  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only. *(Fourth review: that does not stop a split. `JARVIS_USER_HOME` set only in a `.env`, with no `JARVIS_HOME`, still leaves the import-time stores under the default root and the rest under the home. The note says so, and H273's Known limits record it.)* Log redaction is imported first, so a `.env` cannot switch it off.
   - Both lists are measured, not declared. A subprocess spy covers the import and the whole start up to the load, with and without `JARVIS_HOME`; a second spy checks that every read-again name is read after the load and no before-load name is.
   - **Two read-again entries were false, and the MCP transport ignored a user token kept in `.env`.** The bind guard now sees the loaded tokens. The OAuth routes use the plugin manager's copy of the OAuth module, which re-reads the client ids after the load. The MCP transport asks `_user_token_required()`. *(Fourth review: the guard asks for more than that, so a lapsed credential opened the transport. Both now ask `_user_credential_required()`.)*
 

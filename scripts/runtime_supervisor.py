@@ -56,7 +56,20 @@ def _log_path() -> Path:
     # agents.core.observability.runtime_log.default_log_path(): this supervisor
     # is a bare process babysitter that must start even when the app package
     # cannot be imported. Keep the default in sync with DEFAULT_LOG_PATH there.
-    return Path(os.environ.get("JARVIS_RUNTIME_LOG", "logs/runtime.jsonl"))
+    # The coordinator loads the .env files before it reads the path, so a path set only
+    # in one of them is read here too, without loading (a loaded key would reach the
+    # child as the process environment's): one run-log for both (review-H273f m3).
+    value = os.environ.get("JARVIS_RUNTIME_LOG")
+    if value is None:
+        try:
+            if str(_REPO_ROOT) not in sys.path:
+                sys.path.insert(0, str(_REPO_ROOT))
+            from agents.core.env_provenance import hub_value
+
+            value = hub_value("JARVIS_RUNTIME_LOG")
+        except Exception:  # noqa: BLE001  (the app package may not import: keep the default)
+            value = None
+    return Path(value or "logs/runtime.jsonl")
 
 
 def _append_supervisor_event(event: str, **fields) -> None:

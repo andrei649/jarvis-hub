@@ -2059,6 +2059,16 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
         return EXIT_NO_HUB
     except HubError as exc:
         if exc.status in (401, 403):
+            hub = HubClient.from_env(ctx.environ)
+            if hub.admin_token and not hub._sends_admin_token():
+                # The token is set and was kept back on purpose (review-H273f m2): say so,
+                # rather than ask the owner to set what they already have.
+                ctx.err.write(
+                    f"{exc.reason}. JARVIS_ADMIN_TOKEN is set but was withheld from {hub.base_url}: "
+                    "plain http to another machine would carry it in clear text. Point NERVA_HUB_URL "
+                    "at an https address, or run the verb on the hub itself.\n"
+                )
+                return EXIT_AUTH
             ctx.err.write(
                 f"{exc.reason}. Set JARVIS_ADMIN_TOKEN (mint one on the box: "
                 "python -m agents.core.security.token_store issue admin) or JARVIS_USER_TOKEN.\n"

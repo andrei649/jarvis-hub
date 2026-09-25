@@ -102,10 +102,24 @@ def _env_admin_active() -> bool:
     return bool(_admin_env_token()) and not get_token_store().env_revoked("admin")
 
 
+def _ever_configured(scope: str) -> bool:
+    """Whether the token store shows a *scope* credential was ever configured: a
+    rotation or a revoke with ``--revoke-env`` left its persistent ``revoked:<scope>``
+    flag, or an issued token is still on file, live or expired (the hub never purges
+    expired rows). An issued token deleted by a revoke without ``--revoke-env`` leaves no
+    trace; that residual is recorded under H273's Known limits."""
+    store = get_token_store()
+    return store.env_revoked(scope) or any(row["scope"] == scope for row in store.list_tokens())
+
+
 def _admin_configured() -> bool:
-    """True when some admin credential exists: an un-revoked env token, or at
-    least one issued admin token in the store. Drives the localhost-fallback gate."""
-    return _env_admin_active() or get_token_store().has_scope("admin")
+    """Whether an admin credential was ever configured: an env token (active, or
+    superseded by a rotation), or one the store shows (``_ever_configured``). Drives the
+    localhost fallback: only a box that never had an admin credential trusts a direct
+    localhost origin, so it can mint its first token. Once every credential is revoked
+    or has expired, no local process mints a fresh one over HTTP (review-H273f MAJOR-1);
+    recovery is the offline ``token_store rotate admin`` on the box."""
+    return bool(_admin_env_token()) or _ever_configured("admin")
 
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
@@ -246,27 +260,18 @@ def _env_user_active() -> bool:
     return bool(_user_env_token()) and not get_token_store().env_revoked("user")
 
 
-def _user_token_required() -> bool:
-    """True when a user credential exists (network posture).
-
-    AUD-6: True when the static user env token is active OR a user token has been
-    issued into the store. When False the hub is in the localhost-only dev
-    posture: the HTTP guard trusts a localhost origin and requires no token (see
-    ``_user_guard``). Single source of truth reused by the MCP mutating-tool
-    identity gate so it matches the guard exactly."""
-    return _env_user_active() or get_token_store().has_scope("user")
-
-
 def _user_credential_required() -> bool:
     """Whether a user-tier caller must present a credential: one was ever configured.
 
     The single predicate the HTTP user guard, the MCP transport and the MCP identity
     gate share (review-H273e M1). A token in the environment counts even once rotated
-    away or revoked: then nothing valid remains and every caller is refused, rather
-    than the hub falling back to the no-credential localhost posture. A token issued
-    into the store counts too, with no env token at all. Only a hub that never had a
-    user credential trusts a localhost origin without one."""
-    return bool(_user_env_token()) or _user_token_required()
+    away or revoked, and so does one the store shows was configured (``_ever_configured``:
+    a rotation, a revoke with ``--revoke-env``, an issued token live or expired). Then
+    nothing valid may remain and every caller without a credential is refused, rather
+    than the hub falling back to the no-credential localhost posture; the admin tier
+    asks the same question (``_admin_configured``), so no local process mints its way
+    back in (review-H273f MAJOR-1)."""
+    return bool(_user_env_token()) or _ever_configured("user")
 
 
 def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
@@ -282,7 +287,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
     AUD-6 full-replace: managed tokens are first-class; the static env tokens are
     the bootstrap, revoked once rotated. Only meaningful when
-    ``_user_token_required()`` is True; with no token configured the localhost
+    ``_user_credential_required()`` is True; with no token configured the localhost
     posture applies and no credential is needed."""
     if user_supplied and get_token_store().verify(user_supplied) == "user":
         return True
@@ -1862,7 +1867,7 @@ def _build_mcp_mutating_route_tools():
     SECURITY: the in-process adapter has no ``Request``, so it cannot run
     ``Depends(user_guard)`` directly. Instead a per-identity gate
     (``_mcp_identity_check``) is threaded onto every mutating tool; it re-applies
-    the SAME rule ``user_guard`` uses (``_user_token_required`` /
+    the SAME rule ``user_guard`` uses (``_user_credential_required`` /
     ``_user_credential_ok``). A mutating call without a valid identity is refused
     even with both kill-switches on. The transport (``mcp_server_rpc``) extracts
     the credential from the request headers and passes it to the server. Residual

@@ -288,11 +288,15 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 def _dialled_host(url: str) -> str:
     """The host urllib dials for *url*. A bare IPv6 netloc (``http://::1:8080``) has no
     ``hostname`` for ``urlsplit``, yet http.client dials it, splitting the port at the
-    last colon after any ``]``; the same split is made here."""
+    last colon after any ``]``; the same split is made here. It is made first for any
+    unbracketed netloc with two colons or more: ``urlsplit`` reads
+    ``0:0:0:0:0:0:0:1:8080`` as host ``0``, which is not what is dialled (review-H273f n1)."""
     parts = urllib.parse.urlsplit(url)
+    netloc = parts.netloc.rpartition("@")[2]
+    if "[" not in netloc and netloc.count(":") > 1:
+        return netloc[:netloc.rfind(":")]
     if parts.hostname:
         return parts.hostname
-    netloc = parts.netloc.rpartition("@")[2]
     colon, bracket = netloc.rfind(":"), netloc.rfind("]")
     return netloc[:colon] if colon > bracket else netloc
 

@@ -440,7 +440,9 @@ def load_hub_env() -> dict[str, dict]:
     before its boot guards, the coordinator (``scripts/coordinator.py``, the systemd
     ``jarvis-runtime`` unit) before it builds its Orchestrator, the reality-evidence
     harness before its own, and ``PluginManager.build`` for any other entry.
-    ``scripts/install_smoke.py`` does not: it builds an isolated hub on purpose. The first
+    ``scripts/install_smoke.py`` does not load before it builds its isolated hub (a temp
+    data root, built on purpose from the process environment); its PluginManager.build
+    loads afterwards, as for any entry (review-H273f n3). The first
     call in a process loads and the others return its table: a named pipe is read once.
     Log redaction is imported first, so its switch stays the boot environment's."""
     global _HUB_LOADED
@@ -449,6 +451,30 @@ def load_hub_env() -> dict[str, dict]:
 
         _HUB_LOADED = load_layered_env(REPO_ENV_FILE, _hub_home_env)
     return _HUB_LOADED
+
+
+def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
+    """The value *key* has in the hub once its .env files are loaded, without loading
+    them: the process environment, then the repo .env, then the data-home .env that the
+    first two name (``JARVIS_USER_HOME``). For a process that must not load, such as
+    ``scripts/runtime_supervisor.py``, whose child would then read every file key as
+    the process environment's (review-H273f m3). None when no layer sets it."""
+    env = dict(os.environ if environ is None else environ)
+    if key in env:
+        return env[key]
+    merged = after_repo_layer(REPO_ENV_FILE, env)
+    if key in merged:
+        return merged[key]
+    home = (merged.get("JARVIS_USER_HOME") or "").strip()
+    if not home or dotenv_disabled(merged) or key in FROM_PROCESS_ONLY:
+        return None
+    path = Path(home).expanduser() / ".env"
+    if _same_file(path, REPO_ENV_FILE):
+        return None
+    parsed = _file_bindings(path)
+    if parsed is None or parsed[1] is None:
+        return None
+    return hub_values(parsed[1], merged).get(key)
 
 
 def note_for(key: str, layer: str) -> str:
