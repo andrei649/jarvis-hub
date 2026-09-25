@@ -316,6 +316,7 @@ _REFINE_REFUSALS = {
     "turn_in_flight": "A turn is still running in this conversation; try /refine again when it has answered.",
     "busy": "A review is already running; try again in a moment.",
     "daily_budget": "Today's review budget (learning.review_daily_budget) is spent; try again tomorrow.",
+    "reviews_off": "Reviews are switched off: learning.review_daily_budget is 0.",
     "llm_error": ("The review could not run: it needs a local model, and none answered "
                   "(reviews never leave this machine)."),
     "llm_timeout": ("The local model did not finish the review in time; nothing was kept. "

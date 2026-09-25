@@ -472,7 +472,8 @@ def test_config_set_refuses_what_the_schema_refuses(temp_settings):
 
 def test_config_masks_secrets_unless_revealed(temp_settings):
     secret_row = next(
-        (r for r in settings_db.DEFAULTS if "token" in r["key"] or "key" in r["key"] or r["kind"] in ("secret", "password")),
+        (r for r in settings_db.DEFAULTS
+         if r["kind"] == "text" and ("token" in r["key"] or "secret" in r["key"]) or r["kind"] in ("secret", "password")),
         None,
     )
     if secret_row is None:
@@ -484,6 +485,16 @@ def test_config_masks_secrets_unless_revealed(temp_settings):
     assert code == EXIT_OK and "sk-live-1234" not in out and "••••" in out
     code, out, _err, _hub = _run(["config", "get", name, "--reveal"])
     assert code == EXIT_OK and "sk-live-1234" in out
+
+
+def test_config_shows_a_token_budget_as_the_number_it_is(temp_settings):
+    """A number named ``…max_tokens`` is a budget, not a credential (review-H465c m-2:
+    /refine tells the owner to raise ``learning.review_max_tokens``)."""
+    for name in ("learning.review_max_tokens", "llm.max_tokens"):
+        category, key = name.split(".")
+        settings_db.put_category(category, {key: 4096})
+        code, out, _err, _hub = _run(["config", "get", name])
+        assert code == EXIT_OK and "4096" in out and "••" not in out, name
 
 
 def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):

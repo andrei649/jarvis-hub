@@ -178,7 +178,7 @@ def test_the_bound_is_the_constant_and_no_setting_can_raise_it(monkeypatch):
 
 def test_a_budget_of_zero_means_no_reviews_and_garbage_means_the_default():
     zero = _reviewer(_LLM(), **{"learning.review_daily_budget": 0})
-    assert asyncio.run(zero.run_on_demand("user: x"))["reason"] == "daily_budget"
+    assert asyncio.run(zero.run_on_demand("user: x"))["reason"] == "reviews_off"   # its own words (H465c nit 3)
     assert zero.should_run() == (False, "daily_budget")
     garbage = _reviewer(_LLM(), **{"learning.review_daily_budget": "abc"})
     assert asyncio.run(garbage.run_on_demand("user: x"))["ran"] is True

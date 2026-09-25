@@ -40,6 +40,9 @@ _OSV_DEFAULT = "https://api.osv.dev"
 
 _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
+#: Kinds that hold no credential whatever their name: ``llm.max_tokens`` and
+#: ``learning.review_max_tokens`` are budgets, and /refine tells the owner to raise one.
+_PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider", "model-select"})
 _TIER_NAMES = {0: "READ_ONLY", 1: "REVERSIBLE", 2: "EXTERNAL", 3: "IRREVERSIBLE_OR_MONEY"}
 
 
@@ -629,7 +632,10 @@ def _settings():
 
 def _is_secret(row: Mapping[str, Any]) -> bool:
     key = str(row.get("key", "")).lower()
-    return str(row.get("kind", "")) in _SECRET_KINDS or any(hint in key for hint in _SECRET_HINTS)
+    kind = str(row.get("kind", ""))
+    if kind in _SECRET_KINDS:
+        return True
+    return kind not in _PLAIN_KINDS and any(hint in key for hint in _SECRET_HINTS)
 
 
 def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:

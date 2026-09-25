@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import date
@@ -130,10 +131,16 @@ def _focus_line(focus: str) -> str:
     return f"Focus for this review: {text}\n\n" if text else ""
 
 
-def _degraded(raw: object) -> bool:
-    from ..llm.base import is_degraded_reply
+_BACKEND_ERROR = re.compile(r"\[[^\]\n]{0,80}error", re.IGNORECASE)
 
-    return is_degraded_reply(raw)
+
+def _degraded(raw: object) -> bool:
+    """A backend's failure reply, not a review: the local degraded message (``⚠️``) or a
+    bracketed ``[… error: …]``. A reply that merely starts with ``[`` (a JSON array, an
+    ``[analysis]`` preamble) is the model's answer, and is parsed (review-H465c nit 2)."""
+    if not isinstance(raw, str):
+        return False
+    return raw.startswith("⚠️") or bool(_BACKEND_ERROR.match(raw))
 
 
 def _thinking_exhausted(raw: object) -> bool:
@@ -154,6 +161,7 @@ def parse_review_json(raw: str) -> dict:
     """Extract the reviewer's JSON defensively (reflector-style). Never raises."""
     empty = {"user_facts": [], "agent_facts": [], "corrections": [],
              "skill_updates": [], "nothing": True}
+    keys = ("user_facts", "agent_facts", "corrections", "skill_updates", "nothing")
     # An answer with no readable JSON object is not a review that found nothing: a reply
     # cut off by the token cap looks exactly like this (review-H465b m-2).
     unparsed = {**empty, "unparsed": True}
@@ -168,6 +176,8 @@ def parse_review_json(raw: str) -> dict:
             return unparsed
     except Exception:
         return unparsed
+    if not any(key in data for key in keys):
+        return unparsed               # {} or {"error": …}: not a review (review-H465c nit 1)
 
     def _str_list(key):
         vals = data.get(key)
@@ -233,6 +243,8 @@ class BackgroundReviewer:
         self._on_demand = False
         self._in_flight = 0
         self.last_result: dict | None = None
+        self._warned_budget: object = None
+        self._quiet_day = ""          # the day a per-turn cut-off was last logged
 
     def _budget(self) -> int:
         """The day's review budget. 0 means no reviews; a value that is not a number is
@@ -241,10 +253,23 @@ class BackgroundReviewer:
         if raw is None or raw == "":
             return 20
         try:
-            return max(0, int(raw))
-        except (TypeError, ValueError):
-            logger.warning("learning.review_daily_budget %r is not a number; 20 is used", raw)
+            return max(0, int(float(raw))) if not isinstance(raw, bool) else 20
+        except (TypeError, ValueError, OverflowError):
+            if self._warned_budget != raw:            # once per value, not every turn
+                self._warned_budget = raw
+                logger.warning("learning.review_daily_budget %r is not a number; 20 is used", raw)
             return 20
+
+    def _number(self, key: str, default: int) -> int:
+        """A declared learning knob whose 0 is a real value (no facts kept, no idle gap):
+        only an unset or unreadable one falls back to *default* (review-H465c m-2)."""
+        raw = self._get(key, default)
+        if isinstance(raw, bool):
+            return default
+        try:                          # None and "" land in the except, as unset
+            return max(0, int(float(raw)))
+        except (TypeError, ValueError, OverflowError):
+            return default
 
     # ── cadence / budget gate ────────────────────────────────────────────────
 
@@ -264,7 +289,7 @@ class BackgroundReviewer:
             if self._turns_since < n:
                 return False, "cadence_n"
         elif cadence == "idle_gap":
-            gap = float(self._get("learning.review_idle_gap_s", 90) or 90)
+            gap = self._number("learning.review_idle_gap_s", 90)
             if self._last_run_ts is not None and (self._now() - self._last_run_ts) < gap:
                 return False, "cadence_idle"
         return True, "ok"
@@ -285,7 +310,10 @@ class BackgroundReviewer:
         today = date.today().isoformat()
         if today != self._day:
             self._day, self._day_count = today, 0
-        if self._day_count >= self._budget():
+        budget = self._budget()
+        if budget == 0:
+            return {"ran": False, "reason": "reviews_off", "actions": []}
+        if self._day_count >= budget:
             return {"ran": False, "reason": "daily_budget", "actions": []}
         self._on_demand = True
         spent_before = self._day_count
@@ -349,11 +377,8 @@ class BackgroundReviewer:
             raw = None
         if _thinking_exhausted(raw):
             # The model answered but spent its tokens thinking: that is not "no model"
-            # (review-H465b m-2). No review was had, so no budget is spent.
-            self._day_count = max(0, self._day_count - 1)
-            result = {"ran": False, "reason": "review_cut_off", "actions": []}
-            self.last_result = result
-            return result
+            # (review-H465b m-2).
+            return self._cut_off("review_cut_off", on_demand)
         if raw is None or _degraded(raw):
             # A local backend that is configured but down answers with a degraded reply
             # instead of raising: that is no review, and it costs no budget (review-H465 M-1).
@@ -366,14 +391,11 @@ class BackgroundReviewer:
         if review.get("unparsed"):
             # Cut off by the token cap or malformed: nothing can be kept, and it is not
             # "nothing worth keeping" (review-H465b m-2).
-            self._day_count = max(0, self._day_count - 1)
-            result = {"ran": False, "reason": "review_unparsed", "actions": []}
-            self.last_result = result
-            return result
+            return self._cut_off("review_unparsed", on_demand)
         actions: list[str] = []
         counts = {"facts": 0, "blocked": 0, "corrections": 0,
                   "skills_new": 0, "skill_patches": 0}
-        max_facts = max(0, int(self._get("learning.review_max_facts", 3) or 3))
+        max_facts = self._number("learning.review_max_facts", 3)
 
         living = self._living() if callable(self._living) else self._living
         if living is None and on_demand:
@@ -415,6 +437,22 @@ class BackgroundReviewer:
 
         result = {"ran": True, "nothing": review["nothing"] and not actions,
                   "actions": actions, "counts": counts, "ts": time.time()}
+        self.last_result = result
+        return result
+
+    def _cut_off(self, reason: str, on_demand: bool) -> dict:
+        """A generation that ran and gave no usable review. The owner who asked (/refine)
+        gets the unit back; a per-turn pass spends it, since the model did run to its
+        token cap, so the daily budget still caps local GPU use when a model always
+        truncates (review-H465c m-1). The per-turn case is logged once a day."""
+        if on_demand:
+            self._day_count = max(0, self._day_count - 1)
+        elif self._quiet_day != self._day:
+            self._quiet_day = self._day
+            logger.info("learning review: the local model's review was %s; raise learning.review_max_tokens "
+                        "(logged once a day)", "cut off while thinking" if reason == "review_cut_off"
+                        else "cut off or malformed")
+        result = {"ran": False, "reason": reason, "actions": []}
         self.last_result = result
         return result
 

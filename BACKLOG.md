@@ -14,6 +14,29 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465c found no major, three minors and six nits:
+  - **A per-turn review cut off by the token cap was refunded (m-1).** A local model that always truncates therefore ran a review on every turn, uncapped by `learning.review_daily_budget`. Only the owner who asked (`/refine`) gets the unit back now; a per-turn cut-off spends it and is logged at INFO once a day, naming `learning.review_max_tokens`.
+  - **The settings the replies named could not be set (m-2).** The learning loop's knobs had no declared rows, so the admin API skipped them and `nerva config set` refused them. They are declared now (category `learning`), with the defaults the code already used and bounds (`review_max_tokens` 1–32768, `review_daily_budget` 0–1000). A declared 0 for `review_max_facts` or `review_idle_gap_s` is honoured, and `nerva config get` shows a number named `…max_tokens` instead of masking it as a credential.
+  - **Four survivors (m-3):** an empty reply, a reply cut after an inner `}`, a thinking cut-off's stored result, a cancelled `/refine` that must stay cancelled. Each has a case.
+  - **Nits:**
+    - a JSON object that is not a review (`{}`, `{"error": …}`) is unparsed, not "nothing worth keeping";
+    - a reply that starts with `[` is parsed; only a bracketed `[… error …]` is a backend failure;
+    - the budget reads 2.5 as 2 and warns once about a value that is not a number (infinity and a boolean included);
+    - a budget of 0 says reviews are switched off, not "try tomorrow";
+    - a per-turn pass that does not run leaves a DEBUG line naming why;
+    - critic note 1's line citations and the previous round's record count (54 re-stamps, not 53) are corrected.
+
+  Mutation: this round's 22 mutants: 21 caught, one equivalent (a redundant unset check, since removed).
+
+  Records:
+  - H465 rewritten;
+  - 99 drifted rows re-read and re-stamped (H288's `:667` and H427's `publish()` range remapped by content);
+  - GOV-257 extended (setting the knobs, a budget of 0).
+
+  Tests: backend 14,588 → 14,620 (`tests/test_h465d_refine_review.py` 31, `tests/test_nerva_cli.py` 1); vitest unchanged at 1,458.
+
 - 2026-09-25 H153 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H153e found no major, three minors and six nits:
@@ -74,10 +97,10 @@
 
   Records:
   - H465 rewritten;
-  - 53 drifted rows re-read and re-stamped (H427's `publish()` shorthand remapped by content);
+  - 54 drifted rows re-read and re-stamped (H427's `publish()` shorthand remapped by content; the 54th, H288, drifted with the GOV-257 edit);
   - GOV-257 extended.
 
-  Tests: backend 14,509 → 14518 (`tests/test_h465c_refine_review.py` 9); vitest unchanged at 1,456.
+  Tests: backend 14,509 → 14,518 (`tests/test_h465c_refine_review.py` 9); vitest unchanged at 1,456.
 
 - 2026-09-25 H318 second adversarial review round (partial → equivalent, #1207; headline 144 → 145/697).
 

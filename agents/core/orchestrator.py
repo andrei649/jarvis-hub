@@ -3080,6 +3080,10 @@ class Orchestrator:
         except Exception:
             logger.debug("review history gather skipped", exc_info=True)
         result = await self.reviewer.run(text, synthesized, history=history)
+        if not result.get("ran"):
+            # Why a pass did not run, so a loop that keeps failing leaves a trace
+            # (review-H465c nit 6); a cut-off is also logged once a day at INFO.
+            logger.debug("learning review skipped: %s", result.get("reason"))
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
 

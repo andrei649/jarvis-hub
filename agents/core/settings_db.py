@@ -256,6 +256,16 @@ DEFAULTS: list[dict[str, Any]] = [
     # missing keys to False, so this row changes nothing at runtime — it just makes
     # the existing gate visible and toggleable.
     dict(category="cognition", key="review_enabled",      value=False, label="Per-turn background review (H20 learning loop)", kind="toggle"),
+    # learning — the H20 review loop's knobs, read by BackgroundReviewer and the review's
+    # local model call. They had no rows, so the admin API skipped them and
+    # `nerva config set` refused them, while /refine's replies named them (review-H465c
+    # m-2). The values are the ones the code already defaulted to: seeding changes nothing.
+    dict(category="learning", key="review_max_tokens", value=512, label="Review answer budget in tokens (1–32768; a cut-off review names this)", kind="number"),
+    dict(category="learning", key="review_daily_budget", value=20, label="Reviews a day, per-turn and /refine together (0 = none)", kind="number"),
+    dict(category="learning", key="review_cadence", value="every_turn", label="Per-turn review cadence", kind="select", opts=["every_turn", "every_n_turns", "idle_gap"]),
+    dict(category="learning", key="review_every_n", value=3, label="Review every N turns (cadence every_n_turns)", kind="number"),
+    dict(category="learning", key="review_idle_gap_s", value=90, label="Seconds between reviews (cadence idle_gap)", kind="number"),
+    dict(category="learning", key="review_max_facts", value=3, label="Facts a review may keep, per ring", kind="number"),
     # Owner-authored media reminders: one deadline for the complete delivery.
     dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
     # channels
@@ -662,12 +672,24 @@ _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for
 _ROUTING_SLUG_KEYS = frozenset(_routing.SETTINGS_KEYS[name] for name in _routing.SLUG_LISTS)
 
 
+#: The learning loop's integer knobs and their bounds (review-H465c m-2): a
+#: review_max_tokens of 0 would mean "until the context is full" to a local backend.
+_LEARNING_INT_BOUNDS = {
+    "review_max_tokens": (1, 32768), "review_daily_budget": (0, 1000), "review_every_n": (1, 100),
+    "review_idle_gap_s": (0, 86400), "review_max_facts": (0, 20),
+}
+
+
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
     if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
         return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "artifact_ttl_days" and (type(value) is not int or not 0 <= value <= 36500):
         return f"{key}: expected an integer between 0 and 36500 days"
+    if key in _LEARNING_INT_BOUNDS:
+        low, high = _LEARNING_INT_BOUNDS[key]
+        if type(value) is not int or not low <= value <= high:
+            return f"{key}: expected an integer between {low} and {high}"
     if kind == "toggle":
         if not isinstance(value, bool):
             return f"{key}: expected a boolean (toggle)"
