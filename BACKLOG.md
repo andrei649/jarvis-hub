@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H670 second adversarial review round (stays equivalent, #1207; headline stays 149/697).
+
+  review-H670b found no major, three minors and eight nits (the instruction-file class holds on the real approval path, in any casing and through a link):
+  - **The scope lifted honesty from drafted text (m-1).** Only the reply rules (size, depth, filler, restating, narration) are scoped to the agent's own replies; the contract now has a Replies and an Honesty section, and the honesty rules hold for everything an agent writes, drafted text included. `SOUL.md` mirrors it.
+  - **A shipped contract that stopped being UTF-8 emptied the contract at a boundary (m-2).** Any read failure (absent, vanished, not UTF-8, no permission, a reader that raises) keeps the contract in force, reported as failed-open at the boundary and warned once per episode.
+  - **Survivors (m-3)** pinned through the real code: the vanish case through the real read, the hub's start recording the contract (booted, not the source text), the shipped non-UTF-8 path.
+  - **Nits.** An unreadable override (a directory, no permission) falls back to the shipped contract, and that fallback follows an edit of the shipped file (3, 4); a permission error while locating the contract never stops an agent (4); the house fallback rules appear once when both bands are blocked (5); ARCHITECTURE and the first H670 bullet corrected (6); CHT-117 drafts with Veronica (7). Known limits: an override absent for an instant resolves to the shipped file for one boundary (as a persona's does); the contract's verdict is in the log only; the README row reaches new installs only.
+  10 mutants, all caught (two after their cases were added). 16 rows re-stamped.
+  Tests: backend 15,237 → 15,251 (`tests/test_h670c_identity_review.py` 14); vitest unchanged at 1,471.
+
 - 2026-09-25 H145 read the hub's own log from the UI (missing → equivalent, #1207; headline 148 → 149/697).
 
   When something misbehaves (a channel crash-looping, a provider refusing every call), the audit chain and the traces say what Nerva decided and how it routed, not what the process logged; that needed a shell on the box. Now:
@@ -63,9 +73,9 @@
 
   The mechanism (SOUL = system prompt, the H387 scan and cap, versions, the compaction re-read) was there; the shared content was not: every SOUL described character, none specified behaviour. Now:
   - **`agents/_identity/IDENTITY.md`** is the contract every agent's system prompt starts with: size the reply to the weight of the ask; earn depth; no filler, no restating the request, no re-summarizing, no narrating visible tool calls; agree because it is right, not because the owner said it; say when you do not know. Its maintainer note (never sent to the model) says never to add "be targeted and efficient in your exploration", and why. The repo-root `SOUL.md` mirrors it; a test keeps them equal.
-  - **Loaded like a persona:** the same H387 scan and cap, read once per file signature, re-read at a compaction boundary (one stat when unchanged; the last-good text kept on a failed read), overridable per install (`<data home>/souls/IDENTITY.local.md`, or a gitignored `agents/_identity/IDENTITY.local.md`).
+  - **Loaded like a persona:** the same H387 scan and cap, read once per file signature, re-read at a compaction boundary (a few stats when unchanged; the last-good text kept on a failed read — see the two review rounds above for what that covers), overridable per install (`<data home>/souls/IDENTITY.local.md`, or a gitignored `agents/_identity/IDENTITY.local.md`).
   - **`Agent.system_prompt()`** = contract, then persona, used at all four places a system prompt is built (two in the agent, two in the orchestrator); an agent without a SOUL still gets it. Personas and `Persona.prompt_block` stay the character layer.
-  - **Versioned** as `_identity` in the prompt VC at start (a no-op when unchanged): `/api/admin/prompts/_identity/...` diffs, rolls back and A/B-tests it. The prompt-size report counts it as shared per call; the packaged build ships it through its `agents/*/*.md` glob.
+  - **Versioned** as `_identity` in the prompt VC at start (a no-op when unchanged): `/api/admin/prompts/_identity/...` diffs it (corrected in review round 1: a rollback there does not change what is served). The prompt-size report counts it as shared per call; the packaged build ships it through its `agents/*/*.md` glob.
   - It lives in its own `agents/_identity/`, since `agents/_system/` holds only the roster (a guard test).
   Test manual: CHT-117; `docs/ARCHITECTURE.md` names the band. 17 mutants, all caught but one equivalent. 47 rows re-stamped (H427's `publish()` range by hand).
   Tests: backend 15,087 → 15,105 (`tests/test_identity_contract.py` 18); vitest unchanged at 1,462.

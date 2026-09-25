@@ -718,8 +718,10 @@ from git history into `*.local.md`).
 Above every persona sits one shared **behaviour contract**, `agents/_identity/IDENTITY.md` (H670):
 reply sizing, earned depth, the named prohibitions and the anti-sycophancy line. Every agent's
 system prompt starts with it (`Agent.system_prompt()`); it goes through the same injection scan
-and cap as a SOUL, is re-read at a compaction boundary, is versioned in the prompt VC as
-`_identity`, and is overridden per install by `<data home>/souls/IDENTITY.local.md` (or a
+as a SOUL with its own 4,000-character cap, is re-read at a compaction boundary (a file that
+cannot be read keeps the contract in force), is recorded in the prompt VC as `_identity`
+(diffable; what is served is the file), is an instruction file for the file tools' approval
+class, and is overridden per install by `<data home>/souls/IDENTITY.local.md` (or a
 gitignored `agents/_identity/IDENTITY.local.md`). The repo-root `SOUL.md` mirrors it. Personas keep
 the character; the contract keeps the behaviour.
 

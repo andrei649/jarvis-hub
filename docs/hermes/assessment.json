@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "7554f8b3bc9d986594fde11349c6b4a85f61a2a1",
-  "assessed_at": "2026-09-25T12:40:43Z",
+  "base_sha": "73ebb85d2d8aac81d920625f6d7d05c1fa186564",
+  "assessed_at": "2026-09-25T12:47:31Z",
   "reviews": [
     {
       "id": "H001",
@@ -1676,7 +1676,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -1873,7 +1873,7 @@
       "id": "H156",
       "row_sha256": "eb2ba54183f6a6ec85a8aad0651bf8a100fde466e4849249556bf579a2bd7d37",
       "status": "partial",
-      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:375) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:590) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2693) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:445, agents/core/routers/admin.py:472, agents/core/routers/admin.py:520), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:659) is called only from `Agent.__init__` (agents/core/agent.py:528). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:671) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:326) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3544). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
+      "summary": "The SOUL can be read from the UI but not edited. `GET /api/agents/{agent_id}/soul` (agents/core/routers/agents_api.py:86) returns the file that `soul_path_for` (agents/core/agent.py:375) resolves. That is the same file the builder `Agent._read_soul` (agents/core/agent.py:627) gives the model, and the route also returns the H387 guard verdict. The agent Dossier renders it read-only (frontend/src/modes.tsx:70). `PromptsPanel` (frontend/src/gap.tsx:2693) drives the prompt-VC store `SoulVersionStore.commit` (agents/core/soul_versioning.py:45) and its admin routes. Those routes cover commit, rollback and preview (agents/core/routers/admin.py:445, agents/core/routers/admin.py:472, agents/core/routers/admin.py:520), plus history, diff and A/B. The store is a side record, not the persona source, and the code says so (agents/core/learning/evolution.py:16-20). The persona is read at construction: `Agent._load_soul` (agents/core/agent.py:696) is called only from `Agent.__init__` (agents/core/agent.py:555). Since H672 it is also re-read on a running hub. `Agent.refresh_soul` (agents/core/agent.py:713) runs the same builder behind a stat probe, and `_refresh_souls_at_boundary` (agents/core/orchestrator.py:326) calls it for every agent in the process. The trigger is a context-compaction commit (agents/core/orchestrator.py:3544). So a hand edit of the SOUL file reaches the model at the next compaction without a restart (tests/test_h672_compaction_refresh.py).",
       "remaining": "(1) No write path to the live persona. Nothing writes a committed or rolled-back version into the SOUL.local.md that `soul_path_for` resolves. A commit in PromptsPanel still changes nothing the agent says until someone edits the file by hand. The H672 refresh reads only that file, never the version store. It fires only when a session's context compaction commits, so it is not a reload the editor can trigger; with no compaction, the edit still waits for a restart. (2) The version store is not seeded from the on-disk SOUL, so its history is empty for any persona never committed through the panel. (3) The commit and rollback routes write no audit event, but the governance requires SOUL edits in the audit log. (4) No description editor and no Auto-generate. `PUT /api/admin/agents/{agent_id}` (agents/core/routers/admin.py:547) only stores display overrides in an in-memory dict, and nothing drafts a description with a model for the owner to accept. (5) The Dossier has no Edit action that opens the current SOUL in the versioned editor.",
       "evidence": [
         {
@@ -1882,7 +1882,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2661,7 +2661,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -3182,7 +3182,7 @@
       "id": "H275",
       "row_sha256": "aff2a4fa6dd456d07b37cdb5b29a29509d517ab11755f23c72f7992c2498ad93",
       "status": "missing",
-      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:64).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:507).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:999). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:611).\n- Agent._load_soul (agents/core/agent.py:659) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:375: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:671) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:326) at each compaction commit (agents/core/orchestrator.py:3544), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
+      "summary": "No safe mode exists. Grepping for SAFE_MODE, safe_mode, known-good or DISABLE_(PLUGINS|MCP|SKILLS) across agents/, scripts/ and frontend/src finds no boot switch (the one hit is the unrelated D3FEND \"Restore\" entry, \"Return to a known-good state.\", in the security-skills catalogue agents/core/security_skills/pack.py), and serve.py/agents/run.py take no such flag. Every customization loads unconditionally at boot:\n- PluginManager.build constructs every plugin (agents/core/plugin_manager.py:64).\n- The web lifespan loads the persisted MCP servers through _load_mcp_config (agents/web.py:507).\n- Orchestrator.load_agents calls self.skills.discover() (agents/core/orchestrator.py:999). SkillLoader.discover appends the data-home skills folder after the bundled tree (agents/core/skills/loader.py:611).\n- Agent._load_soul (agents/core/agent.py:696) reads whichever SOUL.local.md overlay soul_path_for selects (agents/core/agent.py:375: data-home overlay, then repo-local SOUL.local.md, then the shipped SOUL.md). Since H672 the same overlay is also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:713) is called for every agent by _refresh_souls_at_boundary (agents/core/orchestrator.py:326) at each compaction commit (agents/core/orchestrator.py:3544), with no safe-mode bypass either.\nscripts/doctor.py can diagnose a broken install (HEQ lot 1 added a read-only runtime_resolves check of the configured model route) but cannot boot it with these layers disabled.",
       "remaining": "The whole feature is missing. It needs:\n1. A single boot flag (e.g. JARVIS_SAFE_MODE=1 plus a serve.py/`nerva` switch that sets it) that skips data-home and generated skills (bundled tree only), skips persisted MCP servers without erasing their saved config, skips owner-activated plugins/extensions, and ignores SOUL.local.md/HEARTBEAT.local.md overlays in favour of the shipped templates, both at construction and at the H672 compaction-boundary refresh (refresh_soul), so a safe-mode session cannot pick an overlay back up mid-conversation.\n2. A visible indicator that safe mode is on (status/readyz field and a HUD banner).\n3. A fail-closed guarantee that safe mode only removes capability: no kernel mediation, approval floor, plugin gate or egress policy relaxes.\n4. Tests for each skipped layer and for the no-relaxation property.",
       "evidence": [
         {
@@ -3203,7 +3203,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "scripts/doctor.py",
@@ -3612,7 +3612,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -4663,7 +4663,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -4812,7 +4812,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -5194,7 +5194,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/routers/agents_api.py",
@@ -6013,7 +6013,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -6903,7 +6903,7 @@
       "id": "H490",
       "row_sha256": "40df56c4740cf8a5cbedb2c4efeda29746ba7c49a46155cdf922aaa85500d90f",
       "status": "missing",
-      "summary": "Nerva has no single switch that neutralizes all owner customization. A grep for safe-mode, clean-boot or diagnostic-mode spellings across agents/, scripts/, frontend/src/, mobile/src/ and desktop/ finds no real hit (only a safeModelId helper in the frontend), and the `nerva` CLI (agents/cli/nerva.py) has no such flag. Each extension point loads unconditionally or behind its own flag. Persona resolution prefers the data-home and repo SOUL.local.md overlays (soul_path_for, agents/core/agent.py:375), and that persona is now also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:671) re-resolves the same overlay at every context-compaction commit (H672), so a later safe mode has two SOUL entry points to honour. Skills are discovered at boot (agents/core/orchestrator.py:999). The MCP manager is wired in the orchestrator (agents/core/orchestrator.py:60). agents/core/file_tools.py does not inject instruction files: it classifies writes to them (SOUL/AGENTS/CLAUDE/GEMINI/HEARTBEAT, their .local overlays, .cursorrules) as their own approval class. At runtime Nerva reads the SOUL overlay above and HEARTBEAT.local.md, whose front-matter becomes cron-scheduled agent runs (agents/core/heartbeat.py); that front-matter is now injection-scanned and a flagged file is refused, but a clean owner overlay still wins over the shipped template with no switch to ignore it. Nothing in agents/ loads AGENTS.md or .cursorrules into a prompt. Plugins, memory recall and the WorldView graph each have their own flags. agents/core/product_posture.py composes intelligence flags upward only; it has no 'everything off' position. enforce_boot_posture (agents/core/boot_guards.py:324) is where such a posture would be enforced, and agents/core/env_config.py is the flag layer it would be read from.",
+      "summary": "Nerva has no single switch that neutralizes all owner customization. A grep for safe-mode, clean-boot or diagnostic-mode spellings across agents/, scripts/, frontend/src/, mobile/src/ and desktop/ finds no real hit (only a safeModelId helper in the frontend), and the `nerva` CLI (agents/cli/nerva.py) has no such flag. Each extension point loads unconditionally or behind its own flag. Persona resolution prefers the data-home and repo SOUL.local.md overlays (soul_path_for, agents/core/agent.py:375), and that persona is now also re-read mid-session: Agent.refresh_soul (agents/core/agent.py:713) re-resolves the same overlay at every context-compaction commit (H672), so a later safe mode has two SOUL entry points to honour. Skills are discovered at boot (agents/core/orchestrator.py:999). The MCP manager is wired in the orchestrator (agents/core/orchestrator.py:60). agents/core/file_tools.py does not inject instruction files: it classifies writes to them (SOUL/AGENTS/CLAUDE/GEMINI/HEARTBEAT, their .local overlays, .cursorrules) as their own approval class. At runtime Nerva reads the SOUL overlay above and HEARTBEAT.local.md, whose front-matter becomes cron-scheduled agent runs (agents/core/heartbeat.py); that front-matter is now injection-scanned and a flagged file is refused, but a clean owner overlay still wins over the shipped template with no switch to ignore it. Nothing in agents/ loads AGENTS.md or .cursorrules into a prompt. Plugins, memory recall and the WorldView graph each have their own flags. agents/core/product_posture.py composes intelligence flags upward only; it has no 'everything off' position. enforce_boot_posture (agents/core/boot_guards.py:324) is where such a posture would be enforced, and agents/core/env_config.py is the flag layer it would be read from.",
       "remaining": "Add one safe-mode switch: a JARVIS_SAFE_MODE env flag plus a `--safe-mode` launch option. When it is set, every customization extension point skips itself: SOUL/HEARTBEAT .local overlays fall back to the shipped templates (in soul_path_for, so both Agent._load_soul and the compaction-boundary Agent.refresh_soul honour it, and in the heartbeat loader), and any instruction-file injection a later change adds honours the switch; installed skills and marketplace skills are not loaded; plugins, MCP servers, shell hooks and outbound webhooks are off; memory recall and WorldView context injection are off; runtime-settings autonomy overrides fall back to the built-in approval defaults. Credentials in .env stay loaded. The mode is reported in /api/security/posture, logged at boot and shown in the HUD, so the owner knows they are in a reduced posture. It must never loosen any gate.",
       "evidence": [
         {
@@ -6920,7 +6920,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/heartbeat.py",
@@ -8347,7 +8347,7 @@
         },
         {
           "path": "docs/test-manual/02-chat-routing-agents.md",
-          "sha256": "2edfaaca72c7e1c9109c78e96cad15f5b2593388a0caba52625dd92a1d9a69fd"
+          "sha256": "5e35675aa40cb7a6c4766fd4333c788e9082200e450c61cfe739994cd9bd2132"
         },
         {
           "path": "agents/cli/client.py",
@@ -9155,12 +9155,12 @@
       "id": "H670",
       "row_sha256": "6918c8f480eda6ae370128e54db3018f6bc5ba777026f02c3726f25c4f5f0a35",
       "status": "equivalent",
-      "summary": "The shared identity band exists. agents/_identity/IDENTITY.md is one behaviour contract: the reply-sizing rule (match length to the weight of the ask), earned depth, the named prohibitions (no filler, no restating the request, no re-summarizing, no narrating visible tool calls), the anti-sycophancy line ('agree because it is right, not because the owner said it') and 'say when you do not know'. It governs the agent's own replies to the owner: text drafted in someone else's voice (an email, a post, Howard writing as the owner) keeps that voice, greetings and sign-offs included, and a persona's warmth or curiosity lives inside the answer (review-H670 m-5). Its leading maintainer note (stripped before the model sees it, _strip_maintainer_note, agents/core/agent.py:439) says never to add 'be targeted and efficient in your exploration', and why. The repo-root SOUL.md mirrors the text, so agents working on the repo read the contract the product ships; a test keeps the two equal. identity_path (agents/core/agent.py:424) resolves it as soul_path_for does a persona: the data home's souls/IDENTITY.local.md, then a gitignored agents/_identity/IDENTITY.local.md, then the shipped file. read_identity (agents/core/agent.py:448) runs it through the same H387 helpers as a SOUL (the injection scan on the uncapped body, then the cap), announces a flagged or truncated contract (its blocked and quarantined stubs name the contract, not a persona), caps it at its own 4,000 characters (IDENTITY_MAX_CHARS, never above the persona's cap, so the two bands stay within the persona cap plus 4,000), and reads it once per settled file signature for the whole process. An override that is not UTF-8 is reported at ERROR and the shipped contract used instead, and an unreadable one leaves the agent without it; neither stops an agent from being built. Agent.system_prompt (agents/core/agent.py:531) is the contract, then the agent's persona (either may be empty; an agent without a SOUL still gets the contract). Every place a system prompt is built uses it: Agent.process (agents/core/agent.py:934) and the synthesis path in agent.py, and the orchestrator's two sites (agents/core/orchestrator.py:2105, agents/core/orchestrator.py:3594) through _system_prompt_of (agents/core/orchestrator.py:396). At a compaction boundary refresh_soul (agents/core/agent.py:671) re-reads the contract as it re-reads the persona (_refresh_identity, agents/core/agent.py:552): a few stats when unchanged, the last-good text kept when a read fails or the file is absent for an instant (an editor's save-by-rename), and a moved contract reported as rebuilt, so an edit reaches running agents without a restart. The contract in force at start is committed to the prompt VC (SoulVersionStore) as _identity (_record_identity_version, agents/core/orchestrator.py:378), a no-op when unchanged or empty, so its history is recorded and diffable through /api/admin/prompts/_identity/... beside the personas; what is served is the file (a rollback in the VC does not change it), and an edit picked up at a boundary is recorded at the next start. The prompt-size report counts it as a shared component every call pays (identity_component, agents/core/prompt_size.py:136), and the packaged build ships it through its agents/*/*.md glob (overrides, *.local.md, never ship). IDENTITY.md and its .local overlay are in the H506 instruction-file class (INSTRUCTION_BASE_NAMES, agents/core/file_tools.py:258), so a file write to them asks as an instruction file; a test derives the class from every name the contract's and a persona's loaders can resolve. The data home's README lists souls/IDENTITY.local.md. Persona SOULs and Persona.prompt_block (agents/core/cognition/persona.py:142) stay the character layer on top. tests/test_identity_contract.py (18 cases) covers every rule's presence, the banned line's absence and the kept warning, the mirror, the scan verdict, every active agent's system prompt starting with the contract (and exactly contract then persona), an agent without a persona, the orchestrator's helper and all four sites, both overrides and their order, the scan and the cap on an override, an edit reaching a running agent at the boundary, the one-stat unchanged path, a failed re-read keeping the last-good contract, the version record (once, and a failing store never stopping a start) and one read shared across agents; tests/test_h670b_identity_review.py (21 cases) covers the first review: the instruction-file class, a contract absent or vanishing at a boundary, a non-UTF-8 or unreadable override, the contract's own cap, no empty version, the start-time record, the contract's scope, a mid-file comment, the prompt-size component, the ERROR on a flagged contract, the stubs' wording and CHT-117. The first review (one major: the contract was outside the instruction-file class; seven minors: a missing contract emptied at a boundary, a non-UTF-8 override stopped every agent, the two bands exceeded the cap, the VC's rollback and A/B claim, the contract's unscoped rules against drafting personas and trait directives, six untested survivors, CHT-117 naming a retired agent; six nits) is answered; its six real survivors are pinned. The feature's 17 mutants were caught but one equivalent; this round's 15, all caught, two after their cases were added (an absent contract never read, one vanishing between stat and read). Known limits: the prompt-size report measures the shipped contract, not an override in force (as it measures shipped personas); PromptRefresh.text is still the persona alone. Test manual: CHT-117; docs/ARCHITECTURE.md names the band.",
+      "summary": "The shared identity band exists. agents/_identity/IDENTITY.md is one behaviour contract: the reply-sizing rule (match length to the weight of the ask), earned depth, the named prohibitions (no filler, no restating the request, no re-summarizing, no narrating visible tool calls), the anti-sycophancy line ('agree because it is right, not because the owner said it') and 'say when you do not know'. Its reply rules govern the agent's own replies to the owner: text drafted in someone else's voice (an email, a post, a message written as the owner) keeps that voice, greetings and sign-offs included, and a persona's warmth or curiosity lives inside the answer (review-H670 m-5); its honesty rules hold for everything an agent writes, drafted text included (review-H670b m-1). Its leading maintainer note (stripped before the model sees it, _strip_maintainer_note, agents/core/agent.py:439) says never to add 'be targeted and efficient in your exploration', and why. The repo-root SOUL.md mirrors the text, so agents working on the repo read the contract the product ships; a test keeps the two equal. identity_path (agents/core/agent.py:424) resolves it as soul_path_for does a persona: the data home's souls/IDENTITY.local.md, then a gitignored agents/_identity/IDENTITY.local.md, then the shipped file. read_identity (agents/core/agent.py:467) runs it through the same H387 helpers as a SOUL (the injection scan on the uncapped body, then the cap), announces a flagged or truncated contract (its blocked and quarantined stubs name the contract, not a persona), caps it at its own 4,000 characters (IDENTITY_MAX_CHARS, never above the persona's cap, so the two bands stay within the persona cap plus 4,000), and reads it once per settled file signature for the whole process. An override that cannot be read (not UTF-8, a directory, no permission) is reported at ERROR and the shipped contract used instead, cached against the shipped file's signature so an edit of it is seen; a contract that cannot be located or read at all leaves the agent without it; none of these stops an agent from being built. Agent.system_prompt (agents/core/agent.py:558) is the contract, then the agent's persona (either may be empty; an agent without a SOUL still gets the contract). Every place a system prompt is built uses it: Agent.process (agents/core/agent.py:981) and the synthesis path in agent.py, and the orchestrator's two sites (agents/core/orchestrator.py:2105, agents/core/orchestrator.py:3594) through _system_prompt_of (agents/core/orchestrator.py:396). At a compaction boundary refresh_soul (agents/core/agent.py:713) re-reads the contract as it re-reads the persona (_refresh_identity, agents/core/agent.py:582): a few stats when unchanged; when the file that resolves is absent, vanishes before the read or cannot be read, the contract in force is kept, reported at the boundary as failed-open and warned once per episode (an override absent for an instant resolves to the shipped file for that boundary, as a persona's does); and a moved contract reported as rebuilt, so an edit reaches running agents without a restart. The contract in force at start is committed to the prompt VC (SoulVersionStore) as _identity (_record_identity_version, agents/core/orchestrator.py:378), a no-op when unchanged or empty, so its history is recorded and diffable through /api/admin/prompts/_identity/... beside the personas; what is served is the file (a rollback in the VC does not change it), and an edit picked up at a boundary is recorded at the next start. The prompt-size report counts it as a shared component every call pays (identity_component, agents/core/prompt_size.py:136), and the packaged build ships it through its agents/*/*.md glob (overrides, *.local.md, never ship). IDENTITY.md and its .local overlay are in the H506 instruction-file class (INSTRUCTION_BASE_NAMES, agents/core/file_tools.py:258), so a file write to them asks as an instruction file; a test derives the class from every name the contract's and a persona's loaders can resolve. The data home's README lists souls/IDENTITY.local.md. Persona SOULs and Persona.prompt_block (agents/core/cognition/persona.py:142) stay the character layer on top. tests/test_identity_contract.py (18 cases) covers every rule's presence, the banned line's absence and the kept warning, the mirror, the scan verdict, every active agent's system prompt starting with the contract (and exactly contract then persona), an agent without a persona, the orchestrator's helper and all four sites, both overrides and their order, the scan and the cap on an override, an edit reaching a running agent at the boundary, the one-stat unchanged path, a failed re-read keeping the last-good contract, the version record (once, and a failing store never stopping a start) and one read shared across agents; tests/test_h670b_identity_review.py (21 cases) covers the first review: the instruction-file class, a contract absent or vanishing at a boundary, a non-UTF-8 or unreadable override, the contract's own cap, no empty version, the start-time record, the contract's scope, a mid-file comment, the prompt-size component, the ERROR on a flagged contract, the stubs' wording and CHT-117; tests/test_h670c_identity_review.py (14 cases) covers the second review: honesty unscoped, a shipped contract that stops being UTF-8, a vanish before the real read, the hub's start recording the contract, one warning per episode and a second one, a reader that raises, the fallback following a shipped edit, a directory override, a permission error at load and at a boundary, the fallback rules once when both bands are blocked, and the docs. The first review (one major: the contract was outside the instruction-file class; seven minors: a missing contract emptied at a boundary, a non-UTF-8 override stopped every agent, the two bands exceeded the cap, the VC's rollback and A/B claim, the contract's unscoped rules against drafting personas and trait directives, six untested survivors, CHT-117 naming a retired agent; six nits) is answered; its six real survivors are pinned. The feature's 17 mutants were caught but one equivalent; the first review round's 15 were caught, one only against a stand-in (the vanish case, now driven through the real read). The second review (no major; three minors: the scope lifted the honesty rules from drafted text, a shipped contract that stopped being UTF-8 emptied the contract at a boundary, three real survivors; eight nits) is answered; its 31 mutants' three real survivors are pinned, and this round's 10 were all caught, two after their cases were added (a reader that raises, a second warning episode). Known limits: the prompt-size report measures the shipped contract, not an override in force (as it measures shipped personas); PromptRefresh.text is still the persona alone; the contract's scan verdict is reported only in the log (a persona's also reaches GET /api/agents/{id}/soul); the data home's README is written once, so an existing install does not get its new row. Test manual: CHT-117; docs/ARCHITECTURE.md names the band.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -9180,11 +9180,11 @@
         },
         {
           "path": "agents/_identity/IDENTITY.md",
-          "sha256": "fd6579dd8e6ee0fca334822779f86b151241054478476c881f570b428d0994da"
+          "sha256": "2e649ccf2efe5f1e3cec8a39ef085d7e8d76d8c833eeef9a78f7a4aa4a71a627"
         },
         {
           "path": "SOUL.md",
-          "sha256": "06ccefff040df41c9f83abcf9d69a7f513d966743acba84f7d57c644dc4b2466"
+          "sha256": "66436e7020edf016a299243027e126c9538f3a081f28c1b854b5b8f655873da0"
         },
         {
           "path": "tests/test_identity_contract.py",
@@ -9192,11 +9192,11 @@
         },
         {
           "path": "docs/test-manual/02-chat-routing-agents.md",
-          "sha256": "2edfaaca72c7e1c9109c78e96cad15f5b2593388a0caba52625dd92a1d9a69fd"
+          "sha256": "5e35675aa40cb7a6c4766fd4333c788e9082200e450c61cfe739994cd9bd2132"
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "86816e14519653da3b500bac43b0808443c40d53ecb0934147b2e6d1495b966c"
+          "sha256": "5f51159d6ec225858284a5b14cb180ab60d5e4f4b661f5dade230fde706c6d79"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -9208,7 +9208,11 @@
         },
         {
           "path": "tests/test_h670b_identity_review.py",
-          "sha256": "8397c653684c23399b7c3758883a60d6f8fa43486d92c7e714a7a9270c237a73"
+          "sha256": "dfca4f8fbf12cb05737ddd00af948e7ba5976b9d2b3162cfc2ac2f3583f155a3"
+        },
+        {
+          "path": "tests/test_h670c_identity_review.py",
+          "sha256": "8c5c05cf47744f05ba015c6f42aba7c3317bf57734fb35a60ca79c6a4e1d7ee3"
         }
       ]
     },
@@ -9221,7 +9225,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -9362,7 +9366,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -9391,7 +9395,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -9728,7 +9732,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -10212,7 +10216,7 @@
       "id": "H696",
       "row_sha256": "81f54d38bf80d64430ff6c2f952f8ddda954c9ce6e5216b7118e078b455f5b7e",
       "status": "partial",
-      "summary": "Nerva already has the shape of a small bundle plus a large on-demand catalog. 12 first-party skills ship under skills/ (for example skills/brief/SKILL.md). They are rendered into the 'Available skills' prompt block (agents/core/agent.py:785), which skills_index_component measures (agents/core/prompt_size.py:149). Hermes skills are not bundled; they are imported one at a time on request. POST /skills/import (agents/core/routers/skills.py:323) is user-guarded and DEV_MODE-gated, and frontend/src/panels/skills-import.tsx drives it. It calls SkillImporter.import_from_hermes (agents/core/skills/importer.py:204). That import checks an exact, digest-verified pin allowlist and fails before any network call (tests/test_hermes_import.py). The pin still predates the upstream reorganisation. agents/core/skills/hermes_pin_v1.json:4 and agents/core/skills/importer.py:50 are v2026.8.27 with 78 entries (tests/test_hermes_import.py:232). So the catalog still lists github-auth, github-code-review, github-issue-to-pr, github-issues, github-pr-workflow, github-repo-management, plan, session-librarian and blogwatcher. It has neither the consolidated github skill nor grill-me or the other new optional skills. _safe_pin_path requires every pinned path to start with skills/ (agents/core/skills/importer.py:113), so upstream's optional-skills/ tree cannot be pinned at all. Each pin entry digests only one SKILL.md, so reference files cannot be imported.",
+      "summary": "Nerva already has the shape of a small bundle plus a large on-demand catalog. 12 first-party skills ship under skills/ (for example skills/brief/SKILL.md). They are rendered into the 'Available skills' prompt block (agents/core/agent.py:832), which skills_index_component measures (agents/core/prompt_size.py:149). Hermes skills are not bundled; they are imported one at a time on request. POST /skills/import (agents/core/routers/skills.py:323) is user-guarded and DEV_MODE-gated, and frontend/src/panels/skills-import.tsx drives it. It calls SkillImporter.import_from_hermes (agents/core/skills/importer.py:204). That import checks an exact, digest-verified pin allowlist and fails before any network call (tests/test_hermes_import.py). The pin still predates the upstream reorganisation. agents/core/skills/hermes_pin_v1.json:4 and agents/core/skills/importer.py:50 are v2026.8.27 with 78 entries (tests/test_hermes_import.py:232). So the catalog still lists github-auth, github-code-review, github-issue-to-pr, github-issues, github-pr-workflow, github-repo-management, plan, session-librarian and blogwatcher. It has neither the consolidated github skill nor grill-me or the other new optional skills. _safe_pin_path requires every pinned path to start with skills/ (agents/core/skills/importer.py:113), so upstream's optional-skills/ tree cannot be pinned at all. Each pin entry digests only one SKILL.md, so reference files cannot be imported.",
       "remaining": "1. Re-pin to upstream's current release (v2026.8.31 or later). Read the bytes, record sha256, execute nothing, and keep the fail-before-network posture.\n2. Pin format. The pin must accept the optional-skills/ root, which agents/core/skills/importer.py:113 currently rejects. Each entry must digest-verify and import the skill's reference files as well as SKILL.md, because the consolidated github skill and the pdf and AgentMail skills keep their per-workflow detail in references.\n3. Catalog content. The re-pinned catalog must expose the consolidated github skill and grill-me, and drop the merged/deleted skills.\n4. Move importer constants, tests and the doc-consistency check to the new tag.",
       "evidence": [
         {
@@ -10233,7 +10237,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "a2c3ccb2636b8cbb1ced4272c2604fe47081227efbefd7c9d61ec34eaa9bec10"
+          "sha256": "3909f0e9d12884adb03eb2568678a8d4794117364ebbde7cc94cd637c5665792"
         },
         {
           "path": "agents/core/prompt_size.py",

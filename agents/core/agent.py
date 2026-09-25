@@ -445,14 +445,36 @@ def _strip_maintainer_note(text: str) -> str:
     return text
 
 
+def _signature_or_none(path):
+    try:
+        return _soul_signature(path)
+    except OSError:
+        return None
+
+
+#: Paths whose kept-last-good contract was already announced: one WARNING per episode,
+#: not one per agent per over-budget turn (review-H670b nit 2).
+_IDENTITY_KEEP_WARNED: set = set()
+
+
+def _warn_keep(path, why: str) -> None:
+    if str(path) not in _IDENTITY_KEEP_WARNED:
+        _IDENTITY_KEEP_WARNED.add(str(path))
+        logger.warning("identity contract %s at a compaction boundary (%s); keeping the "
+                       "last-good one", why, path)
+
+
 def read_identity(path=None) -> dict:
     """Read, scan and cap the shared contract through the same H387 builder helpers as a
     persona: ``{content, path, flags, blocked, truncated}``, ``content`` "" when there is
     no file. Read once per settled file signature for the whole process, so eighteen
     agents loading it read (and announce a verdict on) it once; a file written in the
     last two seconds, whose signature is not trusted, is read by each. An override that
-    is not UTF-8 is reported at ERROR and the shipped contract is used in its place
-    (review-H670 m-2): one bad byte never stops every agent from being built."""
+    cannot be read (not UTF-8, a directory, no permission) is reported at ERROR and the
+    shipped contract is used in its place (review-H670 m-2, review-H670b nit 4): one bad
+    file never stops every agent from being built. That fallback is cached against the
+    shipped file's signature too, so an edit of the shipped file is seen (review-H670b
+    nit 3)."""
     path = identity_path() if path is None else path
     empty = {"content": "", "path": path, "flags": [], "blocked": False, "truncated": False}
     try:
@@ -460,19 +482,24 @@ def read_identity(path=None) -> dict:
     except FileNotFoundError:
         return dict(empty, missing=True)
     key = (str(path), signature)
+    shipped = _shipped_identity_path()
     if signature is not None and key in _IDENTITY_CACHE:
-        return dict(_IDENTITY_CACHE[key])
+        cached = _IDENTITY_CACHE[key]
+        if "fallback_sig" not in cached or cached["fallback_sig"] == _signature_or_none(shipped):
+            return dict(cached)
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return dict(empty, missing=True)
-    except UnicodeDecodeError:
-        shipped = _shipped_identity_path()
-        logger.error("identity contract %s is not UTF-8; %s", path,
+    except (UnicodeDecodeError, OSError) as exc:
+        why = "not UTF-8" if isinstance(exc, UnicodeDecodeError) else (
+            getattr(exc, "strerror", None) or exc.__class__.__name__)
+        logger.error("identity contract %s cannot be read (%s); %s", path, why,
                      "using the shipped contract" if path != shipped else "running without it")
-        out = dict(empty, error="not UTF-8")
+        out = dict(empty, error=why)
         if path != shipped:
-            out = dict(read_identity(shipped), error="not UTF-8", override=path)
+            out = dict(read_identity(shipped), error=why, override=path,
+                       fallback_sig=_signature_or_none(shipped))
         if signature is not None:
             _IDENTITY_CACHE.clear()
             _IDENTITY_CACHE[key] = dict(out)
@@ -530,41 +557,50 @@ class Agent:
 
     def system_prompt(self) -> str:
         """What the model is given as the system prompt (H670): the shared behaviour
-        contract, then this agent's persona. Either may be empty."""
+        contract, then this agent's persona. Either may be empty. When both were blocked,
+        the house fallback rules appear once (review-H670b nit 5)."""
         identity = (getattr(self, "identity", None) or {}).get("content", "")
         persona = (self.soul or {}).get("content", "")
+        if identity and _SOUL_FALLBACK_RULES in identity and _SOUL_FALLBACK_RULES in persona:
+            identity = identity.replace(_SOUL_FALLBACK_RULES, "").strip()
         return "\n\n".join(part for part in (identity, persona) if part)
 
     def _load_identity(self) -> None:
-        path = identity_path()
+        self._identity_kept = False
+        path = None
         try:
-            self._identity_stamp = _soul_signature(path)
-        except FileNotFoundError:
-            self._identity_stamp = None
-        try:
+            path = identity_path()
+            self._identity_stamp = _signature_or_none(path)
             self.identity = read_identity(path)
         except (OSError, ValueError) as exc:          # unreadable: never stops the agent
             logger.error("identity contract %s could not be read (%s); running without it",
                          path, exc)
+            self._identity_stamp = None
             self.identity = {"content": "", "path": path, "flags": [], "blocked": False,
                              "truncated": False}
 
     def _refresh_identity(self) -> bool:
         """Re-read the shared contract at a compaction boundary, as the persona is: a few
-        ``os.stat`` calls (resolving the file, then its signature) when it is unchanged;
-        a read that fails, or a contract absent for the instant of an editor's
-        save-by-rename, keeps the last-good one (review-H670 m-1). True when the text the
+        ``os.stat`` calls (resolving the file, then its signature) when it is unchanged.
+        When the file that resolves is absent, vanishes before the read, or cannot be read
+        (not UTF-8, no permission), a contract in force is kept (review-H670 m-1,
+        review-H670b m-2), ``_identity_kept`` says so, and the WARNING is logged once per
+        episode. Like a persona, an override absent for the instant of an editor's
+        save-by-rename resolves to the next file down (the shipped contract) for that
+        boundary; the next boundary reads the override again. True when the text the
         model is given moved."""
-        path = identity_path()
+        self._identity_kept = False
         in_force = getattr(self, "identity", None) or {}
+        path = None
         try:
+            path = identity_path()
             signature = _soul_signature(path)
         except FileNotFoundError:
             if in_force.get("content"):
-                logger.warning("identity contract is absent at a compaction boundary (%s); "
-                               "keeping the last-good one", path)
-                return False
+                return self._keep_identity(path, "is absent")
             signature = None
+        except OSError as exc:
+            return self._keep_identity(None, f"could not be located ({exc.strerror or exc})")
         if (signature is not None and signature == getattr(self, "_identity_stamp", None)
                 and path == in_force.get("path")):
             return False
@@ -573,11 +609,12 @@ class Agent:
         except Exception:
             logger.warning("identity contract could not be re-read at a compaction boundary; "
                            "keeping the last-good one", exc_info=True)
+            self._identity_kept = True
             return False
-        if fresh.get("missing") and in_force.get("content"):
-            logger.warning("identity contract vanished at a compaction boundary (%s); "
-                           "keeping the last-good one", path)
-            return False
+        if in_force.get("content") and (fresh.get("missing") or fresh.get("error")):
+            return self._keep_identity(path, "vanished" if fresh.get("missing")
+                                       else f"cannot be read ({fresh['error']})")
+        _IDENTITY_KEEP_WARNED.discard(str(path))
         self._identity_stamp = signature
         moved = fresh["content"] != in_force.get("content", "")
         self.identity = fresh
@@ -668,16 +705,26 @@ class Agent:
             self._soul_stamp = None
             logger.warning(f"SOUL.md not found for {self.id}")
 
+    def _keep_identity(self, path, why: str) -> bool:
+        _warn_keep(path, why)
+        self._identity_kept = True
+        return False
+
     def refresh_soul(self):
         """H672 — re-read the persona, and (H670) the shared contract above it, at a
         compaction boundary; see ``_refresh_persona``. A contract that moved while the
-        persona did not is reported as rebuilt, so the boundary names the change."""
+        persona did not is reported as rebuilt, so the boundary names the change; a
+        contract kept because its file could not be read, under an unchanged persona, is
+        reported as failed-open, as a kept persona is (review-H670b nit 2)."""
         identity_moved = self._refresh_identity()
         out = self._refresh_persona()
-        if identity_moved and not out.changed:
+        if not out.changed:
             from .session_refresh import PromptRefresh
 
-            return PromptRefresh(text=out.text, changed=True, reason="rebuilt")
+            if identity_moved:
+                return PromptRefresh(text=out.text, changed=True, reason="rebuilt")
+            if getattr(self, "_identity_kept", False) and out.reason == "identical":
+                return PromptRefresh(text=out.text, changed=False, reason="failed-open")
         return out
 
     def _refresh_persona(self):

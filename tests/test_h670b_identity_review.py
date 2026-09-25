@@ -176,7 +176,7 @@ def test_loading_the_agents_records_the_contract_in_force():
 
 def test_the_contract_governs_the_agents_own_replies_only():
     text = _contract().lower()
-    assert "every agent's own replies" in text
+    assert "the reply rules shape your own replies to the owner" in text
     assert "someone else's voice" in text and "greetings and sign-offs included" in text
     assert "inside the answer" in text
 
@@ -212,7 +212,7 @@ def test_a_flagged_contract_is_announced_at_error(app, caplog):
 def test_cht_117_names_live_agents():
     manual = (REPO / "docs/test-manual/02-chat-routing-agents.md").read_text(encoding="utf-8")
     row = next(line for line in manual.splitlines() if line.startswith("| CHT-117 |"))
-    assert "Atlas" not in row and "Howard" in row
+    assert "Atlas" not in row and "Pepper" in row
 
 
 def test_a_blocked_contract_says_contract_not_persona(app):
