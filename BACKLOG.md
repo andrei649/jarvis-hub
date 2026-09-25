@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H145 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H145 found two majors, ten minors and nine nits (the route, the guard, the snapshots and the built bundle held):
+  - **A secret across the cut came back in part (MAJOR 1).** Every line is now redacted whole before anything is cut.
+  - **A long traceback lost its error line (MAJOR 2).** A record over the limit keeps its header and its newest lines behind a `[… N lines not shown]` marker.
+  - **Minors.** A rotation that is a link reached any file: only regular files are listed (lstat), opened without following a link or blocking (m1). The reader masks what `/api/admin/env` masks: secret-named variables' values and credential assignments (m2). A redactor that cannot load shows nothing (m3). C1 controls and bidi overrides are removed (m4). Records are filtered before they are redacted, and the panel skips a tick while a read is in flight (m5). The note reports what `setup_logging` actually did (m6). Plain lines beyond the window are records again, so `nerva logs -n` prints what it did (m7). No stale records after a refused filter (m8). PNB-170 is observable (m9). Survivors pinned (m10).
+  - **Nits.** ASCII rotation numbers only; `nerva logs` on a directory says so; the help text says records; the 400 is no-store; LIVE only while the hub writes its file; the file is read in one go and closed before parsing (a Windows rollover is not held up). Known limit: a header-shaped line inside a multi-line message shows as its own record.
+  26 mutants, all caught but one equivalent (two after their cases were added). 60 rows re-stamped; H456's range recomputed by hand.
+  Tests: backend 15,309 → 15,341 (`tests/test_h145b_log_review.py` 32); vitest 1,479 → 1,484 (`logs-panel.test.tsx` 9 → 14).
+
 - 2026-09-25 H667 third adversarial review round (stays equivalent, #1207; headline stays 150/697).
 
   review-H667c found no major, three minors and eight nits (every review-2 finding fixed on the production paths; no live flock holder, owner root or outside file deleted):
@@ -49,7 +59,7 @@
   When something misbehaves (a channel crash-looping, a provider refusing every call), the audit chain and the traces say what Nerva decided and how it routed, not what the process logged; that needed a shell on the box. Now:
   - **`GET /api/admin/logs`** (admin, read-only) tails the log file the hub writes and its numbered rotations, and nothing else (a file is chosen by a listed name; a path, another file, a pipe or a directory is refused with 400). It reads backwards within 4 MiB, returns at most 500 records, keeps a traceback with its error, filters by File / minimum Level / Component (a logger and its children) / Lines, and re-applies the H495 secret redactor as it reads, since rotated files and older lines never went through it. With file logging off (the default) it says so and how to turn it on, instead of an empty log.
   - **Console → Observe → Logs** has the four filters, level colours, newest-first records shown as text, a 5 s auto-refresh with the LIVE badge, and honest empty, partial-read and refusal states. `nerva logs -n N` reads the same bounded, redacted tail instead of the whole file.
-  29 mutants, all caught but one equivalent (two after their cases were added). Test manual: PNB-169, PNB-170; the API sweep lists the route; the desktop HUD allowlist gains `/v2/console/logs`. 81 rows re-stamped; H456's `nerva.py` range recomputed by hand.
+  29 mutants, all caught but one equivalent (two after their cases were added). Test manual: PNB-169, PNB-170; the API sweep lists the route; the desktop HUD allowlist gains `/v2/console/logs`. 80 rows re-stamped (81 changed, with H145 itself); H456's `nerva.py` range recomputed by hand.
   Tests: backend 15,204 → 15,237 (`tests/test_log_tail.py` 33); vitest 1,462 → 1,471 (`logs-panel.test.tsx` 9).
 
 - 2026-09-25 H670 first adversarial review round (stays equivalent, #1207; headline stays 148/697).

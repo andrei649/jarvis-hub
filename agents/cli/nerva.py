@@ -155,7 +155,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="only the results that were fenced as untrusted data")
     tools.add_argument("--json", action="store_true")
 
-    logs = verbs.add_parser("logs", help="the last lines of the hub log (offline)")
+    logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
+                            "and redacted (offline; -n counts records, a traceback is one)")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
     estop = verbs.add_parser("estop", help="the global emergency stop")
@@ -1040,7 +1041,14 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
 
     if ns.lines <= 0:
         return EXIT_OK
-    tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+    try:
+        tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+    except log_tail.RedactionUnavailable as exc:
+        ctx.err.write(f"the secret redactor could not be loaded ({exc}); the log is not shown\n")
+        return EXIT_FAILED
+    except OSError as exc:
+        ctx.err.write(f"{path} could not be read ({exc.strerror or exc.__class__.__name__})\n")
+        return EXIT_FAILED
     for entry in tail["entries"]:
         ctx.say(entry["text"])
     if tail["truncated"] and len(tail["entries"]) < ns.lines:

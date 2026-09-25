@@ -30,6 +30,9 @@ def logfile(tmp_path, monkeypatch):
     path = tmp_path / "logs" / "jarvis.log"
     path.parent.mkdir()
     monkeypatch.setenv("JARVIS_LOG_FILE", str(path))
+    from agents.core import log
+
+    monkeypatch.setattr(log, "FILE_LOG_STATE", {"configured": False, "path": None, "error": None})
     return path
 
 
@@ -58,7 +61,7 @@ def test_an_old_file_is_still_readable_when_logging_is_off(tmp_path, monkeypatch
     monkeypatch.setattr(log_tail, "_default_log", lambda: path)
     out = log_tail.read_log()
     assert out["enabled"] is False and [e["message"] for e in out["entries"]] == ["from before"]
-    assert "not being written" in out["note"]
+    assert "may no longer be written" in out["note"]
 
 
 def test_rotations_are_listed_newest_first_and_nothing_else(logfile):

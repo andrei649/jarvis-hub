@@ -10,9 +10,10 @@
    The hub reads the file backwards within a byte budget, returns at most 500 records,
    keeps a traceback with its error and masks secrets again as it reads, so what is
    shown here is what the redactor lets through. Auto-refresh re-reads every 5 s while
-   it is on and the page is visible, with the card's LIVE badge. When file logging is off (the
+   it is on and the page is visible (a tick is skipped while a read is in flight), with the
+   card's LIVE badge while the hub is writing its file. When file logging is off (the
    default) the panel says how to turn it on instead of showing an empty log. */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, State, arr, inpS, mono, useApi } from '../panel-kit';
 
 export const LOG_LEVELS = ['ALL', 'INFO', 'WARNING', 'ERROR'];
@@ -58,25 +59,38 @@ export function LogsPanel() {
   const [live, setLive] = useState(false);
   const path = useMemo(() => logsPath({ file, level, component, lines }), [file, level, component, lines]);
   const { d, e, status, refusal, loading, reload } = useApi(path, true, true);
-
-  useEffect(() => {
-    if (!live) return undefined;
-    const timer = setInterval(() => {
-      if (typeof document === 'undefined' || !document.hidden) reload();
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [live, reload]);
-
-  const files = arr(d?.files);
-  const entries = arr(d?.entries);
-  const components: string[] = arr(d?.components);
-  const componentOptions = component && !components.includes(component) ? [component, ...components] : components;
   const refused = status === 401 || status === 403;
   const reason = refusal && typeof refusal === 'object' ? (refusal as any).reason : '';
 
+  // A tick is skipped while a read is still in flight, so slow reads never stack, and
+  // polling stops while the hub refuses the credential (review-H145 m5, nit 5).
+  const busy = useRef(false);
+  useEffect(() => { if (!loading) busy.current = false; }, [loading]);
+  useEffect(() => {
+    if (!live || refused) return undefined;
+    const timer = setInterval(() => {
+      if (busy.current) return;
+      if (typeof document === 'undefined' || !document.hidden) { busy.current = true; reload(); }
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [live, refused, reload]);
+
+  // A file the hub no longer lists (a rotation removed) goes back to the current log.
+  useEffect(() => {
+    if (status === 400 && file && /file/.test(String(reason))) setFile('');
+  }, [status, reason, file]);
+
+  const files = arr(d?.files);
+  // After a refusal the last answer is another request's: its records are not shown
+  // under the new filter (review-H145 m8).
+  const entries = status ? [] : arr(d?.entries);
+  const components: string[] = arr(d?.components);
+  const componentOptions = component && !components.includes(component) ? [component, ...components] : components;
+  const showLive = live && !refused && !status && !!d?.enabled;
+
   return (
     <Card title="Hub log" sub={d?.file ? `${d.file} · newest first` : 'the hub’s own log'}
-      live={live ? 'live' : undefined} onReload={reload}>
+      live={showLive ? 'live' : undefined} onReload={reload}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
         <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>
           File{' '}
@@ -105,8 +119,8 @@ export function LogsPanel() {
       {!refused && status === 400 && <div style={{ color: 'var(--amber)', fontSize: 12 }}>The hub refused the filter: {reason || e}</div>}
       {!refused && status !== 400 && <State e={e} loading={loading && !d} n={entries.length} />}
       {d?.note && <div role="note" style={{ fontSize: 12, color: d.enabled ? 'var(--ink-2)' : 'var(--amber)', margin: '6px 0' }}>{d.note}</div>}
-      {d && !d.note && !entries.length && <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>No records match these filters.</div>}
-      {d?.truncated && (
+      {d && !status && !d.note && !entries.length && <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>No records match these filters.</div>}
+      {!status && d?.truncated && (
         <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', margin: '4px 0' }}>
           only the last {Math.round(Number(d.scanned_bytes || 0) / 1024)} KiB of the file were read
         </div>

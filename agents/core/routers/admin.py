@@ -371,7 +371,7 @@ async def admin_logs(file: str = Query("", max_length=128), level: str = Query("
         out = await asyncio.to_thread(log_tail.read_log, file=file or None, level=level,
                                       component=component, lines=lines)
     except log_tail.LogRequestError as exc:
-        return JSONResponse({"error": "bad_request", "reason": str(exc)}, status_code=400)
+        return nocache_json({"error": "bad_request", "reason": str(exc)}, status_code=400)
     return nocache_json(out)
 
 

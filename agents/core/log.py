@@ -13,6 +13,11 @@ _LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 logger = logging.getLogger(__name__)
 
+#: H145 review — what the last ``setup_logging`` in this process actually did with the
+#: log file: ``path`` it writes (None when file logging is off) and ``error`` when it
+#: could not open it. The log page reports this rather than re-deriving the settings.
+FILE_LOG_STATE: dict = {"configured": False, "path": None, "error": None}
+
 
 def _setting(category: str, key: str, default):
     """Read a settings_db value, falling back to default on any failure.
@@ -100,6 +105,7 @@ def setup_logging(level: Optional[int] = None) -> None:
     )
     _install_redaction()
     cfg = _file_logging_config()
+    FILE_LOG_STATE.update(configured=True, path=None, error=None)
     if cfg is not None:
         path, max_bytes, backups = cfg
         try:
@@ -116,7 +122,9 @@ def setup_logging(level: Optional[int] = None) -> None:
             # existed). The install is idempotent, so the stderr handler is not
             # double-filtered.
             _install_redaction()
+            FILE_LOG_STATE["path"] = os.path.abspath(path)
         except OSError as exc:
+            FILE_LOG_STATE["error"] = f"{os.path.abspath(path)}: {exc.strerror or exc}"
             # A bad path / unwritable dir must not take the process down — we still
             # have stderr logging from basicConfig.
             logger.warning("File logging disabled (cannot open %s): %s", path, exc)

@@ -91,7 +91,9 @@ describe('LogsPanel', () => {
     fireEvent.click(screen.getByLabelText('Auto-refresh every 5 s'));
     expect(screen.getByText('LIVE')).toBeTruthy();
     const before = calls.length;
-    await act(async () => { vi.advanceTimersByTime(REFRESH_MS * 2 + 10); });
+    await act(async () => { vi.advanceTimersByTime(REFRESH_MS + 10); });
+    await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(before + 1));
+    await act(async () => { vi.advanceTimersByTime(REFRESH_MS + 10); });
     await waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(before + 2));
     fireEvent.click(screen.getByLabelText('Auto-refresh every 5 s'));
     const after = calls.length;
@@ -132,5 +134,71 @@ describe('LogsPanel', () => {
     const { container } = render(<LogsPanel />);
     await waitFor(() => expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy());
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('skips a tick while a read is in flight, and stops polling on a refusal', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let release;
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
+    global.fetch = vi.fn((url) => { calls.push({ url: String(url) }); return new Promise((r) => { release = () => r(reply(200, ON)); }); });
+    fireEvent.click(screen.getByLabelText('Auto-refresh every 5 s'));
+    const before = calls.length;
+    await act(async () => { vi.advanceTimersByTime(REFRESH_MS * 4 + 10); });
+    expect(calls.length).toBe(before + 1);
+    await act(async () => { release(); });
+  });
+
+  it('does not poll while the page is hidden, and uses a 5 s interval', async () => {
+    expect(REFRESH_MS).toBe(5000);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    try {
+      fireEvent.click(screen.getByLabelText('Auto-refresh every 5 s'));
+      const before = calls.length;
+      await act(async () => { vi.advanceTimersByTime(REFRESH_MS * 3); });
+      expect(calls.length).toBe(before);
+    } finally {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    }
+  });
+
+  it('shows no old records after a refused filter, and goes back to the current log', async () => {
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
+    status = 400;
+    answer = { error: 'bad_request', reason: 'file must be one of the listed log files' };
+    fireEvent.change(screen.getByLabelText('File'), { target: { value: 'jarvis.log.1' } });
+    await waitFor(() => expect(screen.getByText(/file must be one of the listed log files/)).toBeTruthy());
+    expect(screen.queryByText(/newer/)).toBeNull();
+    status = 200;
+    answer = ON;
+    await waitFor(() => expect(lastQuery().get('file')).toBeNull());
+  });
+
+  it('shows LIVE only while the hub writes its file', async () => {
+    answer = { ...ON, enabled: false, note: 'File logging is off …' };
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByRole('note')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('Auto-refresh every 5 s'));
+    expect(screen.queryByText('LIVE')).toBeNull();
+  });
+
+  it('names a 403 like a 401, dims DEBUG, and keeps a chosen component listed', async () => {
+    expect(levelColor('DEBUG')).toBe('var(--ink-3)');
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
+    answer = { ...ON, components: ['jarvis.web'] };
+    fireEvent.change(screen.getByLabelText('Component'), { target: { value: 'jarvis.agent' } });
+    await waitFor(() => expect(lastQuery().get('component')).toBe('jarvis.agent'));
+    const options = [...screen.getByLabelText('Component').querySelectorAll('option')].map((o) => o.value);
+    expect(options).toContain('jarvis.agent');
+    cleanup();
+    status = 403;
+    answer = { detail: 'forbidden' };
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/needs the admin token/)).toBeTruthy());
   });
 });
