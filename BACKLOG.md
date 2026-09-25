@@ -26,7 +26,7 @@
   - **Said everywhere.** The boot log, `/healthz`, `/readyz` (still ready), `/status`, `/api/status`, and a red SAFE MODE strip in the HUD naming what was left out. A test pins the exact modules that read the flag; no gate does.
 
   28 mutants, all caught. 74 rows re-stamped (the serve.py rows re-derived from HEAD after a double shift). The binding inventory's pinned `web.py`/`scheduler_service.py` lines moved with the files. Test manual: ENV-167, ENV-168.
-  Tests: backend 15,516 → 15,544 (`tests/test_h275_safe_mode.py` 28); vitest 1,491 → 1,495 (`safe-mode-banner.test.tsx` 3, `loaders.test.ts` +1).
+  Tests: backend 15,516 → 15,545 (`tests/test_h275_safe_mode.py` 29); vitest 1,491 → 1,495 (`safe-mode-banner.test.tsx` 3, `loaders.test.ts` +1).
 
 - 2026-09-25 H296 a tool tells the model what this install can do, and a running session sees it move (missing → equivalent, #1207; headline 153 → 154/697).
 

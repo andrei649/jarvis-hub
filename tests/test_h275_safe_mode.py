@@ -37,7 +37,10 @@ REPO = repo_root
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     for var in ("JARVIS_SAFE_MODE", "JARVIS_USER_HOME", "JARVIS_APP_ROOT", "JARVIS_PLUGIN_GRANTS"):
-        monkeypatch.delenv(var, raising=False)
+        # setenv first so the original state (often: unset) is what teardown restores,
+        # even when a test writes the variable itself (serve's switch does).
+        monkeypatch.setenv(var, "")
+        monkeypatch.delenv(var)
     safe_mode.reset()
     yield
     safe_mode.reset()
@@ -79,7 +82,11 @@ def test_the_serve_switch_sets_the_flag(monkeypatch):
     assert safe_mode.enabled() is False
     assert serve.apply_safe_mode_switch(["--safe-mode"]) is True
     assert safe_mode.enabled() is True
-    monkeypatch.delenv(safe_mode.ENV_NAME)
+
+
+def test_the_flag_does_not_outlive_the_serve_switch_test():
+    """Guards the fixture above: the switch writes the real environment."""
+    assert safe_mode.enabled() is False
 
 
 # ── skills: the shipped tree only ────────────────────────────────────────────────
