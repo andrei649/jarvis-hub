@@ -152,7 +152,7 @@ def _known_secret_values() -> list[str]:
                 if isinstance(value, str) and len(value.strip()) >= 6:
                     values.add(value.strip())
     except Exception as exc:  # noqa: BLE001 (no settings store here: the environment still counts)
-        logger.debug("log reader: the settings store's secrets are not readable here: %s", type(exc).__name__)
+        logger.debug("log reader: the settings store is not readable here: %s", type(exc).__name__)
     return sorted(values, key=len, reverse=True)
 
 

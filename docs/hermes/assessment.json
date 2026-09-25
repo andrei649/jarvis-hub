@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "09f8b6b815a98dfcc547754f34716b18e7b350da",
-  "assessed_at": "2026-09-25T14:22:48Z",
+  "base_sha": "76a8f064c158d2e89f329f26ffffeffe0eade5c8",
+  "assessed_at": "2026-09-25T18:48:06Z",
   "reviews": [
     {
       "id": "H001",
@@ -1527,7 +1527,7 @@
       "evidence": [
         {
           "path": "agents/core/log_tail.py",
-          "sha256": "eb37f80682a43ddd50719c96052153d429ce6033b918d019645f474e1fe94cca"
+          "sha256": "146ad59bb306a59f35fc32a33d3edc799d61b611e73def1e60e4b4f3d5158770"
         },
         {
           "path": "agents/core/routers/admin.py",
