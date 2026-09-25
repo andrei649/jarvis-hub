@@ -12,7 +12,7 @@
      run: every key validated as a single write is, nothing written), shows each change,
      and applies it only on a second step. The hub writes all of it or none of it; a
      refusal lists every reason. A secret's values are never shown. */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
 import { inpS, mono, refusalReason, taS } from '../panel-kit';
 
@@ -40,20 +40,28 @@ const shown = (v: any): string => {
   try { return JSON.stringify(v); } catch { return String(v); }
 };
 
-export function ResetCategory({ cat, onDone }: { cat: string; onDone?: () => void }) {
+export function ResetCategory({ cat, count, onDone }: { cat: string; count?: number; onDone?: (cat: string) => void }) {
   const [armed, setArmed] = useState(false);
   const [note, setNote] = useState('');
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  // Arming replaces the focused button: focus moves to the confirmation, never lost.
+  useEffect(() => { if (armed && confirmRef.current) confirmRef.current.focus(); }, [armed]);
   const run = () => apiPost(resetPath(cat), {}, { admin: true })
     .then((r: any) => {
       const moved = Array.isArray(r?.reset) ? r.reset.length : 0;
-      setNote(moved ? `reset ${moved}` : 'already the defaults');
+      const kept = Array.isArray(r?.kept) && r.kept.length ? ` · kept ${r.kept.length} secret${r.kept.length === 1 ? '' : 's'}` : '';
+      const forced = Array.isArray(r?.overridden) && r.overridden.length ? ` · ${r.overridden.join(', ')} still set by the posture` : '';
+      setNote((moved ? `reset ${moved}` : 'already the defaults') + kept + forced);
       setArmed(false);
-      if (onDone) onDone();
+      if (onDone) onDone(cat);
     })
     .catch((err) => { setNote(`not reset · ${refusalReason(err, 'refused')}`); setArmed(false); });
   if (armed) {
+    const all = count ? `all ${count} ` : '';
     return <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-      <button className="tool-btn" onClick={run} aria-label={`confirm reset ${cat}`}>reset {cat} to defaults?</button>
+      <button ref={confirmRef} className="tool-btn" onClick={run} aria-label={`confirm reset ${cat}`}>
+        reset {all}{cat} settings to defaults? (secrets kept)
+      </button>
       <button className="tool-btn" onClick={() => setArmed(false)}>cancel</button>
     </span>;
   }
@@ -74,20 +82,21 @@ function download(doc: any) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);   // some browsers cancel a download revoked at once
     return true;
   } catch {
     return false;          // no Blob URLs here (an old browser, a test): the note still says what was exported
   }
 }
 
-export function SettingsTransfer({ onDone }: { onDone?: () => void }) {
+export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) => void }) {
   const [exported, setExported] = useState<any>(null);
   const [text, setText] = useState('');
   const [plan, setPlan] = useState<any>(null);       // { doc, changes }
   const [errors, setErrors] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const doExport = () => apiGet(EXPORT_PATH, { admin: true })
     .then((doc: any) => { download(doc); setExported(doc); })
@@ -97,6 +106,10 @@ export function SettingsTransfer({ onDone }: { onDone?: () => void }) {
     setNote(''); setErrors([]); setPlan(null);
     let doc: any;
     try { doc = JSON.parse(text); } catch { setErrors(['the document is not JSON']); return; }
+    if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+      const { dry_run: _ignored, ...rest } = doc;   // the apply step is never a dry run
+      doc = rest;
+    }
     setBusy(true);
     apiPost(IMPORT_PATH, { ...doc, dry_run: true }, { admin: true })
       .then((r: any) => setPlan({ doc, changes: Array.isArray(r?.changes) ? r.changes : [] }))
@@ -108,7 +121,13 @@ export function SettingsTransfer({ onDone }: { onDone?: () => void }) {
     if (!plan) return;
     setBusy(true);
     apiPost(IMPORT_PATH, plan.doc, { admin: true })
-      .then((r: any) => { setNote(`imported ${r?.updated ?? 0} setting${r?.updated === 1 ? '' : 's'}`); setPlan(null); setText(''); if (onDone) onDone(); })
+      .then((r: any) => {
+        setNote(`imported ${r?.updated ?? 0} setting${r?.updated === 1 ? '' : 's'}`);
+        const touched = Array.from(new Set((Array.isArray(r?.changes) ? r.changes : [])
+          .map((c: any) => String(c.setting || '').split('.')[0]).filter(Boolean))) as string[];
+        setPlan(null); setText('');
+        if (onDone) onDone(touched);
+      })
       .catch((err) => { setErrors(refusalList(err)); setPlan(null); })
       .finally(() => setBusy(false));
   };
@@ -123,18 +142,17 @@ export function SettingsTransfer({ onDone }: { onDone?: () => void }) {
     <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 4 }}>MOVE A CONFIGURATION</div>
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
       <button className="tool-btn" onClick={doExport}>⬇ export JSON</button>
-      <label className="tool-btn" style={{ cursor: 'pointer' }}>
-        ⬆ import file
-        <input type="file" accept="application/json,.json" aria-label="import settings file"
-          style={{ display: 'none' }} onChange={(e) => readFile(e.target.files && e.target.files[0])} />
-      </label>
+      <button className="tool-btn" onClick={() => fileInput.current && fileInput.current.click()}>⬆ import file</button>
+      <input ref={fileInput} type="file" accept="application/json,.json" aria-label="import settings file"
+        tabIndex={-1} style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        onChange={(e) => readFile(e.target.files && e.target.files[0])} />
     </div>
     {exported && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
       exported {count} settings{(exported.excluded || []).length ? ' · left out: ' : ''}
       {(exported.excluded || []).map((x: any) => `${x.setting} (${x.reason})`).join(', ')}
     </div>}
     <textarea aria-label="settings document" value={text} placeholder='{"settings": {"system": {"log_level": "INFO"}}}'
-      onChange={(e) => { setText(e.target.value); setPlan(null); }} style={{ ...taS, marginTop: 6 }} />
+      disabled={busy} onChange={(e) => { setText(e.target.value); setPlan(null); }} style={{ ...taS, marginTop: 6 }} />
     <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
       <button className="tool-btn" onClick={preview} disabled={!text.trim() || busy}>preview import</button>
       {plan && plan.changes.length > 0 && <button className="tool-btn" onClick={apply} disabled={busy}>apply {plan.changes.length} change{plan.changes.length === 1 ? '' : 's'}</button>}
@@ -146,7 +164,7 @@ export function SettingsTransfer({ onDone }: { onDone?: () => void }) {
         {c.setting}: <span style={{ color: 'var(--ink-3)' }}>{shown(c.from)}</span> → <span style={{ color: 'var(--accent-light)' }}>{shown(c.to)}</span>
       </div>
     ))}
-    {errors.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 3 }}>{r}</div>)}
+    {errors.map((r, i) => <div key={`${i}:${r}`} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 3 }}>{r}</div>)}
   </div>;
 }
 

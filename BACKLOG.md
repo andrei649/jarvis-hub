@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H157 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H157 found two majors, seven minors and twelve nits (the validation, the all-or-nothing write and the route order held):
+  - **A page the owner visited could import settings (MAJOR 1).** The admin guard trusts loopback on a default install, and the import parsed any body as JSON, so a cross-site `text/plain` post could turn the input scanner off. The import and the reset now take only `application/json` (415 otherwise, a type the browser must pre-check) and refuse a request the browser marks cross-site (403).
+  - **A password in a URL was exported (MAJOR 2).** `http://user:pw@host` counts as a credential now, in a list too, and the preview shows a credential-shaped value as `(hidden)`.
+  - **Minors.** NaN, Infinity and nesting too deep are refused (422), never stored (m1, m7). An `mcp.servers` entry needs a name, and the loader skips one without, so a bad import cannot stop the start (m2). The panel drops a reset category's unsaved edits (m3). 2000 and 2000.0 are the same number (m4). A reset keeps the category's secrets and names them (m5). Survivors pinned: a credential in a list, the change listeners, the 1 MB bound, which now also counts a chunked body as it streams in (m6).
+  - **Nits.** Only a JSON `true` makes a dry run, and a pasted `dry_run` is dropped from the apply; every reply is no-store; the reset names the settings the posture still forces, says how many settings go back and moves the focus to its confirmation; edits hidden by the search are counted; the text is held while the hub answers; the file picker is reachable from the keyboard; the download link is revoked after the download starts. Known limit: the preview and the apply are two requests, so a write between them is applied as the apply step finds it.
+  18 mutants, all caught but one equivalent (two after their cases were pinned). 63 rows re-stamped; H551's and H554's citations recomputed by hand.
+  Tests: backend 15,341 → 15,371 (`tests/test_h157b_settings_review.py` 30); vitest 1,484 → 1,488 (`settings-tools.test.tsx` 8 → 12).
+  CI red on 76789d58, fixed here: bandit's try/except/pass in the log reader now logs at debug; the reader takes `JARVIS_LOG_FILE` through `env_str`, so raw env reads are back to 117; and the tool-window test's 4,096-token window no longer held a real agent's prompt once the shared contract grew (H670 review 1), so it runs at 8,192, where the 30,000-character result still spills (a 1M window fails it). H145 and H298 re-stamped.
+
 - 2026-09-25 H145 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
 
   review-H145 found two majors, ten minors and nine nits (the route, the guard, the snapshots and the built bundle held):

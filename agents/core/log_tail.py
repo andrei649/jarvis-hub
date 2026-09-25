@@ -33,10 +33,15 @@ says so, with how to turn it on, instead of looking like an empty log.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import stat
 from pathlib import Path
+
+from .env_config import env_str
+
+logger = logging.getLogger(__name__)
 
 LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 MAX_LINES = 500
@@ -81,7 +86,7 @@ def _default_log() -> Path:
 def configured_log() -> tuple[Path, bool]:
     """``(path, enabled)``: the file the hub writes when file logging is on, and whether
     it is on — ``$JARVIS_LOG_FILE`` wins, as it does for the writer."""
-    explicit = os.environ.get("JARVIS_LOG_FILE", "").strip()
+    explicit = env_str("JARVIS_LOG_FILE").strip()
     if explicit:
         return Path(explicit), True
     return _default_log(), bool(_setting("system", "log_to_file", False))
@@ -146,8 +151,8 @@ def _known_secret_values() -> list[str]:
                 value = get_value(cat, key, "")
                 if isinstance(value, str) and len(value.strip()) >= 6:
                     values.add(value.strip())
-    except Exception:  # noqa: BLE001 (no settings store here: the environment still counts)
-        pass
+    except Exception as exc:  # noqa: BLE001 (no settings store here: the environment still counts)
+        logger.debug("log reader: the settings store's secrets are not readable here: %s", type(exc).__name__)
     return sorted(values, key=len, reverse=True)
 
 

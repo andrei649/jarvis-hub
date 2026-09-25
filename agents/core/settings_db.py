@@ -764,9 +764,23 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
+        if err is None and (cat, key) == ("mcp", "servers"):
+            err = _mcp_servers_problem(value)
         if err:
             errors.append(err)
     return errors
+
+
+def _mcp_servers_problem(value: Any) -> str | None:
+    """``mcp.servers`` is a list of server objects, each with a non-empty string name:
+    an entry the loader cannot read would stop it at start (review-H157 m2)."""
+    if not isinstance(value, list):
+        return "servers: expected a list of server objects"
+    for n, server in enumerate(value):
+        if not isinstance(server, dict) or not isinstance(server.get("name"), str) \
+                or not server["name"].strip():
+            return f"servers: entry {n + 1} needs an object with a non-empty name"
+    return None
 
 
 def _template_vars_problem(value: Any) -> str | None:
@@ -839,11 +853,41 @@ def is_secret_setting(category: str, key: str) -> bool:
     return key in SECRET_KEYS or bool(_CREDENTIAL_NAME.search(key))
 
 
+def _strings(value: Any):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield str(k)
+            yield from _strings(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strings(v)
+
+
+def _url_password(value: Any) -> bool:
+    """Whether any string in the value is a URL carrying a password (``http://u:pw@h``),
+    which the secret scanner recognises only for database URLs (review-H157 M2)."""
+    from urllib.parse import urlsplit
+
+    for text in _strings(value):
+        if "@" not in text or "://" not in text:
+            continue
+        try:
+            if urlsplit(text.strip()).password:
+                return True
+        except ValueError:
+            return True                          # unparseable, with an @: leave it out
+    return False
+
+
 def _looks_like_credential(value: Any) -> bool:
-    """Whether the secret scanner masks anything in the value (a token in a template
-    variable, a key pasted into free text)."""
+    """Whether the value holds a credential: a URL with a password, or anything the
+    secret scanner masks (a token in a template variable, a key pasted into free text)."""
     if value in (None, "", [], {}) or isinstance(value, (bool, int, float)):
         return False
+    if _url_password(value):
+        return True
     try:
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         from .security.log_redaction import SecretRedactionFilter
@@ -912,6 +956,11 @@ def plan_import(doc: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
             if (cat, key) not in _SPEC:
                 errors.append(f"{cat}.{key}: unknown setting")
                 continue
+            try:                                 # NaN, Infinity or a nesting too deep to store
+                json.dumps(value, allow_nan=False)
+            except (ValueError, TypeError, RecursionError):
+                errors.append(f"{cat}.{key}: not a finite JSON value (NaN, Infinity or nested too deep)")
+                continue
             wanted.setdefault(cat, {})[key] = value
         errors.extend(f"{cat}.{err}" for err in validate_category(cat, wanted.get(cat, {})))
     if errors:
@@ -926,9 +975,21 @@ def plan_import(doc: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
     for cat, values in wanted.items():
         for key, value in values.items():
             current = stored.get((cat, key), _SPEC[(cat, key)]["value"])
-            if value != current or type(value) is not type(current):
+            if not _same_value(value, current):
                 changes.setdefault(cat, {})[key] = value
     return changes, []
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    """Equal as a setting: 2000 and 2000.0 are the same number (a browser writes one for
+    the other, review-H157 m4), but a bool is never a number."""
+    if _is_number(a) and _is_number(b):
+        return a == b
+    return a == b and type(a) is type(b)
 
 
 def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -945,9 +1006,15 @@ def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
             if is_secret_setting(cat, key):
                 out.append({"setting": f"{cat}.{key}", "from": "(secret)", "to": "(secret)"})
                 continue
+            free = _SPEC[(cat, key)].get("kind") not in _CHOICE_KINDS
+
+            def shown(value, free=free):
+                # the export's rule: a value that holds a credential is never echoed
+                return "(hidden)" if free and _looks_like_credential(value) else value
+
             out.append({"setting": f"{cat}.{key}",
-                        "from": stored.get((cat, key), _SPEC[(cat, key)]["value"]),
-                        "to": changes[cat][key]})
+                        "from": shown(stored.get((cat, key), _SPEC[(cat, key)]["value"])),
+                        "to": shown(changes[cat][key])})
     return out
 
 
@@ -980,10 +1047,33 @@ def apply_import(changes: dict[str, dict[str, Any]]) -> int:
     return written
 
 
+def reset_kept(cat: str) -> list[str]:
+    """The settings of *cat* a reset leaves alone: its secrets (stored credentials an
+    export never carries could not be got back, review-H157 m5)."""
+    return sorted(spec["key"] for spec in DEFAULTS
+                  if spec["category"] == cat and is_secret_setting(cat, spec["key"]))
+
+
+def posture_overridden(cat: str) -> list[str]:
+    """The settings of *cat* the selected product posture forces while it is selected:
+    a reset puts the stored value back, but this one stays in effect (review-H157 n5)."""
+    try:
+        from agents.core import product_posture
+
+        name = product_posture.normalize(get_value("product", "posture", product_posture.OFF))
+        applies = product_posture.POSTURES[name].get("applies", {})
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(k.split(".", 1)[1] for k in applies if k.startswith(cat + "."))
+
+
 def reset_category(cat: str) -> list[str] | None:
-    """Put every declared setting of *cat* back to its declared value; the keys that
-    moved (``[]`` when none did), or None for a category nothing declares."""
-    specs = [spec for spec in DEFAULTS if spec["category"] == cat]
+    """Put every declared setting of *cat* but its secrets back to its declared value;
+    the keys that moved (``[]`` when none did), or None for a category nothing declares."""
+    specs = [spec for spec in DEFAULTS
+             if spec["category"] == cat and not is_secret_setting(cat, spec["key"])]
+    if not specs and any(spec["category"] == cat for spec in DEFAULTS):
+        return []
     if not specs:
         return None
     _ensure_init()

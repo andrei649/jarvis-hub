@@ -2659,6 +2659,12 @@ export function SettingsPanel() {
     .map(([cat, items]: [string, any]) => [cat, (items || []).filter((it) => settingMatches(cat, it, query))] as [string, any[]])
     .filter(([, items]) => items.length > 0);
   const nMatches = shownCats.reduce((n, [, items]) => n + items.length, 0);
+  // Edits kept under a search: saved with the rest, and counted so the owner knows.
+  const visible = new Set(shownCats.flatMap(([cat, items]) => items.map((it) => `${cat}.${it.key}`)));
+  const nHidden = Object.entries(dirty).reduce((n, [cat, o]) => n + Object.keys(o).filter((k) => !visible.has(`${cat}.${k}`)).length, 0);
+  // A reset or an import changes the stored values: unsaved edits of those categories are
+  // dropped, or "save" would write the old values back over them (review-H157 m3).
+  const dropDirty = (cats: string[]) => setDirty((p) => { const n = { ...p }; for (const c of cats) delete n[c]; return n; });
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
@@ -2683,7 +2689,9 @@ export function SettingsPanel() {
         <div key={cat} style={{ marginBottom: 6 }}>
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{String(cat).toUpperCase()}</span>
-            <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} onDone={reload} /></span>
+            {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
+              <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => { dropDirty([c]); reload(); }} /></span>
+            )}
           </div>
           {(items || []).map((it) => (
             <Row key={it.key}>
@@ -2698,10 +2706,10 @@ export function SettingsPanel() {
         </div>
       ))}
     </div>
-    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
+    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
     {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
-    <SettingsTransfer onDone={reload} />
+    <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
   </Card>;
 }
 function PromptsPanel() {

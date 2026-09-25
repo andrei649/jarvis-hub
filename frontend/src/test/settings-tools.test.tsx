@@ -137,4 +137,63 @@ describe('SettingsPanel — H157 tools', () => {
     await waitFor(() => expect(screen.getByText(/nothing to change/)).toBeTruthy());
     expect(screen.queryByText(/apply \d/)).toBeNull();
   });
+
+  it('drops unsaved edits of a reset category, and names kept secrets and posture settings', async () => {
+    const realFetch = global.fetch;
+    global.fetch = vi.fn(async (url, init = {}) => {
+      if (String(url).endsWith('/reset')) {
+        calls.push({ method: init.method || 'GET', url: String(url) });
+        return reply(200, { ok: true, category: 'system', reset: ['log_level'], kept: ['a_token'], overridden: ['recall_enabled'] });
+      }
+      return realFetch(url, init);
+    });
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByText('Log level')).toBeTruthy());
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'DEBUG' } });
+    expect(screen.getByText(/save 1 change/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('reset system'));
+    expect(screen.getByLabelText('confirm reset system').textContent).toContain('all 2 system settings');
+    expect(document.activeElement).toBe(screen.getByLabelText('confirm reset system'));
+    fireEvent.click(screen.getByLabelText('confirm reset system'));
+    await waitFor(() => expect(screen.getByText(/kept 1 secret/)).toBeTruthy());
+    expect(screen.getByText(/recall_enabled still set by the posture/)).toBeTruthy();
+    expect(screen.queryByText(/save 1 change/)).toBeNull();
+  });
+
+  it('counts edits hidden by the search', async () => {
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByText('Log level')).toBeTruthy());
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'DEBUG' } });
+    fireEvent.change(screen.getByLabelText('search settings'), { target: { value: 'openrouter' } });
+    expect(screen.getByText(/save 1 change \(1 hidden by the search\)/)).toBeTruthy();
+  });
+
+  it('never applies a pasted dry run, and holds the text while the hub answers', async () => {
+    let answer;
+    importReply = (body) => (body.dry_run ? new Promise((r) => { answer = () => r(reply(200, { dry_run: true, count: 1, changes: [{ setting: 'system.log_level', from: 'INFO', to: 'DEBUG' }] })); })
+      : reply(200, { ok: true, updated: 1, changes: [{ setting: 'system.log_level' }] }));
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByText('Log level')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('settings document'),
+      { target: { value: '{"settings": {"system": {"log_level": "DEBUG"}}, "dry_run": true}' } });
+    fireEvent.click(screen.getByText('preview import'));
+    expect(screen.getByLabelText('settings document').disabled).toBe(true);
+    answer();
+    await waitFor(() => expect(screen.getByText('apply 1 change')).toBeTruthy());
+    fireEvent.click(screen.getByText('apply 1 change'));
+    await waitFor(() => expect(screen.getByText('imported 1 setting')).toBeTruthy());
+    const applied = calls.filter((c) => c.url.endsWith('/import'))[1];
+    expect(applied.body).toEqual({ settings: { system: { log_level: 'DEBUG' } } });
+  });
+
+  it('reaches the file import from the keyboard', async () => {
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByText('Log level')).toBeTruthy());
+    const button = screen.getByRole('button', { name: '⬆ import file' });
+    const input = screen.getByLabelText('import settings file');
+    const clicked = vi.fn();
+    input.addEventListener('click', clicked);
+    fireEvent.click(button);
+    expect(clicked).toHaveBeenCalled();
+  });
 });

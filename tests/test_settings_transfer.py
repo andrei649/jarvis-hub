@@ -232,11 +232,11 @@ def test_an_import_with_nothing_to_change_writes_no_row(client):
 
 def test_reset_route(client):
     settings_db.put_category("system", {"log_to_file": True})
-    got = client.post("/api/admin/settings/system/reset", headers=ADMIN)
+    got = client.post("/api/admin/settings/system/reset", json={}, headers=ADMIN)
     assert got.status_code == 200 and got.json()["reset"] == ["log_to_file"]
     assert _value("system", "log_to_file") is False
     assert len(client.rows) == 1 and "settings.system reset to defaults" in client.rows[0].content_preview
-    assert client.post("/api/admin/settings/nope/reset", headers=ADMIN).status_code == 404
+    assert client.post("/api/admin/settings/nope/reset", json={}, headers=ADMIN).status_code == 404
 
 
 def test_a_value_is_left_out_when_the_scanner_cannot_run(store, monkeypatch):

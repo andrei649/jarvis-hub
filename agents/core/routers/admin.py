@@ -171,6 +171,36 @@ async def admin_put_category(category: str, body: AdminPutBody):
     return resp
 
 
+_IMPORT_MAX_BYTES = 1_000_000
+
+
+def _refuse_cross_site_write(request: Request) -> JSONResponse | None:
+    """H157 review M1 — a settings write must be a JSON request from this origin. On a
+    default install the admin guard trusts loopback, so a page the owner visits could
+    otherwise post a plain-text body that needs no browser pre-check. JSON forces that
+    pre-check (and the CORS allow-list decides it); a browser that says the request is
+    cross-site is refused outright."""
+    kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if kind != "application/json":
+        return nocache_json({"error": "expected application/json"}, status_code=415)
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        return nocache_json({"error": "a settings write must come from this origin"}, status_code=403)
+    return None
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes | None:
+    declared = request.headers.get("content-length", "")
+    if declared.isascii() and declared.isdigit() and int(declared) > limit:
+        return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @router.post("/api/admin/settings/import", dependencies=[Depends(admin_guard)])
 async def admin_import_settings(request: Request):
     """H157 — import a settings document (an export, or any ``{"settings": {category:
@@ -179,19 +209,22 @@ async def admin_import_settings(request: Request):
     one transaction with one audit row. ``"dry_run": true`` answers what would change."""
     from agents.core import settings_db
 
-    raw = await request.body()
-    if len(raw) > 1_000_000:
-        return JSONResponse({"error": "invalid settings", "details": ["the document is over 1 MB"]},
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    raw = await _bounded_body(request, _IMPORT_MAX_BYTES)
+    if raw is None:
+        return nocache_json({"error": "invalid settings", "details": ["the document is over 1 MB"]},
                             status_code=413)
     try:
         doc = json.loads(raw or b"{}")
-    except ValueError:
-        return JSONResponse({"error": "invalid settings", "details": ["the document is not JSON"]},
+    except (ValueError, RecursionError):
+        return nocache_json({"error": "invalid settings", "details": ["the document is not JSON"]},
                             status_code=422)
-    dry_run = bool(doc.pop("dry_run", False)) if isinstance(doc, dict) else False
+    dry_run = doc.pop("dry_run", False) is True if isinstance(doc, dict) else False
     changes, errors = await asyncio.to_thread(settings_db.plan_import, doc)
     if errors:
-        return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
+        return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
     preview = await asyncio.to_thread(settings_db.describe_changes, changes)
     if dry_run:
         return nocache_json({"dry_run": True, "count": len(preview), "changes": preview})
@@ -205,17 +238,24 @@ async def admin_import_settings(request: Request):
 
 
 @router.post("/api/admin/settings/{category}/reset", dependencies=[Depends(admin_guard)])
-async def admin_reset_category(category: str):
+async def admin_reset_category(category: str, request: Request):
     """H157 — put one category back to its declared values (the global reseed was the only
-    reset). Audited, naming the keys that moved."""
+    reset). Its secrets are kept (``kept``); a setting the selected product posture forces
+    stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
+    from this origin only (review-H157 M1)."""
     from agents.core import settings_db
 
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
     moved = await asyncio.to_thread(settings_db.reset_category, category)
     if moved is None:
-        return JSONResponse({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+        return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
     if moved:
         await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
-    return {"ok": True, "category": category, "reset": moved}
+    return nocache_json({"ok": True, "category": category, "reset": moved,
+                         "kept": settings_db.reset_kept(category),
+                         "overridden": settings_db.posture_overridden(category)})
 
 
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])
