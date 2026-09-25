@@ -159,8 +159,8 @@ def test_the_package_holds_the_bytes_the_snapshot_read(tmp_path, monkeypatch):
     mk = _market(tmp_path)
     source = mk.skills_dir / "notes"
     source.mkdir(parents=True)
-    (source / "SKILL.md").write_text("# Notes\nversion: 1.0\n", encoding="utf-8")
-    (source / "notes.md").write_text("plain notes\n", encoding="utf-8")
+    (source / "SKILL.md").write_bytes(b"# Notes\nversion: 1.0\n")
+    (source / "notes.md").write_bytes(b"plain notes\n")                  # bytes: the Windows lane too
     (tmp_path / "id_rsa").write_text("-----BEGIN PRIVATE KEY----- SECRET\n", encoding="utf-8")
     real = signing.source_snapshot
 
@@ -303,7 +303,8 @@ def test_a_rollback_that_fails_says_the_new_text_stays(hub, monkeypatch):
 
     def write_bytes(self, data):
         writes.append(self.name)
-        if self.name == "SKILL.md" and writes.count("SKILL.md") > 1:
+        # SKILL.md is written whole through a sibling temporary file (review-H318e n-3).
+        if self.name.startswith(".SKILL.md.") and sum(w.startswith(".SKILL.md.") for w in writes) > 1:
             raise OSError("read-only now")
         return real(self, data)
 

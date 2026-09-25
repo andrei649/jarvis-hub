@@ -66,14 +66,15 @@ def hub(tmp_path, monkeypatch):
     def write(name, body="Steps.\n", *, code=False, files=None, title=None):
         path = root / name
         path.mkdir(parents=True)
-        (path / "SKILL.md").write_text(f"---\nname: {title or name}\ndescription: {name} helper\n---\n{body}",
-                                       encoding="utf-8")
+        # Bytes, never text mode: Windows would write "\r\n" (review-H318e m-2).
+        (path / "SKILL.md").write_bytes(
+            f"---\nname: {title or name}\ndescription: {name} helper\n---\n{body}".encode())
         if code:
-            (path / "main.py").write_text(CODE, encoding="utf-8")
+            (path / "main.py").write_bytes(CODE.encode("utf-8"))
         for rel, data in (files or {}).items():
             target = path / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            (target.write_bytes if isinstance(data, bytes) else target.write_text)(data)
+            target.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
         return path
 
     def load():

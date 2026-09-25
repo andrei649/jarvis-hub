@@ -355,10 +355,6 @@ class SkillMarketplace:
         if not skill_file.exists():
             raise FileNotFoundError(f"SKILL.md manifest missing in: {skill_path}")
 
-        # Parse manifest using SkillLoader's internal helper
-        loader = SkillLoader()
-        manifest = loader._parse_manifest(skill_file)
-
         # Sign the package so it ships a SKILL.sig the installer can verify (HMAC-keyed
         # when JARVIS_SKILL_SIGNING_KEY is set; H12.12). The signature is made on a staged
         # copy, never on the owner's tree (review-H318b m-7): sharing a skill is not
@@ -374,6 +370,12 @@ class SkillMarketplace:
         with tempfile.TemporaryDirectory(prefix="nerva-publish-") as staging:
             staged = Path(staging) / skill_path.name
             snapshot = signing.source_snapshot(skill_path)
+            # The row describes the SKILL.md the package ships: the snapshot's bytes, never
+            # an earlier read of a file that could change before the snapshot (review-H318e n-5).
+            manifest_bytes = snapshot.read_bytes("SKILL.md")
+            if manifest_bytes is None:
+                raise FileNotFoundError(f"SKILL.md manifest missing in: {skill_path}")
+            manifest = SkillLoader()._parse_manifest(skill_file, source_bytes=manifest_bytes)
             for item in snapshot.files:
                 if item.kind != "file":
                     continue

@@ -120,4 +120,12 @@ describe('SkillChangesInbox, the third review', () => {
     // review-H318d n-2: a rollback that failed says the new text stays
     expect(decisionOutcome(reply('rollback_failed'), 'p', true)).toMatch(/the new text stays/);
   });
+
+  it('names a signature that could not be put back, an unreadable skill and a failed apply', () => {
+    const reply = (reason) => ({ action: { applied: { outcomes: [{ proposal_id: 'p', ok: false, reason }] } } });
+    // review-H318e n-1: the old text is back, its signature is not
+    expect(decisionOutcome(reply('signature_not_restored'), 'p', true)).toMatch(/the old text is back, but not its old signature/);
+    expect(decisionOutcome(reply('unreadable_skill'), 'p', true)).toMatch(/cannot be read/);
+    expect(decisionOutcome(reply('apply_error'), 'p', true)).toMatch(/could not be applied/);
+  });
 });

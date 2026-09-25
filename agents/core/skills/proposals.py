@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -97,6 +98,18 @@ def _only_manifest_changed(before, after, proposed: bytes) -> bool:
     new = {f.relative_path: (f.kind, f.content) for f in after.files if f.relative_path != "SKILL.md"}
     manifest = [f.content for f in after.files if f.relative_path == "SKILL.md"]
     return old == new and manifest == [proposed]
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Replace ``path`` with ``data`` whole, or leave it as it was: written to a sibling
+    temporary file, then renamed over it."""
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 class SkillProposalStore(JsonStore):
@@ -292,9 +305,13 @@ class SkillProposalStore(JsonStore):
         # Bytes in and out, never text mode: Windows would write "\r\n" for "\n", so the
         # bytes on disk would never equal the approved text, and a rollback would rewrite
         # the old file's line ends and break the signature it restores (review-H318d MAJOR-1).
+        sig = Path(skill.path) / "SKILL.sig"
         try:
             current_raw = skill_md.read_bytes()
             current = current_raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+            # Read before anything is written: a failed read after the write left the new
+            # text with no renewal and no rollback (review-H318e m-1).
+            old_sig = sig.read_bytes() if sig.is_file() else None
         except Exception:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "unreadable_skill"}
@@ -310,9 +327,16 @@ class SkillProposalStore(JsonStore):
             # name like ../../x escaped the archive), and unique within the second.
             backup = backup_root / f"{Path(skill.path).name}-{stamp}-{uuid.uuid4().hex[:6]}.SKILL.md"
             backup.write_bytes(current_raw)
-            skill_md.write_bytes(proposed_raw)
         except Exception:
             logger.warning("proposal apply failed for %s", rec["skill"], exc_info=True)
+            return {"ok": False, "reason": "write_failed"}
+        try:
+            # Whole or not at all: a write cut short left SKILL.md truncated, and the skill
+            # without its approval (review-H318e n-3).
+            _write_atomic(skill_md, proposed_raw)
+        except Exception:
+            logger.warning("proposal apply failed for %s", rec["skill"], exc_info=True)
+            backup.unlink(missing_ok=True)        # the old text is intact; retried next pass
             return {"ok": False, "reason": "write_failed"}
         restore = getattr(loader, "restore_standing", None)
         if callable(restore) and (standing.get("signed") or standing.get("approved")):
@@ -323,8 +347,6 @@ class SkillProposalStore(JsonStore):
             # SKILL.md and the old SKILL.sig, whose signature and approval still hold, and
             # says why (m-3; review-H318d m-1: a signature renewed before the approval failed
             # was left over the old text). The proposal is then stale, not retried every pass.
-            sig = Path(skill.path) / "SKILL.sig"
-            old_sig = sig.read_bytes() if sig.is_file() else None
             reason = ""
             try:
                 after = _snapshot(Path(skill.path))
@@ -338,16 +360,24 @@ class SkillProposalStore(JsonStore):
                 reason = "standing_not_renewed"
             if reason:
                 try:
-                    skill_md.write_bytes(current_raw)
-                    if old_sig is None:
-                        sig.unlink(missing_ok=True)
-                    else:
-                        sig.write_bytes(old_sig)
+                    _write_atomic(skill_md, current_raw)
                 except Exception:
                     # The new text stays: say so, with where the old one is (review-H318d n-2).
                     logger.warning("skill '%s': the old SKILL.md could not be put back (backup: %s)",
                                    rec["skill"], backup, exc_info=True)
                     reason = "rollback_failed"
+                else:
+                    try:
+                        if old_sig is None:
+                            sig.unlink(missing_ok=True)
+                        else:
+                            _write_atomic(sig, old_sig)
+                    except Exception:
+                        # The old text is back, under a signature that is not its own: the
+                        # skill stays untrusted until it is signed again (review-H318e n-1).
+                        logger.warning("skill '%s': the old SKILL.sig could not be put back",
+                                       rec["skill"], exc_info=True)
+                        reason = "signature_not_restored"
                 self.mark(proposal_id, STATUS_STALE, reason=reason)
                 logger.warning("approved proposal %s for skill '%s' not applied: %s",
                                proposal_id, rec["skill"], reason)

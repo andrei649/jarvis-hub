@@ -414,8 +414,8 @@ async def marketplace_publish(body: PublishSkillBody):
         return error_json(e, 404, "skill not found")
     except SkillSourceSnapshotError:
         # A link, or a file that changed while it was read: nothing was packed (review-H318c m-7).
-        return JSONResponse({"error": f"skill '{body.name}' holds a link or unstable file and was not "
-                                      "published", "reason": "skill_source_refused"}, status_code=422)
+        return JSONResponse({"error": f"skill '{body.name}' holds a link, a special file, or a file that "
+                                      "could not be read stably, and was not published", "reason": "skill_source_refused"}, status_code=422)
     except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)

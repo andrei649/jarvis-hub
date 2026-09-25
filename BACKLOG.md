@@ -14,6 +14,30 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318e found no major, two minors and seven nits:
+  - **The old SKILL.sig was read after the write, with nothing behind it (m-1).** A failed read left the new SKILL.md on disk with no renewal and no rollback, and the skill sandboxed. It is now read with SKILL.md, before anything is written, and a failure there is `unreadable_skill` with nothing changed.
+  - **This round's own fixtures were Windows-unsafe (m-2).** The H318 test helpers and fixtures write bytes, so the Windows push lane sees the same files as Linux (five older `test_h318_skill_tools` cases included).
+  - **Nits:**
+    - a SKILL.sig that could not be put back is `signature_not_restored` (the old text is back, the skill untrusted until signed again), not `rollback_failed`; the HUD names it, `unreadable_skill` and `apply_error`;
+    - the background review and /refine supersede their own older proposal when they re-send another origin's text;
+    - SKILL.md is written whole through a sibling temporary file, so a write cut short leaves the old text, and a failed write leaves no backup behind;
+    - /v1 disables Approve for every skill-change card it has no diff for and drops the Decision Inbox pointer (pinned in `tests/frontend/tools.test.js`);
+    - publish's registry row describes the SKILL.md the package ships (the snapshot's bytes);
+    - the 422 says "a link, a special file, or a file that could not be read stably";
+    - the escaped ceiling's boundary and the description cut are pinned.
+
+  Mutation: this round's 16 mutants (11 Python, 2 /v1, 3 HUD) were all caught, one after its case was corrected (the publish row read after the snapshot).
+
+  Records:
+  - H318 rewritten; H350's apply citation now names the whole-file write;
+  - 20 drifted rows re-read and re-stamped (H477's `:334` remapped by content);
+  - GOV-256 names the fourth and fifth rounds' tests;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,837 → 14,847 (`tests/test_h318f_skill_review.py` 10); vitest 1,461 → 1,462 (`skill-changes` 1); `tests/frontend/tools.test.js` +1.
+
 - 2026-09-25 H465 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H465e found no major, two minors and seven nits:

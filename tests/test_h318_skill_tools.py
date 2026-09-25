@@ -77,11 +77,11 @@ def _write_skill(root: Path, name: str, body: str, *, frontmatter: str = "", fil
     path = root / name
     path.mkdir(parents=True)
     head = f"---\nname: {name}\ndescription: {frontmatter or name + ' helper'}\n---\n"
-    (path / "SKILL.md").write_text(head + body, encoding="utf-8")
+    (path / "SKILL.md").write_bytes((head + body).encode("utf-8"))       # bytes on every platform
     for rel, data in (files or {}).items():
         target = path / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        (target.write_bytes if isinstance(data, bytes) else target.write_text)(data)
+        target.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
     return path
 
 
@@ -197,8 +197,8 @@ def test_view_reads_a_linked_file_confined_to_the_skill(installed):
 
 def test_view_serves_the_bytes_loaded_not_a_later_edit(installed):
     loader = installed(stable={"body": "Original steps.\n", "files": {"notes.md": "v1\n"}})
-    (installed.root / "stable" / "SKILL.md").write_text("---\nname: stable\n---\nEdited on disk.\n")
-    (installed.root / "stable" / "notes.md").write_text("v2\n")
+    (installed.root / "stable" / "SKILL.md").write_bytes(b"---\nname: stable\n---\nEdited on disk.\n")
+    (installed.root / "stable" / "notes.md").write_bytes(b"v2\n")
     server = _server(loader)
     assert "Original steps." in _call(server, TOOL_VIEW, {"name": "stable"})["body"]
     assert _call(server, TOOL_VIEW, {"name": "stable", "file": "notes.md"})["content"] == "v1\n"
@@ -451,7 +451,7 @@ def test_a_keyed_signature_is_a_vouch(installed, monkeypatch):
 def test_signing_a_skill_reloads_what_skill_view_serves(installed, monkeypatch):
     monkeypatch.setenv("JARVIS_SKILL_SIGNING_KEY", "k" * 40)
     loader = installed(later={"body": "Original.\n"})
-    (installed.root / "later" / "SKILL.md").write_text("---\nname: later\n---\nEdited.\n")
+    (installed.root / "later" / "SKILL.md").write_bytes(b"---\nname: later\n---\nEdited.\n")
     loader.sign_skill("later")
     view = _call(_server(loader), TOOL_VIEW, {"name": "later"})
     assert "Edited." in view["body"] and "tainted" not in view

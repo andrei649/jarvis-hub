@@ -56,6 +56,7 @@ export function decisionOutcome(reply: any, proposalId: string, approved: boolea
     standing_not_renewed: 'its signature or approval could not be renewed: nothing was kept',
     signing_key_missing: 'its signing key is not configured: it waits until the key is back',
     rollback_failed: 'its signature or approval could not be renewed and the old text could not be put back: the new text stays, the old one is in the backup',
+    signature_not_restored: 'its signature or approval could not be renewed: the old text is back, but not its old signature, so the skill stays untrusted until it is signed again',
     unreadable_skill: 'the skill cannot be read',
     apply_error: 'the change could not be applied',
   };

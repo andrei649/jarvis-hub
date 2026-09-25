@@ -100,8 +100,8 @@
       if (a.tool !== 'skill.patch_proposal') return null;
       if (unknownYet()) return h('div', { className: 'tool-card-text' }, changes.err ? '⚠ the proposed change could not be loaded: ' + changes.err : 'Loading the proposed change…');
       const p = byCard[a.id];
-      if (!p && owned[a.id]) return h('div', { className: 'tool-card-text' }, 'This change is beyond the page loaded here: decide the ones above first, or read it in the Decision Inbox.');
-      if (!p) return h('div', { className: 'tool-card-text' }, 'This card is not a proposal\'s own approval card: approving it changes no skill.');
+      if (!p && owned[a.id]) return h('div', { className: 'tool-card-text' }, 'This change is beyond the page loaded here: decide the ones above first, then reload to read it.');
+      if (!p) return h('div', { className: 'tool-card-text' }, 'No change is shown for this card here, so it cannot be approved from this panel; reject it, or reload to read it.');
       return h('div', null,
         (p.flags || []).concat(p.drifted ? ['the skill changed since: approving applies nothing'] : []).map(function (f) { return h('div', { key: f, className: 'tool-card-text' }, '⚠ ' + f); }),
         h('pre', { className: 'tool-diff', style: { whiteSpace: 'pre-wrap', maxHeight: '320px', overflow: 'auto' } }, p.diff || '(no change)'));
@@ -113,7 +113,7 @@
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
         skillChange(a),
         h('div', { className: 'tool-actions' },
-          (a.tool === 'skill.patch_proposal' && (unknownYet() || (byCard[a.id] && refused(byCard[a.id])) || (!byCard[a.id] && owned[a.id])))
+          (a.tool === 'skill.patch_proposal' && (unknownYet() || !byCard[a.id] || refused(byCard[a.id])))
             ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
             : Btn('Approve', function () { decide(a.id, true); }, 'ok'),
           Btn('Reject', function () { decide(a.id, false); }, 'bad')));

@@ -308,3 +308,43 @@ describe('Webhooks panel', () => {
     expect(text()).not.toContain('secret');
   });
 });
+
+// H318 (review-H318e n-4): a skill-change card is approved only beside the diff it shows.
+// A card beyond the loaded page, or one no proposal names, offers Reject only.
+describe('Action Approvals — skill changes', () => {
+  it('enables Approve only for a card whose diff is shown', async () => {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/actions/pending') {
+        return json({ actions: [
+          { id: 'c1', tool: 'skill.patch_proposal', summary: 'shown change' },
+          { id: 'c2', tool: 'skill.patch_proposal', summary: 'beyond the page' },
+          { id: 'c3', tool: 'skill.patch_proposal', summary: 'unknown card' },
+          { id: 'c4', tool: 'send_email', summary: 'plain action' },
+        ] });
+      }
+      if (url.startsWith('/api/skills/proposals')) {
+        return json({ proposals: [{ id: 'p1', card: 'c1', skill: 'brief', diff: '-old\n+new', flags: [] }],
+                      cards: ['c1', 'c2'], more: 1 });
+      }
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Action Approvals');
+    await env.flush();
+    await env.flush();
+    const cards = [...container.querySelectorAll('.console-content .tool-card')];
+    const approve = (text) => [...cards.find((c) => c.textContent.includes(text)).querySelectorAll('.tool-btn')]
+      .find((b) => b.textContent === 'Approve');
+    expect(approve('shown change').disabled).toBe(false);
+    expect(approve('beyond the page').disabled).toBe(true);
+    expect(approve('unknown card').disabled).toBe(true);
+    expect(approve('plain action').disabled).toBe(false);
+    const text = container.textContent;
+    expect(text).toContain('+new');
+    expect(text).not.toContain('Decision Inbox');
+    expect(text).toContain('cannot be approved from this panel');
+  });
+});

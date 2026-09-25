@@ -584,7 +584,9 @@ class BackgroundReviewer:
                 return False
             supersede = getattr(self._proposals, "supersede_older", None)
             if callable(supersede):
-                supersede(prop, self._approvals)
+                # This pass's own older proposal goes, even when the text re-sent was
+                # another origin's first (review-H318e n-2).
+                supersede(prop, self._approvals, origin=label)
             if self._approvals is not None:
                 try:
                     # The proposal's one card, bound to it in the ledger: only that card's
