@@ -118,7 +118,11 @@ def test_recovery_writes_the_store_a_env_file_names(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(ts_mod, "_store", None)
     monkeypatch.setattr(paths, "_DEFAULT_ROOT", tmp_path / "default-root")   # never the checkout's
     for key in ("JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_USER_HOME"):
-        monkeypatch.delenv(key, raising=False)
+        # setenv first, so the teardown puts back the environment as it was even for a
+        # key the load sets: a delenv of an unset key records nothing, and the loaded
+        # JARVIS_USER_HOME leaked into every later test on the worker.
+        monkeypatch.setenv(key, "")
+        monkeypatch.delenv(key)
     assert token_recover.main(["rotate", "admin"]) == 0
     out, err = capsys.readouterr()
     db = home / "memory" / "security" / "tokens.db"

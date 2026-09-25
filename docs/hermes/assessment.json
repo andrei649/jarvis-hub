@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "2623d89d86637fc9e227de298d9c297accc36dc8",
-  "assessed_at": "2026-09-25T09:17:02Z",
+  "base_sha": "b69a2c31c081581665fed935ec17757792cd5551",
+  "assessed_at": "2026-09-25T09:23:58Z",
   "reviews": [
     {
       "id": "H001",
@@ -3126,7 +3126,7 @@
         },
         {
           "path": "tests/test_h273g_provenance_review.py",
-          "sha256": "3190c0dd9b3873571dd484c47043b7368f48bed222a3dbfd548babe23d43abb1"
+          "sha256": "b8923ae4253007e06e476d5b288cfa9653210b01154a4ba000f37bed9814354d"
         },
         {
           "path": "scripts/token_recover.py",
