@@ -257,6 +257,9 @@ def _has_secret_part(relative_parts: Sequence[str]) -> bool:
 # with the title of a scratch note.
 INSTRUCTION_BASE_NAMES = frozenset({
     "soul.md", "agents.md", "claude.md", "gemini.md", ".cursorrules", "heartbeat.md",
+    # H670: the shared behaviour contract every agent's system prompt starts with
+    # (``Agent.identity_path``), and with it ``identity.local.md``, the per-install override.
+    "identity.md",
 })
 
 

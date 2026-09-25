@@ -376,9 +376,12 @@ def _refresh_souls_at_boundary(orchestrator) -> list[str]:
 
 
 def _record_identity_version(orchestrator) -> None:
-    """H670 — the shared contract in force at start is a version of ``_identity`` in the
-    prompt VC (SoulVersionStore), so it is diffed, rolled back and A/B-tested beside the
-    personas (``/api/admin/prompts/_identity/...``). A no-op when it is unchanged."""
+    """H670 — the shared contract in force at start is recorded as a version of
+    ``_identity`` in the prompt VC (SoulVersionStore), so its history is diffable beside
+    the personas (``/api/admin/prompts/_identity/...``). A no-op when it is unchanged or
+    empty. What is served is the file: a rollback in the VC does not change it (edit or
+    remove ``IDENTITY.local.md`` for that), and an edit picked up at a compaction boundary
+    is recorded at the next start (review-H670 m-4)."""
     try:
         from .agent import IDENTITY_KEY, read_identity
 

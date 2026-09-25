@@ -141,7 +141,7 @@ def identity_component(root: Path) -> Component:
         from .agent import _strip_maintainer_note
 
         text = _strip_maintainer_note(path.read_text(encoding="utf-8")).strip()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return Component(name="identity", chars=0, tokens=0, detail="no contract")
     return Component.of("identity", text, detail=str(path.relative_to(root.parent)))
 

@@ -14,6 +14,20 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H670 first adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H670 found one major, seven minors and six nits (every agent-facing prompt carries the contract; the note hides nothing from the scan; the H363 prefix holds):
+  - **The contract was outside the instruction-file class (M-1).** A file write to `IDENTITY.local.md`, which now steers every agent, asked with a scratch note's card. `identity.md` joins the H506 roster (its `.local` overlay derived); a test derives the class from every name the contract's and a persona's loaders can resolve.
+  - **A missing contract emptied at a boundary (m-1).** Absent at the stat or gone before the read, the last-good text is kept, as a persona's is.
+  - **A non-UTF-8 override stopped every agent (m-2).** It is reported once at ERROR and the shipped contract used; an unreadable one leaves the agent without it; the prompt-size report survives it too.
+  - **The two bands exceeded the cap (m-3).** The contract has its own 4,000-character cap, never above the persona's.
+  - **"Rolled back and A/B-tested" (m-4)** is now "recorded and diffable": what is served is the file, an edit at a boundary is recorded at the next start, and no empty version is recorded.
+  - **Unscoped rules (m-5).** The contract governs the agent's own replies; text drafted in someone else's voice keeps its greetings and sign-offs, and a persona's warmth or curiosity lives inside the answer. `SOUL.md` mirrors it.
+  - **Survivors (m-6)** pinned: a mid-file comment, an empty version, the start-time record, the prompt-size component and its note, the ERROR on a flagged contract. **CHT-117 (m-7)** asks Pepper, not the retired Atlas, and adds Howard drafting in the owner's voice.
+  - **Nits.** The blocked and quarantined stubs name the contract; the data home's README lists `souls/IDENTITY.local.md`; docstrings say "a few stats" and "settled signature". Known limits: the prompt-size report measures the shipped contract; `PromptRefresh.text` is still the persona alone.
+  15 mutants, all caught (two after their cases were added: an absent contract never read, one vanishing between stat and read). 57 rows re-stamped; H427's `publish()` range (`:3529-3533`) by hand.
+  Tests: backend 15,183 → 15,204 (`tests/test_h670b_identity_review.py` 21); vitest unchanged at 1,462.
+
 - 2026-09-25 H667 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
 
   review-H667b found one major, four minors and seven nits (on POSIX no live run, owner root or outside file was ever deleted):

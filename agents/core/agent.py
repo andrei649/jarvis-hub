@@ -165,7 +165,7 @@ def _cap_soul_body(body: str, filename: str, limit: int) -> "tuple[str, bool]":
     return (out if len(out) <= limit else out[:limit]), True
 
 
-def _blocked_soul_body(filename: str) -> str:
+def _blocked_soul_body(filename: str, kind: str = "persona") -> str:
     """The stub that replaces a wholly-flagged persona — visible, never empty.
 
     An empty body would change a running install's behaviour with nothing to
@@ -175,13 +175,14 @@ def _blocked_soul_body(filename: str) -> str:
     measuring this agent instead of scoring it vacuously clean.
     """
     return (f"[BLOCKED: {filename} flagged as prompt-injection — review the file; "
-            "this agent is running without its persona]\n\n" + _SOUL_FALLBACK_RULES)
+            f"this agent is running without its {kind}]\n\n" + _SOUL_FALLBACK_RULES)
 
 
-def _quarantined_line_stub(lineno: int, filename: str) -> str:
+def _quarantined_line_stub(lineno: int, filename: str, kind: str = "persona") -> str:
     """Replacement for a single flagged line — the core_block granularity."""
+    short = kind.rsplit(" ", 1)[-1]
     return (f"[BLOCKED: line {lineno} of {filename} flagged as prompt-injection "
-            "— review the file; the rest of this persona is intact]")
+            f"— review the file; the rest of this {short} is intact]")
 
 
 def _body_line_offset(content: str, body: str) -> int:
@@ -252,7 +253,7 @@ def _wrapped_injection_hits(lines: "list[str]") -> "tuple[list[str], set[int]]":
 
 
 def _scan_soul_body(body: str, filename: str,
-                    line_offset: int = 0) -> "tuple[str, list[str], bool]":
+                    line_offset: int = 0, kind: str = "persona") -> "tuple[str, list[str], bool]":
     """Neutralise injection in a SOUL body. Returns ``(body, flags, blocked)``.
 
     Four passes, in this order:
@@ -336,13 +337,13 @@ def _scan_soul_body(body: str, filename: str,
             flags.append(pattern)
     flagged |= wrapped_lines
 
-    kept = [_quarantined_line_stub(lineno + line_offset, filename) if lineno in flagged
+    kept = [_quarantined_line_stub(lineno + line_offset, filename, kind) if lineno in flagged
             else line
             for lineno, line in enumerate(lines, start=1)]
 
     non_blank = sum(1 for line in lines if line.strip())
     if flagged and len(flagged) > _SOUL_BLOCK_RATIO * non_blank:
-        return _blocked_soul_body(filename), flags, True
+        return _blocked_soul_body(filename, kind), flags, True
 
     result = "\n".join(kept)
     # A persona that renders as NOTHING is a payload, not a persona, and it must not
@@ -355,7 +356,7 @@ def _scan_soul_body(body: str, filename: str,
     # the exact moment the agent is least constrained. The flags were raised either
     # way, but nothing downstream was reading them as "blocked".
     if raw.strip() and not result.strip():
-        return _blocked_soul_body(filename), flags, True
+        return _blocked_soul_body(filename, kind), flags, True
     return result, flags, False
 
 
@@ -404,6 +405,20 @@ def soul_path_for(agent_id: str):
 #: each agent's own persona (``/api/admin/prompts/_identity/...``).
 IDENTITY_KEY = "_identity"
 _IDENTITY_CACHE: dict = {}
+#: The contract's own cap (review-H670 m-3): it is paid on every call beside a persona
+#: that has the whole $JARVIS_SOUL_MAX_CHARS cap to itself, so the two bands together stay
+#: within that cap plus this one. Never above the persona's cap. The shipped contract is
+#: about 1.5k characters.
+IDENTITY_MAX_CHARS = 4000
+
+
+def _identity_max_chars() -> int:
+    return min(IDENTITY_MAX_CHARS, _soul_max_chars())
+
+
+def _shipped_identity_path():
+    from .paths import app_root
+    return app_root() / "agents" / "_identity" / "IDENTITY.md"
 
 
 def identity_path():
@@ -417,12 +432,13 @@ def identity_path():
     if souls_home is not None:
         candidates.append(souls_home / "IDENTITY.local.md")
     candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.local.md")
-    candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.md")
+    candidates.append(_shipped_identity_path())
     return next((c for c in candidates if c.exists()), candidates[-1])
 
 
 def _strip_maintainer_note(text: str) -> str:
-    """The file's leading ``<!-- … -->`` note is for maintainers, never the model."""
+    """The file's leading ``<!-- … -->`` note is for maintainers, never the model. A
+    comment anywhere else is the file's own text and is kept."""
     stripped = text.lstrip()
     if stripped.startswith("<!--") and "-->" in stripped:
         return stripped.split("-->", 1)[1].lstrip("\n")
@@ -432,26 +448,41 @@ def _strip_maintainer_note(text: str) -> str:
 def read_identity(path=None) -> dict:
     """Read, scan and cap the shared contract through the same H387 builder helpers as a
     persona: ``{content, path, flags, blocked, truncated}``, ``content`` "" when there is
-    no file. Read once per file signature for the whole process, so eighteen agents
-    loading it read (and announce a verdict on) it once."""
+    no file. Read once per settled file signature for the whole process, so eighteen
+    agents loading it read (and announce a verdict on) it once; a file written in the
+    last two seconds, whose signature is not trusted, is read by each. An override that
+    is not UTF-8 is reported at ERROR and the shipped contract is used in its place
+    (review-H670 m-2): one bad byte never stops every agent from being built."""
     path = identity_path() if path is None else path
     empty = {"content": "", "path": path, "flags": [], "blocked": False, "truncated": False}
     try:
         signature = _soul_signature(path)
     except FileNotFoundError:
-        return empty
+        return dict(empty, missing=True)
     key = (str(path), signature)
     if signature is not None and key in _IDENTITY_CACHE:
         return dict(_IDENTITY_CACHE[key])
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return empty
+        return dict(empty, missing=True)
+    except UnicodeDecodeError:
+        shipped = _shipped_identity_path()
+        logger.error("identity contract %s is not UTF-8; %s", path,
+                     "using the shipped contract" if path != shipped else "running without it")
+        out = dict(empty, error="not UTF-8")
+        if path != shipped:
+            out = dict(read_identity(shipped), error="not UTF-8", override=path)
+        if signature is not None:
+            _IDENTITY_CACHE.clear()
+            _IDENTITY_CACHE[key] = dict(out)
+        return out
     body = _strip_maintainer_note(raw)
-    body, flags, blocked = _scan_soul_body(body, path.name, _body_line_offset(raw, body))
+    body, flags, blocked = _scan_soul_body(body, path.name, _body_line_offset(raw, body),
+                                           kind="shared contract")
     truncated = False
     if not blocked:
-        body, truncated = _cap_soul_body(body, path.name, _soul_max_chars())
+        body, truncated = _cap_soul_body(body, path.name, _identity_max_chars())
     out = {"content": body.strip(), "path": path, "flags": flags, "blocked": blocked,
            "truncated": truncated}
     if flags:
@@ -460,7 +491,7 @@ def read_identity(path=None) -> dict:
                      ", ".join(flags))
     if truncated:
         logger.warning("identity contract exceeds the %d-char cap and was truncated: %s",
-                       _soul_max_chars(), path)
+                       _identity_max_chars(), path)
     if signature is not None:
         _IDENTITY_CACHE.clear()
         _IDENTITY_CACHE[key] = dict(out)
@@ -510,18 +541,30 @@ class Agent:
             self._identity_stamp = _soul_signature(path)
         except FileNotFoundError:
             self._identity_stamp = None
-        self.identity = read_identity(path)
+        try:
+            self.identity = read_identity(path)
+        except (OSError, ValueError) as exc:          # unreadable: never stops the agent
+            logger.error("identity contract %s could not be read (%s); running without it",
+                         path, exc)
+            self.identity = {"content": "", "path": path, "flags": [], "blocked": False,
+                             "truncated": False}
 
     def _refresh_identity(self) -> bool:
-        """Re-read the shared contract at a compaction boundary, as the persona is: one
-        ``os.stat`` when it is unchanged; a read that fails keeps the last-good one.
-        True when the text the model is given moved."""
+        """Re-read the shared contract at a compaction boundary, as the persona is: a few
+        ``os.stat`` calls (resolving the file, then its signature) when it is unchanged;
+        a read that fails, or a contract absent for the instant of an editor's
+        save-by-rename, keeps the last-good one (review-H670 m-1). True when the text the
+        model is given moved."""
         path = identity_path()
+        in_force = getattr(self, "identity", None) or {}
         try:
             signature = _soul_signature(path)
         except FileNotFoundError:
+            if in_force.get("content"):
+                logger.warning("identity contract is absent at a compaction boundary (%s); "
+                               "keeping the last-good one", path)
+                return False
             signature = None
-        in_force = getattr(self, "identity", None) or {}
         if (signature is not None and signature == getattr(self, "_identity_stamp", None)
                 and path == in_force.get("path")):
             return False
@@ -530,6 +573,10 @@ class Agent:
         except Exception:
             logger.warning("identity contract could not be re-read at a compaction boundary; "
                            "keeping the last-good one", exc_info=True)
+            return False
+        if fresh.get("missing") and in_force.get("content"):
+            logger.warning("identity contract vanished at a compaction boundary (%s); "
+                           "keeping the last-good one", path)
             return False
         self._identity_stamp = signature
         moved = fresh["content"] != in_force.get("content", "")

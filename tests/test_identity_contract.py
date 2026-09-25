@@ -261,6 +261,6 @@ def test_the_read_is_shared_across_agents(monkeypatch):
         return real(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", read_text)
-    for aid in ("friday", "jarvis", "atlas"):
+    for aid in ("friday", "jarvis", "pepper"):
         _agent(aid)
     assert len(reads) <= 1

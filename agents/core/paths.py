@@ -29,6 +29,7 @@ instance lives in one owner-visible folder — by default
                      to the bundled ones; same name → the user's copy wins)
       souls/<id>/    SOUL.local.md / HEARTBEAT.local.md persona overlays
                      (win over both the repo-local overlay and the template)
+      souls/IDENTITY.local.md  the shared behaviour contract's override (H670)
 
 In a dev checkout with no env vars set, :func:`user_home` is ``None`` and all
 of this is inert — behavior stays byte-identical to before.
@@ -62,6 +63,7 @@ upgraded at any time without losing anything.
 | `memory/` | All runtime state: settings, conversation memory, checkpoints, the security audit log, autonomy queue, embeddings cache. |
 | `skills/` | Skills you installed or Nerva generated (with your approval). These load in addition to the bundled skills; a same-named skill here wins. |
 | `souls/<agent>/SOUL.local.md` | Your personalized agent personas (and `HEARTBEAT.local.md` schedules). These override the shipped templates. |
+| `souls/IDENTITY.local.md` | Your version of the behaviour contract every agent follows (reply length, no filler, honesty). Overrides the shipped one for all agents. |
 
 **Backup:** copy this whole folder. **Full reset:** stop Nerva and delete
 `memory/`. **Uninstall:** delete the app install directory; this folder is
