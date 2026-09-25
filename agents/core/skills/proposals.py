@@ -101,11 +101,22 @@ def _only_manifest_changed(before, after, proposed: bytes) -> bool:
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
-    """Replace ``path`` with ``data`` whole, or leave it as it was: written to a sibling
-    temporary file, then renamed over it."""
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    """Replace ``path`` with ``data`` whole, or leave it as it was: written to a temporary
+    file beside the skill's folder (same filesystem, never inside it, where a file left
+    by a crash would count as a member of the skill and void its signature: review-H318f
+    m-1), flushed to disk, then renamed over it, keeping the old file's mode (n-2)."""
+    tmp = path.parent.parent / f".{path.parent.name}.{path.name}.{uuid.uuid4().hex[:8]}.tmp"
     try:
-        tmp.write_bytes(data)
+        mode = os.stat(path).st_mode & 0o7777
+    except OSError:
+        mode = None
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -309,12 +320,19 @@ class SkillProposalStore(JsonStore):
         try:
             current_raw = skill_md.read_bytes()
             current = current_raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
-            # Read before anything is written: a failed read after the write left the new
-            # text with no renewal and no rollback (review-H318e m-1).
-            old_sig = sig.read_bytes() if sig.is_file() else None
         except Exception:
             self.mark(proposal_id, STATUS_STALE)
             return {"ok": False, "reason": "unreadable_skill"}
+        try:
+            # Read before anything is written: a failed read after the write left the new
+            # text with no renewal and no rollback (review-H318e m-1). A read that fails
+            # (a sharing violation, EIO) changes nothing and is tried again at the next
+            # pass, as a failed write is: it does not make the change stale (review-H318f n-1).
+            old_sig = sig.read_bytes() if sig.is_file() else None
+        except Exception:
+            logger.warning("skill '%s': its SKILL.sig could not be read; retried next pass",
+                           rec["skill"], exc_info=True)
+            return {"ok": False, "reason": "unreadable_signature"}
         proposed_raw = rec["proposed"].encode("utf-8")
         if manifest_hash(current) != rec["original_hash"]:
             self.mark(proposal_id, STATUS_STALE)

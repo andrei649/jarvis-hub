@@ -14,6 +14,21 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H318 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318f found no major, one minor and four nits; the fifth round's two minors and seven nits held:
+  - **A crash could leave the staged SKILL.md inside the skill (m-1).** The whole-file write put its temporary file in the skill's folder, where one a crash left counted as a member of the skill: the signature failed, the skill was sandboxed, and publish shipped the file. It is staged beside the folder now (same filesystem), flushed to disk before the rename.
+  - **Nits:** a SKILL.sig read that fails (a sharing violation, EIO) is `unreadable_signature` and retried at the next pass, not marked stale; the atomic write keeps the file's mode; SKILL.sig is not put back over new text whose SKILL.md could not be (so the signature matches the text that stays); /v1's reject-only for a refused change is pinned; the route comment above the 422 matches its text. (Windows: replacing a file another process holds open can fail; the rollback then reports `rollback_failed` with the backup, as before.)
+
+  Mutation: this round's 7 mutants (5 Python, 1 /v1, 1 HUD) were all caught.
+
+  Records:
+  - H318 rewritten;
+  - 13 drifted rows re-read and re-stamped (H477's `:334` by content);
+  - GOV-256 names the new tests; HUD bundle rebuilt.
+
+  Tests: backend 14,883 → 14,888 (`tests/test_h318g_skill_review.py` 5); vitest unchanged at 1,462 (one `skill-changes` case extended); `tests/frontend/tools.test.js` +1.
+
 - 2026-09-25 H465 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H465f found no major, no minor and seven nits; the fifth round's fixes held and its nine survivors are killed:

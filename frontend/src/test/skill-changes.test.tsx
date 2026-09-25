@@ -127,5 +127,7 @@ describe('SkillChangesInbox, the third review', () => {
     expect(decisionOutcome(reply('signature_not_restored'), 'p', true)).toMatch(/the old text is back, but not its old signature/);
     expect(decisionOutcome(reply('unreadable_skill'), 'p', true)).toMatch(/cannot be read/);
     expect(decisionOutcome(reply('apply_error'), 'p', true)).toMatch(/could not be applied/);
+    // review-H318f n-1: a signature read that failed is retried, not given up
+    expect(decisionOutcome(reply('unreadable_signature'), 'p', true)).toMatch(/tried again at the next pass/);
   });
 });

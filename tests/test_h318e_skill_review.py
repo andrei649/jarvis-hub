@@ -298,17 +298,18 @@ def test_a_rollback_that_fails_says_the_new_text_stays(hub, monkeypatch):
         raise OSError("disk full")
 
     loader.restore_standing = broken
-    real = pathlib.Path.write_bytes
+    real = os.replace
     writes = []
 
-    def write_bytes(self, data):
-        writes.append(self.name)
-        # SKILL.md is written whole through a sibling temporary file (review-H318e n-3).
-        if self.name.startswith(".SKILL.md.") and sum(w.startswith(".SKILL.md.") for w in writes) > 1:
+    def replace(src, dst):
+        # SKILL.md is replaced whole from a temporary file (review-H318e n-3): the second
+        # replacement of it is the rollback, which fails.
+        writes.append(Path(dst).name)
+        if Path(dst).name == "SKILL.md" and writes.count("SKILL.md") > 1:
             raise OSError("read-only now")
-        return real(self, data)
+        return real(src, dst)
 
-    monkeypatch.setattr(pathlib.Path, "write_bytes", write_bytes)
+    monkeypatch.setattr(proposals_mod.os, "replace", replace)
     out = hub.curator.apply_decisions()
     assert out["outcomes"][0]["reason"] == "rollback_failed"
     assert hub.proposals.get(rec["id"])["status"] == "stale"

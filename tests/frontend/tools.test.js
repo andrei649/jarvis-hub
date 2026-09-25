@@ -348,3 +348,31 @@ describe('Action Approvals — skill changes', () => {
     expect(text).toContain('cannot be approved from this panel');
   });
 });
+
+// H318 (review-H318f V4): a change the hub will refuse (a bundled skill, a rename) offers
+// Reject only, even beside its diff.
+describe('Action Approvals — a refused change', () => {
+  it('disables Approve for a change the hub will refuse', async () => {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/actions/pending') {
+        return json({ actions: [{ id: 'c9', tool: 'skill.patch_proposal', summary: 'bundled change' }] });
+      }
+      if (url.startsWith('/api/skills/proposals')) {
+        return json({ proposals: [{ id: 'p9', card: 'c9', skill: 'core', diff: '-a\n+b', flags: ['bundled skill: the hub refuses it'] }],
+                      cards: ['c9'] });
+      }
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Action Approvals');
+    await env.flush();
+    await env.flush();
+    const card = [...container.querySelectorAll('.console-content .tool-card')].find((c) => c.textContent.includes('bundled change'));
+    const buttons = [...card.querySelectorAll('.tool-btn')];
+    expect(buttons.find((b) => b.textContent === 'Approve').disabled).toBe(true);
+    expect(buttons.find((b) => b.textContent === 'Reject').disabled).toBeFalsy();
+  });
+});

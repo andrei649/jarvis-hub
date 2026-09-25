@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 import pathlib
 import sqlite3
 import zipfile
@@ -65,10 +66,11 @@ def test_a_signature_that_cannot_be_read_changes_nothing(hub, monkeypatch):
     monkeypatch.setattr(pathlib.Path, "read_bytes", read_bytes)
     out = hub.curator.apply_decisions()
     monkeypatch.setattr(pathlib.Path, "read_bytes", real)
-    assert out["outcomes"][0]["reason"] == "unreadable_skill"
+    assert out["outcomes"][0]["reason"] == "unreadable_signature"
     assert (path / "SKILL.md").read_bytes() == before
     assert hub.registry.is_approved(path) and signing.verify_skill(path)[0] is True
-    assert hub.proposals.get(rec["id"])["status"] == "stale"
+    # Retried at the next pass, as a failed write is (review-H318f n-1).
+    assert hub.proposals.get(rec["id"])["status"] == "approved"
 
 
 # ── n-1: the old text is back, its signature is not ──────────────────────────────
@@ -84,15 +86,16 @@ def test_a_signature_that_cannot_be_put_back_is_named_for_what_it_is(hub, monkey
         raise OSError(28, "No space left on device")
 
     loader.restore_standing = renew_then_fail
-    real = pathlib.Path.write_bytes
+    real = os.replace
 
-    def write_bytes(self, data):
-        if self.name.startswith(".SKILL.sig."):
+    def replace(src, dst):
+        if Path(dst).name == "SKILL.sig":
             raise OSError(30, "read-only file system")
-        return real(self, data)
+        return real(src, dst)
 
-    monkeypatch.setattr(pathlib.Path, "write_bytes", write_bytes)
+    monkeypatch.setattr(proposals_mod.os, "replace", replace)
     out = hub.curator.apply_decisions()
+    monkeypatch.setattr(proposals_mod.os, "replace", real)
     assert out["outcomes"][0]["reason"] == "signature_not_restored"
     assert (path / "SKILL.md").read_bytes() == before
     assert hub.proposals.get(rec["id"])["status"] == "stale"
@@ -106,17 +109,14 @@ def test_a_write_cut_short_leaves_the_old_text_and_no_backup(hub, monkeypatch):
     before = (path / "SKILL.md").read_bytes()
     hub.load()
     rec, _current = _ledger(hub, "tool")
-    real = pathlib.Path.write_bytes
+    real = os.fsync
 
-    def write_bytes(self, data):
-        if self.name.startswith(".SKILL.md."):
-            real(self, data[: len(data) // 2])                  # half of it, then the disk fills
-            raise OSError(28, "No space left on device")
-        return real(self, data)
+    def fsync(fd):
+        raise OSError(28, "No space left on device")            # written, then the disk fills
 
-    monkeypatch.setattr(pathlib.Path, "write_bytes", write_bytes)
+    monkeypatch.setattr(proposals_mod.os, "fsync", fsync)
     out = hub.curator.apply_decisions()
-    monkeypatch.setattr(pathlib.Path, "write_bytes", real)
+    monkeypatch.setattr(proposals_mod.os, "fsync", real)
     assert out["outcomes"][0]["reason"] == "write_failed"
     assert (path / "SKILL.md").read_bytes() == before and hub.registry.is_approved(path)
     assert sorted(p.name for p in path.iterdir()) == ["SKILL.md", "main.py"]
@@ -129,6 +129,7 @@ def test_the_atomic_write_replaces_whole_and_leaves_nothing(tmp_path):
     target.write_bytes(b"old")
     proposals_mod._write_atomic(target, b"new text")
     assert target.read_bytes() == b"new text" and [p.name for p in tmp_path.iterdir()] == ["SKILL.md"]
+    assert list(tmp_path.parent.glob(f".{tmp_path.name}.SKILL.md.*.tmp")) == []
 
 
 # ── n-2: the background review supersedes by its own origin ──────────────────────
