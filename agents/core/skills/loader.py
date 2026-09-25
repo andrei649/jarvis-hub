@@ -35,6 +35,7 @@ logger = logging.getLogger("jarvis.skills")
 # frozen) instead of the CWD, so skill discovery works no matter where the
 # process was launched from. From the repo root this is the same "skills/"
 # directory as before.
+from agents.core import safe_mode  # noqa: E402
 from agents.core.paths import app_root as _app_root  # noqa: E402
 
 SKILLS_DIR = _app_root() / "skills"
@@ -616,7 +617,11 @@ class SkillLoader:
             and user_dir.is_dir()
             and user_dir.resolve() != SKILLS_DIR.resolve()
         ):
-            roots.append(user_dir)
+            if safe_mode.enabled():
+                # H275: safe mode discovers the shipped skills only.
+                safe_mode.note("owner_skills")
+            else:
+                roots.append(user_dir)
         for root in roots:
             for skill_dir in sorted(root.iterdir()):
                 if skill_dir.is_dir():
@@ -672,6 +677,12 @@ class SkillLoader:
                 )
         if not external and snapshot is not None:
             external = not _snapshot_matches_bundled(snapshot, path.name)
+        if external and safe_mode.enabled():
+            # H275: a generated, imported, edited or pending-review skill in the bundled
+            # tree is the owner's, not the release's; safe mode leaves it out entirely.
+            safe_mode.note("owner_skills")
+            logger.info("Safe mode: skill at %s is not a shipped skill; not loaded", path.name)
+            return
 
         snapshot_manifest = snapshot.read_bytes("SKILL.md") if snapshot else None
         manifest = self._parse_manifest(skill_file, source_bytes=snapshot_manifest)

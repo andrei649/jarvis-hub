@@ -467,6 +467,12 @@ async def lifespan(application: FastAPI):
     from core.paths import ensure_user_home
     scaffolded_home = ensure_user_home()
     setup_logging()
+    from agents.core import safe_mode
+    if safe_mode.enabled():
+        logger.warning(
+            "SAFE MODE: only shipped skills, personas and schedules load; saved MCP servers, "
+            "acquired packages, plugin grants and owner jobs are left out (JARVIS_SAFE_MODE)"
+        )
     if scaffolded_home is not None:
         logger.info("User data home: %s", scaffolded_home)
     # SEC-4 / audit F-08: warn when private runtime state lives inside the git
@@ -1694,7 +1700,13 @@ async def _list_local_models() -> dict:
 
 def _save_mcp_config():
     """Persist MCP servers configuration to settings DB."""
+    from agents.core import safe_mode
     from agents.core.settings_db import put_category
+    if safe_mode.enabled():
+        # H275: in safe mode the manager holds none of the saved servers, so writing
+        # its list back would erase them. The routes refuse first; this is the floor.
+        logger.warning("Safe mode: the MCP server configuration is not rewritten")
+        return
     config = orch.mcp.to_config()
     put_category("mcp", {"servers": config})  # return value intentionally unused
 
@@ -1702,9 +1714,15 @@ def _save_mcp_config():
 def _load_mcp_config():
     """Load MCP servers configuration from settings DB."""
     from agents.core.settings_db import get_category
+    from agents.core import safe_mode
     items = get_category("mcp")
     for item in items:
         if item["key"] == "servers":
+            if safe_mode.enabled():
+                # H275: none is registered; the saved configuration stays as it is.
+                safe_mode.note("mcp_servers")
+                logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"] or []))
+                return
             orch.mcp.load_from_config(item["value"])
             logger.info(f"Loaded {len(item['value'])} MCP servers from settings")
             return

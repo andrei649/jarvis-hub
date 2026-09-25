@@ -4,6 +4,7 @@
    an honest "not connected" state) rather than inventing plausible data. The seeded
    demo corpus is used ONLY when `demo` is true (an explicit, watermarked mode), so
    the HUD never passes fiction off as fact. */
+import { SAFE_MODE_OFF, readSafeMode, type SafeModeState } from '../safe-mode-banner';
 import { apiGet } from './client';
 import type {
   StatusResp, AgentsResp, DashboardResp, TickerResp, TasksResp,
@@ -36,6 +37,7 @@ export interface JarvisData {
   decisions: any[];
   trust: { mic: string; strict_local: boolean; cloud_available?: boolean; claude_available?: boolean };
   sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
+  safeMode: SafeModeState; // H275: the hub was started in safe mode
 }
 
 /* A pending approval, projected into the shape the cockpit's decision cards read.
@@ -71,6 +73,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   const out: JarvisData = {
     demo,
     serverUp: false,
+    safeMode: SAFE_MODE_OFF,
     live: false,
     llm: { state: 'unknown', model: null, residents: [] },
     agents: demo ? (V2.AGENTS as any[]) : [],
@@ -109,6 +112,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
   try {
     const d = await apiGet<any>('/status');
     out.serverUp = true;
+    out.safeMode = readSafeMode(d.safe_mode);
     if (d.sys) out.sys = d.sys;
     const residents: LocalModelRef[] = Array.isArray(d.resident_models)
       ? d.resident_models.flatMap((pair: unknown) => {

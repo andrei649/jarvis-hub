@@ -102,6 +102,8 @@ async def status():
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
         "channels": _channel_rows(orch),
+        # H275: the HUD shows a banner while the hub runs in safe mode.
+        "safe_mode": _safe_mode_status(),
     })
 
 
@@ -109,4 +111,10 @@ async def status():
 async def api_status():
     """Return service version, agent count, and health status."""
     from agents import AGENT_COUNT, __version__
-    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
+    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok", "safe_mode": _safe_mode_status()}
+
+
+def _safe_mode_status() -> dict:
+    from agents.core import safe_mode
+
+    return safe_mode.status()

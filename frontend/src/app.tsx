@@ -1,3 +1,4 @@
+import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
 import {describeImages} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
@@ -130,6 +131,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
+  const [safeMode, setSafeMode] = useState(SAFE_MODE_OFF);
   const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
     try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
   });
@@ -433,7 +435,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        setServerUp(!!d.serverUp); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
         /* Live approvals REPLACE the list only when the feed actually answered.
            `/autonomy/approvals` is admin-guarded, so on the common token-configured
@@ -467,6 +469,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {appearanceNotice}
+    <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
     <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
@@ -482,6 +485,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       <div className="shell">
         {appearanceNotice}
         {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
+        <SafeModeBanner state={safeMode} />
         {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}

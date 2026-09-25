@@ -139,12 +139,29 @@ class MCPServerConfig(BaseModel):
     tools_deny: Optional[list[str]] = None
 
 
+def _safe_mode_refusal():
+    """H275: in safe mode the saved servers are not loaded, so an add or a remove would
+    rewrite the saved list from an empty manager. Both refuse until a normal boot."""
+    from agents.core import safe_mode
+
+    if not safe_mode.enabled():
+        return None
+    return JSONResponse(
+        {"error": safe_mode.REASON,
+         "message": "MCP servers cannot be added or removed in safe mode; restart normally first"},
+        status_code=409,
+    )
+
+
 @router.post("/api/admin/mcp", dependencies=[Depends(admin_guard)])
 async def admin_mcp_add(req: MCPServerConfig):
     """Add a new MCP server configuration."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    refusal = _safe_mode_refusal()
+    if refusal is not None:
+        return refusal
     from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust, tool_patterns_over_bounds
     # stdio is the only transport MCPServer.connect() actually speaks. Accepting
     # an "sse" config used to register + persist a server that could never
@@ -199,6 +216,9 @@ async def admin_mcp_remove(name: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    refusal = _safe_mode_refusal()
+    if refusal is not None:
+        return refusal
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]

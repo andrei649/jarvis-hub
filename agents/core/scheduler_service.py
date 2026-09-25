@@ -53,6 +53,13 @@ class SchedulerService:
         runner = getattr(self._orch, "jobs", None)
         if runner is None:
             return
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            # H275: the owner's jobs stay saved; none is put on the scheduler.
+            safe_mode.note("owner_jobs")
+            logger.warning("Safe mode: owner jobs are not scheduled")
+            return
         try:
             registered = runner.register_all()
             logger.info("Owner jobs registered: %d", registered)

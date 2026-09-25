@@ -113,6 +113,18 @@ describe('loadJarvisData current-evidence adapters', () => {
     expect(second.trust.cloud_available).toBeUndefined();
   });
 
+  it('carries the hub safe-mode state, off when /status says nothing (H275)', async () => {
+    let safe: unknown = { enabled: true, skipped: ['owner_skills', 'owner_jobs'] };
+    globalThis.fetch = vi.fn((url: string) => (url === '/status'
+      ? ok({ model_state: 'no_model', loaded_model: null, resident_models: [], safe_mode: safe })
+      : unavailable())) as unknown as typeof fetch;
+    expect((await loadJarvisData(false)).safeMode).toEqual({ enabled: true, skipped: ['owner_skills', 'owner_jobs'] });
+    safe = undefined;
+    expect((await loadJarvisData(false)).safeMode).toEqual({ enabled: false, skipped: [] });
+    globalThis.fetch = vi.fn(() => unavailable()) as unknown as typeof fetch;
+    expect((await loadJarvisData(false)).safeMode).toEqual({ enabled: false, skipped: [] });
+  });
+
   it('requires literal trust booleans before the Mesh can create a cloud lane', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url === '/status') return ok({ model_state: 'no_model', loaded_model: null, resident_models: [] });

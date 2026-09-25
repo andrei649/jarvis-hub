@@ -372,6 +372,20 @@ class _NullCtx:
 
 
 
+def _pick_overlay(candidates: list):
+    """The first existing candidate, the shipped template (the last) when none exists.
+
+    H275: in safe mode the overlays before it are never taken, at construction and at
+    the compaction boundary alike, since both resolve through here."""
+    from . import safe_mode
+
+    if safe_mode.enabled():
+        if any(c.exists() for c in candidates[:-1]):
+            safe_mode.note("persona_overlays")
+        return candidates[-1]
+    return next((c for c in candidates if c.exists()), candidates[-1])
+
+
 def soul_path_for(agent_id: str):
     """The SOUL file the model will actually be given for *agent_id*.
 
@@ -398,7 +412,7 @@ def soul_path_for(agent_id: str):
         candidates.append(souls_home / str(agent_id) / "SOUL.local.md")
     candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.local.md")
     candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.md")
-    return next((c for c in candidates if c.exists()), candidates[-1])
+    return _pick_overlay(candidates)
 
 
 #: H670 — the SoulVersionStore key the shared behaviour contract is versioned under, beside
@@ -433,7 +447,7 @@ def identity_path():
         candidates.append(souls_home / "IDENTITY.local.md")
     candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.local.md")
     candidates.append(_shipped_identity_path())
-    return next((c for c in candidates if c.exists()), candidates[-1])
+    return _pick_overlay(candidates)
 
 
 def _strip_maintainer_note(text: str) -> str:

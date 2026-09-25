@@ -14,6 +14,20 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H275 safe mode: the hub boots without the owner's customizations, and relaxes nothing (missing → equivalent, #1207; headline 154 → 155/697).
+
+  There was no way to start a hub broken by something the owner added. Now `JARVIS_SAFE_MODE=1`, or `python serve.py --safe-mode`, leaves out seven layers (`agents/core/safe_mode.py`):
+  - **Skills.** Only the shipped skills load: the data-home folder is not opened, and a generated, imported, edited or pending-review skill in the bundled tree is not loaded.
+  - **MCP.** The saved servers are not registered and their saved configuration is not touched: the save never runs from the empty manager, and add/remove answer 409 `safe_mode`.
+  - **Acquisition and extensions.** The runtime reports itself disabled, so nothing promoted is re-registered and no extension can be activated.
+  - **Plugin grants.** `JARVIS_PLUGIN_GRANTS` is ignored; it only ever widens access.
+  - **Overlays.** `SOUL.local.md`, `IDENTITY.local.md` and `HEARTBEAT.local.md` (data home or repository) give way to the shipped files, at construction and at the H672 boundary.
+  - **Owner jobs.** They stay saved and are not scheduled.
+  - **Said everywhere.** The boot log, `/healthz`, `/readyz` (still ready), `/status`, `/api/status`, and a red SAFE MODE strip in the HUD naming what was left out. A test pins the exact modules that read the flag; no gate does.
+
+  28 mutants, all caught. 74 rows re-stamped (the serve.py rows re-derived from HEAD after a double shift). The binding inventory's pinned `web.py`/`scheduler_service.py` lines moved with the files. Test manual: ENV-167, ENV-168.
+  Tests: backend 15,516 → 15,544 (`tests/test_h275_safe_mode.py` 28); vitest 1,491 → 1,495 (`safe-mode-banner.test.tsx` 3, `loaders.test.ts` +1).
+
 - 2026-09-25 H296 a tool tells the model what this install can do, and a running session sees it move (missing → equivalent, #1207; headline 153 → 154/697).
 
   Every ToolRPC tool advertised one static schema: `terminal_run` took any `target` string, `desktop_run` any step `action`, `speak` any device or room, and the model learned the real names from a refusal. Now:

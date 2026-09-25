@@ -12,6 +12,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "agents"))
 
+SAFE_MODE_SWITCH = "--safe-mode"
+
+
+def apply_safe_mode_switch(argv=None) -> bool:
+    """H275: ``python serve.py --safe-mode`` boots with every owner customization left
+    out (agents/core/safe_mode.py). It sets ``JARVIS_SAFE_MODE=1`` here, before the
+    hub is imported, so every loader sees it; the variable itself works the same way."""
+    if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
+        os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        return True
+    return False
+
+
+apply_safe_mode_switch()
+
 import importlib.util
 
 # Dependency availability probes (find_spec checks without importing the module).

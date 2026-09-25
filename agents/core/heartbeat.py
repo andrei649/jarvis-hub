@@ -206,6 +206,7 @@ class HeartbeatScheduler:
             # Personalization overlay: HEARTBEAT.local.md (gitignored) wins over
             # the shipped template — same convention as SOUL.local.md. A user
             # data home (Documents/Jarvis/souls/<id>/) wins over both.
+            from . import safe_mode
             from .paths import user_souls_dir
             souls_home = user_souls_dir()
             hb_path = None
@@ -215,6 +216,10 @@ class HeartbeatScheduler:
                     hb_path = candidate
             if hb_path is None:
                 hb_path = agent_dir / "HEARTBEAT.local.md"
+            if safe_mode.enabled() and hb_path.exists():
+                # H275: the shipped schedule only; an overlay's runs are not scheduled.
+                safe_mode.note("heartbeat_overlays")
+                hb_path = agent_dir / "HEARTBEAT.md"
             if not hb_path.exists():
                 hb_path = agent_dir / "HEARTBEAT.md"
             if hb_path.exists():
