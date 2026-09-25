@@ -42,7 +42,8 @@ _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
 #: Kinds that hold no credential whatever their name: ``llm.max_tokens`` and
 #: ``learning.review_max_tokens`` are budgets, and /refine tells the owner to raise one.
-_PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider", "model-select"})
+#: A model id is left out: a typed one can carry a credential (routers/admin.py).
+_PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider"})
 _TIER_NAMES = {0: "READ_ONLY", 1: "REVERSIBLE", 2: "EXTERNAL", 3: "IRREVERSIBLE_OR_MONEY"}
 
 
@@ -633,7 +634,9 @@ def _settings():
 def _is_secret(row: Mapping[str, Any]) -> bool:
     key = str(row.get("key", "")).lower()
     kind = str(row.get("kind", ""))
-    if kind in _SECRET_KINDS:
+    # A key the store encrypts is a credential whatever its name (review-H465d nit 5: the
+    # GA4 service-account JSON, a private key, printed in the clear).
+    if kind in _SECRET_KINDS or key in _settings().SECRET_KEYS:
         return True
     return kind not in _PLAIN_KINDS and any(hint in key for hint in _SECRET_HINTS)
 

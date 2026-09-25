@@ -14,6 +14,29 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465d found no major, two minors and seven nits:
+  - **A day of cut-offs made /refine name the wrong setting (m-1).** Per-turn reviews the model cut off now spend the budget, so after a day of them `/refine` said "try again tomorrow" and named `learning.review_daily_budget`. It now answers `daily_budget_cut_off`, naming `learning.review_max_tokens` rather than the budget, and `GET /api/cognition/learning` counts `cut_offs_today`.
+  - **Seven real survivors (m-2).** The documented values are now accepted through the settings store (a budget, idle gap and max facts of 0, a token cap of 32768, the `idle_gap` cadence, `every_n` 100), not only the bad ones refused; prose that mentions an error midway is malformed, not a backend failure; a `/refine` cut-off leaves the day's INFO line to the per-turn pass; a `review_unparsed` skip reaches the DEBUG log.
+  - **Nits:**
+    - a reply that parses as a review is the model's answer whatever it opens with (`[{"… error …"}]`); only an unparsed reply that opens with a bracketed `[… error …]` or is the local degraded message is a backend failure;
+    - a boolean or NaN budget warns once;
+    - corrections have their own cap, so `review_max_facts` 0 keeps no facts but still records corrections, and `/refine` says what it found;
+    - every knob reads within its declared bounds whatever the stored row (`bounded_learning_int`), the review's own token cap included: a hand-edited -1 no longer means "until the context is full";
+    - older than H465: `nerva config` printed the GA4 service-account JSON (a private key) unmasked; it now masks every key the store encrypts, and a model id;
+    - older than H465: a burst of passes could pass the budget; `run()` checks it again where the unit is spent;
+    - the daily INFO line names the token cap as the cause of a thinking cut-off and as a possible one of a malformed answer.
+
+  Mutation: this round's 19 mutants were all caught, two after their cases were added (prose that mentions an error midway, an out-of-range `every_n`).
+
+  Records:
+  - H465 rewritten;
+  - 99 drifted rows re-read and re-stamped (H288's `:685` and H427's `publish()` range remapped by content);
+  - GOV-257 extended (a day of cut-offs).
+
+  Tests: backend 14,711 → 14,748 (`tests/test_h465e_refine_review.py` 37); vitest unchanged at 1,461.
+
 - 2026-09-25 H318 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
 
   review-H318c found one records major (the stale evidence hash, fixed at 0a941f64), eight minors and seven nits:

@@ -992,7 +992,12 @@ class Orchestrator:
                 # backend up ⇒ RuntimeError ⇒ this review pass is skipped.
                 backend = router.local_backend
                 model = router.active_model or "google/gemma-4-31b-a4b"
-                max_tokens = int(self.get_setting("learning.review_max_tokens", 512) or 512)
+                from .settings_db import bounded_learning_int
+
+                # Within its bounds even for a row that predates them: -1 would mean
+                # "until the context is full" to a local backend (review-H465d nit 4).
+                max_tokens = bounded_learning_int(
+                    "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
                 return await backend.generate(
                     model=model, prompt=prompt,
                     system="You are a precise background reviewer. Output only JSON.",

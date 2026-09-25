@@ -265,7 +265,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="learning", key="review_cadence", value="every_turn", label="Per-turn review cadence", kind="select", opts=["every_turn", "every_n_turns", "idle_gap"]),
     dict(category="learning", key="review_every_n", value=3, label="Review every N turns (cadence every_n_turns)", kind="number"),
     dict(category="learning", key="review_idle_gap_s", value=90, label="Seconds between reviews (cadence idle_gap)", kind="number"),
-    dict(category="learning", key="review_max_facts", value=3, label="Facts a review may keep, per ring", kind="number"),
+    dict(category="learning", key="review_max_facts", value=3, label="Facts a review may keep, per ring (0 = none; corrections are capped apart)", kind="number"),
     # Owner-authored media reminders: one deadline for the complete delivery.
     dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
     # channels
@@ -678,6 +678,20 @@ _LEARNING_INT_BOUNDS = {
     "review_max_tokens": (1, 32768), "review_daily_budget": (0, 1000), "review_every_n": (1, 100),
     "review_idle_gap_s": (0, 86400), "review_max_facts": (0, 20),
 }
+
+
+def bounded_learning_int(key: str, raw: Any, default: int) -> int:
+    """A learning knob as its readers use it: an integer within its declared bounds, else
+    ``default``. The bounds are enforced on write; this holds them for a row written
+    before them, restored from a backup or edited by hand (review-H465d nit 4)."""
+    low, high = _LEARNING_INT_BOUNDS[key]
+    if isinstance(raw, bool):
+        return default
+    try:
+        value = int(float(raw))
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return value if low <= value <= high else default
 
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
