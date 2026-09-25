@@ -163,7 +163,6 @@ def _orch(turns=(), reviewer=None):
     orch.memory = _Memory(list(turns))
     orch.reviewer = reviewer if reviewer is not None else _FakeReviewer()
     orch._session_id_default = "web-1"
-    orch.last_learning_review = None
     return orch
 
 
@@ -176,7 +175,6 @@ def test_refine_reviews_a_snapshot_of_this_session_and_leaves_it_untouched():
     history, focus = orch.reviewer.calls[0]
     assert history == "user: how do I deploy\nassistant: run make ship" and focus == "deployment"
     assert orch.memory.turns == turns
-    assert orch.last_learning_review == result
 
 
 def test_refine_refuses_while_another_turn_holds_the_session():
@@ -297,12 +295,15 @@ def test_a_local_model_that_is_down_is_no_review_and_costs_no_budget():
     assert asyncio.run(reviewer.run("hi", "hello"))["reason"] == "llm_error"
 
 
-def test_a_review_that_outlasts_its_bound_is_named_and_refunded():
+def test_a_review_that_outlasts_its_bound_is_named_and_refunded(monkeypatch):
+    from agents.core.learning import background_review as br
+
     async def slow(prompt):
         await asyncio.sleep(5)
         return '{"nothing": true}'
 
-    reviewer = _reviewer(slow, **{"learning.refine_timeout_s": 1})
+    monkeypatch.setattr(br, "REFINE_TIMEOUT_S", 0.3)
+    reviewer = _reviewer(slow)
     result = asyncio.run(reviewer.run_on_demand("user: x"))
     assert result == {"ran": False, "reason": "llm_timeout", "actions": []}
     assert reviewer._day_count == 0 and reviewer._on_demand is False
@@ -344,7 +345,9 @@ def test_on_demand_and_per_turn_reviews_exclude_each_other_and_keep_the_cadence(
     async def scenario():
         per_turn = asyncio.create_task(reviewer.run("hi", "hello"))
         await asyncio.sleep(0)
-        refused = await reviewer.run_on_demand("user: b")
+        # bounded: without the exclusion the /refine would wait on the gate, and the
+        # test must fail fast rather than hang (review-H465b m-3, N2)
+        refused = await asyncio.wait_for(reviewer.run_on_demand("user: b"), 2)
         gate.set()
         await per_turn
         return refused
@@ -403,7 +406,7 @@ def test_proposals_from_refine_are_labelled_refine(tmp_path):
     asyncio.run(reviewer.run_on_demand("user: x"))
     assert proposals.list("pending")[0]["origin"] == "refine"
     assert cards.rows[0]["agent"] == "refine" and cards.rows[0]["summary"].startswith("/refine proposes")
-    assert reviewer._label == "background_review"
+    assert not hasattr(reviewer, "_label")        # passed down per pass, never instance state
 
 
 def test_the_snapshot_leaves_out_commands_their_replies_and_stays_contiguous():
@@ -425,11 +428,15 @@ def test_refine_on_a_chat_of_commands_only_says_there_is_nothing_to_review():
 
 
 def test_a_refused_review_does_not_overwrite_the_last_one_shown():
-    orch = _orch([{"role": "user", "content": "x"}], reviewer=_FakeReviewer({"ran": False, "reason": "busy",
-                                                                               "actions": []}))
-    orch.last_learning_review = {"ran": True, "actions": ["earlier"]}
-    asyncio.run(orch.refine())
-    assert orch.last_learning_review == {"ran": True, "actions": ["earlier"]}
+    """GET /api/cognition/learning shows reviewer.status()["last_result"]; a refusal leaves it."""
+    reviewer = _reviewer(_LLM('{"nothing": true}'))
+    earlier = {"ran": True, "actions": ["earlier"]}
+    reviewer.last_result = earlier
+    reviewer._in_flight = 1                                   # a per-turn pass is running
+    orch = _orch([{"role": "user", "content": "x"}], reviewer=reviewer)
+    assert asyncio.run(orch.refine())["reason"] == "busy"
+    assert reviewer.status()["last_result"] == earlier
+    assert not hasattr(orch, "last_learning_review")          # the field nothing read is gone
 
 
 def test_the_reply_header_cuts_the_focus_and_names_where_a_new_skill_waits():

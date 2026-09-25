@@ -136,6 +136,12 @@ def _degraded(raw: object) -> bool:
     return is_degraded_reply(raw)
 
 
+def _thinking_exhausted(raw: object) -> bool:
+    from ..llm.base import THINKING_EXHAUSTED_REPLY
+
+    return raw == THINKING_EXHAUSTED_REPLY
+
+
 def _default_detect(text: str) -> list:
     try:
         from ..security.quarantine import detect_injection
@@ -148,17 +154,20 @@ def parse_review_json(raw: str) -> dict:
     """Extract the reviewer's JSON defensively (reflector-style). Never raises."""
     empty = {"user_facts": [], "agent_facts": [], "corrections": [],
              "skill_updates": [], "nothing": True}
+    # An answer with no readable JSON object is not a review that found nothing: a reply
+    # cut off by the token cap looks exactly like this (review-H465b m-2).
+    unparsed = {**empty, "unparsed": True}
     if not raw:
-        return empty
+        return unparsed
     try:
         start, end = raw.find("{"), raw.rfind("}") + 1
         if not (0 <= start < end):
-            return empty
+            return unparsed
         data = json.loads(raw[start:end])
         if not isinstance(data, dict):
-            return empty
+            return unparsed
     except Exception:
-        return empty
+        return unparsed
 
     def _str_list(key):
         vals = data.get(key)
@@ -223,9 +232,19 @@ class BackgroundReviewer:
         self._day_count = 0
         self._on_demand = False
         self._in_flight = 0
-        #: Who the review's proposals and approval cards name ("refine" for /refine).
-        self._label = "background_review"
         self.last_result: dict | None = None
+
+    def _budget(self) -> int:
+        """The day's review budget. 0 means no reviews; a value that is not a number is
+        named in the log and the default used (review-H465 nit 4), never a crash."""
+        raw = self._get("learning.review_daily_budget", 20)
+        if raw is None or raw == "":
+            return 20
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            logger.warning("learning.review_daily_budget %r is not a number; 20 is used", raw)
+            return 20
 
     # ── cadence / budget gate ────────────────────────────────────────────────
 
@@ -237,8 +256,7 @@ class BackgroundReviewer:
         today = date.today().isoformat()
         if today != self._day:
             self._day, self._day_count = today, 0
-        budget = int(self._get("learning.review_daily_budget", 20) or 20)
-        if self._day_count >= budget:
+        if self._day_count >= self._budget():
             return False, "daily_budget"
         cadence = str(self._get("learning.review_cadence", "every_turn") or "every_turn")
         if cadence == "every_n_turns":
@@ -257,50 +275,60 @@ class BackgroundReviewer:
         """H465 — the review the owner asked for (``/refine [focus]``), over a snapshot.
 
         It skips the cadence gate (the owner asked now) but spends the daily budget like
-        any pass, keeps the strict-local model, and runs one at a time: a second request
-        while one runs is refused ``busy``, not queued."""
+        any pass, keeps the strict-local model, and runs one at a time: a request while a
+        review runs is refused ``busy``, not queued, and a per-turn pass that would start
+        while it runs is skipped (``run`` refuses it, ``on_demand``). The review is bounded
+        at REFINE_TIMEOUT_S, below the turn lease's wait. A review that times out or is
+        cancelled costs no budget."""
         if self._on_demand or self._in_flight:
             return {"ran": False, "reason": "busy", "actions": []}
         today = date.today().isoformat()
         if today != self._day:
             self._day, self._day_count = today, 0
-        budget = int(self._get("learning.review_daily_budget", 20) or 20)
-        if self._day_count >= budget:
+        if self._day_count >= self._budget():
             return {"ran": False, "reason": "daily_budget", "actions": []}
         self._on_demand = True
-        self._label = "refine"
-        try:
-            limit = float(self._get("learning.refine_timeout_s", REFINE_TIMEOUT_S) or REFINE_TIMEOUT_S)
-        except (TypeError, ValueError):
-            limit = REFINE_TIMEOUT_S
+        spent_before = self._day_count
         try:
             # The per-turn cadence is the per-turn reviews' own: an owner's /refine
             # neither resets it nor delays the next one (review-H465 nit 3).
             return await asyncio.wait_for(
                 self.run("", "", history=history, focus=focus, context_chars=REFINE_SNAPSHOT_CHARS,
-                         cadence=False),
-                timeout=max(1.0, min(limit, REFINE_TIMEOUT_S)))
+                         cadence=False, on_demand=True),
+                timeout=REFINE_TIMEOUT_S)
         except TimeoutError:
-            self._day_count = max(0, self._day_count - 1)   # no review was had
+            self._day_count = min(self._day_count, spent_before)   # no review was had
             result = {"ran": False, "reason": "llm_timeout", "actions": []}
             self.last_result = result
             return result
+        except asyncio.CancelledError:
+            self._day_count = min(self._day_count, spent_before)   # review-H465b nit 6
+            raise
         finally:
             self._on_demand = False
-            self._label = "background_review"
 
     async def run(self, user_text: str, assistant_text: str, history: str = "", *,
-                  focus: str = "", context_chars: int = 6000, cadence: bool = True) -> dict:
-        """One review pass. Never raises — failures return a summary dict."""
+                  focus: str = "", context_chars: int = 6000, cadence: bool = True,
+                  on_demand: bool = False) -> dict:
+        """One review pass. Never raises — failures return a summary dict.
+
+        The exclusion is taken here, not only where a pass is spawned (review-H465b m-1):
+        a per-turn pass spawned before a /refine started waits on the memory lock and can
+        enter only after the /refine set its flag, so it is refused ``on_demand`` then."""
+        if self._on_demand and not on_demand:
+            return {"ran": False, "reason": "on_demand", "actions": []}
         self._in_flight += 1
         try:
             return await self._run(user_text, assistant_text, history, focus=focus,
-                                   context_chars=context_chars, cadence=cadence)
+                                   context_chars=context_chars, cadence=cadence, on_demand=on_demand)
         finally:
             self._in_flight -= 1
 
     async def _run(self, user_text: str, assistant_text: str, history: str, *,
-                   focus: str, context_chars: int, cadence: bool) -> dict:
+                   focus: str, context_chars: int, cadence: bool, on_demand: bool) -> dict:
+        # Who the pass's proposals and approval cards name, passed down rather than kept
+        # on the instance, so no other pass can read it (review-H465b m-1).
+        label = "refine" if on_demand else "background_review"
         if cadence:
             self._turns_since = 0
             self._last_run_ts = self._now()
@@ -319,6 +347,13 @@ class BackgroundReviewer:
         except Exception as e:
             logger.debug("background review LLM call failed: %s", e)
             raw = None
+        if _thinking_exhausted(raw):
+            # The model answered but spent its tokens thinking: that is not "no model"
+            # (review-H465b m-2). No review was had, so no budget is spent.
+            self._day_count = max(0, self._day_count - 1)
+            result = {"ran": False, "reason": "review_cut_off", "actions": []}
+            self.last_result = result
+            return result
         if raw is None or _degraded(raw):
             # A local backend that is configured but down answers with a degraded reply
             # instead of raising: that is no review, and it costs no budget (review-H465 M-1).
@@ -328,17 +363,28 @@ class BackgroundReviewer:
             return result
 
         review = parse_review_json(raw)
+        if review.get("unparsed"):
+            # Cut off by the token cap or malformed: nothing can be kept, and it is not
+            # "nothing worth keeping" (review-H465b m-2).
+            self._day_count = max(0, self._day_count - 1)
+            result = {"ran": False, "reason": "review_unparsed", "actions": []}
+            self.last_result = result
+            return result
         actions: list[str] = []
         counts = {"facts": 0, "blocked": 0, "corrections": 0,
                   "skills_new": 0, "skill_patches": 0}
         max_facts = max(0, int(self._get("learning.review_max_facts", 3) or 3))
 
         living = self._living() if callable(self._living) else self._living
-        found = len(review["user_facts"][:max_facts]) + len(review["agent_facts"][:max_facts])
-        if living is None and found:
-            # Said, not dropped silently (review-H465 m-3).
-            actions.append(f"{found} fact(s) found but not kept: living memory is off "
-                           "(cognition.memory_enabled)")
+        if living is None and on_demand:
+            # Said to the owner who asked, not dropped silently (review-H465 m-3), counting
+            # only facts the injection scan would let through (review-H465b nit 5). The
+            # per-turn pass stays quiet: memory being off is not news every turn.
+            found = sum(1 for fact in review["user_facts"][:max_facts] + review["agent_facts"][:max_facts]
+                        if not self._detect(fact))
+            if found:
+                actions.append(f"{found} fact(s) found but not kept: living memory is off "
+                               "(cognition.memory_enabled)")
         self._put_facts(review["user_facts"][:max_facts],
                         getattr(living, "user_core", None),
                         "User profile", actions, counts)
@@ -361,10 +407,10 @@ class BackgroundReviewer:
 
         for update in review["skill_updates"][:2]:
             if update["kind"] == "new":
-                if self._dispatch_new_skill(update, actions):
+                if self._dispatch_new_skill(update, actions, label):
                     counts["skills_new"] += 1
             else:
-                if self._dispatch_patch(update, actions):
+                if self._dispatch_patch(update, actions, label):
                     counts["skill_patches"] += 1
 
         result = {"ran": True, "nothing": review["nothing"] and not actions,
@@ -403,13 +449,13 @@ class BackgroundReviewer:
             counts["facts"] += added
             actions.append(f"{label} updated (+{added})")
 
-    def _dispatch_new_skill(self, update, actions) -> bool:
+    def _dispatch_new_skill(self, update, actions, label: str = "background_review") -> bool:
         """New skills ride the existing CDX-8 quarantine pipeline unchanged."""
         if self._skills is None or not hasattr(self._skills, "generate_skill"):
             return False
         try:
             name = self._skills.generate_skill(
-                self._label, update["task"], update["steps"] or ["(captured from review)"])
+                label, update["task"], update["steps"] or ["(captured from review)"])
             if name:
                 actions.append(f"Skill '{name}' proposed (quarantined, pending review)")
                 return True
@@ -417,7 +463,7 @@ class BackgroundReviewer:
             logger.debug("skill generation from review skipped", exc_info=True)
         return False
 
-    def _dispatch_patch(self, update, actions) -> bool:
+    def _dispatch_patch(self, update, actions, label: str = "background_review") -> bool:
         """Patches never touch the live skill — they land as pending proposals."""
         if self._proposals is None:
             return False
@@ -440,7 +486,7 @@ class BackgroundReviewer:
             return False
         try:
             prop = self._proposals.propose(name, current, update["content"],
-                                           origin=self._label)
+                                           origin=label)
             if prop is None:
                 return False
             if self._approvals is not None:
@@ -449,8 +495,8 @@ class BackgroundReviewer:
                     # decision is the owner's (review-H318b m-6), and a proposal that
                     # already has a card gets no second one (m-1).
                     self._proposals.queue_card(
-                        prop["id"], self._approvals, agent=self._label,
-                        summary=(f"/refine proposes a patch to skill '{name}'" if self._label == "refine"
+                        prop["id"], self._approvals, agent=label,
+                        summary=(f"/refine proposes a patch to skill '{name}'" if label == "refine"
                                  else f"Background review proposes a patch to skill '{name}'"))
                 except Exception:
                     logger.debug("approval request for patch skipped", exc_info=True)

@@ -712,10 +712,10 @@ class Orchestrator:
         self._warmup_task: Optional[asyncio.Task] = None
         self._drive_ai_task: Optional[asyncio.Task] = None
         self.last_cognition = None
-        # H20 learning loop: frozen-per-session core-memory prompt block + the
-        # last background-review result (surfaced via /api/cognition/learning).
+        # H20 learning loop: frozen-per-session core-memory prompt block. The last review's
+        # result lives on the reviewer (reviewer.last_result), which /api/cognition/learning
+        # reads.
         self._core_block_cache: Optional[tuple] = None
-        self.last_learning_review: Optional[dict] = None
         self.reviewer = None            # BackgroundReviewer, built in load_agents
         self.curator = None             # SkillCurator, built in load_agents
         # Daily Reflection & Graph Consolidation (H5.15)
@@ -3065,8 +3065,6 @@ class Orchestrator:
         if not snapshot:
             return {"ran": False, "reason": "empty_conversation", "actions": []}
         result = await reviewer.run_on_demand(snapshot, focus=focus)
-        if result.get("ran"):
-            self.last_learning_review = result
         for action in result.get("actions", []):
             logger.info("learning review (on demand): %s", action)
         return result
@@ -3082,7 +3080,6 @@ class Orchestrator:
         except Exception:
             logger.debug("review history gather skipped", exc_info=True)
         result = await self.reviewer.run(text, synthesized, history=history)
-        self.last_learning_review = result
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
 

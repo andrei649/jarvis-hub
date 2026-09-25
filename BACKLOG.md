@@ -14,6 +14,29 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H465 second adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465b found three minors and six nits:
+  - **A per-turn pass could still run beside /refine (m-1).** The exclusion was checked where a pass is spawned, but a per-turn pass spawned before a /refine waits on the memory lock. It then entered `run()` after the /refine set its flags, ran beside it and labelled its new skill `refine`. `run()` now refuses a per-turn pass while /refine runs (`on_demand`: skipped, not deferred). The label is passed down per pass, never kept on the instance. The claim "either one makes the other wait its turn" is corrected.
+  - **A cut-off review read as nothing (m-2).** An answer cut off mid-JSON by the token cap was "nothing worth keeping". A model that spent its answer thinking was "no local model answered". Both are now named (`review_unparsed`, `review_cut_off`), point to `learning.review_max_tokens` and cost no budget.
+  - **Mutation (m-3).** The unregistered `learning.refine_timeout_s` setting is gone: the bound is the 150 s constant. A new skill's label and a timeout's stored result have cases.
+  - **Nits:**
+    - a budget of 0 means no reviews, and a garbage budget is logged and defaults to 20;
+    - the dead `last_learning_review` field is gone (the API reads the reviewer's own `last_result`);
+    - facts not kept are counted after the injection scan, and only for the owner who asked;
+    - a cancelled /refine costs no budget;
+    - the H288 credit, critic note 1's done-line and its `turn_lease` citation are corrected;
+    - H273's summary was rewritten in its own round.
+
+  Mutation: this round's 14 mutants were all caught.
+
+  Records:
+  - H465 rewritten;
+  - 53 drifted rows re-read and re-stamped (H427's `publish()` shorthand remapped by content);
+  - GOV-257 extended.
+
+  Tests: backend 14,509 → 14518 (`tests/test_h465c_refine_review.py` 9); vitest unchanged at 1,456.
+
 - 2026-09-25 H318 second adversarial review round (partial → equivalent, #1207; headline 144 → 145/697).
 
   review-H318b found two majors, seven minors and seven nits:
@@ -114,7 +137,7 @@
 
   It also found four minors. H273 is partial until its fix round.
 
-  Records: H465 rewritten; 53 drifted rows re-read and re-stamped (H427's `publish()` range corrected by hand); GOV-257.
+  Records: H465 rewritten; 53 drifted rows re-read and re-stamped (H427's `publish()` range and H288's GOV-224 citation, 640 → 636, corrected by hand); GOV-257.
 
   Tests: backend 14,413 → 14,426; vitest unchanged at 1,447.
 - 2026-09-25 H318 adversarial review round (H318 and H351 partial → equivalent, H340 stays equivalent, #1207; headline 142 → 144/697).
@@ -172,7 +195,7 @@
 
   Also in this change: `orchestrator_bindings.py`'s writer inventory is re-pinned. The H318 insert in `autonomy_coordinator.py` shifted 12 pinned lines, a failure the loaded local run had hidden behind a worker timeout.
 
-  Records: H465 closed; 54 drifted rows re-read (first recorded as 53) and re-stamped (H427's `publish()` range and H288's GOV-224 citation corrected by hand); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
+  Records: H465 closed; 54 drifted rows re-read (first recorded as 53) and re-stamped (H427's `publish()` range corrected by hand; the H288 GOV-224 correction recorded here did not hold and was made in the review round); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
 
   Tests: backend 14,373 → 14,395 (`tests/test_h465_refine.py` 22); vitest unchanged at 1,444.
 - 2026-09-25 H318 + H340 the model lists, reads and proposes its own skills (H318 partial → equivalent, H340 missing → equivalent, H351 partial → equivalent, #1207; headline 141 → 144/697).

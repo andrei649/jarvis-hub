@@ -320,6 +320,10 @@ _REFINE_REFUSALS = {
                   "(reviews never leave this machine)."),
     "llm_timeout": ("The local model did not finish the review in time; nothing was kept. "
                     "Try again, or with a narrower focus."),
+    "review_cut_off": ("The local model spent its whole answer on thinking and wrote no review; nothing was "
+                       "kept. Raise learning.review_max_tokens, or try a narrower focus."),
+    "review_unparsed": ("The local model's review was cut off or malformed, so nothing was kept. Raise "
+                        "learning.review_max_tokens, or try a narrower focus."),
     "empty_conversation": "There is no conversation here to review yet.",
     "unavailable": "The learning reviewer is not available on this hub.",
 }
