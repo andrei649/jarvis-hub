@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H666 subtasks under a parent (partial → equivalent, #1207; headline 140 → 141/697).
+
+  Hermes nests the agent's subtasks with one optional `parent` per todo item (another item's id, so merge-by-id keeps working) and draws the list through one defensive tree builder. Nerva now does both:
+  - **The tree** — `agents/core/todo_tree.py` (stdlib, the CLI's) and its HUD twin `frontend/src/todo-tree.ts` return `(item, depth)` in depth-first order, depth capped at 4. A missing, self or non-id parent draws at depth 0 in place; cycle members are appended flat. Nothing is dropped or repeated.
+  - **The todo tool** — items take an optional `parent`, cleaned like an id and refused `todo_bad_parent` when it is not one. `""` clears it on a merge and null is "not sent". A move counts toward the plan cap, and a move by an untrusted turn taints the item, as a status does. Re-sending the same parent changes nothing. A flat list answers exactly as before.
+  - **Mission steps** — every step has a nullable `parent`. `POST /api/missions` takes `{title, parent}` entries whose parent is an earlier step's index, so a plan is a forest by construction; anything else answers 400 `bad_plan_step`. Budget charging and the completion gates are unchanged.
+  - **Rendering** — `nerva todo`, the Decision Inbox's plans in flight and the mission canvas draw the indented tree.
+
+  Mutation: 43 mutants of the new guards; 39 caught at once, the other four after cases were added. One unreachable guard was removed.
+
+  Records: H666 closed; 30 drifted rows re-read and re-stamped (H315's schema line gains `parent?`); its plan left the build queue (75 rows remain); test manual GOV-250..252; `docs/ARCHITECTURE.md`.
+
+  Tests: backend 14,309 → 14,346 (`tests/test_h666_subtasks.py` 37); vitest 1,434 → 1,444 (`todo-tree.test.ts` 8, plans in flight +1, mission canvas +1).
 - 2026-09-25 H315 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
 
   The review found one major, fixed:

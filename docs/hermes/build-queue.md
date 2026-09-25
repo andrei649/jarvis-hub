@@ -6,7 +6,7 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 
-**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 76 rows remain.
+**Closed in #1207** (2026-09-24): H327, H433, H687, H428, H165, H200 + H153 (built once, per critic note 7), H273, H315, and on 2026-09-25 H666 — built red-first one at a time in the single integration PR; plans left this page with their ledger entries. 75 rows remain.
 
 **Re-opened and closed again in #1207** (2026-09-24): H428. Its review round made the recall bound hold for the turn: a separate store lock, and background turn embeddings. It found the next-turn warm-up half missing, and that half was then built as a per-session warm context that stands in when a turn's own recall times out or is skipped.
 
@@ -50,7 +50,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H318](#h318) | List, read and author the agent's own skills | partial | 5 | [21](#critic-note-21), [22](#critic-note-22) |
 | [H465](#h465) | Run the self-improvement review on demand | partial | 5 | [1](#critic-note-1), [3](#critic-note-3) |
 | [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
-| [H666](#h666) | The agent's own task list nests subtasks under a parent | partial | 5 |  |
 | [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
 | [H670](#h670) | The default identity prompt is a behavior contract, and it lives in one file | partial | 5 | [29](#critic-note-29) |
 | [H145](#h145) | Read the system logs from the UI | missing | 6 | [32](#critic-note-32) |
@@ -149,16 +148,6 @@ Plan: 1. Add a `focus: str = ''` parameter to BackgroundReviewer.run, rendered a
 Files: `agents/cli/nerva.py`, `tests/test_nerva_cli_vision.py (new)`, `tests/test_cli_fish_completion.py (only if the command-tree snapshot changes)`
 
 Plan: In agents/cli/nerva.py, add `nerva chat --image PATH` (repeatable, at most 8) and `--clipboard`. `--clipboard` reads the image with `wl-paste --type image/png` or `xclip -selection clipboard -t image/png -o`, or `pngpaste -` on macOS: argv lists, no shell, a 5 s timeout and a 4 MiB cap. Check PNG/JPEG/GIF/WebP magic bytes locally and build data URIs. GET /api/vlm/composer/status to learn the destination and binding, and require `--remote-ok` when status.local is false. Then POST /api/vlm/composer/describe with {prompt, images, expected_destination, expected_binding, remote_ack}. Print the response on stdout, and the model/destination provenance on stderr under -z. Map 503 to exit 1, 409 and 403 to exit 1 with a named reason, and a missing clipboard tool to exit 2. Tests in tests/test_nerva_cli_vision.py use an injected fake HubClient. The first red test is test_chat_image_posts_to_composer_describe. Then cover: a remote destination without --remote-ok refused before any POST; an oversized or non-image file refused; a 409 binding change surfaced; a fake clipboard executable on PATH read correctly.
-
-## H666
-
-**The agent's own task list nests subtasks under a parent** (delta) — partial, ~5 h.
-
-**Since H315 (#1207):** Nerva now has the `todo` tool this row's Hermes original extends (agents/core/todo_tool.py). Hermes puts `parent` on the todo item (an id of another item, so merge-by-id keeps working). Build it there first: validate the parent in TodoStore.write, and render the same defensive tree in `nerva todo` and the Decision Inbox's plans. The mission-step plan below is the same tree applied to missions.
-
-Files: `agents/core/autonomy/missions.py`, `agents/core/routers/missions.py`, `frontend/src/panels/mission-canvas.tsx`, `frontend/src/panels/mission-canvas.test.tsx`, `tests/test_missions.py`
-
-Plan: 1) In MissionStore.create, accept plan items that are either str or {'title': str, 'parent': int|None}, and store 'parent' on each step (None for strings). Reject non-int parents with MissionError('invalid_step_parent'), but keep out-of-range, self or cyclic parents so they render defensively. Leave finish_step/steps_used unchanged. 2) Add plan_tree(plan) -> list[(step, depth)] in missions.py: DFS from roots in idx order, depth min(depth, 4), dangling or self parent treated as root at depth 0, unvisited cycle members appended at depth 0. Expose it as 'tree' in Mission.to_dict or in the GET /api/missions/{id} payload. 3) Update the missions_create docstring and body handling in routers/missions.py. 4) Add a matching todoTree helper in the frontend, and have MissionCanvasPanel render steps indented by depth instead of plan.map. Red-first tests: tests/test_missions.py create(plan=['phase', {'title':'sub','parent':0}]) must yield step 1 title 'sub' with parent 0 and tree depths [0,1]; it fails today with a stringified title. Also cover a dangling parent (depth 0), a self parent (depth 0), a 2-cycle (both present, flat) and depth capped at 4. Add a vitest case in mission-canvas.test.tsx for indentation.
 
 ## H667
 

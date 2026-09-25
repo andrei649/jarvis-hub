@@ -23,6 +23,9 @@ logger = logging.getLogger("jarvis.web")
 router = APIRouter(tags=["missions"])
 
 
+_BAD_PLAN_STEP = "a plan step is a title, or {title, parent} where parent is the index of an earlier step"
+
+
 def _store():
     orch = get_orch()
     return getattr(orch, "missions", None) if orch else None
@@ -45,7 +48,8 @@ async def missions_list(status: str = Query(None), limit: int = Query(50, ge=1, 
 
 @router.post("/api/missions", dependencies=[Depends(user_guard)])
 async def missions_create(req: Request):
-    """Create a workspace. Body: {title, goal?, plan?:[step titles], max_steps?, max_seconds?}."""
+    """Create a workspace. Body: {title, goal?, plan?, max_steps?, max_seconds?}; a plan
+    entry is a step title or {title, parent?}, parent the index of an earlier step (H666)."""
     store = _store()
     if store is None:
         return JSONResponse({"error": "missions not available"}, status_code=503)
@@ -66,6 +70,8 @@ async def missions_create(req: Request):
         # Fixed message keyed on the failure category — the exception object never
         # reaches the response (CodeQL: no info exposure); detail is logged instead.
         logger.debug("mission create rejected: %s", log_safe(str(e)))
+        if getattr(e, "code", None) == "bad_plan_step":
+            return JSONResponse({"error": _BAD_PLAN_STEP, "code": "bad_plan_step"}, status_code=400)
         return JSONResponse({"error": "invalid mission parameters"}, status_code=400)
     return nocache_json({"ok": True, "mission": _mission_payload(store, m)})
 

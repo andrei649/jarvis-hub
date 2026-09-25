@@ -154,4 +154,22 @@ describe('Decision Inbox — plans in flight (H315)', () => {
     fireEvent.click(screen.getByLabelText('Reload'));
     await waitFor(() => expect(calls.filter((c) => c.url.includes('/sessions/todo')).length).toBe(before + 1));
   });
+
+  it('indents a subtask under its parent and keeps dangling, self and cyclic parents in view (H666)', async () => {
+    const sub = (id, content, status, parent) => ({ ...item(id, content, status), parent });
+    route([plan('web-1', [
+      sub('b', 'loop b', 'pending', 'a'), sub('a', 'loop a', 'pending', 'b'),
+      item('1', 'ship it', 'in_progress'), sub('1a', 'write tests', 'pending', '1'),
+      sub('1a1', 'edge cases', 'pending', '1a'), sub('me', 'self parent', 'pending', 'me'),
+      sub('o', 'orphan', 'pending', 'gone'),
+    ])]);
+    render(<DecisionInboxPanel />);
+    await screen.findByText('ship it');
+    const rows = Array.from(screen.getByTestId('plans-in-flight').querySelectorAll('li'))
+      .map((li) => [li.textContent.slice(1), li.getAttribute('data-depth'), li.style.paddingLeft]);
+    expect(rows).toEqual([
+      ['ship it', '0', '0px'], ['write tests', '1', '14px'], ['edge cases', '2', '28px'],
+      ['self parent', '0', '0px'], ['orphan', '0', '0px'], ['loop b', '0', '0px'], ['loop a', '0', '0px'],
+    ]);
+  });
 });

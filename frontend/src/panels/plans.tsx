@@ -12,9 +12,14 @@
    guest's, a household member's or a background turn) and whether that text came from
    an untrusted source (the H315 review: tags are per item, so a merge by the owner
    cannot relabel a guest's text). A failed read says it failed; it is never drawn as
-   "no plans". */
+   "no plans".
+
+   H666 — a subtask sits indented under its parent (`parent` is another item's id), drawn
+   by todoTree, the twin of the CLI's builder: a missing, self or cyclic parent draws at
+   the top and no item is dropped. ITEMS_SHOWN counts rows in that order. */
 import React from 'react';
 import { Row, Tag, arr, mono } from '../panel-kit';
+import { todoTree } from '../todo-tree';
 
 export const PLANS_PATH = '/sessions/todo';
 export const PLANS_SHOWN = 3;
@@ -25,7 +30,7 @@ const WORDS: Record<string, string> = {
   pending: 'to do', in_progress: 'in progress', completed: 'done', cancelled: 'cancelled',
 };
 
-type Item = { id?: string; content?: string; status?: string; by?: string; tainted?: boolean };
+type Item = { id?: string; content?: string; status?: string; by?: string; tainted?: boolean; parent?: string };
 type Plan = { session_id?: string; agent?: string; posture?: string; updated_at?: number; todos?: Item[] };
 const WRITERS: Record<string, string> = { guest: 'guest turn', system: 'background turn' };
 
@@ -70,6 +75,7 @@ export function PlansInFlight({ reply, error }: { reply: any; error?: string | n
       </div>
       {plans.map((plan, i) => {
         const items = arr(plan.todos) as Item[];
+        const rows = todoTree(items, (item) => item?.id, (item) => item?.parent);
         const done = items.filter((item) => item.status === 'completed').length;
         const age = planAge(plan.updated_at);
         return (
@@ -82,8 +88,9 @@ export function PlansInFlight({ reply, error }: { reply: any; error?: string | n
               </span>
             </Row>
             <ul style={{ listStyle: 'none', margin: '2px 0 6px 10px', padding: 0, fontSize: 11 }}>
-              {items.slice(0, ITEMS_SHOWN).map((item, k) => (
-                <li key={item.id ?? k} style={{
+              {rows.slice(0, ITEMS_SHOWN).map(([item, depth], k) => (
+                <li key={k} data-depth={depth} style={{
+                  paddingLeft: depth * 14,
                   color: item.status === 'in_progress' ? 'var(--ink)' : 'var(--ink-2)',
                   textDecoration: item.status === 'cancelled' ? 'line-through' : undefined,
                   overflowWrap: 'anywhere',

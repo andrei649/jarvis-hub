@@ -8,7 +8,9 @@ the operator's planners are all written by someone else.
 
 ``todo`` is a session-scoped ToolRPC tool:
 
-* items are ``{id, content, status}``, status one of :data:`STATUSES`;
+* items are ``{id, content, status}``, status one of :data:`STATUSES`, and an optional
+  ``parent``: the id of the item it sits under (H666). The list stays flat, so merge-by-id
+  keeps working; ``todo_tree`` draws it as a tree that loses nothing;
 * a call with ``todos`` replaces the list; with ``merge=true`` it updates items by id
   (only the fields sent) and appends new ones; a call with no ``todos`` reads it;
 * every call answers with the whole list and its counts. The tool loop never swaps that
@@ -79,7 +81,7 @@ _MAX_MARKS = 3
 #: Letters and symbols that render as nothing: the Hangul fillers and the braille blank.
 _BLANK = frozenset("ᅟᅠㅤﾠ⠀")
 _ARG_FIELDS = frozenset({"todos", "merge"})
-_ITEM_FIELDS = frozenset({"id", "content", "status"})
+_ITEM_FIELDS = frozenset({"id", "content", "status", "parent"})
 SHARED_SESSION_DETAIL = (
     "this turn runs on the owner's shared conversation, where only the owner's own turns "
     "keep a list: plan in your reply instead"
@@ -97,6 +99,7 @@ INPUT_SCHEMA: dict[str, Any] = {
                     "id": {"type": "string", "minLength": 1, "maxLength": MAX_ID},
                     "content": {"type": "string", "minLength": 1, "maxLength": MAX_CONTENT},
                     "status": {"type": "string", "enum": list(STATUSES)},
+                    "parent": {"type": "string", "maxLength": MAX_ID},
                 },
                 "required": ["id"],
                 "additionalProperties": False,
@@ -114,7 +117,8 @@ DESCRIPTION = (
     "in_progress, completed or cancelled, and only one item may be in_progress. Every call "
     "returns the whole list, so an update is also a read. Plan multi-step work here and keep "
     "it current: mark the item you start in_progress and mark it completed when it is done. "
-    "The owner can see this list."
+    "To nest a subtask, give it parent: the id of the item it belongs under (an empty parent "
+    "moves it back to the top). The owner can see this list."
 )
 
 
@@ -190,6 +194,20 @@ def _clean_content(raw: Any, item_id: str) -> str:
     return clean
 
 
+def _clean_parent(raw: Any, item_id: str) -> str | None:
+    """The id of the item this one sits under (H666), cleaned like an id; ``""`` is none.
+    It need not name an item in the list: a parent that is missing, the item itself or
+    part of a cycle is drawn at the top (``todo_tree``), never refused and never lost."""
+    if raw == "":
+        return None
+    try:
+        return _clean_id(raw)
+    except TodoError:
+        raise TodoError("todo_bad_parent",
+                        f"item {item_id!r}: parent is the id of another item (text of 1 to {MAX_ID} "
+                        "characters), or empty for none") from None
+
+
 def _clean_status(raw: Any, item_id: str) -> str:
     if raw not in STATUSES:
         raise TodoError("todo_bad_status",
@@ -206,8 +224,15 @@ def counts(todos: list[Mapping[str, Any]]) -> dict[str, int]:
 
 
 def model_items(todos: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """The items as the tool answers them: what the model wrote, nothing it did not."""
-    return [{"id": item["id"], "content": item["content"], "status": item["status"]} for item in todos]
+    """The items as the tool answers them: what the model wrote, nothing it did not. An
+    item with no parent answers without the key."""
+    out = []
+    for item in todos:
+        row = {"id": item["id"], "content": item["content"], "status": item["status"]}
+        if item.get("parent") is not None:
+            row["parent"] = item["parent"]
+        out.append(row)
+    return out
 
 
 def plan_bytes(todos: list[Mapping[str, Any]]) -> int:
@@ -323,6 +348,7 @@ class TodoStore:
                     raise TodoError("todo_duplicate_id", f"id {item_id!r} appears twice in one call")
                 seen.add(item_id)
                 target = by_id.get(item_id) if merge else None
+                parent = raw.get("parent")
                 if target is None:
                     status = raw.get("status")
                     item = {
@@ -333,6 +359,8 @@ class TodoStore:
                         "tainted": taint,
                         "turn": turn,
                     }
+                    if parent is not None and (above := _clean_parent(parent, item_id)) is not None:
+                        item["parent"] = above
                     items.append(item)
                     by_id[item_id] = item
                     wrote_text = True
@@ -347,11 +375,23 @@ class TodoStore:
                         target["tainted"] = bool(target.get("tainted")) or taint
                         target["turn"] = turn
                         wrote_text = True
+                moved = False
+                if parent is not None:
+                    # Where an item sits is the writer's word too, and it costs bytes: a move
+                    # is checked against the cap and taints the item like a status does.
+                    above = _clean_parent(parent, item_id)
+                    if above != target.get("parent"):
+                        if above is None:
+                            target.pop("parent", None)
+                        else:
+                            target["parent"] = above
+                        moved = wrote_text = True
                 if raw.get("status") is not None:
                     target["status"] = _clean_status(raw.get("status"), item_id)
-                    if taint and not target.get("tainted"):
-                        target["tainted"] = True
-                        target["turn"] = turn
+                    moved = True
+                if moved and taint and not target.get("tainted"):
+                    target["tainted"] = True
+                    target["turn"] = turn
             if len(items) > MAX_ITEMS:
                 raise TodoError("todo_too_many", f"a list holds at most {MAX_ITEMS} items")
             if sum(item["status"] == "in_progress" for item in items) > 1:

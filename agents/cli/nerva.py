@@ -1193,10 +1193,15 @@ def _print_plan(ctx: Context, plan: dict) -> None:
         head.append("updated " + time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp)))
     head.append(f"{done}/{len(todos)} done")
     ctx.say("  ·  ".join(head))
-    for item in todos:
+    # Subtasks sit under their parent (H666); a missing, self or cyclic parent draws at
+    # the top and nothing is dropped (agents/core/todo_tree.py).
+    from agents.core.todo_tree import tree
+
+    for item, depth in tree(todos, lambda row: row.get("id"), lambda row: row.get("parent")):
         mark = _TODO_MARKS.get(str(item.get("status")), "[?]")
         tags = _todo_tags(item)
-        ctx.say(f"  {mark} {item.get('content', '')}" + (f"  ({', '.join(tags)})" if tags else ""))
+        ctx.say("  " * (depth + 1) + f"{mark} {item.get('content', '')}"
+                + (f"  ({', '.join(tags)})" if tags else ""))
 
 
 def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
