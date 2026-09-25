@@ -213,6 +213,9 @@ def _error_reason(exc: urllib.error.HTTPError) -> str:
         detail = payload.get("detail")
         if isinstance(detail, list) and detail and isinstance(detail[0], dict):
             msg = detail[0].get("msg")
+            loc = detail[0].get("loc")
+            field = str(loc[-1]) if isinstance(loc, (list, tuple)) and loc else ""
             if isinstance(msg, str) and msg:
-                return msg.removeprefix("Value error, ")[:200]
+                msg = msg.removeprefix("Value error, ")
+                return (f"{field}: {msg}" if field and field != "body" else msg)[:200]
     return exc.reason if isinstance(exc.reason, str) else str(exc.code)

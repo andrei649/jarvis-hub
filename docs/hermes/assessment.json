@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "fd08101c8260b8b1167f339bb98a94891d31de82",
-  "assessed_at": "2026-09-25T11:38:52Z",
+  "base_sha": "dfa517ea4cbc8aef99b095d55cfccb698d8ec549",
+  "assessed_at": "2026-09-25T11:52:12Z",
   "reviews": [
     {
       "id": "H001",
@@ -14,7 +14,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -39,7 +39,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_oneshot.py",
@@ -68,7 +68,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -97,7 +97,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -114,7 +114,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -131,7 +131,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -156,7 +156,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -181,7 +181,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -206,7 +206,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -227,7 +227,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_dep_audit.py",
@@ -248,7 +248,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -324,7 +324,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_desktop_setup.py",
@@ -345,7 +345,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_prompt_size.py",
@@ -362,7 +362,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -379,7 +379,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -404,7 +404,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -545,7 +545,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -668,7 +668,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -1535,7 +1535,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -1576,7 +1576,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -1939,7 +1939,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_admin_settings_mutations.py",
@@ -2305,7 +2305,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         }
       ]
     },
@@ -2539,7 +2539,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/web.py",
@@ -2604,12 +2604,12 @@
       "id": "H227",
       "row_sha256": "4f9c0d30c2a5fab5c2b3f64fa932518a530579ad6d97986c602f974fc939d0b3",
       "status": "partial",
-      "summary": "The data exists behind several separate routes, but there is no single inspector and no view of the resolved system prompt on any surface. The terminal client agents/cli/nerva.py offers three related verbs. `nerva status` (cmd_status, agents/cli/nerva.py:682) prints version, backend, and the model with its /status inventory word, where a legacy `ready` is now shown as `resident`. It also prints a `runnable:` line with the hub's strict route verdict: route → provider/model plus a named reason, read from GET /api/onboarding/command-center by `_runnable` (agents/cli/nerva.py:542). It then prints busy agents, channels and e-stop. `nerva tools` (cmd_tools, agents/cli/nerva.py:850) shows the recent tool-event trail, not the available toolset. `nerva prompt-size` (cmd_prompt_size, agents/cli/nerva.py:2370) shows the offline per-component prompt cost. GET /api/toolrpc/tools (agents/core/routers/mesh.py:170) and /sandbox/status list registered ToolRPC tools. GET /skills (agents/core/routers/skills.py:30) lists skills, GET /api/admin/mcp (agents/core/routers/mcp.py:51) lists MCP servers, and GET /api/system-map (agents/core/routers/system_map.py:387) serves the component map. Each HUD panel in frontend/src/gap.tsx reads one of these on its own.",
+      "summary": "The data exists behind several separate routes, but there is no single inspector and no view of the resolved system prompt on any surface. The terminal client agents/cli/nerva.py offers three related verbs. `nerva status` (cmd_status, agents/cli/nerva.py:682) prints version, backend, and the model with its /status inventory word, where a legacy `ready` is now shown as `resident`. It also prints a `runnable:` line with the hub's strict route verdict: route → provider/model plus a named reason, read from GET /api/onboarding/command-center by `_runnable` (agents/cli/nerva.py:542). It then prints busy agents, channels and e-stop. `nerva tools` (cmd_tools, agents/cli/nerva.py:850) shows the recent tool-event trail, not the available toolset. `nerva prompt-size` (cmd_prompt_size, agents/cli/nerva.py:2433) shows the offline per-component prompt cost. GET /api/toolrpc/tools (agents/core/routers/mesh.py:170) and /sandbox/status list registered ToolRPC tools. GET /skills (agents/core/routers/skills.py:30) lists skills, GET /api/admin/mcp (agents/core/routers/mcp.py:51) lists MCP servers, and GET /api/system-map (agents/core/routers/system_map.py:387) serves the component map. Each HUD panel in frontend/src/gap.tsx reads one of these on its own.",
       "remaining": "No inspector payload or view exists. Nothing composes these into one read-only payload: model, agent state and context usage; the tools the tool profile actually offers this principal and agent (ToolProfileResolver output, not the raw registry); the advertised skills catalog; the MCP servers with transport and connection status; and the resolved system prompt (Agent.build_prompt with the core-memory, skills and runtime-state blocks). `nerva status --json` now joins /status, e-stop and the runnable verdict, but only on the client side and with no context usage, tools, skills, MCP servers or prompt. The resolved system prompt appears on no surface. The terminal client has no verb that shows tools, skills, MCP servers or the prompt, and the HUD has no panel reading a shared payload, so nothing guarantees the two surfaces agree.",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -2674,11 +2674,11 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/cli/client.py",
-          "sha256": "f1665b99a12de098c808220b78286c884a18f2794cb7b0895a29700fb7011192"
+          "sha256": "33e6c1eafb604dce1c9c510f82661f827edf4ddca772b3207489ef0fbda4dd62"
         },
         {
           "path": "agents/core/support_bundle.py",
@@ -2833,7 +2833,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -2920,7 +2920,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -3042,11 +3042,11 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/cli/client.py",
-          "sha256": "f1665b99a12de098c808220b78286c884a18f2794cb7b0895a29700fb7011192"
+          "sha256": "33e6c1eafb604dce1c9c510f82661f827edf4ddca772b3207489ef0fbda4dd62"
         },
         {
           "path": "frontend/src/api/live.ts",
@@ -3286,7 +3286,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -4054,7 +4054,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/plans.tsx",
@@ -4896,7 +4896,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/web.py",
@@ -5286,7 +5286,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -5781,7 +5781,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -5913,7 +5913,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
@@ -6102,7 +6102,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -6376,7 +6376,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/job-builder.tsx",
@@ -6503,7 +6503,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_h465_refine.py",
@@ -6764,7 +6764,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_channel_outbound.py",
@@ -6806,7 +6806,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -6855,7 +6855,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -6924,7 +6924,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_o26_f6_boot_guards.py",
@@ -8221,7 +8221,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/cockpit.tsx",
@@ -8270,7 +8270,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "equivalent",
-      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:238). App.submit sends an image draft to runVision (frontend/src/app.tsx:372, frontend/src/app.tsx:347). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1441). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:301), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:270) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:1921), dispatched before any /chat body is built (agents/cli/nerva.py:1630). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1721; _read_image, agents/cli/nerva.py:1731). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound and a 10 s deadline (_run_reader, agents/cli/nerva.py:1820): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory (never the current one) on Windows, and through interop under WSL (_clipboard_command, agents/cli/nerva.py:1798; _clipboard_image, agents/cli/nerva.py:1865). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off this machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:1978). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash), and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
+      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:238). App.submit sends an image draft to runVision (frontend/src/app.tsx:372, frontend/src/app.tsx:347). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1441). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:301), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:270) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:1978), dispatched before any /chat body is built (agents/cli/nerva.py:1630). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1721; _read_image, agents/cli/nerva.py:1731). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:1831): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:1806; _clipboard_image, agents/cli/nerva.py:1916). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2041). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
       "remaining": "",
       "evidence": [
         {
@@ -8303,7 +8303,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -8327,7 +8327,7 @@
         },
         {
           "path": "tests/test_nerva_chat_image.py",
-          "sha256": "9fc90724525c0547cc3124de2ee645f6758f28dcaf5eb74206005b4ca1fb8a3f"
+          "sha256": "267f2f510c9a1bef5b7050d75383b99581f3e16eeb3e8c690efe7db1dfb16194"
         },
         {
           "path": "docs/test-manual/02-chat-routing-agents.md",
@@ -8335,11 +8335,15 @@
         },
         {
           "path": "agents/cli/client.py",
-          "sha256": "f1665b99a12de098c808220b78286c884a18f2794cb7b0895a29700fb7011192"
+          "sha256": "33e6c1eafb604dce1c9c510f82661f827edf4ddca772b3207489ef0fbda4dd62"
         },
         {
           "path": "tests/test_h586b_image_review.py",
-          "sha256": "c9f8220cfd1c2b4a2fa402f730d97de791726b4093e1476daae74bb6df719cdc"
+          "sha256": "17d9914381dd62f2cd1880b0ff23eaab2fba52695991af42743a5e7f8ec73131"
+        },
+        {
+          "path": "tests/test_h586c_image_review.py",
+          "sha256": "1af1bfb71d2b5ea695c9bfb80b65785a7a11c38e1879c02eb12cbbf88de21a35"
         }
       ]
     },
@@ -8728,7 +8732,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         }
       ]
     },
@@ -9018,7 +9022,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/todo-tree.ts",
@@ -9115,7 +9119,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_tool_rpc_runtime.py",
@@ -9297,7 +9301,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -9846,7 +9850,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -9936,7 +9940,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "tests/test_jobs_doctor.py",
@@ -10054,7 +10058,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "b2a399d1bd8c9e8f35096bf3ff1bbf29bc42dc51782fddf71111a78b4f5f5fd9"
+          "sha256": "2ae4bc74468fcedd1bb22fc6dc1ef47b80400286f76c7fb26316b00c6661880f"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",

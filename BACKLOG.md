@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-25 H586 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H586b found no major, four minors and eight nits (the slow-model, refusal and memory fixes held live; no image reached /chat):
+  - **An oversized clipboard image read as empty (B1).** Cut off at the bound, it now says "larger than 4 MiB" again.
+  - **A descendant stretched the deadline (B2).** On POSIX the reader runs in a session of its own, the pipe is read against a monotonic deadline (no thread), and the whole process group is killed at the deadline, past the bound or on an interrupt.
+  - **`shutil.which` put the current directory back (B3).** The Windows fallback walks the absolute PATH entries itself; WSL also finds `powershell.exe` on its PATH.
+  - **Survivors (B4)** pinned with real processes: the reader's exit code, the group kill, the bound; the status read's 403 and failures with their receipts; the `--json` receipt; WSL detection.
+  - **Nits.** Hub text filtered before the terminal; a user name, query or fragment in `--remote-vision` refused; a receipt on an interrupted clipboard read; the field named in a validation reason; wording.
+  16 mutants, all caught but one equivalent. 49 rows re-stamped.
+  Tests: backend 15,105 → 15,128 (`tests/test_h586c_image_review.py` 23); vitest unchanged at 1,462.
+
 - 2026-09-25 H670 one shared behaviour contract under every persona (partial → equivalent, #1207; headline 147 → 148/697).
 
   The mechanism (SOUL = system prompt, the H387 scan and cap, versions, the compaction re-read) was there; the shared content was not: every SOUL described character, none specified behaviour. Now:

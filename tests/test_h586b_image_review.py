@@ -177,16 +177,20 @@ def test_windows_powershell_comes_from_the_system_directory():
 
 
 def test_the_current_directory_is_never_searched_for_powershell(tmp_path, monkeypatch):
+    # review-H586b B3: the PATH entries are walked directly; shutil.which would put the
+    # current directory back on Windows whatever path it is given.
     monkeypatch.chdir(tmp_path)
-    searched = []
+    looked = []
 
-    def which(name, path=None):
-        searched.append(path)
-        return None
+    def exists(path):
+        looked.append(path)
+        return False
 
     env = {"PATH": f".{nerva.os.pathsep}{tmp_path}{nerva.os.pathsep}relative{nerva.os.pathsep}/opt/ps"}
-    assert nerva._clipboard_command("win32", env, which, exists=lambda path: False) is None
-    assert searched and all(p == "/opt/ps" for p in searched)
+    never = lambda *a, **k: pytest.fail("shutil.which must not be asked")  # noqa: E731
+    assert nerva._clipboard_command("win32", env, never, exists=exists) is None
+    searched = {nerva.os.path.dirname(p) for p in looked[1:]}           # [0] is the system copy
+    assert searched == {"/opt/ps"}
 
 
 def test_macos_without_pngpaste_uses_osascript():

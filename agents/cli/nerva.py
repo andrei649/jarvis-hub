@@ -1782,17 +1782,25 @@ def _is_wsl() -> bool:
 
 def _windows_powershell(environ: Mapping[str, str], which: Callable[..., str | None],
                         exists: Callable[[str], bool]) -> str | None:
-    """Windows PowerShell from the system directory, else a PATH lookup that leaves out
-    the current directory, which Windows searches first (review-H586 m4)."""
+    """Windows PowerShell from the system directory, else the first powershell.exe or
+    pwsh.exe in an absolute PATH entry that is not the current directory, which Windows
+    searches first (review-H586 m4)."""
     system = os.path.join(environ.get("SystemRoot") or "C:\\Windows", "System32",
                           "WindowsPowerShell", "v1.0", "powershell.exe")
     if exists(system):
         return system
+    # Never shutil.which here: on Windows it puts the current directory back at the
+    # front of any path it is given (review-H586b B3). The absolute PATH entries are
+    # walked instead, the current directory left out.
     cwd = os.path.normcase(os.path.abspath(os.getcwd()))
     entries = [e for e in (environ.get("PATH") or "").split(os.pathsep)
                if e and e != "." and os.path.isabs(e) and os.path.normcase(os.path.abspath(e)) != cwd]
-    search = os.pathsep.join(entries)
-    return (which("powershell", path=search) or which("pwsh", path=search)) if search else None
+    for name in ("powershell.exe", "pwsh.exe"):
+        for entry in entries:
+            candidate = os.path.join(entry, name)
+            if exists(candidate):
+                return candidate
+    return None
 
 
 def _clipboard_command(platform: str, environ: Mapping[str, str],
@@ -1812,46 +1820,89 @@ def _clipboard_command(platform: str, environ: Mapping[str, str],
         return ["wl-paste", "--no-newline", "--type", "image/png"]
     if environ.get("DISPLAY") and which("xclip"):
         return ["xclip", "-selection", "clipboard", "-target", "image/png", "-out"]
-    if wsl and exists(_WSL_POWERSHELL):
-        return [_WSL_POWERSHELL, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD]
+    if wsl:
+        # The interop default, else wherever PATH puts it (a custom automount root).
+        exe = _WSL_POWERSHELL if exists(_WSL_POWERSHELL) else which("powershell.exe")
+        if exe:
+            return [exe, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD]
     return None
 
 
 def _run_reader(argv: list[str], limit: int, deadline: float = 10.0) -> tuple[int | None, bytes, str]:
     """``(exit code, stdout, why)``: the reader's output, read up to *limit* + 1 bytes
     and never more, within *deadline* seconds; a reader that says more, or takes
-    longer, is killed (review-H586 m2)."""
+    longer, is killed (review-H586 m2). On POSIX it runs in a session of its own and
+    the whole group is killed, so a descendant holding the pipe open cannot stretch the
+    deadline, and the pipe is read against a monotonic clock, never by a thread
+    (review-H586b B2). An interrupt kills it too."""
     import subprocess  # nosec B404  (a fixed argv, never a shell)
-    import threading
+    import time
 
+    posix = os.name == "posix"
     try:
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,  # noqa: S603  # nosec B603
-                                stderr=subprocess.DEVNULL)
+                                stderr=subprocess.DEVNULL, start_new_session=posix)
     except OSError as exc:
         return None, b"", f"{argv[0]} failed ({exc.__class__.__name__})"
-    box: dict[str, bytes] = {}
-    pump = threading.Thread(target=lambda: box.setdefault("out", proc.stdout.read(limit + 1)),
-                            daemon=True)
-    pump.start()
-    pump.join(deadline)
-    try:
-        if pump.is_alive():
-            proc.kill()
-            pump.join(2)
-            return None, b"", f"{argv[0]} did not answer within {deadline:g} s"
-        out = box.get("out", b"")
-        if len(out) > limit:
-            proc.kill()
-            return None, out[: limit + 1], ""
-        try:
-            code = proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            code = None
-        return code, out, ""
-    finally:
+
+    def kill() -> None:
         with _suppressed():
-            proc.stdout.close()
+            if posix:
+                import signal
+
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+
+    end = time.monotonic() + deadline
+    out = bytearray()
+    timed_out = False
+    pump_alive = False
+    try:
+        if posix:
+            import selectors
+
+            fd = proc.stdout.fileno()
+            with selectors.DefaultSelector() as selector:
+                selector.register(fd, selectors.EVENT_READ)
+                while len(out) <= limit:
+                    left = end - time.monotonic()
+                    if left <= 0 or not selector.select(left):
+                        timed_out = True
+                        break
+                    chunk = os.read(fd, min(1 << 16, limit + 1 - len(out)))
+                    if not chunk:
+                        break
+                    out += chunk
+        else:
+            import threading
+
+            box: dict[str, bytes] = {}
+            pump = threading.Thread(target=lambda: box.setdefault("out", proc.stdout.read(limit + 1)),
+                                    daemon=True)
+            pump.start()
+            pump.join(deadline)
+            pump_alive = pump.is_alive()
+            timed_out = pump_alive
+            out += box.get("out", b"")
+        if timed_out:
+            kill()
+            return None, b"", f"{argv[0]} did not answer within {deadline:g} s"
+        if len(out) > limit:
+            kill()
+            return None, bytes(out[: limit + 1]), ""
+        try:
+            code = proc.wait(timeout=max(0.1, end - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            kill()
+            code = None
+        return code, bytes(out), ""
+    finally:
+        if proc.poll() is None:
+            kill()                       # an interrupt, or anything else, never leaves it running
+        if not pump_alive:
+            with _suppressed():
+                proc.stdout.close()
         with _suppressed():
             proc.wait(timeout=2)
 
@@ -1878,6 +1929,10 @@ def _clipboard_image(environ: Mapping[str, str]) -> tuple[bytes | None, str]:
     code, raw, why = _run_reader(argv, 2 * VISION_MAX_BYTES + 64 if hexed else VISION_MAX_BYTES)
     if why:
         return None, f"--clipboard-image: {why}"
+    if len(raw) > (2 * VISION_MAX_BYTES + 64 if hexed else VISION_MAX_BYTES):
+        # Cut off at the bound (and killed): an image too large, not an empty
+        # clipboard (review-H586b B1).
+        return None, "--clipboard-image: the image is larger than 4 MiB"
     if hexed and code == 0 and raw:
         text = raw.decode("utf-8", errors="replace").strip()
         head, _, body = text.partition("«data PNGf")
@@ -1913,6 +1968,8 @@ def _destination_key(url: str) -> tuple[str, str, int | None, str] | None:
     scheme = parts.scheme.lower()
     if scheme not in ("http", "https") or not parts.hostname:
         return None
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment:
+        return None                     # a look-alike (user@host) is not an acknowledgement
     if port == {"http": 80, "https": 443}[scheme]:
         port = None
     return scheme, parts.hostname.lower(), port, parts.path.rstrip("/")
@@ -1934,6 +1991,7 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
         return finish(EXIT_USAGE, status="usage", reason=why)
 
     def failed(why: str) -> int:
+        why = _plain(why, 500)                       # hub text never reaches the terminal raw
         ctx.err.write(f"{why}\n")
         return finish(EXIT_FAILED, status="failed", reason=why)
 
@@ -1951,7 +2009,8 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
         return usage(f"{count} images given; one turn carries up to {VISION_MAX_IMAGES}")
     acknowledged = getattr(ns, "remote_vision", None)
     if acknowledged is not None and _destination_key(acknowledged) is None:
-        return usage(f"--remote-vision {_plain(acknowledged, 200)}: not an http(s) address")
+        return usage(f"--remote-vision {_plain(acknowledged, 200)}: not a plain http(s) address "
+                     "(no user name, query or fragment)")
     images: list[str] = []
     for path in paths:
         raw, why = _read_image(path)
@@ -1959,7 +2018,11 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
             return usage(why)
         images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")
     if getattr(ns, "clipboard_image", False):
-        raw, why = _clipboard_image(ctx.environ)
+        try:
+            raw, why = _clipboard_image(ctx.environ)
+        except KeyboardInterrupt:
+            finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+            raise
         if raw is None:
             return usage(why)
         images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")

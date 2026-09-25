@@ -240,8 +240,9 @@ def test_the_receipt_and_json(png, tmp_path):
 def test_the_clipboard_reader_is_the_platforms_own(platform, environ, tools, first):
     argv = nerva._clipboard_command(platform, environ,
                                     lambda name, path=None: f"/bin/{name}" if name in tools else None,
-                                    exists=lambda path: False)
-    assert (argv[0].rsplit("/", 1)[-1] if argv else None) == first
+                                    exists=lambda path: (platform.startswith("win") and "powershell" in tools
+                                                         and path.endswith("powershell.exe")))
+    assert (argv[0].replace("\\", "/").rsplit("/", 1)[-1].removesuffix(".exe") if argv else None) == first
 
 
 def _clipboard(monkeypatch, stdout, returncode=0):
