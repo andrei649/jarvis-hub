@@ -84,6 +84,14 @@ POINTER_ANCHORS = (
 )
 MAX_TOUR_STEPS = 8
 MAX_CAPTION = 160
+#: Tips and tours point for a moment; they are not something the owner keeps. They live in
+#: a ring of their own: at most ``_MAX_POINTERS``, each gone ``POINTER_TTL_SECONDS`` after it
+#: was posted (unless pinned), and never counted against the other elements' 200, so a
+#: flood of tips cannot push a saved reply off the canvas. The HUD overlay (pointer.tsx)
+#: shows one for the same ten minutes.
+POINTER_TYPES = ("tip", "tour")
+POINTER_TTL_SECONDS = 600
+_MAX_POINTERS = 20
 
 
 def _caption(v) -> str:
@@ -101,11 +109,14 @@ def _pointer_step(p: dict) -> dict:
     return {"target": target, "caption": caption}
 
 
-def _sanitize(el_type: str, payload: dict) -> dict:
-    """Return a sanitized payload for a known type, or raise ValueError."""
+def _sanitize(el_type: str, payload: dict, *, untrusted: bool = False) -> dict:
+    """Return a sanitized payload for a known type, or raise ValueError.
+
+    ``untrusted`` marks a tip or a tour. It is the poster's word (the tool knows whose
+    turn it is, the route who called), never the payload's."""
     p = payload if isinstance(payload, dict) else {}
     if el_type == "tip":
-        return {**_pointer_step(p), "untrusted": p.get("untrusted") is True}
+        return {**_pointer_step(p), "untrusted": bool(untrusted)}
     if el_type == "tour":
         steps = p.get("steps")
         if not isinstance(steps, (list, tuple)) or not steps:
@@ -113,7 +124,7 @@ def _sanitize(el_type: str, payload: dict) -> dict:
         if len(steps) > MAX_TOUR_STEPS:
             raise ValueError(f"at most {MAX_TOUR_STEPS} steps")
         return {"title": _caption(p.get("title"))[:120], "steps": [_pointer_step(x) for x in steps],
-                "untrusted": p.get("untrusted") is True}
+                "untrusted": bool(untrusted)}
     if el_type in ("text", "markdown"):
         body = _s(p.get("body"), 4000 if el_type == "markdown" else 2000)
         if not body:
@@ -152,6 +163,13 @@ def _sanitize(el_type: str, payload: dict) -> dict:
 ALLOWED_TYPES = ("text", "markdown", "list", "link", "metric", "table", "image_ref", "tip", "tour")
 
 
+def _age(el: dict, now: float) -> float:
+    try:
+        return now - float(el.get("created_at") or 0)
+    except (TypeError, ValueError):
+        return float("inf")
+
+
 class CanvasStore(JsonStore):
     """Agent-posted, governed visual elements."""
 
@@ -165,9 +183,10 @@ class CanvasStore(JsonStore):
         raw = raw if isinstance(raw, dict) else {}
         self._elements = raw.get("elements", [])
 
-    def post(self, agent: str, el_type: str, payload: dict, *, pinned: bool = False) -> dict:
+    def post(self, agent: str, el_type: str, payload: dict, *, pinned: bool = False,
+             untrusted: bool = False) -> dict:
         """Validate + sanitize an element and add it. Raises ValueError if unsafe."""
-        clean = _sanitize(el_type, payload)        # raises on unknown type / bad payload
+        clean = _sanitize(el_type, payload, untrusted=untrusted)   # raises on unknown type / bad payload
         el = {
             "id": secrets.token_urlsafe(8),
             "agent": _s(agent, 64) or "agent",
@@ -183,17 +202,30 @@ class CanvasStore(JsonStore):
         return dict(el)
 
     def _evict(self) -> None:
-        if len(self._elements) <= _MAX_ELEMENTS:
-            return
-        # drop oldest *unpinned* first
-        unpinned = [e for e in self._elements if not e.get("pinned")]
-        drop = len(self._elements) - _MAX_ELEMENTS
-        to_remove = {id(e) for e in unpinned[:drop]}
-        self._elements = [e for e in self._elements if id(e) not in to_remove][-_MAX_ELEMENTS:]
+        # H309: pointers age out and are capped among themselves, apart from the rest.
+        now = time.time()
+        pointers = [e for e in self._elements if e.get("type") in POINTER_TYPES
+                    and (e.get("pinned") or _age(e, now) <= POINTER_TTL_SECONDS)][-_MAX_POINTERS:]
+        others = [e for e in self._elements if e.get("type") not in POINTER_TYPES]
+        if len(others) > _MAX_ELEMENTS:
+            # drop oldest *unpinned* first
+            unpinned = [e for e in others if not e.get("pinned")]
+            to_remove = {id(e) for e in unpinned[:len(others) - _MAX_ELEMENTS]}
+            others = [e for e in others if id(e) not in to_remove][-_MAX_ELEMENTS:]
+        keep = {id(e) for e in pointers} | {id(e) for e in others}
+        self._elements = [e for e in self._elements if id(e) in keep]
 
     def list(self, agent: Optional[str] = None) -> list[dict]:
         items = [dict(e) for e in self._elements if agent is None or e.get("agent") == agent]
         return items[::-1]                         # newest first
+
+    def pointers(self, now: Optional[float] = None) -> list[dict]:
+        """H309 — the tips and tours posted in the last ``POINTER_TTL_SECONDS``, newest
+        first: all the HUD's pointer overlay reads, aged by the hub's clock."""
+        now = time.time() if now is None else now
+        items = [dict(e) for e in self._elements
+                 if e.get("type") in POINTER_TYPES and _age(e, now) <= POINTER_TTL_SECONDS]
+        return items[::-1][:_MAX_POINTERS]
 
     def get(self, el_id: str) -> Optional[dict]:
         for e in self._elements:

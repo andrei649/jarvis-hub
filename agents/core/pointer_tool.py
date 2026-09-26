@@ -7,14 +7,18 @@ calls ``canvas_point`` with a ``target`` and a ``caption`` (a tip), or a ``title
 line per caption, bounded — and the HUD's pointer overlay draws it next to the named
 element, paging a tour with Back and Next.
 
-- **Ungated.** A tip only draws on the owner's own screen; it runs nothing and changes no
-  state beyond the canvas, which the owner clears.
+- **Ungated.** A tip runs nothing. It adds one element to the shared canvas, which every
+  viewer with a user token already reads and can post to, so it shows on every viewer's
+  HUD, not the owner's alone. Tips and tours keep to a small ring of their own there (at
+  most twenty, each gone after ten minutes), so a flood of them never pushes a saved
+  element off the canvas.
 - **Named places only.** A target must be one of :data:`~agents.core.canvas.POINTER_ANCHORS`
   (the rail's modes, the message box, the Decision Inbox panel, the Console button); the
   schema offers exactly that list, so a tip can never land on an approve or reject button.
 - **Said who wrote it.** A tip written by an untrusted turn (an inbound channel, a
-  recalled or fetched text) or by a turn that is not the owner's is marked ``untrusted``,
-  and the HUD shows it as such.
+  recalled or fetched text) or by a turn that is not the owner's at the operator surface
+  is marked ``untrusted``, and the HUD shows it as such. The mark is this tool's word to
+  the canvas, never a field of the payload.
 """
 from __future__ import annotations
 
@@ -23,8 +27,10 @@ from collections.abc import Callable
 from typing import Any
 
 from agents.core.canvas import MAX_CAPTION, MAX_TOUR_STEPS, POINTER_ANCHORS
+from agents.core.tool_profiles import PRINCIPAL_OWNER, SURFACE_OPERATOR
 
 logger = logging.getLogger("jarvis.pointer_tool")
+_OWNER_AT_THE_HUD = f"{SURFACE_OPERATOR}/{PRINCIPAL_OWNER}"
 
 TOOL_NAME = "canvas_point"
 CAPABILITY_ID = "tool:canvas_point"
@@ -75,8 +81,8 @@ def register_pointer_tool(
         try:
             if is_untrusted_source(origin()):
                 return True
-            where = posture() if posture is not None else "owner/owner"
-            return not str(where).endswith("/owner")
+            where = posture() if posture is not None else _OWNER_AT_THE_HUD
+            return str(where) != _OWNER_AT_THE_HUD
         except Exception:
             logger.warning("canvas_point: the turn's origin could not be read; marked untrusted", exc_info=True)
             return True
@@ -94,11 +100,11 @@ def register_pointer_tool(
             return {"ok": False, "reason": "canvas_unavailable"}
         untrusted = _untrusted()
         if steps is not None:
-            el_type, payload = "tour", {"title": args.get("title"), "steps": steps, "untrusted": untrusted}
+            el_type, payload = "tour", {"title": args.get("title"), "steps": steps}
         else:
-            el_type, payload = "tip", {"target": target, "caption": args.get("caption"), "untrusted": untrusted}
+            el_type, payload = "tip", {"target": target, "caption": args.get("caption")}
         try:
-            el = store.post(current_tool_actor() or "jarvis", el_type, payload)
+            el = store.post(current_tool_actor() or "jarvis", el_type, payload, untrusted=untrusted)
         except ValueError as exc:
             return {"ok": False, "reason": "invalid", "detail": str(exc)[:200]}
         return {"ok": True, "id": el["id"], "type": el_type, "untrusted": untrusted,

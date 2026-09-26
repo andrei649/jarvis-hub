@@ -1,11 +1,12 @@
 """Agent Canvas / A2UI endpoints (H12.18) — extracted from web.py (CLN-3)."""
 
+import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import _web, user_guard
 
 from agents.core.web_helpers import nocache_json, error_json
 from agents.core.app_state import get_orch
@@ -39,12 +40,24 @@ async def canvas_list(agent: Optional[str] = None):
     return nocache_json({"elements": _get_canvas().list(agent)})
 
 
+@router.get("/api/canvas/pointers", dependencies=[Depends(user_guard)])
+async def canvas_pointers():
+    """H309 — only the live tips and tours, with the hub's clock: what the HUD's pointer
+    overlay polls, instead of the whole canvas every few seconds."""
+    now = time.time()
+    return nocache_json({"elements": _get_canvas().pointers(now), "now": now})
+
+
 @router.post("/api/canvas/post", dependencies=[Depends(user_guard)])
-async def canvas_post(body: CanvasPostBody):
-    """Add a typed, sanitized element. Unsafe/unknown types are rejected (422)."""
+async def canvas_post(body: CanvasPostBody, request: Request):
+    """Add a typed, sanitized element. Unsafe/unknown types are rejected (422).
+
+    H309: a tip or a tour posted here is marked untrusted unless the owner (an admin
+    credential) sent it; the payload has no say in that."""
+    untrusted = not _web()._web_principal(request).admin
     try:
         return nocache_json(_get_canvas().post(body.agent, body.type, body.payload,
-                                                    pinned=body.pinned))
+                                                    pinned=body.pinned, untrusted=untrusted))
     except ValueError as e:
         return error_json(e, 422, "invalid or unsupported canvas element")
 

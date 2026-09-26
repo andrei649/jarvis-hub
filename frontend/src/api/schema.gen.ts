@@ -1247,6 +1247,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/canvas/pointers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Canvas Pointers
+         * @description H309 — only the live tips and tours, with the hub's clock: what the HUD's pointer
+         *     overlay polls, instead of the whole canvas every few seconds.
+         */
+        get: operations["canvas_pointers_api_canvas_pointers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas/post": {
         parameters: {
             query?: never;
@@ -1259,6 +1280,9 @@ export interface paths {
         /**
          * Canvas Post
          * @description Add a typed, sanitized element. Unsafe/unknown types are rejected (422).
+         *
+         *     H309: a tip or a tour posted here is marked untrusted unless the owner (an admin
+         *     credential) sent it; the payload has no say in that.
          */
         post: operations["canvas_post_api_canvas_post_post"];
         delete?: never;
@@ -13759,6 +13783,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canvas_pointers_api_canvas_pointers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -76,6 +76,7 @@
   "GET /api/cameras/events": "user",
   "GET /api/cameras/status": "user",
   "GET /api/canvas": "user",
+  "GET /api/canvas/pointers": "user",
   "GET /api/capabilities": "user",
   "GET /api/capture": "user",
   "GET /api/capture/export": "user",

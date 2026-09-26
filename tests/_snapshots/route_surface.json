@@ -76,6 +76,7 @@
   "GET /api/cameras/events",
   "GET /api/cameras/status",
   "GET /api/canvas",
+  "GET /api/canvas/pointers",
   "GET /api/capabilities",
   "GET /api/capture",
   "GET /api/capture/export",

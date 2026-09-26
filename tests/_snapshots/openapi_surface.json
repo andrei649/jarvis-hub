@@ -76,6 +76,7 @@
   "GET /api/cameras/events": "camera_events_api_cameras_events_get",
   "GET /api/cameras/status": "camera_status_api_cameras_status_get",
   "GET /api/canvas": "canvas_list_api_canvas_get",
+  "GET /api/canvas/pointers": "canvas_pointers_api_canvas_pointers_get",
   "GET /api/capabilities": "capabilities_api_capabilities_get",
   "GET /api/capture": "capture_list_api_capture_get",
   "GET /api/capture/export": "capture_export_api_capture_export_get",
