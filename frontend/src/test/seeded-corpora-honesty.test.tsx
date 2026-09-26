@@ -235,4 +235,13 @@ describe('AdminMode over the honest corpus shows no seed fiction', () => {
     expect(screen.getByText('sk-a…2f')).toBeTruthy();
     expect(screen.queryByText(/4f2a/)).toBeNull();
   });
+
+  it('a key names the layer it came from when the hub says (H273)', () => {
+    const sources = { sources: [{ key: 'ANTHROPIC_API_KEY', layer: 'user_env', label: 'data-home .env',
+      shadowed: [], masked: true }] };
+    V2.ADMIN = { ...honestAdminSeed(), keys: hydrateAdminKeys(REAL_ENV, sources) };
+    render(<AdminMode t={{ admin: 'Admin' }} />);
+    expect(screen.getByText('sk-a…2f · data-home .env')).toBeTruthy();
+    expect(screen.getByText('****')).toBeTruthy();                 // no layer known: the mask alone
+  });
 });

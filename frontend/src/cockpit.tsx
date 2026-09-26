@@ -1,4 +1,5 @@
 import {ComposerImages,useComposerImages} from './composer-images';
+import { ContextRefHints, acceptRef, useContextRefs } from './context-refs';
 /* HUD v2 · COCKPIT — conversation + cognition trace + input */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
@@ -6,6 +7,7 @@ import { V2 } from './data';
 import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
+import { Markdown } from './markdown';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -72,7 +74,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
         ) : m.role==='vision' ? (
           <div className="msg agent" key={i}>
             <div className="mtag"><span className="who">VISION ANALYSIS</span><span className="ts">{m.ts}</span></div>
-            <div className="bubble">{renderRich(m.text)}</div>
+            <div className="bubble"><Bubble text={m.text} /></div>
             <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
           </div>
         ) : (
@@ -88,7 +90,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
                 </span>
               )}
             </div>
-            <div className="bubble">{renderRich(m.text)}</div>
+            <div className="bubble"><Bubble text={m.text} /></div>
             {m.prov && (
               <div className="prov-chip" onClick={()=>onProv(m.prov)}>
                 <Icon d={ICONS.shield} size={12}/>
@@ -117,11 +119,14 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
     </div>
   );
 }
-function renderRich(text){
-  // bold **x**
-  const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((p,i)=> p.startsWith('**') ? <b key={i} style={{color:'var(--accent-light)'}}>{p.slice(2,-2)}</b> : p);
-}
+/* H168 — agent text is Markdown, rendered by the one shared, React-only renderer
+   (markdown.tsx): lists, fences, tables and http(s)/same-origin links render; raw HTML
+   and any other link stay text; a single newline is a line break. Memoised on the
+   text, so a streamed token re-parses only the bubble it lands in. The owner's own
+   turns are shown as typed. */
+const Bubble = React.memo(function Bubble({ text }: { text: string }) {
+  return <Markdown text={text} className="md md-inline" breaks />;
+});
 
 /* ---- Cognition trace ---- */
 function CognitionStream({ trace, t }) {
@@ -218,6 +223,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   const [cfgOpen,setCfgOpen]=useState(false);
   const draft=useComposerImages();
   const fileInput=useRef<HTMLInputElement>(null);
+  const refs=useContextRefs(val);   // H579: @file: completion
   const submit=()=>{
     if(draft.images.length){const vision=draft.submission();if(!vision)return;
       if(onSubmit(val.trim()||'Describe these images.',vision)===false)return;
@@ -265,9 +271,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         <button className="mic" aria-label="Choose images" title="Attach images" onClick={()=>fileInput.current?.click()}>▧</button>
         <span className="pre">▸</span>
         <span className="chan">{t.channel}</span>
-        <div className="field">
-          <input value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
-            onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
+        <div className="field" style={{position:'relative'}}>
+          <ContextRefHints items={refs} onPick={ref=>setVal(acceptRef(val,ref))}/>
+          <input data-composer="1" data-anchor="composer" value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
+            onKeyDown={e=>{ if(e.key==='Tab'&&refs.length){e.preventDefault();setVal(acceptRef(val,refs[0].ref));return;} if(e.key==='Enter') submit(); }}/>
           <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
             title={micMuted ? 'mic muted — unmute NERVA' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
@@ -310,4 +317,4 @@ function traceFromCognition(cog, text){
   };
 }
 
-export { Conversation, CognitionStream, buildTrace, traceFromCognition, InputBar, renderRich };
+export { Conversation, CognitionStream, buildTrace, traceFromCognition, InputBar, Bubble };

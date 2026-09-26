@@ -17,6 +17,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Optional
 
 from .agent import Agent
@@ -31,6 +32,7 @@ from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
 from .conversation_clock import CONTEXT_REFUSED_REPLY, CompactionClockRefused, capture_clock, prompt_clock
 from .llm.tokenizer import estimate_tokens
+from .memory import turn_tools
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .heartbeat import HeartbeatScheduler
@@ -50,6 +52,8 @@ from .llm_control import detect_llm_control  # re-exported: NL LLM-control detec
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
+from . import project_context  # H594: the project's convention files
+from . import power  # H182: keep awake while a turn runs
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
@@ -269,9 +273,18 @@ def current_principal() -> Principal:
 _TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_turn_meter_maps", default=None
 )
+#: H413: the turn's deferred session-title upgrade, started once its reply is final
+#: (Hermes titles after the first response, so the title call never competes with it).
+_TURN_TITLE: contextvars.ContextVar = contextvars.ContextVar("jarvis_turn_title", default=None)
 
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
+)
+#: Whether the turn's session was the shared default when the turn resolved it (H315
+#: second review): a default that moves later (an owner resuming another session) does
+#: not let an in-flight turn that started on it in. None: no turn has resolved one.
+_session_is_shared: contextvars.ContextVar = contextvars.ContextVar(
+    "jarvis_session_is_shared", default=None
 )
 
 
@@ -314,6 +327,55 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
         return None
     billable_input = usage.input_tokens + usage.cache_read + usage.cache_write
     return billable_input, usage.output_tokens, usage.cache_read
+
+
+def _taint_attached_context() -> None:
+    """H579 — a turn whose owner message attached ``@file:`` content is tainted, like one
+    that recalled untrusted memory: an action planned from it escalates GRANT to QUEUE."""
+    from .context_refs import attached
+
+    if attached():
+        from .security.recall_taint import mark_turn_recall_tainted
+        mark_turn_recall_tainted()
+
+
+async def _begin_project_context(orch) -> None:
+    """H594 — read the project's convention files for this turn (the file root's git root
+    down to it, and every directory the tools touched this session), off the event loop.
+    A turn given any is tainted like one that recalled untrusted memory: an action planned
+    from it asks."""
+    getter = getattr(orch, "get_setting", None)
+    on = getter(project_context.SETTING, True) if callable(getter) else True
+    try:
+        session = orch.session_id or "default"
+    except AttributeError:
+        session = "default"
+    workdir = getter("llm.project_dir", "") if callable(getter) and on else ""   # H218
+    state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
+                                    workdir=workdir)
+    project_context.set_turn(state)
+    if state is not None and state.block:
+        from .security.recall_taint import mark_turn_recall_tainted
+        mark_turn_recall_tainted()
+
+
+def _precompress_checkpoint(orch, sid: str):
+    """H427 — the checkpoint the compressor awaits before it evicts turns: every
+    registered provider (the transcript archive by default) sees them first, and with
+    ``memory.compression_checkpoint_required`` on, a checkpoint that did not land keeps
+    the transcript uncompressed. Audited in the signed intent log."""
+    from .memory import precompress
+
+    registered = getattr(orch, "precompress_providers", None)
+    providers = list(registered) if registered is not None else precompress.default_providers()
+    required = orch.get_setting(precompress.SETTING_REQUIRED, False) is True
+    audit = getattr(orch, "action_audit", None)
+
+    async def _checkpoint(evicted, transcript):
+        await precompress.run_checkpoint(providers, evicted, transcript, required=required,
+                                         session_id=sid, audit=audit)
+
+    return _checkpoint
 
 
 def _refresh_souls_at_boundary(orchestrator) -> list[str]:
@@ -366,6 +428,33 @@ def _refresh_souls_at_boundary(orchestrator) -> list[str]:
                     "process-wide, so every session sees this on its next turn — %s",
                     str(getattr(orchestrator, "session_id", "") or "")[:128], "; ".join(notes))
     return notes
+
+
+def _record_identity_version(orchestrator) -> None:
+    """H670 — the shared contract in force at start is recorded as a version of
+    ``_identity`` in the prompt VC (SoulVersionStore), so its history is diffable beside
+    the personas (``/api/admin/prompts/_identity/...``). A no-op when it is unchanged or
+    empty. What is served is the file: a rollback in the VC does not change it (edit or
+    remove ``IDENTITY.local.md`` for that), and an edit picked up at a compaction boundary
+    is recorded at the next start (review-H670 m-4)."""
+    try:
+        from .agent import IDENTITY_KEY, read_identity
+
+        text = read_identity().get("content", "")
+        store = getattr(orchestrator, "soul_versions", None)
+        if text and store is not None:
+            store.commit(IDENTITY_KEY, text, message="in force at start", author="hub")
+    except Exception:
+        logger.warning("the identity contract's version could not be recorded", exc_info=True)
+
+
+def _system_prompt_of(agent) -> str:
+    """The agent's system prompt (H670: the shared contract, then its persona); a stand-in
+    agent without the method is its persona alone."""
+    build = getattr(agent, "system_prompt", None)
+    if callable(build):
+        return build()
+    return (getattr(agent, "soul", None) or {}).get("content", "")
 
 
 class Orchestrator:
@@ -515,7 +604,7 @@ class Orchestrator:
         if rules:
             self.learning.set_promotion_rules(rules)
         self.bench = LatencyBenchmark()
-        from .settings_db import get_value as _gv
+        from .safe_mode import get_value as _gv   # H490: the stricter value in safe mode
         # /admin → security.sandbox_timeout / sandbox_memory. allow_subprocess stays
         # OFF (HF-6): the host-exec fallback is never enabled by these knobs.
         self.sandbox = Sandbox(
@@ -705,10 +794,10 @@ class Orchestrator:
         self._warmup_task: Optional[asyncio.Task] = None
         self._drive_ai_task: Optional[asyncio.Task] = None
         self.last_cognition = None
-        # H20 learning loop: frozen-per-session core-memory prompt block + the
-        # last background-review result (surfaced via /api/cognition/learning).
+        # H20 learning loop: frozen-per-session core-memory prompt block. The last review's
+        # result lives on the reviewer (reviewer.last_result), which /api/cognition/learning
+        # reads.
         self._core_block_cache: Optional[tuple] = None
-        self.last_learning_review: Optional[dict] = None
         self.reviewer = None            # BackgroundReviewer, built in load_agents
         self.curator = None             # SkillCurator, built in load_agents
         # Daily Reflection & Graph Consolidation (H5.15)
@@ -780,6 +869,31 @@ class Orchestrator:
             self._session_id_default = value
         else:
             _active_session.set(value)
+            if value is None or value == self._session_id_default:
+                _session_is_shared.set(True)     # a turn can move onto the shared session, never off it
+
+    def on_shared_session(self) -> bool:
+        """H315 review: True when this turn runs on the shared default session (the HUD's)
+        rather than on one of its own.
+
+        A turn gets a session of its own from an explicit session id or from a channel's
+        own conversation (``channel_handler``). A turn that binds neither falls back to the
+        shared default, and so does a caller outside any turn: a widget visitor (the widget
+        route binds no session), a webhook, a job, a subagent, a direct tool call. Naming
+        the default's id explicitly is still the shared session. Whatever is kept per
+        session there is the owner's.
+
+        The answer is the one the turn got when it resolved its session: the default can
+        move while a turn runs (``/sessions/resume``, ``/memory/clear``), and a turn that
+        started on the shared session stays on it for this question.
+        """
+        pinned = _session_is_shared.get()
+        if pinned is not None:
+            return bool(pinned)
+        value = _active_session.get()
+        if value is _SESSION_UNSET or value is None:
+            return True
+        return value == self._session_id_default
 
     def _ensure_context_cache(self) -> None:
         """Create the cache only from the auth pool produced by detection."""
@@ -805,9 +919,11 @@ class Orchestrator:
         self._ensure_context_cache()
 
         # Preload the detected local model so the first turn (often a voice
-        # command) skips the cold-load cost. Fire-and-forget — the model load
-        # can take seconds and must not delay startup. Gate with
-        # JARVIS_LLM_WARMUP=0 for environments where preloading is unwanted.
+        # command) skips the cold-load cost. A background task: load_agents does
+        # not wait for it, the web lifespan does — bounded by
+        # system.startup_warmup_timeout_seconds — before any channel opens (H677,
+        # lifecycle_budget.gate_warmup). Gate with JARVIS_LLM_WARMUP=0 for
+        # environments where preloading is unwanted.
         if env_flag("JARVIS_LLM_WARMUP", True):
             self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
             self._warmup_task.add_done_callback(_log_task_result)
@@ -854,6 +970,7 @@ class Orchestrator:
                 logger.info(f"Loaded: {agent_id}")
 
         self._configure_cognition_roster()
+        _record_identity_version(self)
 
         # K2: issue a least-privilege capability token per agent, derived from its declared
         # config (plugins/channel/policy). Inert until the per-action enforcement waves
@@ -869,7 +986,7 @@ class Orchestrator:
 
         # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
         # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
-        self.plugin_manager.build(self)
+        self._build_plugins()
 
         # Autonomy queue — durable self-tasking store (H6.1)
         try:
@@ -951,21 +1068,6 @@ class Orchestrator:
             self.skill_proposals = SkillProposalStore(
                 path=_dp("learning", "skill_proposals.json"))
 
-            async def _review_llm(prompt: str) -> str:
-                router = self.llm_router
-                # STRICT-LOCAL by construction: `local_backend` fails closed —
-                # never the HybridRouter `.backend` property, which prefers
-                # cloud Claude/Gemini when keys are configured. Review prompts
-                # embed raw conversation content and must not egress; no local
-                # backend up ⇒ RuntimeError ⇒ this review pass is skipped.
-                backend = router.local_backend
-                model = router.active_model or "google/gemma-4-31b-a4b"
-                max_tokens = int(self.get_setting("learning.review_max_tokens", 512) or 512)
-                return await backend.generate(
-                    model=model, prompt=prompt,
-                    system="You are a precise background reviewer. Output only JSON.",
-                    max_tokens=max_tokens, temperature=0.2)
-
             def _review_living():
                 cog = getattr(self, "cognition", None)
                 if cog is None or not cog.sub_enabled("memory_enabled"):
@@ -973,7 +1075,7 @@ class Orchestrator:
                 return cog.module("memory")
 
             self.reviewer = BackgroundReviewer(
-                _review_llm,
+                self._review_llm,
                 living=_review_living,
                 skills=self.skills,
                 learning=(self.cognition.module("learning")
@@ -1131,6 +1233,20 @@ class Orchestrator:
             if ensemble is not None and baseline:
                 ensemble.register_persona(agent_id, baseline)
 
+    def _build_plugins(self) -> None:
+        """Build the live plugins, or, in safe mode (H490), none: no integration is
+        reached and no plugin data enters a prompt. The .env credentials are still
+        loaded (the hub's one load), and oracle_bridge / argus stay None."""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            from .env_provenance import load_hub_env
+
+            load_hub_env()
+            safe_mode.note("plugins")
+            return
+        self.plugin_manager.build(self)
+
     def load_runtime_settings(self):
         try:
             all_s = _get_settings()
@@ -1138,8 +1254,12 @@ class Orchestrator:
             for cat, items in all_s.items():
                 for item in items:
                     flat[f"{cat}.{item['key']}"] = item["value"]
+            from . import safe_mode
             from .product_posture import apply_to_runtime_settings
-            flat = apply_to_runtime_settings(flat)
+            # H490: in safe mode a setting that loosens an approval or widens a budget
+            # reads the stricter of the owner's value and its shipped default, before and
+            # after the product posture (which it forces off) is applied.
+            flat = safe_mode.override_settings(apply_to_runtime_settings(safe_mode.override_settings(flat)))
             self._runtime_settings = flat
             logger.debug(f"Runtime settings loaded: {len(flat)} keys")
             # Product Posture wave 1 can wake turn embeddings without replacing
@@ -1267,14 +1387,13 @@ class Orchestrator:
         task = getattr(self, name, None)
         if task is None:
             return
-        task.cancel()
+        # H677: at most TASK_CANCEL_BUDGET — a task that swallows its cancellation is
+        # named and left behind instead of holding shutdown past the service manager's
+        # stop budget.
+        from agents.core.lifecycle_budget import TASK_CANCEL_BUDGET, wait_task
+
         try:
-            await task
-        except asyncio.CancelledError:
-            pass  # expected — we asked for it. Not an Exception subclass, so it
-            # needs its own clause; a bare `except Exception` would miss it.
-        except Exception as e:
-            logger.warning("Error stopping %s: %s", name, e)
+            await wait_task(task, TASK_CANCEL_BUDGET, name)
         finally:
             setattr(self, name, None)
 
@@ -1289,15 +1408,31 @@ class Orchestrator:
         for _task_attr in ("_settings_watcher_task", "_autonomy_task", "_learning_task"):
             await self._cancel_task(_task_attr)
         # The Oracle GitHub watcher polls every 30s when enabled; nothing stopped it.
+        from agents.core.lifecycle_budget import CLOSE_STEP_BUDGET, bounded
+
         bridge = getattr(self, "oracle_bridge", None)
         stop_watcher = getattr(bridge, "stop_watcher", None)
         if stop_watcher is not None:
+            await bounded(stop_watcher(), CLOSE_STEP_BUDGET, "Oracle watcher stop")
+        # Close all active plugins gracefully (CLN-2: owned by PluginManager), within a
+        # budget (H677).
+        await bounded(self.plugin_manager.close_all(), CLOSE_STEP_BUDGET, "plugin close")
+        # H428 — turn embeddings are written in the background: give the queue a
+        # bounded chance to land before the backends close, and say what it dropped.
+        memory = getattr(self, "memory", None)
+        flush = getattr(memory, "flush_embeddings", None)
+        if flush is not None:
             try:
-                await stop_watcher()
+                await asyncio.wait_for(flush(), timeout=5.0)
+            except asyncio.TimeoutError:
+                # Nothing still queued may write after the backends close: the rest is
+                # dropped (a write already inside the store may still complete).
+                discard = getattr(memory, "discard_pending_embeddings", None)
+                if discard is not None:
+                    discard()
+                logger.warning("shutdown: queued turn embeddings did not land within 5s; the rest are dropped")
             except Exception as e:
-                logger.warning(f"Error stopping Oracle watcher: {e}")
-        # Close all active plugins gracefully (CLN-2: owned by PluginManager).
-        await self.plugin_manager.close_all()
+                logger.warning(f"Error flushing turn embeddings: {e}")
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
@@ -1368,12 +1503,15 @@ class Orchestrator:
                 # and reset it in finally, so the binding is scoped to this request's
                 # async context only and never touches the shared default.
                 # `_resolve_session` inside handle_input keeps the value we set here.
-                token = _active_session.set(self._channel_sessions[key])
+                channel_session = self._channel_sessions[key]
+                token = _active_session.set(channel_session)
+                shared_token = _session_is_shared.set(channel_session == self._session_id_default)
                 try:
                     response = await self._channel_turn(
                         text, channel, observe_only=observe_only, draft=draft
                     )
                 finally:
+                    _session_is_shared.reset(shared_token)
                     _active_session.reset(token)
             else:
                 response = await self._channel_turn(
@@ -1454,6 +1592,10 @@ class Orchestrator:
         async with self.turn_lease() as acquired:
             if not acquired:
                 return TURN_BUSY_REPLY
+            from agents.core.lifecycle_budget import WARMUP
+
+            if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
+                logger.info("%s turn served while the local model is still warming up", channel)
             if draft is not None:
                 return await self.handle_input_stream(text, channel, on_token=draft.push)
             return await self.handle_input(text, channel)
@@ -1567,12 +1709,16 @@ class Orchestrator:
         """
         if session_id is not None:
             _active_session.set(session_id)
+            _session_is_shared.set(session_id == self._session_id_default)
             return session_id
         existing = _active_session.get()
         if existing is not _SESSION_UNSET:
+            if _session_is_shared.get() is None:
+                _session_is_shared.set(existing is None or existing == self._session_id_default)
             return existing
         sid = self._session_id_default
         _active_session.set(sid)
+        _session_is_shared.set(True)
         return sid
 
     async def process(self, prompt: str, agent: str = "jarvis", channel: str = "internal") -> str:
@@ -1594,6 +1740,7 @@ class Orchestrator:
         if agent_id not in self.agents:
             logger.warning(f"process(): no agent available for completion (agent={agent})")
             return ""
+        awake = power.hold_for_turn(self)        # H182: a one-shot completion is a turn too
         try:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
@@ -1605,6 +1752,8 @@ class Orchestrator:
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
             return ""
+        finally:
+            power.release_for_turn(awake)
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
         # of raising; treat those as a soft failure and return "".
@@ -1707,6 +1856,10 @@ class Orchestrator:
         # CLI turn never appends into a neighbour's.
         approvals_token = bind_turn_approvals()
         meter_token = _TURN_METER_MAPS.set({})
+        title_token = _TURN_TITLE.set([])
+        _taint_attached_context()   # H579: attached file content taints the turn
+        project_token = project_context.bind()   # H594: begun once the session is known
+        awake = power.hold_for_turn(self)        # H182: off unless JARVIS_KEEP_AWAKE=1
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -1714,9 +1867,15 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            project_context.reset(project_token)
+            titles = _TURN_TITLE.get()
+            _TURN_TITLE.reset(title_token)
+            if titles:
+                self._start_title_upgrades(titles)
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -1735,6 +1894,9 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._title_session(text)   # H413: a first message names the session
+        turn_tools.begin()          # H441: the reply records the tools this turn calls
+        await _begin_project_context(self)   # H594: the project's convention files
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -1883,6 +2045,10 @@ class Orchestrator:
         origin_token = bind_turn_action_origin(channel)
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
+        title_token = _TURN_TITLE.set([])
+        _taint_attached_context()   # H579: attached file content taints the turn
+        project_token = project_context.bind()   # H594: begun once the session is known
+        awake = power.hold_for_turn(self)        # H182: see handle_input
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
@@ -1890,9 +2056,15 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            project_context.reset(project_token)
+            titles = _TURN_TITLE.get()
+            _TURN_TITLE.reset(title_token)
+            if titles:
+                self._start_title_upgrades(titles)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -1910,6 +2082,9 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._title_session(text)   # H413: a first message names the session
+        turn_tools.begin()          # H441: the reply records the tools this turn calls
+        await _begin_project_context(self)   # H594: the project's convention files
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -2034,7 +2209,7 @@ class Orchestrator:
                 # date schedules "tomorrow" against the wrong day. Same-day
                 # sessions render byte-identically bar the start line, so the
                 # cached prefix (H363) survives.
-                system_prompt = agent.soul.get("content", "")
+                system_prompt = _system_prompt_of(agent)
                 turn_text = await self._build_agent_turn_text(
                     agent_id,
                     text,
@@ -2502,22 +2677,353 @@ class Orchestrator:
         """Execute a detected LLM-control action (delegates to llm_control, CLN-2)."""
         return await llm_control.run_llm_control(self, action, model, channel=channel)
 
+    # H428 — Hermes bounds each memory prefetch at 8 s (_EXTERNAL_PREFETCH_TIMEOUT_S).
+    _RECALL_TIMEOUT_DEFAULT_S = 8.0
+    _RECALL_TIMEOUT_BOUNDS_S = (0.1, 60.0)
+    # A late result waits this long, counted from when it finished, for a retry of the same
+    # question; a session's warm context stays usable for the same time.
+    _RECALL_HANDOFF_TTL_S = 600.0
+    _RECALL_WARM_SESSIONS = 256
+
+    def _recall_timeout_s(self) -> float:
+        """``memory.recall_timeout_s``, validated: a non-number, non-finite or
+        non-positive value reads as the default, anything else is clamped into the bounds."""
+        raw = self.get_setting("memory.recall_timeout_s", self._RECALL_TIMEOUT_DEFAULT_S)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or raw <= 0:
+            return self._RECALL_TIMEOUT_DEFAULT_S
+        low, high = self._RECALL_TIMEOUT_BOUNDS_S
+        return float(min(max(raw, low), high))
+
+    async def _recall_hits(self, text: str) -> list:
+        """The retrieval step the hard timeout bounds: the query rewrite (H433), the
+        query embedding and the fused vector ⊕ graph search. The job-model-pin check
+        runs before it (_recall_block) and the living-memory rerank after it, on the
+        hits a turn actually uses."""
+        from .llm.job_selection import current_selection, SelectionError
+        if current_selection() is not None:  # the task runs in the caller's copied context
+            raise SelectionError("job model pins exclude auxiliary recall embedding")
+        query = text
+        if self.get_setting("memory.recall_query_rewrite", False):
+            # H433 — one strict-local rewrite into a grounded retrieval question;
+            # "" (rejected, failed or no local backend) keeps the raw text. It gets
+            # half the recall bound of its own (Hermes gives it its own 8 s): past it
+            # the model call is cancelled and recall runs on the raw text, still
+            # inside the bound, instead of the whole recall becoming a straggler.
+            from .memory.query_rewrite import rewrite_query
+            budget = self._recall_timeout_s() / 2
+            try:
+                query = await asyncio.wait_for(rewrite_query(text, self._query_rewriter()), budget) or text
+            except TimeoutError:
+                logger.info("recall query rewrite timed out after %.1fs; recalling on the raw text", budget)
+        k = self.get_setting("memory.recall_top_k", 5)
+        if query != text:
+            # The rewrite is the embedding query only. The graph leg finds an entity
+            # whose name or property contains the keyword, so it only ever helps a
+            # short, entity-like message ("BMW", "dentist"); a rewritten whole question
+            # would never match, so it keeps the raw text (Hermes, too, keeps the raw
+            # message for its context fetch).
+            return await self.memory.recall(query, top_k=k, keyword=text)
+        return await self.memory.recall(text, top_k=k)
+
+    def _title_session(self, text: str) -> None:
+        """H413 — name a session from its first message: at once from its first words,
+        then once in the background by the strict-local model, started after the turn's
+        reply (never alongside it). Never raises; an already-titled session (or
+        ``memory.session_titles`` off) is left alone."""
+        from . import session_titles
+
+        try:
+            manager = getattr(self, "checkpoints", None)
+            session = str(getattr(self, "session_id", "") or "")
+            if manager is None or not session or self.get_setting(session_titles.SETTING, True) is False:
+                return
+            if manager.session_title(session).get("title"):
+                return
+            title = session_titles.instant_title(text)
+            if not title or not manager.set_session_title(session, title, session_titles.FIRST_WORDS):
+                return
+            generate = self._session_titler()
+        except Exception:
+            logger.warning("session title skipped", exc_info=True)
+            return
+        if generate is None:
+            return
+        pending = (manager, session, text, generate)
+        deferred = _TURN_TITLE.get()
+        if deferred is not None:
+            deferred.append(pending)        # started by handle_input once the reply is final
+        else:
+            self._start_title_upgrades([pending])
+
+    def _start_title_upgrades(self, pending) -> None:
+        """Start each deferred H413 title upgrade as a background task (kept referenced)."""
+        if not pending:
+            return
+        tasks = getattr(self, "_title_tasks", None)
+        if tasks is None:
+            tasks = self._title_tasks = set()
+        for manager, session, text, generate in pending:
+            try:
+                task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+            except RuntimeError:            # no running loop: no upgrade, the instant title stays
+                return
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+
+    @staticmethod
+    async def _upgrade_session_title(manager, session: str, text: str, generate) -> bool:
+        """The local model's name replaces the first-words title, and only that one."""
+        from . import session_titles
+
+        title = await session_titles.model_title(text, generate)
+        if not title:
+            return False
+        return bool(await asyncio.to_thread(
+            manager.set_session_title, session, title, session_titles.MODEL,
+            replace=(session_titles.FIRST_WORDS,)))
+
+    def _session_titler(self):
+        """Strict-local generate() for the H413 session title, or ``None`` (as the H433
+        query rewrite: ``LLMRouter.local_backend`` only, never a cloud backend)."""
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return None
+
+        async def _generate(*, system: str, prompt: str) -> str:
+            from .llm.job_selection import SelectionError, current_selection
+            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .session_titles import MAX_TOKENS, TEMPERATURE
+            if current_selection() is not None:
+                raise SelectionError("job model pins exclude the auxiliary session title")
+            backend = router.local_backend      # strict-local; raises if none
+            model = router.active_model or DEFAULT_LOCAL_MODEL
+            if "qwen3" in model.lower():
+                prompt = f"{prompt}\n/no_think"
+            return await backend.generate(model=model, prompt=prompt, system=system,
+                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+
+        return _generate
+
+    def _query_rewriter(self):
+        """Strict-local generate() for the H433 query rewrite, or ``None``.
+
+        The message is raw conversation content, so like _compression_summarizer
+        this uses ``LLMRouter.local_backend`` only — the fail-closed accessor that
+        never falls through to a cloud backend (no local backend ⇒ it raises and
+        the rewrite returns ""). Temperature 0 and 96 tokens, as in Hermes.
+        """
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return None
+
+        async def _generate(*, system: str, prompt: str) -> str:
+            from .llm.job_selection import SelectionError, current_selection
+            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .memory.query_rewrite import MAX_TOKENS, TEMPERATURE
+            if current_selection() is not None:  # as _compression_summarizer does, for any caller
+                raise SelectionError("job model pins exclude the auxiliary recall rewrite")
+            backend = router.local_backend      # strict-local; raises if none
+            model = router.active_model or DEFAULT_LOCAL_MODEL
+            if "qwen3" in model.lower():
+                # Qwen3 (the default local model) thinks before it answers and would
+                # spend the 96 tokens on that; its documented switch turns it off.
+                prompt = f"{prompt}\n/no_think"
+            return await backend.generate(model=model, prompt=prompt, system=system,
+                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+
+        return _generate
+
+    def _recall_runtime(self) -> SimpleNamespace:
+        """Recall bookkeeping (lazy, so orchestrators built without __init__ work too).
+
+        ``stuck``: recalls still running past their timeout. ``late``: per session,
+        the result of its last straggler that finished cleanly, for one handoff.
+        ``warm``: per session, the hits its last recall served (the next-turn
+        warm-up). ``generation``: bumped by a purge or a single-memory delete, before
+        and after the wipe. Every result carries the generation its recall STARTED
+        under and is served, handed off or kept warm only while that is still
+        current, so nothing read before a delete is ever served after it.
+        ``erasing``: a purge is between its two bumps, and recall serves nothing.
+        """
+        state = getattr(self, "_recall_state", None)
+        if state is None:
+            state = self._recall_state = SimpleNamespace(stuck=set(), late={}, warm={}, generation=0,
+                                                         erasing=0)
+        return state
+
+    def _recall_session_key(self) -> str | None:
+        """The turn's session, or None outside a turn.
+
+        Callers outside any turn (the autonomy worker, the nightly reflection,
+        /api/context/compress) have no bound session: they never keep, serve or
+        consume the per-turn warm context or the same-question handoff, and their
+        stragglers leave no handoff, so they cannot overwrite or take an owner's.
+        Work delegated inside a turn shares that turn's session.
+        """
+        value = _active_session.get()
+        return None if value is _SESSION_UNSET else str(value or "default")
+
+    def _keep_warm_recall(self, hits: list, generation: int) -> None:
+        """This session's served hits become the next turn's warm context (H428).
+
+        An empty result is kept too: "nothing relevant" replaces an older answer.
+        """
+        key = self._recall_session_key()
+        state = self._recall_runtime()
+        if key is None or generation != state.generation:
+            return  # outside a turn, or read before a delete: nothing to keep
+        state.warm.pop(key, None)
+        state.warm[key] = SimpleNamespace(hits=list(hits), stored=time.monotonic(), generation=generation)
+        while len(state.warm) > self._RECALL_WARM_SESSIONS:
+            state.warm.pop(next(iter(state.warm)))
+
+    def _warm_recall(self) -> list | None:
+        """This session's warm context, while fresh and from the current generation."""
+        key = self._recall_session_key()
+        if key is None:
+            return None
+        state = self._recall_runtime()
+        warm = state.warm.get(key)
+        if (warm is None or warm.generation != state.generation
+                or time.monotonic() - warm.stored > self._RECALL_HANDOFF_TTL_S):
+            return None
+        return list(warm.hits)
+
+    async def _bounded_recall_hits(self, text: str, generation: int) -> list | None:
+        """Recall hits under the hard timeout, or None when recall was unavailable (H428).
+
+        A timed-out recall cannot be killed — its embedding and search run on worker
+        threads, the search holding the memory manager's store lock — so it is left
+        to finish as a *straggler*. While any straggler runs, later recalls are
+        skipped instead of queueing another round-trip behind the same hung backend
+        (Hermes skips a provider whose previous prefetch is still alive). A straggler
+        that finishes cleanly leaves its hits for one handoff: the next recall in a
+        turn takes them, and serves them only if it is a retry of the same question
+        within the TTL of their completion, from the current generation. ``None``
+        (skipped, timed out, or overtaken by a delete) is not ``[]`` (recall ran and
+        found nothing): only the first lets _recall_block fall back to warm context.
+        """
+        state = self._recall_runtime()
+        stuck = [task for task in state.stuck if not task.done()]
+        if stuck:
+            logger.info("recall skipped: %d earlier recall(s) still running past the timeout", len(stuck))
+            return None
+        key = self._recall_session_key()
+        if key is not None:
+            late = state.late.pop(key, None)
+            if (late is not None and late.text == text and late.generation == generation
+                    and time.monotonic() - late.finished <= self._RECALL_HANDOFF_TTL_S):
+                return late.hits
+        timeout = self._recall_timeout_s()
+        task = asyncio.ensure_future(self._recall_hits(text))
+        try:
+            done, _pending = await asyncio.wait({task}, timeout=timeout)
+        except asyncio.CancelledError:
+            # The turn is gone, but the worker threads cannot be: keep the task as a
+            # straggler (still holding the store lock) instead of cancelling it out
+            # from under them, which would let a second search start beside it.
+            self._adopt_recall_straggler(task, text, generation)
+            raise
+        if not done:
+            self._adopt_recall_straggler(task, text, generation)
+            logger.warning("recall timed out after %.1fs", timeout)
+            return None
+        if state.generation != generation:
+            task.exception()  # retrieved either way; the result is from before the delete
+            logger.info("recall discarded: memory was deleted while it was in flight")
+            return None
+        return task.result()
+
+    def _adopt_recall_straggler(self, task: "asyncio.Task", text: str, generation: int) -> None:
+        state = self._recall_runtime()
+        state.stuck.add(task)
+        key = self._recall_session_key()  # the handoff belongs to the turn's session
+
+        def _finished(done: "asyncio.Task") -> None:
+            state.stuck.discard(done)
+            # exception() also marks a failure as retrieved: it stays a quiet empty block.
+            if (done.cancelled() or done.exception() is not None or generation != state.generation
+                    or key is None):
+                return
+            state.late.pop(key, None)
+            state.late[key] = SimpleNamespace(text=text, hits=done.result(), finished=time.monotonic(),
+                                              generation=generation)
+            while len(state.late) > self._RECALL_WARM_SESSIONS:
+                state.late.pop(next(iter(state.late)))
+
+        task.add_done_callback(_finished)
+
+    def _recall_purged(self, *, erasing: bool | None = None) -> None:
+        """Memory was deleted (a purge, or one record): drop every cached recall result.
+
+        A purge calls it before the stores are wiped (``erasing=True``) and again
+        after (``erasing=False``), so a recall that read them in between also carries
+        a stale generation; in between, recall serves nothing at all. Nothing
+        started before the last call is ever served, handed off or kept warm after it.
+        """
+        state = self._recall_runtime()
+        state.generation += 1
+        state.late.clear()
+        state.warm.clear()
+        if erasing is True:
+            state.erasing += 1
+        elif erasing is False:
+            state.erasing = max(0, state.erasing - 1)
+
     async def _recall_block(self, text: str) -> str:
         """Long-term memory recall injected into the prompt (RAG, all agents).
 
         Off by default — enable with the `memory.recall_enabled` setting. Pairs
         with `MEMORY_EMBED_TURNS=true` or explicit `/api/memory/remember` so there
         is something to recall. Embeds the query and runs fused recall (vector ⊕
-        graph); any failure degrades to an empty block (never breaks a turn)."""
+        graph); any failure degrades to an empty block (never breaks a turn).
+
+        H428: a trivial prompt (empty, a slash command, a bare acknowledgement —
+        memory.recall_gate) skips recall entirely, a job-model-pinned turn never
+        recalls, and the retrieval is bounded by `memory.recall_timeout_s`
+        (default 8 s) through _bounded_recall_hits. The living-memory rerank then
+        runs off the event loop on the hits this turn uses."""
         if not self.get_setting("memory.recall_enabled", False):
             return ""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            safe_mode.note("memory_injection")   # H490: no recalled memory in the prompt
+            return ""
+        from .memory.recall_gate import is_trivial_prompt
+        if is_trivial_prompt(text):
+            logger.debug("recall skipped: trivial prompt")
+            return ""
+        from .llm.job_selection import current_selection
+        if current_selection() is not None:
+            # Checked before any handoff: a pinned job turn never receives a late
+            # result an owner's turn left behind, and never consumes it either.
+            logger.info("recall skipped: job model pins exclude auxiliary recall embedding")
+            return ""
+        state = self._recall_runtime()
+        if state.erasing:
+            # A purge is wiping the stores: what they still hold is about to go.
+            logger.info("recall skipped: memory is being erased")
+            return ""
+        generation = state.generation  # the generation this recall starts under
         try:
-            from .llm.job_selection import current_selection, SelectionError
-            if current_selection() is not None:
-                raise SelectionError("job model pins exclude auxiliary recall embedding")
-            k = self.get_setting("memory.recall_top_k", 5)
-            hits = await self.memory.recall(text, top_k=k)
-            hits = self._living_memory_rerank_hits(hits)
+            hits = await self._bounded_recall_hits(text, generation)
+            if hits is None:
+                # Next-turn warm-up (Hermes' queue_prefetch_all): when this turn's own
+                # recall timed out or was skipped behind a stuck one, the session's
+                # previous recall stands in, instead of no long-term memory at all.
+                # Those hits were reranked when first served, so they are not again:
+                # a fallback does not reinforce memories this turn never recalled.
+                hits = self._warm_recall() or []
+                logger.info("recall unavailable this turn; %s",
+                            f"using this session's previous recall ({len(hits)} hits)" if hits
+                            else "the turn runs without long-term memory")
+            else:
+                if hits:
+                    hits = await asyncio.to_thread(self._living_memory_rerank_hits, hits)
+                self._keep_warm_recall(hits, generation)
+            if state.generation != generation:
+                hits = []  # a delete landed while this turn was recalling: serve nothing it read
         except Exception as e:
             logger.warning(f"recall failed: {e}")
             return ""
@@ -2547,7 +3053,7 @@ class Orchestrator:
         from .memory.living_recall import rerank_with_living_memory
         return rerank_with_living_memory(hits, living, decay_memory=getattr(self, "decay", None))
 
-    def _living_core_memory_block(self) -> str:
+    def _living_core_memory_block(self, *, freeze: bool = True) -> str:
         """Render bounded LivingMemory core facts for prompt context.
 
         Frozen-snapshot discipline (hermes-agent pattern): the block is rendered
@@ -2556,9 +3062,18 @@ class Orchestrator:
         llama.cpp/LM Studio (and cloud) prompt caches warm. A new session (or
         /reset) re-renders. Entries are injection-scanned by the renderer; see
         agents/core/learning/core_block.py.
+
+        ``freeze=False`` (H227, the inspector) answers what the next turn would send
+        without being what freezes it: the frozen block when a turn already froze
+        one, else a fresh render that is not kept.
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
+            return ""
+        from . import safe_mode
+
+        if safe_mode.enabled():
+            safe_mode.note("memory_injection")   # H490: no core block in the prompt
             return ""
         # Key on (session, day): jarvis sessions can live for days (unlike
         # hermes conversation-scoped ones), and the nightly reflector writes
@@ -2580,7 +3095,8 @@ class Orchestrator:
         except Exception:
             logger.debug("LivingMemory core render skipped", exc_info=True)
             return ""
-        self._core_block_cache = (cache_key, block)
+        if freeze:
+            self._core_block_cache = (cache_key, block)
         return block
 
     def _persona_prompt_block(self, agent_id: str) -> str:
@@ -2606,12 +3122,14 @@ class Orchestrator:
         plugin_block: str = "",
         recall_block: str = "",
         runtime_block: str = "",
+        freeze_core: bool = True,
     ) -> str:
         """Shared per-turn prompt ingredients before the agent prompt wrapper.
 
         Both non-stream and stream turns feed this text into ``Agent.build_prompt``.
         That keeps persona, memory context, plugin data, long-term recall and
-        runtime truth aligned across the two surfaces.
+        runtime truth aligned across the two surfaces. ``freeze_core=False`` is the
+        inspector's look (H227): the core block is shown, not frozen.
         """
         base = text
         if history:
@@ -2626,9 +3144,13 @@ class Orchestrator:
         if agent_context:
             parts.append(f"Agent context: {agent_context}")
 
-        core_memory_block = self._living_core_memory_block()
+        core_memory_block = (self._living_core_memory_block() if freeze_core
+                             else self._living_core_memory_block(freeze=False))
         if core_memory_block:
             parts.append(core_memory_block)
+        turn_project = project_context.current()   # H594: begun (and tainted) at turn start
+        if turn_project is not None and turn_project.block:
+            parts.append(turn_project.block)
 
         for block in (plugin_block, recall_block, runtime_block):
             block = (block or "").strip()
@@ -2657,11 +3179,24 @@ class Orchestrator:
         catalog = getattr(getattr(self, "skills", None), "prompt_catalog", None)
         if not callable(catalog):
             return merged
+        from .skills import visibility as skill_visibility
+
+        agent_id = getattr(agent, "id", None)
+        # H328: the catalog shows a skill by the tools this turn is offered.
+        runtime = getattr(self, "agent_tool_runtime", None)
+        probe = getattr(runtime, "offered_names", None)
         try:
-            rows = catalog(getattr(agent, "id", None))
+            offer = frozenset(probe(agent_id)) if callable(probe) else None
+        except Exception:
+            offer = None                                   # unknown: the tool gates stand aside
+        token = skill_visibility.bind_offer(offer)
+        try:
+            rows = catalog(agent_id)
         except Exception:
             logger.warning("skills catalog for the prompt failed closed", exc_info=True)
             return merged
+        finally:
+            skill_visibility.reset_offer(token)
         if rows:
             merged["skills"] = rows
         return merged
@@ -2732,6 +3267,61 @@ class Orchestrator:
         except Exception:
             logger.debug("background review spawn skipped", exc_info=True)
 
+    async def refine(self, focus: str = "", session_id: Optional[str] = None) -> dict:
+        """H465 — review this conversation now (``/refine [focus]``), as Hermes' /refine does.
+
+        The review reads a snapshot of the session's history (the newest turns, bounded;
+        commands and their replies left out) and never writes to it. Every path that
+        dispatches /refine holds the session's turn lease first, so a /refine sent while
+        another turn runs waits for that turn (up to the lease's bound) and then reviews
+        the conversation as it stands; the review itself is bounded below that wait
+        (``REFINE_TIMEOUT_S``). A direct caller that holds no lease while another turn
+        does is refused ``turn_in_flight`` — the lease is held and not by this context
+        (critic note 1). It runs whether or not the per-turn learning loop
+        (``cognition.review_enabled``) is on: the owner asked. Returns the reviewer's
+        result; the command reports it."""
+        from .learning.background_review import conversation_snapshot
+
+        reviewer = getattr(self, "reviewer", None)
+        if reviewer is None or not hasattr(reviewer, "run_on_demand"):
+            return {"ran": False, "reason": "unavailable", "actions": []}
+        key = self._lease_key(session_id)
+        lock = self.__dict__.get("_turn_leases", {}).get(key)
+        if lock is not None and lock.locked() and key not in _held_turn_leases.get():
+            return {"ran": False, "reason": "turn_in_flight", "actions": []}
+        try:
+            turns = await self.memory.get_history(key, last_n=None)
+        except Exception:
+            logger.warning("refine: the conversation could not be read", exc_info=True)
+            turns = []
+        snapshot = conversation_snapshot(turns)
+        if not snapshot:
+            return {"ran": False, "reason": "empty_conversation", "actions": []}
+        result = await reviewer.run_on_demand(snapshot, focus=focus)
+        for action in result.get("actions", []):
+            logger.info("learning review (on demand): %s", action)
+        return result
+
+    async def _review_llm(self, prompt: str) -> str:
+        """The background reviewer's model call. STRICT-LOCAL by construction:
+        ``local_backend`` fails closed, never the HybridRouter ``.backend`` property,
+        which prefers cloud Claude/Gemini when keys are configured. Review prompts embed
+        raw conversation content and must not egress; no local backend up means a
+        RuntimeError, and the review pass is skipped."""
+        from .settings_db import bounded_learning_int
+
+        router = self.llm_router
+        backend = router.local_backend
+        model = router.active_model or "google/gemma-4-31b-a4b"
+        # Within its bounds even for a row that predates them: -1 would mean "until the
+        # context is full" to a local backend (review-H465d nit 4).
+        max_tokens = bounded_learning_int(
+            "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
+        return await backend.generate(
+            model=model, prompt=prompt,
+            system="You are a precise background reviewer. Output only JSON.",
+            max_tokens=max_tokens, temperature=0.2)
+
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
         history = ""
@@ -2743,7 +3333,10 @@ class Orchestrator:
         except Exception:
             logger.debug("review history gather skipped", exc_info=True)
         result = await self.reviewer.run(text, synthesized, history=history)
-        self.last_learning_review = result
+        if not result.get("ran"):
+            # Why a pass did not run, so a loop that keeps failing leaves a trace
+            # (review-H465c nit 6); a cut-off is also logged once a day at INFO.
+            logger.debug("learning review skipped: %s", result.get("reason"))
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
 
@@ -2821,7 +3414,12 @@ class Orchestrator:
         t_synthesize: int,
     ) -> None:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
-        await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+        called = turn_tools.collected()
+        if called:
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
+                                       tools=called)
+        else:
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
         await asyncio.to_thread(
@@ -2961,12 +3559,40 @@ class Orchestrator:
             model = router.active_model or DEFAULT_LOCAL_MODEL
             max_tokens = int(self.get_setting(
                 "memory.compression_summary_max_tokens", 256) or 256)
-            return await backend.generate(
+            # H674: streamed, and cut after the inactivity deadline with nothing
+            # received, instead of holding the backend's whole read budget; a
+            # degraded reply raises here, so it never becomes the summary.
+            from .compaction_hold import IDLE_SETTING, idle_seconds, stream_summary
+            return await stream_summary(
+                backend, idle_seconds(self.get_setting(IDLE_SETTING, 60)),
                 model=model, prompt=prompt,
                 system="You compress conversation context. Output only the summary.",
                 max_tokens=max_tokens, temperature=0.2)
 
         return _summarize
+
+    def _summary_gate(self, sid: str, cache: dict, prior):
+        """H674 — the bounded hold for this turn's LLM summary (see ``compaction_hold``).
+
+        A summary that lands after the turn went on seeds this session's merge prior —
+        only if no newer turn has replaced the prior this one started from — and is
+        never published through the compaction clock: no prompt was built from it."""
+        from .compaction_hold import HOLD_SETTING, SummaryHold, hold_seconds
+
+        holds = getattr(self, "_summary_holds", None)
+        if holds is None:
+            holds = self._summary_holds = SummaryHold()
+        hold = hold_seconds(self.get_setting(HOLD_SETTING, 10))
+
+        async def gate(make, covered):
+            def seed(summary: str) -> None:
+                if cache.get(sid) is prior:
+                    cache[sid] = {"summary": summary, "covered": covered}
+                    logger.info("deferred compaction summary landed; it seeds the next turn")
+
+            return await holds.wait(sid, make, hold, seed)
+
+        return gate
 
     def _compaction_model(self) -> str:
         """The model whose window bounds this session's context.
@@ -3102,16 +3728,18 @@ class Orchestrator:
         summarizer = None
         if self.get_setting("memory.compression_summarizer", False):
             summarizer = self._compression_summarizer()
+        cache = getattr(self, "_ctx_summary_cache", None)
+        if cache is None:
+            cache = self._ctx_summary_cache = {}
+        prior = cache.get(sid) if summarizer is not None else None
         compressor = ContextCompressor(
             summarizer=summarizer,
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
             keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
             structured=summarizer is not None,
+            checkpoint=_precompress_checkpoint(self, sid),   # H427
+            gate=self._summary_gate(sid, cache, prior) if summarizer is not None else None,   # H674
         )
-        cache = getattr(self, "_ctx_summary_cache", None)
-        if cache is None:
-            cache = self._ctx_summary_cache = {}
-        prior = cache.get(sid) if summarizer is not None else None
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
         # than by a fixed token budget that is wrong for every model but one.
@@ -3153,6 +3781,10 @@ class Orchestrator:
             prior=prior,
             anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
+        if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
+            # H427 — a required checkpoint did not land, so nothing was evicted; a prompt
+            # that cannot fit uncompressed is refused rather than sent over the window.
+            raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
         def publish():
             if result["compressed"] and snapshot is not None:
                 # This synchronous CAS and publication have no cancellation point between
@@ -3161,7 +3793,17 @@ class Orchestrator:
                 if committed is None:
                     raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
                 prompt_clock.set(committed)
-            if summarizer is not None and result["compressed"]:
+            if result.get("summary_deferred"):
+                # H674 — the turn went on without its summary: say so, and leave the
+                # merge prior to the summary still being written (a digest here would
+                # overwrite it).
+                from .compaction_hold import DEFERRED_NOTICE, NOTICE_CODE
+                from .turn_notices import record_turn_notice
+                logger.info("compaction summary deferred for this turn (%s); the turn used %s",
+                            "memory.compression_max_turn_hold_seconds",
+                            "the digest" if result["summary"] else "its turns verbatim")
+                record_turn_notice(NOTICE_CODE, DEFERRED_NOTICE)
+            elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
                 cache[sid] = {"summary": result["summary"],
                                           "covered": result["covered"]}
@@ -3218,7 +3860,7 @@ class Orchestrator:
                     checkpoint = self.checkpoints.load(aid, self.session_id)
                     if checkpoint:
                         prompt = f"[RESUMED FROM CHECKPOINT]\n{checkpoint['prompt']}\n---\n{prompt}"
-                system = render_snapshot(agent.soul.get("content", ""), prompt_clock.get())
+                system = render_snapshot(_system_prompt_of(agent), prompt_clock.get())
                 overhead = max(0, estimate_tokens(prompt) - estimate_tokens(value)) + estimate_tokens(system) + 64
                 # The accepted rebuild may add the second clock line after planning.
                 runtime = getattr(agent, "tool_runtime", None)
@@ -3821,35 +4463,34 @@ class Orchestrator:
         Defensive throughout — every step is guarded so a failure in one does
         not abort the rest, and shutdown never raises.
         """
-        await self._flush_checkpoint()
+        # H677: every step within a short budget; an overrun is named and the next step
+        # runs, so one wedged close cannot use up the service manager's stop budget.
+        from agents.core.lifecycle_budget import CLOSE_STEP_BUDGET, TASK_CANCEL_BUDGET, bounded, wait_task
+
+        await bounded(self._flush_checkpoint(), CLOSE_STEP_BUDGET, "checkpoint flush")
         cache_tasks = getattr(self, "_cache_tasks", None)
         if cache_tasks:
-            pending_cache_tasks = tuple(cache_tasks)
-            for task in pending_cache_tasks:
-                task.cancel()
-            await asyncio.gather(*pending_cache_tasks, return_exceptions=True)
+            for task in tuple(cache_tasks):
+                await wait_task(task, TASK_CANCEL_BUDGET, "context cache task")
             cache_tasks.clear()
+        warmup = getattr(self, "_warmup_task", None)
+        if warmup is not None:
+            await wait_task(warmup, TASK_CANCEL_BUDGET, "model warm-up")
+        summary_holds = getattr(self, "_summary_holds", None)
+        if summary_holds is not None:
+            await summary_holds.aclose(TASK_CANCEL_BUDGET)   # H674: deferred summaries
         router = getattr(self, "llm_router", None)
         if router is not None:
-            try:
-                await router.aclose()
-            except Exception as e:
-                logger.warning(f"Error closing LLM router: {e}")
+            await bounded(router.aclose(), CLOSE_STEP_BUDGET, "LLM router close")
         ollama_control = getattr(self, "ollama", None)
         ollama_close = getattr(ollama_control, "aclose", None)
         if ollama_close is not None:
-            try:
-                await ollama_close()
-            except Exception as e:
-                logger.warning(f"Error closing Ollama lifecycle client: {e}")
+            await bounded(ollama_close(), CLOSE_STEP_BUDGET, "Ollama lifecycle client close")
         # Close MCP sessions (httpx/stdio transports) if any are open.
         mcp = getattr(self, "mcp", None)
         close_all = getattr(mcp, "close_all", None)
         if close_all is not None:
-            try:
-                await close_all()
-            except Exception as e:
-                logger.warning(f"Error closing MCP sessions: {e}")
+            await bounded(close_all(), CLOSE_STEP_BUDGET, "MCP session close")
         # Close the autonomy sqlite queue connection.
         queue = getattr(self, "autonomy_queue", None)
         queue_close = getattr(queue, "close", None)
@@ -3863,16 +4504,11 @@ class Orchestrator:
         cache = getattr(self, "context_cache", None)
         cache_close = getattr(cache, "close", None)
         if cache_close is not None:
-            try:
-                await cache_close()
-            except Exception as e:
-                logger.warning(f"Error closing context cache: {e}")
+            await bounded(cache_close(), CLOSE_STEP_BUDGET, "context cache close")
         # AUD-18: drain the pooled per-plugin HTTP clients (PluginHTTPClient registry).
-        try:
-            from . import http_client as _http_client
-            await _http_client.close_all()
-        except Exception as e:
-            logger.warning(f"Error closing plugin HTTP clients: {e}")
+        from . import http_client as _http_client
+
+        await bounded(_http_client.close_all(), CLOSE_STEP_BUDGET, "plugin HTTP client close")
         # AUD-18: close channel transports that hold a long-lived client (e.g. the
         # Telegram httpx client). Only the async `aclose` convention is honored;
         # best-effort so one channel can't abort the rest of shutdown.
@@ -3880,10 +4516,7 @@ class Orchestrator:
             closer = getattr(ch, "aclose", None)
             if closer is None:
                 continue
-            try:
-                await closer()
-            except Exception as e:
-                logger.warning(f"Error closing channel '{cid}': {e}")
+            await bounded(closer(), CLOSE_STEP_BUDGET, f"channel '{cid}' close")
         # The two sqlite connections opened at boot. Both classes have had a close()
         # all along; shutdown simply never called either, so the handles lived until
         # process exit. That is not merely untidy here:

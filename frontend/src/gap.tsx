@@ -12,6 +12,20 @@ import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionF
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
+import { DocsPanel, docHref, sectionIndex } from './panels/docs';
+import { WebhooksPanel } from './panels/webhooks';
+import { LongTermMemoryPanel } from './panels/long-term-memory';
+import { SkillSwitchesPanel } from './panels/skill-switches';
+import { ProviderCheckPanel } from './panels/provider-check';
+import { ProviderQuotaPanel } from './panels/provider-quota';
+import { InspectorPanel } from './panels/inspector';
+import { refusalText } from './soul-edit';
+import { ConfirmAction, RISK_TIER } from './confirm';
+import { LogsPanel } from './panels/logs';
+import { SessionsPanel } from './panels/sessions';
+import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, settingMatches, shown as shownSetting } from './panels/settings-tools';
+import { PLANS_PATH, PlansInFlight } from './panels/plans';
+import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -750,8 +764,15 @@ export function KillSwitchPanel() {
         : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
       {/* The button stays live even when the state is unknown: with `halted` false
           it sends engage=true, and halting on an unknown state is the safe
-          direction. Only the claim about current state is withheld. */}
-      <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+          direction. Only the claim about current state is withheld. H168: halting is
+          one click (a stop never waits for a second one); disengaging lets every agent
+          act again, so it takes the typed phrase. */}
+      <span style={{ marginLeft: 'auto' }}>
+        {halted
+          ? <ConfirmAction tier={RISK_TIER.EXTERNAL} label="disengage" phrase="DISENGAGE"
+              prompt="type DISENGAGE to let every agent act again:" onConfirm={toggle} />
+          : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
+      </span></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
       {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
@@ -1003,6 +1024,8 @@ export function PosturePanel() {
           </Row>
         </>
       )}
+      {/* H165 — each switch above has a price; the flags doc names it. */}
+      <Row><a href={docHref('flags')} style={mono}>what flipping a flag costs ↗</a></Row>
     </Card>
   );
 }
@@ -2366,15 +2389,6 @@ export function LearningPanel() {
     </div>
   </Card>;
 }
-function SessionsPanel() {
-  const { d, e, loading, reload } = useApi('/sessions');
-  const list = arr(d, 'sessions');
-  return <Card title="SESSIONS" live={asLive(d)} sub={list.length} onReload={reload}>
-    <State e={e} loading={loading} n={list.length} />
-    {list.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.session_id || s.id || s}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s.turns ?? s.count ?? ''}</span>{(s.session_id || s.id) && <button className="tool-btn" onClick={() => act('/sessions/resume', { session_id: s.session_id || s.id })}>resume</button>}</Row>)}
-  </Card>;
-}
-
 /* ── Admin ─────────────────────────────────────────────── */
 export function LMStudioPanel() {
   const { d, e, loading, reload } = useApi('/api/models/local', true, true);
@@ -2629,41 +2643,91 @@ function settingsField(it, val, on) {
     case 'select': return <select value={val} onChange={(e) => on(e.target.value)} style={ip}>{(it.opts || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>;
     case 'number': case 'slider': return <input type="number" value={val} onChange={(e) => on(e.target.value === '' ? '' : Number(e.target.value))} style={{ ...ip, width: 84 }} />;
     case 'tags': return <input value={Array.isArray(val) ? val.join(', ') : (val || '')} onChange={(e) => on(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} style={{ ...ip, width: 150 }} />;
+    // A JSON setting is edited as JSON and saved parsed (H340 review: skills.template_vars
+    // saved from a text box was a string the hub ignored). Text that does not parse is sent
+    // as typed, so the hub's refusal names what is wrong.
+    case 'json': return <textarea aria-label={'json value of ' + it.key} defaultValue={typeof val === 'string' ? val : JSON.stringify(val ?? {})} onChange={(e) => { try { on(JSON.parse(e.target.value)); } catch { on(e.target.value); } }} rows={2} style={{ ...ip, width: 220 }} />;
     default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
   }
 }
-function SettingsPanel() {
+export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
+  // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
+  const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
+  const [refused, setRefused] = useState<string[]>([]);
+  // H157 — one search across every category (key or label), a reset per category, and a
+  // configuration moved between boxes as JSON (SettingsTransfer).
+  const [query, setQuery] = useState('');
   const cats = d && typeof d === 'object' ? d : {};
+  const shownCats = Object.entries(cats)
+    .map(([cat, items]: [string, any]) => [cat, (items || []).filter((it) => settingMatches(cat, it, query))] as [string, any[]])
+    .filter(([, items]) => items.length > 0);
+  const nMatches = shownCats.reduce((n, [, items]) => n + items.length, 0);
+  // Edits kept under a search: saved with the rest, and counted so the owner knows.
+  const visible = new Set(shownCats.flatMap(([cat, items]) => items.map((it) => `${cat}.${it.key}`)));
+  const nHidden = Object.entries(dirty).reduce((n, [cat, o]) => n + Object.keys(o).filter((k) => !visible.has(`${cat}.${k}`)).length, 0);
+  // A reset or an import changes the stored values: unsaved edits of those categories are
+  // dropped, or "save" would write the old values back over them (review-H157 m3).
+  const dropDirty = (cats: string[]) => setDirty((p) => { const n = { ...p }; for (const c of cats) delete n[c]; return n; });
+  // H259: a reset (one category or all) or an undo re-reads the list of resets.
+  const [resetTick, setResetTick] = useState(0);
+  const afterReset = (cats: string[]) => { dropDirty(cats); setResetTick((n) => n + 1); reload(); };
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
   const save = async () => {
+    // A refused category keeps its edits and shows the hub's own reason (review-H318b n-4:
+    // "updated 0" over a 422 read as saved, and the typed text stayed in the box).
     let n = 0;
+    const kept: Record<string, any> = {};
+    const why: string[] = [];
     for (const cat of Object.keys(dirty)) {
-      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
+      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; }
+      catch (err) { kept[cat] = dirty[cat]; why.push(`${cat}: ${refusalReason(err, 'not saved')}`); }
     }
-    setSaved(n); setDirty({}); reload();
+    setSaved(n); setRefused(why); setDirty(kept); reload();
   };
   return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
+    <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
+    {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
-      {Object.entries(cats).map(([cat, items]: [string, any]) => (
+      {shownCats.map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px' }}>{String(cat).toUpperCase()}</div>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{String(cat).toUpperCase()}</span>
+            {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
+              <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
+            )}
+          </div>
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
+              {costs[`${cat}.${it.key}`] && (
+                <a href={docHref('flags', costs[`${cat}.${it.key}`])} target="_blank" rel="noopener noreferrer"
+                  style={{ ...mono, fontSize: 9.5 }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
+              )}
+              {/* H259: a setting that differs from its declared default says so, and ↺ stages the
+                  default for the next save (a secret carries no default, so never). */}
+              {'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
+                <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
+                <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
+                  aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
+              </>}
               <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>
             </Row>
           ))}
         </div>
       ))}
     </div>
-    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
+    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
+    {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
+    <ResetAll onDone={() => afterReset(Object.keys(cats))} />
+    <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />
   </Card>;
 }
 function PromptsPanel() {
@@ -2685,10 +2749,12 @@ function PromptsPanel() {
   const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r: any) => setAb(r.ab || null)).catch(() => setAb(null));
   const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r: any) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
   const doAB = () => { if (a == null || b == null) return; apiPost(`${base}/ab`, { a, b, split: 0.5 }, { admin: true }).then(loadAB).catch(() => {}); };
-  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then(() => { setNote('rolled back to v' + vn); reload(); }).catch(() => {});
+  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then((r: any) => { setNote('rolled back to v' + vn + (r?.live ? ' · live' : '')); reload(); }).catch((err: any) => setNote(refusalText(err)));
   const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v: any) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
   const doPreview = () => { if (!edit) return; apiPost(`${base}/preview`, { proposed: edit.content }, { admin: true }).then(setPreview).catch(() => {}); };
   const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
+  // H156: apply = a new version AND the live persona (the agent's next turn uses it).
+  const doApply = () => { if (!edit) return; apiPut('/api/admin/agents/' + encodeURIComponent(agent) + '/soul', { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('applied v' + (r.version?.version ?? '?') + ' · live'); setEdit(null); setPreview(null); setPick([]); reload(); }).catch((err: any) => setNote(refusalText(err))); };
 
   useEffect(() => { loadAB(); }, [agent]); // eslint-disable-line
 
@@ -2725,7 +2791,8 @@ function PromptsPanel() {
       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
         <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
         <button className="tool-btn" onClick={doPreview}>preview</button>
-        <button className="tool-btn" onClick={doCommit}>commit</button>
+        <button className="tool-btn" onClick={doCommit} title="save a version only; the persona in use does not change">commit</button>
+        <button className="tool-btn" onClick={doApply} title="save a version and make it the live persona">apply</button>
         <button className="tool-btn" onClick={() => { setEdit(null); setPreview(null); }}>✕</button>
       </div>
       {preview && <div style={{ marginTop: 6 }}>
@@ -2733,7 +2800,7 @@ function PromptsPanel() {
         <DiffView text={preview.diff} />
       </div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback · A/B + diff + rollback (H10.22)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
   </Card>;
 }
 export function RoomsPanel() {
@@ -2954,7 +3021,10 @@ export function OnboardingPanel() {
 /* HUD-v3 B1 — the DECISION INBOX (the product north-star). The frontend READ /tasks (the
    autonomy queue, drawn as a network fan) but had NO control to resolve a blocked
    decision. This is it: the blocked queue (GET /autonomy/tasks?status=blocked) with
-   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin). */
+   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin).
+   H315 — under them, the plans the agent is working through (GET /sessions/todo).
+   H318 — and the skill changes the agent proposed, each with its whole diff
+   (GET /api/skills/proposals; panels/skill-changes.tsx). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   useEffect(() => {
@@ -2964,6 +3034,8 @@ export function DecisionInboxPanel() {
   const pending = arr(d, 'tasks');
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
+  const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
+  const changes = useApi(SKILL_CHANGES_PATH, true, true);   // H318 — skill changes, each with its whole diff
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
@@ -2996,7 +3068,7 @@ export function DecisionInboxPanel() {
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
-      onReload={() => { reload(); interrupts.reload(); }}>
+      onReload={() => { reload(); interrupts.reload(); plans.reload(); changes.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
       {pending.slice(0, 10).map((t, i) => (
@@ -3053,6 +3125,8 @@ export function DecisionInboxPanel() {
         </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+      <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
+      <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );
 }
@@ -3137,14 +3211,12 @@ export function BackupPanel() {
   const verify = () => actA('/api/admin/backup/verify', {}, (r) => setMsg(r && r.ok ? 'restore-drill OK · ' + (r.file_count || 0) + ' files' : 'verify failed'));
   const exportMe = () => actA('/api/admin/export', {}, (r) => setMsg(r && r.bytes ? 'export written · ' + sz(r.bytes) : 'export written'));
   // forget-me (C9, destructive) — the backend requires {"confirm":"FORGET"}; the UI mirrors
-  // that hard-to-fat-finger acknowledgement with a typed-confirmation reveal. Backup-first.
-  const [armed, setArmed] = useState(false);
-  const [confirm, setConfirm] = useState('');
+  // that hard-to-fat-finger acknowledgement with the tier-3 typed confirmation (H168).
+  // Backup-first.
   const forget = () => {
-    if (confirm !== 'FORGET') return;
     actA('/api/admin/forget', { confirm: 'FORGET' }, (r) => {
       setMsg(r && r.ok !== false ? 'forgotten · backup-first purge complete' : 'forget failed');
-      setArmed(false); setConfirm(''); reload();
+      reload();
     });
   };
   return (
@@ -3165,16 +3237,10 @@ export function BackupPanel() {
         <button className="tool-btn" onClick={exportMe}>export my data</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      {!armed
-        ? <button className="tool-btn" style={{ marginTop: 8, color: 'var(--red)' }} onClick={() => setArmed(true)}>forget me…</button>
-        : (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, color: 'var(--red)' }}>type FORGET to erase all content (backup-first):</span>
-            <input value={confirm} onChange={(ev) => setConfirm(ev.target.value)} placeholder="FORGET" style={{ ...inpS, width: 90 }} />
-            <button className="tool-btn" disabled={confirm !== 'FORGET'} style={{ color: confirm === 'FORGET' ? 'var(--red)' : 'var(--ink-3)' }} onClick={forget}>confirm erase</button>
-            <button className="tool-btn" onClick={() => { setArmed(false); setConfirm(''); }}>cancel</button>
-          </div>
-        )}
+      <div style={{ marginTop: 8 }}>
+        <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="forget me…" phrase="FORGET" armedLabel="confirm erase"
+          prompt="type FORGET to erase all content (backup-first):" style={{ color: 'var(--red)' }} onConfirm={forget} />
+      </div>
     </Card>
   );
 }
@@ -3898,6 +3964,8 @@ export function CameraPanel() {
   );
 }
 
+/* The phrase the acquisition ledger purge takes, typed (H168), and sent to the hub. */
+const PURGE_PHRASE = 'PURGE ACQUISITION DETAIL';
 /* H32.6 — owner-visible acquisition lifecycle and hash-only audit projection.
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
@@ -3922,7 +3990,6 @@ export function AcquisitionPanel() {
   const reuse = data.reuse || {};
   const reuseRate = Math.round(Math.max(0, Math.min(1, Number(reuse.reuse_rate) || 0)) * 100);
   const [outcome, setOutcome] = useState('');
-  const [purgeConfirmation, setPurgeConfirmation] = useState('');
   const [entrypoint, setEntrypoint] = useState('run');
   const [cases, setCases] = useState('[{"input": {}, "expected": null}]');
   const gaps = arr(requests.d, 'requests').slice(0, 50);
@@ -3943,12 +4010,11 @@ export function AcquisitionPanel() {
       .then((result: any) => setOutcome(`export ready · ${Number(result.summary?.count || 0)} summarized events`))
       .catch((error) => setOutcome(`refused · ${error?.message || 'export_failed'}`));
   };
+  // H168: the tier-3 typed confirmation guards it; the hub checks the phrase again.
   const purgeLedger = () => {
-    if (purgeConfirmation !== 'PURGE ACQUISITION DETAIL') return;
-    apiPost('/api/acquisition/ledger/purge', { confirm: purgeConfirmation }, { admin: true })
+    apiPost('/api/acquisition/ledger/purge', { confirm: PURGE_PHRASE }, { admin: true })
       .then((result: any) => {
         setOutcome(`purged · ${Number(result.purged || 0)} detailed events`);
-        setPurgeConfirmation('');
         reload();
       })
       .catch((error) => setOutcome(`refused · ${error?.message || 'purge_failed'}`));
@@ -4068,22 +4134,9 @@ export function AcquisitionPanel() {
                 </span>
               </Row>
             ))}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginTop: 10 }}>
-            <input
-              aria-label="acquisition purge confirmation"
-              value={purgeConfirmation}
-              onChange={(event) => setPurgeConfirmation(event.target.value)}
-              maxLength={64}
-              placeholder="type PURGE ACQUISITION DETAIL"
-              style={inpS}
-            />
-            <button
-              className="tool-btn"
-              type="button"
-              disabled={purgeConfirmation !== 'PURGE ACQUISITION DETAIL'}
-              onClick={purgeLedger}
-              aria-label="Purge acquisition detail"
-            >purge detail</button>
+          <div style={{ marginTop: 10 }}>
+            <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="purge detail" ariaLabel="Purge acquisition detail"
+              phrase={PURGE_PHRASE} armedLabel="purge detail" onConfirm={purgeLedger} />
           </div>
         </section>
         {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
@@ -4753,6 +4806,9 @@ const PANEL_COMPONENTS = {
   CommandCenterPanel,
   TodayReceiptPanel,
   ModelSetupPanel,
+  DocsPanel,
+  WebhooksPanel,
+  LogsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
   HousePanel,
@@ -4764,6 +4820,11 @@ const PANEL_COMPONENTS = {
   VaultPanel,
   KgPanel,
   MemoryWritePanel,
+  LongTermMemoryPanel,
+  SkillSwitchesPanel,
+  ProviderCheckPanel,
+  ProviderQuotaPanel,
+  InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
   MemoryEvalPanel,

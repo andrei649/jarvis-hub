@@ -39,7 +39,7 @@ def _mk(tmp_path):
 def _publish(mk, folder="myskill", title="My Skill"):
     sd = mk.skills_dir / folder
     sd.mkdir(parents=True, exist_ok=True)
-    (sd / "SKILL.md").write_text(f"# {title}\nversion: 1.0\n", encoding="utf-8")
+    (sd / "SKILL.md").write_text(f"# {title}\n> A test skill.\nversion: 1.0\n", encoding="utf-8")
     (sd / "main.py").write_text("def run():\n    return 'ok'\n", encoding="utf-8")
     mk.publish_skill(folder)
     return sd, mk.list_skills()[0]["name"]
@@ -54,7 +54,9 @@ def _clean_env(monkeypatch):
 def test_publish_signs_and_marks_pending(tmp_path):
     mk = _mk(tmp_path)
     sd, name = _publish(mk)
-    assert (sd / "SKILL.sig").exists()                 # package is signed on publish
+    # The package is signed on publish; the owner's tree is not (review-H318b m-7: sharing
+    # a skill is not vouching for it).
+    assert not (sd / "SKILL.sig").exists()
     entry = mk.list_skills()[0]
     assert entry["review_status"] == "pending"
     assert entry["signed"] is True
@@ -83,7 +85,7 @@ def test_zip_slip_is_blocked(tmp_path):
     mk = _mk(tmp_path)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("SKILL.md", "# Evil\n")
+        z.writestr("SKILL.md", "# Evil\n> A test skill.\n")
         z.writestr("../../evil.txt", "pwned")
     with pytest.raises(ValueError):
         mk.install_from_zip(buf.getvalue())
@@ -99,7 +101,7 @@ def test_signature_gate_rejects_unsigned(tmp_path, monkeypatch):
     mk = _mk(tmp_path)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("SKILL.md", "# Unsigned\n")
+        z.writestr("SKILL.md", "# Unsigned\n> A test skill.\n")
         z.writestr("main.py", "x = 1\n")               # no SKILL.sig
     with pytest.raises(PermissionError):
         mk.install_from_zip(buf.getvalue())
@@ -122,7 +124,7 @@ def test_signature_gate_accepts_signed_publish(tmp_path, monkeypatch):
 def test_windows_and_absolute_member_names_are_rejected(tmp_path, evil):
     mk = _mk(tmp_path)
     with pytest.raises(ValueError):
-        mk.install_from_zip(_pkg(("SKILL.md", "# Evil\n"), (evil, "pwned")))
+        mk.install_from_zip(_pkg(("SKILL.md", "# Evil\n> A test skill.\n"), (evil, "pwned")))
     assert _entries(mk) == []
     assert not (tmp_path / "evil.txt").exists()
 
@@ -134,7 +136,7 @@ def test_symlink_entry_fails_the_install(tmp_path):
     link.create_system = 3
     link.external_attr = (stat.S_IFLNK | 0o777) << 16
     with pytest.raises(ValueError, match="symlink"):
-        mk.install_from_zip(_pkg(("SKILL.md", "# Linky\n"), (link, "/etc/passwd")))
+        mk.install_from_zip(_pkg(("SKILL.md", "# Linky\n> A test skill.\n"), (link, "/etc/passwd")))
     assert _entries(mk) == []
 
 
@@ -145,9 +147,9 @@ def test_oversized_package_is_rejected_before_anything_lands(tmp_path, monkeypat
     monkeypatch.setattr(mkmod, "SKILL_PACKAGE_LIMITS", ArchiveLimits(max_members=10, max_bytes=1000))
     mk = _mk(tmp_path)
     with pytest.raises(ValueError, match="bytes"):
-        mk.install_from_zip(_pkg(("SKILL.md", "# Big\n"), ("blob.bin", b"\0" * 5000)))
+        mk.install_from_zip(_pkg(("SKILL.md", "# Big\n> A test skill.\n"), ("blob.bin", b"\0" * 5000)))
     with pytest.raises(ValueError, match="members"):
-        mk.install_from_zip(_pkg(("SKILL.md", "# Many\n"),
+        mk.install_from_zip(_pkg(("SKILL.md", "# Many\n> A test skill.\n"),
                                  *[(f"f{i}.txt", "x") for i in range(12)]))
     assert _entries(mk) == []
 
@@ -163,7 +165,7 @@ def test_a_rejected_update_keeps_the_previous_install(tmp_path, monkeypatch):
     installed = mk.skills_dir / "keeper"
     assert (installed / "main.py").read_text() == "def run():\n    return 'ok'\n"
     with pytest.raises(PermissionError):
-        mk.install_from_zip(_pkg(("SKILL.md", "# Keeper\n"), ("main.py", "tampered = True\n")))
+        mk.install_from_zip(_pkg(("SKILL.md", "# Keeper\n> A test skill.\n"), ("main.py", "tampered = True\n")))
     assert (installed / "main.py").read_text() == "def run():\n    return 'ok'\n"
     assert (installed / "SKILL.sig").exists()
     assert sorted(_entries(mk)) == ["keeper", "src"]   # no staging debris
@@ -171,8 +173,8 @@ def test_a_rejected_update_keeps_the_previous_install(tmp_path, monkeypatch):
 
 def test_reinstall_places_exactly_the_package(tmp_path):
     mk = _mk(tmp_path)
-    assert mk.install_from_zip(_pkg(("SKILL.md", "# Swap\n"), ("old.py", "x = 1\n"))) is True
-    assert mk.install_from_zip(_pkg(("SKILL.md", "# Swap\n"), ("new.py", "y = 2\n"))) is True
+    assert mk.install_from_zip(_pkg(("SKILL.md", "# Swap\n> A test skill.\n"), ("old.py", "x = 1\n"))) is True
+    assert mk.install_from_zip(_pkg(("SKILL.md", "# Swap\n> A test skill.\n"), ("new.py", "y = 2\n"))) is True
     installed = mk.skills_dir / "swap"
     assert (installed / "new.py").exists()
     assert not (installed / "old.py").exists()         # no stale file outside the package
@@ -182,7 +184,7 @@ def test_reinstall_places_exactly_the_package(tmp_path):
 
 def test_nested_package_layout_is_preserved(tmp_path):
     mk = _mk(tmp_path)
-    assert mk.install_from_zip(_pkg(("pkg/SKILL.md", "# Nested\n"), ("pkg/main.py", "x\n"))) is True
+    assert mk.install_from_zip(_pkg(("pkg/SKILL.md", "# Nested\n> A test skill.\n"), ("pkg/main.py", "x\n"))) is True
     installed = mk.skills_dir / "nested"
     assert (installed / "pkg" / "SKILL.md").exists()
     assert (installed / "pkg" / "EXTERNAL_SOURCE").exists()
@@ -210,7 +212,7 @@ def test_install_sweeps_staging_left_by_a_killed_install(tmp_path):
     os.utime(stale, (old, old))
     fresh = mk.skills_dir / ".nerva-install-cafef00d"   # a concurrent install, still running
     fresh.mkdir()
-    assert mk.install_from_zip(_pkg(("SKILL.md", "# Fine\n"))) is True
+    assert mk.install_from_zip(_pkg(("SKILL.md", "# Fine\n> A test skill.\n"))) is True
     assert _entries(mk) == [".nerva-install-cafef00d", "fine"]
 
 

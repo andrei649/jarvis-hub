@@ -167,7 +167,7 @@ async def test_new_skill_goes_through_generate_pipeline(tmp_path):
 
 async def test_patch_lands_as_pending_proposal_not_live_write(tmp_path):
     loader = _FakeLoader(tmp_path)
-    loader.add_skill("weather", "# Weather\noriginal body")
+    loader.add_skill("weather", "# Weather\n> Weather.\noriginal body")
     proposals = SkillProposalStore(path=tmp_path / "props.json")
     approvals = []
 
@@ -179,14 +179,14 @@ async def test_patch_lands_as_pending_proposal_not_live_write(tmp_path):
     r = BackgroundReviewer(
         _llm_returning({"user_facts": [], "agent_facts": [], "corrections": [],
                         "skill_updates": [{"kind": "patch", "name": "weather",
-                                           "content": "# Weather\nimproved body"}],
+                                           "content": "# Weather\n> Weather.\nimproved body"}],
                         "nothing": False}),
         living=_living(tmp_path), skills=loader,
         proposals=proposals, approvals=_Approvals())
     result = await r.run("u", "a")
     # live SKILL.md untouched
     assert (loader.skills["weather"].path / "SKILL.md").read_text(encoding="utf-8") \
-        == "# Weather\noriginal body"
+        == "# Weather\n> Weather.\noriginal body"
     pending = proposals.list(STATUS_PENDING)
     assert len(pending) == 1 and pending[0]["skill"] == "weather"
     assert approvals and approvals[0]["tool"] == "skill.patch_proposal"

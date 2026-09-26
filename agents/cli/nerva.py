@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +40,11 @@ _OSV_DEFAULT = "https://api.osv.dev"
 
 _SECRET_KINDS = frozenset({"secret", "password"})
 _SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
+#: Kinds that hold no credential whatever their name: ``llm.max_tokens`` and
+#: ``learning.review_max_tokens`` are budgets, and /refine tells the owner to raise one.
+#: A model id (``model-select``) is not listed, so a hinted name would be masked; the one
+#: model row, ``llm.default_model``, has no hint and shows as typed (review-H465e nit 1).
+_PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider"})
 _TIER_NAMES = {0: "READ_ONLY", 1: "REVERSIBLE", 2: "EXTERNAL", 3: "IRREVERSIBLE_OR_MONEY"}
 
 
@@ -149,8 +155,38 @@ def build_parser() -> argparse.ArgumentParser:
                        help="only the results that were fenced as untrusted data")
     tools.add_argument("--json", action="store_true")
 
-    logs = verbs.add_parser("logs", help="the last lines of the hub log (offline)")
+    # H227 — what an agent can do right now, as a principal sees it (admin, read-only).
+    inspect = verbs.add_parser("inspect", help="what an agent can do right now: status, tools, "
+                               "skills, MCP servers and its resolved prompt (admin)")
+    inspect.add_argument("agent", nargs="?", default="jarvis")
+    inspect.add_argument("--as", dest="view", choices=INSPECT_VIEWS, default="owner",
+                         help="whose turn: the owner or a guest on the HUD, the owner or a "
+                              "stranger on an external channel, or no human (internal)")
+    inspect.add_argument("--section", choices=tuple(INSPECT_SECTIONS), help="only this section")
+    inspect.add_argument("--json", action="store_true")
+
+    logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
+                            "and redacted (offline; -n counts records, a traceback is one)")
     logs.add_argument("-n", "--lines", type=int, default=50)
+
+    skills = verbs.add_parser("skills", help="skill authoring tools (offline)")
+    skills_verbs = skills.add_subparsers(dest="action", required=True, metavar="action")
+    skills_lint = skills_verbs.add_parser(
+        "lint", help="check SKILL.md files: an error is what every write refuses, advice is not enforced")
+    skills_lint.add_argument("paths", nargs="+", metavar="path",
+                             help="a SKILL.md, a skill folder, or a folder of skill folders")
+    skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
+    skills_lint.add_argument("--json", action="store_true")
+    # H329 — switched off, not uninstalled (admin; applies at once).
+    skills_verbs.add_parser("list", help="installed skills and where each is switched off").add_argument(
+        "--json", action="store_true")
+    for verb, text in (("off", "switch a skill off without uninstalling it (admin)"),
+                       ("on", "switch a skill back on (admin; recorded in the intent log)")):
+        switch = skills_verbs.add_parser(verb, help=text)
+        switch.add_argument("name", nargs="?", help="the skill's name or folder")
+        switch.add_argument("--category", help="every skill of this category instead of one skill")
+        switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
+        switch.add_argument("--json", action="store_true")
 
     estop = verbs.add_parser("estop", help="the global emergency stop")
     estop_verbs = estop.add_subparsers(dest="action", required=True, metavar="action")
@@ -171,6 +207,9 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_create.add_argument("--when", help="plain words ('every weekday at 7') or a five-field cron")
     # dest differs from the subparser's own `action` dest, which an option default would clobber.
     jobs_create.add_argument("--action", dest="action_json", help='JSON, e.g. {"type":"remind","message":"stand up"}')
+    jobs_create.add_argument("--first-run", dest="first_run", action=argparse.BooleanOptionalAction, default=None,
+                             help="fire once now whatever the schedule (--no-first-run: never); by default only an "
+                                  "interval job fires at once")
     jobs_create.add_argument("--json", action="store_true")
     jobs_create.add_argument("--toolsets", help="model ask: default, none, or comma-separated installed IDs from jobs doctor; requires complete --options")
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
@@ -210,6 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "status":
             sub.add_argument("--request", help="durable manual-run receipt id")
 
+    todo = verbs.add_parser("todo", help="the checklists the agent keeps while it works")
+    todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
+    todo.add_argument("--json", action="store_true")
+
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
     session_verbs = sessions.add_subparsers(dest="session_action")
@@ -233,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
                "  nerva chat -z \"what is on my calendar?\"\n"
                "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
                "  nerva chat -z -f prompt.txt --agent athena\n"
+               "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
@@ -253,6 +297,15 @@ def build_parser() -> argparse.ArgumentParser:
                       help="reasoning effort for this invocation only")
     chat.add_argument("--session", help="explicit existing conversation session")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("--image", action="append", metavar="PATH",
+                      help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
+                           "each); the turn goes to the hub's vision model only, never to an agent")
+    chat.add_argument("--clipboard-image", action="store_true",
+                      help="attach the image on the clipboard (wl-paste, xclip, pngpaste, "
+                           "osascript, or PowerShell on Windows and WSL), as --image does")
+    chat.add_argument("--remote-vision", metavar="URL",
+                      help="acknowledge that the images go to this vision destination off the "
+                           "hub's machine; it must name the destination the hub reports")
 
     send = verbs.add_parser(
         "send",
@@ -529,7 +582,7 @@ def _runnable(client: HubClient) -> dict:
         return {"ready": None, "reason": "hub_unreachable", "error": exc.reason}
     except HubError as exc:
         if exc.status in (401, 403):
-            return {"ready": None, "reason": "needs_token"}
+            return {"ready": None, "reason": "needs_token", "error": exc.reason}
         return {"ready": None, "reason": "command_center_unavailable",
                 "error": f"HTTP {exc.status}: {exc.reason}"}
     model = center.get("model") if isinstance(center, dict) else None
@@ -554,10 +607,94 @@ def _named(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _runnable_line(verdict: Mapping[str, Any]) -> str:
+#: Settings read once, at start: a running hub does not pick them up (review-H667 nit 6).
+_RESTART_SETTINGS = frozenset({("security", "sandbox_temp_dir")})
+
+
+def _withheld_admin(client: Any) -> bool:
+    """The admin token is set and this client keeps it back: plain http off this machine
+    would carry it in clear text (review-H273f m2)."""
+    sends = getattr(client, "_sends_admin_token", None)
+    return bool(getattr(client, "admin_token", "")) and callable(sends) and not sends()
+
+
+def _refusal_tier(reason: str) -> str | None:
+    """The tier the hub's refusal asked for, read from its own reason (agents/web.py's
+    guards): "admin", "user", or None when the reason does not say."""
+    text = (reason or "").lower()
+    if "admin token required" in text or text.startswith("admin disabled from network"):
+        return "admin"
+    if "user token required" in text or "disabled from network" in text:
+        return "user"
+    return None
+
+
+def _auth_hint(client: Any, reason: str = "") -> str:
+    """What to do about a 401/403, for the client that was refused and the hub's own
+    reason. The withheld admin token is named as one possible cause, beside the user
+    token, never as the only one (review-H273g m3). The reason says which tier the hub
+    wanted: only a token of that tier that was sent is called refused, and a verb that
+    needs the admin tier asks for the admin token when only the user token is set
+    (review-H273i m2). Recovery is the additive ``issue``; ``rotate`` revokes every
+    token of the tier, so it is named only for a leaked one."""
+    if _withheld_admin(client):
+        return (f"JARVIS_ADMIN_TOKEN is set but was withheld from {client.base_url}: plain http to "
+                "another machine would carry it in clear text. If this needs the admin token, point "
+                "NERVA_HUB_URL at an https address or run it on the hub itself; otherwise set "
+                "JARVIS_USER_TOKEN, or check that it is current.")
+    admin_set = bool(getattr(client, "admin_token", ""))
+    user_set = bool(getattr(client, "user_token", ""))
+    tier = _refusal_tier(reason)
+    if "disabled from network" in (reason or "").lower():
+        name = "JARVIS_ADMIN_TOKEN" if tier == "admin" else "JARVIS_USER_TOKEN"
+        return (f"The hub has no {name} configured, so it refuses this from another machine "
+                f"whatever is sent: set {name} on the hub (mint one there: python "
+                f"scripts/token_recover.py issue {tier or 'user'}) and use it here, or run the verb "
+                "on the hub itself.")
+    if tier == "admin":
+        if not admin_set:
+            also = " (JARVIS_USER_TOKEN is not enough)" if user_set else ""
+            return (f"This needs JARVIS_ADMIN_TOKEN{also}. Mint one on the box: python "
+                    "scripts/token_recover.py issue admin.")
+        return ("The hub refused JARVIS_ADMIN_TOKEN: it may be expired or revoked. Mint another on "
+                "the box: python scripts/token_recover.py issue admin (rotate admin only if it "
+                "leaked: rotating revokes every admin token).")
+    sent = [name for name, value in (("JARVIS_ADMIN_TOKEN", admin_set),
+                                     ("JARVIS_USER_TOKEN", user_set)) if value]
+    if tier == "user":
+        if not sent:
+            return ("Set JARVIS_USER_TOKEN (mint one on the box: python scripts/token_recover.py "
+                    "issue user) or JARVIS_ADMIN_TOKEN.")
+        return (f"The hub refused {' and '.join(sent)}: it may be expired or revoked. Mint another "
+                "on the box: python scripts/token_recover.py issue user.")
+    if sent:
+        return (f"The hub refused {' and '.join(sent)}: it may be expired or revoked, or this needs "
+                "the other tier. Mint another on the box: python scripts/token_recover.py issue "
+                "admin (or issue user).")
+    return ("Set JARVIS_ADMIN_TOKEN (mint one on the box: python scripts/token_recover.py issue admin) "
+            "or JARVIS_USER_TOKEN.")
+
+
+def _read_hint(client: Any, reason: str = "") -> str:
+    """The status lines' version of the hint, for a read the hub refused (a user-tier
+    read). The hub's reason rules causes out: a hub with no user token configured
+    refuses every read from the network, whatever is sent (review-H273i n4)."""
+    if "disabled from network" in (reason or "").lower():
+        return "(refused from the network: the hub has no JARVIS_USER_TOKEN configured)"
+    if _withheld_admin(client):
+        if getattr(client, "user_token", ""):
+            return ("(refused: JARVIS_ADMIN_TOKEN is withheld over plain http, and JARVIS_USER_TOKEN "
+                    "may be expired or revoked)")
+        return "(needs JARVIS_USER_TOKEN to read here: JARVIS_ADMIN_TOKEN is withheld over plain http)"
+    if getattr(client, "admin_token", "") or getattr(client, "user_token", ""):
+        return "(refused: the token set may be expired or revoked)"
+    return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
+
+
+def _runnable_line(verdict: Mapping[str, Any], client: Any = None) -> str:
     reason = verdict.get("reason")
     if reason == "needs_token":
-        return "(needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)"
+        return _read_hint(client, str(verdict.get("error") or ""))
     if reason in ("command_center_unavailable", "malformed_reply", "hub_unreachable"):
         error = verdict.get("error")
         return f"unknown — {reason}" + (f" ({error})" if error else "")
@@ -578,11 +715,13 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
     if not isinstance(status, dict):
         raise HubError(0, "malformed /status reply")
     estop = None
+    estop_refused = ""
     try:
         estop = client.get("/api/ops/estop")
     except HubError as exc:
         if exc.status not in (401, 403):
             raise
+        estop_refused = exc.reason
     runnable = _runnable(client)
     if ns.json:
         ctx.dump({"status": status, "estop": estop, "runnable": runnable})
@@ -595,7 +734,7 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         f"  model:       {status.get('loaded_model') or status.get('configured_model') or '—'}"
         f" ({_MODEL_STATE_WORDS.get(state, state)})"
     )
-    ctx.say(f"  runnable:    {_runnable_line(runnable)}")
+    ctx.say(f"  runnable:    {_runnable_line(runnable, client)}")
     ctx.say(f"  agents:      {status.get('agents_online', 0)}/{status.get('agents_total', len(agents))} busy")
     channels = status.get("channels") or []
     names = ", ".join(
@@ -609,7 +748,7 @@ def cmd_status(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say("  e-stop:      not engaged")
     else:
-        ctx.say("  e-stop:      (needs JARVIS_USER_TOKEN or JARVIS_ADMIN_TOKEN to read)")
+        ctx.say(f"  e-stop:      {_read_hint(client, estop_refused)}")
     return EXIT_OK
 
 
@@ -621,7 +760,12 @@ def _settings():
 
 def _is_secret(row: Mapping[str, Any]) -> bool:
     key = str(row.get("key", "")).lower()
-    return str(row.get("kind", "")) in _SECRET_KINDS or any(hint in key for hint in _SECRET_HINTS)
+    kind = str(row.get("kind", ""))
+    # A key the store encrypts is a credential whatever its name (review-H465d nit 5: the
+    # GA4 service-account JSON, a private key, printed in the clear).
+    if kind in _SECRET_KINDS or key in _settings().SECRET_KEYS:
+        return True
+    return kind not in _PLAIN_KINDS and any(hint in key for hint in _SECRET_HINTS)
 
 
 def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
@@ -671,7 +815,11 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         for cat, rows in groups.items():
             for row in rows:
                 shown = json.dumps(_shown(row, reveal=ns.reveal), ensure_ascii=False)
-                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')})")
+                # H273: "default" is the declared value; "set" was changed from it
+                source = f", {row['source']}" if row.get("source") else ""
+                overlay = (f"; in effect: {json.dumps(row['in_effect'])} by {row['overlay']}"
+                           if row.get("overlay") else "")
+                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
         return EXIT_OK
     if ns.action == "get":
         category, key = _split_name(ns.name)
@@ -697,7 +845,12 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
         settings.put_category(category, {key: value})
-        ctx.say(f"{ns.name} = {json.dumps(value)}  (a running hub picks it up within 30 s)")
+        # A stored secret is echoed back masked, as `config get` shows it (review-H465e
+        # nit 3); the value typed on this command line is the shell's to keep or not.
+        shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
+        when = ("restart the hub to apply it" if (category, key) in _RESTART_SETTINGS
+                else "a running hub picks it up within 30 s")
+        ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  ({when})")
         return EXIT_OK
     if ns.action == "check":
         problems: list[str] = []
@@ -762,6 +915,100 @@ def cmd_tools(ns: argparse.Namespace, ctx: Context) -> int:
     ctx.say(f"{len(events)} shown — since boot: {sum(counts.values())} events, "
             f"{fenced} fenced as untrusted")
     return EXIT_OK
+
+
+#: `nerva inspect --as` — the inspector's views (agents/core/inspector.py VIEWS, same order).
+INSPECT_VIEWS = ("owner", "guest", "inbound-owner", "inbound", "internal")
+#: `nerva inspect --section` → the payload's section.
+INSPECT_SECTIONS = {"status": "status", "tools": "tools", "skills": "skills", "mcp": "mcp",
+                    "prompt": "system_prompt"}
+
+
+def cmd_inspect(ns: argparse.Namespace, ctx: Context) -> int:
+    """H227 — what an agent can do right now, as the chosen principal sees it.
+
+    One read of GET /api/admin/inspector — the payload the HUD's Inspector panel reads —
+    rendered section by section; ``--json`` prints it as it came.
+    """
+    from urllib.parse import urlencode
+
+    query = [("agent", ns.agent), ("view", ns.view)]
+    if ns.section:
+        query.append(("section", INSPECT_SECTIONS[ns.section]))
+    reply = ctx.client().get(f"/api/admin/inspector?{urlencode(query)}") or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    only = INSPECT_SECTIONS[ns.section] if ns.section else None
+    for line in render_inspector(reply, only=only):
+        ctx.say(line)
+    return EXIT_OK
+
+
+def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> list[str]:
+    """The inspector payload as text, in the payload's section order (*only*: one section)."""
+    if only is not None:
+        payload = {k: v for k, v in payload.items() if k in ("agent", "view", "posture", only)}
+    lines = [f"{payload.get('agent', '?')} as {payload.get('view', '?')} — posture {payload.get('posture', '?')}"]
+    status = payload.get("status")
+    if isinstance(status, Mapping):
+        loaded = status.get("loaded_model")
+        lines.append(
+            f"status   nerva {status.get('version', '?')} · backend {status.get('backend', 'none')} · "
+            f"model {status.get('model') or '?'} · {status.get('model_state', 'unknown')}"
+            + (f" ({loaded})" if loaded else "")
+            + f" · context budget {status.get('context_tokens') or '75% of the model window'}"
+            + f" · tool loop {'on' if status.get('tool_loop') else 'off'}"
+            + (" · SAFE MODE" if status.get("safe_mode") else ""))
+    tools = payload.get("tools")
+    if isinstance(tools, Mapping):
+        offered = list(tools.get("offered") or [])
+        withheld = list(tools.get("withheld") or [])
+        head = f"tools    {len(offered)} offered of {tools.get('registry', 0)}"
+        if not tools.get("wired", True):
+            head += " — the tool runtime is not wired"
+        elif tools.get("error"):
+            head += " — the offer could not be resolved, so nothing is offered"
+        elif not tools.get("loop_enabled"):
+            head += " — the tool loop is off: none of these reach the model until llm.tool_loop_enabled is on"
+        lines.append(head)
+        for row in offered:
+            marks = [m for m, on in (("gated", row.get("gated")),
+                                     ("untrusted output", row.get("untrusted_output"))) if on]
+            description = str(row.get("description") or "")
+            if len(description) > 60:
+                description = description[:59] + "…"
+            lines.append(f"  {row.get('name', '?'):22s} {', '.join(marks):24s} {description}".rstrip())
+        if withheld:
+            lines.append(f"  withheld ({len(withheld)}): {', '.join(withheld)}")
+    skills = payload.get("skills")
+    if isinstance(skills, Mapping):
+        if not skills.get("in_prompt", True):
+            lines.append("skills   none in the prompt (llm.skills_in_prompt is off)")
+        else:
+            lines.append(f"skills   {skills.get('count', 0)} in the prompt")
+        for row in skills.get("rows") or []:
+            lines.append(f"  {row.get('command', '?'):24s} {row.get('description', '')}".rstrip())
+    mcp = payload.get("mcp")
+    if isinstance(mcp, Mapping):
+        servers = list(mcp.get("servers") or [])
+        lines.append(f"mcp      {len(servers)} servers, {mcp.get('connected', 0)} connected")
+        for row in servers:
+            names = ", ".join(row.get("tool_names") or [])
+            lines.append(f"  {row.get('name', '?'):16s} {row.get('transport', ''):16s} {row.get('trust', ''):10s} "
+                         f"{'connected' if row.get('connected') else 'down':10s} {row.get('tools', 0)} tools"
+                         + (f": {names}" if names else ""))
+    prompt = payload.get("system_prompt")
+    if isinstance(prompt, Mapping):
+        if prompt.get("withheld"):
+            lines.append("prompt   withheld: the secret redactor could not be loaded")
+        else:
+            size = f"prompt   {prompt.get('bytes', 0)} bytes, about {prompt.get('tokens', 0)} tokens before any history"
+            if prompt.get("truncated"):
+                size += f", shown to {prompt.get('cap')}"
+            lines += [size, "--- system ---", str(prompt.get("system") or ""),
+                      "--- turn (an empty user message) ---", str(prompt.get("turn") or "")]
+    return lines
 
 
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
@@ -903,6 +1150,71 @@ def log_path(environ: Mapping[str, str]) -> Path:
     return data_path("logs", "jarvis.log")
 
 
+def _skill_files(raw: str) -> list[Path] | None:
+    """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
+    path = Path(raw)
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        return None
+    if (path / "SKILL.md").is_file():
+        return [path / "SKILL.md"]
+    return sorted(p for p in path.glob("*/SKILL.md") if p.is_file())
+
+
+def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
+    """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
+    H329 — ``nerva skills list | off | on``: the skill switches on the running hub."""
+    if ns.action in ("list", "off", "on"):
+        return _skill_switches(ns, ctx)
+    from agents.core.skills.validate import (
+        MAX_SKILL_MD_BYTES,
+        Problem,
+        lint_skill_md,
+        validate_skill_md,
+    )
+
+    files: list[Path] = []
+    for raw in ns.paths:
+        found = _skill_files(raw)
+        if found is None:
+            ctx.err.write(f"no such file or folder: {raw}\n")
+            return EXIT_USAGE
+        if not found:
+            ctx.err.write(f"no SKILL.md in {raw} or in the folders directly under it\n")
+            return EXIT_USAGE
+        files.extend(found)
+    report, errors, advice = [], 0, 0
+    for path in dict.fromkeys(files):
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read(MAX_SKILL_MD_BYTES + 1)     # past the cap is an error anyway
+        except OSError as exc:
+            problems, findings = [Problem("document", f"cannot be read ({exc.strerror or exc})")], []
+        else:
+            problems = validate_skill_md(data)
+            findings = lint_skill_md(data, folder=path.parent.name)
+        errors += len(problems)
+        advice += len(findings)
+        report.append({"path": str(path), "errors": [p.as_dict() for p in problems],
+                       "advice": [p.as_dict() for p in findings]})
+    if ns.json:
+        ctx.dump(report)
+    else:
+        for entry in report:
+            if not entry["errors"] and not entry["advice"]:
+                ctx.out.write(f"{entry['path']}: ok\n")
+                continue
+            ctx.out.write(f"{entry['path']}:\n")
+            for kind, items in (("error ", entry["errors"]), ("advice", entry["advice"])):
+                for item in items:
+                    line = f" (line {item['line']})" if "line" in item else ""
+                    ctx.out.write(f"  {kind} {item['field']}: {item['message']}{line}\n")
+        ctx.out.write(f"{len(report)} file{'s' if len(report) != 1 else ''}: {errors} error"
+                      f"{'s' if errors != 1 else ''}, {advice} advice\n")
+    return EXIT_FAILED if errors or (ns.strict and advice) else EXIT_OK
+
+
 def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
     path = log_path(ctx.environ)
     if not path.exists():
@@ -911,9 +1223,65 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
             "(`nerva config set system.log_to_file on`) or JARVIS_LOG_FILE is set\n"
         )
         return EXIT_FAILED
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    for line in lines[-max(0, ns.lines):]:
-        ctx.say(line)
+    # H145: read from the end within a byte budget and redacted again, as the HUD's log
+    # page reads it; a multi-gigabyte log costs the same as a small one.
+    from agents.core import log_tail
+
+    if ns.lines <= 0:
+        return EXIT_OK
+    try:
+        tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+    except log_tail.RedactionUnavailable as exc:
+        ctx.err.write(f"the secret redactor could not be loaded ({exc}); the log is not shown\n")
+        return EXIT_FAILED
+    except OSError as exc:
+        ctx.err.write(f"{path} could not be read ({exc.strerror or exc.__class__.__name__})\n")
+        return EXIT_FAILED
+    for entry in tail["entries"]:
+        ctx.say(entry["text"])
+    if tail["truncated"] and len(tail["entries"]) < ns.lines:
+        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
+    return EXIT_OK
+
+
+def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
+    client = ctx.client()
+    if ns.action == "list":
+        reply = client.get("/skills")
+        skills = reply.get("skills") if isinstance(reply, dict) else None
+        if not isinstance(skills, dict):
+            ctx.err.write("unexpected reply from the hub: no skills in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        for name in sorted(skills, key=str.casefold):
+            row = skills[name] if isinstance(skills[name], dict) else {}
+            where = ("off everywhere" if row.get("disabled") else
+                     "off on " + ", ".join(row["disabled_channels"]) if row.get("disabled_channels") else "on")
+            ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}")
+        return EXIT_OK
+    if bool(ns.name) == bool(ns.category):
+        ctx.err.write("name one skill, or one --category\n")
+        return EXIT_USAGE
+    body = {"enabled": ns.action == "on"}
+    body.update({"skill": ns.name} if ns.name else {"category": ns.category})
+    if ns.channel:
+        body["channel"] = ns.channel
+    reply = client.post("/api/skills/switch", body)
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    changed = reply.get("changed") or [] if isinstance(reply, dict) else []
+    where = f"on {ns.channel}" if ns.channel else "everywhere"
+    if changed:
+        ctx.say(f"switched {ns.action} {where}: {', '.join(changed)}")
+    for name in (reply.get("unchanged") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: already {ns.action} {where}")
+    for name in (reply.get("essential") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: essential, stays on")
+    if changed and isinstance(reply, dict) and not reply.get("audited"):
+        ctx.say("note: the intent log could not record this switch")
     return EXIT_OK
 
 
@@ -1032,6 +1400,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
                 body["name"] = ns.name
             if ns.when:
                 body["schedule_text"] = ns.when
+            if ns.first_run is not None:
+                body["first_run"] = ns.first_run
         except ValueError as exc:
             ctx.err.write(f"{exc}\n")
             return EXIT_USAGE
@@ -1040,7 +1410,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.dump(reply)
             return EXIT_OK
         job = reply.get("job") or {}
-        ctx.say(f"armed {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
+        # H687 — the hub says whether a first run was queued now or the job waits.
+        when = reply.get("confirmation") or f"{job.get('schedule_text')} ({job.get('cron')})"
+        ctx.say(f"armed {job.get('id')}  {when}  {job.get('name')}")
         return EXIT_OK
     if ns.action == "edit":
         if ns.media_id and not ns.action_json:
@@ -1135,6 +1507,96 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
         ctx.say(f"{sid}  {started}")
+    return EXIT_OK
+
+
+#: How `nerva todo` draws a status — the same four Hermes uses.
+_TODO_MARKS = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]", "cancelled": "[-]"}
+
+
+#: Who wrote an item's text, when it was not the owner (the posture's principal).
+_TODO_WRITERS = {"guest": "guest turn", "system": "background turn"}
+
+
+def _todo_tags(item: dict) -> list[str]:
+    """What the owner should know about an item's text: a guest's or a household
+    member's turn wrote it (``operator/guest`` reads as a household turn), a background
+    turn did, or it came from an untrusted source."""
+    by = str(item.get("by") or "")
+    surface, _, principal = by.partition("/")
+    tags = []
+    if principal == "guest" and surface == "operator":
+        tags.append("household turn")
+    elif principal in _TODO_WRITERS:
+        tags.append(_TODO_WRITERS[principal])
+    if item.get("tainted") is True:
+        tags.append("untrusted source")
+    return tags
+
+
+def _plan_shape_ok(plan) -> bool:
+    return isinstance(plan, dict) and isinstance(plan.get("todos"), list) and all(
+        isinstance(item, dict) for item in plan["todos"])
+
+
+def _print_plan(ctx: Context, plan: dict) -> None:
+    todos = plan.get("todos") or []
+    done = sum(1 for item in todos if item.get("status") == "completed")
+    head = [str(plan.get("session_id") or "?")]
+    head += [str(plan[key]) for key in ("agent", "posture") if plan.get(key)]
+    stamp = plan.get("updated_at")
+    if isinstance(stamp, (int, float)) and not isinstance(stamp, bool):
+        head.append("updated " + time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp)))
+    head.append(f"{done}/{len(todos)} done")
+    ctx.say("  ·  ".join(head))
+    # Subtasks sit under their parent (H666); a missing, self or cyclic parent draws at
+    # the top and nothing is dropped (agents/core/todo_tree.py).
+    from agents.core.todo_tree import tree
+
+    for item, depth in tree(todos, lambda row: row.get("id"), lambda row: row.get("parent")):
+        mark = _TODO_MARKS.get(str(item.get("status")), "[?]")
+        tags = _todo_tags(item)
+        ctx.say("  " * (depth + 1) + f"{mark} {item.get('content', '')}"
+                + (f"  ({', '.join(tags)})" if tags else ""))
+
+
+def cmd_todo(ns: argparse.Namespace, ctx: Context) -> int:
+    """H315 — what the agent has planned and where it stands, read-only.
+
+    The plans are the ones the model keeps with its `todo` tool; the owner reads them
+    here, in the Decision Inbox, and in the tool trail (`nerva tools`), before any
+    approval card they lead to appears.
+    """
+    if ns.session is not None:
+        from agents.core.validation import is_valid_session_id
+
+        if not is_valid_session_id(ns.session):
+            ctx.err.write(f"not a session id: {ns.session!r} (letters, digits, _ and -)\n")
+            return EXIT_USAGE
+        plan = ctx.client().get(f"/sessions/{ns.session}/todo")
+        if not _plan_shape_ok(plan):
+            ctx.err.write("unexpected reply from the hub: no plan in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(plan)
+        elif not plan.get("todos"):
+            ctx.say(f"no plan for {ns.session}")
+        else:
+            _print_plan(ctx, plan)
+        return EXIT_OK
+    reply = ctx.client().get("/sessions/todo")
+    plans = reply.get("plans") if isinstance(reply, dict) else None
+    if not isinstance(plans, list) or not all(_plan_shape_ok(plan) for plan in plans):
+        ctx.err.write("unexpected reply from the hub: no list of plans in it\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    if not plans:
+        ctx.say("no plans yet — the agent writes one when it works through a multi-step task")
+        return EXIT_OK
+    for plan in plans:
+        _print_plan(ctx, plan)
     return EXIT_OK
 
 
@@ -1409,6 +1871,13 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
 
+    if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
+        return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
+    if getattr(ns, "remote_vision", None) is not None:
+        why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
+
     body: dict[str, Any] = {"message": message}
     if ns.agent:
         body["agent"] = ns.agent
@@ -1479,6 +1948,397 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
 
     _write_answer(ctx, answer)
     return finish(EXIT_OK, status="completed", pending=pending)
+
+
+#: What one vision turn carries (agents/core/routers/composer_vision.py, the HUD's
+#: composer alike): up to eight rasters of up to 4 MiB each, and a 4 000-character question.
+VISION_MAX_IMAGES = 8
+VISION_MAX_BYTES = 4 * 1024 * 1024
+VISION_MAX_PROMPT = 4_000
+_RASTER_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_mime(raw: bytes) -> str | None:
+    """The raster type the bytes are, by their signature, never by a file name."""
+    for magic, mime in _RASTER_MAGIC:
+        if raw.startswith(magic):
+            return mime
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _read_image(path: str) -> tuple[bytes | None, str]:
+    """``(bytes, "")`` for a regular raster file of at most 4 MiB, else ``(None, why)``.
+    The file is opened once, without blocking, and judged by what was opened: a path
+    swapped for a pipe between a check and the read never hangs the verb."""
+    import stat
+
+    target = Path(path).expanduser()
+    try:
+        fd = os.open(target, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    except FileNotFoundError:
+        return None, f"--image {path}: not a file"
+    except OSError as exc:
+        if isinstance(exc, IsADirectoryError):
+            return None, f"--image {path}: not a file"
+        return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None, f"--image {path}: not a file"
+        with os.fdopen(fd, "rb") as fh:
+            fd = -1
+            raw = fh.read(VISION_MAX_BYTES + 1)
+    except OSError as exc:
+        return None, f"--image {path}: cannot be read ({exc.strerror or exc.__class__.__name__})"
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    if len(raw) > VISION_MAX_BYTES:
+        return None, f"--image {path}: larger than 4 MiB"
+    if _image_mime(raw) is None:
+        return None, f"--image {path}: not a PNG, JPEG, GIF or WebP image"
+    return raw, ""
+
+
+#: PowerShell's own clipboard reader: the image as PNG on binary stdout, nothing else.
+_POWERSHELL_CLIPBOARD = (
+    "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+    "$i=[System.Windows.Forms.Clipboard]::GetImage();"
+    "if($i){$m=New-Object System.IO.MemoryStream;"
+    "$i.Save($m,[System.Drawing.Imaging.ImageFormat]::Png);"
+    "$o=[Console]::OpenStandardOutput();$o.Write($m.ToArray(),0,[int]$m.Length);$o.Flush()}")
+#: macOS without pngpaste: AppleScript prints the clipboard's PNG as «data PNGf<hex>».
+_OSASCRIPT_CLIPBOARD = "the clipboard as «class PNGf»"
+_WSL_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+
+
+def _is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="replace").lower()
+    except OSError:
+        return False
+
+
+def _windows_powershell(environ: Mapping[str, str], which: Callable[..., str | None],
+                        exists: Callable[[str], bool]) -> str | None:
+    """Windows PowerShell from the system directory, else the first powershell.exe or
+    pwsh.exe in an absolute PATH entry that is not the current directory, which Windows
+    searches first (review-H586 m4)."""
+    system = os.path.join(environ.get("SystemRoot") or "C:\\Windows", "System32",
+                          "WindowsPowerShell", "v1.0", "powershell.exe")
+    if exists(system):
+        return system
+    # Never shutil.which here: on Windows it puts the current directory back at the
+    # front of any path it is given (review-H586b B3). The absolute PATH entries are
+    # walked instead, the current directory left out.
+    cwd = os.path.normcase(os.path.abspath(os.getcwd()))
+    entries = [e for e in (environ.get("PATH") or "").split(os.pathsep)
+               if e and e != "." and os.path.isabs(e) and os.path.normcase(os.path.abspath(e)) != cwd]
+    for name in ("powershell.exe", "pwsh.exe"):
+        for entry in entries:
+            candidate = os.path.join(entry, name)
+            if exists(candidate):
+                return candidate
+    return None
+
+
+def _clipboard_command(platform: str, environ: Mapping[str, str],
+                       which: Callable[..., str | None], *, wsl: bool = False,
+                       exists: Callable[[str], bool] = os.path.isfile) -> list[str] | None:
+    """The fixed argv that prints the clipboard's image on this machine, or None:
+    pngpaste, else osascript (macOS); PowerShell (Windows); wl-paste (Wayland), xclip
+    (X11), else Windows PowerShell through WSL interop."""
+    if platform == "darwin":
+        if which("pngpaste"):
+            return ["pngpaste", "-"]
+        return ["osascript", "-e", _OSASCRIPT_CLIPBOARD] if which("osascript") else None
+    if platform.startswith("win"):
+        exe = _windows_powershell(environ, which, exists)
+        return [exe, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD] if exe else None
+    if environ.get("WAYLAND_DISPLAY") and which("wl-paste"):
+        return ["wl-paste", "--no-newline", "--type", "image/png"]
+    if environ.get("DISPLAY") and which("xclip"):
+        return ["xclip", "-selection", "clipboard", "-target", "image/png", "-out"]
+    if wsl:
+        # The interop default, else wherever PATH puts it (a custom automount root).
+        exe = _WSL_POWERSHELL if exists(_WSL_POWERSHELL) else which("powershell.exe")
+        if exe:
+            return [exe, "-NoProfile", "-STA", "-Command", _POWERSHELL_CLIPBOARD]
+    return None
+
+
+def _run_reader(argv: list[str], limit: int, deadline: float = 10.0) -> tuple[int | None, bytes, str]:
+    """``(exit code, stdout, why)``: the reader's output, read up to *limit* + 1 bytes
+    and never more, within *deadline* seconds; a reader that says more, or takes
+    longer, is killed (review-H586 m2). On POSIX it runs in a session of its own and
+    the whole group is killed, so a descendant holding the pipe open cannot stretch the
+    deadline, and the pipe is read against a monotonic clock, never by a thread
+    (review-H586b B2). An interrupt kills it too."""
+    import subprocess  # nosec B404  (a fixed argv, never a shell)
+    import time
+
+    posix = os.name == "posix"
+    try:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,  # noqa: S603  # nosec B603
+                                stderr=subprocess.DEVNULL, start_new_session=posix)
+    except OSError as exc:
+        return None, b"", f"{argv[0]} failed ({exc.__class__.__name__})"
+
+    def kill() -> None:
+        with _suppressed():
+            if posix:
+                import signal
+
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+
+    end = time.monotonic() + deadline
+    out = bytearray()
+    timed_out = False
+    pump_alive = False
+    try:
+        if posix:
+            import selectors
+
+            fd = proc.stdout.fileno()
+            with selectors.DefaultSelector() as selector:
+                selector.register(fd, selectors.EVENT_READ)
+                while len(out) <= limit:
+                    left = end - time.monotonic()
+                    if left <= 0 or not selector.select(left):
+                        timed_out = True
+                        break
+                    chunk = os.read(fd, min(1 << 16, limit + 1 - len(out)))
+                    if not chunk:
+                        break
+                    out += chunk
+        else:
+            import threading
+
+            box: dict[str, bytes] = {}
+            pump = threading.Thread(target=lambda: box.setdefault("out", proc.stdout.read(limit + 1)),
+                                    daemon=True)
+            pump.start()
+            pump.join(deadline)
+            pump_alive = pump.is_alive()
+            timed_out = pump_alive
+            out += box.get("out", b"")
+        if timed_out:
+            kill()
+            return None, b"", f"{argv[0]} did not answer within {deadline:g} s"
+        if len(out) > limit:
+            kill()
+            return None, bytes(out[: limit + 1]), ""
+        try:
+            code = proc.wait(timeout=max(0.1, end - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            kill()
+            code = None
+        return code, bytes(out), ""
+    finally:
+        if proc.poll() is None:
+            kill()                       # an interrupt, or anything else, never leaves it running
+        if not pump_alive:
+            with _suppressed():
+                proc.stdout.close()
+        with _suppressed():
+            proc.wait(timeout=2)
+
+
+def _suppressed():
+    import contextlib
+
+    return contextlib.suppress(Exception)
+
+
+def _clipboard_image(environ: Mapping[str, str]) -> tuple[bytes | None, str]:
+    """``(bytes, "")`` for the clipboard's image, else ``(None, why)``. Nothing but the
+    platform's own clipboard reader runs, with a fixed argv and no shell, its output
+    bounded while it is read."""
+    import binascii
+    import shutil
+
+    argv = _clipboard_command(sys.platform, environ, shutil.which, wsl=_is_wsl())
+    if argv is None:
+        return None, ("--clipboard-image: no clipboard reader found (wl-paste or xclip on "
+                      "Linux, pngpaste or osascript on macOS, PowerShell on Windows and WSL); "
+                      "save the image and pass --image PATH")
+    hexed = argv[0] == "osascript"
+    code, raw, why = _run_reader(argv, 2 * VISION_MAX_BYTES + 64 if hexed else VISION_MAX_BYTES)
+    if why:
+        return None, f"--clipboard-image: {why}"
+    if len(raw) > (2 * VISION_MAX_BYTES + 64 if hexed else VISION_MAX_BYTES):
+        # Cut off at the bound (and killed): an image too large, not an empty
+        # clipboard (review-H586b B1).
+        return None, "--clipboard-image: the image is larger than 4 MiB"
+    if hexed and code == 0 and raw:
+        text = raw.decode("utf-8", errors="replace").strip()
+        head, _, body = text.partition("«data PNGf")
+        try:
+            raw = binascii.unhexlify(body.removesuffix("»")) if body and not head else b""
+        except (binascii.Error, ValueError):
+            raw = b""
+    if code != 0 or not raw:
+        return None, "--clipboard-image: the clipboard holds no image"
+    if len(raw) > VISION_MAX_BYTES:
+        return None, "--clipboard-image: the image is larger than 4 MiB"
+    if _image_mime(raw) is None:
+        return None, "--clipboard-image: the clipboard's content is not a PNG, JPEG, GIF or WebP image"
+    return raw, ""
+
+
+#: How long an image turn waits for the vision model: the hub gives it 180 s.
+VISION_TIMEOUT = 240.0
+#: The longest vision answer printed, as the HUD's own display limit.
+VISION_MAX_ANSWER = 128 * 1024
+
+
+def _destination_key(url: str) -> tuple[str, str, int | None, str] | None:
+    """A destination as the hub names it (public_config): scheme and host in any case,
+    the default port spelled or not, a trailing slash or not — one key."""
+    import urllib.parse
+
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in ("http", "https") or not parts.hostname:
+        return None
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment:
+        return None                     # a look-alike (user@host) is not an acknowledgement
+    if port == {"http": 80, "https": 443}[scheme]:
+        port = None
+    return scheme, parts.hostname.lower(), port, parts.path.rstrip("/")
+
+
+def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
+                 finish: Callable[..., int], oneshot: bool) -> int:
+    """H586 — the terminal's image turn: the HUD composer's, over the same route.
+
+    The images and the question go to POST /api/vlm/composer/describe, the configured
+    vision model's route, and never to /chat: no agent, session or tool plan sees them,
+    as in the HUD. The destination the hub reports is bound into the request, so a model
+    changed in between is refused (409), and a destination off the hub's machine is used
+    only when --remote-vision names it (the HUD's per-destination acknowledgement)."""
+    import base64
+
+    def usage(why: str) -> int:
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
+
+    def failed(why: str) -> int:
+        why = _plain(why, 500)                       # hub text never reaches the terminal raw
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_FAILED, status="failed", reason=why)
+
+    for flag, given in (("--agent", ns.agent), ("--session", getattr(ns, "session", None)),
+                        ("--reasoning", getattr(ns, "reasoning", None))):
+        if given:
+            return usage(f"{flag} does not apply to an image turn: it goes to the vision model "
+                         "only, never to an agent or a conversation")
+    if len(message) > VISION_MAX_PROMPT:
+        return usage(f"the question is {len(message):,} characters, and an image turn carries "
+                     f"up to {VISION_MAX_PROMPT:,}")
+    paths = list(getattr(ns, "image", None) or [])
+    count = len(paths) + (1 if getattr(ns, "clipboard_image", False) else 0)
+    if count > VISION_MAX_IMAGES:
+        return usage(f"{count} images given; one turn carries up to {VISION_MAX_IMAGES}")
+    acknowledged = getattr(ns, "remote_vision", None)
+    if acknowledged is not None and _destination_key(acknowledged) is None:
+        return usage(f"--remote-vision {_plain(acknowledged, 200)}: not a plain http(s) address "
+                     "(no user name, query or fragment)")
+    images: list[str] = []
+    for path in paths:
+        raw, why = _read_image(path)
+        if raw is None:
+            return usage(why)
+        images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")
+    if getattr(ns, "clipboard_image", False):
+        try:
+            raw, why = _clipboard_image(ctx.environ)
+        except KeyboardInterrupt:
+            finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+            raise
+        if raw is None:
+            return usage(why)
+        images.append(f"data:{_image_mime(raw)};base64,{base64.b64encode(raw).decode('ascii')}")
+
+    client = ctx.client()
+    try:
+        status = client.get("/api/vlm/composer/status")
+        if not isinstance(status, dict) or status.get("configured") is not True:
+            return failed("no vision model is configured on the hub (Admin → vision model)")
+        destination, binding, local = status.get("destination"), status.get("binding"), status.get("local")
+        if not isinstance(destination, str) or not isinstance(binding, str) or not isinstance(local, bool):
+            return failed("the hub's vision status is incomplete (destination, binding or local "
+                          "missing); nothing was sent")
+        if local and acknowledged is not None:
+            ctx.err.write("--remote-vision is not needed: the vision model is on the hub's machine\n")
+        if not local and (acknowledged is None
+                          or _destination_key(acknowledged) != _destination_key(destination)):
+            return usage(f"the vision model is at {_plain(destination, 200)}, off the hub's machine; "
+                         "the images go there only with --remote-vision set to that address")
+        where = "on the hub's machine" if local else "off the hub's machine"
+        model = _plain(str(status.get("model") or "?"), 80)
+        ctx.err.write(f"asking {model} at {_plain(destination, 200)} ({where}) about "
+                      f"{len(images)} image(s)\n")
+    except KeyboardInterrupt:
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        raise
+    except HubUnavailable:
+        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+        raise
+    except HubError as exc:
+        if exc.status in (401, 403):
+            finish(EXIT_AUTH, status="unauthorised", reason=str(exc))
+            raise
+        return failed(exc.reason)
+    try:
+        reply = client.post("/api/vlm/composer/describe", {
+            "prompt": message, "images": images, "expected_destination": destination,
+            "expected_binding": binding, "remote_ack": not local,
+        }, timeout=VISION_TIMEOUT)
+    except KeyboardInterrupt:
+        finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
+        raise
+    except HubUnavailable as exc:
+        if "timed out" in str(exc):
+            # The hub answered the status a moment ago: the model is what is slow.
+            return failed(f"the vision model did not answer within {VISION_TIMEOUT:g} s")
+        finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
+        raise
+    except HubError as exc:
+        if exc.status == 401 or (exc.status == 403 and not exc.reason.startswith("Acknowledge")):
+            finish(EXIT_AUTH, status="unauthorised", reason=str(exc))
+            raise
+        return failed(exc.reason)
+
+    if (not isinstance(reply, dict) or reply.get("ok") is not True
+            or not isinstance(reply.get("response"), str)):
+        return failed("the hub's vision reply is malformed")
+    if len(reply["response"]) > VISION_MAX_ANSWER:
+        return failed("the vision answer is longer than 128 KiB, the display limit")
+    answer = _answer_text(reply["response"])
+    if ns.json:
+        ctx.dump(reply)
+        return finish(EXIT_OK, status="completed" if answer.strip() else "refused",
+                      completed=bool(answer.strip()))
+    if not answer.strip():
+        why = "the vision model returned an empty answer"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_FAILED if oneshot else EXIT_OK, status="refused", reason=why,
+                      completed=False)
+    _write_answer(ctx, answer)
+    return finish(EXIT_OK, status="completed")
 
 
 #: What one send carries, subject included — the outbound seam's own bound.
@@ -1917,10 +2777,13 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "approvals": cmd_approvals,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
+    "inspect": cmd_inspect,
     "logs": cmd_logs,
+    "skills": cmd_skills,
     "estop": cmd_estop,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
+    "todo": cmd_todo,
     "chat": cmd_chat,
     "send": cmd_send,
     "desktop": cmd_desktop,
@@ -1946,10 +2809,7 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
         return EXIT_NO_HUB
     except HubError as exc:
         if exc.status in (401, 403):
-            ctx.err.write(
-                f"{exc.reason}. Set JARVIS_ADMIN_TOKEN (mint one on the box: "
-                "python -m agents.core.security.token_store issue admin) or JARVIS_USER_TOKEN.\n"
-            )
+            ctx.err.write(f"{exc.reason}. {_auth_hint(ctx.client(), exc.reason)}\n")
             return EXIT_AUTH
         ctx.err.write(f"{exc}\n")
         return EXIT_FAILED

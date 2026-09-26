@@ -1,3 +1,6 @@
+import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
+import { PowerChip, usePower } from './power-chip';
+import { PressureBanner, usePressure } from './pressure-banner';
 import {describeImages} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
@@ -9,8 +12,12 @@ import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
+import { type Overrides, bindings as shortcutBindings, loadOverrides, matchAction, saveOverrides } from './shortcuts';
+import { ShortcutsPanel } from './shortcuts-panel';
+import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
+import { noticeMessages } from './turn-notices';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
@@ -20,6 +27,7 @@ import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
 import { DesktopControls, notifyDesktopConversation, useDesktopConversation } from './desktop';
+import { useListeningIndicator } from './listening';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
@@ -130,6 +138,9 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const [sys, setSys] = useState(null);
   const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
+  const [safeMode, setSafeMode] = useState(SAFE_MODE_OFF);
+  const power = usePower(demo);   // H182: battery, resume, keep-awake
+  const [pressure, dismissPressure] = usePressure(demo);   // H161: memory/disk running out
   const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
     try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
   });
@@ -195,11 +206,19 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       .catch(() => {});
   }, [demo]);
 
-  // hotkeys: number keys jump modes, ⌘K palette, A ambient
+  // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
+  // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
+  const [shortcutOverrides, setShortcutOverrides] = useState<Overrides>(() => loadOverrides());
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const changeShortcuts = useCallback((next: Overrides) => { setShortcutOverrides(next); saveOverrides(next); }, []);
   useEffect(() => {
+    const list = shortcutBindings(shortcutOverrides);
     function onKey(e) {
-      if (floating) return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
+      if (floating || shortcutsOpen) return;   // the panel owns the keyboard while it is open
+      const action = matchAction(e, list, 'global');
+      if (!action) return;
+      if (action.id === 'session.palette') { e.preventDefault(); setPalette((p) => !p); return; }
+      if (action.id === 'session.shortcuts') { e.preventDefault(); setPalette(false); setShortcutsOpen(true); return; }
       if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
@@ -209,15 +228,18 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       // Same reasoning as the input/textarea bail: a surface you are reading or typing
       // into owns its keys.
       if (e.target && e.target.closest && e.target.closest('[role="log"]')) return;
-      const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
-      if (m[e.key]) setMode(m[e.key]);
-      else if (e.key.toLowerCase() === 'a') setAmbient(true);
-      else if (e.key.toLowerCase() === 'm') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
-      else if (e.key === '`') { e.preventDefault(); setConsoleOpen((c) => !c); }
+      if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
+      else if (action.id === 'view.ambient') setAmbient(true);
+      else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
+      else if (action.id === 'view.console') { e.preventDefault(); setConsoleOpen((c) => !c); }
+      else if (action.id === 'composer.focus') {
+        const box = document.querySelector('[data-composer]') as HTMLInputElement | null;
+        if (box) { e.preventDefault(); box.focus(); }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ambient, cinema]);
+  }, [ambient, cinema, shortcutOverrides, shortcutsOpen]);
 
   // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
   // can't send the user token, so this only attaches where the guard is
@@ -313,6 +335,9 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        // H674: what the owner should know beside the reply (e.g. the summary was deferred).
+        const notes = noticeMessages(evt, fmtTimeShort(new Date()));
+        if (notes.length) setMessages((m) => [...m, ...notes]);
         turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
         setThinking(null);
         resolve(finalText);
@@ -374,6 +399,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   },[runTurn,runVision,thinking]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
+  useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
   voiceRef.current = voice;
 
   // Leaving DEMO is a provenance boundary, not just a URL toggle. Clear every
@@ -433,7 +459,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         setAgents(d.agents); baseAgents.current = d.agents;
         setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
         setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        setServerUp(!!d.serverUp); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
         /* Live approvals REPLACE the list only when the feed actually answered.
            `/autonomy/approvals` is admin-guarded, so on the common token-configured
@@ -467,6 +493,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {appearanceNotice}
+    <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
     <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
@@ -482,6 +509,9 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       <div className="shell">
         {appearanceNotice}
         {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
+        <SafeModeBanner state={safeMode} />
+        <PowerChip state={power} />
+        <PressureBanner state={pressure} onDismiss={dismissPressure} />
         {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
@@ -557,13 +587,15 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} /></RouteBoundary>}
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
-      <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
+      {!floating && <PointerOverlay enabled={!demo} />}
+      <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title="console (`)"
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
+      {shortcutsOpen && <ShortcutsPanel overrides={shortcutOverrides} onChange={changeShortcuts} onClose={() => setShortcutsOpen(false)} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} shortcutOverrides={shortcutOverrides} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

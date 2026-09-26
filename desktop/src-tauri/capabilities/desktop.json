@@ -14,6 +14,7 @@
   },
   "permissions": [
     "allow-desktop-action",
-    "allow-desktop-capabilities"
+    "allow-desktop-capabilities",
+    "allow-desktop-listening"
   ]
 }

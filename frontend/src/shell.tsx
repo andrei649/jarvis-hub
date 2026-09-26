@@ -1,12 +1,13 @@
 /* HUD v2 · SHELL — topbar, nav, ticker, right column, ambient, palette */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
-import { renderRich } from './cockpit';
+import { Bubble } from './cockpit';
 import { isExecutingAgent, NeuralMesh } from './mesh';
 import { VoiceOrb } from './orb';
 import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
 import { V2 } from './data';
+import { bindings as shortcutBindings, matchAction } from './shortcuts';
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
@@ -104,7 +105,7 @@ function Rail({ mode, setMode, t }){
     <div className="rail">
       {MODES.map((m,i)=> m.sep
         ? <div className="rail-sep" key={i}></div>
-        : <button key={m.id} className={'rail-btn'+(mode===m.id?' active':'')+(m.locked?' locked':'')}
+        : <button key={m.id} data-anchor={'mode.'+m.id} className={'rail-btn'+(mode===m.id?' active':'')+(m.locked?' locked':'')}
             onClick={()=>!m.locked&&setMode(m.id)} title={t[m.tkey]+(m.locked?' (soon)':'')}>
             <Icon d={ICONS[m.icon]} size={19}/><span className="rl">{t[m.tkey]}</span>
           </button>
@@ -132,7 +133,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
   const empty = (msg) => <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)',letterSpacing:'.05em'}}>{msg}</div>;
   return (
     <div className="col scrollcol">
-      <div className="panel">
+      <div className="panel" data-anchor="decisions">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.bolt} size={14}/><span className="ttl">{t.decisions}</span><span className="st">{decisions.length}</span></div>
         <div className="panel-body tight" tabIndex={0}>
@@ -140,7 +141,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
           {decisions.map((d,i)=>(
             <div className="dcard" key={d._id}>
               <div className="dh"><span className="who">{d.who}</span><span className={'kind '+d.kind}>{d.kindLabel}</span></div>
-              <div className="db">{renderRich(d.body)}</div>
+              <div className="db"><Bubble text={d.body} /></div>
               <div className="da">{d.actions.map((a,j)=><button key={j} className={a.primary?'primary':''} onClick={()=>onDecision(d._id)}>{a.l}</button>)}</div>
             </div>
           ))}
@@ -376,7 +377,7 @@ function StagePicker({ stage, setStage, floating = false }: any) {
    Honesty contract: the prototype hardcoded "87% on-device / 0 cloud leaks" — we show only
    REAL figures (live agent count from the roster, %-local from /api/analytics/locality),
    never a fabricated split. */
-export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, voice, decisions, calendar, heartbeat, serverUp = false, clock, motion = 'lively', localPctSource = null, onExit, t }: any) {
+export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo = false, localPct, voice, decisions, calendar, heartbeat, serverUp = false, clock, motion = 'lively', localPctSource = null, shortcutOverrides = null, onExit, t }: any) {
   const [tag, setTag] = useState(0);
   // Two stages share the cinema frame: the mesh (who is working) and the voice orb
   // (is Jarvis listening / speaking). Mesh stays the default so an existing demo
@@ -384,15 +385,16 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
   const [stage, setStage] = useState('mesh');
   useEffect(() => { const iv = setInterval(() => setTag((x) => x + 1), 4200); return () => clearInterval(iv); }, []);
   useEffect(() => {
+    // H209: the stage keys are registry actions (rebindable); Esc always exits.
+    const list = shortcutBindings(shortcutOverrides || {});
     const h = (e) => {
-      if (e.key === 'Escape') onExit();
-      else if (e.key === 'o' || e.key === 'O') setStage('orb');
-      else if (e.key === 'n' || e.key === 'N') setStage('mesh');
-      else if (e.key === 'b' || e.key === 'B') setStage('brain');
+      if (e.key === 'Escape') { onExit(); return; }
+      const action = matchAction(e, list, 'cinema');
+      if (action) setStage(action.id.slice('cinema.'.length));
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [onExit]);
+  }, [onExit, shortcutOverrides]);
   const trustEvidence = sources?.trust === true;
   const cloudReported = trustEvidence
     && (trust?.cloud_available === true || trust?.claude_available === true);

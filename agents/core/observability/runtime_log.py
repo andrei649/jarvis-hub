@@ -185,7 +185,9 @@ def default_log_path() -> Path:
     the coordinator writes, so a ``JARVIS_RUNTIME_LOG`` override must move both
     ends together or the brief silently reports a runtime that isn't there.
     """
-    return Path(os.environ.get("JARVIS_RUNTIME_LOG", DEFAULT_LOG_PATH))
+    # An empty value is unset, as the supervisor reads it: Path("") would be the working
+    # directory, which no one can append to (review-H273g n4).
+    return Path(os.environ.get("JARVIS_RUNTIME_LOG") or DEFAULT_LOG_PATH)
 
 
 _TAIL_BYTES = 256 * 1024

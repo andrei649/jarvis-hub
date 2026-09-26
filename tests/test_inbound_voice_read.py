@@ -44,6 +44,13 @@ from agents.core.channels.inbound_voice import (
 from agents.core.channels.telegram import TelegramChannel
 from agents.core.security.taint import is_untrusted_source
 
+
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 OGG = b"OggS" + b"not really opus, and it never needs to be"
 SAID = "pornește calculatorul din birou"
 

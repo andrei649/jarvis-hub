@@ -1,5 +1,6 @@
 {
   "registry": [
+    "canvas_point",
     "desktop_plan",
     "desktop_run",
     "echo",
@@ -10,18 +11,24 @@
     "file_search",
     "file_write",
     "image_generate",
+    "memory",
     "operator_plan",
     "osint_enrich",
     "search_memory",
     "session_search",
+    "skill_propose",
+    "skill_view",
+    "skills_list",
     "speak",
     "terminal_run",
     "time",
+    "todo",
     "web_extract",
     "web_search"
   ],
   "postures": {
     "operator/owner": [
+      "canvas_point",
       "desktop_plan",
       "desktop_run",
       "echo",
@@ -32,17 +39,23 @@
       "file_search",
       "file_write",
       "image_generate",
+      "memory",
       "operator_plan",
       "osint_enrich",
       "search_memory",
       "session_search",
+      "skill_propose",
+      "skill_view",
+      "skills_list",
       "speak",
       "terminal_run",
       "time",
+      "todo",
       "web_extract",
       "web_search"
     ],
     "operator/guest": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",
@@ -52,11 +65,16 @@
       "operator_plan",
       "search_memory",
       "session_search",
+      "skill_propose",
+      "skill_view",
+      "skills_list",
       "time",
+      "todo",
       "web_extract",
       "web_search"
     ],
     "inbound/owner": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",
@@ -66,15 +84,21 @@
       "operator_plan",
       "search_memory",
       "session_search",
+      "skill_propose",
+      "skill_view",
+      "skills_list",
       "time",
+      "todo",
       "web_extract",
       "web_search"
     ],
     "inbound/guest": [
       "echo",
-      "time"
+      "time",
+      "todo"
     ],
     "internal/system": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",
@@ -84,7 +108,11 @@
       "operator_plan",
       "search_memory",
       "session_search",
+      "skill_propose",
+      "skill_view",
+      "skills_list",
       "time",
+      "todo",
       "web_extract",
       "web_search"
     ]

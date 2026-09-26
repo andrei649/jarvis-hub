@@ -165,7 +165,7 @@ def _cap_soul_body(body: str, filename: str, limit: int) -> "tuple[str, bool]":
     return (out if len(out) <= limit else out[:limit]), True
 
 
-def _blocked_soul_body(filename: str) -> str:
+def _blocked_soul_body(filename: str, kind: str = "persona") -> str:
     """The stub that replaces a wholly-flagged persona — visible, never empty.
 
     An empty body would change a running install's behaviour with nothing to
@@ -175,13 +175,14 @@ def _blocked_soul_body(filename: str) -> str:
     measuring this agent instead of scoring it vacuously clean.
     """
     return (f"[BLOCKED: {filename} flagged as prompt-injection — review the file; "
-            "this agent is running without its persona]\n\n" + _SOUL_FALLBACK_RULES)
+            f"this agent is running without its {kind}]\n\n" + _SOUL_FALLBACK_RULES)
 
 
-def _quarantined_line_stub(lineno: int, filename: str) -> str:
+def _quarantined_line_stub(lineno: int, filename: str, kind: str = "persona") -> str:
     """Replacement for a single flagged line — the core_block granularity."""
+    short = kind.rsplit(" ", 1)[-1]
     return (f"[BLOCKED: line {lineno} of {filename} flagged as prompt-injection "
-            "— review the file; the rest of this persona is intact]")
+            f"— review the file; the rest of this {short} is intact]")
 
 
 def _body_line_offset(content: str, body: str) -> int:
@@ -252,7 +253,7 @@ def _wrapped_injection_hits(lines: "list[str]") -> "tuple[list[str], set[int]]":
 
 
 def _scan_soul_body(body: str, filename: str,
-                    line_offset: int = 0) -> "tuple[str, list[str], bool]":
+                    line_offset: int = 0, kind: str = "persona") -> "tuple[str, list[str], bool]":
     """Neutralise injection in a SOUL body. Returns ``(body, flags, blocked)``.
 
     Four passes, in this order:
@@ -336,13 +337,13 @@ def _scan_soul_body(body: str, filename: str,
             flags.append(pattern)
     flagged |= wrapped_lines
 
-    kept = [_quarantined_line_stub(lineno + line_offset, filename) if lineno in flagged
+    kept = [_quarantined_line_stub(lineno + line_offset, filename, kind) if lineno in flagged
             else line
             for lineno, line in enumerate(lines, start=1)]
 
     non_blank = sum(1 for line in lines if line.strip())
     if flagged and len(flagged) > _SOUL_BLOCK_RATIO * non_blank:
-        return _blocked_soul_body(filename), flags, True
+        return _blocked_soul_body(filename, kind), flags, True
 
     result = "\n".join(kept)
     # A persona that renders as NOTHING is a payload, not a persona, and it must not
@@ -355,7 +356,7 @@ def _scan_soul_body(body: str, filename: str,
     # the exact moment the agent is least constrained. The flags were raised either
     # way, but nothing downstream was reading them as "blocked".
     if raw.strip() and not result.strip():
-        return _blocked_soul_body(filename), flags, True
+        return _blocked_soul_body(filename, kind), flags, True
     return result, flags, False
 
 
@@ -369,6 +370,20 @@ class _NullCtx:
     async def __aexit__(self, *exc):
         return False
 
+
+
+def _pick_overlay(candidates: list):
+    """The first existing candidate, the shipped template (the last) when none exists.
+
+    H275: in safe mode the overlays before it are never taken, at construction and at
+    the compaction boundary alike, since both resolve through here."""
+    from . import safe_mode
+
+    if safe_mode.enabled():
+        if any(c.exists() for c in candidates[:-1]):
+            safe_mode.note("persona_overlays")
+        return candidates[-1]
+    return next((c for c in candidates if c.exists()), candidates[-1])
 
 
 def soul_path_for(agent_id: str):
@@ -397,7 +412,131 @@ def soul_path_for(agent_id: str):
         candidates.append(souls_home / str(agent_id) / "SOUL.local.md")
     candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.local.md")
     candidates.append(app_root() / "agents" / str(agent_id) / "SOUL.md")
-    return next((c for c in candidates if c.exists()), candidates[-1])
+    return _pick_overlay(candidates)
+
+
+#: H670 — the SoulVersionStore key the shared behaviour contract is versioned under, beside
+#: each agent's own persona (``/api/admin/prompts/_identity/...``).
+IDENTITY_KEY = "_identity"
+_IDENTITY_CACHE: dict = {}
+#: The contract's own cap (review-H670 m-3): it is paid on every call beside a persona
+#: that has the whole $JARVIS_SOUL_MAX_CHARS cap to itself, so the two bands together stay
+#: within that cap plus this one. Never above the persona's cap. The shipped contract is
+#: about 1.5k characters.
+IDENTITY_MAX_CHARS = 4000
+
+
+def _identity_max_chars() -> int:
+    return min(IDENTITY_MAX_CHARS, _soul_max_chars())
+
+
+def _shipped_identity_path():
+    from .paths import app_root
+    return app_root() / "agents" / "_identity" / "IDENTITY.md"
+
+
+def identity_path():
+    """The behaviour contract every agent's system prompt starts with (H670): the one
+    shared band under each persona. Precedence as ``soul_path_for``: the data home's
+    ``souls/IDENTITY.local.md`` → a repo-local ``agents/_identity/IDENTITY.local.md`` → the
+    shipped ``agents/_identity/IDENTITY.md``."""
+    from .paths import app_root, user_souls_dir
+    candidates = []
+    souls_home = user_souls_dir()
+    if souls_home is not None:
+        candidates.append(souls_home / "IDENTITY.local.md")
+    candidates.append(app_root() / "agents" / "_identity" / "IDENTITY.local.md")
+    candidates.append(_shipped_identity_path())
+    return _pick_overlay(candidates)
+
+
+def _strip_maintainer_note(text: str) -> str:
+    """The file's leading ``<!-- … -->`` note is for maintainers, never the model. A
+    comment anywhere else is the file's own text and is kept."""
+    stripped = text.lstrip()
+    if stripped.startswith("<!--") and "-->" in stripped:
+        return stripped.split("-->", 1)[1].lstrip("\n")
+    return text
+
+
+def _signature_or_none(path):
+    try:
+        return _soul_signature(path)
+    except OSError:
+        return None
+
+
+#: Paths whose kept-last-good contract was already announced: one WARNING per episode,
+#: not one per agent per over-budget turn (review-H670b nit 2).
+_IDENTITY_KEEP_WARNED: set = set()
+
+
+def _warn_keep(path, why: str) -> None:
+    if str(path) not in _IDENTITY_KEEP_WARNED:
+        _IDENTITY_KEEP_WARNED.add(str(path))
+        logger.warning("identity contract %s at a compaction boundary (%s); keeping the "
+                       "last-good one", why, path)
+
+
+def read_identity(path=None) -> dict:
+    """Read, scan and cap the shared contract through the same H387 builder helpers as a
+    persona: ``{content, path, flags, blocked, truncated}``, ``content`` "" when there is
+    no file. Read once per settled file signature for the whole process, so eighteen
+    agents loading it read (and announce a verdict on) it once; a file written in the
+    last two seconds, whose signature is not trusted, is read by each. An override that
+    cannot be read (not UTF-8, a directory, no permission) is reported at ERROR and the
+    shipped contract is used in its place (review-H670 m-2, review-H670b nit 4): one bad
+    file never stops every agent from being built. That fallback is cached against the
+    shipped file's signature too, so an edit of the shipped file is seen (review-H670b
+    nit 3)."""
+    path = identity_path() if path is None else path
+    empty = {"content": "", "path": path, "flags": [], "blocked": False, "truncated": False}
+    try:
+        signature = _soul_signature(path)
+    except FileNotFoundError:
+        return dict(empty, missing=True)
+    key = (str(path), signature)
+    shipped = _shipped_identity_path()
+    if signature is not None and key in _IDENTITY_CACHE:
+        cached = _IDENTITY_CACHE[key]
+        if "fallback_sig" not in cached or cached["fallback_sig"] == _signature_or_none(shipped):
+            return dict(cached)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return dict(empty, missing=True)
+    except (UnicodeDecodeError, OSError) as exc:
+        why = "not UTF-8" if isinstance(exc, UnicodeDecodeError) else (
+            getattr(exc, "strerror", None) or exc.__class__.__name__)
+        logger.error("identity contract %s cannot be read (%s); %s", path, why,
+                     "using the shipped contract" if path != shipped else "running without it")
+        out = dict(empty, error=why)
+        if path != shipped:
+            out = dict(read_identity(shipped), error=why, override=path,
+                       fallback_sig=_signature_or_none(shipped))
+        if signature is not None:
+            _IDENTITY_CACHE.clear()
+            _IDENTITY_CACHE[key] = dict(out)
+        return out
+    body = _strip_maintainer_note(raw)
+    body, flags, blocked = _scan_soul_body(body, path.name, _body_line_offset(raw, body),
+                                           kind="shared contract")
+    truncated = False
+    if not blocked:
+        body, truncated = _cap_soul_body(body, path.name, _identity_max_chars())
+    out = {"content": body.strip(), "path": path, "flags": flags, "blocked": blocked,
+           "truncated": truncated}
+    if flags:
+        logger.error("identity contract %s flagged by the injection scan — %s; matched: %s",
+                     path, "contract dropped" if blocked else "flagged lines quarantined",
+                     ", ".join(flags))
+    if truncated:
+        logger.warning("identity contract exceeds the %d-char cap and was truncated: %s",
+                       _identity_max_chars(), path)
+    if signature is not None:
+        _IDENTITY_CACHE.clear()
+        _IDENTITY_CACHE[key] = dict(out)
+    return out
 
 
 class Agent:
@@ -428,6 +567,79 @@ class Agent:
         self._last_latency = 0.0
         self._checkpoint_manager = None
         self._load_soul()
+        self._load_identity()
+
+    def system_prompt(self) -> str:
+        """What the model is given as the system prompt (H670): the shared behaviour
+        contract, the operator's description of this machine when one is set (H283,
+        ``JARVIS_ENVIRONMENT_HINT``), then this agent's persona. Any may be empty. When
+        both were blocked, the house fallback rules appear once (review-H670b nit 5)."""
+        from .environment_hint import hint_block
+
+        identity = (getattr(self, "identity", None) or {}).get("content", "")
+        persona = (self.soul or {}).get("content", "")
+        if identity and _SOUL_FALLBACK_RULES in identity and _SOUL_FALLBACK_RULES in persona:
+            identity = identity.replace(_SOUL_FALLBACK_RULES, "").strip()
+        return "\n\n".join(part for part in (identity, hint_block(), persona) if part)
+
+    def _load_identity(self) -> None:
+        self._identity_kept = False
+        path = None
+        try:
+            path = identity_path()
+            self._identity_stamp = _signature_or_none(path)
+            self.identity = read_identity(path)
+        except (OSError, ValueError) as exc:          # unreadable: never stops the agent
+            logger.error("identity contract %s could not be read (%s); running without it",
+                         path, exc)
+            self._identity_stamp = None
+            self.identity = {"content": "", "path": path, "flags": [], "blocked": False,
+                             "truncated": False}
+
+    def _refresh_identity(self) -> bool:
+        """Re-read the shared contract at a compaction boundary, as the persona is: a few
+        ``os.stat`` calls (resolving the file, then its signature) when it is unchanged.
+        When the file that resolves is absent, vanishes before the read, or cannot be read
+        (not UTF-8, no permission), a contract in force is kept (review-H670 m-1,
+        review-H670b m-2), ``_identity_kept`` says so, and the WARNING is logged once per
+        episode. Like a persona, an override absent for the instant of an editor's
+        save-by-rename resolves to the next file down (the shipped contract) for that
+        boundary; the next boundary reads the override again. True when the text the
+        model is given moved."""
+        self._identity_kept = False
+        in_force = getattr(self, "identity", None) or {}
+        path = None
+        try:
+            path = identity_path()
+            signature = _soul_signature(path)
+        except FileNotFoundError:
+            if in_force.get("content"):
+                return self._keep_identity(path, "is absent")
+            signature = None
+        except OSError as exc:
+            return self._keep_identity(None, f"could not be located ({exc.strerror or exc})")
+        if (signature is not None and signature == getattr(self, "_identity_stamp", None)
+                and path == in_force.get("path")):
+            return False
+        try:
+            fresh = read_identity(path)
+        except Exception:
+            logger.warning("identity contract could not be re-read at a compaction boundary; "
+                           "keeping the last-good one", exc_info=True)
+            self._identity_kept = True
+            return False
+        if in_force.get("content") and (fresh.get("missing") or fresh.get("error")):
+            return self._keep_identity(path, "vanished" if fresh.get("missing")
+                                       else f"cannot be read ({fresh['error']})")
+        _IDENTITY_KEEP_WARNED.discard(str(path))
+        self._identity_stamp = signature
+        moved = fresh["content"] != in_force.get("content", "")
+        self.identity = fresh
+        if moved:
+            logger.info("identity contract for agent %s rebuilt at a compaction boundary "
+                        "(%d chars; flags=%s, blocked=%s)", self.id, len(fresh["content"]),
+                        fresh["flags"], fresh["blocked"])
+        return moved
 
     def _read_soul(self, *, quiet: bool = False, path=None) -> dict:
         """Read, scan and cap the SOUL the model will be given — touching nothing on ``self``.
@@ -510,7 +722,29 @@ class Agent:
             self._soul_stamp = None
             logger.warning(f"SOUL.md not found for {self.id}")
 
+    def _keep_identity(self, path, why: str) -> bool:
+        _warn_keep(path, why)
+        self._identity_kept = True
+        return False
+
     def refresh_soul(self):
+        """H672 — re-read the persona, and (H670) the shared contract above it, at a
+        compaction boundary; see ``_refresh_persona``. A contract that moved while the
+        persona did not is reported as rebuilt, so the boundary names the change; a
+        contract kept because its file could not be read, under an unchanged persona, is
+        reported as failed-open, as a kept persona is (review-H670b nit 2)."""
+        identity_moved = self._refresh_identity()
+        out = self._refresh_persona()
+        if not out.changed:
+            from .session_refresh import PromptRefresh
+
+            if identity_moved:
+                return PromptRefresh(text=out.text, changed=True, reason="rebuilt")
+            if getattr(self, "_identity_kept", False) and out.reason == "identical":
+                return PromptRefresh(text=out.text, changed=False, reason="failed-open")
+        return out
+
+    def _refresh_persona(self):
         """H672 — re-read the persona at a compaction boundary; fails OPEN.
 
         Nerva re-resolves tools, skills and the plugin block every turn; the one
@@ -649,11 +883,21 @@ class Agent:
         Resolved per call rather than at construction so a test's sink, or a tracer
         wired later in a boot, is honoured without re-creating the agent.
         """
-        if self.tool_event_sink is not None:
-            return self.tool_event_sink
-        from .observability.tool_events import TOOL_EVENTS
+        from .memory import turn_tools
 
-        return TOOL_EVENTS.record
+        if self.tool_event_sink is not None:
+            sink = self.tool_event_sink
+        else:
+            from .observability.tool_events import TOOL_EVENTS
+
+            sink = TOOL_EVENTS.record
+
+        def record(event):
+            # H441 — the turn's own list of tool names, for the recap; then the trail.
+            turn_tools.note(event)
+            return sink(event)
+
+        return record
 
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
@@ -762,7 +1006,7 @@ class Agent:
             return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
-        system_prompt = self.soul.get("content", "")
+        system_prompt = self.system_prompt()
         model = self.default_model()
 
         if not self.llm_router:
@@ -912,7 +1156,7 @@ class Agent:
             return " | ".join(parts) if parts else "Done, sir."
 
         model = self.config.get("model", "google/gemma-4-31b-a4b")
-        system_prompt = self.soul.get("content", "")
+        system_prompt = self.system_prompt()
 
         if in_character:
             directive = (

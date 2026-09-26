@@ -64,6 +64,28 @@ describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
     expect(screen.getByText('disengage')).toBeTruthy();
   });
 
+  it('halts on one click, but disengages only once DISENGAGE is typed (H168)', async () => {
+    const fn = mockFetch({ global: false, halted: {} }, 200);
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText('HALT ALL')).toBeTruthy());
+    fireEvent.click(screen.getByText('HALT ALL'));
+    await waitFor(() => expect(fn.mock.calls.filter(([, i]) => i?.method === 'POST').length).toBe(1));
+    expect(JSON.parse(fn.mock.calls.find(([, i]) => i?.method === 'POST')[1].body).engage).toBe(true);
+    const engaged = mockFetch({ global: true, halted: { global: { reason: 'hud' } } }, 200);
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText('disengage')).toBeTruthy());
+    fireEvent.click(screen.getByText('disengage'));
+    const posts = () => engaged.mock.calls.filter(([, i]) => i?.method === 'POST');
+    expect(posts()).toEqual([]);
+    const box = screen.getByLabelText('type DISENGAGE to confirm disengage');
+    fireEvent.change(box, { target: { value: 'disengage' } });
+    expect(screen.getByText('confirm disengage').closest('button').disabled).toBe(true);
+    fireEvent.change(box, { target: { value: 'DISENGAGE' } });
+    fireEvent.click(screen.getByText('confirm disengage'));
+    await waitFor(() => expect(posts().length).toBe(1));
+    expect(JSON.parse(posts()[0][1].body).engage).toBe(false);
+  });
+
   it('does not show a stale refusal banner on a later successful toggle', async () => {
     mockFetch({ global: false, halted: {} }, 403);
     render(<KillSwitchPanel />);

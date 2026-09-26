@@ -307,12 +307,22 @@ class ContextCompressor:
 
     def __init__(self, summarizer: Optional[Callable[[str], Awaitable[str]]] = None,
                  max_tokens: int = 2000, keep_recent: int = 4,
-                 keep_first: int = 0, structured: bool = False) -> None:
+                 keep_first: int = 0, structured: bool = False,
+                 checkpoint: Optional[Callable[["list[dict]", "list[dict]"], Awaitable[Any]]] = None,
+                 gate: Optional[Callable[[Callable[[], Awaitable[str]], int], Awaitable[Optional[str]]]] = None,
+                 ) -> None:
         self._summarize = summarizer
         self.max_tokens = max_tokens
         self.keep_recent = keep_recent
         self.keep_first = max(0, int(keep_first))
         self.structured = structured
+        # H427: awaited with exactly the turns about to be summarised away (and the whole
+        # transcript) before the summary replaces them; CheckpointAborted keeps them.
+        self._checkpoint = checkpoint
+        # H674: how long the turn may wait for the summarizer. ``gate(make, covered)``
+        # answers the summary, or None when the turn must go on without it (the
+        # summary is still being written, for the next turn); None here = wait.
+        self._gate = gate
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
@@ -496,7 +506,31 @@ class ContextCompressor:
             result = await self.compress(working, prior=prior)
         finally:
             self.keep_first, self.keep_recent, self.max_tokens = previous
+        if result.get("checkpoint_aborted"):
+            # H427 — fail closed: the transcript is kept exactly as it came in (not even its
+            # images dropped), and no lineage row claims a compaction that did not happen.
+            return {
+                "compressed": False, "kept": rows, "kept_first": [], "summary": "",
+                "evicted": 0, "tokens": used, "covered": 0, "tier": "none",
+                "images_dropped": 0, "lineage": None,
+                "checkpoint_aborted": result["checkpoint_aborted"], "window": window,
+            }
 
+        if result.get("summary_deferred") and under_budget and pol.tier(used_after, model) != "summarize":
+            # H674 — the summary is still being written and the turns, their old images
+            # dropped, still fit the window under the owner's budget: send them
+            # verbatim rather than a lossy digest. The summary seeds the next turn.
+            row = lineage_row(
+                session_id=session_id, summary="", evicted=0,
+                images_dropped=dropped, tier="images", model=model,
+            ) if dropped else None
+            self._emit(sink, row)
+            return {
+                "compressed": bool(dropped), "kept": working, "kept_first": [],
+                "summary": "", "evicted": 0, "tokens": used_after, "covered": 0,
+                "tier": "images", "images_dropped": dropped, "lineage": row,
+                "summary_deferred": True,
+            }
         row = lineage_row(
             session_id=session_id, summary=result.get("summary", ""),
             evicted=int(result.get("evicted", 0)), images_dropped=dropped,
@@ -537,11 +571,26 @@ class ContextCompressor:
                 prior_summary, covered = s, c
         new_older = older[covered:]
 
-        summary = ""
-        if self._summarize is not None:
+        if self._checkpoint is not None:
+            from .memory.precompress import CheckpointAborted
             try:
-                summary = await self._summarize(
-                    self._summarizer_input(new_older, prior_summary))
+                await self._checkpoint(list(older), list(turns))
+            except CheckpointAborted as exc:
+                return {"compressed": False, "kept": list(turns), "kept_first": [],
+                        "summary": "", "evicted": 0, "tokens": total, "covered": 0,
+                        "checkpoint_aborted": str(exc)}
+
+        summary = ""
+        deferred = False
+        if self._summarize is not None:
+            request = self._summarizer_input(new_older, prior_summary)
+            try:
+                if self._gate is None:
+                    summary = await self._summarize(request)
+                else:
+                    held = await self._gate(lambda: self._summarize(request), len(older))
+                    deferred = held is None
+                    summary = held or ""
             except Exception:
                 summary = ""
         if not summary:
@@ -555,8 +604,14 @@ class ContextCompressor:
             # Salvage (hermes-agent salvage_grown_transcript, v2026.8.27): a
             # "compression" that grew the transcript — e.g. a rambling summary
             # over few/short evicted turns — must never replace the original.
-            return {"compressed": False, "kept": list(turns), "kept_first": [],
-                    "summary": "", "evicted": 0, "tokens": total, "covered": 0}
-        return {"compressed": True, "kept": recent, "kept_first": first,
-                "summary": summary, "evicted": len(older), "tokens": kept_tokens,
-                "covered": len(older)}
+            salvaged = {"compressed": False, "kept": list(turns), "kept_first": [],
+                        "summary": "", "evicted": 0, "tokens": total, "covered": 0}
+            if deferred:
+                salvaged["summary_deferred"] = True
+            return salvaged
+        result = {"compressed": True, "kept": recent, "kept_first": first,
+                  "summary": summary, "evicted": len(older), "tokens": kept_tokens,
+                  "covered": len(older)}
+        if deferred:
+            result["summary_deferred"] = True
+        return result

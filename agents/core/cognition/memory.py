@@ -311,6 +311,26 @@ class CoreMemory(JsonStore):
         with self._lock:
             return list(self._facts)
 
+    def compare_and_set(self, expected: "list[str]", facts: "list[str]") -> bool:
+        """H314 — replace the whole ring with *facts*, only if it still holds *expected*.
+
+        The model's ``memory`` tool computes a new ring from one it read; a forget (or
+        another write) that ran in between must win, so a stale ring is never written
+        back over it. Returns False, and changes nothing, when the ring moved."""
+        cleaned = [str(f).strip() for f in facts if str(f or "").strip()]
+        if len(cleaned) > self.cap or len(set(cleaned)) != len(cleaned):
+            raise ValueError("a core ring holds at most `cap` distinct facts")
+        with self._lock:
+            if self._facts != list(expected):
+                return False
+            previous, self._facts = self._facts, cleaned
+            try:
+                self._save()
+            except Exception:
+                self._facts = previous   # a ring that could not be saved did not change
+                raise
+            return True
+
     def render(self) -> str:
         facts = self.list()
         return "" if not facts else "[core memory]\n" + "\n".join(f"- {f}" for f in facts)

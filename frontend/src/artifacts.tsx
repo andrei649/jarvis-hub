@@ -15,6 +15,7 @@ import { internalLink } from './base-path';
 import { BinaryArtifacts } from './panels/binary-artifacts';
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, apiDelete } from './api/client';
+import { Markdown } from './markdown';
 
 /* Canvas bounds Markdown bodies to 4,000 chars (agents/core/canvas.py). Send no
    more than the backend keeps, and disclose visibly when the copy was cut. */
@@ -70,36 +71,14 @@ function isSameOriginPath(u) {
 }
 function isRemoteHttp(u) { return /^https?:\/\//i.test(cleanUrl(u)); }
 
-/* ── tiny React-only Markdown renderer (headings, bold, inline code, lists) ──
-   Anything else — raw HTML included — stays literal text, which is the safety
-   property the tests pin. */
-function renderInline(text) {
-  const parts = String(text).split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((p, i) =>
-    p.startsWith('**') && p.endsWith('**') && p.length > 4
-      ? <b key={i}>{p.slice(2, -2)}</b>
-      : p.startsWith('`') && p.endsWith('`') && p.length > 2
-        ? <code key={i}>{p.slice(1, -1)}</code>
-        : p);
-}
+/* ── Markdown bodies: the shared, React-only renderer (markdown.tsx, H168) ──
+   Raw HTML stays literal text and only http(s)/same-origin links render, which is
+   the safety property the tests pin. The canvas keeps at most MARKDOWN_LIMIT code
+   points; an element stored before that bound is shown cut the same way. */
 function MarkdownBody({ body }) {
-  const out = [];
-  let list = [];
-  const flush = (k) => {
-    if (!list.length) return;
-    out.push(<ul key={'ul' + k}>{list.map((it, j) => <li key={j}>{renderInline(it)}</li>)}</ul>);
-    list = [];
-  };
-  String(body || '').split(/\r?\n/).forEach((ln, i) => {
-    const li = ln.match(/^\s*[-*]\s+(.*)$/);
-    if (li) { list.push(li[1]); return; }
-    flush(i);
-    const h = ln.match(/^(#{1,3})\s+(.*)$/);
-    if (h) out.push(<div key={i} className={'art-h art-h' + h[1].length}>{renderInline(h[2])}</div>);
-    else if (ln.trim()) out.push(<div key={i} className="art-line">{renderInline(ln)}</div>);
-  });
-  flush('end');
-  return <div className="art-md">{out}</div>;
+  const cps = Array.from(String(body || ''));
+  const text = cps.length > MARKDOWN_LIMIT ? cps.slice(0, MARKDOWN_LIMIT).join('') : cps.join('');
+  return <Markdown text={text} className="md art-md" breaks />;
 }
 
 /* Remote images stay behind an explicit consent click; loading uses
@@ -178,6 +157,14 @@ function ArtifactBody({ el, L }) {
       return (<>
         {p.title && <div className="art-title">{p.title}</div>}
         <ImageRefBody payload={p} L={L} />
+      </>);
+    case 'tip':
+      return <div className="art-plain">→ {String(p.target)}: {String(p.caption)}{p.untrusted ? ' (from an untrusted turn)' : ''}</div>;
+    case 'tour':
+      return (<>
+        {p.title && <div className="art-title">{p.title}</div>}
+        <ol className="art-md">{(p.steps || []).map((st, i) => <li key={i}>→ {String(st && st.target)}: {String(st && st.caption)}</li>)}</ol>
+        {p.untrusted && <div className="art-plain">(from an untrusted turn)</div>}
       </>);
     default:
       // future/unknown types stay inert: a JSON snapshot as plain text

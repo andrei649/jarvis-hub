@@ -225,10 +225,12 @@ def compute_digest(
     return ("sha256", content_digest.hex())
 
 
-def sign_skill(skill_dir: Path) -> str:
-    """Write a ``SKILL.sig`` for the skill and return the signature line."""
+def sign_skill(skill_dir: Path, *, snapshot: SkillSourceSnapshot | None = None) -> str:
+    """Write a ``SKILL.sig`` for the skill and return the signature line. With
+    ``snapshot``, the signature covers those verified bytes, not a fresh read of the
+    tree (review-H318c m-1: a write between a check and the read would ride along)."""
     skill_dir = Path(skill_dir)
-    snapshot = source_snapshot(skill_dir)
+    snapshot = snapshot if snapshot is not None else source_snapshot(skill_dir)
     algo, digest = compute_digest(skill_dir, snapshot=snapshot)
     line = f"{algo}:{digest}"
     sig_file = skill_dir / SIG_FILENAME

@@ -26,6 +26,9 @@ from .orchestrator_bindings import bind_external_orchestrator_attribute
 
 logger = logging.getLogger("jarvis.orchestrator")
 
+#: H182 — what a heavy background job returns when it skipped a run on battery.
+DEFERRED_ON_BATTERY = {"skipped": True, "reason": "deferred_on_battery"}   # scheduler health: "skipped"
+
 
 class SchedulerService:
     def __init__(self, orchestrator):
@@ -39,9 +42,13 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
+        self.schedule_auto_archive()
+        self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
         self.schedule_llm_backend_refresh()
+        self.schedule_power_monitor()
+        self.schedule_pressure_monitor()
         self.schedule_company_mode()
         self.schedule_backups()
         self.schedule_owner_jobs()
@@ -51,6 +58,13 @@ class SchedulerService:
         """Put the owner's own jobs on the scheduler (Hermes absorption, wave 2)."""
         runner = getattr(self._orch, "jobs", None)
         if runner is None:
+            return
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            # H275: the owner's jobs stay saved; none is put on the scheduler.
+            safe_mode.note("owner_jobs")
+            logger.warning("Safe mode: owner jobs are not scheduled")
             return
         try:
             registered = runner.register_all()
@@ -108,12 +122,12 @@ class SchedulerService:
         if hours <= 0:
             return
         try:
-            sched.add_job(self._orch._run_learning_loop, "interval", hours=hours,
+            sched.add_job(self.run_learning_loop, "interval", hours=hours,
                           id="learning-loop-promotions", replace_existing=True)
             # DRA-41 — the H20.4 self-evolution twin: same cadence, same inbox,
             # nothing self-applies. This is the unattended production caller the
             # trajectory/prompt-optimization mechanism never had.
-            sched.add_job(self._orch._run_prompt_evolution, "interval", hours=hours,
+            sched.add_job(self.run_prompt_evolution, "interval", hours=hours,
                           id="learning-loop-prompt-evolution", replace_existing=True)
             logger.info("Scheduled learning-loop promotions + prompt evolution every %sh", hours)
         except Exception as e:
@@ -162,7 +176,7 @@ class SchedulerService:
             return
         interval = max(60, int(self._orch.get_setting("worldview.kg_sync_interval", 900)))
         try:
-            sched.add_job(self._orch._run_worldview_kg_sync, "interval", seconds=interval,
+            sched.add_job(self.run_worldview_kg_sync, "interval", seconds=interval,
                           id="worldview-kg-sync", replace_existing=True)
             logger.info("Scheduled WorldView KG sync every %ss", interval)
         except Exception as e:
@@ -183,6 +197,52 @@ class SchedulerService:
             logger.info("Scheduled data-retention sweep: 03:30 daily (no-op unless retention.enabled)")
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
+
+    def schedule_auto_archive(self):
+        """H218 — archive idle chats daily at 03:40; a no-op unless
+        ``memory.auto_archive_days`` is set (0, the default, is off)."""
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_auto_archive, "cron", hour=3, minute=40,
+                          id="session-auto-archive", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the session auto-archive: {e}")
+
+    async def run_auto_archive(self):
+        from agents.core import session_archive
+
+        days = session_archive.auto_archive_days(
+            self._orch.get_setting(session_archive.SETTING_AUTO_DAYS, 0))
+        if not days:
+            return {"_scheduler_status": "skipped"}
+        try:
+            done = await asyncio.to_thread(
+                session_archive.run_auto_archive, self._orch.checkpoints, days,
+                active=getattr(self._orch, "session_id", None))
+            return {"archived": len(done)}
+        except Exception as e:
+            logger.warning(f"Session auto-archive failed: {e}")
+            return {"_scheduler_status": "failed"}
+
+    def schedule_exec_cache_prune(self):
+        """Hourly prune of the sandbox's managed run-directory cache (H667).
+
+        Always on: the cache is the hub's own (``<data root>/cache/exec``), and a run
+        directory is removed only when its newest file is older than
+        ``security.sandbox_temp_max_age_hours`` (72 by default) and no sandbox holds it.
+        It is pruned whatever root is chosen now; a root the owner chose
+        (``JARVIS_EXEC_TEMP_DIR``, ``security.sandbox_temp_dir``) is never pruned.
+        """
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_exec_cache_prune, "interval", hours=1,
+                          id="exec-cache-prune", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the sandbox cache prune: {e}")
 
     def schedule_memory_maintenance(self):
         """Nightly LivingMemory consolidation + decay inspection (O26-P2.2).
@@ -353,6 +413,49 @@ class SchedulerService:
             logger.warning("Failed to schedule the LLM backend re-probe", exc_info=True)
 
     # ── job bodies (no external callers) ──────────────────────────
+    def schedule_power_monitor(self):
+        """H182 — read the power state every minute, so a resume from sleep is noticed
+        (and streamed to the HUD) without anyone asking. Skipped under JARVIS_TESTING."""
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_power_tick, "interval", seconds=60,
+                          id="power-monitor", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the power monitor: {e}")
+
+    def schedule_pressure_monitor(self):
+        """H161 — sample memory and disk every minute for the pressure banner, on the
+        hub's scheduler rather than the autonomy tick, so autonomy off or ESTOP engaged
+        does not blind it. Skipped under JARVIS_TESTING (the route samples on demand)."""
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_pressure_tick, "interval", seconds=60,
+                          id="pressure-monitor", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the pressure monitor: {e}")
+
+    async def run_pressure_tick(self):
+        from agents.core import resource_pressure
+
+        state = await asyncio.to_thread(resource_pressure.monitor().tick)
+        return {"worst": (state.get("worst") or {}).get("condition")}
+
+    async def run_power_tick(self):
+        from agents.core import power
+
+        state = await asyncio.to_thread(power.MONITOR.tick)
+        return {"on_battery": bool(state.get("on_battery"))}
+
     async def run_llm_backend_refresh(self):
         """One availability pass. Never raises — a failed probe is not fatal."""
         router = getattr(self._orch, "llm_router", None)
@@ -365,11 +468,39 @@ class SchedulerService:
             logger.warning("Local LLM backend re-probe failed", exc_info=True)
             return {"skipped": True, "reason": "probe_failed"}
 
+    async def _deferred_on_battery(self) -> bool:
+        """H182 — on battery below ``system.battery_defer_percent``: skip this heavy run."""
+        from agents.core import power
+
+        try:
+            return await asyncio.to_thread(power.defer_background, getattr(self._orch, "get_setting", None))
+        except Exception:
+            logger.debug("power state unavailable; the job runs", exc_info=True)
+            return False
+
+    async def run_learning_loop(self):
+        """The learning-loop promotions (the body stays on the orchestrator), deferred on battery."""
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_learning_loop()
+
+    async def run_prompt_evolution(self):
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_prompt_evolution()
+
+    async def run_worldview_kg_sync(self):
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_worldview_kg_sync()
+
     async def run_tech_scout(self):
         """Run one tech-scout pass, reading live settings each time (H27-self-improve)."""
         scout = getattr(self._orch, "tech_scout", None)
         if scout is None:
             return {"skipped": True, "reason": "unavailable"}
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
         enabled = bool(self._orch.get_setting("autonomy.tech_scout_enabled", False))
         try:
             interval_hours = float(self._orch.get_setting("autonomy.tech_scout_interval_hours", 168))
@@ -398,6 +529,8 @@ class SchedulerService:
         living = cog.module("memory")
         if living is None:
             return {"skipped": True, "reason": "living_memory_unavailable"}
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
 
         try:
             nrem = await living.consolidate("nrem")
@@ -458,6 +591,23 @@ class SchedulerService:
             decay_summary.get("candidates"),
         )
         return result
+
+    async def run_exec_cache_prune(self):
+        """Prune the managed sandbox cache off the event loop; the live sandbox is kept.
+        Never raises into the scheduler: a failure is reported as its status."""
+        from agents.core import exec_cache
+
+        try:
+            # The managed cache is the hub's own whatever root is chosen now: a choice
+            # made after start never strands what is already there (review-H667 m5).
+            sandbox = getattr(self._orch, "sandbox", None)
+            live = [sandbox.work_dir] if getattr(sandbox, "work_dir", None) else []
+            return await asyncio.to_thread(
+                exec_cache.prune, exec_cache.managed_root(), managed=True,
+                max_age_hours=exec_cache.max_age_hours(), live=live)
+        except Exception as e:
+            logger.warning(f"Sandbox cache prune failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     async def run_retention_purge(self):
         """Run the retention sweep off the event loop (file + SQLite I/O)."""

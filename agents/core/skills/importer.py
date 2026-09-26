@@ -200,6 +200,8 @@ class SkillImporter:
     def __init__(self, skills_dir: str = "skills"):
         self.skills_dir = Path(skills_dir)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
+        # H350 — why the last _save_skill refused its document (empty when it did not).
+        self.last_refusal: list = []
 
     async def import_from_hermes(self, skill_name: str) -> bool:
         skill_slug = _safe_slug(skill_name)
@@ -265,7 +267,7 @@ class SkillImporter:
                 logger.warning("Hermes content digest mismatch for '%s'", entry.slug)
                 return None
             text = raw.decode("utf-8")
-            if SkillImporter._extract_frontmatter(text).get("name") != entry.slug:
+            if SkillImporter._extract_frontmatter(text, strict=True).get("name") != entry.slug:
                 logger.warning("Hermes content identity mismatch for '%s'", entry.slug)
                 return None
         except UnicodeDecodeError:
@@ -434,10 +436,19 @@ class SkillImporter:
                 "Rejected skill import: %r resolves outside %s", skill_name, self.skills_dir
             )
             return False
-        target_dir.mkdir(parents=True, exist_ok=True)
 
         if skill_md_text is None:
             skill_md_text = self._synthesize_skill_md(skill_name, manifest or {}, source)
+        # H350 — the document is checked before its folder exists: a malformed SKILL.md
+        # would register under the folder's name with an empty description.
+        from .validate import validate_skill_md
+
+        self.last_refusal = validate_skill_md(skill_md_bytes if skill_md_bytes is not None else skill_md_text)
+        if self.last_refusal:
+            logger.warning("Rejected skill import: its SKILL.md is not valid (%s)",
+                           "; ".join(str(p) for p in self.last_refusal))
+            return False
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         # Preserve verified upstream bytes exactly. Generic imports retain their
         # existing text-write behavior.
@@ -491,22 +502,17 @@ class SkillImporter:
         return f"---\n{fm_text}\n---\n\n" + "\n".join(body)
 
     @staticmethod
-    def _extract_frontmatter(text: str) -> dict:
-        if not text or not text.startswith("---"):
+    def _extract_frontmatter(text: str, *, strict: bool = False) -> dict:
+        # The same parse the loader runs (H327): BOM-safe, with the key:value
+        # fallback for malformed YAML, so the importer and the loader agree on
+        # metadata. ``strict`` drops that fallback: a name only the fallback can
+        # find never decides an identity (the Hermes pin gate, a migration slug).
+        if not text:
             return {}
-        lines = text.split("\n")
-        if lines[0].strip() != "---":
-            return {}
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                try:
-                    import yaml
+        from .frontmatter import split_frontmatter
 
-                    data = yaml.safe_load("\n".join(lines[1:i]))
-                    return data if isinstance(data, dict) else {}
-                except Exception:
-                    return {}
-        return {}
+        data, _body = split_frontmatter(text, lenient=not strict)
+        return data if isinstance(data, dict) else {}
 
     async def _sync_from_hermes(self, category: Optional[str]) -> list[str]:
         pin = _load_hermes_pin()
@@ -1180,11 +1186,19 @@ async def _import_local_skill(
         text = raw.decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return _local_skill_result(None, "rejected", "skill_md_unreadable")
-    frontmatter = SkillImporter._extract_frontmatter(text)
+    frontmatter = SkillImporter._extract_frontmatter(text, strict=True)
     declared = frontmatter.get("name")
     slug = _safe_slug(str(declared) if declared else Path(skill_dir).name)
     if slug is None:
         return _local_skill_result(None, "rejected", "unsafe_skill_name")
+    # H350 — a document the loader would misread is refused here, before any dry-run
+    # verdict, any backup or any quarantine marker (the re-import path included).
+    from .validate import validate_skill_md
+
+    problems = validate_skill_md(raw)
+    if problems:
+        return _local_skill_result(slug, "rejected", "invalid_skill_md",
+                                   problems=[p.as_dict() for p in problems])
 
     from ..security import quarantine
 
@@ -1356,7 +1370,7 @@ def rescan_imported(
                 _local_skill_result(target.name, "source_unreadable", "skill_md_unreadable", **info)
             )
             continue
-        declared = SkillImporter._extract_frontmatter(text).get("name")
+        declared = SkillImporter._extract_frontmatter(text, strict=True).get("name")
         slug = _safe_slug(str(declared) if declared else source_path.parent.name)
         if slug != target.name:
             rows.append(

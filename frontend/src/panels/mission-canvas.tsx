@@ -80,6 +80,7 @@
    Both routes are USER tier (Depends(user_guard)) — act(), not actA(). */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS } from '../panel-kit';
+import { todoTree } from '../todo-tree';
 
 /* The backend's own words, never ours. apiPost throws on 4xx/5xx and rides the parsed refusal
    body along on `err.body` (api/client.ts:104), so the real `error`/`detail` string is reachable
@@ -242,11 +243,15 @@ export function MissionCanvasPanel() {
 
                   {m.status !== 'active' && plan.length > 0 && note(notActiveHint(m.status), AMBER)}
 
-                  {plan.map((s: any, si: number) => {
+                  {/* H666: a step with a `parent` (an earlier step's idx) sits indented under
+                      it; todoTree never drops a step, whatever the parents say. */}
+                  {todoTree<[any, number]>(plan.map((s: any, si: number) => [s, si] as [any, number]),
+                    ([s, si]) => (typeof s.idx === 'number' ? s.idx : si), ([s]) => s.parent,
+                  ).map(([[s, si], depth]) => {
                     const idx = typeof s.idx === 'number' ? s.idx : si;
                     const open2 = m.status === 'active' && (s.status === 'pending' || s.status === 'running');
                     return (
-                      <div key={idx}>
+                      <div key={si} data-depth={depth} style={depth ? { paddingLeft: depth * 14 } : undefined}>
                         <Row>
                           <span style={{ ...mono, color: INK3 }}>#{idx}</span>
                           <span style={{ ...mono, color: 'var(--ink-2)' }}>{s.title || '(untitled step)'}</span>

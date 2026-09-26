@@ -126,6 +126,7 @@ async def test_inbound_user_turn_embedding_carries_taint_metadata():
     sid = await mm.new_session()
 
     await mm.add_turn(sid, "user", "external channel text", channel="telegram")
+    await mm.flush_embeddings()  # H428: turn embeddings are written in the background
 
     assert len(mm.vectors.records) == 1
     meta = mm.vectors.records[0].metadata

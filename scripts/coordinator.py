@@ -48,6 +48,13 @@ def _env_float(name: str, default: float, *, minimum: float) -> float:
 
 
 async def _build_orchestrator():
+    # The coordinator (systemd jarvis-runtime) shares the hub's data root: it loads the
+    # same .env files before anything it builds reads config, or its audit rows go
+    # unkeyed beside the hub's keyed ones and the shared chain reads as tampered
+    # (review-H273e M2). Idempotent: run() has usually loaded already.
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()
     from agents.core.config import JarvisConfig
     from agents.core.env_config import env_flag
     from agents.core.orchestrator import Orchestrator
@@ -80,6 +87,9 @@ async def _build_orchestrator():
 async def run() -> None:
     import os
 
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()                    # before the paths and knobs below are read
     from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
 
     log_path = default_log_path()

@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import inspect
 import json
 import logging
 import math
 import re
+import secrets
 from collections.abc import Callable, Coroutine, Mapping
 from contextlib import suppress
 from functools import partial
@@ -61,7 +63,7 @@ from .tool_result_store import (
     preview_envelope,
     threshold_for,
 )
-from .tool_rpc import ToolRPCServer
+from .tool_rpc import ToolRPCServer, bind_tool_turn, reset_tool_turn
 
 logger = logging.getLogger("jarvis.agent_runtime")
 
@@ -112,6 +114,25 @@ _DUPLICATE_NOTICE = (
     "This result is byte-identical to the result of call {call_id} earlier this turn and "
     "was not repeated; refer to that result."
 )
+# H315 — tools whose answer IS the thing the model must re-read. `todo` restates the whole
+# plan on every call so the model reads its own checklist again; a "same as call N" stub
+# would point it at an older copy many messages up (possibly compacted by then), which is
+# exactly the re-reading the tool exists to force. Such a call is not counted against a
+# per-tool cap, and the repeat detector keys it on the plan it last saw as well as its
+# arguments (H315 second review): a read after the plan changed is the tool doing its
+# job, but the same call again with nothing changed in between is the loop signature,
+# and it is stopped like any other repeat.
+_ALWAYS_RESTATED = frozenset({"todo"})
+#: Tools that run a script able to call other tools behind the model's back (H315).
+_SCRIPT_TOOLS = frozenset({"execute_code"})
+#: execute_code's refusals before any script runs (agents/core/code_tools.py: DISABLED,
+#: SANDBOX_UNAVAILABLE, NOT_ISOLATED, AUTHORITY_UNAVAILABLE): nothing can have changed.
+_SCRIPT_REFUSALS = frozenset({"code_execution_disabled", "sandbox_unavailable",
+                              "sandbox_not_isolated", "authority_unavailable",
+                              # K2's own, before any cell reaches the interpreter (review-H315h
+                              # n2). Not teardown_unconfirmed: it also ends a cell that ran.
+                              "estop_engaged", "authority_expired", "cell_denied",
+                              "kernel_unavailable", "cell_refused", "cell_too_long"})
 # Hermes absorption 3b — the profile (agent × surface × principal) decides what is offered
 # before the model sees a tool list; a turn the profile leaves with nothing never enters the
 # loop (``can_run`` says no and the agent answers on the plain path).
@@ -241,6 +262,19 @@ class AgentToolRuntime:
             logger.warning("agent tool runtime capability check failed closed")
             return False
 
+    def offered_names(self, agent_id: str | None) -> frozenset[str]:
+        """The tool names this agent's turn would be offered, with no side effect (H328:
+        a skill that needs a tool, or stands in for one, is shown by it). Empty when the
+        tool loop is off; a failure answers empty too."""
+        try:
+            if not self._enabled():
+                return frozenset()
+            offered, _decision = self._profiled(agent_id, self._server.tools())
+            return frozenset(str(tool.get("name") or "") for tool in offered)
+        except Exception:
+            logger.warning("tool offer for the skill catalog could not be read", exc_info=True)
+            return frozenset()
+
     def _profiled(
         self, agent_id: str | None, metadata: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], Any]:
@@ -326,6 +360,33 @@ class AgentToolRuntime:
         constructor default untouched; a value is clamped to
         ``WALL_SECONDS_MIN..WALL_SECONDS_CAP`` and stays finite (Hermes absorption 5c).
         """
+        # Each run is one model turn: calls it makes carry its token, so a tool can tell
+        # what the model sent in this turn from what an earlier turn or a script wrote.
+        turn = bind_tool_turn(secrets.token_hex(8))
+        try:
+            return await self._run_turn(
+                agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
+                max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
+                wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+            )
+        finally:
+            reset_tool_turn(turn)
+
+    async def _run_turn(
+        self,
+        *,
+        agent_id: str,
+        backend: Any,
+        model: str,
+        prompt: str,
+        system: str = "",
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        event_sink: ToolEventSink | None = None,
+        wall_seconds: float | None = None,
+        usage_sink: Callable[[TokenUsage], None] | None = None,
+        effective_window: EffectiveWindow | None = None,
+    ) -> str:
         # None, a bool, a non-number, a non-finite or a non-positive value all keep
         # the constructor's own deadline; only a real value is clamped into the range.
         parsed = 0.0 if isinstance(wall_seconds, bool) else _safe_float(wall_seconds, default=0.0)
@@ -470,6 +531,8 @@ class AgentToolRuntime:
         seen_calls: dict[tuple[str, str], int] = {}
         failure_streaks: dict[str, int] = {}
         tool_counts: dict[str, int] = {}
+        restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
+        scripts_run = 0                 # scripts this turn: each one opens a new revision
         seen_results: dict[str, str] = {}
 
         # H298 — what this turn has already put in the window, and how big that window
@@ -519,6 +582,10 @@ class AgentToolRuntime:
                                 _bounded_identity(name)
                                 for name in refreshed.removed[:_EVENT_WITHHELD_NAMES]
                             ],
+                            "reshaped": [
+                                _bounded_identity(name)
+                                for name in refreshed.reshaped[:_EVENT_WITHHELD_NAMES]
+                            ],
                             "offered": len(refreshed.tools),
                         },
                     )
@@ -565,13 +632,13 @@ class AgentToolRuntime:
                     agent_id=agent_id, event_sink=event_sink,
                 ):
                     return _CONTEXT_REPLY
-            repeated, looping = self._note_repeats(bounded_calls, seen_calls)
+            repeated, looping = self._note_repeats(bounded_calls, seen_calls, restated)
             if looping is not None:
                 await self._emit(
                     event_sink,
                     {
                         **self._event(looping, agent_id, "tool_loop_repeated", "repeated_call"),
-                        "repeats": seen_calls[_call_key(looping)],
+                        "repeats": seen_calls[_call_key(looping, restated)],
                         "limit": self._repeat_limit,
                     },
                 )
@@ -622,6 +689,23 @@ class AgentToolRuntime:
                         "content": content,
                     }
                 )
+            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+                if call.name in _ALWAYS_RESTATED:
+                    restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
+            # Scripts after the reads of the same step: the batch runs concurrently, so a
+            # read beside a script answered the plan from before it; the step must end on
+            # the script's revision, or the next read keys on a plan the model already read
+            # (review-H315f m2).
+            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+                if _script_revision_due(call.name, result):
+                    # A script may have called tools the model never saw answer (H315 third
+                    # review), so it may have changed a restated tool's state: the next read
+                    # of one is not the same call as the last. Each such script opens its own
+                    # revision — clearing it would key every read after a script alike, so
+                    # the third such read became a "repeat" (review-H315e M1).
+                    scripts_run += 1
+                    for name in _ALWAYS_RESTATED:
+                        restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _APPROVAL_REPLY
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
@@ -812,6 +896,7 @@ class AgentToolRuntime:
         self,
         calls: tuple[ToolCall, ...],
         seen: dict[tuple[str, str], int],
+        restated: Mapping[str, str] | None = None,
     ) -> tuple[dict[str, int], ToolCall | None]:
         """Count identical (tool, arguments) calls across the turn.
 
@@ -824,7 +909,7 @@ class AgentToolRuntime:
         if limit <= 0:
             return repeated, None
         for call in calls:
-            key = _call_key(call)
+            key = _call_key(call, restated)
             count = seen.get(key, 0) + 1
             seen[key] = count
             if count > limit:
@@ -850,6 +935,8 @@ class AgentToolRuntime:
         limit = self._per_tool_cap()
         capped: dict[str, int] = {}
         for call in calls:
+            if call.name in _ALWAYS_RESTATED:
+                continue
             count = counts.get(call.name, 0) + 1
             counts[call.name] = count
             if limit > 0 and count > limit:
@@ -911,6 +998,8 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
     ) -> str:
         """A successful result already in the transcript becomes a reference stub."""
+        if call.name in _ALWAYS_RESTATED:
+            return content
         if _is_failed_result(result) or len(content.encode("utf-8")) < self._duplicate_stub_bytes:
             return content
         prior = seen.get(content)
@@ -1472,9 +1561,11 @@ def _failure_reason(result: Mapping[str, Any]) -> str:
     return reason if isinstance(reason, str) and reason else "failed"
 
 
-def _call_key(call: ToolCall) -> tuple[str, str]:
+def _call_key(call: ToolCall, restated: Mapping[str, str] | None = None) -> tuple[str, str]:
     """Identity of a call for the repeat detector: the tool plus its arguments in
-    canonical JSON (key order does not make a different call)."""
+    canonical JSON (key order does not make a different call). A restated tool's call
+    also carries the revision of its last answer, so the same call is a repeat only
+    while nothing changed in between."""
     if isinstance(call.arguments, dict):
         try:
             encoded = json.dumps(
@@ -1484,7 +1575,51 @@ def _call_key(call: ToolCall) -> tuple[str, str]:
             encoded = str(call.raw_arguments)
     else:
         encoded = str(call.raw_arguments)
+    if call.name in _ALWAYS_RESTATED:
+        encoded = f"{encoded}@{(restated or {}).get(call.name, '')}"
     return (str(call.name), encoded)
+
+
+def _script_revision_due(tool: str, result: Any) -> bool:
+    """Whether a call may have changed a restated tool's state behind the model's back: it
+    made tool calls of its own, or it is a script that ran and did not finish cleanly (a
+    crash reports no calls, review-H315e M1). A script that ran cleanly with no calls, or
+    one the server refused and never ran (no answer of its own), changed nothing, so the
+    repeat stop still holds across it (review-H315f n2). A handler that raised may have
+    raised after its script ran, so it opens one; execute_code's own refusals before any
+    script (switched off, no sandbox, not isolated, no authority) do not (review-H315g n1),
+    nor do the session kernel's before any cell (e-stop, expired, denied, no kernel, an
+    empty or overlong cell: review-H315h n2)."""
+    if _made_nested_calls(result):
+        return True
+    if tool not in _SCRIPT_TOOLS:
+        return False
+    if isinstance(result, Mapping) and result.get("ok") is False and result.get("reason") == "tool_error":
+        return True
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    if not isinstance(inner, Mapping) or inner.get("reason") in _SCRIPT_REFUSALS:
+        return False
+    return inner.get("ok") is False or bool(inner.get("timed_out"))
+
+
+def _made_nested_calls(result: Any) -> bool:
+    """The call ran a script that made tool calls of its own (``execute_code``)."""
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    calls = inner.get("tool_calls") if isinstance(inner, Mapping) else None
+    return isinstance(calls, int) and not isinstance(calls, bool) and calls > 0
+
+
+def _answer_revision(result: Any, previous: str) -> str:
+    """The revision of a restated tool's answer: a digest of what it restated. A call
+    that failed restated nothing, and leaves the last revision in force."""
+    inner = result.get("result") if isinstance(result, Mapping) else None
+    if not isinstance(inner, Mapping) or inner.get("ok") is False:
+        return previous
+    try:
+        encoded = json.dumps(inner, sort_keys=True, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return previous
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 def _non_json(tool_name: str) -> dict[str, Any]:

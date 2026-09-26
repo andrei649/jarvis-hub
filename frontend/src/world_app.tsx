@@ -5,6 +5,7 @@ import { V2 } from './data';
 import { Icon, ICONS } from './ui';
 import { useHudRoute, navigateHud, closeHudOverlay } from './hud-routing';
 import { RouteBoundary } from './route-boundary';
+import { bindings, loadOverrides, matchAction } from './shortcuts';
 const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
 
 /* The bottom-left WORLD button's geometry, and the strip the mode rail gives up for it.
@@ -33,7 +34,7 @@ function WorldAwareApp() {
     function onKey(e) {
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-      if (e.key.toLowerCase() === 'w') setOpen(true);
+      if (matchAction(e, bindings(loadOverrides()), 'global')?.id === 'view.world') setOpen(true);   // H209
       if (e.key === 'Escape' && logicalPath(window.location.pathname) === '/v2/world') setOpen(false);
     }
     window.addEventListener('keydown', onKey);

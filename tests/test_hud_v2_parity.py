@@ -76,6 +76,7 @@ RULES = [
     ("/ticker", "cockpit"),
     ("/tasks", "cockpit"),
     ("/api/cognition", "cockpit"),
+    ("/api/power", "cockpit"),          # H182: the shell's PowerChip (poll + stream)
     ("/tts", "cockpit"),
     ("/sessions", "cockpit"),
     ("/memory/clear", "cockpit"),
@@ -85,6 +86,7 @@ RULES = [
         "cockpit",
     ),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
+    ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
     ("/api/trust/status", "topbar"),
     # memory & knowledge
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
@@ -623,7 +625,6 @@ COMPUTED_URL_CALLERS: dict[str, str] = {
     "/api/admin/prompts/{agent_id}/ab": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/commit": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/diff": "frontend/src/gap.tsx",
-    "/api/admin/prompts/{agent_id}/preview": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/rollback": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/version/{version}": "frontend/src/gap.tsx",
     # MissionsPanel: act('/api/missions/' + m.id + '/' + a), a from actionsFor(status)

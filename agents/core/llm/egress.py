@@ -7,8 +7,9 @@ backend, though, dialled its own bare ``httpx.AsyncClient``, so a turn answered 
 Anthropic or Gemini left the machine without the ledger seeing a thing: the panel could
 read "0 external — local-only ✓" while a cloud model answered every question.
 
-`llm_async_client` is the one constructor those backends use instead. It hangs an httpx
-request event hook on the client, so the recorded host is the host actually dialled
+`llm_async_client` is the one constructor those backends use instead. It verifies
+against the one TLS trust anchor (H504, ``agents/core/tls_trust.verify_for``) and hangs an
+httpx request event hook on the client, so the recorded host is the host actually dialled
 rather than a guess made from config, and the hook fires for streaming and non-streaming
 requests alike.
 
@@ -80,6 +81,19 @@ def llm_async_client(backend: str, **kwargs) -> httpx.AsyncClient:
     keep the timeouts they already tuned. The ledger hook is appended last, so it sees
     the request exactly as it is about to be dispatched.
     """
+    from .quota import request_hook, response_hook
+
     event_hooks = dict(kwargs.pop("event_hooks", None) or {})
-    event_hooks["request"] = [*event_hooks.get("request", []), _recorder(backend)]
+    # H373: the shared 429 guard refuses first (a refused request never left, so it is not
+    # an egress row); every cloud response's quota headers are then recorded.
+    event_hooks["request"] = [*event_hooks.get("request", []), request_hook(backend), _recorder(backend)]
+    event_hooks["response"] = [*event_hooks.get("response", []), response_hook(backend)]
+    # H504: every model client verifies against the one trust anchor (JARVIS_CA_BUNDLE
+    # included). An explicit SSLContext also means httpx never reads SSL_CERT_FILE on its
+    # own, so a client that keeps trust_env for the owner's proxy cannot fail on an
+    # unnamed file. A test's own transport, or a caller's own verify, is left alone.
+    if "verify" not in kwargs and kwargs.get("transport") is None:
+        from agents.core.tls_trust import verify_for
+
+        kwargs["verify"] = verify_for(backend, kwargs.get("base_url"))
     return httpx.AsyncClient(event_hooks=event_hooks, **kwargs)

@@ -6,8 +6,10 @@ wired for real — see that module's docstring) as a child process and
 respawns it immediately if it dies for any reason, including ``SIGKILL``: a
 process cannot recover itself from ``kill -9``, so a killed coordinator's
 recovery is this parent's job. Every respawn is appended to the same
-``logs/runtime.jsonl`` the coordinator writes to, so a crash-and-recover is
-visible in the run-log the morning brief reads, not just in stderr.
+run-log the coordinator writes to (``logs/runtime.jsonl`` by default), so a
+crash-and-recover is visible in the run-log the morning brief reads, not just in
+stderr — apart from a path only a named-pipe .env names, which this process never
+reads: its own events then stay in the default file (H273's Known limits).
 
 This is what ``deploy/systemd/jarvis-runtime.service`` and the
 ``runtime-coordinator`` docker-compose service both run. Layering systemd/
@@ -56,7 +58,26 @@ def _log_path() -> Path:
     # agents.core.observability.runtime_log.default_log_path(): this supervisor
     # is a bare process babysitter that must start even when the app package
     # cannot be imported. Keep the default in sync with DEFAULT_LOG_PATH there.
-    return Path(os.environ.get("JARVIS_RUNTIME_LOG", "logs/runtime.jsonl"))
+    # The coordinator loads the .env files before it reads the path, so a path set only
+    # in one of them is read here too, without loading (a loaded key would reach the
+    # child as the process environment's): one run-log for both (review-H273f m3).
+    value = os.environ.get("JARVIS_RUNTIME_LOG")
+    if value is None:
+        value = _file_run_log()
+    return Path(value or "logs/runtime.jsonl")
+
+
+def _file_run_log() -> str | None:
+    """The run-log path a regular .env file names, read the way the hub reads it; None
+    when none does, or the app package cannot be imported (keep the default)."""
+    try:
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        from agents.core.env_provenance import hub_value
+
+        return hub_value("JARVIS_RUNTIME_LOG") or None
+    except Exception:  # noqa: BLE001  (the app package may not import: nothing to hand down)
+        return None
 
 
 def _append_supervisor_event(event: str, **fields) -> None:
@@ -70,6 +91,26 @@ def _append_supervisor_event(event: str, **fields) -> None:
         pass  # the run-log is observability, never a reason to fail the supervisor
 
 
+def _child_env() -> dict[str, str]:
+    """The child's environment: this process's, with the run-log path this supervisor
+    found in a regular .env file (the coordinator loads the .env files without
+    overriding the process, so both write that one run-log: review-H273g m4). A path this
+    process found nowhere is not handed down: the child then reads it where it can, a
+    named-pipe .env included, and writes where the hub reads the cycles; only the
+    supervisor's own respawn events stay in the default file (review-H273h m1)."""
+    env = dict(os.environ)
+    found = os.environ.get("JARVIS_RUNTIME_LOG") or _file_run_log()
+    if found:
+        env["JARVIS_RUNTIME_LOG"] = found
+    return env
+
+
+def _spawn() -> subprocess.Popen:
+    # Fixed argv (this interpreter + a repo-relative script path) — no shell,
+    # no untrusted input; matches the repo's other internal subprocess seams.
+    return subprocess.Popen([sys.executable, _COORDINATOR], env=_child_env())  # noqa: S603  # nosec B603
+
+
 def main() -> int:
     starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
     backoff = starting_delay
@@ -81,9 +122,7 @@ def main() -> int:
         if child.poll() is None:
             child.send_signal(signum)
 
-    # Fixed argv (this interpreter + a repo-relative script path) — no shell,
-    # no untrusted input; matches the repo's other internal subprocess seams.
-    child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+    child = _spawn()
     started_at = time.monotonic()
     _append_supervisor_event("spawned", pid=child.pid)
     signal.signal(signal.SIGTERM, _request_stop)
@@ -100,7 +139,7 @@ def main() -> int:
                 backoff = starting_delay
             time.sleep(backoff)
             backoff = min(MAX_BACKOFF_SECONDS, backoff * 2)
-            child = subprocess.Popen([sys.executable, _COORDINATOR])  # noqa: S603  # nosec B603
+            child = _spawn()
             started_at = time.monotonic()
             _append_supervisor_event("respawned", pid=child.pid)
     finally:

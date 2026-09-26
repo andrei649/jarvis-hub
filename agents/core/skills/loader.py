@@ -25,6 +25,7 @@ from agents.core.automation_contracts import (
     predicate,
 )
 
+from . import frontmatter as _fm
 from . import signing
 from .approval import SkillApprovalStore
 
@@ -34,6 +35,7 @@ logger = logging.getLogger("jarvis.skills")
 # frozen) instead of the CWD, so skill discovery works no matter where the
 # process was launched from. From the repo root this is the same "skills/"
 # directory as before.
+from agents.core import load_set, safe_mode  # noqa: E402
 from agents.core.paths import app_root as _app_root  # noqa: E402
 
 SKILLS_DIR = _app_root() / "skills"
@@ -223,6 +225,16 @@ def _matches_bundled_source(path: Path, root: Path) -> bool:
     return _snapshot_matches_bundled(snapshot, path.name)
 
 
+def _shipped_location(path: Path) -> bool:
+    """``path`` is where a shipped skill lives: directly under the product's skills tree,
+    under a shipped skill's name. Its bytes may have drifted (so it loads as external),
+    but it is still product source, never a place a patch writes (review-H318c n-6)."""
+    try:
+        return Path(path).resolve().parent == SKILLS_DIR.resolve() and Path(path).name in _BUNDLED_SKILL_MANIFEST
+    except OSError:
+        return False
+
+
 def _snapshot_matches_bundled(
     snapshot: signing.SkillSourceSnapshot,
     skill_name: str,
@@ -310,6 +322,28 @@ def _external_skill_may_import(
         )
         is not None
     )
+
+
+#: What skill_view may keep of a skill (H318): a file up to VIEW_FILE_BYTES is kept as
+#: bytes, and at most VIEW_SKILL_BYTES of a skill in all; any other file is kept as its
+#: size, so it is listed and refused as too large rather than held in memory.
+VIEW_FILE_BYTES = 64 * 1024
+VIEW_SKILL_BYTES = 1024 * 1024
+
+
+def _view_files(snapshot: "signing.SkillSourceSnapshot | None") -> dict[str, "bytes | int"]:
+    out: dict[str, bytes | int] = {}
+    kept = 0
+    for item in getattr(snapshot, "files", ()) or ():
+        if item.kind != "file":
+            continue
+        size = len(item.content)
+        if size <= VIEW_FILE_BYTES and kept + size <= VIEW_SKILL_BYTES:
+            out[item.relative_path] = bytes(item.content)
+            kept += size
+        else:
+            out[item.relative_path] = size
+    return out
 
 
 def _materialize_source_snapshot(
@@ -404,25 +438,12 @@ def _skill_generation_allowed(payload: dict) -> bool:
 def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
     """Split a SKILL.md into (yaml_frontmatter_dict, body).
 
-    Returns (None, content) when there is no parseable ``---`` frontmatter
-    block, so callers can fall back to the Markdown-heading dialect.
+    Returns (None, content) when there is no ``---`` frontmatter block, so callers
+    can fall back to the Markdown-heading dialect. The parse is the shared H327
+    contract: a leading BOM is dropped and malformed YAML falls back to
+    ``key: value`` lines (``frontmatter.split_frontmatter``).
     """
-    if not content.startswith("---"):
-        return None, content
-    lines = content.split("\n")
-    if lines[0].strip() != "---":
-        return None, content
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            try:
-                import yaml
-
-                data = yaml.safe_load("\n".join(lines[1:i]))
-            except Exception:
-                return None, content
-            body = "\n".join(lines[i + 1 :])
-            return (data, body) if isinstance(data, dict) else (None, content)
-    return None, content
+    return _fm.split_frontmatter(content)
 
 
 class Skill:
@@ -440,9 +461,25 @@ class Skill:
         # H20.5 — best-effort usage-telemetry hook (set by SkillLoader.attach_usage);
         # None keeps execute() byte-identical to today's behavior.
         self.usage_hook: Optional[Callable] = None
+        # H318 — what skill_view serves: the files of the snapshot the trust checks ran on
+        # (a later edit on disk is not what was verified), each kept as bytes when it is
+        # small enough to serve and as its size otherwise (VIEW_FILE_BYTES each,
+        # VIEW_SKILL_BYTES a skill), so a skill's assets are not held for the process's life.
+        self.view_files: dict[str, bytes | int] = {}
+        # Whether the source is from outside the product (an import, the owner's own tree),
+        # and whether the owner vouched for it: a keyed signature or an owner approval of
+        # these exact bytes. An unkeyed SKILL.sig is a sha256 anyone can compute, so it is
+        # not a vouch (review-H318 M-1, SEC-B2). A bundled skill is the product's own.
+        self.external: bool = True
+        self.owner_vouched: bool = False
 
     def to_dict(self) -> dict:
+        from .visibility import readiness
+
+        ready, why = readiness(self)
         return {
+            "readiness": ready,
+            "readiness_reason": why,
             "name": self.name,
             "version": self.version,
             "author": self.author,
@@ -451,6 +488,11 @@ class Skill:
             "signature_reason": self.signature_reason,
             "sandboxed": self.sandboxed,
             "has_module": self.module is not None,
+            "platforms": self.platforms,
+            "environments": self.environments,
+            "requires_apps": self.requires_apps,
+            "required_env": self.required_env,
+            "hermes": self.hermes_meta,
         }
 
     @property
@@ -477,10 +519,47 @@ class Skill:
     def commands_meta(self) -> list[dict]:
         return self.manifest.get("commands", [])
 
+    # H327 — the contract fields a SKILL.md declared (empty for the heading dialect).
+    @property
+    def platforms(self) -> list[str]:
+        return list(self.manifest.get("platforms", []))
+
+    @property
+    def environments(self) -> list[str]:
+        return list(self.manifest.get("environments", []))
+
+    @property
+    def requires_apps(self) -> list[str]:
+        return list(self.manifest.get("requires_apps", []))
+
+    @property
+    def required_env(self) -> list[str]:
+        """Names of the environment variables the skill declares; never their values."""
+        return [e["name"] for e in self.manifest.get("required_environment_variables", [])
+                if isinstance(e, dict) and e.get("name")]
+
+    @property
+    def hermes_meta(self) -> dict:
+        return dict(self.manifest.get("hermes", {}))
+
     def register_command(self, name: str, fn: Callable):
         self.commands[name] = fn
 
     async def execute(self, command: str, args: str = "", context: dict = None) -> str:
+        from . import switches
+
+        # H329: a switched-off skill stays installed and is not run; the turn is told why.
+        off = switches.off_reason(self, (context or {}).get("channel"))
+        if off:
+            logger.info("Skill '%s' is switched off %s; command '%s' refused", self.name, off, command)
+            return switches.refusal(self, off)
+        from .visibility import readiness
+
+        # H328: a skill for another operating system cannot run here, even when named.
+        ready, why = readiness(self)
+        if ready != "ready":
+            logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
+            return f"[skill:{self.name}] is {why}"
         if self.usage_hook is not None:
             try:
                 self.usage_hook(self.name, "use")
@@ -511,6 +590,10 @@ class Skill:
 class SkillLoader:
     def __init__(self, approval_store: SkillApprovalStore | None = None):
         self.skills: dict[str, Skill] = {}
+        # H350 — why the last generate_skill refused its document (empty when it did not).
+        self.last_generation_problems: list = []
+        # H507 — what the last generated skill's code looks like (warn-only).
+        self.last_generation_warnings: list = []
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
@@ -555,13 +638,46 @@ class SkillLoader:
             and user_dir.is_dir()
             and user_dir.resolve() != SKILLS_DIR.resolve()
         ):
-            roots.append(user_dir)
+            if safe_mode.enabled():
+                # H275: safe mode discovers the shipped skills only.
+                safe_mode.note("owner_skills")
+            else:
+                roots.append(user_dir)
+        # H285: the owner's load set, read once for this pass.
+        load_set.begin("skills")
+        self._load_lists = load_set.declared("skills")
+        folders: set[str] = set()
         for root in roots:
             for skill_dir in sorted(root.iterdir()):
                 if skill_dir.is_dir():
-                    self._load_skill(skill_dir, discovery_root=root)
+                    folders.add(skill_dir.name)
+                    try:
+                        self._load_skill(skill_dir, discovery_root=root)
+                    except signing.SkillSigningMisconfigured:
+                        raise  # SEC-B2: the operator has to see this one
+                    except Exception:
+                        # One hostile or unreadable SKILL.md must not take the rest of
+                        # discovery (and startup) down with it; it simply is not registered.
+                        logger.warning("Skill at %s could not be loaded; skipped", skill_dir, exc_info=True)
+        load_set.finish("skills", folders | set(self.skills) | set(load_set.status("skills")["skipped"]),
+                        lists=self._load_lists)
+        self._load_lists = None
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
+
+    def _register(self, name: str, skill: "Skill") -> None:
+        """Put ``skill`` in the registry slot ``name``, saying so when it replaces another.
+
+        A user skill replacing a bundled one of the same name is by design (info). Two
+        skills of one tree claiming one name — e.g. two names that share their first 64
+        characters, the agentskills.io cap — is a collision the owner should see.
+        """
+        previous = self.skills.get(name)
+        if previous is not None and Path(previous.path) != Path(skill.path):
+            same_tree = Path(previous.path).parent == Path(skill.path).parent
+            (logger.warning if same_tree else logger.info)(
+                "Skill name '%s' from %s replaces the one from %s", name, skill.path, previous.path)
+        self.skills[name] = skill
 
     def _load_skill(self, path: Path, *, discovery_root: Path | None = None):
         # H32.5: acquired packages are signed for integrity but are NEVER trusted
@@ -590,11 +706,23 @@ class SkillLoader:
                 )
         if not external and snapshot is not None:
             external = not _snapshot_matches_bundled(snapshot, path.name)
+        if external and safe_mode.enabled():
+            # H275: a generated, imported, edited or pending-review skill in the bundled
+            # tree is the owner's, not the release's; safe mode leaves it out entirely.
+            safe_mode.note("owner_skills")
+            logger.info("Safe mode: skill at %s is not a shipped skill; not loaded", path.name)
+            return
 
         snapshot_manifest = snapshot.read_bytes("SKILL.md") if snapshot else None
         manifest = self._parse_manifest(skill_file, source_bytes=snapshot_manifest)
         name = manifest.get("name", path.name)
+        lists = getattr(self, "_load_lists", None)
+        if not load_set.permits("skills", name, path.name, lists=lists):
+            # H285: switched off by the owner's load set; nothing about it is registered.
+            load_set.note_skipped("skills", name)
+            return
         skill = Skill(name, path, manifest)
+        skill.external = bool(external)
         if self._usage is not None:
             store = self._usage
             skill.usage_hook = lambda n, kind: store.bump(n, kind)
@@ -606,7 +734,7 @@ class SkillLoader:
             skill.trusted = False
             skill.sandboxed = True
             skill.signature_reason = "pending review (CDX-8 quarantine)"
-            self.skills[name] = skill
+            self._register(name, skill)
             logger.info("Skill '%s' is PENDING REVIEW — NOT loaded in-process (quarantined)", name)
             return
 
@@ -614,7 +742,7 @@ class SkillLoader:
             skill.trusted = False
             skill.sandboxed = True
             skill.signature_reason = "source-snapshot-invalid"
-            self.skills[name] = skill
+            self._register(name, skill)
             logger.warning(
                 "Skill '%s' source was not a stable regular-file snapshot — "
                 "module NOT loaded in-process",
@@ -642,6 +770,8 @@ class SkillLoader:
             self._approval_store,
             snapshot,
         )
+        skill.owner_vouched = bool(external_import_allowed)
+        skill.view_files = _view_files(snapshot)
         if py_exists and ((require_signed and not skill.trusted) or not external_import_allowed):
             # Strict mode: refuse to exec untrusted code in-process. The skill is
             # flagged sandboxed; the HUD/executor can run it via the Sandbox.
@@ -694,7 +824,7 @@ class SkillLoader:
                     skill.sandboxed = True
                 logger.warning(f"Failed to load skill module {name}: {e}")
 
-        self.skills[name] = skill
+        self._register(name, skill)
         logger.info(f"Loaded skill: {name} v{skill.version}")
 
     def _parse_manifest(
@@ -703,10 +833,12 @@ class SkillLoader:
         *,
         source_bytes: bytes | None = None,
     ) -> dict:
+        # utf-8-sig: a byte-order mark from a Windows editor must not defeat the
+        # ``---`` fence check or the heading dialect's ``# name`` line (H327).
         content = (
-            source_bytes.decode("utf-8")
+            source_bytes.decode("utf-8-sig")
             if source_bytes is not None
-            else path.read_text(encoding="utf-8")
+            else path.read_text(encoding="utf-8-sig")
         )
         default_name = path.parent.name
 
@@ -716,33 +848,44 @@ class SkillLoader:
         # back to the heading parser for everything else.
         fm, body = _split_frontmatter(content)
         if fm is not None:
-            return self._manifest_from_frontmatter(fm, body, default_name)
+            try:
+                return self._manifest_from_frontmatter(fm, body, default_name)
+            except Exception:
+                # Third-party frontmatter the normaliser cannot read registers the skill
+                # under its directory name instead of failing its whole discovery.
+                logger.warning("Skill frontmatter in %s could not be read; using defaults", path, exc_info=True)
+                return self._manifest_from_headings("", default_name)
         return self._manifest_from_headings(content, default_name)
 
     def _manifest_from_frontmatter(self, fm: dict, body: str, default_name: str) -> dict:
         meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
         hermes = meta.get("hermes") if isinstance(meta.get("hermes"), dict) else {}
 
-        requires = fm.get("requires") or hermes.get("requires_toolsets") or []
-        if isinstance(requires, str):
-            requires = [r.strip() for r in requires.split(",") if r.strip()]
-        agents = fm.get("agents") or []
-        if isinstance(agents, str):
-            agents = [a.strip() for a in agents.split(",") if a.strip()]
+        # A YAML list, "[a, b]" or "a, b" alike (the key:value fallback leaves a flow
+        # list as a string), as plain strings: a YAML date in `agents:` must not reach
+        # a JSON route as a date object.
+        requires = _fm.str_list(fm.get("requires")) or _fm.str_list(hermes.get("requires_toolsets"))
+        agents = _fm.str_list(fm.get("agents"))
         commands = self._normalize_commands(fm.get("commands"))
         if not commands:
             commands = self._parse_commands_from_body(body)
 
-        return {
-            "name": fm.get("name", default_name),
-            "description": fm.get("description", ""),
-            "version": str(fm.get("version", "0.1.0")),
-            "author": fm.get("author", "unknown"),
-            "license": fm.get("license", ""),
-            "agents": list(agents),
-            "requires": list(requires),
+        manifest = {
+            # agentskills.io caps: a name at 64 characters, a description at 1024.
+            "name": _fm.text(fm.get("name"), limit=_fm.MAX_NAME_LENGTH) or default_name,
+            # No declared description: the first body line, as Hermes' listing reads it.
+            "description": _fm.cap_description(fm.get("description"))
+            or _fm.cap_description(_fm.first_body_line(body)),
+            "version": _fm.text(fm.get("version")) or "0.1.0",
+            "author": _fm.joined(fm.get("author")) or "unknown",
+            "license": _fm.joined(fm.get("license")),
+            "agents": agents,
+            "requires": requires,
             "commands": commands,
         }
+        # H327 — every other key Hermes recognises, normalised (metadata only).
+        manifest.update(_fm.contract_fields(fm))
+        return manifest
 
     def _manifest_from_headings(self, content: str, default_name: str) -> dict:
         manifest = {
@@ -800,11 +943,15 @@ class SkillLoader:
         out: list[dict] = []
         if not isinstance(raw, list):
             return out
-        for entry in raw:
+        for entry in raw[: 4 * _fm.MAX_LIST_ITEMS]:
             if isinstance(entry, dict):
                 cmd = entry.get("command")
                 if isinstance(cmd, str) and re.fullmatch(r"\w+", cmd):
-                    out.append(entry)
+                    # The rest of the entry is third-party YAML too: plain, finite
+                    # JSON types only (H327), with the command token kept whole.
+                    safe = _fm.json_safe(entry) or {}
+                    safe["command"] = cmd
+                    out.append(safe)
             elif isinstance(entry, str) and re.fullmatch(r"\w+", entry):
                 out.append({"command": entry})
         return out
@@ -909,8 +1056,6 @@ class SkillLoader:
         # bare identifier.
         cmd = _safe_command_name(cmd, skill_name)
 
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
         steps_text = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(solution_steps))
 
         skill_md = f"""# {skill_name.replace("_", " ").title()}
@@ -936,6 +1081,18 @@ Agent-generated skill from successful task completion.
         if output:
             skill_md += f"\n## Example Output\n```\n{output}\n```\n"
 
+        # H350 — the generated document passes the same check as any other write, before
+        # its folder exists: a description past 1,024 characters, a second '# ' line from
+        # the task text, and the like, are refused with the field and the reason.
+        from .validate import validate_skill_md
+
+        self.last_generation_problems = validate_skill_md(skill_md)
+        self.last_generation_warnings = []
+        if self.last_generation_problems:
+            logger.warning("Skill generation refused: %s",
+                           "; ".join(str(p) for p in self.last_generation_problems))
+            return None
+        skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
 
         # The shape below is the loader's contract, not decoration:
@@ -1016,6 +1173,17 @@ def register(skill):
                 self._usage.note_created(registered, "agent")
             except Exception:
                 logger.debug("usage provenance note skipped", exc_info=True)
+        from ..code_guidance import scan_tree
+
+        try:
+            self.last_generation_warnings = scan_tree(skill_dir)
+        except Exception:
+            logger.warning("code guidance for a generated skill failed", exc_info=True)
+            self.last_generation_warnings = []
+        if self.last_generation_warnings:
+            logger.warning("Generated skill '%s' has %d code warning(s): %s", skill_name,
+                           len(self.last_generation_warnings),
+                           ", ".join(sorted({w["rule"] for w in self.last_generation_warnings})))
         logger.info(
             "Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
             skill_name,
@@ -1085,8 +1253,56 @@ def register(skill):
         if skill is None:
             return None
         line = signing.sign_skill(skill.path)
-        skill.trusted, skill.signature_reason = signing.verify_skill(skill.path)
+        # Load it again, so its trust, its vouch and what skill_view serves all describe
+        # the bytes just signed, not the ones seen at start (review-H318 n-1).
+        self._load_skill(Path(skill.path), discovery_root=Path(skill.path).parent)
         return line
+
+    def owner_standing(self, skill: "Skill") -> dict:
+        """What vouches for ``skill``'s bytes as they are on disk now (review-H318b M-1).
+
+        ``bundled``: it ships with Nerva, by its load or by where it lives (review-H318c
+        n-6: a shipped skill whose bytes drifted loads as external, yet is product source).
+        ``signed``: its SKILL.sig verifies. ``approved``: the owner approved these exact
+        bytes. ``key_missing``: a keyed SKILL.sig the missing key cannot renew. ``snapshot``:
+        the one read of the tree all of these judged, which a renewal must match (m-1)."""
+        path = Path(skill.path)
+        unreadable = False
+        try:
+            snapshot = signing.source_snapshot(path)
+            _, reason = signing.verify_skill(path, snapshot=snapshot)
+        except ValueError:                            # a SKILL.sig that is not UTF-8
+            snapshot, reason = None, "unreadable"
+        except OSError:
+            # Could not read, which is not "unsigned": a sharing violation or an EIO for a
+            # moment would otherwise void both vouches over an applied change
+            # (review-H318g m-1). The caller retries.
+            snapshot, reason, unreadable = None, "unreadable", True
+        approved = (snapshot is not None
+                    and self._approval_store.approved_snapshot(path, snapshot=snapshot) is not None)
+        return {
+            "unreadable": unreadable,
+            "bundled": not getattr(skill, "external", True) or _shipped_location(path),
+            "signed": reason in ("signed", "integrity-only"),
+            "approved": approved,
+            "key_missing": reason == "algo-mismatch" and signing._signing_key() is None,
+            "snapshot": snapshot,
+        }
+
+    def restore_standing(self, path: Path, standing: dict, snapshot=None) -> None:
+        """Give an approved patch's bytes the standing the replaced bytes had: re-sign what
+        verified and re-approve what the owner had approved, over ``snapshot`` (the bytes
+        the caller checked) when given. The owner approved this change, and only SKILL.md
+        changed; a skill nothing vouched for gains no vouch."""
+        if standing.get("signed"):
+            signing.sign_skill(path, snapshot=snapshot)
+        if standing.get("approved"):
+            self._approval_store.approve(path, snapshot=snapshot)
+
+    def manifest_name(self, path: Path, text: str) -> str:
+        """The registry name a SKILL.md text would give the skill at ``path``."""
+        manifest = self._parse_manifest(Path(path) / "SKILL.md", source_bytes=text.encode("utf-8"))
+        return str(manifest.get("name") or Path(path).name)
 
     def _name_from_task(self, task: str) -> str:
         words = re.sub(r"[^a-zA-Z0-9\s]", "", task).lower().split()
@@ -1097,7 +1313,9 @@ def register(skill):
         ]
         if not important:
             important = ["custom"]
-        name = "_".join(important[:4])
+        # At most 48 characters before the stamp: the name is a folder and the heading, and
+        # one long word from the task once made a folder name the filesystem refused (H350).
+        name = "_".join(important[:4])[:48].rstrip("_") or "custom"
         timestamp = datetime.now(timezone.utc).strftime("%H%M%S")
         return f"{name}_{timestamp}"
 
@@ -1106,6 +1324,36 @@ def register(skill):
 
     def get_skills_for_agent(self, agent_id: str) -> list[Skill]:
         return [s for s in self.skills.values() if agent_id in s.agents or "all" in s.agents]
+
+    @staticmethod
+    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None, *, switches: Optional[dict] = None,
+                     visibility: Optional[dict] = None) -> str:
+        """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``disabled``
+        (switched off by the owner, everywhere or on this turn's channel — H329),
+        ``unsupported`` (another operating system — H328), ``sandboxed``, ``untrusted``
+        (a signature that does not verify here), ``agent`` (declared for other agents), or
+        one of the soft H328 gates, ``environment``, ``channel`` or ``tools``, which only
+        hide it from what is offered (``visibility.SOFT_GATES``). The catalog,
+        ``skills_list`` and ``skill_view`` share it (H318). ``switches`` is a
+        ``skills.switches.state()`` and ``visibility`` a ``skills.visibility.context()``
+        already read."""
+        from . import switches as skill_switches
+        from . import visibility as skill_visibility
+
+        if skill_switches.off_reason(skill, current=switches):
+            return "disabled"
+        host = (visibility or {}).get("host")
+        if skill_visibility.readiness(skill, host=host)[0] != "ready":
+            return "unsupported"
+        if skill.sandboxed:
+            return "sandboxed"
+        reason = str(getattr(skill, "signature_reason", "") or "")
+        if not getattr(skill, "trusted", False) and reason not in CATALOG_TOLERATED_UNTRUSTED_REASONS:
+            return "untrusted"
+        declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
+        if agent_id and declared and agent_id not in declared and "all" not in declared:
+            return "agent"
+        return skill_visibility.offer_gate(skill, skill_visibility.context() if visibility is None else visibility)
 
     def prompt_catalog(
         self,
@@ -1168,29 +1416,33 @@ def register(skill):
         must not become a silent capability revocation.
         """
         from ..security import quarantine
+        from . import switches as skill_switches
+        from . import visibility as skill_visibility
 
         rows: list[dict] = []
         dropped_untrusted: list[str] = []
         cap = max(0, int(limit))
         chars = max(0, int(description_chars))
+        try:
+            switched = skill_switches.state()   # H329: read once for the whole catalog
+        except Exception:
+            logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
+            switched = {}
+        seen = skill_visibility.context()       # H328: the host, channel and offer, once
         for name in sorted(self.skills):
             skill = self.skills[name]
-            if skill.sandboxed:
-                continue
-            reason = str(getattr(skill, "signature_reason", "") or "")
-            if (
-                not getattr(skill, "trusted", False)
-                and reason not in CATALOG_TOLERATED_UNTRUSTED_REASONS
-            ):
+            gate = self.catalog_gate(skill, agent_id, switches=switched, visibility=seen)
+            if gate in skill_visibility.SOFT_GATES or gate in skill_visibility.HARD_GATES:
+                skill_visibility.note_hidden(skill, gate)
+            if gate == "untrusted":
                 dropped_untrusted.append(skill.name)
                 logger.warning(
                     "Skill '%s' is NOT advertised to the model — signature %s",
                     skill.name,
-                    reason or "unknown",
+                    str(getattr(skill, "signature_reason", "") or "") or "unknown",
                 )
                 continue
-            declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
-            if agent_id and declared and agent_id not in declared and "all" not in declared:
+            if gate:
                 continue
             for meta in skill.commands_meta:
                 if not isinstance(meta, dict):

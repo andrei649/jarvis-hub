@@ -48,6 +48,24 @@ describe('CinemaMesh — full-bleed mesh demo overlay', () => {
     expect(container.textContent).not.toContain('on-device');
   });
 
+  it('H209: the stage keys come from the shortcut registry and can be rebound', () => {
+    const on = (c) => c.querySelector('.cin-stage-pick .on')?.textContent;
+    const { container, unmount } = render(<CinemaMesh agents={AGENTS} localPct={50} onExit={() => {}} t={{}} />);
+    expect(on(container)).toBe('mesh');
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(on(container)).toBe('orb');
+    fireEvent.keyDown(window, { key: 'b' });
+    expect(on(container)).toBe('brain');
+    fireEvent.keyDown(window, { key: 'n' });
+    expect(on(container)).toBe('mesh');
+    unmount();
+    const moved = render(<CinemaMesh agents={AGENTS} localPct={50} shortcutOverrides={{ 'cinema.orb': 'p' }} onExit={() => {}} t={{}} />);
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(on(moved.container)).toBe('mesh');
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(on(moved.container)).toBe('orb');
+  });
+
   it('Esc and the exit button both call onExit', () => {
     const onExit = vi.fn();
     const { container } = render(<CinemaMesh agents={AGENTS} localPct={50} onExit={onExit} t={{}} />);

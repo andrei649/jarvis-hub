@@ -98,10 +98,12 @@ class NodeMesh:
         node_id = str(node_id)
         caps = sorted({str(c) for c in (capabilities or []) if str(c).strip()})
         token_id = ""
+        hub = self._hub()   # H689: the grant is scoped to this install, not just the node
         if self._broker is not None:
             token_id = self._broker.issue(
-                caps, source=f"node:{node_id}", task_id=node_id, ttl=self._ttl)["id"]
-        rec = {"id": node_id, "capabilities": caps, "token_id": token_id,
+                caps, source=f"node:{node_id}@{hub}" if hub else f"node:{node_id}",
+                task_id=node_id, ttl=self._ttl)["id"]
+        rec = {"id": node_id, "capabilities": caps, "token_id": token_id, "hub_id": hub,
                "meta": meta or {}, "registered_at": time.time()}
         with self._lock:
             old = self._nodes.get(node_id)
@@ -112,6 +114,11 @@ class NodeMesh:
         out = self._public(rec)
         out["token_issued"] = bool(token_id)
         return out
+
+    def _hub(self) -> str:
+        from agents.core.install_identity import install_id
+
+        return install_id() or ""
 
     def nodes(self) -> "list[dict]":
         with self._lock:

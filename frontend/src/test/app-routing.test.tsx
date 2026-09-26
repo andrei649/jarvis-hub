@@ -146,3 +146,41 @@ it('closes prefixed World with Escape and restores the invoking mode', async () 
     expect(location.pathname).toBe('/one/v2/chat');
   } finally {delete window.__NERVA_BASE_PATH__;}
 });
+
+it('H209: mod+/ opens the shortcuts panel, a rebinding moves the key, and it persists', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.keyDown(window, { key: '2' });                          // the panel owns the keyboard
+  expect(location.pathname).toBe('/v2/chat');
+  fireEvent.click(screen.getByRole('button', { name: 'Rebind Go to Agents' }));
+  fireEvent.keyDown(window, { key: 'x' });
+  expect(JSON.parse(localStorage.getItem('hud.shortcuts') || '{}')).toEqual({ 'mode.agents': 'x' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(dialog.isConnected).toBe(false);
+  fireEvent.keyDown(window, { key: '2' });
+  expect(location.pathname).toBe('/v2/chat');
+  fireEvent.keyDown(window, { key: 'x' });
+  await screen.findByText('Agents route loaded');
+  expect(location.pathname).toBe('/v2/agents');
+});
+
+it('H209: a rebound World key opens World and the old one no longer does', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'view.world': 'y' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: 'w' });
+  expect(location.pathname).toBe('/v2/chat');
+  fireEvent.keyDown(window, { key: 'y' });
+  await screen.findByText('World route loaded');
+});
+
+it('H209: / focuses the message box', async () => {
+  history.replaceState(null, '', '/v2/cockpit?demo=1');
+  render(<WorldAwareApp />);
+  const box = await waitFor(() => { const el = document.querySelector('[data-composer]'); if (!el) throw new Error('no composer'); return el; });
+  fireEvent.keyDown(window, { key: '/' });
+  expect(document.activeElement).toBe(box);
+});

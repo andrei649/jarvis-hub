@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -29,6 +29,9 @@ class JobCreateBody(BaseModel):
     options: dict[str, Any] | None = None
     blueprint: str | None = Field(default=None, max_length=40)
     params: dict[str, Any] | None = None
+    # H687 — a creation-time choice, never stored: true fires once now whatever the
+    # schedule, false never does; absent leaves it to first_run_decision.
+    first_run: StrictBool | None = None
 
 
 class JobEditBody(BaseModel):
@@ -103,10 +106,14 @@ async def jobs_create(body: JobCreateBody):
             if not body.name or not body.schedule_text or body.action is None:
                 return _refused("name, schedule_text and action are required (or a blueprint)")
             name, schedule_text, action = body.name, body.schedule_text, body.action
-        job = runner.create(name=name, schedule_text=schedule_text, action=action, blueprint=body.blueprint, options=body.options)
+        job, first_run, confirmation = runner.arm(name=name, schedule_text=schedule_text, action=action,
+                                                  blueprint=body.blueprint, options=body.options,
+                                                  first_run=body.first_run)
     except ValueError as exc:
         return _refused(str(exc))
-    return nocache_json({"ok": True, "job": _job_view(runner, job)}, status_code=201)
+    # H687 — the first-run receipt (queued now) or null when the job waits for its cadence.
+    return nocache_json({"ok": True, "job": _job_view(runner, job), "first_run": first_run,
+                         "confirmation": confirmation}, status_code=201)
 
 
 @router.get("/api/jobs/doctor", dependencies=[Depends(admin_guard)])

@@ -1473,8 +1473,9 @@ function AdminApp() {
       active === 'system' && h('div',{style:{marginTop:20}},
         h('button',{className:'admin-btn is-warning',
           onClick:()=>{
-            if (!confirm('Reinițializați toate setările la valorile implicite? Modificările custom vor fi pierdute.')) return;
-            afetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
+            if (!confirm('Reinițializați toate setările la valorile implicite? Secretele se păstrează, iar resetarea se poate anula din consolă.')) return;
+            // H259: a JSON request (secrets are kept; the reset can be undone)
+            afetch('/api/admin/settings/reseed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).then(d=>{
               showToast(d.message||'Reseeded');
               setDirty({});
               setRefreshKey(k=>k+1);

@@ -30,6 +30,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from agents.core.capability_manifests import RollbackContract
+from agents.core.tool_profiles import SESSION_SCOPED_TOOLS
 
 logger = logging.getLogger("jarvis.capabilities")
 
@@ -279,6 +280,33 @@ def _action_records(orch=None) -> list[CapabilityRecord]:
     return records
 
 
+def _session_state_record(tool: dict, capability_id: str, name: str, verification) -> CapabilityRecord:
+    """H315 review: a session-scoped tool (``todo``) is ungated but not read-only. It
+    writes the session's own state in memory. What a call replaced is put back by a
+    compensating call: every answer carries the whole list, and the answer stays in the
+    transcript (H315 second review: "none" contradicted "reversible")."""
+    return CapabilityRecord(
+        id=capability_id,
+        kind="tool",
+        state=WIRED,
+        description=str(tool.get("description", "")),
+        inputs=tool.get("input_schema") or {"type": "object"},
+        risk="reversible",
+        requires=("tool-rpc.registered",),
+        supports=("tool-rpc", "inline"),
+        verification=verification,
+        rollback=RollbackContract(
+            mode="compensate",
+            description=("It writes only this session's in-memory state. Every answer carries "
+                         "the whole list, so a later call can write back what a call replaced; "
+                         "the tool keeps no copy of it."),
+        ),
+        confidence=0.0,
+        implementation=f"agents.core.tool_rpc:{name}",
+        detail={"tool": name, "gated": False, "session_scoped": True},
+    )
+
+
 def _tool_records(orch) -> list[CapabilityRecord]:
     """Derive live ToolRPC capabilities only when registration declares identity."""
     server = getattr(orch, "tool_rpc", None)
@@ -294,6 +322,9 @@ def _tool_records(orch) -> list[CapabilityRecord]:
             continue
         name = str(tool.get("name", ""))
         gated = bool(tool.get("gated"))
+        if not gated and name in SESSION_SCOPED_TOOLS:
+            out.append(_session_state_record(tool, capability_id, name, tool_verification_ref(name)))
+            continue
         out.append(
             CapabilityRecord(
                 id=capability_id,

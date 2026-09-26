@@ -2347,6 +2347,9 @@ export type SessionInfo = {
   ended_at?: string;
   turn_count?: number;
   summary?: string;
+  /** H413: the session's title (its first words, then the local model's name). */
+  title?: string;
+  title_source?: string;
 };
 
 export type HistoryTurn = {
@@ -2373,6 +2376,7 @@ export async function resumeSession(
 // ── TTS ───────────────────────────────────────────────────────────
 
 /** POST /tts and return the synthesized MP3 as base64 (for expo-file-system). */
+/** The reply's speech as base64 MP3, or '' when the hub found nothing to say (H526). */
 export async function ttsFetchBase64(config: ServerConfig, text: string, lang: string): Promise<string> {
   const base = normalizeBaseUrl(config.baseUrl);
   if (!base) throw new ApiError('No server URL configured');
@@ -2393,6 +2397,9 @@ export async function ttsFetchBase64(config: ServerConfig, text: string, lang: s
   } finally {
     clearTimeout(timer);
   }
+  // H526: the hub normalises the reply for speech; one with nothing worth saying (all
+  // code, emoji or reasoning) answers 204 — silence, not an error and not an empty clip.
+  if (res.status === 204) return '';
   if (!res.ok) {
     throw new ApiError(
       res.status === 401 ? 'Unauthorized — check your user token' : `TTS failed (HTTP ${res.status})`,

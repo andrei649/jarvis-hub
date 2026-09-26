@@ -42,6 +42,13 @@ from agents.core.channels.inbound_media import (
 )
 from agents.core.channels.telegram import TelegramChannel
 
+
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 BOT_ID = 999
 BOT = "nerva_bot"
 GROUP = -1001

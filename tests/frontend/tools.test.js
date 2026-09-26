@@ -185,3 +185,194 @@ describe('panel flows', () => {
     expect(JSON.parse(post[1].body).name).toBe('smoke');
   });
 });
+
+// H153 / H200 review — the legacy Webhooks panel: admin-only routes, a delete that
+// asks first, a refused list that says why, and one credential shown until dismissed.
+describe('Webhooks panel', () => {
+  function hooksBackend(listReply) {
+    const calls = [];
+    const fetch = vi.fn((url, init = {}) => {
+      calls.push({ url, method: init.method || 'GET', admin: (init.headers || {})['X-Admin-Token'] });
+      if (url === '/api/webhooks' && !init.method) return listReply();
+      if (url === '/api/webhooks' && init.method === 'POST') {
+        const signed = JSON.parse(init.body).signed;
+        return json({ id: 'hk2', token: 'tok-1', signing_secret: signed ? 'sec-1' : null, signed });
+      }
+      if (init.method === 'DELETE') return json({ ok: true });
+      return json({});
+    });
+    return { fetch, calls };
+  }
+  async function openWebhooks(listReply) {
+    env.cleanup();
+    const backendCalls = hooksBackend(listReply);
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: backendCalls.fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    return { container, calls: backendCalls.calls, text: () => container.querySelector('.console-content').textContent };
+  }
+  const listed = () => json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', signed: false, enabled: false }] });
+
+  it('lists with the admin token, and a delete asks first and carries it too', async () => {
+    const { container, calls, text } = await openWebhooks(listed);
+    expect(calls.find((c) => c.url === '/api/webhooks').admin).toBe('adm');
+    expect(text()).toContain('ci → POST /api/webhooks/hk1 (off)');
+    env.window.confirm = vi.fn(() => false);
+    env.click(toolBtn(container, 'Delete'));
+    expect(env.window.confirm).toHaveBeenCalledTimes(1);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    env.window.confirm = vi.fn(() => true);
+    env.click(toolBtn(container, 'Delete'));
+    const del = calls.find((c) => c.method === 'DELETE');
+    expect(del.url).toBe('/api/webhooks/hk1');
+    expect(del.admin).toBe('adm');
+  });
+
+  it('says why a refused list failed instead of "No webhooks."', async () => {
+    const { text } = await openWebhooks(() => json({ detail: 'admin token required' }, { ok: false, status: 401 }));
+    expect(text()).toContain('admin token required (set it in ⚙ Settings)');
+    expect(text()).not.toContain('No webhooks.');
+  });
+
+  it('shows a signed hook only its signing secret, until it is dismissed', async () => {
+    const { container, calls, text } = await openWebhooks(listed);
+    env.toggle(container.querySelector('.console-content input[type="checkbox"]'));
+    env.click(toolBtn(container, 'Create'));
+    await env.flush(6);
+    expect(calls.find((c) => c.method === 'POST').admin).toBe('adm');
+    expect(text()).toContain('signing secret: sec-1');
+    expect(text()).not.toContain('tok-1');
+    env.click(toolBtn(container, 'I have saved it'));
+    expect(text()).not.toContain('sec-1');
+  });
+
+  it('reads the receiver with the admin token, and shows every hook refused while it is off', async () => {
+    env.cleanup();
+    const calls = [];
+    const fetch = vi.fn((url, init = {}) => {
+      calls.push({ url, admin: (init.headers || {})['X-Admin-Token'] });
+      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true, deliver: 'telegram' }] });
+      if (url === '/api/admin/settings/webhooks') return json({ webhooks: [{ key: 'receiver_enabled', value: false }] });
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    const text = container.querySelector('.console-content').textContent;
+    expect(calls.find((c) => c.url === '/api/admin/settings/webhooks').admin).toBe('adm');
+    expect(text).toContain('Receiver off: every delivery is refused');
+    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off) · deliver to telegram');
+  });
+
+  // H153 third round — only a literal true is on, and a read that failed is "not read",
+  // never a guessed "on".
+  async function openWithReceiver(settings) {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/webhooks') return json({ webhooks: [{ id: 'hk1', name: 'ci', target: 'jarvis', enabled: true }] });
+      if (url === '/api/admin/settings/webhooks') return settings();
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Webhooks');
+    await env.flush(6);
+    return container.querySelector('.console-content').textContent;
+  }
+
+  it('reads a stored receiver value that is not literally true as off', async () => {
+    const text = await openWithReceiver(() => json({ webhooks: [{ key: 'receiver_enabled', value: 'yes' }] }));
+    expect(text).toContain('Receiver off: every delivery is refused');
+    expect(text).toContain('ci → POST /api/webhooks/hk1 (receiver off)');
+  });
+
+  it('says the receiver was not read when its read fails, never "on"', async () => {
+    const text = await openWithReceiver(() => json({ error: 'boom' }, { ok: false, status: 500 }));
+    expect(text).toContain('Receiver: not read');
+    expect(text).not.toContain('Receiver: on');
+  });
+
+  it('shows a token hook its token', async () => {
+    const { container, text } = await openWebhooks(listed);
+    env.click(toolBtn(container, 'Create'));
+    await env.flush(6);
+    expect(text()).toContain('token: tok-1');
+    expect(text()).not.toContain('secret');
+  });
+});
+
+// H318 (review-H318e n-4): a skill-change card is approved only beside the diff it shows.
+// A card beyond the loaded page, or one no proposal names, offers Reject only.
+describe('Action Approvals — skill changes', () => {
+  it('enables Approve only for a card whose diff is shown', async () => {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/actions/pending') {
+        return json({ actions: [
+          { id: 'c1', tool: 'skill.patch_proposal', summary: 'shown change' },
+          { id: 'c2', tool: 'skill.patch_proposal', summary: 'beyond the page' },
+          { id: 'c3', tool: 'skill.patch_proposal', summary: 'unknown card' },
+          { id: 'c4', tool: 'send_email', summary: 'plain action' },
+        ] });
+      }
+      if (url.startsWith('/api/skills/proposals')) {
+        return json({ proposals: [{ id: 'p1', card: 'c1', skill: 'brief', diff: '-old\n+new', flags: [] }],
+                      cards: ['c1', 'c2'], more: 1 });
+      }
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Action Approvals');
+    await env.flush();
+    await env.flush();
+    const cards = [...container.querySelectorAll('.console-content .tool-card')];
+    const approve = (text) => [...cards.find((c) => c.textContent.includes(text)).querySelectorAll('.tool-btn')]
+      .find((b) => b.textContent === 'Approve');
+    expect(approve('shown change').disabled).toBe(false);
+    expect(approve('beyond the page').disabled).toBe(true);
+    expect(approve('unknown card').disabled).toBe(true);
+    expect(approve('plain action').disabled).toBe(false);
+    const text = container.textContent;
+    expect(text).toContain('+new');
+    expect(text).not.toContain('Decision Inbox');
+    expect(text).toContain('cannot be approved from this panel');
+  });
+});
+
+// H318 (review-H318f V4): a change the hub will refuse (a bundled skill, a rename) offers
+// Reject only, even beside its diff.
+describe('Action Approvals — a refused change', () => {
+  it.each([['a bundled skill: it cannot be changed here'], ['renames the skill']])('disables Approve for a change the hub will refuse (%s)', async (flag) => {
+    env.cleanup();
+    const fetch = vi.fn((url) => {
+      if (url === '/api/actions/pending') {
+        return json({ actions: [{ id: 'c9', tool: 'skill.patch_proposal', summary: 'bundled change' }] });
+      }
+      if (url.startsWith('/api/skills/proposals')) {
+        return json({ proposals: [{ id: 'p9', card: 'c9', skill: 'core', diff: '-a\n+b', flags: [flag] }],
+                      cards: ['c9'] });
+      }
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Action Approvals');
+    await env.flush();
+    await env.flush();
+    const card = [...container.querySelectorAll('.console-content .tool-card')].find((c) => c.textContent.includes('bundled change'));
+    const buttons = [...card.querySelectorAll('.tool-btn')];
+    expect(buttons.find((b) => b.textContent === 'Approve').disabled).toBe(true);
+    expect(buttons.find((b) => b.textContent === 'Reject').disabled).toBeFalsy();
+  });
+});

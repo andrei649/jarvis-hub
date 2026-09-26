@@ -1354,7 +1354,9 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
     assert len(runtime.calls) == 1
     from agents.core.observability.tool_events import TOOL_EVENTS
 
-    assert runtime.calls[0] == {
+    call = dict(runtime.calls[0])
+    sink = call.pop("event_sink")
+    assert call == {
         "agent_id": "jarvis",
         "backend": backend,
         "model": "tool-model",
@@ -1362,9 +1364,11 @@ async def test_agent_generate_response_tool_mode_emits_only_final_answer_and_awa
         "system": "system",
         "max_tokens": 400,
         "temperature": 0.1,
-        # The loop used to be run with no sink, so every event it emitted was dropped.
-        "event_sink": TOOL_EVENTS.record,
     }
+    # The loop used to be run with no sink, so every event it emitted was dropped. The
+    # sink lands every event in the trail (and, since H441, notes the turn's tools).
+    sink({"event": "tool_result", "tool": "probe_h441"})
+    assert TOOL_EVENTS.snapshot(1)[-1]["tool"] == "probe_h441"
 
 
 @pytest.mark.parametrize("runtime_response", ["", " \t "])
@@ -1873,8 +1877,28 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._secrets is secret_broker
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
+    from agents.core import pointer_tool
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
+    from agents.core.memory_tool import INPUT_SCHEMA as MEMORY_SCHEMA
+    from agents.core.memory_tool import OFF_DESCRIPTION as MEMORY_OFF_DESCRIPTION
+    from agents.core.skills.tools import LIST_DESCRIPTION as SKILLS_LIST_DESCRIPTION
+    from agents.core.skills.tools import LIST_SCHEMA as SKILLS_LIST_SCHEMA
+    from agents.core.skills.tools import PROPOSE_DESCRIPTION as SKILL_PROPOSE_DESCRIPTION
+    from agents.core.skills.tools import PROPOSE_SCHEMA as SKILL_PROPOSE_SCHEMA
+    from agents.core.skills.tools import VIEW_DESCRIPTION as SKILL_VIEW_DESCRIPTION
+    from agents.core.skills.tools import VIEW_SCHEMA as SKILL_VIEW_SCHEMA
+    from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
+    from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
+
     assert orch.tool_rpc.tools() == [
+        {
+            # H309: the model points at the owner's HUD (ungated, named anchors only).
+            "name": "canvas_point",
+            "gated": False,
+            "description": pointer_tool.DESCRIPTION,
+            "input_schema": pointer_tool.INPUT_SCHEMA,
+            "capability_id": "tool:canvas_point",
+        },
         {
             "name": "desktop_plan",
             "gated": False,
@@ -1908,7 +1932,10 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                         "items": {
                             "type": "object",
                             "properties": {
-                                "action": {"type": "string", "maxLength": 64},
+                                # H296: the actions the step validator accepts, advertised.
+                                "action": {"type": "string", "maxLength": 64, "enum": [
+                                    "click", "launch", "locate", "observe", "read", "screenshot", "type",
+                                ]},
                                 "args": {
                                     "type": "object",
                                     "maxProperties": 32,
@@ -1943,6 +1970,14 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "description": "Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
             "input_schema": INPUT_SCHEMA,
             "capability_id": "tool:image_generate",
+        },
+        {
+            # H314: the orchestrator here has no cognition, so the tool says memory is off.
+            "name": "memory",
+            "gated": False,
+            "description": MEMORY_OFF_DESCRIPTION,
+            "input_schema": MEMORY_SCHEMA,
+            "capability_id": "tool:memory",
         },
         {
             "name": "operator_plan",
@@ -2035,9 +2070,34 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "capability_id": "tool:session_search",
         },
         {
+            "name": "skill_propose",
+            "gated": False,
+            "description": SKILL_PROPOSE_DESCRIPTION,
+            "input_schema": SKILL_PROPOSE_SCHEMA,
+            "capability_id": "tool:skill_propose",
+        },
+        {
+            "name": "skill_view",
+            "gated": False,
+            "description": SKILL_VIEW_DESCRIPTION,
+            "input_schema": SKILL_VIEW_SCHEMA,
+            "capability_id": "tool:skill_view",
+        },
+        {
+            "name": "skills_list",
+            "gated": False,
+            "description": SKILLS_LIST_DESCRIPTION,
+            "input_schema": SKILLS_LIST_SCHEMA,
+            "capability_id": "tool:skills_list",
+        },
+        {
             "name": "terminal_run",
             "gated": True,
-            "description": "Run one bounded shell command on a named governed target.",
+            # H296: with JARVIS_TERMINAL_TARGETS off the tool says so instead of
+            # advertising targets it will refuse.
+            "description": ("Run one bounded shell command on a named governed target. "
+                            "Terminal targets are switched off on this hub "
+                            "(JARVIS_TERMINAL_TARGETS), so every call is refused."),
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -2064,6 +2124,14 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                  "additionalProperties": False,
              },
             "capability_id": "tool:time",
+        },
+        {
+            # H315 — the model's own checklist: ungated, session-scoped.
+            "name": "todo",
+            "gated": False,
+            "description": TODO_DESCRIPTION,
+            "input_schema": TODO_SCHEMA,
+            "capability_id": "tool:todo",
         },
         {
             "name": "web_extract",

@@ -159,6 +159,48 @@ def _isolate_gpu_probe_cache():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_hub_env_load():
+    """Each test starts as a fresh process would, with the hub's .env files not loaded yet.
+
+    The hub loads them once per process (H273 third review: serve.py, the lifespan and the
+    plugin manager all ask, a named pipe is read once). A pytest worker runs many lifespans
+    in one process, so without this the first one would be the only load, and a later test
+    that points the data home at a .env of its own would start without it."""
+    try:
+        from agents.core import env_provenance
+    except Exception:
+        yield
+        return
+    env_provenance._HUB_LOADED = None
+    # What the loads recorded is put back as it was, so a test that loads a .env of its own
+    # (a named pipe included) leaves no record of it for the next test (review-H273i n6).
+    files, loaded = dict(env_provenance._FILES), dict(env_provenance._LOADED)
+    yield
+    env_provenance._HUB_LOADED = None
+    env_provenance._FILES.clear()
+    env_provenance._FILES.update(files)
+    env_provenance._LOADED.clear()
+    env_provenance._LOADED.update(loaded)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_provider_quota(tmp_path_factory):
+    """Keep one test's provider 429 out of the next one (H373).
+
+    The shared quota guard lives in a file every process reads, on purpose: a 429 seen by
+    one process holds the others. A test that mocks a 429 would otherwise hold that backend
+    and key for every later test in the run, so each test gets a store of its own."""
+    try:
+        from agents.core.llm import quota
+    except Exception:
+        yield
+        return
+    quota.set_store(quota.QuotaStore(tmp_path_factory.mktemp("quota") / "provider_quota.db"))
+    yield
+    quota.set_store(None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_action_origin():
     """Keep one test's action-origin binding out of the next one.
 

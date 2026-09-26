@@ -30,7 +30,7 @@ class _FakeLoader:
         self.skills = {}
         self._tmp = tmp_path
 
-    def add(self, name, content="# skill\nbody"):
+    def add(self, name, content="# skill\n> A skill.\nbody"):
         d = self._tmp / name
         d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(content, encoding="utf-8")
@@ -143,11 +143,11 @@ async def test_curator_idempotent_per_day(tmp_path):
 
 async def test_approved_proposal_applied_with_backup(tmp_path):
     loader = _FakeLoader(tmp_path)
-    loader.add("weather", "# Weather\nv1")
+    loader.add("weather", "# Weather\n> Weather.\nv1")
     usage = _store(tmp_path)
     usage.note_created("weather", ORIGIN_AGENT)
     props = SkillProposalStore(path=tmp_path / "p.json")
-    rec = props.propose("weather", "# Weather\nv1", "# Weather\nv2 improved")
+    rec = props.propose("weather", "# Weather\n> Weather.\nv1", "# Weather\n> Weather.\nv2 improved")
     props.mark(rec["id"], STATUS_APPROVED)
 
     cur = _curator(loader, usage, tmp_path, datetime.now(UTC),
@@ -155,21 +155,21 @@ async def test_approved_proposal_applied_with_backup(tmp_path):
     out = await cur.run()
     assert out["proposals"]["applied"] == ["weather"]
     md = (loader.skills["weather"].path / "SKILL.md").read_text(encoding="utf-8")
-    assert md == "# Weather\nv2 improved"
+    assert md == "# Weather\n> Weather.\nv2 improved"
     assert props.get(rec["id"])["status"] == STATUS_APPLIED
     backups = list((tmp_path / "archive").glob("weather-*.SKILL.md"))
-    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == "# Weather\nv1"
+    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == "# Weather\n> Weather.\nv1"
 
 
 async def test_drifted_proposal_marked_stale_not_applied(tmp_path):
     loader = _FakeLoader(tmp_path)
-    loader.add("weather", "# Weather\nv1")
+    loader.add("weather", "# Weather\n> Weather.\nv1")
     props = SkillProposalStore(path=tmp_path / "p.json")
-    rec = props.propose("weather", "# Weather\nv1", "# Weather\nv2")
+    rec = props.propose("weather", "# Weather\n> Weather.\nv1", "# Weather\n> Weather.\nv2")
     props.mark(rec["id"], STATUS_APPROVED)
     # skill drifts after the proposal was computed
     (loader.skills["weather"].path / "SKILL.md").write_text(
-        "# Weather\nsomeone edited this", encoding="utf-8")
+        "# Weather\n> Weather.\nsomeone edited this", encoding="utf-8")
 
     cur = _curator(loader, _store(tmp_path), tmp_path,
                    datetime.now(UTC), proposals=props)
@@ -182,16 +182,24 @@ async def test_drifted_proposal_marked_stale_not_applied(tmp_path):
 
 async def test_approval_queue_decisions_sync_to_ledger(tmp_path):
     loader = _FakeLoader(tmp_path)
-    loader.add("s", "# S\nv1")
+    loader.add("s", "# S\n> S.\nv1")
     props = SkillProposalStore(path=tmp_path / "p.json")
-    rec = props.propose("s", "# S\nv1", "# S\nv2")
+    rec = props.propose("s", "# S\n> S.\nv1", "# S\n> S.\nv2")
 
     class _Approvals:
+        def request(self, row):
+            return {"id": "card-1"}
+
         def list(self, status=None):
             if status == "approved":
-                return [{"tool": "skill.patch_proposal",
+                # a card someone else queued naming the same proposal decides nothing
+                return [{"id": "forged", "tool": "skill.patch_proposal",
+                         "args": {"skill": "s", "proposal_id": rec["id"]}},
+                        {"id": "card-1", "tool": "skill.patch_proposal",
                          "args": {"skill": "s", "proposal_id": rec["id"]}}]
             return []
+
+    assert props.queue_card(rec["id"], _Approvals(), agent="t", summary="s") == "card-1"
 
     cur = _curator(loader, _store(tmp_path), tmp_path,
                    datetime.now(UTC), proposals=props,

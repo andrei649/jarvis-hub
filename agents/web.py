@@ -10,6 +10,7 @@ import re
 import secrets
 import sys
 import time
+import weakref
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
@@ -73,8 +74,10 @@ DEV_MODE = env_flag("DEV_MODE")
 #   - Issued tokens (TTL / rotation / hash-at-rest) are first-class admin creds.
 #   - With no admin credential configured at all, a direct-localhost origin is
 #     trusted (dev posture); a Pi/LAN deployment is locked down.
-#   - Lost every token? The offline CLI `python -m agents.core.security.token_store
-#     rotate admin` mints a fresh one from the machine itself — no HTTP, no lockout.
+#   - Lost every token? `python scripts/token_recover.py rotate admin` mints a fresh
+#     one from the machine itself, in the store this hub reads (it loads the hub's .env
+#     first) — no HTTP. A packaged build ships no Python to run it: remove
+#     security/tokens.db under the data home instead (review-H273g m2).
 ADMIN_TOKEN = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
 _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -102,10 +105,44 @@ def _env_admin_active() -> bool:
     return bool(_admin_env_token()) and not get_token_store().env_revoked("admin")
 
 
+def _ever_configured(scope: str) -> bool:
+    """Whether the token store shows a *scope* credential was ever configured: a
+    rotation or a revoke with ``--revoke-env`` left its persistent ``revoked:<scope>``
+    flag, or an issued token is still on file, live or expired (the hub never purges
+    expired rows). An issued token deleted by a revoke without ``--revoke-env`` leaves no
+    trace; that residual is recorded under H273's Known limits.
+
+    Once true for a store it stays true for that store, without listing its table again:
+    this runs on every guarded request, and the table only grows through ``issue``
+    (review-H273g n1). A store emptied later (``purge_expired``, a revoke of the only issued
+    token, a deleted file) therefore keeps a running hub locked until it restarts."""
+    store = get_token_store()
+    try:
+        seen = _CONFIGURED_SCOPES.setdefault(store, set())
+    except TypeError:                   # a store that cannot be weakly referenced: no memo
+        seen = set()
+    if scope in seen:
+        return True
+    if store.env_revoked(scope) or any(row["scope"] == scope for row in store.list_tokens()):
+        seen.add(scope)
+        return True
+    return False
+
+
+#: Scopes each token store has shown configured, kept for as long as the store lives.
+_CONFIGURED_SCOPES: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
 def _admin_configured() -> bool:
-    """True when some admin credential exists: an un-revoked env token, or at
-    least one issued admin token in the store. Drives the localhost-fallback gate."""
-    return _env_admin_active() or get_token_store().has_scope("admin")
+    """Whether an admin credential was ever configured: an env token (active, or
+    superseded by a rotation), or one the store shows (``_ever_configured``). Drives the
+    localhost fallback: only a box that never had an admin credential trusts a direct
+    localhost origin, so it can mint its first token. Once an admin credential was
+    configured and every one is revoked or has expired, no local process mints a fresh one
+    over HTTP (review-H273f MAJOR-1); recovery is ``scripts/token_recover.py rotate admin``
+    on the box. A box that never had an admin credential keeps trusting a direct
+    localhost caller as admin, whatever happened to its user tokens (review-H273g m1)."""
+    return bool(_admin_env_token()) or _ever_configured("admin")
 
 # HF-7 — by default the localhost-origin gate fails CLOSED behind a reverse proxy
 # (forwarding headers present → request.client.host is the proxy, untrustworthy →
@@ -246,15 +283,20 @@ def _env_user_active() -> bool:
     return bool(_user_env_token()) and not get_token_store().env_revoked("user")
 
 
-def _user_token_required() -> bool:
-    """True when a user credential exists (network posture).
+def _user_credential_required() -> bool:
+    """Whether a user-tier caller must present a credential: one was ever configured.
 
-    AUD-6: True when the static user env token is active OR a user token has been
-    issued into the store. When False the hub is in the localhost-only dev
-    posture: the HTTP guard trusts a localhost origin and requires no token (see
-    ``_user_guard``). Single source of truth reused by the MCP mutating-tool
-    identity gate so it matches the guard exactly."""
-    return _env_user_active() or get_token_store().has_scope("user")
+    The single predicate the HTTP user guard, the MCP transport and the MCP identity
+    gate share (review-H273e M1). A token in the environment counts even once rotated
+    away or revoked, and so does one the store shows was configured (``_ever_configured``:
+    a rotation, a revoke with ``--revoke-env``, an issued token live or expired). Then
+    nothing valid may remain and every caller without a credential is refused, rather
+    than the hub falling back to the no-credential localhost posture. The admin tier asks
+    the same question for its own credentials (``_admin_configured``): where an admin
+    credential was ever configured, no local process mints its way back in (review-H273f
+    MAJOR-1); where none was, a direct localhost caller is still admin and can mint a user
+    token, so this lock binds remote callers only (review-H273g m1)."""
+    return bool(_user_env_token()) or _ever_configured("user")
 
 
 def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bool:
@@ -270,7 +312,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
     AUD-6 full-replace: managed tokens are first-class; the static env tokens are
     the bootstrap, revoked once rotated. Only meaningful when
-    ``_user_token_required()`` is True; with no token configured the localhost
+    ``_user_credential_required()`` is True; with no token configured the localhost
     posture applies and no credential is needed."""
     if user_supplied and get_token_store().verify(user_supplied) == "user":
         return True
@@ -284,7 +326,7 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
-    if _user_env_token():
+    if _user_credential_required():
         if _user_credential_ok(
             user_supplied=request.headers.get("x-user-token", ""),
             admin_supplied=request.headers.get("x-admin-token", ""),
@@ -407,18 +449,39 @@ def _telegram_allowed_user_ids() -> list[int]:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global orch, gateway
+    # H273: the .env files come first, before anything the start reads (the boot
+    # guards, the data home, logging, the orchestrator with its audit log, memory and
+    # router), so a value there is in effect for all of it. serve.py has already loaded
+    # them when it is the entry; the first load in a process is the only one.
+    from agents.core.env_provenance import load_hub_env
+    load_hub_env()
     # O26-P0.6 (F6): the fail-closed boot guards (unauthenticated external
     # bind, hardened-profile preconditions) used to run only in serve.py — a
     # raw `python -m uvicorn agents.web:app` start silently skipped them.
     # They run here so every entry point enforces the same posture.
     from core.boot_guards import enforce_boot_posture
     enforce_boot_posture()
+    # H504: a CA variable that is set but cannot be trusted as written stops the start
+    # here, named with its repair — not as an unnamed FileNotFoundError on a model call.
+    from agents.core.tls_trust import enforce_ca_environment
+    enforce_ca_environment()
     # Packaged installs / $JARVIS_USER_HOME: scaffold the owner's data folder
     # (Documents/Jarvis — README, .env, memory/, skills/, souls/) BEFORE any
     # store opens under the data root. Idempotent no-op in a plain dev checkout.
     from core.paths import ensure_user_home
     scaffolded_home = ensure_user_home()
     setup_logging()
+    # H501: say once, in the log, when the host itself is set up dangerously (root,
+    # sshd passwords, a container's data root not on a volume). Read-only, never blocks.
+    from agents.core import host_posture
+    await asyncio.to_thread(host_posture.log_startup)
+    from agents.core import safe_mode
+    if safe_mode.enabled():
+        logger.warning(
+            "SAFE MODE: only shipped skills, personas and schedules load; saved MCP servers, "
+            "acquired packages, plugins and their grants, outbound webhooks, memory in prompts, "
+            "owner jobs and loosened settings are left out (JARVIS_SAFE_MODE)"
+        )
     if scaffolded_home is not None:
         logger.info("User data home: %s", scaffolded_home)
     # SEC-4 / audit F-08: warn when private runtime state lives inside the git
@@ -449,13 +512,6 @@ async def lifespan(application: FastAPI):
 
     await orch.load_agents()
 
-    # Hermes absorption 5b: the early guard ran before the repo/user .env files were
-    # read (PluginManager.build loads them inside load_agents), so a bot token, a
-    # JARVIS_CHANNEL_PAIRING=0 or a proxy/host list that lives only there was invisible
-    # to it. Re-check the front door over the environment as it is now, before any
-    # channel is wired — a refusal here is the same SystemExit the early pass raises.
-    from core.boot_guards import assert_front_door
-    assert_front_door()
     # H691: say which proxies ended up trusted — Nerva's list with its warnings, and
     # uvicorn's own proxy-header layer when it believes anyone. The import-time read
     # is silent (setup_logging() did not exist yet); the environment is now final
@@ -512,6 +568,10 @@ async def lifespan(application: FastAPI):
     # Outbound only — nothing that arrives on a topic can become a turn. The topic is the
     # identity on ntfy, so it is never logged.
     ntfy_ch = NtfyChannel.from_env(os.environ)
+    if ntfy_ch is not None and safe_mode.enabled():
+        # H490: in safe mode no outbound webhook is started (ntfy, the webhook channels).
+        safe_mode.note("outbound_webhooks")
+        ntfy_ch = None
     if ntfy_ch is not None:
         await orch.register_channel(ntfy_ch)
         logger.info("ntfy channel wired")
@@ -551,6 +611,9 @@ async def lifespan(application: FastAPI):
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
     # Default-off; each adapter routes inbound through the same governed gateway.
     wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})
+    if wh_cfg and safe_mode.enabled():
+        safe_mode.note("outbound_webhooks")
+        wh_cfg = {}
     if wh_cfg:
         from core.channels.webhook_channels import channels_from_config
         for ch in channels_from_config(wh_cfg, gateway.route):
@@ -558,6 +621,11 @@ async def lifespan(application: FastAPI):
             await orch.register_channel(ch)
             logger.info("Webhook channel wired: %s", ch.channel_id)
 
+    # H677: the first message must not race a cold model. Wait for the boot warm-up —
+    # bounded by system.startup_warmup_timeout_seconds — before any channel opens.
+    from agents.core.lifecycle_budget import WARMUP_SETTING, gate_warmup, warmup_timeout
+    await gate_warmup(getattr(orch, "_warmup_task", None),
+                      warmup_timeout(get_value(*WARMUP_SETTING.split(".", 1), 20)))
     await orch.start_channels()
     from agents.core.routers.cameras import start_camera_ingestion
     await start_camera_ingestion()
@@ -566,7 +634,22 @@ async def lifespan(application: FastAPI):
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
         f"{list(orch.skills.skills.keys())} skills"
     )
+    # H283 — tell systemd (Type=notify) the hub is ready once /readyz would say so,
+    # and keep its watchdog fed from the event loop; a no-op without NOTIFY_SOCKET.
+    # H161 — the memory/disk watch: read what the last run left (a suspected OOM
+    # restart) and mark this run as not yet cleanly stopped.
+    from agents.core import resource_pressure
+    resource_pressure.monitor().start()
+    from agents.core.routers.ops import readiness_snapshot
+    from agents.core.sd_notify import NOTIFIER
+    NOTIFIER.ready(readiness_snapshot())
     yield
+    # H161: the clean-shutdown mark first — a later step that hangs must not make this
+    # stop look like an out-of-memory kill to the next start.
+    resource_pressure.monitor().stop()
+    await NOTIFIER.stopping()
+    from agents.core import power
+    power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion
     await stop_camera_ingestion()
     from agents.core.ambient.runtime import close_ambient_runtimes
@@ -998,6 +1081,11 @@ class ChatRequest(BaseModel):
         return v
 
 
+class TurnNotice(BaseModel):
+    code: str
+    text: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     # The turn's reply is prose ("…this action requires approval"), which names
@@ -1005,6 +1093,12 @@ class ChatResponse(BaseModel):
     # turn pushed onto the approval queue — a report, not a grant: every one of
     # them is still `proposed` and still needs the owner's decision.
     pending_approvals: list[int] = []
+    # H677: True when the turn was served while the local model was still warming up
+    # (the boot gate expired first), so a slow first reply is named, not mysterious.
+    warming: bool = False
+    # H674: what the owner should know beside the reply (e.g. the conversation summary
+    # was still being written), one per kind: {"code", "text"}.
+    notices: list[TurnNotice] = []
 
 
 # ── mount static files ────────────────────────────────────────────
@@ -1125,6 +1219,7 @@ async def chat(req: ChatRequest, request: Request):
     # queued an action and *then* raised still left those rows on the queue, and
     # answering "Internal error." with an empty list would hide them.
     queued_approvals: list[int] = []
+    turn_notices: list[dict] = []
     try:
         if req.session_id is not None:
             from agents.core.session_continuation import ContinuationRefused, prepare_session
@@ -1132,8 +1227,11 @@ async def chat(req: ChatRequest, request: Request):
                 await prepare_session(orch, req.session_id)
             except ContinuationRefused as exc:
                 return JSONResponse({"error": exc.reason}, status_code=exc.status)
+        # H579: @file:path references in the owner's own message are attached inline.
+        from agents.core import context_refs
+        expansion = await asyncio.to_thread(context_refs.expand, req.message)
         # H10.21: inject the active session's notes as persistent context.
-        message = req.message
+        message = expansion.text
         notes = getattr(orch, "notes", None)
         if notes is not None:
             prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
@@ -1141,10 +1239,15 @@ async def chat(req: ChatRequest, request: Request):
                 message = prefix + message
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(_web_principal(request))
+        attached_token = context_refs.bind_attached(expansion.any_attached)
         # Opened here, not inside the turn: the turn resets its own binds before
         # returning, so this is the only place that still holds the list once the
         # reply is in hand. The turn appends to THIS list (see turn_approvals).
         sink, approvals_token = open_turn_approvals()
+        from agents.core.turn_notices import open_turn_notices, reset_turn_notices
+        notices, notices_token = open_turn_notices()      # H674, bound here for the same reason
+        from agents.core.lifecycle_budget import WARMUP
+        warming = WARMUP.warming
         try:
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id) as acquired:
@@ -1156,17 +1259,21 @@ async def chat(req: ChatRequest, request: Request):
                                                     **({"session_id": req.session_id} if req.session_id is not None else {}))
         finally:
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             reset_turn_approvals(approvals_token)
+            reset_turn_notices(notices_token)
             reset_turn_principal(principal_token)
-        return ChatResponse(reply=reply, pending_approvals=queued_approvals)
+            context_refs.reset_attached(attached_token)
+        return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming, notices=turn_notices)
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals)
+        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals, notices=turn_notices)
 
 
-async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None):
+async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
+                             attached=False):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1182,6 +1289,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     # the runner just before it announces the end, because the sink lives in the
     # runner task's context and the consumer below is what has to report it.
     queued_approvals: list[int] = []
+    turn_notices: list[dict] = []
 
     async def on_token(token: str):
         await queue.put(("token", token))
@@ -1190,12 +1298,17 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later. The approval collector
         # is bound here for the same reason.
+        from agents.core import context_refs
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(principal) if principal is not None else None
         sink, approvals_token = open_turn_approvals()
+        from agents.core.turn_notices import open_turn_notices, reset_turn_notices
+        notices, notices_token = open_turn_notices()             # H674
+        attached_token = context_refs.bind_attached(attached)   # H579: bound in the task, as above
 
         async def end(text: str) -> None:
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             await queue.put(("end", text))
 
         try:
@@ -1221,12 +1334,17 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             # non-stream path used to. The ids go out even here: whatever the turn
             # queued before it raised is still sitting on the approval queue.
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             await queue.put(("error", ""))
         finally:
             reset_turn_approvals(approvals_token)
+            reset_turn_notices(notices_token)
+            context_refs.reset_attached(attached_token)
             if principal_token is not None:
                 reset_turn_principal(principal_token)
 
+    from agents.core.lifecycle_budget import WARMUP
+    warming = WARMUP.warming          # H677: served before the boot warm-up finished
     task = asyncio.create_task(runner())
     try:
         yield f"data: {json.dumps({'type': 'start', 'agent': agent})}\n\n"
@@ -1235,13 +1353,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
@@ -1269,17 +1387,21 @@ async def chat_stream(req: ChatRequest, request: Request):
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
     agent_override = req.agent if req.agent != "jarvis" else None
+    # H579: @file:path references are attached here too, as on /chat.
+    from agents.core import context_refs
+    expansion = await asyncio.to_thread(context_refs.expand, req.message)
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
-    message = req.message
+    message = expansion.text
     notes = getattr(orch, "notes", None)
     if notes is not None:
         prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
         if prefix:
             message = prefix + message
     return StreamingResponse(
-        _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id),
+        _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
+                           attached=expansion.any_attached),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1392,6 +1514,10 @@ app.include_router(_onboarding_router)
 from agents.core.routers.preferences import router as _preferences_router  # noqa: E402
 
 app.include_router(_preferences_router)
+# H165 — the owner's docs, read-only from an allowlist; user-guarded on the router.
+from agents.core.routers.help_docs import router as _help_docs_router  # noqa: E402
+
+app.include_router(_help_docs_router)
 from agents.core.routers.composer_vision import router as _composer_vision_router
 app.include_router(_composer_vision_router)
 app.include_router(_feedback_router)
@@ -1420,6 +1546,8 @@ from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.company import router as _company_router  # noqa: E402
 from agents.core.routers.operator_bench import router as _operator_bench_router  # noqa: E402
 from agents.core.routers.host_probe import router as _host_probe_router  # noqa: E402
+from agents.core.routers.power import router as _power_router  # noqa: E402
+from agents.core.routers.pressure import router as _pressure_router  # noqa: E402
 from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
@@ -1557,6 +1685,8 @@ app.include_router(_backup_router)
 app.include_router(_company_router)
 app.include_router(_operator_bench_router)
 app.include_router(_host_probe_router)
+app.include_router(_power_router)   # H182: GET /api/power + /api/power/stream
+app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismiss
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
@@ -1643,19 +1773,53 @@ async def _list_local_models() -> dict:
 
 def _save_mcp_config():
     """Persist MCP servers configuration to settings DB."""
+    from agents.core import safe_mode
     from agents.core.settings_db import put_category
+    if safe_mode.enabled():
+        # H275: in safe mode the manager holds none of the saved servers, so writing
+        # its list back would erase them. The routes refuse first; this is the floor.
+        logger.warning("Safe mode: the MCP server configuration is not rewritten")
+        return
     config = orch.mcp.to_config()
+    # H285: a saved server the load set switched off is not in the manager; it is kept
+    # in the saved list exactly as it was, so switching it back on finds it again.
+    live = {row.get("name") for row in config}
+    config += [dict(row) for row in _MCP_HELD if row.get("name") not in live]
     put_category("mcp", {"servers": config})  # return value intentionally unused
+
+
+#: H285 — saved MCP servers the owner's load set switched off at boot: not registered,
+#: written back unchanged by every save.
+_MCP_HELD: list[dict] = []
+
+
+def mcp_held_names() -> set[str]:
+    return {str(row.get("name")) for row in _MCP_HELD}
 
 
 def _load_mcp_config():
     """Load MCP servers configuration from settings DB."""
     from agents.core.settings_db import get_category
+    from agents.core import safe_mode
     items = get_category("mcp")
     for item in items:
         if item["key"] == "servers":
-            orch.mcp.load_from_config(item["value"])
-            logger.info(f"Loaded {len(item['value'])} MCP servers from settings")
+            if safe_mode.enabled():
+                # H275: none is registered; the saved configuration stays as it is.
+                safe_mode.note("mcp_servers")
+                logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"] or []))
+                return
+            from agents.core import load_set
+            rows = [row for row in (item["value"] or []) if isinstance(row, dict)]
+            lists = load_set.declared("mcp")
+            load_set.begin("mcp")
+            kept = [row for row in rows if load_set.permits("mcp", str(row.get("name") or ""), lists=lists)]
+            _MCP_HELD[:] = [row for row in rows if row not in kept]
+            for row in _MCP_HELD:
+                load_set.note_skipped("mcp", str(row.get("name") or ""))
+            load_set.finish("mcp", {str(row.get("name") or "") for row in rows}, lists=lists)
+            orch.mcp.load_from_config(kept)
+            logger.info(f"Loaded {len(kept)} MCP servers from settings ({len(_MCP_HELD)} switched off)")
             return
     logger.info("No MCP servers configured in settings")
 
@@ -1847,7 +2011,7 @@ def _build_mcp_mutating_route_tools():
     SECURITY: the in-process adapter has no ``Request``, so it cannot run
     ``Depends(user_guard)`` directly. Instead a per-identity gate
     (``_mcp_identity_check``) is threaded onto every mutating tool; it re-applies
-    the SAME rule ``user_guard`` uses (``_user_token_required`` /
+    the SAME rule ``user_guard`` uses (``_user_credential_required`` /
     ``_user_credential_ok``). A mutating call without a valid identity is refused
     even with both kill-switches on. The transport (``mcp_server_rpc``) extracts
     the credential from the request headers and passes it to the server. Residual
@@ -1891,7 +2055,7 @@ def _mcp_identity_check(token: Optional[str]) -> bool:
       * If it is SET → require a credential that matches ``JARVIS_USER_TOKEN`` (or
         a matching ``JARVIS_ADMIN_TOKEN``, admin ⊇ user), exactly as the HTTP 401
         path checks it."""
-    if not _user_token_required():
+    if not _user_credential_required():
         return True
     return _user_credential_ok(user_supplied=token or "", admin_supplied=token or "")
 

@@ -86,8 +86,8 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security",
+        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
+        "prompt-size", "desktop", "security", "todo", "skills",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
@@ -98,6 +98,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
+    # H350: the linter reads files and reports; it never writes a skill.
+    assert tree["skills"] == ["lint", "list", "off", "on"]
 
 
 @pytest.mark.parametrize("report,expected", [
@@ -419,7 +421,7 @@ def test_an_unreachable_hub_is_exit_3_with_the_next_step():
 def test_a_missing_credential_is_exit_4_with_how_to_mint_one():
     hub = _FakeHub(raise_with=HubError(401, "admin token required"))
     code, _out, err, _hub = _run(["approvals", "list"], hub)
-    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_store issue admin" in err
+    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_recover.py issue admin" in err
 
 
 def test_any_other_hub_error_is_exit_1():
@@ -443,7 +445,7 @@ def test_config_list_get_set_and_check_work_on_the_data_root(temp_settings):
     assert code == EXIT_OK and settings_db.get_value("llm", "tool_loop_max_iterations") == 12
 
     code, out, _err, _hub = _run(["config", "list", "llm"])
-    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number)" in out
+    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number, set)" in out   # H273: changed from 8
 
     code, out, _err, _hub = _run(["config", "list", "--json"])
     assert code == EXIT_OK and json.loads(out)["llm"]
@@ -472,7 +474,8 @@ def test_config_set_refuses_what_the_schema_refuses(temp_settings):
 
 def test_config_masks_secrets_unless_revealed(temp_settings):
     secret_row = next(
-        (r for r in settings_db.DEFAULTS if "token" in r["key"] or "key" in r["key"] or r["kind"] in ("secret", "password")),
+        (r for r in settings_db.DEFAULTS
+         if r["kind"] == "text" and ("token" in r["key"] or "secret" in r["key"]) or r["kind"] in ("secret", "password")),
         None,
     )
     if secret_row is None:
@@ -484,6 +487,16 @@ def test_config_masks_secrets_unless_revealed(temp_settings):
     assert code == EXIT_OK and "sk-live-1234" not in out and "••••" in out
     code, out, _err, _hub = _run(["config", "get", name, "--reveal"])
     assert code == EXIT_OK and "sk-live-1234" in out
+
+
+def test_config_shows_a_token_budget_as_the_number_it_is(temp_settings):
+    """A number named ``…max_tokens`` is a budget, not a credential (review-H465c m-2:
+    /refine tells the owner to raise ``learning.review_max_tokens``)."""
+    for name in ("learning.review_max_tokens", "llm.max_tokens"):
+        category, key = name.split(".")
+        settings_db.put_category(category, {key: 4096})
+        code, out, _err, _hub = _run(["config", "get", name])
+        assert code == EXIT_OK and "4096" in out and "••" not in out, name
 
 
 def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):
@@ -1218,3 +1231,17 @@ def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monke
     assert code == EXIT_UNAVAILABLE
     assert out == "" and "did not complete (RuntimeError)" in err and "nothing is claimed" in err
     assert "site-packages vanished" not in err                 # the message is not reflected
+
+
+def test_jobs_create_prints_whether_a_first_run_was_queued():
+    # H687 — the hub's confirmation names the first run (or the wait for the cadence).
+    interval = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every 2 hours", "cron": "0 */2 * * *"}
+    queued = _FakeHub({"POST /api/jobs": {"ok": True, "job": interval, "first_run": {"status": "queued"},
+                                          "confirmation": "first run now, then every 2 hours (0 */2 * * *)"}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], queued)
+    assert code == EXIT_OK and "first run now, then every 2 hours (0 */2 * * *)" in out
+    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every weekday at 8:00", "cron": "0 8 * * 1-5"}
+    # An older hub without the field still prints the schedule, as before.
+    older = _FakeHub({"POST /api/jobs": {"ok": True, "job": job}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], older)
+    assert code == EXIT_OK and "every weekday at 8:00 (0 8 * * 1-5)" in out

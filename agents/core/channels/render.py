@@ -33,13 +33,37 @@ from .descriptor import (
 
 _FENCE_RE = re.compile(r"^\s*```")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-_BOLD_RE = re.compile(r"(?<![\w*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w*])")
-_BOLD_UNDERSCORE_RE = re.compile(r"(?<![\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])")
-_ITALIC_RE = re.compile(r"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])")
-_ITALIC_UNDERSCORE_RE = re.compile(r"(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])")
-_LINK_RE = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
+# Every marker span is bounded (H153 fourth review): an unbounded span made each
+# candidate start re-scan the rest of the line, so one long line of ``[`` or ``*a``
+# cost quadratic time while holding the GIL. A span longer than the bound is left as
+# written; one long line now costs linear time.
+_SPAN = 500
+_URL = 2_048
+_BOLD_RE = re.compile(rf"(?<![\w*])\*\*(?=\S)(.{{1,{_SPAN}}}?)(?<=\S)\*\*(?![\w*])")
+_BOLD_UNDERSCORE_RE = re.compile(rf"(?<![\w_])__(?=\S)(.{{1,{_SPAN}}}?)(?<=\S)__(?![\w_])")
+_ITALIC_RE = re.compile(rf"(?<![\w*])\*(?=[^\s*])(.{{1,{_SPAN}}}?)(?<=[^\s*])\*(?![\w*])")
+_ITALIC_UNDERSCORE_RE = re.compile(rf"(?<![\w_])_(?=[^\s_])(.{{1,{_SPAN}}}?)(?<=[^\s_])_(?![\w_])")
+_LINK_RE = re.compile(rf"\[([^\]\n]{{1,{_SPAN}}})\]\((https?://[^\s)]{{1,{_URL}}})\)")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 _CODE_PLACEHOLDER = "\x00code{}\x00"
+_CODE_PLACEHOLDER_RE = re.compile("\x00code(\\d+)\x00")
+
+
+def _restore_codes(out: str, codes: list[str]) -> str:
+    """Put the stashed inline code spans back in one pass: a ``replace`` per span over the
+    whole text cost spans x length, quadratic on a line of many spans (review-H153e
+    MINOR-1). A placeholder that names no span (the text spelled one out) is left as is."""
+    if not codes:
+        return out
+    return _CODE_PLACEHOLDER_RE.sub(
+        lambda m: codes[int(m.group(1))] if int(m.group(1)) < len(codes) else m.group(0), out)
+
+
+def _heading(line: str):
+    """The heading match of *line*, or None. Its trailing whitespace-and-hashes part
+    backtracks over the whole line for every character, so a line longer than a heading
+    can be is none."""
+    return _HEADING_RE.match(line) if len(line) <= _SPAN else None
 
 
 def _split_fences(text: str) -> list[tuple[bool, str]]:
@@ -75,12 +99,10 @@ def _inline_html(text: str) -> str:
     out = _ITALIC_UNDERSCORE_RE.sub(r"<i>\1</i>", out)
     lines = []
     for line in out.split("\n"):
-        heading = _HEADING_RE.match(line)
+        heading = _heading(line)
         lines.append(f"<b>{heading.group(2)}</b>" if heading else line)
     out = "\n".join(lines)
-    for index, code in enumerate(codes):
-        out = out.replace(_CODE_PLACEHOLDER.format(index), code)
-    return out
+    return _restore_codes(out, codes)
 
 
 def to_telegram_html(text: str) -> str:
@@ -109,7 +131,7 @@ def to_plain(text: str) -> str:
         out = _ITALIC_RE.sub(r"\1", out)
         out = _ITALIC_UNDERSCORE_RE.sub(r"\1", out)
         out = "\n".join(
-            (_HEADING_RE.match(line).group(2) if _HEADING_RE.match(line) else line)
+            (heading.group(2) if (heading := _heading(line)) else line)
             for line in out.split("\n")
         )
         parts.append(out)
@@ -132,12 +154,10 @@ def _inline_mrkdwn(text: str) -> str:
     out = _BOLD_UNDERSCORE_RE.sub(r"*\1*", out)
     lines = []
     for line in out.split("\n"):
-        heading = _HEADING_RE.match(line)
+        heading = _heading(line)
         lines.append(f"*{heading.group(2)}*" if heading else line)
     out = "\n".join(lines)
-    for index, code in enumerate(codes):
-        out = out.replace(_CODE_PLACEHOLDER.format(index), code)
-    return out
+    return _restore_codes(out, codes)
 
 
 def to_slack_mrkdwn(text: str) -> str:

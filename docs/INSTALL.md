@@ -144,7 +144,7 @@ eval "$(python scripts/nerva.py completion bash)"
 
 Online verbs talk to the running hub at `NERVA_HUB_URL` (default `http://127.0.0.1:8080`) with
 the same credentials the HUD uses — `JARVIS_ADMIN_TOKEN` for owner verbs, `JARVIS_USER_TOKEN`
-for the rest (`python -m agents.core.security.token_store issue admin` mints one). Offline
+for the rest (`python scripts/token_recover.py issue admin` mints one, in the store the hub reads). Offline
 verbs (`doctor`, `config`, `logs`, `kernel explain`) read the same data root as the hub
 (`JARVIS_HOME`) and never need it running. Exit codes: 0 ok · 1 the verb failed · 3 no hub
 reachable · 4 a credential is required. In chat, `/help`, `/status`, `/sessions`, `/jobs`, and

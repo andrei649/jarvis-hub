@@ -7,12 +7,12 @@
 (function () {
 
   /* ── shared hooks/widgets ──────────────────────────────────────────────── */
-  function useApi(url, auto) {
+  function useApi(url, auto, admin) {
     const _s = useState({ loading: !!auto }), s = _s[0], set = _s[1];
     const reload = useCallback(function () {
       set({ loading: true });
-      api(url).then(function (d) { set({ data: d }); }).catch(function (e) { set({ err: String(e) }); });
-    }, [url]);
+      (admin ? adminFetch : api)(url).then(function (d) { set({ data: d }); }).catch(function (e) { set({ err: String(e) }); });
+    }, [url, admin]);
     useEffect(function () { if (auto) reload(); }, [url]);
     return [s, reload];
   }
@@ -77,17 +77,48 @@
 
   function ActionsPanel() {
     const _ = useApi('/api/actions/pending', true), s = _[0], reload = _[1];
+    // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub
+    // from the proposal ledger (never from the card's own args), before Approve.
+    const _c = useApi('/api/skills/proposals', true, true), changes = _c[0], reloadChanges = _c[1];
+    const byCard = {}, owned = {};
+    ((changes.data && changes.data.proposals) || []).forEach(function (p) { if (p.card) byCard[p.card] = p; });
+    // Every pending proposal's card, the page's and beyond it (review-H318d m-4).
+    ((changes.data && changes.data.cards) || []).forEach(function (c) { owned[c] = true; });
     function decide(id, ok) {
-      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(reload).catch(function (e) { alert(e.message); });
+      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(function () { reload(); reloadChanges(); }).catch(function (e) { alert(e.message); });
+    }
+    // Only once the proposals answered can a card be said not to be one's own: while they
+    // load, or when the fetch failed, the panel says so and Approve waits (review-H318c m-2).
+    function unknownYet() { return changes.loading || !!changes.err || !changes.data; }
+    // The proposals call may re-bind a lost card: the action list is re-read once it answers,
+    // so the new card shows and a withdrawn one goes (review-H318d n-6).
+    const seenChanges = useRef(null);
+    useEffect(function () { if (changes.data && seenChanges.current !== changes.data) { seenChanges.current = changes.data; reload(); } }, [changes.data]);
+    // A change the hub will refuse (a bundled skill, a rename) offers Reject only (n-7).
+    function refused(p) { return (p.flags || []).some(function (f) { return /bundled skill|renames the skill/.test(f); }); }
+    function skillChange(a) {
+      if (a.tool !== 'skill.patch_proposal') return null;
+      if (unknownYet()) return h('div', { className: 'tool-card-text' }, changes.err ? '⚠ the proposed change could not be loaded: ' + changes.err : 'Loading the proposed change…');
+      const p = byCard[a.id];
+      if (!p && owned[a.id]) return h('div', { className: 'tool-card-text' }, 'This change is beyond the page loaded here: decide the ones above first, then reload to read it.');
+      if (!p) return h('div', { className: 'tool-card-text' }, 'No change is shown for this card here, so it cannot be approved from this panel; reject it, or reload to read it.');
+      return h('div', null,
+        (p.flags || []).concat(p.drifted ? ['the skill changed since: approving applies nothing'] : []).map(function (f) { return h('div', { key: f, className: 'tool-card-text' }, '⚠ ' + f); }),
+        h('pre', { className: 'tool-diff', style: { whiteSpace: 'pre-wrap', maxHeight: '320px', overflow: 'auto' } }, p.diff || '(no change)'));
     }
     let body;
     if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
     else { const acts = (s.data.actions || []); body = acts.length ? acts.map(function (a) {
       return h('div', { key: a.id, className: 'tool-card' },
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
-        h('div', { className: 'tool-actions' }, Btn('Approve', function () { decide(a.id, true); }, 'ok'), Btn('Reject', function () { decide(a.id, false); }, 'bad')));
+        skillChange(a),
+        h('div', { className: 'tool-actions' },
+          (a.tool === 'skill.patch_proposal' && (unknownYet() || !byCard[a.id] || refused(byCard[a.id])))
+            ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
+            : Btn('Approve', function () { decide(a.id, true); }, 'ok'),
+          Btn('Reject', function () { decide(a.id, false); }, 'bad')));
     }) : Empty('No pending tool-calls.'); }
-    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', reload));
+    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', function () { reload(); reloadChanges(); }));
   }
 
   /* ── Arena ─────────────────────────────────────────────────────────────── */
@@ -308,20 +339,44 @@
   }
 
   function WebhooksPanel() {
-    const _ = useApi('/api/webhooks', true), s = _[0], reload = _[1];
+    /* The hook routes are admin-only (SEC-1): every call carries the admin token, or
+       the panel only worked in the no-admin-token localhost posture (H153). A refused
+       list says why instead of reading as "No webhooks." (a missing admin token is
+       the usual cause), and a new hook shows the one credential its sender uses (the
+       signing secret of a signed hook, the token otherwise) until it is dismissed. */
+    const _s = useState({ loading: true }), s = _s[0], setS = _s[1];
+    // H153 review — the receiver switch as the hub reads it (only a literal true is
+    // on): while it is off no hook is live, whatever its own switch says.
+    const _rx = useState('not read'), rx = _rx[0], setRx = _rx[1];
+    const reload = useCallback(function () {
+      setS({ loading: true });
+      adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: (e && e.message) || String(e) }); });
+      adminFetch('/api/admin/settings/webhooks').then(function (d) {
+        const row = ((d && d.webhooks) || []).filter(function (r) { return r && r.key === 'receiver_enabled'; })[0];
+        setRx(row ? (row.value === true ? 'on' : 'off') : 'not read');
+      }).catch(function () { setRx('not read'); });
+    }, []);
+    useEffect(function () { reload(); }, []);
     const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
     const _sg = useState(false), signed = _sg[0], setSigned = _sg[1];
     const _c = useState(null), created = _c[0], setCreated = _c[1];
-    function create() { api('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e); }); }
-    function del(id) { fetch('/api/webhooks/' + id, { method: 'DELETE' }).then(reload).catch(function () {}); }
+    function create() { adminFetch('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e.message); }); }
+    function del(id) { if (!confirm('Delete this webhook? Its token stops working.')) return; adminFetch('/api/webhooks/' + encodeURIComponent(id), { method: 'DELETE' }).then(reload).catch(function (e) { alert(e.message); }); }
     const hooks = s.data ? (s.data.webhooks || []) : [];
+    const credential = created && (created.signed ? 'signing secret: ' + (created.signing_secret || '') : 'token: ' + (created.token || ''));
+    const list = s.err ? Err(s.err)
+      : s.loading ? Empty('Loading…')
+        : hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '') + (w.enabled === false ? ' (off)' : rx === 'off' ? ' (receiver off)' : '') + (w.deliver && w.deliver !== 'log' ? ' · deliver to ' + w.deliver + (w.deliver_only ? ' only' : '') : '')), Btn('Delete', function () { del(w.id); }, 'bad')); })
+          : Empty('No webhooks.');
     const body = h('div', null,
+      h('div', { className: rx === 'off' ? 'tool-stat bad' : 'tool-hint' },
+        rx === 'off' ? 'Receiver off: every delivery is refused (Console → Webhooks switches it back on).' : 'Receiver: ' + rx),
       h('div', { className: 'tool-form' },
         h('input', { className: 'tool-input', placeholder: 'target agent', value: target, onChange: function (e) { setTarget(e.target.value); } }),
         h('label', { className: 'tool-hint' }, h('input', { type: 'checkbox', checked: signed, onChange: function (e) { setSigned(e.target.checked); } }), ' HMAC signed'),
         Btn('Create', create, 'ok')),
-      created && h('div', { className: 'tool-card' }, 'token: ' + (created.token || '') + (created.signing_secret ? (' · secret: ' + created.signing_secret) : ''), h('div', { className: 'tool-hint' }, '(shown once)')),
-      hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); }) : Empty('No webhooks.'));
+      created && h('div', { className: 'tool-card webhook-created' }, h('span', { className: 'tool-card-text' }, credential), h('div', { className: 'tool-hint' }, '(shown once: save it now)'), Btn('I have saved it', function () { setCreated(null); })),
+      list);
     return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
   }
 

@@ -356,4 +356,20 @@ async def security_posture():
         # CDX-12: the Design-Partner / Hardened profile posture (opt-in, default-off).
         "hardened": _hardened.posture(),
         "product_posture": product_posture.snapshot(getattr(orch, "_runtime_settings", {})),
+        # H490: a hub in safe mode runs in a reduced posture, and says which layers it left out.
+        "safe_mode": _safe_mode_status(),
+        # H501: the host's own posture (root, sshd passwords, container storage), read now.
+        "host": await asyncio.to_thread(_host_posture),
     })
+
+
+def _host_posture() -> dict:
+    from agents.core import host_posture
+
+    return host_posture.report()
+
+
+def _safe_mode_status() -> dict:
+    from agents.core import safe_mode
+
+    return safe_mode.status()

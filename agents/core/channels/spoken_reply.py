@@ -28,15 +28,13 @@ import asyncio
 import contextlib
 import hashlib
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from agents.core.voice.sentence_stream import split_sentences
-
-from .render import to_plain
+from agents.core.voice.speech_text import for_speech
 
 logger = logging.getLogger("jarvis.channels.spoken_reply")
 
@@ -53,9 +51,6 @@ MAX_SPOKEN_CHARS = 1500
 #: What may be handed to a chat transport as one clip.
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
-_FENCE_RE = re.compile(r"```.*?```", re.S)
-_URL_RE = re.compile(r"https?://\S+")
-_SPACES_RE = re.compile(r"[ \t]+")
 _MIME = {
     ".mp3": "audio/mpeg",
     ".ogg": "audio/ogg",
@@ -70,20 +65,16 @@ _MIME = {
 Synthesizer = Callable[[str, str], Awaitable[str | None]]
 
 
-def speakable(text: object, *, max_chars: int = MAX_SPOKEN_CHARS) -> str:
+def speakable(text: object, *, max_chars: int = MAX_SPOKEN_CHARS, lang: object = None) -> str:
     """The prose worth reading aloud, or ``""`` when there is none.
 
-    Fenced code goes, links become "link", markers are stripped, whitespace is
-    folded to single spaces, and the result is cut at a sentence boundary
-    inside ``max_chars`` with an ellipsis marking the cut.
+    The hub's one speech normaliser (H526, :func:`agents.core.voice.speech_text.
+    for_speech`: reasoning, code, links, markers, emoji and symbols), then cut at a
+    sentence boundary inside ``max_chars`` with an ellipsis marking the cut.
     """
     if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 16:
         raise ValueError("max_chars must be an integer of at least 16")
-    raw = _FENCE_RE.sub(" ", str(text or ""))
-    raw = to_plain(raw)
-    raw = _URL_RE.sub("link", raw)
-    lines = [_SPACES_RE.sub(" ", line).strip() for line in raw.splitlines()]
-    plain = " ".join(line for line in lines if line)
+    plain = for_speech(text, lang=lang)
     if len(plain) <= max_chars:
         return plain
     kept = ""
@@ -193,7 +184,7 @@ class SpokenReply:
         refused = await asyncio.to_thread(self.refusal)
         if refused is not None:
             return refused
-        spoken = speakable(text, max_chars=self.max_chars)
+        spoken = speakable(text, max_chars=self.max_chars, lang=lang)
         if not spoken:
             return Audio(False, reason=REASON_EMPTY)
         digest = hashlib.sha256(spoken.encode("utf-8")).hexdigest()

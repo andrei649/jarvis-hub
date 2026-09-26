@@ -9,6 +9,7 @@ from typing import Callable, Optional
 
 from agents.core.paths import data_path
 
+from . import listening
 from .stt import STTEngine
 from .tts import TTSEngine
 from .wake_word import WakeWordDetector
@@ -34,6 +35,7 @@ class VoicePipeline:
     def stop(self):
         self._running = False
         self.detector.stop()
+        listening.set_state(listening.HUB, "off")
         logger.info("Voice pipeline stopped")
 
     def _on_wake_word(self, word: str):
@@ -45,21 +47,28 @@ class VoicePipeline:
             if not t.cancelled() and t.exception() else None)
 
     async def _capture_and_process(self, wake_word: str):
-        audio_path = await self._record_audio()
-        if not audio_path:
-            return
+        # H222: say what the host's mic path is doing, and fall back when it is done.
+        listening.set_state(listening.HUB, "listening")
+        try:
+            audio_path = await self._record_audio()
+            if not audio_path:
+                return
+            listening.set_state(listening.HUB, "thinking")
 
-        text = await self.stt.transcribe_async(audio_path)
-        if not text or text == "[silence]":
-            return
+            text = await self.stt.transcribe_async(audio_path)
+            if not text or text == "[silence]":
+                return
 
-        logger.info(f"STT: {text}")
-        if self.on_transcription:
-            response = await self.on_transcription(text)
-            if response:
-                audio_out = await self.tts.speak(response)
-                if audio_out:
-                    await self._play_audio(audio_out)
+            logger.info(f"STT: {text}")
+            if self.on_transcription:
+                response = await self.on_transcription(text)
+                if response:
+                    audio_out = await self.tts.speak(response)
+                    if audio_out:
+                        listening.set_state(listening.HUB, "speaking")
+                        await self._play_audio(audio_out)
+        finally:
+            listening.set_state(listening.HUB, "armed" if self.detector.running else "off")
 
     async def _record_audio(self) -> Optional[str]:
         """Record from mic until silence (off the event loop). Returns temp path."""

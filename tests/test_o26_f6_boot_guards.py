@@ -197,10 +197,10 @@ def test_web_lifespan_calls_the_guards():
     )
 
 
-def test_front_door_late_pass_refuses_malformed_lists_too(monkeypatch):
-    """The two network-edge lists live in .env like the channel tokens, so the late
-    pass must parse-check them over the loaded mapping — a value the early pass never
-    saw must still stop the boot, naming the variable and never the value."""
+def test_front_door_refuses_malformed_lists_in_a_callers_mapping(monkeypatch):
+    """The two network-edge lists live in .env like the channel tokens, so the check
+    over a caller's own mapping parse-checks them too — a malformed value there stops
+    the boot, naming the variable and never the value."""
     _clean_env(monkeypatch)
     with pytest.raises(SystemExit) as refused:
         boot_guards.assert_front_door({"JARVIS_TRUSTED_PROXIES": "10.0.0.0/8, nonsense"})
@@ -208,24 +208,23 @@ def test_front_door_late_pass_refuses_malformed_lists_too(monkeypatch):
     with pytest.raises(SystemExit) as refused:
         boot_guards.assert_front_door({"JARVIS_ALLOWED_HOSTS": "*"})
     assert "JARVIS_ALLOWED_HOSTS" in str(refused.value)
-    # uvicorn's own allowlist can live in .env too (H691): the late pass checks it.
+    # uvicorn's own allowlist can live in .env too (H691): the mapping check covers it.
     with pytest.raises(SystemExit) as refused:
         boot_guards.assert_front_door({"UVICORN_FORWARDED_ALLOW_IPS": "0.0.0.0/0"})
     assert "UVICORN_FORWARDED_ALLOW_IPS" in str(refused.value) and "0.0.0.0/0" not in str(refused.value)
     assert boot_guards.assert_front_door({"JARVIS_TRUSTED_PROXIES": "127.0.0.1/32"}) is None
 
 
-def test_web_lifespan_runs_the_late_front_door_after_env_load():
-    """The early guard runs before load_agents loads .env; the late pass must sit after
-    it and before the first channel token is read, or a .env-only bot boots open."""
+def test_web_lifespan_loads_env_before_the_boot_guards():
+    """The lifespan loads the .env files first (H273), so the boot guards judge what lives
+    only there before the first channel token is read: a .env-only bot cannot boot open."""
     from agents import web
 
     src = inspect.getsource(web.lifespan)
-    early = src.index("enforce_boot_posture()")
-    loaded = src.index("await orch.load_agents()")
-    late = src.index("assert_front_door()")
+    loaded = src.index("load_hub_env()")
+    guards = src.index("enforce_boot_posture()")
     first_token = src.index('os.environ.get("TELEGRAM_BOT_TOKEN"')
-    assert early < loaded < late < first_token
+    assert loaded < guards < first_token
 
 
 def test_serve_reexports_stay_importable():

@@ -13,16 +13,31 @@ import logging
 import os
 import platform
 import secrets
+import stat
 import sys
-import tempfile
 import time
-from pathlib import Path, PurePosixPath
+import weakref
+from pathlib import Path, PurePath, PurePosixPath
 
 logger = logging.getLogger("jarvis.sandbox")
 
 
 class SandboxError(Exception):
     pass
+
+
+def _bind_mount(source: str, target: str, *, readonly: bool) -> list[str]:
+    """A Docker bind mount as ``--mount``, never ``-v``: a ``:`` in the host path (a data
+    root such as ``/srv/a:b``) split ``-v`` into the wrong fields (review-H667 nit 4).
+    Each field is CSV-quoted, so a ``,``, ``"`` or line break in the path is data, not
+    syntax (review-H667b nit 1)."""
+    def field(text: str) -> str:
+        if any(ch in text for ch in ',"\n\r'):
+            return '"' + text.replace('"', '""') + '"'
+        return text
+
+    fields = ["type=bind", f"src={source}", f"dst={target}"] + (["readonly"] if readonly else [])
+    return ["--mount", ",".join(field(f) for f in fields)]
 
 
 class SandboxResult:
@@ -57,7 +72,21 @@ class Sandbox:
         self.timeout = timeout
         self.max_memory_mb = max_memory_mb
         self.max_output_bytes = max(8, int(max_output_bytes))
-        self.work_dir = Path(work_dir) if work_dir else Path(tempfile.mkdtemp())
+        # H667: a run directory under the managed cache (<data root>/cache/exec), or the
+        # owner's chosen root, never the system temp root (tmpfs on many distros). Its
+        # lock, held while this sandbox lives, keeps the cache's prune away from it.
+        self._work_lock = None
+        self.work_dir_managed = False
+        if work_dir:
+            self.work_dir = Path(work_dir)
+        else:
+            from . import exec_cache
+
+            self.work_dir, self.work_dir_managed = exec_cache.new_work_dir()
+            # Only the managed cache is pruned, so only its run directories take a lock.
+            self._work_lock = exec_cache.hold(self.work_dir) if self.work_dir_managed else None
+            self._release = weakref.finalize(self, exec_cache.release, self._work_lock,
+                                             self.work_dir)
         self._has_docker = self._check_docker()
         self.allow_subprocess = allow_subprocess
         # H11.4 — WASM (wasmtime) backend: isolation without a Docker daemon.
@@ -67,6 +96,32 @@ class Sandbox:
         self.allow_wasm = allow_wasm
         self.wasm_runtime = wasm_runtime or os.environ.get("JARVIS_WASM_PYTHON", "")
         self._has_wasmtime = self._check_wasmtime() if allow_wasm else False
+
+    def ensure_work_dir(self) -> None:
+        """A run directory removed under a live sandbox is made again private (0700),
+        and its lock taken again, never re-created world-readable (review-H667 m6). A
+        managed one that is there without its lock, or wider than 0700 (made again by
+        another path first: review-H667b m2), is made right too, and so is one whose
+        first lock could not be taken."""
+        missing = not self.work_dir.is_dir()
+        if missing:
+            self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not self.work_dir_managed:
+            return
+        from . import exec_cache
+
+        with contextlib.suppress(OSError):
+            if stat.S_IMODE(os.stat(self.work_dir).st_mode) & 0o077:
+                os.chmod(self.work_dir, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+        # A lock that is not there (never taken, or removed) is taken now (review-H667c nit 5).
+        if missing or not exec_cache._lock_path(self.work_dir).is_file():
+            self._release.detach()
+            exec_cache.release(self._work_lock, self.work_dir)
+            self._work_lock = exec_cache.hold(self.work_dir)
+            self._release = weakref.finalize(self, exec_cache.release, self._work_lock,
+                                             self.work_dir)
+
+    _ensure_work_dir = ensure_work_dir
 
     @staticmethod
     def _probe_binary(argv: list[str], missing_note: str) -> bool:
@@ -236,7 +291,33 @@ class Sandbox:
         sinks are the separate, complete copy, written as the streams arrive so
         nothing is ever held whole. Every fallback below re-routes at spawn time,
         before a byte has been read, so a sink can never receive two runs' output.
+
+        Each run writes a file of its own (``script-<random>.py`` for ``script.py``) and
+        removes it afterwards: the orchestrator shares one Sandbox across every turn, and
+        two runs that wrote one name overwrote each other's code, so one ran the other's
+        script, against the other's tool-RPC mailbox, and answered it to the wrong
+        caller (review-H315g).
         """
+        # The suffix comes off the file's own name only: a dot in a directory ("a.d/run")
+        # made a new directory per run, left behind (review-H315h n4).
+        path = PurePath(filename)
+        if not path.name:
+            # "", "." or "/": no name to keep; the default one runs (review-H315i n3).
+            path = PurePath("script.py")
+        stem, dot, ext = path.name.rpartition(".")
+        name = (f"{stem}-{secrets.token_hex(8)}.{ext}" if dot and stem
+                else f"{path.name}-{secrets.token_hex(8)}")
+        run_name = str(path.with_name(name))
+        try:
+            return await self._execute_python_file(code, run_name, writable_paths=writable_paths,
+                                                   sinks=sinks)
+        finally:
+            with contextlib.suppress(OSError):
+                (self.work_dir / run_name).unlink()
+
+    async def _execute_python_file(self, code: str, filename: str,
+                                   writable_paths: list[str | Path] | None = None,
+                                   sinks=None) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_python(
                 code,
@@ -257,6 +338,7 @@ class Sandbox:
     async def _execute_wasm_python(self, code: str, filename: str,
                                    sinks=None) -> SandboxResult:
         start = time.monotonic()
+        self._ensure_work_dir()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(code, encoding="utf-8")
@@ -334,6 +416,7 @@ class Sandbox:
         # the same second would otherwise collide on --name and the second
         # `docker run` would fail with a daemon name-conflict.
         container_name = f"cabinet-sandbox-{int(time.time())}-{secrets.token_hex(4)}"
+        self._ensure_work_dir()
         workdir_path = str(self.work_dir)
 
         for fname, content in (files or {}).items():
@@ -350,7 +433,7 @@ class Sandbox:
             "--cpus", "1",
             "--pids-limit", "50",
             "--read-only",
-            "-v", f"{workdir_path}:/workspace:ro",
+            *_bind_mount(workdir_path, "/workspace", readonly=True),
             *self._docker_writable_mount_args(writable_paths),
             "-w", "/workspace",
             self.docker_image,
@@ -454,7 +537,7 @@ class Sandbox:
 
             host_path.mkdir(parents=True, exist_ok=True)
             target = PurePosixPath("/workspace", *rel.parts).as_posix()
-            args.extend(["-v", f"{host_path}:{target}:rw"])
+            args.extend(_bind_mount(str(host_path), target, readonly=False))
 
         return args
 
@@ -463,6 +546,7 @@ class Sandbox:
         logger.warning("Sandbox: running Python on the HOST with no Docker isolation "
                        "(allow_subprocess=True) — do not enable in production (HF-6)")
         start = time.monotonic()
+        self._ensure_work_dir()
         fpath = self.work_dir / filename
         fpath.parent.mkdir(parents=True, exist_ok=True)
         fpath.write_text(code, encoding="utf-8")

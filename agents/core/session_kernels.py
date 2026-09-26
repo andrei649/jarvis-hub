@@ -46,9 +46,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import hashlib
 import json
 import logging
+import os
+import re
 import secrets
 import shutil
 import time
@@ -56,7 +59,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .action_origin import current_action_origin
 from .environments.output_limits import MAX_OUTPUT_BYTES, render_capped
+from .security.taint import is_untrusted_source
 from .session_kernel_mailbox import SessionRPCStore
 
 logger = logging.getLogger("jarvis.session_kernels")
@@ -110,6 +115,153 @@ class KernelRefused(Exception):
 
 class KernelStartupUnavailable(KernelRefused):
     """No cell was dispatched; the governed isolated per-call path is safe."""
+
+
+_OWNER_DIR = re.compile(r"p(\d{1,10})-[0-9a-f]{8}")
+_OWNER_LOCK = ".lock"
+
+try:                                     # POSIX; elsewhere owner directories age out
+    import fcntl as _fcntl
+except ImportError:                      # pragma: no cover - Windows
+    _fcntl = None
+
+
+def _hold_owner_lock(owner_dir: Path):
+    """Take this manager's owner lock and keep it for the process's life: an exclusive
+    ``flock`` on ``<owner>/.lock``. The kernel drops it when the process ends, however it
+    ends, and it means the same in every pid namespace that shares the data root, where a
+    pid does not (review-H315f m1: a hub is PID 1 in every container start).
+
+    The directory is built under a temporary name the sweep never takes for an owner's,
+    locked there, and only then renamed into place: another start never sees the owner
+    directory with a lock nobody holds, so it can neither take the lock nor remove the
+    directory while this one is being made (review-H315g m1)."""
+    if _fcntl is None:
+        return None
+    staging = owner_dir.with_name(f".{owner_dir.name}-{secrets.token_hex(4)}.tmp")
+    fd = None
+    try:
+        staging.mkdir(parents=True, exist_ok=False)
+        fd = os.open(staging / _OWNER_LOCK, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        os.rename(staging, owner_dir)
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+        shutil.rmtree(staging, ignore_errors=True)
+        logger.warning("session kernel owner lock unavailable", exc_info=True)
+        return None
+    return fd
+
+
+LOCK_HELD, LOCK_UNKNOWN, LOCK_LOST = "held", "unknown", "lost"
+
+
+def _lock_state(owner_dir: Path, fd) -> str:
+    """Whether the lock this manager holds is still the one at ``<owner>/.lock``.
+
+    A ``.lock`` that is gone or is another file reads as lost, and so does an owner path
+    that is no longer a directory (ENOTDIR, a symlink loop) or an fd the manager no longer
+    has (review-H315i n1). Any other error (ESTALE, EACCES, ENOMEM) says nothing about the
+    lock, which is kept: a manager that gave up an intact lock over its live mounts let
+    the next start remove them (review-H315h m1)."""
+    if fd is None:
+        return LOCK_LOST
+    try:
+        held = os.fstat(fd)
+    except OSError as exc:
+        # EBADF: the fd is gone, and so is the lock. Anything else (ENOMEM) says nothing
+        # about it, and it is kept (review-H315j m2).
+        return LOCK_LOST if exc.errno == errno.EBADF else LOCK_UNKNOWN
+    try:
+        there = os.stat(owner_dir / _OWNER_LOCK, follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return LOCK_LOST
+    except OSError as exc:
+        return LOCK_LOST if exc.errno == errno.ELOOP else LOCK_UNKNOWN
+    return LOCK_HELD if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev) else LOCK_LOST
+
+
+def _relock_in_place(owner_dir: Path):
+    """Hold ``<owner>/.lock`` again in a directory this manager still owns, whose lock file
+    went or was replaced: its live mounts keep a holder, so no other start removes them
+    (review-H315h m1). A new lock file is made and locked under a staging name and only
+    then renamed over ``.lock``, so the name never holds a file nobody has locked
+    (review-H315i m2); a ``.lock`` that is there is held while that happens. None when
+    the directory is gone or a link, or someone else holds the file there (a start
+    judging the directory, which will remove it)."""
+    try:
+        if _fcntl is None or owner_dir.is_symlink() or not owner_dir.is_dir():
+            return None
+    except OSError:                      # a root this user cannot search (review-H315j n3)
+        return None
+    lock = owner_dir / _OWNER_LOCK
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        old = os.open(lock, os.O_RDWR | nofollow)
+    except FileNotFoundError:
+        old = None
+    except OSError:
+        return None
+    try:
+        if old is not None:
+            try:
+                _fcntl.flock(old, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except OSError:
+                return None
+        staged = owner_dir / f"{_OWNER_LOCK}.{secrets.token_hex(4)}.tmp"
+        try:
+            fd = os.open(staged, os.O_RDWR | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+        except OSError:
+            return None
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            os.replace(staged, lock)
+            held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
+            if (held.st_ino, held.st_dev) == (there.st_ino, there.st_dev):
+                return fd
+        except OSError:
+            pass
+        os.close(fd)
+        with contextlib.suppress(OSError):
+            staged.unlink()
+        return None
+    finally:
+        if old is not None:
+            os.close(old)
+
+
+def _owner_alive(owner_dir: Path) -> bool | None:
+    """Whether the manager that owns ``owner_dir`` still runs: its lock is held. None when
+    that cannot be told (no lock file: a directory from before the lock, or no flock), so
+    the caller falls back to the directory's age. An error reads as alive."""
+    lock = owner_dir / _OWNER_LOCK
+    try:
+        if _fcntl is None or lock.is_symlink() or not lock.is_file():
+            return None
+    except OSError:
+        # Another user's directory (umask 077) cannot even be looked into: whatever runs
+        # there, it is not this process's to remove (review-H315i m3).
+        return True
+    try:
+        fd = os.open(lock, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return True
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        # The file locked must still be the one at .lock: an owner that relocked in the
+        # meantime renamed a new, held file over it, and the file taken here is an orphan
+        # that says nothing about the owner (review-H315j m1).
+        held, there = os.fstat(fd), os.stat(lock, follow_symlinks=False)
+        if (held.st_ino, held.st_dev) != (there.st_ino, there.st_dev):
+            return True
+    except BlockingIOError:
+        return True
+    except OSError:
+        return True
+    finally:
+        os.close(fd)                     # closing drops a lock this call took
+    return False
 
 
 class KernelTeardownUnconfirmed(KernelRefused):
@@ -299,6 +451,10 @@ class CellOutcome:
     tool_calls: int = 0
     reason: str = ""
     fallback_safe: bool = False
+    #: The kernel has held untrusted text by the end of this cell (H315 third review):
+    #: the caller declares it in its result, so the loop fences the output and raises
+    #: the turn's taint whether the cell succeeded or not.
+    tainted: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -322,6 +478,14 @@ class _Record:
     pending_loss: str = ""
     quarantined: bool = False
     teardown_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    #: The interpreter has held untrusted text: a cell of it read an untrusted tool, or
+    #: ran in a turn that had. Its variables outlive the turn, so every later cell runs
+    #: tainted until a reset replaces the record (H315 second review).
+    tainted: bool = False
+    #: This interpreter's own host directory, shared with it as its mailbox root. It is
+    #: new for every interpreter and removed when the interpreter is (H315 third review):
+    #: a file a tainted kernel left there cannot reach the clean kernel after it.
+    rpc_host: Path | None = None
 
 
 class PipeKernelBackend:
@@ -540,7 +704,8 @@ def docker_kernel_argv(image: str, *, memory_mb: int = 256, pids: int = 64):
             "--security-opt", "no-new-privileges",
             "--read-only",
             # nosec B108 — a tmpfs mount spec for the container, not a host path: the
-            # root filesystem is read-only, so this is the only place a cell may write.
+            # root filesystem is read-only, so a cell writes only here and in its mailbox
+            # mount (above), which is this interpreter's own and removed with it.
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",  # noqa: S108
             "--memory", f"{int(memory_mb)}m",
             "--memory-swap", f"{int(memory_mb)}m",
@@ -571,6 +736,11 @@ class SessionKernelManager:
     ) -> None:
         self._backend = backend
         self._rpc_root = None if rpc_root is None else Path(rpc_root)
+        # This manager's own directory under the root, with a lock it holds while its
+        # process runs, so another process's start can tell whose interpreters these are
+        # and whether that process is gone (review-H315e m1, review-H315f m1).
+        self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
+        self._owner_fd = None if self._rpc_root is None else _hold_owner_lock(self._rpc_root / self._owner)
         self._max_tool_calls = max(0, int(max_tool_calls))
         self._poll_interval = max(0.001, float(poll_interval))
         self._max_kernels = max(1, int(max_kernels))
@@ -586,6 +756,7 @@ class SessionKernelManager:
         # Bounded, because a key is a principal x session and both are unbounded.
         self._expiries: dict[KernelKey, str] = {}
         self._guard = asyncio.Lock()
+        self._clear_stale_mounts()
 
     # ── the cell ─────────────────────────────────────────────────────────────
 
@@ -657,7 +828,28 @@ class SessionKernelManager:
 
     async def _cell(self, key: KernelKey, record: _Record, cell: str,
                     broker=None, sinks=None) -> CellOutcome:
-        """Run one cell on a record whose lock this call holds."""
+        """Run one cell on a record whose lock this call holds.
+
+        A kernel that has held untrusted text taints every call its next cell makes, and
+        the cell's outcome says so, so the caller declares it and the loop fences the
+        output and taints the turn that ran the cell, whether the cell succeeded or not.
+        A cell that reads untrusted text, or runs in a turn that did, taints the kernel
+        from then on."""
+        tainted = record.tainted or is_untrusted_source(current_action_origin())
+        if tainted and broker is not None:
+            broker.tainted = True
+        outcome = None
+        try:
+            outcome = await self._run_cell(key, record, cell, broker, sinks)
+            return outcome
+        finally:
+            if tainted or getattr(broker, "tainted", False):
+                record.tainted = True
+                if outcome is not None:
+                    outcome.tainted = True
+
+    async def _run_cell(self, key: KernelKey, record: _Record, cell: str,
+                        broker=None, sinks=None) -> CellOutcome:
         continuity, record.pending_loss = record.pending_loss or CONTINUED, ""
         mailbox, child_mailbox = self._cell_mailbox(record, broker)
         try:
@@ -710,10 +902,10 @@ class SessionKernelManager:
         authority, so a shim captured in an earlier cell writes where nobody reads.
         """
         root = getattr(record.handle, "child_rpc_dir", "")
-        if broker is None or self._rpc_root is None or not root:
+        if broker is None or record.rpc_host is None or not root:
             return None, ""
         name = f"cell-{secrets.token_hex(16)}"
-        mailbox = self._rpc_root / record.key.token / name
+        mailbox = record.rpc_host / name
         try:
             mailbox.mkdir(parents=True, exist_ok=False)
         except OSError:
@@ -750,7 +942,13 @@ class SessionKernelManager:
                 await asyncio.sleep(self._poll_interval)
             if record.quarantined or self._records.get(record.key) is not record:
                 raise KernelRefused(CRASHED)
-            return await task
+            payload = await task
+            if isinstance(payload, dict):
+                # The calls the host served, not the count the kernel reports: a cell can
+                # set its own counter to anything (review-H315g n1). With no mailbox the
+                # host served none (review-H315h n2).
+                payload = {**payload, "tool_calls": len(served) if store is not None else 0}
+            return payload
         finally:
             active = False
             pending = [item for item in (task, service) if item is not None]
@@ -878,36 +1076,121 @@ class SessionKernelManager:
                     raise KernelRefused(TEARDOWN_UNCONFIRMED)
             while len(self._records) >= self._max_kernels:
                 await self._evict()
+            mount = self._mount(key)
             try:
-                handle = await self._backend.start(key, **self._mount(key))
+                handle = await self._backend.start(key, **mount)
             except KernelTeardownUnconfirmed as refusal:
                 now = self._clock()
+                # The quarantined row owns the directory, so its teardown removes it
+                # (review-H315e n3).
                 self._records[key] = _Record(key=key, handle=refusal.handle,
-                    created_at=now, last_used=now, quarantined=True)
+                    created_at=now, last_used=now, quarantined=True,
+                    rpc_host=Path(mount["rpc_dir"]) if mount else None)
                 if refusal.cancelled:
                     raise asyncio.CancelledError from None
                 raise
             except KernelRefused as refusal:
+                self._unmount(mount)
                 if refusal.reason == KERNEL_UNAVAILABLE:
                     raise KernelStartupUnavailable(KERNEL_UNAVAILABLE) from None
                 raise
+            except BaseException:
+                self._unmount(mount)       # any other failed start leaves nothing behind
+                raise
             now = self._clock()
             record = _Record(key=key, handle=handle, created_at=now, last_used=now,
-                             pending_loss=lost or self._expiries.pop(key, "") or NEW_KERNEL)
+                             pending_loss=lost or self._expiries.pop(key, "") or NEW_KERNEL,
+                             rpc_host=Path(mount["rpc_dir"]) if mount else None)
             self._records[key] = record
             return record
 
     def _mount(self, key: KernelKey) -> dict:
-        """The one shared directory a kernel gets, created before it starts."""
+        """The one shared directory a kernel gets, created before it starts: new for
+        every interpreter, never one an earlier interpreter of the same key wrote in."""
         if self._rpc_root is None:
             return {}
-        host = self._rpc_root / key.token
+        if _fcntl is not None:
+            owner_dir = self._rpc_root / self._owner
+            state = _lock_state(owner_dir, self._owner_fd)
+            if state == LOCK_LOST:
+                # The old fd locks a file no longer at the path, so it holds nothing up
+                # and is closed. Hold the directory's lock again where its mounts live;
+                # when that cannot be had, take a new directory, and with no lock at all,
+                # give no mount (review-H315g m1, review-H315h m1).
+                if self._owner_fd is not None:
+                    with contextlib.suppress(OSError):   # an fd already gone (review-H315j m2)
+                        os.close(self._owner_fd)
+                self._owner_fd = _relock_in_place(owner_dir)
+                if self._owner_fd is None:
+                    self._owner = f"p{os.getpid()}-{secrets.token_hex(4)}"
+                    self._owner_fd = _hold_owner_lock(self._rpc_root / self._owner)
+                if self._owner_fd is None:
+                    return {}
+        host = self._rpc_root / self._owner / f"{key.token}-{secrets.token_hex(8)}"
         try:
-            host.mkdir(parents=True, exist_ok=True)
+            host.mkdir(parents=True, exist_ok=False)
         except OSError:
             logger.warning("session kernel rpc root unavailable", exc_info=True)
             return {}
         return {"rpc_dir": str(host), "child_rpc_dir": self._backend.child_rpc_dir(str(host))}
+
+    @staticmethod
+    def _unmount(mount) -> None:
+        """Remove an interpreter's directory, with whatever its cells left in it."""
+        host = (mount or {}).get("rpc_dir") if isinstance(mount, dict) else mount
+        if host:
+            shutil.rmtree(host, ignore_errors=True)
+
+    def _clear_stale_mounts(self) -> None:
+        """Remove what the interpreters of a process that is gone left under the root.
+
+        Two processes can share one data root (the documented jarvis-hub and
+        jarvis-runtime units do), so a start may not sweep the whole root: that deleted the
+        other's live mounts (review-H315e m1). Each manager keeps its interpreters under a
+        directory of its own (``p<pid>-<token>``) and holds that directory's lock while its
+        process runs; a start removes an owner directory whose lock it can take, which is a
+        process that has ended, in any pid namespace sharing the root. A pid is not asked:
+        in a container the hub is PID 1 on every start (review-H315f m1). A directory with
+        no lock (the older layouts, or no flock) is removed once it is older than the idle
+        expiry, which no live interpreter's is; an owner directory's age is its newest
+        interpreter's."""
+        if self._rpc_root is None or not self._rpc_root.is_dir():
+            return
+        try:
+            entries = list(self._rpc_root.iterdir())
+        except OSError:
+            logger.warning("session kernel rpc root could not be listed", exc_info=True)
+            return
+        for entry in entries:
+            try:
+                self._clear_one(entry)
+            except OSError:
+                # One unreadable entry (another user's) never stops the sweep, let alone
+                # the start (review-H315i m3): it is left.
+                logger.debug("session kernel mount %s left", entry.name, exc_info=True)
+
+    def _clear_one(self, entry: Path) -> None:
+        """Remove one entry under the root if its process is gone (see _clear_stale_mounts)."""
+        if not entry.is_dir() or entry.is_symlink() or entry.name == self._owner:
+            return
+        alive = _owner_alive(entry) if _OWNER_DIR.fullmatch(entry.name) else None
+        if alive:
+            return
+        if alive is None:
+            try:
+                newest = entry.stat().st_mtime
+                if _OWNER_DIR.fullmatch(entry.name):
+                    # An owner directory's own time moves only when an interpreter's
+                    # directory is made or removed in it; a busy interpreter moves its
+                    # own directory's (review-H315g m1).
+                    newest = max([newest, *(child.stat().st_mtime for child in entry.iterdir()
+                                            if child.is_dir() and not child.is_symlink())])
+                age = time.time() - newest
+            except OSError:
+                return
+            if age < self._idle_ttl:
+                return
+        shutil.rmtree(entry, ignore_errors=True)
 
     async def _reap(self) -> None:
         cutoff = self._clock() - self._idle_ttl
@@ -943,6 +1226,7 @@ class SessionKernelManager:
                 logger.warning("session kernel teardown unconfirmed")
                 return False
             self._records.pop(key, None)
+            self._unmount(record.rpc_host)    # stopped: nothing writes there any more
             self._remember(key, reason)
             return True
 

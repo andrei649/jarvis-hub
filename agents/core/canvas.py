@@ -72,9 +72,48 @@ def _list_of_str(v, max_items: int, item_len: int) -> list[str]:
     return [_s(x, item_len) for x in list(v)[:max_items] if _s(x, item_len)]
 
 
+#: H309 — the HUD places a tip or a tour step only on an element that carries one of
+#: these ``data-anchor`` names (frontend/src/pointer.tsx holds the same list): the rail's
+#: modes, the message box, the Decision Inbox panel and the Console button. Nothing
+#: else on the page can be pointed at, and never a single approve or reject button.
+POINTER_ANCHORS = (
+    "mode.cockpit", "mode.chat", "mode.projects", "mode.agents", "mode.trust", "mode.memory",
+    "mode.autonomy", "mode.build", "mode.observe", "mode.interop", "mode.finance", "mode.health",
+    "mode.knowledge", "mode.family", "mode.comms", "mode.admin",
+    "composer", "decisions", "console",
+)
+MAX_TOUR_STEPS = 8
+MAX_CAPTION = 160
+
+
+def _caption(v) -> str:
+    """One line: every run of whitespace (newlines included) becomes a single space."""
+    return _s(" ".join(str(v if v is not None else "").split()), MAX_CAPTION)
+
+
+def _pointer_step(p: dict) -> dict:
+    target = str(p.get("target") or "").strip() if isinstance(p, dict) else ""
+    if target not in POINTER_ANCHORS:
+        raise ValueError(f"unknown target: {target[:64]!r}")
+    caption = _caption(p.get("caption"))
+    if not caption:
+        raise ValueError("caption is required")
+    return {"target": target, "caption": caption}
+
+
 def _sanitize(el_type: str, payload: dict) -> dict:
     """Return a sanitized payload for a known type, or raise ValueError."""
     p = payload if isinstance(payload, dict) else {}
+    if el_type == "tip":
+        return {**_pointer_step(p), "untrusted": p.get("untrusted") is True}
+    if el_type == "tour":
+        steps = p.get("steps")
+        if not isinstance(steps, (list, tuple)) or not steps:
+            raise ValueError("steps is required")
+        if len(steps) > MAX_TOUR_STEPS:
+            raise ValueError(f"at most {MAX_TOUR_STEPS} steps")
+        return {"title": _caption(p.get("title"))[:120], "steps": [_pointer_step(x) for x in steps],
+                "untrusted": p.get("untrusted") is True}
     if el_type in ("text", "markdown"):
         body = _s(p.get("body"), 4000 if el_type == "markdown" else 2000)
         if not body:
@@ -110,7 +149,7 @@ def _sanitize(el_type: str, payload: dict) -> dict:
     raise ValueError(f"unknown element type: {el_type}")
 
 
-ALLOWED_TYPES = ("text", "markdown", "list", "link", "metric", "table", "image_ref")
+ALLOWED_TYPES = ("text", "markdown", "list", "link", "metric", "table", "image_ref", "tip", "tour")
 
 
 class CanvasStore(JsonStore):

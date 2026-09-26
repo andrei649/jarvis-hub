@@ -133,6 +133,19 @@ def soul_components(root: Path) -> list[Component]:
     return found
 
 
+def identity_component(root: Path) -> Component:
+    """The shared behaviour contract every system prompt starts with (H670): paid on
+    every call, whichever agent answers, so it is shared, not a persona."""
+    path = root / "_identity" / "IDENTITY.md"
+    try:
+        from .agent import _strip_maintainer_note
+
+        text = _strip_maintainer_note(path.read_text(encoding="utf-8")).strip()
+    except (OSError, UnicodeDecodeError):
+        return Component(name="identity", chars=0, tokens=0, detail="no contract")
+    return Component.of("identity", text, detail=str(path.relative_to(root.parent)))
+
+
 def skills_index_component(skills: Iterable[Mapping[str, Any]]) -> Component:
     """The `Available skills:` block, rendered exactly as `build_prompt` renders it."""
     rows = list(skills or [])
@@ -189,6 +202,7 @@ def breakdown(
     """Assemble the fixed floor. Pure: every input is passed in, nothing is booted."""
     report = Breakdown()
     report.components.extend(soul_components(agents_root))
+    report.components.append(identity_component(agents_root))
     report.components.extend(tool_schema_components(tool_specs))
     report.components.append(skills_index_component(skills))
     report.components.append(scaffold_component(agent_name))

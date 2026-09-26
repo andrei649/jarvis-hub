@@ -13,6 +13,12 @@ from agents.core.channels.gateway import Gateway
 from agents.core.channels.pairing import SenderPairing
 
 
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 @pytest.mark.asyncio
 async def test_native_sdk_parser_callback_and_threads_close_without_network(monkeypatch):
     """Exercise SDK lifecycle internals when installed; only network seams are mocked."""

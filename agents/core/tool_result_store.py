@@ -94,7 +94,10 @@ READ_TOOL = "file_read"
 #: rather than merely configured: ``file_read`` is how a spilled result is read back.
 #: If reading a spill could itself spill, a large file would generate an unbounded
 #: chain of files, each one describing the last.
-PINNED_THRESHOLDS: dict[str, float] = {READ_TOOL: math.inf}
+#: H315 — `todo` answers with the whole plan the model must follow, and its store bounds
+#: that answer below the smallest per-result budget (todo_tool.MAX_PLAN_BYTES), so it
+#: is never spilled or cut, not even once the turn's own allowance is spent.
+PINNED_THRESHOLDS: dict[str, float] = {READ_TOOL: math.inf, "todo": math.inf}
 
 #: Bridged MCP tools share one default: their sizes are a third party's decision, so
 #: they get a tighter allowance than first-party tools rather than the global one.

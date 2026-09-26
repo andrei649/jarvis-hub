@@ -71,6 +71,44 @@ logger = logging.getLogger("jarvis.orchestrator")
 _RESEARCH_MAX_RESULTS = 5
 
 
+_DESKTOP_RUN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "steps": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "maxLength": 64},
+                    "args": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["steps"],
+    "additionalProperties": False,
+}
+
+
+def _desktop_run_overrides() -> dict:
+    """H296 — desktop_run names the step actions its validator accepts (the table
+    ``validate_desktop_run_args`` checks), not a free string."""
+    from copy import deepcopy
+
+    from .desktop_operator import _DESKTOP_ARG_RULES
+
+    steps = deepcopy(_DESKTOP_RUN_SCHEMA["properties"]["steps"])
+    steps["items"]["properties"]["action"]["enum"] = sorted(_DESKTOP_ARG_RULES)
+    return {"properties": {"steps": steps}}
+
+
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
@@ -517,30 +555,9 @@ class AutonomyCoordinator:
             _rpc_desktop_run,
             gated=True,
             description="Propose bounded governed desktop steps for approval.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "steps": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "maxLength": 64},
-                                "args": {
-                                    "type": "object",
-                                    "maxProperties": 32,
-                                    "additionalProperties": True,
-                                },
-                            },
-                            "required": ["action"],
-                            "additionalProperties": False,
-                        },
-                    }
-                },
-                "required": ["steps"],
-                "additionalProperties": False,
-            },
+            # H296: the actions the step validator accepts, from its own table.
+            schema_overrides=_desktop_run_overrides,
+            input_schema=_DESKTOP_RUN_SCHEMA,
             capability_id="tool:desktop_run",
             preflight=_desktop_preflight,
             trusted_execution=True,
@@ -590,7 +607,7 @@ class AutonomyCoordinator:
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
             )
-            return await runner.run(
+            result = await runner.run(
                 target=args["target"],
                 agent="jarvis",
                 command=args["command"],
@@ -598,6 +615,11 @@ class AutonomyCoordinator:
                 cwd=args.get("cwd"),
                 timeout=args.get("timeout"),
             )
+            from . import project_context   # H594: the terminal moved into a project directory
+
+            if project_context.current() is not None and args.get("cwd"):
+                result = await asyncio.to_thread(project_context.attach_terminal, result, args["cwd"])
+            return result
 
         server.register_tool(
             "terminal_run",
@@ -617,6 +639,7 @@ class AutonomyCoordinator:
             },
             capability_id="tool:terminal_run",
             trusted_execution=True,
+            schema_overrides=self._terminal_run_overrides,
         )
 
         async def _rpc_desktop_plan(args):
@@ -848,6 +871,13 @@ class AutonomyCoordinator:
             agents = getattr(config, "agents", None) or {}
             return getattr(agents.get(agent_id), "tools", None)
 
+        def _on_shared_session() -> bool:
+            # H315 review — a turn with no session of its own runs on the HUD's shared
+            # session; what a session-scoped tool keeps there is the owner's. A double
+            # without the probe counts as shared (fail closed).
+            probe = getattr(self._orch, "on_shared_session", None)
+            return True if not callable(probe) else bool(probe())
+
         # K1 — the model may write one script that orchestrates many tool calls. Off
         # unless `llm.execute_code` is on, and registered last on purpose: the tool
         # offers a script exactly the tools registered above, minus itself, narrowed by
@@ -864,6 +894,8 @@ class AutonomyCoordinator:
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            # A script's reach is narrowed as the turn's offer is, the shared session included.
+            shared_session=_on_shared_session,
             # K2 — a resident interpreter per authorized session, behind its own
             # switch. Docker only and pinned by digest: a kernel that survives an
             # hour deserves the pin the acquisition profile already demands, and a
@@ -891,7 +923,56 @@ class AutonomyCoordinator:
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
+            shared_session=_on_shared_session,
         )
+        # H315 — the model keeps a checklist of the turn's work and re-reads it on every
+        # call. Ungated: it writes the session's own list, which the owner reads next to
+        # the approval queue with each item's posture and taint. On the shared session
+        # only an owner's turn keeps one.
+        from .todo_tool import register_todo_tool
+
+        register_todo_tool(
+            server,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+            shared_session=_on_shared_session,
+        )
+        # H314 — the model writes its long-term memory (the LivingMemory core and user
+        # rings): owner-operator turns only, audited in the intent log, undoable.
+        from .memory_tool import register_memory_tool
+
+        def _living_memory():
+            cog = getattr(self._orch, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        register_memory_tool(
+            server,
+            living=_living_memory,
+            audit=lambda: getattr(self._orch, "intent_log", None),
+            posture=lambda: tool_profile.posture().key,
+        )
+        # H318 + H340 — the model lists and reads its skills under the catalog's trust
+        # gates (the body rendered with its template variables) and proposes changes into
+        # the governed pipeline; nothing here writes a live SKILL.md.
+        from .skills.tools import register_skill_tools
+
+        register_skill_tools(
+            server,
+            loader=lambda: getattr(self._orch, "skills", None),
+            proposals=lambda: getattr(self._orch, "skill_proposals", None),
+            approvals=lambda: getattr(self._orch, "action_approvals", None),
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+            settings=_get_setting,
+        )
+        # H309 — the model points at the owner's HUD (a tip, or a short tour) through
+        # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
+        from .pointer_tool import register_pointer_tool
+
+        register_pointer_tool(server, canvas=lambda: getattr(self._orch, "canvas", None),
+                              posture=lambda: tool_profile.posture().key)
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the
@@ -1005,6 +1086,20 @@ class AutonomyCoordinator:
             rpc_root=str(data_path("code_sessions")),
             max_tool_calls=int(get_setting("security.sandbox_max_tool_calls", 50) or 50),
         )
+
+    def _terminal_run_overrides(self) -> dict:
+        """H296 — terminal_run names the targets actually registered, or says it is off."""
+        from .env_config import env_flag
+
+        if not env_flag("JARVIS_TERMINAL_TARGETS"):
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "Terminal targets are switched off on this hub "
+                                   "(JARVIS_TERMINAL_TARGETS), so every call is refused."}
+        names = self._target_registry().names()
+        if not names:
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "No target is registered, so every call is refused."}
+        return {"properties": {"target": {"enum": names[:64]}}}
 
     def _target_registry(self):
         """Build the named-target registry once, with a durable audit chain.

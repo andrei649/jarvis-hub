@@ -77,7 +77,7 @@ export function SessionsModal({
               <Pressable style={styles.option} onPress={() => resume(item.id)} disabled={!!busyId}>
                 <View style={styles.optInfo}>
                   <Text style={styles.optTitle} numberOfLines={1}>
-                    {item.summary?.trim() || item.id}
+                    {item.title?.trim() || item.summary?.trim() || item.id}
                   </Text>
                   <Text style={styles.optMeta} numberOfLines={1}>
                     {[

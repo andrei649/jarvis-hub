@@ -45,6 +45,9 @@ from .security.quarantine import strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
+#: Tools whose override failed, so the WARNING is logged once per failing tool, not
+#: on every tool-list build; a hook that recovers is cleared and warns again if it fails.
+_OVERRIDE_WARNED: set[str] = set()
 
 #: Who the call in flight is being made *as*. ``handle`` resolves the actor once and
 #: publishes it here for the length of the handler, so a handler that has to make an
@@ -59,6 +62,27 @@ def current_tool_actor() -> str:
     return _tool_actor.get()
 
 
+#: Which model turn a call belongs to (H315 second review): the tool loop binds a fresh
+#: token for each run and a script's calls run with none, so a tool can tell text the
+#: model itself sent in this turn (it is in the transcript already) from text an earlier
+#: turn or a script wrote. ``None`` outside a loop run.
+_tool_turn: ContextVar[Optional[str]] = ContextVar("jarvis_tool_turn", default=None)
+
+
+def bind_tool_turn(token: Optional[str]):
+    """Bind the turn the next calls belong to; returns the reset token."""
+    return _tool_turn.set(token)
+
+
+def reset_tool_turn(token) -> None:
+    _tool_turn.reset(token)
+
+
+def current_tool_turn() -> Optional[str]:
+    """The model turn of the call in flight, or ``None`` (no loop run, or a script)."""
+    return _tool_turn.get()
+
+
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
@@ -68,6 +92,74 @@ GatedIntake = Callable[[str, dict], int]
 #: server-owned like :data:`Preflight`: call data selects the tool, never the
 #: classifier, so a script cannot label its own call — or unlabel it.
 Classifier = Callable[[dict], Optional[Mapping]]
+#: H296 — a zero-argument hook that states what the live install can do, merged over a
+#: tool's static schema every time the tool list is built (see ``advertised_schema``).
+SchemaOverrides = Callable[[], Optional[Mapping]]
+#: The longest description an override may advertise.
+MAX_OVERRIDE_DESCRIPTION = 2048
+_OVERRIDE_KEYS = frozenset({"description", "properties", "required"})
+
+
+def _apply_override(description: str, schema: dict, patch: object) -> tuple[str, dict]:
+    """Merge one hook answer over a static (description, schema); raise on anything else.
+
+    An answer may carry ``description`` (text), ``properties`` (per-property keys
+    merged over properties the static schema already declares: an override narrows
+    an argument, it never invents one) and ``required`` (names the schema declares).
+    ``None`` or ``{}`` means "nothing to change".
+    """
+    import json
+
+    if patch is None:
+        return description, schema
+    if not isinstance(patch, Mapping):
+        raise TypeError("an override must be a mapping")
+    unknown = set(patch) - _OVERRIDE_KEYS
+    if unknown:
+        raise ValueError(f"unknown override keys: {sorted(unknown)}")
+    if "description" in patch:
+        text = patch["description"]
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_OVERRIDE_DESCRIPTION:
+            raise ValueError("an override description must be non-empty text")
+        description = text
+    declared = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    props = patch.get("properties")
+    if props is not None:
+        if not isinstance(props, Mapping):
+            raise TypeError("override properties must be a mapping")
+        merged = dict(declared)
+        for key, value in props.items():
+            if key not in declared or not isinstance(value, Mapping) or not isinstance(declared[key], Mapping):
+                raise ValueError(f"override for an undeclared or malformed property: {key!r}")
+            merged[key] = {**declared[key], **deepcopy(dict(value))}
+        schema = {**schema, "properties": merged}
+    if "required" in patch:
+        names = patch["required"]
+        if not isinstance(names, list) or any(n not in declared for n in names):
+            raise ValueError("override required must name declared properties")
+        schema = {**schema, "required": list(names)}
+    json.dumps(schema)            # plain JSON only: a set, a NaN or an object cannot reach a model
+    return description, schema
+
+
+def advertised_schema(name: str, description: str, schema: Mapping,
+                      overrides: SchemaOverrides | None) -> tuple[str, dict]:
+    """What a tool tells the model it accepts, now (H296): its static description and
+    schema with the live override merged in, or the static ones when the hook raises
+    or answers something malformed (logged once per tool until it recovers)."""
+    static_description, static_schema = description, deepcopy(dict(schema))
+    if overrides is None:
+        return static_description, static_schema
+    try:
+        merged = _apply_override(static_description, static_schema, overrides())   # it never mutates
+    except Exception as exc:  # noqa: BLE001 - a hook never breaks the tool list
+        if name not in _OVERRIDE_WARNED:
+            _OVERRIDE_WARNED.add(name)
+            logger.warning("tool %s: its live schema could not be built (%s); advertising its "
+                           "static schema", name, type(exc).__name__)
+        return static_description, static_schema
+    _OVERRIDE_WARNED.discard(name)
+    return merged
 
 #: Label keys a classifier may not set: they are the card's own identity.
 _RESERVED_LABEL_KEYS = frozenset({"tool", "args", "target"})
@@ -156,6 +248,7 @@ class ToolRPCServer:
         gated_intake: GatedIntake | None = None,
         classifier: Classifier | None = None,
         max_result_bytes: int | None = None,
+        schema_overrides: SchemaOverrides | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -179,6 +272,14 @@ class ToolRPCServer:
         below a pinned tool and the owner's override, above the global default — and
         is the rung only the registrar can fill: a tool that knows its output is
         always small says so here rather than waiting for someone to configure it.
+
+        ``schema_overrides`` (H296) is a zero-argument hook that tells the model what
+        this install can do right now: the targets actually registered, the actions
+        this driver accepts, the rooms that have a speaker. It is called every time
+        the tool list is built and merged over the static schema (see
+        :func:`advertised_schema`); a hook that raises or answers something
+        malformed is logged and the static schema is advertised instead. It narrows
+        what is advertised; the handler's own checks still decide every call.
         """
         if max_result_bytes is not None:
             try:
@@ -195,6 +296,8 @@ class ToolRPCServer:
             raise ValueError("custom intake requires a trusted gated tool")
         if classifier is not None and (not callable(classifier) or not gated):
             raise ValueError("a call classifier requires a gated tool")
+        if schema_overrides is not None and not callable(schema_overrides):
+            raise ValueError("schema_overrides must be a zero-argument callable")
         if capability_id is not None:
             if (
                 not isinstance(capability_id, str)
@@ -227,6 +330,7 @@ class ToolRPCServer:
             "gated_intake": gated_intake,
             "classifier": classifier,
             "max_result_bytes": max_result_bytes,
+            "schema_overrides": schema_overrides,
             "active_tasks": set(),
         }
         return self
@@ -262,11 +366,13 @@ class ToolRPCServer:
     def tools(self) -> "list[dict]":
         tools = []
         for name, spec in sorted(self._tools.items()):
+            description, schema = advertised_schema(
+                name, spec["description"], spec["input_schema"], spec.get("schema_overrides"))
             row = {
                 "name": name,
                 "gated": spec["gated"],
-                "description": spec["description"],
-                "input_schema": deepcopy(spec["input_schema"]),
+                "description": description,
+                "input_schema": schema,
             }
             if spec.get("capability_id"):
                 row["capability_id"] = spec["capability_id"]
@@ -286,6 +392,11 @@ class ToolRPCServer:
         """
         spec = self._tools.get(str(name or ""))
         return None if spec is None else spec.get("max_result_bytes")
+
+    def declares_untrusted_output(self, name: str) -> bool:
+        """Whether this tool said what it returns comes from outside the box."""
+        spec = self._tools.get(str(name or ""))
+        return bool(spec and spec.get("untrusted_output"))
 
     def allows(self, name: str) -> bool:
         return name in self._tools

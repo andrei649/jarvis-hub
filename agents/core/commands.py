@@ -172,7 +172,8 @@ def _help(ctx: CommandContext) -> str:
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
     lines = [command.summary for command in commands]
     if not ctx.principal.admin:
-        lines.append("Owner commands (/pause, /resume, /stop) answer only the owner's channel.")
+        lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
+                     "the owner's channel.")
     return "\n".join(lines) if lines else "No commands are registered."
 
 
@@ -208,12 +209,22 @@ def _sessions(ctx: CommandContext) -> str:
     rows = checkpoints.get_sessions(limit=5) if checkpoints is not None else []
     if not rows:
         return "No sessions recorded."
+    from agents.core.session_titles import title_fields
+
     lines = []
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
-        lines.append(f"{sid}  {started}".rstrip())
+        title = title_fields(row.get("metadata"))["title"]   # H413
+        lines.append(f"{sid}  {started}  {title}".rstrip())
     return "Recent sessions:\n" + "\n".join(lines)
+
+
+def _usage(ctx: CommandContext) -> str:
+    """H373 — what each cloud provider says is left, and any shared 429 hold."""
+    from agents.core.llm import quota
+
+    return quota.render(quota.usage())
 
 
 def _pause(ctx: CommandContext) -> str:
@@ -258,9 +269,10 @@ def _remind(ctx: CommandContext) -> str:
     when, sep, message = ctx.args.partition("|")
     when, message = when.strip(), message.strip()
     if not sep or not when or not message:
-        return "Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes"
+        return ("Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes, "
+                "or once: /remind in 30m | stretch, /remind tomorrow at 9 | call the bank")
     try:
-        job = runner.create(
+        job, _first_run, confirmation = runner.arm(
             name=message[:60],
             schedule_text=when,
             action={"type": "remind", "message": message},
@@ -268,7 +280,8 @@ def _remind(ctx: CommandContext) -> str:
         )
     except ValueError as exc:
         return f"Could not arm that: {exc}"
-    return f"Armed {job.id}: {job.schedule_text} ({job.cron}) — {message}. /jobs lists it; the HUD or `nerva jobs` can pause or delete it."
+    return (f"Armed {job.id}: {confirmation} — {message}. "
+            "/jobs lists it; the HUD or `nerva jobs` can pause or delete it.")
 
 
 def _voice(ctx: CommandContext) -> str:
@@ -310,15 +323,84 @@ def _voice(ctx: CommandContext) -> str:
     return f"Voice mode here is now {wanted} — {voice_mode.DESCRIPTIONS[wanted]}. {engine}"
 
 
+_REFINE_REFUSALS = {
+    "turn_in_flight": "A turn is still running in this conversation; try /refine again when it has answered.",
+    "busy": "A review is already running; try again in a moment.",
+    "daily_budget": "Today's review budget (learning.review_daily_budget) is spent; try again tomorrow.",
+    "reviews_off": "Reviews are switched off: learning.review_daily_budget is 0.",
+    "daily_budget_cut_off": ("At least half of today's review budget went to reviews the local model cut off or "
+                             "left malformed; if they were cut off, raise learning.review_max_tokens "
+                             "rather than the budget, or try again tomorrow."),
+    "llm_error": ("The review could not run: it needs a local model, and none answered "
+                  "(reviews never leave this machine)."),
+    "llm_timeout": ("The local model did not finish the review in time; nothing was kept. "
+                    "Try again, or with a narrower focus."),
+    "review_cut_off": ("The local model spent its whole answer on thinking and wrote no review; nothing was "
+                       "kept. Raise learning.review_max_tokens, or try a narrower focus."),
+    "review_unparsed": ("The local model's review was cut off or malformed, so nothing was kept. Raise "
+                        "learning.review_max_tokens, or try a narrower focus."),
+    "empty_conversation": "There is no conversation here to review yet.",
+    "unavailable": "The learning reviewer is not available on this hub.",
+}
+
+
+async def _refine(ctx: CommandContext) -> str:
+    """H465 — Hermes' ``/refine [focus]``: review this conversation for durable memories
+    and skill changes now, and say what was kept. A changed skill is a proposal that waits
+    in the Decision Inbox, a new one waits in the pending skills list; facts land in the
+    living memory (the reply says so when it is off). It runs whether or not the per-turn
+    learning loop is on."""
+    refine = getattr(ctx.orch, "refine", None)
+    if refine is None:
+        return _REFINE_REFUSALS["unavailable"]
+    focus = " ".join((ctx.args or "").split())[:200]
+    result = await refine(focus=focus)
+    if not result.get("ran"):
+        return _REFINE_REFUSALS.get(str(result.get("reason")), "The review did not run.")
+    actions = [str(a) for a in result.get("actions") or []]
+    if not actions:
+        return "Reviewed this conversation: nothing worth keeping."
+    head = f"Reviewed this conversation (focus: {focus}):" if focus else "Reviewed this conversation:"
+    lines = [head, *[f"- {a}" for a in actions]]
+    if any("patch proposed" in a for a in actions):
+        lines.append("A skill change waits for your approval in the Decision Inbox.")
+    if any("quarantined" in a for a in actions):
+        lines.append("A new skill waits in the pending skills list (SELF-IMPROVEMENT) until you approve it.")
+    return "\n".join(lines)
+
+
+async def _recap(ctx: CommandContext) -> str:
+    """H441 — Hermes' ``/recap``: this conversation's last exchanges, rendered from the
+    stored turns with no model call; tools a reply used show as a count. ``/recap 20``
+    shows more exchanges (at most 50)."""
+    orch = ctx.orch
+    memory = getattr(orch, "memory", None)
+    session = getattr(orch, "session_id", None)
+    if memory is None or not session:
+        return "There is no conversation here to recap yet."
+    from agents.core.memory.recap import DEFAULT_EXCHANGES, render_recap
+
+    arg = (ctx.args or "").strip()
+    exchanges = int(arg) if arg.isdigit() and int(arg) > 0 else DEFAULT_EXCHANGES
+    turns = await memory.get_history(session)
+    # The /recap line itself is the conversation's newest turn: it is not recapped.
+    if turns and turns[-1].get("role") == "user" and str(turns[-1].get("content", "")).lstrip().startswith("/recap"):
+        turns = turns[:-1]
+    return render_recap(turns, exchanges=exchanges)["text"]
+
+
 def build_default_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
+    registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
+    registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))
     registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
+    registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
     return registry

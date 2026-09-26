@@ -298,45 +298,59 @@ function ObserveMode({ t }){
 }
 
 /* ============ INTEROP ============ */
+/* H200 review — a live section whose source failed says so; an empty one says none. */
+function Section({ off, n, children }: { off?: boolean; n: number; children?: any }){
+  if (off) return <div className="iod" style={{padding:'6px 0'}}>not connected</div>;
+  if (!n) return <div className="iod" style={{padding:'6px 0'}}>none</div>;
+  return <>{children}</>;
+}
+
 function InteropMode({ t }){
-  const N = V2.INTEROP;
+  const N: any = V2.INTEROP;
+  const off = N.unavailable || {};
   return (
     <ModePanel icon="interop" title={t.interop} status="A2A · MCP · widgets · webhooks">
       <div className="obs-grid">
         <div>
           <SubH>AGENT-TO-AGENT (A2A)</SubH>
-          {N.a2a.map((a,i)=>(
+          <Section off={off.a2a} n={N.a2a.length}>{N.a2a.map((a,i)=>(
             <div className="io-row" key={i}>
               <span className={'sdot '+(a.status==='connected'?'active':'idle')}></span>
               <div><div className="ion">{a.peer}</div><div className="iod">{a.protocol}</div></div>
               <div className="io-agents">{a.agents.map(x=><Gl key={x} id={x} size={12}/>)}</div>
               <span className={'io-status '+a.status}>{a.status}</span>
             </div>
-          ))}
+          ))}</Section>
           <SubH style={{marginTop:16}}>MCP SERVERS</SubH>
-          {N.mcp.map((m,i)=>(
+          <Section off={off.mcp} n={N.mcp.length}>{N.mcp.map((m,i)=>(
             <div className="io-row" key={i}>
               <span className={'sdot '+(m.status==='up'?'active':m.status==='degraded'?'busy':'err')}></span>
               <div><div className="ion">{m.server}</div><div className="iod">{m.scope}</div></div>
               <span className="io-tools">{m.tools} tools</span>
               <span className={'io-status '+(m.status==='up'?'connected':'degraded')}>{m.status}</span>
             </div>
-          ))}
+          ))}</Section>
         </div>
         <div>
           <SubH>WIDGETS</SubH>
-          {N.widgets.map((w,i)=>(
+          <Section off={off.widgets} n={N.widgets.length}>{N.widgets.map((w,i)=>(
             <div className="cap-row" key={i}><div><div className="cn">{w.name}</div><div className="cd">{w.surface}</div></div>
               <span className={'cap-tag '+(w.enabled?'allow':'scoped')}>{w.enabled?'LIVE':'OFF'}</span></div>
-          ))}
-          <SubH style={{marginTop:16}}>WEBHOOKS</SubH>
-          {N.webhooks.map((h,i)=>(
+          ))}</Section>
+          {/* H200 — create, switch and delete live in the console's Webhooks panel. */}
+          <SubH style={{marginTop:16}}>WEBHOOKS <a href={appUrl('/v2/console/webhooks')} aria-label="manage webhooks" style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
+          {!off.webhooks && N.receiver && N.receiver !== 'on' && (
+            <div className="iod" data-testid="interop-receiver" style={{padding:'4px 0',color:'var(--amber)'}}>
+              {N.receiver === 'off' ? 'receiver off: every delivery is refused' : 'receiver not read: deliveries may be refused'}
+            </div>
+          )}
+          <Section off={off.webhooks} n={N.webhooks.length}>{N.webhooks.map((h,i)=>(
             <div className="io-row" key={i}>
               <span className={'io-dir '+h.dir}>{h.dir==='in'?'IN':'OUT'}</span>
               <div><div className="ion" style={{fontFamily:'var(--font-mono)',fontSize:11}}>{h.event}</div><div className="iod">{h.url}</div></div>
               <span className={'io-status '+(h.status==='active'?'connected':'degraded')}>{h.status}</span>
             </div>
-          ))}
+          ))}</Section>
         </div>
       </div>
     </ModePanel>

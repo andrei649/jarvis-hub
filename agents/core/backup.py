@@ -44,6 +44,7 @@ import errno
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import stat
@@ -324,6 +325,41 @@ _STALE_AFTER_SECONDS = 2 * 86_400.0
 
 
 # ── create ────────────────────────────────────────────────────────
+_RUN_DIR = re.compile(r"nerva-sandbox-[a-z0-9_]{8}")
+
+
+def _owner_sandbox_root(root: Path) -> tuple[str, ...] | None:
+    """The sandbox root the owner chose, as parts relative to the data root, when it is
+    inside it (else None)."""
+    try:
+        from .exec_cache import resolve_root
+
+        chosen, managed = resolve_root()
+        if managed:
+            return None
+        return Path(os.path.realpath(chosen)).relative_to(os.path.realpath(root)).parts
+    except Exception:  # noqa: BLE001 (no settings, a bad root: nothing more to leave out)
+        return None
+
+
+def _in_exec_cache(path: Path, root: Path, owner_root: tuple[str, ...] | None = None) -> bool:
+    """The sandbox's files stay out of a backup: the managed cache, and a run directory
+    (exactly as mkdtemp names it, ``nerva-sandbox-`` and eight characters) directly under
+    the root the owner chose inside the data root (review-H667b nit 3). A folder of the
+    owner's that merely starts with the prefix is kept (review-H667c m2)."""
+    try:
+        parts = Path(path).relative_to(root).parts
+    except ValueError:
+        return False
+    if parts[:2] == ("cache", "exec"):
+        return True
+    if owner_root is None:
+        return False
+    depth = len(owner_root)
+    return (len(parts) > depth + 1 and parts[:depth] == owner_root
+            and bool(_RUN_DIR.fullmatch(parts[depth])))
+
+
 def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = None,
                   label: str = "", encrypt: Optional[bool] = None,
                   key: Optional[str] = None) -> dict:
@@ -363,6 +399,10 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # and not followed (H503): a link planted in the data root must not pull an
     # arbitrary file into an archive that may leave the machine.
     files, manifest["skipped_links"] = archive_safe.collect_regular_files(src)
+    # The sandbox's run directories are a disposable cache, not the owner's data: model-
+    # written scripts and tool-call mailboxes stay out of an archive (review-H667 m3).
+    owner_root = _owner_sandbox_root(src)
+    files = [f for f in files if not _in_exec_cache(f, src, owner_root)]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         if do_encrypt:

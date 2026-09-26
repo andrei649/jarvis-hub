@@ -170,7 +170,9 @@ class Gateway:
             return {}
         source = f"inbound:{str(channel or '').strip().lower() or 'unknown'}"
         meta = taint.mark({}, source=source)
-        meta["injection_flags"] = detect_injection(str(text or ""))
+        # H117: scanned with its whitespace collapsed, so a payload split across the
+        # pieces of a batched burst (or across lines) reads as the sentence it is.
+        meta["injection_flags"] = detect_injection(" ".join(str(text or "").split()))
         return meta
 
     def _record_inbox(self, channel: str, text: str, *, sender: Any = None,

@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from agents.core.paths import data_path
 
@@ -107,7 +107,7 @@ class Mission:
     title: str
     goal: str
     status: str
-    plan: list[dict]          # [{idx, title, status, result, started_at, ended_at}]
+    plan: list[dict]          # [{idx, title, parent, status, result, started_at, ended_at}]; parent: an earlier idx or None (H666)
     max_steps: int
     max_seconds: int
     steps_used: int
@@ -200,16 +200,17 @@ class MissionStore:
         )
 
     # ── writes ────────────────────────────────────────────────────
-    def create(self, title: str, goal: str = "", plan: Optional[list[str]] = None,
+    def create(self, title: str, goal: str = "", plan: Optional[list[Any]] = None,
                max_steps: int = DEFAULT_MAX_STEPS, max_seconds: int = DEFAULT_MAX_SECONDS) -> Mission:
         title = (title or "").strip()
         if not title:
             raise MissionError("mission title required", code="title_required")
-        steps = [
-            {"idx": i, "title": str(s), "status": StepStatus.PENDING.value,
-             "result": None, "started_at": None, "ended_at": None}
-            for i, s in enumerate(plan or [])
-        ]
+        steps = []
+        for i, entry in enumerate(plan or []):
+            step_title, parent = _plan_step(entry, i)
+            steps.append({"idx": i, "title": step_title, "parent": parent,
+                          "status": StepStatus.PENDING.value,
+                          "result": None, "started_at": None, "ended_at": None})
         now = _now()
         with self._lock:
             cur = self._conn.execute(
@@ -383,6 +384,26 @@ class MissionStore:
 
 
 # ── helpers ───────────────────────────────────────────────────────
+_STEP_FIELDS = frozenset({"title", "parent"})
+
+
+def _plan_step(entry: Any, idx: int) -> tuple[str, Optional[int]]:
+    """One plan entry as ``(title, parent)`` (H666). A title alone is a top-level step (any
+    other value, a mapping without ``title`` or ``parent`` included, is its own text, as
+    before); ``{title, parent?}`` may sit under an earlier step: ``parent`` is that step's
+    index. Only an earlier step, so a plan is a forest by construction — no step is its
+    own ancestor and none points past the end."""
+    if not isinstance(entry, dict) or not _STEP_FIELDS & set(entry):
+        return str(entry), None
+    title, parent = entry.get("title"), entry.get("parent")
+    if (set(entry) - _STEP_FIELDS or not isinstance(title, str) or not title.strip()
+            or (parent is not None and (isinstance(parent, bool) or not isinstance(parent, int)
+                                        or not 0 <= parent < idx))):
+        raise MissionError(f"plan step {idx} is not a title or {{title, parent}} with an earlier parent",
+                           code="bad_plan_step")
+    return title.strip(), parent
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

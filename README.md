@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-13325-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-17059-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -99,7 +99,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **13,325** · frontend **1,329** · mobile **140**. Route surface: **502**.
+Generated test matrix: backend **17,059** · frontend **1,684** · mobile **142**. Route surface: **533**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -143,7 +143,9 @@ python -m pytest             # full offline suite — current count auto-synced 
 
 _Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. The optional companions are
 **opt-in** on every platform: `JARVIS_WORLDVIEW=1` also starts the 4D OSINT globe (`:3000`),
-`JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`).
+`JARVIS_SIGNAL_LAYER=1` also starts the Signal Layer (`:8787`). If something you added breaks the hub (a persona
+overlay, a skill, a scheduled job, an MCP server), **`python serve.py --safe-mode`** starts it with
+only what ships: nothing of yours is deleted, the HUD says SAFE MODE, and a normal restart brings it all back.
 
 _Changed your mind?_ `./uninstall.sh --confirm` (`UNINSTALL.bat` on Windows) removes the
 installer-created software footprint (`.venv/`, WorldView's `node_modules/` + env files).
@@ -176,7 +178,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **13,325** · frontend **1,329** · mobile **140** · **502** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 15 open or blocked of 304 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `4049146eee47`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **17,059** · frontend **1,684** · mobile **142** · **533** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 15 open or blocked of 304 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `66f94ce45908`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for WorldView geoint, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

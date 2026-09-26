@@ -36,7 +36,7 @@ from agents.core.automation_contracts import ContractTemplate, contract_denial, 
 from agents.core.memory.consolidation import (
     ADD, DELETE, UPDATE, ListStore, existing_from_hits, validate_plan,
 )
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.routers._component import require_component
 from agents.core.security import quarantine, taint
 from agents.core.security.rag_guard import REDACTION, provenance_from_hit
@@ -316,11 +316,15 @@ async def memory_consolidate_preview(q: str = "", top_k: int = Query(20, ge=1, l
 
 
 async def _vector_remove(memory, record_id: str) -> bool:
-    """Remove one vector record through the manager's lock (off-loop: Qdrant is httpx)."""
+    """Remove one vector record under the manager's store lock (off-loop: Qdrant is httpx).
+
+    The store lock, not the conversation lock (H428): a slow Qdrant remove must not
+    stall every session's turn, and removes stay serialised with vector writes.
+    """
     vectors = getattr(memory, "vectors", None)
     if vectors is None or not hasattr(vectors, "remove"):
         return False
-    lock = getattr(memory, "_lock", None)
+    lock = getattr(memory, "_store_lock", None) or getattr(memory, "_lock", None)
     if isinstance(lock, asyncio.Lock):
         async with lock:
             await asyncio.to_thread(vectors.remove, record_id)
@@ -329,7 +333,16 @@ async def _vector_remove(memory, record_id: str) -> bool:
     return True
 
 
-async def _persist_consolidation(memory, plan: list[dict], existing: list[dict]) -> dict:
+def _recall_forget(orch) -> None:
+    """A memory was deleted: cached recall results (warm context, a late handoff) must not
+    bring it back (H428)."""
+    invalidate = getattr(orch, "_recall_purged", None)
+    if callable(invalidate):
+        invalidate()
+
+
+async def _persist_consolidation(memory, plan: list[dict], existing: list[dict], *,
+                                 on_removed=None) -> dict:
     """Write an applied plan back to the live vector store, honestly.
 
     ADD → ``remember``; UPDATE → remove + ``remember`` under the same id (a plain
@@ -358,7 +371,13 @@ async def _persist_consolidation(memory, plan: list[dict], existing: list[dict])
                 if not by_id.get(target, {}).get("persistable", False):
                     skipped.append({"index": idx, "op": kind, "reason": "not_vector_backed"})
                     continue
-                if not await _vector_remove(memory, target):
+                removed = None  # unknown until the call returns: a cancelled call may still remove
+                try:
+                    removed = await _vector_remove(memory, target)
+                finally:
+                    if removed is not False and on_removed is not None:
+                        on_removed()  # H428: the old text must not come back from a cached recall
+                if not removed:
                     skipped.append({"index": idx, "op": kind, "reason": "no_vector_store"})
                     continue
                 if kind == DELETE:
@@ -409,7 +428,10 @@ async def memory_consolidate_apply(req: Request):
         out.update({"persisted": {ADD: 0, UPDATE: 0, DELETE: 0}, "skipped": [],
                     "persistence": "dry_run"})
     else:
-        out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing))
+        # A removed vector, even one whose re-embedding then failed, drops the cached
+        # recall results (H428); a plan whose rows were all skipped removes nothing.
+        out.update(await _persist_consolidation(getattr(orch, "memory", None), plan, existing,
+                                                on_removed=lambda: _recall_forget(orch)))
     return nocache_json(out)
 
 
@@ -638,7 +660,14 @@ async def kg_upsert_entity(req: Request):
     denied = _kg_kernel_denial(get_orch(), payload, req.headers.get("x-capability-token", ""))
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    existed = await _kg_call(g.get_entity, name) is not None
+    try:
+        ok = await _kg_call(g.add_entity, name, entity_type, body.get("properties") or {})
+    finally:
+        if existed:
+            # An edit replaces the entity's properties: a fact edited out must not
+            # come back from a cached recall result (H428).
+            _recall_forget(get_orch())
     return nocache_json({"ok": bool(ok), "entity": await _kg_call(g.get_entity, name)})
 
 
@@ -659,7 +688,13 @@ async def kg_delete_entity(name: str, req: Request = None):
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await _kg_call(g.delete_entity, name):
+    deleted = None  # unknown until the call returns: a cancelled call may still delete
+    try:
+        deleted = await _kg_call(g.delete_entity, name)
+    finally:
+        if deleted is not False:
+            _recall_forget(get_orch())
+    if not deleted:
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True, "deleted": name})
 
@@ -714,7 +749,13 @@ async def kg_delete_relation(source: str, relation: str, target: str, req: Reque
     denied = _kg_kernel_denial(get_orch(), payload, token_id)
     if denied is not None:
         return JSONResponse({"error": f"kernel denied: {denied}"}, status_code=403)
-    if not await _kg_call(g.delete_relation, source, relation, target):
+    deleted = None  # unknown until the call returns: a cancelled call may still delete
+    try:
+        deleted = await _kg_call(g.delete_relation, source, relation, target)
+    finally:
+        if deleted is not False:
+            _recall_forget(get_orch())
+    if not deleted:
         return JSONResponse({"error": "not found"}, status_code=404)
     return nocache_json({"ok": True})
 
@@ -818,6 +859,42 @@ async def memory_eval_run(mode: str = "keyword"):
     if mode == "recall":
         return nocache_json(await run_recall_eval())
     return JSONResponse({"error": "mode must be keyword or recall"}, status_code=400)
+
+
+def _living_memory():
+    orch = get_orch()
+    cog = getattr(orch, "cognition", None) if orch else None
+    if cog is None or not cog.sub_enabled("memory_enabled"):
+        return None
+    return cog.module("memory")
+
+
+@router.get("/api/memory/core", dependencies=[Depends(user_guard)])
+async def memory_core():
+    """H314 — the long-term memory the model writes: both rings, and the newest writes
+    that can still be undone (ref, time, targets)."""
+    from agents.core.memory_tool import UNDO
+
+    living = _living_memory()
+    if living is None:
+        return nocache_json({"enabled": False, "memory": [], "user": [], "undoable": []})
+    return nocache_json({"enabled": True, "memory": living.core.list(), "user": living.user_core.list(),
+                         "undoable": UNDO.recent()})
+
+
+@router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])
+async def memory_core_undo(body: dict):
+    """H314 — undo one write of the model's memory tool, while nothing has changed since."""
+    from agents.core.memory_tool import MemoryToolError, undo
+
+    orch = get_orch()
+    try:
+        result = undo(str((body or {}).get("ref") or ""), living=_living_memory(),
+                      audit=getattr(orch, "intent_log", None) if orch else None)
+    except MemoryToolError as exc:
+        status = 404 if exc.reason == "memory_undo_unknown" else 409
+        return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail}, status_code=status)
+    return nocache_json(result)
 
 
 @router.post("/api/memory/remember", dependencies=[Depends(user_guard)])

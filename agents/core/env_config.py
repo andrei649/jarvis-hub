@@ -103,6 +103,19 @@ def env_flag_is_malformed(name: str) -> bool:
     return raw is not None and raw.strip() != "" and not is_recognized_bool(raw)
 
 
+# python-dotenv's own off switch, with python-dotenv's own spellings (its check in
+# dotenv.main), not Nerva's truthy convention: it has to agree with the library that
+# reads it (H273, env_provenance). This module still loads no .env file.
+_DOTENV_DISABLED_SPELLINGS = frozenset({"1", "true", "t", "yes", "y"})
+
+
+def dotenv_disabled(environ=None) -> bool:
+    """Whether PYTHON_DOTENV_DISABLED stops python-dotenv loading any .env file."""
+    environ = os.environ if environ is None else environ
+    value = environ.get("PYTHON_DOTENV_DISABLED")
+    return value is not None and value.casefold() in _DOTENV_DISABLED_SPELLINGS
+
+
 def env_flag(name: str, default: bool = False) -> bool:
     """Boolean env flag with an explicit default direction.
 

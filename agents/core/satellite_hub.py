@@ -78,6 +78,8 @@ class SatellitePairing:
     allowed_peer: str
     allowed_transport: str
     expires_at: float
+    #: H689 — the install that provisioned it; a hub with another install id refuses it.
+    hub_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -105,6 +107,10 @@ class SatellitePairing:
             ).lower(),
         )
         object.__setattr__(self, "expires_at", _timestamp(self.expires_at, label="expires_at"))
+        hub = str(self.hub_id or "").strip().lower()
+        if hub and (len(hub) != 32 or any(char not in "0123456789abcdef" for char in hub)):
+            raise ValueError("hub_id must be an install id")
+        object.__setattr__(self, "hub_id", hub)
 
     @classmethod
     def from_token(
@@ -116,6 +122,7 @@ class SatellitePairing:
         allowed_peer: str,
         allowed_transport: str,
         expires_at: float,
+        hub_id: str = "",
     ) -> SatellitePairing:
         return cls(
             satellite_id=satellite_id,
@@ -124,6 +131,7 @@ class SatellitePairing:
             allowed_peer=allowed_peer,
             allowed_transport=allowed_transport,
             expires_at=expires_at,
+            hub_id=hub_id,
         )
 
 
@@ -189,8 +197,11 @@ class SatelliteHub:
         max_clock_skew: float = 30.0,
         replay_ttl: float = 120.0,
         max_replay_nonces: int = 1_024,
+        hub_id=None,
     ) -> None:
         self._inf = inference or NullInference()
+        # H689: this hub's install id (a callable is read when first needed).
+        self._hub_id = hub_id
         self.max_concurrency = max(1, int(max_concurrency))
         self._sem = asyncio.Semaphore(self.max_concurrency)
         self._sats: dict[str, dict] = {}
@@ -299,12 +310,25 @@ class SatelliteHub:
                 ),
             }
 
+    def _own_hub_id(self) -> str:
+        """This hub's install id ('' when unknown: a pinned pairing is then refused)."""
+        hub = self._hub_id
+        if hub is None:
+            from agents.core.install_identity import install_id
+
+            hub = self._hub_id = install_id() or ""
+        elif callable(hub):
+            hub = hub() or ""
+        return str(hub)
+
     def _pairing_refusal(
         self,
         pairing: SatellitePairing,
         claim: _SatelliteClaim,
         now: float,
     ) -> str:
+        if pairing.hub_id and pairing.hub_id != self._own_hub_id():
+            return "other_install"
         if pairing.allowed_transport != claim.transport:
             return "transport_refused"
         if not hmac.compare_digest(pairing.allowed_peer, claim.peer):

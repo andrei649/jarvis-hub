@@ -34,6 +34,12 @@ class AcquisitionRuntime:
         self.extension_runtime = None
 
     def is_enabled(self) -> bool:
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            # H275: nothing acquired is re-registered and no extension is activated.
+            safe_mode.note("acquired_packages")
+            return False
         try:
             return self._enabled() is True
         except Exception:

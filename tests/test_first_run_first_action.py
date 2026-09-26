@@ -215,8 +215,10 @@ def test_the_record_survives_a_restart(store):
 def test_a_corrupt_store_reads_as_not_started_rather_than_raising(store):
     store.write_text("{not json")
     assert activation_state(store, now=DAY)["installed"] is False
-    # and the clock can be restarted over it
-    assert mark_installed(store, now=DAY)["installed_at"] == DAY
+    # H689: and it is never re-minted over — the owner's clock is kept as it is
+    got = mark_installed(store, now=DAY)
+    assert got["unreadable"] is True and got["installed_at"] is None
+    assert store.read_text() == "{not json"
 
 
 def test_a_foreign_schema_is_not_trusted(store):

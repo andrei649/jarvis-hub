@@ -36,7 +36,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -120,10 +119,18 @@ def mark_installed(
     existing = _read(target)
     if existing is not None:
         return existing
+    from agents.core.install_identity import install_id
+
+    if target.exists():
+        # H689: a record that cannot be read is kept, never re-minted over: the clock
+        # it holds is the owner's, and a new one would restart it under a new id.
+        logger.warning("activation clock at %s is unreadable; left as it is", target)
+        return {"schema": SCHEMA, "install_id": install_id(), "installed_at": None,
+                "inferred_at_boot": False, "activated": None, "unreadable": True}
     moment = time.time() if now is None else float(now)
     record = {
         "schema": SCHEMA,
-        "install_id": uuid.uuid4().hex[:16],
+        "install_id": install_id(),   # H689: the durable install id (None when unavailable)
         "installed_at": moment,
         "inferred_at_boot": False,
         "activated": None,
@@ -142,6 +149,8 @@ def infer_install_at_boot(
     if existing is not None:
         return existing
     record = mark_installed(target, now=now)
+    if record.get("unreadable"):
+        return record
     record["inferred_at_boot"] = True
     _write(target, record)
     return record
@@ -173,6 +182,8 @@ def record_first_action(
         # clock now and mark it inferred — the elapsed time will read as ~0, which
         # is visibly wrong in the honest direction and is flagged as inferred.
         record = infer_install_at_boot(target, now=now)
+    if record.get("unreadable"):
+        return None   # H689: never write over a record that cannot be read
     if record.get("activated"):
         return None  # the first is the first
 

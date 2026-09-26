@@ -25,6 +25,23 @@ import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 
+/** H450 — a one-shot's time, in the viewer's clock: "once at 2026-10-01 09:00". */
+export function onceAt(job: any): string {
+  const when = job?.run_at ? new Date(job.run_at) : null;
+  if (!when || Number.isNaN(when.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `once at ${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`;
+}
+
+/** H687 — what happens next, as the hub reports it: a first run now, or the wait for the cadence. */
+export function armNote(reply: any): string {
+  const job = reply?.job || {};
+  const cadence = `${job.schedule_text || ''} (${job.one_shot ? onceAt(job) : job.cron || ''})`;
+  if (typeof reply?.confirmation === 'string' && reply.confirmation) return `armed · ${reply.confirmation}`;
+  if (job.one_shot) return `armed · ${cadence}`;   // H450: no cadence and never a first run
+  return reply?.first_run ? `armed · first run now, then ${cadence}` : `armed · ${cadence}, on its cadence`;
+}
+
 const JOBS_PATH = '/api/jobs';
 const BLUEPRINTS_PATH = '/api/jobs/blueprints';
 
@@ -41,6 +58,7 @@ const Note = ({ c, children }: { c?: any; children?: any }) => (
 
 const stateOf = (job: any): { label: string; color: string } => {
   if (job?.options?.repeat && job.attempts >= job.options.repeat) return { label: 'complete', color: 'var(--ink-3)' };
+  if (job?.one_shot && job.attempts >= 1) return { label: 'done', color: 'var(--ink-3)' };   // H450: ran its one time
   if (job?.paused_reason) return { label: 'paused', color: 'var(--amber)' };
   if (job?.enabled === false) return { label: 'off', color: 'var(--ink-3)' };
   return { label: 'on', color: 'var(--green)' };
@@ -131,7 +149,7 @@ export function JobsPanel() {
     // Governed effect on the owner's behalf: MUST carry onErr so a 422 (a schedule that fires
     // too often, a blueprint missing its message) is printed, not swallowed.
     actA(JOBS_PATH, { blueprint: chosen.id, params: p, ...(Object.keys(options).length ? {options} : {}) },
-      (r: any) => { setNote(`armed · ${r?.job?.schedule_text || ''} (${r?.job?.cron || ''})`); setMessage(''); setPrompt(''); reload(); },
+      (r: any) => { setNote(armNote(r)); setMessage(''); setPrompt(''); reload(); },
       (err: any) => setNote(`refused · ${refusalReason(err, 'could not arm the job')}`));
   };
 
@@ -172,7 +190,7 @@ export function JobsPanel() {
     apiPatch(`${JOBS_PATH}/${encodeURIComponent(id)}`, body, { admin: true })
       .then((r: any) => {
         setEditing((m) => ({ ...m, [id]: null }));
-        setRunNote((m) => ({ ...m, [id]: `edited · ${r?.job?.schedule_text || ''} (${r?.job?.cron || ''})` }));
+        setRunNote((m) => ({ ...m, [id]: `edited · ${r?.job?.schedule_text || ''} (${r?.job?.one_shot ? onceAt(r.job) : r?.job?.cron || ''})` }));
         reload();
       })
       .catch((err: any) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err, 'could not edit the job')}` })));
@@ -209,7 +227,7 @@ export function JobsPanel() {
             <Row>
               <span style={mono}>{job.name || EM}</span>
               <Tag c={st.color}>{st.label}</Tag>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{job.schedule_text || job.cron || ''}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{job.schedule_text || job.cron || ''}{job.one_shot ? ` · ${onceAt(job)}` : ''}</span>
               <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{job.action?.type || ''}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
                 <button className="tool-btn" title="run now" onClick={() => drive(id, 'run')}>▶ now</button>
@@ -288,7 +306,7 @@ export function JobsPanel() {
           </div>
         )}
         <button className="tool-btn" onClick={()=>{setNote(null);setCustom(true);}}>custom job</button>
-        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(`armed · ${r?.job?.schedule_text}`);setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
+        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(armNote(r));setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
         {note && !custom && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
       </div>
     </Card>

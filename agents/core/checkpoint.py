@@ -247,6 +247,132 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"Failed to create session record: {e}")
 
+    def session_title(self, session_id: str) -> dict:
+        """H413 — ``{"title", "source"}`` from the session row's metadata (empty strings
+        when there is none, the row is missing or its metadata is unreadable)."""
+        empty = {"title": "", "source": ""}
+        if not self._conn:
+            return empty
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
+            meta = json.loads(row[0] or "{}") if row else {}
+        except Exception:
+            return empty
+        if not isinstance(meta, dict) or not isinstance(meta.get("title"), str):
+            return empty
+        return {"title": meta["title"], "source": str(meta.get("title_source") or "")}
+
+    def set_session_title(self, session_id: str, title: str, source: str, *,
+                          replace: tuple[str, ...] = ()) -> bool:
+        """H413 — write the title when the session has none, or its current title came
+        from one of ``replace`` (compare-and-set: a newer title is never overwritten).
+        Whether it was written. The row is created when it is missing."""
+        if not self._conn or not isinstance(title, str) or not title:
+            return False
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
+                if row is None:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO sessions (id, started_at, turn_count, metadata) VALUES (?, ?, 0, '{}')",
+                        (session_id, datetime.now(timezone.utc).isoformat()))
+                    meta = {}
+                else:
+                    try:
+                        meta = json.loads(row[0] or "{}")
+                    except ValueError:
+                        meta = {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+                titled = isinstance(meta.get("title"), str) and bool(meta["title"])
+                if titled and str(meta.get("title_source") or "") not in replace:
+                    return False
+                meta.update({"title": title, "title_source": source})
+                self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
+                                   (json.dumps(meta, ensure_ascii=False), session_id))
+                self._conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to set session title: {e}")
+            return False
+
+    def session_row(self, session_id: str) -> dict | None:
+        """H218 — one session's row, or None."""
+        if not self._conn:
+            return None
+        with self._lock:
+            cursor = self._conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,))
+            columns = [d[0] for d in cursor.description]
+            row = cursor.fetchone()
+        return dict(zip(columns, row)) if row else None
+
+    def set_archived(self, session_id: str, archived: bool, *, at: str | None = None) -> bool:
+        """H218 — stamp (or clear) ``archived_at`` in a session's metadata. Whether the
+        session exists; a session is never created by archiving it."""
+        if not self._conn:
+            return False
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
+                if row is None:
+                    return False
+                try:
+                    meta = json.loads(row[0] or "{}")
+                except ValueError:
+                    meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if archived:
+                    meta["archived_at"] = at or datetime.now(timezone.utc).isoformat()
+                else:
+                    meta.pop("archived_at", None)
+                self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
+                                   (json.dumps(meta, ensure_ascii=False), session_id))
+                self._conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to archive session: {e}")
+            return False
+
+    def stale_sessions(self, before: str, *, limit: int = 500) -> list[str]:
+        """H218 — unarchived sessions whose last activity (``ended_at``, else
+        ``started_at``) is older than the ISO timestamp ``before``, oldest first."""
+        if not self._conn:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT id FROM sessions WHERE {self._ARCHIVED_SQL} IS NULL"  # nosec B608 - fixed SQL fragment
+                " AND COALESCE(ended_at, started_at) IS NOT NULL AND COALESCE(ended_at, started_at) < ?"
+                " ORDER BY COALESCE(ended_at, started_at) LIMIT ?", (before, limit)).fetchall()
+        return [r[0] for r in rows]
+
+    def session_rows_for_backup(self, session_id: str) -> dict:
+        """H218 — everything this store keeps about one session, for the backup a
+        permanent delete takes first."""
+        out: dict = {"session": None, "checkpoints": [], "clock": None}
+        if not self._conn:
+            return out
+        with self._lock:
+            for table, key, many in (("sessions", "id", False), ("checkpoints", "session_id", True),
+                                     ("session_clock", "session_id", False)):
+                cursor = self._conn.execute(f"SELECT * FROM {table} WHERE {key}=?", (session_id,))  # nosec B608 - fixed table names
+                columns = [d[0] for d in cursor.description]
+                rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
+                out[{"sessions": "session", "session_clock": "clock"}.get(table, table)] = rows if many else (rows[0] if rows else None)
+        return out
+
+    def delete_session_rows(self, session_id: str) -> dict:
+        """H218 — remove one session's rows (checkpoints, clock, the session itself)."""
+        counts = {"checkpoints": 0, "session_clock": 0, "sessions": 0}
+        if not self._conn:
+            return counts
+        with self._lock:
+            for table, key in (("checkpoints", "session_id"), ("session_clock", "session_id"), ("sessions", "id")):
+                counts[table] = self._conn.execute(f"DELETE FROM {table} WHERE {key}=?", (session_id,)).rowcount  # nosec B608 - fixed table names
+            self._conn.commit()
+        return counts
+
     def session_started_at(self, session_id: str) -> str | None:
         """Read the durable birth date; old/missing rows remain unknown."""
         if not self._conn:
@@ -338,13 +464,23 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"Failed to update session: {e}")
 
-    def get_sessions(self, limit: int = 20) -> list[dict]:
+    #: H218 — a session's archived stamp, read from its metadata only when the JSON is valid.
+    _ARCHIVED_SQL = "(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.archived_at') END)"
+
+    def get_sessions(self, limit: int = 20, *, archived: bool | None = None) -> list[dict]:
+        """The newest sessions; ``archived`` True lists only archived ones, False only
+        the others, None (the default, for existing callers) all of them."""
         if not self._conn:
             return []
+        where = ""
+        if archived is True:
+            where = f" WHERE {self._ARCHIVED_SQL} IS NOT NULL"
+        elif archived is False:
+            where = f" WHERE {self._ARCHIVED_SQL} IS NULL"
         try:
             with self._lock:
                 cursor = self._conn.execute(
-                    "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
+                    f"SELECT * FROM sessions{where} ORDER BY started_at DESC LIMIT ?", (limit,)  # nosec B608 - fixed SQL fragments
                 )
                 columns = [d[0] for d in cursor.description]
                 rows = cursor.fetchall()

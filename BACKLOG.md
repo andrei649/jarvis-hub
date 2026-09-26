@@ -14,6 +14,1434 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H259 a settings reset shows what it will change, keeps the secrets and can be undone; the HUD marks what differs from the default (partial → equivalent, #1207; headline 185 → 186/697).
+
+  The reseed ran `DELETE FROM settings`: every setting, secrets included, gone at once with no preview and no way back; and the HUD could not tell a changed setting from its default. Now (on top of H157's search, export, dry-run import and per-category reset):
+  - **Defaults.** Every declared row but a secret carries its `default`; the Settings panel marks a row that differs ("changed", the default in its tooltip) and ↺ stages the default for the next validated save.
+  - **Preview first.** `POST /api/admin/settings/{category}/reset` and `POST /api/admin/settings/reseed` take `{"dry_run": true}` (only a JSON `true`, 4 KB bound) and answer what would change, a credential-shaped value hidden; arming a reset in the HUD shows it.
+  - **The reseed no longer deletes.** It is the per-category reset over every category: secrets kept and named, undeclared rows left, a JSON request from this origin only, audited with what moved. The v1 admin page sends JSON; the HUD gets "reset every category…".
+  - **Undo.** A reset records what it replaced in the same transaction (the last 20); `POST /api/admin/settings/undo` puts the latest back, leaving a setting changed since, no longer valid or no longer declared as it is and naming it; audited; listeners hear every write, so the webhook receiver follows. `GET /api/admin/settings/resets` lists them (names, never values); the HUD shows "last reset … · undo…". Every reset and undo is a two-step `ConfirmAction` at the REVERSIBLE tier.
+  - **Adapted:** the reseed does not go through the approval queue's irreversible tier because it is no longer irreversible; a new kernel action kind would be an owner change (`agents/core/kernel`).
+
+  54 mutants, all caught (ten after survivors got cases: the listeners, a no-longer-declared undo, the list's undone flag, only-JSON-true dry runs, the 4 KB bound, only secrets kept, the newest reset first). Test manual: PNB-173 (PNB-171 and ENV-085 updated).
+  Tests: backend 17,035 → 17,059 (`tests/test_settings_defaults_undo.py` 24; the reseed, H153b and row-shape tests follow); frontend 1,677 → 1,684 (`settings-reset-undo.test.tsx` 7); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; HUD v2 bundle rebuilt.
+
+- 2026-09-26 H168 one confirmation graded like the approval queue, and agent text rendered as Markdown everywhere it is shown (partial → equivalent, #1207; headline 184 → 185/697).
+
+  Destructive confirmation was hand-rolled in seven panels, each its own shape, and none said how risky the action was in the approval queue's terms; chat bubbles and decision cards rendered only `**bold**` (lists, fences, tables and links showed as raw characters), and canvas artifacts had a private renderer of their own. Now:
+  - **One confirmation, graded by `RiskTier`** (`frontend/src/confirm.tsx`, `ConfirmAction`): READ_ONLY one click, REVERSIBLE two steps, EXTERNAL and IRREVERSIBLE_OR_MONEY a phrase typed exactly; an unknown tier takes the most; `tests/test_confirm_tiers.py` ties `RISK_TIER` to `agents/core/autonomy/policy.py`. Focus follows the control that replaced the one pressed, Escape cancels, Enter confirms only on a match; a promise keeps it open until it lands, and a refusal keeps it armed to retry.
+  - **Every site migrated.** Kill switch: HALT ALL stays one click (an emergency stop never waits), disengage is typed (`DISENGAGE`); forget-me (`FORGET`) and acquisition purge typed; trust-ops rotation types the scope; marketplace uninstall types the folder it deletes (the `rmtree` has no undo); webhook delete and the ESTOP pause are two steps.
+  - **Markdown everywhere agent text is shown.** Chat bubbles (agent and vision) and decision cards go through the shared React-only renderer (`Bubble`, memoised per text, so a streamed token re-parses one bubble), and canvas Markdown artifacts too (bounded to 4,000 code points at render as well as on save). A new `breaks` option keeps single newlines as line breaks there; documents keep paragraph joining. The owner's own words stay literal. Closes test-manual gap G22.
+
+  51 mutants: 48 caught, eight after survivors got cases (a cancelled phrase re-opening pre-filled, an open confirmation's cancel, artifact line breaks, a row's held switch, the uninstall closing and its empty folder, the rotation's clear-on-success and keep-on-refusal); three were equivalent and that code went. Test manual: SHL-223, SHL-224 (SHL-104, SHL-133, SHL-185 and G22 updated).
+  Tests: backend 17,033 → 17,035 (`tests/test_confirm_tiers.py`); frontend 1,656 → 1,677 (`confirm.test.tsx` 11, `markdown-adoption.test.tsx` 6, `markdown.test.tsx` +1, `kill-switch-refusal.test.tsx` +1, `marketplace-admin.test.tsx` +1, `webhooks-panel.test.tsx` +1; the purge, marketplace and artifact tests follow the new steps); HUD v2 bundle rebuilt.
+
+- 2026-09-26 H156 edit an agent's persona in the UI, live on its next turn; draft its description with the local model (partial → equivalent, #1207; headline 183 → 184/697).
+
+  The Prompts panel versioned persona text in a side history, and nothing wrote it where the model reads it: a commit or a rollback changed a JSON file while the agent kept its old persona, and nothing seeded the history, audited it, or let the owner edit or describe an agent from its Dossier. Now one apply path (`agents/core/soul_edit.py`):
+  - **Refused when the guard would drop it.** The H387 scan runs first: a persona it would block is refused (422) and changes nothing; a line it only quarantines is applied and named. 409 in safe mode, 413 over 256 KiB, 404 for an agent the hub has not loaded.
+  - **Nothing live is lost.** The first edit keeps the file on disk as v1, and a hand edit made since the last version is kept as its own version before it is replaced.
+  - **Written where the model reads it, then live.** The owner's overlay (`souls/<id>/SOUL.local.md` in the data home, else the repo-local `SOUL.local.md`; never the shipped template), atomically; then versioned, and the agent re-reads it, so its next turn uses it — no restart, no compaction.
+  - **Rollback goes the same way**, for a loaded agent; `_identity` and other keys keep the history-only rollback. Every apply, rollback and commit is audited with the version and its hash, never the text.
+  - **Description.** `description:` in the front-matter is listed on `GET /agents` and the SOUL read, never prompted; `POST /api/admin/agents/{id}/description/draft` asks the strict-local model for one paragraph and saves nothing.
+  - **HUD.** The Dossier's **Edit persona** opens the live SOUL with Preview, Apply, Draft description → Use it, and the hub's refusal in words; the Prompts panel gets **apply** beside **commit**.
+
+  61 mutants: 58 caught, eight after survivors got cases; two survivors of the first-edit-only seed led to keeping hand edits as versions (its five mutants caught); the fsync is a crash-only property. Test manual: CHT-119, CHT-120.
+  Tests: backend 17,004 → 17,033 (`tests/test_soul_edit_route.py` 29; the H10.22 rollback test now asserts the rollback is live, in a throwaway data home); frontend 1,650 → 1,656 (`soul-edit.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; HUD v2 bundle rebuilt.
+
+- 2026-09-26 H227 “what can it do right now”: one inspector for an agent as a chosen principal sees it (partial → equivalent, #1207; headline 182 → 183/697).
+
+  The pieces lived apart (the raw ToolRPC registry, the MCP admin list, `nerva prompt-size` over files on disk) and nothing answered for *this* agent, *this* surface, *this* principal, nor showed the resolved prompt. Now (`agents/core/inspector.py`), one read-only payload built from the code a turn runs:
+  - **Five views, the five postures.** The owner or a guest on the HUD, the owner or a stranger on an external channel (under the inbound origin a channel turn has), or no human. Each look runs in its own task, so what it binds ends with it.
+  - **Status line.** Version, backend and model, the local model's state, the context budget (0 = 75 % of the model window), the tool loop, safe mode.
+  - **Tools as offered, not as registered.** The runtime's own resolved offer (job toolset, posture, the agent's `tools:` list, the shared-session rule), each marked gated / untrusted output, the withheld ones listed; fails closed; says when the loop is off.
+  - **Skills, MCP, prompt.** The prompt's skill rows under that principal and offer; each MCP server's transport, trust and transport-aware liveness (no URL or command); the system prompt plus the empty-message user part (core memory, runtime/language/grounding rails, skills), about how many tokens that costs every turn, masked by the log redactor and capped at 64 KiB. The core block is read without freezing it, so a look never fixes the day's snapshot.
+  - **Three surfaces.** `GET /api/admin/inspector?agent=&view=&section=` (admin), `nerva inspect [agent] [--as …] [--section …] [--json]`, and Console → Admin → Inspector (status line, As switch, folding sections).
+
+  82 mutants: 79 caught, ten after survivors got cases, one redundant reset simplified away, the origin passed to the posture equivalent (the principal alone decides the surface). Test manual: GOV-287, GOV-288.
+  Tests: backend 16,961 → 17,004 (`tests/test_inspector.py` 43); frontend 1,646 → 1,650 (`panels/inspector.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types, desktop HUD routes and the API sweep updated; HUD v2 bundle rebuilt.
+
+- 2026-09-26 H161 the HUD warns when memory or disk runs out, and only about the worst of it (partial → equivalent, #1207; headline 181 → 182/697).
+
+  The thresholds existed (the autonomy observer's 85/95 %), but they surfaced only as ticker lines and alert tasks, cleared on the first good sample, watched only `/`, stopped with autonomy off or the e-stop engaged, never suspected an out-of-memory restart and could not be dismissed. Now, as Hermes' pressure banner (`agents/core/resource_pressure.py`):
+  - **Ranked, worst only.** `disk_critical` > `memory_critical` > `oom_restart_suspected` > `disk_elevated` > `memory_elevated`, over memory and every watched volume (`/` and the data home). The HUD shows only the worst one not dismissed, in one sentence under the power chip.
+  - **Confirmed recovery.** A condition rises at once and clears (or steps down) only after 3 samples 5 points under its line, so a flapping reading neither clears nor re-raises it.
+  - **A suspected OOM restart.** A small state file (boot id, memory level, clean-shutdown mark) makes a start on the same boot, after an unclean stop under memory pressure, a named suspicion. The lifespan writes the mark as its very first teardown step.
+  - **Dismissal per boot.** It survives a restart on the same boot; a new boot re-arms it, and so does the condition's recovery.
+  - **Apart from autonomy.** Sampled every minute on the hub's scheduler (and on demand by the route when stale). `GET /api/system/pressure` and `POST /api/system/pressure/dismiss` are user-guarded.
+
+  50 mutants: 47 caught after ten survivors got cases, one equivalent, one simplified away, one (the atomic replace) a crash-consistency property. Test manual: ENV-181, ENV-182.
+  Tests: backend 16,921 → 16,961 (`tests/test_h161_resource_pressure.py` 40); frontend 1,640 → 1,646 (`pressure-banner.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; the binding-writer inventory's two pinned scheduler lines move with the file; HUD v2 bundle rebuilt.
+
+- 2026-09-26 H674 a conversation summary never holds the turn past a short bound, and a silent summarizer is cut (partial → equivalent, #1207; headline 180 → 181/697).
+
+  Compaction awaited the strict-local summarizer inline, bounded only by the backend's read timeout (120 s for Ollama, a total-duration wait on a non-streaming call), and nothing said why a turn was slow. Now, with Hermes' two clocks (`agents/core/compaction_hold.py`):
+  - **The hold.** A turn waits at most `memory.compression_max_turn_hold_seconds` (10 s, 0 = never) for the LLM summary, one per session at a time. Past it the turn goes on with its turns verbatim when they still fit the window under the owner's budget, else the deterministic digest. The summary keeps being written and seeds the next turn's iterative merge. It never goes through the compaction clock, and never replaces a newer prior. A turn cancelled while it waits still leaves its summary; shutdown stops what is still being written.
+  - **The owner is told.** `notices` on `/chat` and every `/chat/stream` end event (`agents/core/turn_notices.py`), shown by the HUD as a line under the reply: “The conversation summary is taking longer than usual…”.
+  - **The inactivity deadline.** The summarizer streams and is cut after `memory.compression_summary_idle_seconds` (60 s) with nothing received. Any chunk is life, reasoning included: a new `on_activity` on the Ollama and LM Studio streams. A slow stream that keeps talking is never cut, and a degraded reply (`⚠️ …`) is never taken as the summary.
+
+  72 mutants: 70 caught after nine survivors got cases, two equivalent (one removed from the code). Test manual: GOV-285, GOV-286.
+  Tests: backend 16,869 → 16,921 (`tests/test_h674_compaction_hold.py` 52); frontend 1,636 → 1,640 (`turn-notices.test.ts`); OpenAPI types regenerated (`ChatResponse.notices`, `TurnNotice`); HUD v2 bundle rebuilt.
+
+- 2026-09-26 H677 warm up before accepting work; every shutdown wait has a short budget; one slow chat never holds another (partial → equivalent, #1207; headline 179 → 180/697).
+
+  The local model's warm-up was fire-and-forget, so a message right after boot raced the cold load; each channel stop, cancelled task and close was awaited with no bound; and Telegram's poll loop awaited every turn, so one chat's slow answer (or a 180 s lease wait) held every other chat. Now, as Hermes' lifecycle:
+  - **Warm-up gate** (`agents/core/lifecycle_budget.py`). The web lifespan waits for the warm-up before any channel opens, at most `system.startup_warmup_timeout_seconds` (default 20 s, 0 = no wait). On expiry it says so, opens anyway, and the warm-up finishes in the background. `/api/status` and `/readyz` report `warmup` (`off | warming | ready | cold | failed`, never a reason to be not-ready). A turn served while it is still `warming` carries `warming: true` (`/chat`, the stream's `end` event) or a log line (channel turns).
+  - **Shutdown budgets.** `bounded` (3 s: each channel stop, the Oracle watcher, plugin close, the checkpoint flush, the LLM router, Ollama, MCP, the context cache, the plugin HTTP clients, each channel close) and `wait_task` (2 s: each cancelled background task and the warm-up) name an overrun and move on; a step that ignores cancellation is abandoned. The budgets are per step (no total deadline).
+  - **Chat lanes** (`agents/core/channels/chat_lanes.py`). Telegram hands each turn, button tap and observed group line to its chat's lane: a chat's turns in order, chats side by side (at most 8 at once), the poll loop straight back to reading, 2 s to finish at stop. A voice note's "answer speech with speech" mark travels with its own turn, so a busy chat's earlier typed reply is never the one spoken (a regression the lanes would have introduced, caught while building).
+
+  84 mutants, all caught after 21 survivors got cases (a cancelled warm-up, the frozen duration, a zero budget, an abandoned step's cancel, lane order after an earlier turn ends, the poll loop's own lanes, a tap in another chat, cache-task cleanup, the budgets nesting…); one equivalent (`asyncio.shield` around `asyncio.wait`, which never cancels) removed. Test manual: ENV-179, ENV-180, GOV-284.
+  Tests: backend 16,818 → 16,869 (`tests/test_h677_boot_and_shutdown.py` 51); OpenAPI types regenerated (`ChatResponse.warming`).
+
+- 2026-09-26 H450 say when in plain words: one-shots, compact intervals, repeat counts (partial → equivalent, #1207; headline 178 → 179/697).
+
+  Every job was a cron, so `in 30m` and an ISO time were refused, and worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` were silently armed as a DAILY `0 9 * * *`. Now (`agents/core/autonomy/nl_schedule.py`, `jobs.py`), as Hermes' schedule syntax:
+  - **One-shots.** A delay (`in 30m`, `in 1h30m`, `peste 2 ore`), an ISO time anchored to the scheduler's zone (or its own offset), or a day word with a time (`tomorrow at 9`, `mâine la 9`, `today at 18:00`, `once at 9am`). It is stored as `@at <UTC ISO>` and armed as a date trigger. It runs once: attempts are reserved before any executor, a later firing is skipped as `one-shot already ran`, and a new time re-arms it. It never takes H687's first run, even when one is asked for. A passed, date-only, impossible or over-a-year time is refused by name, and so is a delay with more words ("in 2 hours at 9").
+  - **Compact intervals.** `every 2h`, `every 30m`, bare `2h`/`30m`, `la fiecare 2 ore`. An interval a cron cannot keep (`every 45 minutes` fired at :00 and :45) is refused with the divisors to use.
+  - **Repeat counts.** `normalize_repeat` takes `forever | once | 1x | N | 3 times | de 3 ori` on every surface.
+  - **Where it shows.** `/remind in 30m | stretch` works; the HUD jobs panel shows `once at …` and marks a spent one-shot `done`.
+
+  62 mutants, all caught after fourteen cases were added. One survivor was a real bug, "in 2 hours at 9" read as a daily 9 o'clock; it is now refused. Test manual: GOV-283.
+  Tests: backend 16,701 → 16,818 (`tests/test_h450_schedule_words.py` 117); frontend 1,634 → 1,636 (`jobs.test.tsx`, `jobs-first-run.test.ts`).
+
+- 2026-09-26 H526 a spoken reply sounds like speech, not read-out markdown (partial → equivalent, #1207; headline 177 → 178/697).
+
+  Only Telegram voice notes and the gated speak tool cleaned their text; `/tts`, `/tts/stream`, the wake-word pipeline, the voice channel, the HUD's live voice and mobile read emoji, list bullets, table pipes, `<think>` blocks and `&`/`%`/`->` aloud. Now one normaliser (`agents/core/voice/speech_text.py`, twin `frontend/src/speech-text.ts`, both pinned by the same 47 cases) sits in front of every entry point, as Hermes' speech cleaning:
+  - **What goes.** Reasoning blocks (closed, unclosed, or a stray closing tag), fenced code (unclosed too), HTML, emoji (flags, keycaps, skin tones, ZWJ sequences), and the markers of bold, italic, strikethrough, inline code, headings, lists, quotes and tables. A table is read as cells; a link as its words, a bare URL as "link", without eating its parenthesis or full stop. Fish `[emotion]` tags stay.
+  - **What is said.** `&`, `%`, `->`/`→`/`=>` and `°`/`°C`/`°F` in the reply's language (Romanian or English). Block lines end as sentences.
+  - **Where.** `TTSEngine.speak` (so the wake-word pipeline, the voice channel and voice notes) and `speak_stream`, normalised before sentences are split. `/tts` answers 204 `nothing_to_say` rather than synthesising nothing. The HUD normalises for its own browser voice and every streamed sentence, and a `SpeechStreamFilter` keeps a code or reasoning block whose markers are split across token deltas from being spoken. Mobile treats the 204 as silence.
+
+  126 mutants: 124 caught after nine cases were added; the other two were redundant code, removed. Test manual: CHN-186.
+  Tests: backend 16,587 → 16,701 (`tests/test_h526_speech_text.py` 114); frontend 1,567 → 1,634 (`speech-text.test.ts`, `voice-speech-text.test.tsx`); mobile 140 → 142 (`api/__tests__/tts.test.ts`).
+
+- 2026-09-26 H504 fail loudly when TLS trust is misconfigured, never quietly off (partial → equivalent, #1207; headline 176 → 177/697).
+
+  Plugin egress had a trust anchor; model egress bypassed it, nothing was checked at start, and a bad `SSL_CERT_FILE` surfaced as an unnamed `FileNotFoundError` on the first model call. Now (`agents/core/tls_trust.py`), as Hermes' TLS trust:
+  - **Boot validation.** Every CA variable that is set — `JARVIS_CA_BUNDLE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` (a file that loads and holds a certificate; a pinned self-signed server certificate counts), `SSL_CERT_DIR` (directories) — and certifi itself. A broken one stops the start (lifespan, beside the boot guards) with the variable, its value, what is wrong, a repair command for this shell and the `.env` file that set it.
+  - **Model egress on the anchor.** `llm_async_client` gives every model backend's client an explicit SSLContext of certifi plus the owner's root, so `JARVIS_CA_BUNDLE` reaches Anthropic, Gemini, OpenRouter, OpenAI Responses, xAI, LM Studio, Ollama and the VLM, and httpx never reads `SSL_CERT_FILE` on its own.
+  - **Per-target off switch.** `JARVIS_TLS_INSECURE_TARGETS` (provider ids or exact hosts) is the only way verification is off: each such client logs a WARNING naming its URL, the start logs the list, the hardened profile ignores it (ERROR), and a bad CA path never means off.
+
+  Proved end to end against a real HTTPS server only the test's CA signed. 48 mutants: 46 caught after three cases were added; one was redundant code (removed), one is equivalent. Test manual: SEC-215.
+  Tests: backend 16,542 → 16,587 (`tests/test_h504_tls_trust.py` 45).
+
+- 2026-09-26 H501 warn about a dangerous host posture before it becomes an incident (partial → equivalent, #1207; headline 175 → 176/697).
+
+  The bind guard already refused an unauthenticated network bind; nothing looked at the host. Now (`agents/core/host_posture.py`), as Hermes' posture warnings — three read-only checks that never block, each `ok`/`warn`/`unknown` with the fix:
+  - **Root.** The hub runs as root (euid 0) on any host, or elevated on Windows.
+  - **sshd passwords.** `/etc/ssh/sshd_config` read the way sshd reads it: `Include`s in place and in lexical order, the first value wins (so a drop-in included at the top overrides the main file), `Match` blocks conditional, an absent `PasswordAuthentication` the default `yes`.
+  - **Container storage.** In a container, the data root is not on a volume or bind mount (`/proc/self/mountinfo`): memory, vault and keys would go with it.
+  - **Where it shows.** One log line per warning at start; `GET /api/security/posture` gains `host`; the doctor ends with three advisory rows (`host_not_root`, `sshd_no_passwords`, `container_storage`), `skip` when a check cannot tell, never ok. The shipped Dockerfile has no `USER`, so a stock container now shows the root warning.
+
+  55 mutants: 53 caught after five cases were added; the other two were dead code, removed. Test manual: SEC-214.
+  Tests: backend 16,500 → 16,542 (`tests/test_h501_host_posture.py` 42).
+
+- 2026-09-26 H222 the tray says when Nerva is listening, outside its windows (missing → equivalent, #1207; headline 174 → 175/697).
+
+  Mic state lived only inside the HUD page and was a static mute flag; the voice pipeline, the wake-word detector and the satellites published nothing. Now (`agents/core/voice/listening.py`, `frontend/src/listening.ts`, `desktop/src-tauri/src/indicator.rs`), as Hermes' listening indicator:
+  - **State.** One registry per process: `hub` is `armed` while the wake-word detector holds the mic, then `listening` → `thinking` → `speaking` through a capture and back (a `finally`, so no early end or failure leaves it lit); an authenticated Wyoming satellite's `detection`/`voice-started` marks `satellite:<id>` until it is answered or disconnects. The loudest state wins (an open mic first) and a stuck transient state expires after 120 s. Get / set / subscribe in process only.
+  - **Read-only surfaces.** `GET /api/voice/listening` and `/stream` (user-guarded, GET-only: nothing can set it over HTTP).
+  - **Outside the window.** In the desktop app the HUD follows the stream with its own token (polling as fallback), adds its own mic, and tells the shell (`desktop_listening`, local HUD windows only); the tray shows `● listening` / `○ wake word` in the menu bar (macOS; next to the icon on Linux) and names the state in its tooltip (macOS, Windows). No control on it can open or close a mic.
+
+  65 mutants: 64 caught after five cases were added; the other was a redundant check, removed. Test manual: CHN-185, PGE-250.
+  Tests: backend 16,456 → 16,500 (`tests/test_h222_listening.py` 44), frontend 1,556 → 1,567 (`src/test/listening.test.tsx` 8, `src/test/desktop-listening.test.ts` 3).
+
+- 2026-09-26 H182 keep the machine awake while a turn runs, know when it is on battery (missing → equivalent, #1207; headline 173 → 174/697).
+
+  Nerva had no power assertion, no battery reading, no resume events and no battery-aware throttling, and the desktop webview was throttled in the background. Now (`agents/core/power.py`, `agents/core/routers/power.py`, `frontend/src/power-chip.tsx`, `desktop/src-tauri/src/throttling.rs`), as Hermes' keep-awake and power awareness:
+  - **Keep awake (off by default).** `JARVIS_KEEP_AWAKE=1` makes every turn (`handle_input`, `handle_input_stream`, `process`) hold one shared power assertion: `caffeinate -i -w <pid>`, `systemd-inhibit … tail --pid=<pid>` (both end with the hub, even a killed one) or `SetThreadExecutionState`. It is released on the reply, an error, a cancel, at shutdown and at exit. It is gated as `host.control` once per process (system-control permission, the host-control contract's `power.keep_awake`, an Action Kernel GRANT, a durable audit row); a refusal is kept until the next start and named on `GET /api/power`.
+  - **Power state.** Battery (`psutil`), and a resume from sleep (the wall clock running ahead of the monotonic one), read every minute; `GET /api/power` answers it and `GET /api/power/stream` pushes each change.
+  - **Battery-aware throttling.** Below `system.battery_defer_percent` (50 by default) on battery, memory maintenance, the tech scout, the learning loop, prompt evolution and the WorldView KG sync skip their run (`deferred_on_battery`).
+  - **HUD and desktop.** A `PowerChip` in the shell says on battery, woke from sleep, and what keep-awake is doing. The desktop shell turns webview background throttling off, so a background HUD keeps reading a streaming reply (`NERVA_DESKTOP_BACKGROUND_THROTTLING` asks for it back).
+
+  100 mutants: 98 caught after five cases were added; the other two were redundant checks, removed. Test manual: ENV-177, ENV-178, PGE-249.
+  Tests: backend 16,380 → 16,456 (`tests/test_h182_power.py` 76), frontend 1,550 → 1,556 (`src/test/power-chip.test.tsx` 6).
+
+- 2026-09-26 H689 one durable install identity, one hub per data root, isolated profiles (missing → equivalent, #1207; headline 172 → 173/697).
+
+  The only install-level id was an analytics value that a broken record re-minted; nothing named the install, a second hub could run on the same root, and `JARVIS_PROFILE` was forwarded but never read. Now (`agents/core/install_identity.py`, `agents/core/paths.py`, `serve.py`), as Hermes' install identity and profiles:
+  - **The id.** One 32-hex id in `<data root>/install_id`. It is minted once under an in-process lock and a cross-process file lock, written atomically (fsync of the file and the folder) and read back. When it cannot be read or kept, the answer is `None`, never a new id, and a file holding anything else is left as it is.
+  - **Consumers.** The activation clock carries the id and no longer re-mints over an unreadable record. Node grants are issued as `node:<id>@<install>`. Channel deeplinks and satellite pairings carry the install id, and another install's is refused (`other_install`).
+  - **One hub per root.** `serve.py` holds `<data root>/hub.lock` for the life of the process; a second hub on the same root stops with the holder's pid.
+  - **Profiles.** `JARVIS_PROFILE=<name>` puts everything under `<data root>/profiles/<name>`: settings, memory, credentials (the secrets store resolves under the root the process starts with), install id and lock. A bad name stops the start. It is read from the process environment only (`env_provenance`).
+
+  32 mutants: 30 caught; the other two were a redundant check (removed) and an unpinned refusal (now pinned). Test manual: ENV-175, ENV-176.
+  Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43; `test_first_run_first_action.py` now pins the no-re-mint rule).
+
+- 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697).
+
+  Sessions could only be listed and resumed, and the only deletion was the install-wide forget. Now (`agents/core/session_archive.py`, `agents/core/checkpoint.py`, `agents/core/routers/sessions.py`), as Hermes' Archived Chats:
+  - **Archive.** `POST /sessions/{id}/archive` and `/unarchive` stamp or clear `archived_at` in the session's metadata; nothing is deleted. `GET /sessions` leaves archived chats out and `?archived=true` lists only them. Resuming an archived chat brings it back.
+  - **Auto-archive.** `memory.auto_archive_days` (0 = off, at most 3,650) archives chats idle longer than that, daily at 03:40; the chat in use is never touched.
+  - **Delete for good.** `DELETE /sessions/{id}?confirm=DELETE` is admin-only and refuses the chat in use (409). It first writes every trace of the chat (row, checkpoints, clock, transcript snapshot and log, checklist, compaction archive) to `<data home>/backups/sessions/<id>-<stamp>.json`, created 0600, fsynced and read back. Only then does it delete them. If the backup does not land, nothing is deleted.
+  - **HUD.** The Sessions panel has chats and archived tabs, an archive button, and in the archived tab unarchive and a two-step “delete permanently” that names the backup.
+  - **Default project directory.** `llm.project_dir` is the folder, inside the file roots, that H594 reads a project's convention files from.
+
+  41 mutants: 38 caught, 3 equivalent (two now removed as redundant). Test manual: SHL-221, SHL-222.
+  Tests: backend 16,298 → 16,337 (`tests/test_h218_archived_chats.py` 39); vitest 1,543 → 1,550 (`sessions-archive.test.tsx` 7).
+
+- 2026-09-26 H309 the agent points at the HUD: a tip on one element, or a short tour (missing → equivalent, #1207; headline 170 → 171/697).
+
+  Only the Agent Canvas existed; nothing could point at the page. Now (`agents/core/pointer_tool.py`, `agents/core/canvas.py`, `frontend/src/pointer.tsx`), as Hermes' pointing:
+  - **Canvas types.** A `tip` is a target and a one-line caption. A `tour` is a title and at most 8 such steps. The canvas sanitises both (whitespace collapsed, 160-character captions).
+  - **Named places only.** A target is one of 19 anchors (the rail's modes, the message box, the Decision Inbox panel, the Console button), held in `canvas.POINTER_ANCHORS` and mirrored in the HUD with a parity test. A tip can never ring an approve or reject button.
+  - **The tool.** `canvas_point` is ungated and offered to the owner's turns; it is not a guest tool. A tip from an untrusted turn, or from a turn that is not the owner's, is marked `untrusted`, and the HUD says so.
+  - **The overlay.** It polls `GET /api/canvas` and takes the newest tip or tour of the last ten minutes that this page has not closed. It rings the element with that `data-anchor`, draws the caption with an arrow (flipped above near the bottom), and pages a tour with Back/Next/Done. A target that is not on screen is named instead. Console → Artifacts lists tips and tours as text.
+
+  37 mutants: all caught. Test manual: SHL-219, SHL-220.
+  Tests: backend 16,260 → 16,298 (`tests/test_h309_pointer.py` 38); vitest 1,532 → 1,543 (`pointer.test.tsx` 10, `artifacts.test.tsx` +1).
+
+- 2026-09-26 H209 every HUD shortcut in one registry, listed and rebindable (missing → equivalent, #1207; headline 169 → 170/697).
+
+  The HUD's keys were literal maps in `app.tsx`, `world_app.tsx` and the cinema overlay. Now (`frontend/src/shortcuts.ts`, `shortcuts-panel.tsx`), as Hermes' keyboard shortcuts:
+  - **One registry.** Every shortcut is an action (id, category, label, default chord, scope): the ten modes, World, the Console, Ambient, Cinema and its three stages, focus the message box (`/`, new), the palette and the panel. All three places dispatch through `matchAction`, so a key is spelled only in the registry.
+  - **The panel.** Ctrl/⌘+/ opens Keyboard Shortcuts: Navigation, View, Composer and Session, with search. Click a chord and press the new one (“Press a key…”, Esc cancels, a lone modifier waits). ↺ resets one binding and “Reset all” resets them all. A shared chord says “Also bound to …”. Rebindings are this viewer's, kept in `localStorage`.
+  - **No key decides.** An action whose id, category or label names an approval or a decision is refused when the registry is built; approving, rejecting and deciding stay a click on the card.
+
+  38 mutants: 36 caught; the other two were equivalent (a redundant array guard, now removed, and a hook dependency that closing the panel already refreshes). Test manual: SHL-217, SHL-218.
+  Tests: vitest 1,512 → 1,532 (`shortcuts.test.tsx` 16, `app-routing.test.tsx` +3, `cinema.test.tsx` +1).
+
+- 2026-09-26 H594 the project's convention files reach the agent (missing → equivalent, #1207; headline 168 → 169/697).
+
+  Nothing read a project's `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or `.cursor/rules/*.mdc`; they only counted as instruction files for writes. Now (`agents/core/project_context.py`), as Hermes' context files and subdirectory hints:
+  - **Walked.** From the git root (never above the file root) down to the working directory (the first `JARVIS_FILE_ROOTS` root), each directory's files in that order; a directory `file_read`, `file_list`, `file_search` or a local `terminal_run` touches is noted for the session, its chain is read on every later turn, and the tool result carries the files the turn had not seen. A project `SOUL.md`, `HEARTBEAT.md` or `IDENTITY.md` is never read, not even through a link.
+  - **Guarded.** Resolved through FileScope (outside the roots, symlink escape, secret paths refused); regular files only (a FIFO is never opened); 20 KB a file, 40 KB and 12 files a turn, each cut named; binaries skipped.
+  - **Scanned and tainted.** `detect_injection_normalized` per file; a flagged file is a `[BLOCKED …]` line with none of its text. The block is caveated (not the owner's instructions, no permission) and sits after the core-memory block; a turn given any file is tainted, so an action planned from it escalates GRANT → QUEUE.
+  - **Off switch.** `llm.project_context_files` (on by default) and safe mode (new layer `project_context`, named on the HUD banner). File work runs off the event loop.
+
+  51 mutants: all caught (the redundant checks the first pass found were removed). Test manual: GOV-281, GOV-282.
+  Tests: backend 16,213 → 16,260 (`tests/test_h594_project_context.py` 47).
+
+- 2026-09-26 H373 see how much provider quota is left, and never hammer a provider that said stop (missing → equivalent, #1207; headline 167 → 168/697).
+
+  A provider's limit was learned only from a failed request, in one process's memory. Now (`agents/core/llm/quota.py`), as Hermes' rate-limit tracker and shared 429 guard:
+  - **Captured.** A response hook on every cloud backend's client (`llm_async_client`) reads `x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` and keeps the latest numbers per backend and key (a key only as a hash fingerprint) in a SQLite file every process shares; local models are not tracked.
+  - **Shared 429.** A 429 holds that backend and key in every process until its retry-after (else 30 s, never over 900 s); the request hook refuses before sending, so a held key is never retried against the provider and the refused call is not egress. Another key in the pool still goes out.
+  - **Shown.** `GET /api/llm/quota` (admin), the HUD Console → Admin → Provider Quota panel (bars, numbers, reset times, holds) and `/usage` (admin).
+
+  50 mutants: all caught. Test manual: GOV-279, GOV-280.
+  Tests: backend 16,170 → 16,213 (`tests/test_h373_provider_quota.py` 43); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`).
+
+- 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
+
+  The owner pasted file contents by hand; nothing expanded @-references. Now (`agents/core/context_refs.py`), as Hermes' context references:
+  - **Expanded.** `@file:path` and `@file:path#L10-40` (also `#L7`, `#L2-L3`, a quoted path) in what the owner sends on `/chat` and `/chat/stream` (the HUD and `nerva chat`; never a channel message) are attached under `--- Attached Context ---`, fenced as file content, not instructions.
+  - **Guarded.** Resolved through the file tools' FileScope (outside the roots, traversal, symlink escape and secret paths refused); 8 references, 64 KB each, 128 KB in all, counted in bytes; binary files skipped; every problem is a ⚠ line, never a failed message.
+  - **Tainted.** A turn that attached anything raises its origin to untrusted recall, so an action planned from attached text escalates GRANT → QUEUE.
+  - **Completion.** `GET /api/context-refs?prefix=` lists in-scope files and folders (no secrets); the HUD composer shows them while an `@file:` is typed, Tab takes one.
+
+  53 mutants: 49 caught, 4 equivalent. Test manual: GOV-277, GOV-278.
+  Tests: backend 16,126 → 16,170 (`tests/test_h579_context_refs.py` 44); vitest 1,507 → 1,510 (`context-refs.test.tsx`).
+
+- 2026-09-26 H117 a burst of messages is one turn (missing → equivalent, #1207; headline 165 → 166/697).
+
+  A Telegram-split long message, an album (one update per photo) or a photo followed by “what is this?” ran one turn per piece. Now (`agents/core/channels/batching.py`), as Hermes' text/photo/album batching:
+  - **The window.** Pieces from the same sender in the same conversation within 0.35 s of each other are merged in order into one turn, never waiting past 1.0 s from the first piece (32 pieces flush at once). `JARVIS_INBOUND_BATCH_MS` / `JARVIS_INBOUND_BATCH_MAX_MS` set it for every channel; 0 turns it off.
+  - **Where.** Telegram's poll loop (polling without the long wait while pieces are held; a button tap or observed message flushes first; stopping flushes); Discord and Slack via a timer-per-key batcher that delivers in order (Slack keyed by thread too; a stopping channel discards, as Slack already does with undelivered events).
+  - **Scanned whole.** The gateway's injection scan runs on the merged text, now with whitespace collapsed, so a payload split across pieces or lines is caught.
+
+  61 mutants: 59 caught, 2 equivalent. Test manual: GOV-275, GOV-276.
+  Tests: backend 16,079 → 16,126 (`tests/test_h117_message_batching.py` 47); vitest 1,507.
+
+- 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697).
+
+  The compressor summarised the middle of a conversation and the evicted turns left the prompt with nothing checking they had landed anywhere (the store keeps only the last `memory.max_turns`). Now (`agents/core/memory/precompress.py`), as Hermes' `on_pre_compress`:
+  - **The hook.** `ContextCompressor.compress` awaits the checkpoint with exactly the turns the summary replaces and the whole transcript, before building the summary. Versioned contract (API v2; new keyword arguments passed only when a provider's signature takes them; synchronous providers run off the loop).
+  - **The shipped provider.** `TranscriptArchive` appends each evicted turn once (hash of speaker, time, content) to a per-session JSONL under the data folder, fsynced before it returns; images as `[image]`.
+  - **Fail closed.** With `memory.compression_checkpoint_required` (off by default), a failing checkpoint or none landing keeps the transcript exactly as it was (no summary, no lineage row), and a turn that cannot fit uncompressed is refused. Every checkpoint and abort is in the signed intent log (`memory.precompress_checkpoint` / `memory.precompress_abort`), without turn text.
+
+  51 mutants: 49 caught, 2 equivalent. Test manual: GOV-273, GOV-274.
+  Tests: backend 16,035 → 16,079 (`tests/test_h427_precompress_checkpoint.py` 44); vitest 1,507.
+
+- 2026-09-26 H659 a retried external request returns the original run instead of starting a second one (missing → equivalent, #1207; headline 163 → 164/697).
+
+  A sender that timed out and retried got a second approval card (`/api/actions/request`), a second turn or owner message (`/api/webhooks/{id}`), or a second A2A inbox row. Now (`agents/core/idempotency.py`), as in Hermes:
+  - **The key.** `Idempotency-Key`, 1–255 visible ASCII; anything else is 400 `invalid_idempotency_key`, checked before the body is read. No header: nothing changes.
+  - **The reservation.** A durable SQLite row `UNIQUE(scope, key)` under `BEGIN IMMEDIATE` (two workers cannot both win; it survives a restart), scoped to the authenticated caller (`actions`, `webhook:<id>`, `a2a:<peer>`) and taken after authentication and before anything is queued or run. It stores only a fingerprint and the public reference (action id, receipt, `ok`/`target`/`skipped`), never a body or reply.
+  - **The answers.** A retry → the original reference with `Idempotent-Replayed: true`; another body under the key → 409 `idempotency_key_reused`; still running → 409 `idempotency_in_progress` + `Retry-After`; a failed first attempt (exception or 5xx) releases the key; an abandoned one is taken over after 10 min; rows expire after 24 h; an unwritable store refuses a keyed request (503) rather than drop the guarantee. A forged A2A retry never reads the peer's receipt.
+
+  57 mutants: all caught. Test manual: GOV-271, GOV-272.
+  Tests: backend 15,965 → 16,035 (`tests/test_h659_idempotency.py` 70); vitest 1,507.
+
+- 2026-09-26 H413 a conversation is named from its first message, then by the local model (missing → equivalent, #1207; headline 162 → 163/697).
+
+  Sessions were listed by id: the HUD card, `/sessions` and the mobile resume list showed `3f9c…` for every conversation, because nothing wrote a title. Now (`agents/core/session_titles.py`), in two stages as in Hermes:
+  - **At once.** The first user message's first words, cleaned (no control or invisible characters, one line) and cut at a word boundary to 60 characters, are the title the moment the turn is stored. A slash command is not a title; the next real message is.
+  - **Then once, after the reply.** The strict-local model (never a cloud backend; temperature 0, 24 tokens, `/no_think` for Qwen3, refused under a job pin) is asked to *name* the conversation, the message handed over as a JSON string it must not follow. A one-line answer of 1–10 words, with no URL and nothing instruction- or refusal-shaped, replaces the first-words title. It is started only when the turn's reply is final, so it never competes with the answer.
+  - **Where it lives.** `metadata.title` / `title_source` on the session row, written by compare-and-set (the model's name replaces only a first-words title, never a newer or unknown-source one). It shows on `GET /sessions`, `/sessions`, the HUD SESSIONS card (title + short id) and the mobile resume list. Switch: `memory.session_titles`.
+
+  67 mutants: 65 caught, 2 equivalent. Test manual: GOV-269, GOV-270.
+  Tests: backend 15,879 → 15,965 (`tests/test_h413_session_titles.py` 86); vitest 1,506 → 1,507 (`sessions-title.test.tsx`).
+
+- 2026-09-26 H507 the agent is warned when code it writes contains a known-dangerous pattern (missing → equivalent, #1207; headline 161 → 162/697).
+
+  Nothing looked at what the model wrote: `file_write` returned ok/path/bytes, the approval card only named instruction files, and a skill install checked contracts and signatures, never code. Now (`agents/core/code_guidance.py`), warn-only:
+  - **The table.** 25 rules by file type plus a GitHub Actions check: pickle/dill/marshal, `yaml.load` without SafeLoader, `torch.load` without `weights_only`, `os.system`, `shell=True`, `eval`/`exec`/`new Function`, `child_process.exec`, a Go shell `exec.Command`, SQL f-strings, `mktemp`, innerHTML/`document.write`/`dangerouslySetInnerHTML`, ECB, `createCipher`, TLS verification off (Python/Node/Go), XXE flags, a remote `<script>` without SRI, and `${{ github.event.* }}` inside a `run:` step. Guards keep `model.eval()`, SafeLoader, `regex.exec`, comments and non-code files quiet.
+  - **Where it shows.** The `file_write` approval card (`code_warnings`, count, a title notice — never a class, so H506's binding is untouched), the write result the model reads (“warnings, not refusals”), and the result of a marketplace install (`code_warnings` on the route) or a generated skill. Nothing is ever blocked; a failing scan never fails a write. Switch: `security.code_guidance`.
+
+  46 mutants: 44 caught, 2 equivalent. Test manual: GOV-267, GOV-268.
+  Tests: backend 15,796 → 15,879 (`tests/test_h507_code_guidance.py` 83); vitest 1,506.
+
+- 2026-09-26 H380 a configured cloud key is proven to work before a turn finds out (missing → equivalent, #1207; headline 160 → 161/697).
+
+  "Configured" meant a key variable was non-empty, and a cloud route was "ready" because the router had a key — a wrong or revoked key was discovered by the first failed turn. Now (`agents/core/llm/provider_probe.py`):
+  - **The probe.** One authenticated model-list GET per cloud provider with the key the hub would use (pool first), through `llm_async_client` (egress-ledgered; the host-protocol mandate applies). Verdicts: ok, no_listing, auth_failed, forbidden, rate_limited, error, unreachable, refused, not_configured, not_cloud. Never the key or the body; cached 300 s per key, a forced re-check throttled for 30 s.
+  - **Where.** `POST /api/admin/llm/providers/probe` (admin; one or all, `force`), the Console's Provider Check panel (probes only when asked), and the command-center model block: a selected cloud route is runnable only when its provider accepts the route's key, otherwise `cloud_<verdict>` — which `nerva doctor` (`runtime_resolves`) and `nerva status` now report.
+
+  38 mutants, all caught. Test manual: ENV-173, ENV-174.
+  Tests: backend 15,766 → 15,796 (`tests/test_h380_provider_probe.py` 30); vitest 1,503 → 1,506 (`provider-check-panel.test.tsx` 3).
+
+- 2026-09-26 H328 a skill is shown where it makes sense: the host OS, the environment, the channel, and the tools this turn is offered (missing → equivalent, #1207; headline 159 → 160/697).
+
+  H327 kept `platforms`, `environments` and `metadata.hermes.*`, but nothing read them. Now (`agents/core/skills/visibility.py`), Hermes' four gates, split the same way:
+  - **Hard — `platforms`.** A skill for another OS is `unsupported` here: left out of every offer, `skill_view` answers `skill_unsupported` (`readiness_status: unsupported`), its command is refused; `GET /skills` and the Skill Switches panel say so. Termux counts as linux + android.
+  - **Soft — hidden from the catalog and `skills_list` only; named explicitly, it still works.** `environments` (docker/container, s6, `kanban` = a turn with no human, plus `JARVIS_SKILL_ENVIRONMENTS`); `session_platforms` per channel (`cli` = HUD/voice; an unbound turn is not gated); `requires_tools/toolsets` and `fallback_for_tools/toolsets` against the tools this turn is offered (`AgentToolRuntime.offered_names`, bound around the catalog; the tool loop's own offer inside it; not applied when unknown).
+  - Every hide is logged once per skill and gate. The unbound principal's `unknown` channel now counts as no channel (also for H329's switches).
+
+  42 mutants, all caught. Test manual: GOV-265, GOV-266.
+  Tests: backend 15,733 → 15,766 (`tests/test_h328_skill_visibility.py` 33); vitest 1,503 (panel case extended).
+
+- 2026-09-25 H329 a skill can be switched off without uninstalling it, everywhere or on one channel (missing → equivalent, #1207; headline 158 → 159/697).
+
+  An owner who distrusted a skill could only uninstall it, losing its usage history, signature and approval. Now (`agents/core/skills/switches.py`):
+  - **The switches.** `skills.disabled` (everywhere) and `skills.channel_disabled` (`{channel: [names]}`), read live, so a switch applies to the next turn with no restart. Entries are skill names; the route and CLI resolve a folder to its name.
+  - **Off, not gone.** A switched-off skill stays installed, signed, approved and counted; the shared `catalog_gate` leaves it out of the model's catalog, `skills_list` and `skill_view`, and a command naming it is refused with the reason (no usage counted). The security monitor is essential and has no off switch.
+  - **Governed.** `POST /api/skills/switch` (admin): one skill or a whole `metadata.hermes.category`, on/off, everywhere or per channel, one settings write, every change in the intent log. Switching back on is refused (503) when it cannot be recorded, and an unrecorded one is put back by compare-and-set.
+  - **Surfaces.** `GET /skills` carries `disabled` / `disabled_channels` / `essential` / `category`; `nerva skills list | off | on [--channel] [--category]`; the Console's Skill Switches panel (Trust). Distinct from the H285 load set, which keeps a skill from loading at all.
+
+  58 mutants, all caught. Test manual: GOV-263, GOV-264.
+  Tests: backend 15,694 → 15,733 (`tests/test_h329_skill_switches.py` 39); vitest 1,499 → 1,503 (`skill-switches-panel.test.tsx` 4).
+
+- 2026-09-25 H490 safe mode takes the rest of Hermes' reduced posture: no plugins, no outbound hooks, no memory in the turn, no loosened settings (missing → equivalent, #1207; headline 157 → 158/697).
+
+  H275's safe mode left out the owner's customizations but still built every plugin, started the outbound channels, injected memory and served every loosened setting. Now, with `JARVIS_SAFE_MODE=1` (`agents/core/safe_mode.py`, four new layers):
+  - **Plugins.** None is built (`Orchestrator._build_plugins`; the `.env` still loads), so no integration is reached and no WorldView / Signal Layer data reaches a prompt; the gate switches every plugin off and the toggle answers 409 `safe_mode` without rewriting the saved choice.
+  - **Outbound webhooks.** ntfy and `JARVIS_WEBHOOK_CHANNELS` are not started, `send_to_target` refuses, and the inbound receiver answers 503 before reading its switch.
+  - **Memory.** No pre-turn recall, no core block, and the H314 `memory` tool reads as switched off. The conversation's own history stays.
+  - **Settings.** Each setting that loosens an approval or widens a budget (`FORCED_SETTINGS`: actuation and tool-loop switches, earned autonomy, ambient, acquisition, the scans, the autonomy caps, sandbox limits, model-pull cap, guest tools, cloud fallback, product posture) reads the **stricter** of the owner's value and the shipped default, so an owner who tightened one keeps it; the three unseeded loosening keys are dropped. Applied to the runtime settings (around the product posture) and to the orchestrator's boot reads.
+  - **Said.** `/api/security/posture` gains `safe_mode`; the boot log and the HUD banner name the new layers. Nerva has no owner shell hooks, so there are none to skip. No gate reads the flag (the H275 reader pin now lists 16 modules).
+
+  52 mutants, all caught. Test manual: ENV-171, ENV-172.
+  Tests: backend 15,638 → 15,694 (`tests/test_h490_safe_mode_posture.py` 56); vitest 1,498 → 1,499 (`safe-mode-banner.test.tsx` +1).
+
+- 2026-09-25 H314 the model writes its own long-term memory, visibly and undoably (partial → equivalent, #1207; headline 156 → 157/697).
+
+  The model could reach the LivingMemory core and user rings only through the post-turn review (off by default, unaudited). Now a `memory` tool (`agents/core/memory_tool.py`):
+  - **Operations.** add / replace / remove on `memory` (agent notes) or `user` (profile), checked in full on a working copy, then committed by a new `CoreMemory.compare_and_set`, so a forget in between wins and nothing forgotten comes back. A full ring refuses instead of dropping the oldest fact.
+  - **Guarded.** One line of ≤300 characters, no control or invisible characters, the normalised injection scan. Offered to operator/owner only (`OWNER_OPERATOR_TOOLS`, not even via `llm.guest_tools`), and refused in a turn that read untrusted content.
+  - **Recorded and undoable.** Each write is an intent-log `memory.write` record (ref, targets, hashes; never the text, since the intent log survives "forget me"), with the before-image in a purgeable undo store. `POST /api/memory/core/undo` restores it while nothing changed since; `GET /api/memory/core` reads the rings, and the Console's Long-Term Memory panel shows them with an undo per write. A `memory_updated` trail row carries targets and actions only.
+
+  33 mutants: 32 caught, 1 equivalent. Test manual: MEM-204, MEM-205.
+  Tests: backend 15,581 → 15638 (`tests/test_h314_memory_tool.py` 57); vitest 1,495 → 1,498 (`long-term-memory-panel.test.tsx` 3).
+
+- 2026-09-25 H285 the owner declares which skills, plugins and MCP servers load, and a plugin toggle survives a restart (partial → equivalent, #1207; headline 155 → 156/697).
+
+  A plugin toggle flipped an in-memory flag a restart forgot, an MCP server could only be disconnected or deleted, and a skill could not be switched off. Now (`agents/core/load_set.py`):
+  - **The lists.** Six declared settings rows, `loadset.{skills,plugins,mcp}_{disabled,only}`, comma lists editable from Settings and `nerva config set`. The settings page's `plugins.<id>` switches, which nothing read, now count.
+  - **Read at boot.** `SkillLoader.discover` does not register a switched-off skill (by name or folder); `PermissionGate` switches off the named plugins, and each gate now holds its own manifest copies; the MCP load registers only permitted saved servers.
+  - **Kept.** The plugin toggle writes the lists (`persisted` in its answer). A switched-off MCP server stays in the saved configuration: every save writes it back, and adding or removing it answers 409 `switched_off`.
+  - **Narrowing only.** Nothing is installed, approved or registered; a name that matches nothing is reported as unknown. `/skills`, `/plugins` and `/api/admin/mcp` return `load_set` (lists, switched off, unknown).
+
+  33 mutants, all caught. Test manual: ENV-169, ENV-170.
+  Tests: backend 15,545 → 15,579 (`tests/test_h285_load_set.py` 34).
+
+- 2026-09-25 H275 safe mode: the hub boots without the owner's customizations, and relaxes nothing (missing → equivalent, #1207; headline 154 → 155/697).
+
+  There was no way to start a hub broken by something the owner added. Now `JARVIS_SAFE_MODE=1`, or `python serve.py --safe-mode`, leaves out seven layers (`agents/core/safe_mode.py`):
+  - **Skills.** Only the shipped skills load: the data-home folder is not opened, and a generated, imported, edited or pending-review skill in the bundled tree is not loaded.
+  - **MCP.** The saved servers are not registered and their saved configuration is not touched: the save never runs from the empty manager, and add/remove answer 409 `safe_mode`.
+  - **Acquisition and extensions.** The runtime reports itself disabled, so nothing promoted is re-registered and no extension can be activated.
+  - **Plugin grants.** `JARVIS_PLUGIN_GRANTS` is ignored; it only ever widens access.
+  - **Overlays.** `SOUL.local.md`, `IDENTITY.local.md` and `HEARTBEAT.local.md` (data home or repository) give way to the shipped files, at construction and at the H672 boundary.
+  - **Owner jobs.** They stay saved and are not scheduled.
+  - **Said everywhere.** The boot log, `/healthz`, `/readyz` (still ready), `/status`, `/api/status`, and a red SAFE MODE strip in the HUD naming what was left out. A test pins the exact modules that read the flag; no gate does.
+
+  28 mutants, all caught. 74 rows re-stamped (the serve.py rows re-derived from HEAD after a double shift). The binding inventory's pinned `web.py`/`scheduler_service.py` lines moved with the files. Test manual: ENV-167, ENV-168.
+  Tests: backend 15,516 → 15,545 (`tests/test_h275_safe_mode.py` 29); vitest 1,491 → 1,495 (`safe-mode-banner.test.tsx` 3, `loaders.test.ts` +1).
+
+- 2026-09-25 H296 a tool tells the model what this install can do, and a running session sees it move (missing → equivalent, #1207; headline 153 → 154/697).
+
+  Every ToolRPC tool advertised one static schema: `terminal_run` took any `target` string, `desktop_run` any step `action`, `speak` any device or room, and the model learned the real names from a refusal. Now:
+  - **The hook** (`agents/core/tool_rpc.py`). `register_tool(schema_overrides=...)` takes a zero-argument hook, asked every time the tool list is built and merged over the static schema by `advertised_schema`. It may change the `description`, per-property keys of properties the schema already declares (it narrows an argument, never invents one) and `required`. A hook that raises or answers something malformed is logged once per tool and the static schema is advertised. The capability-registry projection gets the same shape, since its records are built from `tools()`.
+  - **The session boundary** (`agents/core/session_refresh.py`). At the H672 fold, a still-offered tool whose description or schema moved is `reshaped`: the specs are rebuilt, `tool_offer_refreshed` names it and the boundary note says "tool schemas moved".
+  - **Three tools use it.** `terminal_run` names the registered targets, or says that terminal targets are switched off or that none is registered. `desktop_run` names the step actions its validator accepts. `speak` names the announce-capable speakers, their rooms and `presence:auto`, or says that no speaker can announce or the Media Director is unavailable. The handlers still check every call.
+
+  35 mutants: 33 caught, 2 equivalent. 45 rows re-stamped (H515 for the binding inventory, whose pinned coordinator lines moved); H456's bare `:455-471` and `:778-867` recomputed by hand. Test manual: GOV-261, GOV-262.
+  Tests: backend 15,465 → 15,516 (`tests/test_h296_schema_overrides.py` 51).
+
+- 2026-09-25 H283 systemd knows when the hub is ready and when it hangs, and the operator can describe the machine (partial → equivalent, #1207; headline 152 → 153/697).
+
+  - **sd_notify** (`agents/core/sd_notify.py`). The lifespan sends `READY=1` once `/readyz` would answer 200, and `STOPPING=1` on teardown. Between the two, an event-loop task sends `WATCHDOG=1` every half `WATCHDOG_USEC` (only for this PID), so a hung loop stops the pings and systemd restarts the hub. It is a no-op without `NOTIFY_SOCKET` and never raises.
+  - **The unit.** It is now `Type=notify`, `NotifyAccess=main`, `WatchdogSec=60`, `TimeoutStartSec=300`. The README describes the protocol instead of saying the hub does not emit it.
+  - **The environment hint** (`agents/core/environment_hint.py`). `JARVIS_ENVIRONMENT_HINT` is cleaned: a `\n` escape becomes a line break, control and bidi characters are removed, no line may be a heading, and it is capped at 2,000 characters. It goes into every agent's stable system prompt between the shared contract and the persona, under a heading that names it context, not instructions. It is byte-stable across turns, and with the variable unset the prompt is unchanged.
+
+  21 mutants, all caught. 41 rows re-stamped; H456's `:1249` and H510's web.py ranges recomputed by hand. Test manual: ENV-165, ENV-166.
+  Tests: backend 15,442 → 15465 (`tests/test_h283_host_notify_and_hint.py` 23).
+
+- 2026-09-25 H441 a free recap when you come back to a conversation (partial → equivalent, #1207; headline 151 → 152/697).
+
+  Resuming a session used to return its last 20 raw turns and nothing else. There was no `/recap`, and the HUD showed nothing after a resume. Now:
+  - **The recap.** `agents/core/memory/recap.py` renders the last exchanges (10 by default, at most 50), each turn one bounded line of plain text, with a reply's tools collapsed to `[3 tool calls: web_search, web_fetch]`. It never calls a model: Hermes' rule, since a generated recap costs a cache miss for no accuracy gain.
+  - **Tools on turns.** The orchestrator opens a per-turn collection (`memory/turn_tools.py`, a context variable, so concurrent sessions never mix). The agent's tool-event sink notes each finished call's tool, and the reply that closes the turn stores the names on `Turn.tools`. They are persisted and survive a reload or a resume.
+  - **Everywhere.** `POST /sessions/resume` returns `recap` beside the raw turns. `/recap [n]` answers in every channel from that chat's own session and leaves out its own line. The HUD Sessions panel (`frontend/src/panels/sessions.tsx`) shows the recap after a resume and names a refused one.
+  - **Tests:** three tests that pinned the tool-event sink's identity now check that it forwards every event to the trail.
+
+  28 mutants (24 Python, 4 HUD), all caught, three after their cases were added. 82 rows re-stamped; H427's publish() range and its `:327`, and the SessionsPanel citations of H218, H413 and H440 (moved to `panels/sessions.tsx`), fixed by hand. Test manual: CHT-118 (CHT-011 names the recap).
+  Tests: backend 15,426 → 15,442 (`tests/test_h441_session_recap.py` 16); vitest 1,488 → 1,491 (`sessions-recap.test.tsx` 3).
+
+- 2026-09-25 H350 a SKILL.md is checked at every write, and `nerva skills lint` advises the rest (missing → equivalent, #1207; headline 150 → 151/697).
+
+  A malformed SKILL.md used to fall through to the heading parser and register under its folder's name with an empty description. `agents/core/skills/validate.py` now checks both dialects the loader reads:
+  - **Frontmatter** (agentskills.io / Hermes): a closed fence, a YAML mapping, a folder-safe `name` of at most 64 characters, a `description` of at most 1,024, and a body.
+  - **Headings** (Nerva's code-skill format): `# Name` and a `> description`, and never a second of either, since the loader takes the last one. A body is advised, not required: the commands may live in `main.py`.
+  - **Every document**: at most 64 KiB (what `skill_view` serves), UTF-8, no NUL.
+  - **Every write path runs it** and names each problem with its field and line: the import (GitHub, manifest and local, dry runs included, before any backup or marker), marketplace publish and zip install (422 `invalid_skill_md`), `generate_skill`, `skill_propose` (`skill_propose_invalid`), the background review, and the apply of a proposal recorded before the check.
+  - **`nerva skills lint PATH…`** adds advice: unknown keys, a short or "when"-less description, name vs folder, a long body, no section, an open fence, trailing spaces, home-folder paths. It exits 1 on an error (or on advice with `--strict`), and `--json` is available.
+  - **Found on the way:** a generated skill's name had no length cap, so one long word in the task text made a folder name the filesystem refused. It is capped at 48 characters before its stamp.
+  - **Fixtures:** those that wrote a SKILL.md with no description, or proposed a whole file with no frontmatter, now write real documents.
+
+  46 mutants, 45 caught (five after cases were added), one equivalent. 74 rows re-stamped; H456's list and H477's `(:341)` recomputed by hand. Test manual: GOV-259, GOV-260.
+  Tests: backend 15,371 → 15,426 (`tests/test_h350_skill_validator.py` 54, `test_h318c` +1).
+
+- 2026-09-25 H157 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H157 found two majors, seven minors and twelve nits (the validation, the all-or-nothing write and the route order held):
+  - **A page the owner visited could import settings (MAJOR 1).** The admin guard trusts loopback on a default install, and the import parsed any body as JSON, so a cross-site `text/plain` post could turn the input scanner off. The import and the reset now take only `application/json` (415 otherwise, a type the browser must pre-check) and refuse a request the browser marks cross-site (403).
+  - **A password in a URL was exported (MAJOR 2).** `http://user:pw@host` counts as a credential now, in a list too, and the preview shows a credential-shaped value as `(hidden)`.
+  - **Minors.** NaN, Infinity and nesting too deep are refused (422), never stored (m1, m7). An `mcp.servers` entry needs a name, and the loader skips one without, so a bad import cannot stop the start (m2). The panel drops a reset category's unsaved edits (m3). 2000 and 2000.0 are the same number (m4). A reset keeps the category's secrets and names them (m5). Survivors pinned: a credential in a list, the change listeners, the 1 MB bound, which now also counts a chunked body as it streams in (m6).
+  - **Nits.** Only a JSON `true` makes a dry run, and a pasted `dry_run` is dropped from the apply; every reply is no-store; the reset names the settings the posture still forces, says how many settings go back and moves the focus to its confirmation; edits hidden by the search are counted; the text is held while the hub answers; the file picker is reachable from the keyboard; the download link is revoked after the download starts. Known limit: the preview and the apply are two requests, so a write between them is applied as the apply step finds it.
+  18 mutants, all caught but one equivalent (two after their cases were pinned). 63 rows re-stamped; H551's and H554's citations recomputed by hand.
+  Tests: backend 15,341 → 15,371 (`tests/test_h157b_settings_review.py` 30); vitest 1,484 → 1,488 (`settings-tools.test.tsx` 8 → 12).
+  CI red on 76789d58, fixed here: bandit's try/except/pass in the log reader now logs at debug; the reader takes `JARVIS_LOG_FILE` through `env_str`, so raw env reads are back to 117; and the tool-window test's 4,096-token window no longer held a real agent's prompt once the shared contract grew (H670 review 1), so it runs at 8,192, where the 30,000-character result still spills (a 1M window fails it). H145 and H298 re-stamped.
+
+- 2026-09-25 H145 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H145 found two majors, ten minors and nine nits (the route, the guard, the snapshots and the built bundle held):
+  - **A secret across the cut came back in part (MAJOR 1).** Every line is now redacted whole before anything is cut.
+  - **A long traceback lost its error line (MAJOR 2).** A record over the limit keeps its header and its newest lines behind a `[… N lines not shown]` marker.
+  - **Minors.** A rotation that is a link reached any file: only regular files are listed (lstat), opened without following a link or blocking (m1). The reader masks what `/api/admin/env` masks: secret-named variables' values and credential assignments (m2). A redactor that cannot load shows nothing (m3). C1 controls and bidi overrides are removed (m4). Records are filtered before they are redacted, and the panel skips a tick while a read is in flight (m5). The note reports what `setup_logging` actually did (m6). Plain lines beyond the window are records again, so `nerva logs -n` prints what it did (m7). No stale records after a refused filter (m8). PNB-170 is observable (m9). Survivors pinned (m10).
+  - **Nits.** ASCII rotation numbers only; `nerva logs` on a directory says so; the help text says records; the 400 is no-store; LIVE only while the hub writes its file; the file is read in one go and closed before parsing (a Windows rollover is not held up). Known limit: a header-shaped line inside a multi-line message shows as its own record.
+  26 mutants, all caught but one equivalent (two after their cases were added). 60 rows re-stamped; H456's range recomputed by hand.
+  Tests: backend 15,309 → 15,341 (`tests/test_h145b_log_review.py` 32); vitest 1,479 → 1,484 (`logs-panel.test.tsx` 9 → 14).
+
+- 2026-09-25 H667 third adversarial review round (stays equivalent, #1207; headline stays 150/697).
+
+  review-H667c found no major, three minors and eight nits (every review-2 finding fixed on the production paths; no live flock holder, owner root or outside file deleted):
+  - **A filesystem that refuses flock read as busy (m1).** ENOLCK, EOPNOTSUPP or EINVAL kept a dead owner's directory forever; only EWOULDBLOCK is busy now, and any other error reads the record.
+  - **Backups dropped any folder starting with the prefix (m2)**, anywhere in the data root (`workspace/nerva-sandbox-plans/`). Only a run directory exactly as mkdtemp names it, in the managed cache or directly under the root the owner chose, is left out.
+  - **Survivors (m3)** pinned: another kernel's record under a free flock, a reboot, a failed GetExitCodeProcess, a cache that does not exist yet, nested run files, an owner-root directory made again, a staged record on the error path, a root we do not own.
+  - **Nits.** A record from before a reboot or before the flag is free under a free flock (1); the record names its pid namespace and a pid is read only in its own (2); stale staged records are cleaned and an interrupt leaks nothing (3); an odd pid never stops the sweep and ages out (4); a first lock that failed is taken later (5); ctypes loaded lazily with declared types (6); only a junction or symlink reparse point is a link, not a cloud placeholder (7); the label and PNB-167 say JARVIS_EXEC_TEMP_DIR makes a root the owner keeps, and a pruned cache moves with the data root (8).
+  18 mutants, all caught but three equivalent (three after their cases were added). 34 rows re-stamped.
+  Tests: backend 15,279 → 15,309 (`tests/test_h667d_exec_cache_review.py` 30); vitest unchanged at 1,479.
+
+- 2026-09-25 H157 every configuration key from the UI: search, export, import, per-category reset (partial → equivalent, #1207; headline 149 → 150/697).
+
+  The backend was already strong (typed validation before a write, an audit row per write); the UI lacked a search across categories, a way to move a configuration to another box, and any reset smaller than the global reseed. Now:
+  - **Search** in SettingsPanel matches a setting's category.key or label across every category, with a match count.
+  - **Export** (`GET /api/admin/settings/export`) is a `nerva-settings/1` document that leaves out every secret (encrypted at rest, or named like a token, secret, password, client id or API key), `mcp.servers` (credentials by design) and any free-form value the secret scanner would mask, and names each left-out setting with its reason.
+  - **Import** (`POST /api/admin/settings/import`) runs every key through the same `validate_category` a single write uses and refuses an unknown key: one refusal writes nothing (422 with every reason). The write is one transaction, secrets encrypted, one audit row; `dry_run` shows each change (a secret as `(secret)`), and the panel applies only on a second step.
+  - **Reset one category** (`POST /api/admin/settings/{category}/reset`) puts it back to its declared values, audited; the panel asks first.
+  25 backend mutants, all caught (one after its case was added). Test manual: PNB-171, PNB-172; the API sweep lists the three routes. 57 rows re-stamped; H288's bare `settings_db.py` citations recomputed by hand.
+  Tests: backend 15,251 → 15,279 (`tests/test_settings_transfer.py` 28); vitest 1,471 → 1,479 (`settings-tools.test.tsx` 8).
+
+- 2026-09-25 H670 second adversarial review round (stays equivalent, #1207; headline stays 149/697).
+
+  review-H670b found no major, three minors and eight nits (the instruction-file class holds on the real approval path, in any casing and through a link):
+  - **The scope lifted honesty from drafted text (m-1).** Only the reply rules (size, depth, filler, restating, narration) are scoped to the agent's own replies; the contract now has a Replies and an Honesty section, and the honesty rules hold for everything an agent writes, drafted text included. `SOUL.md` mirrors it.
+  - **A shipped contract that stopped being UTF-8 emptied the contract at a boundary (m-2).** Any read failure (absent, vanished, not UTF-8, no permission, a reader that raises) keeps the contract in force, reported as failed-open at the boundary and warned once per episode.
+  - **Survivors (m-3)** pinned through the real code: the vanish case through the real read, the hub's start recording the contract (booted, not the source text), the shipped non-UTF-8 path.
+  - **Nits.** An unreadable override (a directory, no permission) falls back to the shipped contract, and that fallback follows an edit of the shipped file (3, 4); a permission error while locating the contract never stops an agent (4); the house fallback rules appear once when both bands are blocked (5); ARCHITECTURE and the first H670 bullet corrected (6); CHT-117 drafts with Veronica (7). Known limits: an override absent for an instant resolves to the shipped file for one boundary (as a persona's does); the contract's verdict is in the log only; the README row reaches new installs only.
+  10 mutants, all caught (two after their cases were added). 16 rows re-stamped.
+  Tests: backend 15,237 → 15,251 (`tests/test_h670c_identity_review.py` 14); vitest unchanged at 1,471.
+
+- 2026-09-25 H145 read the hub's own log from the UI (missing → equivalent, #1207; headline 148 → 149/697).
+
+  When something misbehaves (a channel crash-looping, a provider refusing every call), the audit chain and the traces say what Nerva decided and how it routed, not what the process logged; that needed a shell on the box. Now:
+  - **`GET /api/admin/logs`** (admin, read-only) tails the log file the hub writes and its numbered rotations, and nothing else (a file is chosen by a listed name; a path, another file, a pipe or a directory is refused with 400). It reads backwards within 4 MiB, returns at most 500 records, keeps a traceback with its error, filters by File / minimum Level / Component (a logger and its children) / Lines, and re-applies the H495 secret redactor as it reads, since rotated files and older lines never went through it. With file logging off (the default) it says so and how to turn it on, instead of an empty log.
+  - **Console → Observe → Logs** has the four filters, level colours, newest-first records shown as text, a 5 s auto-refresh with the LIVE badge, and honest empty, partial-read and refusal states. `nerva logs -n N` reads the same bounded, redacted tail instead of the whole file.
+  29 mutants, all caught but one equivalent (two after their cases were added). Test manual: PNB-169, PNB-170; the API sweep lists the route; the desktop HUD allowlist gains `/v2/console/logs`. 80 rows re-stamped (81 changed, with H145 itself); H456's `nerva.py` range recomputed by hand.
+  Tests: backend 15,204 → 15,237 (`tests/test_log_tail.py` 33); vitest 1,462 → 1,471 (`logs-panel.test.tsx` 9).
+
+- 2026-09-25 H670 first adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H670 found one major, seven minors and six nits (every agent-facing prompt carries the contract; the note hides nothing from the scan; the H363 prefix holds):
+  - **The contract was outside the instruction-file class (M-1).** A file write to `IDENTITY.local.md`, which now steers every agent, asked with a scratch note's card. `identity.md` joins the H506 roster (its `.local` overlay derived); a test derives the class from every name the contract's and a persona's loaders can resolve.
+  - **A missing contract emptied at a boundary (m-1).** Absent at the stat or gone before the read, the last-good text is kept, as a persona's is.
+  - **A non-UTF-8 override stopped every agent (m-2).** It is reported once at ERROR and the shipped contract used; an unreadable one leaves the agent without it; the prompt-size report survives it too.
+  - **The two bands exceeded the cap (m-3).** The contract has its own 4,000-character cap, never above the persona's.
+  - **"Rolled back and A/B-tested" (m-4)** is now "recorded and diffable": what is served is the file, an edit at a boundary is recorded at the next start, and no empty version is recorded.
+  - **Unscoped rules (m-5).** The contract governs the agent's own replies; text drafted in someone else's voice keeps its greetings and sign-offs, and a persona's warmth or curiosity lives inside the answer. `SOUL.md` mirrors it.
+  - **Survivors (m-6)** pinned: a mid-file comment, an empty version, the start-time record, the prompt-size component and its note, the ERROR on a flagged contract. **CHT-117 (m-7)** asks Pepper, not the retired Atlas, and adds Howard drafting in the owner's voice.
+  - **Nits.** The blocked and quarantined stubs name the contract; the data home's README lists `souls/IDENTITY.local.md`; docstrings say "a few stats" and "settled signature". Known limits: the prompt-size report measures the shipped contract; `PromptRefresh.text` is still the persona alone.
+  15 mutants, all caught (two after their cases were added: an absent contract never read, one vanishing between stat and read). 57 rows re-stamped; H427's `publish()` range (`:3529-3533`) by hand.
+  Tests: backend 15,183 → 15,204 (`tests/test_h670b_identity_review.py` 21); vitest unchanged at 1,462.
+
+- 2026-09-25 H667 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H667b found one major, four minors and seven nits (on POSIX no live run, owner root or outside file was ever deleted):
+  - **Windows never pruned (M1).** `os.kill(pid, 0)` is a console Ctrl+C there and never says "no such process", and an open lock cannot be removed, so every directory was kept. Liveness now asks the process table (OpenProcess / GetExitCodeProcess, with the creation time), and `release` closes before it unlinks.
+  - **The record overrode a working flock (m1).** A crashed sandbox whose pid came back (the hub is pid 1 in a container) kept its directory forever. The record says whether its writer took the flock and names the kernel's boot id: on the same kernel a free flock is the answer; the pid (with its start time, so a reused pid is dead) is asked only for a record written without a flock; another host's record ages out at ten times the limit.
+  - **The tool-RPC path (m2).** Its mailbox made the run directory again with the umask's mode and no lock; the runtime asks the sandbox first, and a directory there without its lock or wider than `0700` is made right.
+  - **The managed cache spelled another way (m3)** through a link or a `..` took no lock yet was pruned; roots are compared by identity.
+  - **Survivors (m4)** pinned: EPERM, the empty record, the uid and group-writable checks, a linked root, `RuntimeError`/`ValueError` at resolve, a fresh directory's lock, a linked `.locks`, the backup's reach, the mount's quoting, a planted link, the private `.locks`, a lock that is a link to a live record, a long host name.
+  - **Nits.** Control characters are no root and the mount quotes line breaks (n1); run directories under a root chosen inside the data root stay out of backups (n3); a Windows junction is a link (n4); the label and PNB-167 say to move the cache with `JARVIS_EXEC_TEMP_DIR` (n5); a real tree ages with the production date (n6); the record is written under a temporary name and renamed into place, never seen empty (n7). Known limit (n2): where flock does not work, another pid namespace under the same host name is read by its pid.
+  36 mutants, all caught but two equivalent ones (a .locks mkdir mode the chmod repairs, samefile behind resolve), five after their cases were added (a probe that took no flock, the start tick's field, a wide .locks, the mailbox made after the repair, a file named like a run directory). PNB-167/168 updated. 40 rows re-stamped.
+  Tests: backend 15,128 → 15,183 (`tests/test_h667c_exec_cache_review.py` 55); vitest unchanged at 1,462.
+
+- 2026-09-25 H586 second adversarial review round (stays equivalent, #1207; headline stays 148/697).
+
+  review-H586b found no major, four minors and eight nits (the slow-model, refusal and memory fixes held live; no image reached /chat):
+  - **An oversized clipboard image read as empty (B1).** Cut off at the bound, it now says "larger than 4 MiB" again.
+  - **A descendant stretched the deadline (B2).** On POSIX the reader runs in a session of its own, the pipe is read against a monotonic deadline (no thread), and the whole process group is killed at the deadline, past the bound or on an interrupt.
+  - **`shutil.which` put the current directory back (B3).** The Windows fallback walks the absolute PATH entries itself; WSL also finds `powershell.exe` on its PATH.
+  - **Survivors (B4)** pinned with real processes: the reader's exit code, the group kill, the bound; the status read's 403 and failures with their receipts; the `--json` receipt; WSL detection.
+  - **Nits.** Hub text filtered before the terminal; a user name, query or fragment in `--remote-vision` refused; a receipt on an interrupted clipboard read; the field named in a validation reason; wording.
+  16 mutants, all caught but one equivalent. 49 rows re-stamped.
+  Tests: backend 15,105 → 15,128 (`tests/test_h586c_image_review.py` 23); vitest unchanged at 1,462.
+
+- 2026-09-25 H670 one shared behaviour contract under every persona (partial → equivalent, #1207; headline 147 → 148/697).
+
+  The mechanism (SOUL = system prompt, the H387 scan and cap, versions, the compaction re-read) was there; the shared content was not: every SOUL described character, none specified behaviour. Now:
+  - **`agents/_identity/IDENTITY.md`** is the contract every agent's system prompt starts with: size the reply to the weight of the ask; earn depth; no filler, no restating the request, no re-summarizing, no narrating visible tool calls; agree because it is right, not because the owner said it; say when you do not know. Its maintainer note (never sent to the model) says never to add "be targeted and efficient in your exploration", and why. The repo-root `SOUL.md` mirrors it; a test keeps them equal.
+  - **Loaded like a persona:** the same H387 scan and cap, read once per file signature, re-read at a compaction boundary (a few stats when unchanged; the last-good text kept on a failed read — see the two review rounds above for what that covers), overridable per install (`<data home>/souls/IDENTITY.local.md`, or a gitignored `agents/_identity/IDENTITY.local.md`).
+  - **`Agent.system_prompt()`** = contract, then persona, used at all four places a system prompt is built (two in the agent, two in the orchestrator); an agent without a SOUL still gets it. Personas and `Persona.prompt_block` stay the character layer.
+  - **Versioned** as `_identity` in the prompt VC at start (a no-op when unchanged): `/api/admin/prompts/_identity/...` diffs it (corrected in review round 1: a rollback there does not change what is served). The prompt-size report counts it as shared per call; the packaged build ships it through its `agents/*/*.md` glob.
+  - It lives in its own `agents/_identity/`, since `agents/_system/` holds only the roster (a guard test).
+  Test manual: CHT-117; `docs/ARCHITECTURE.md` names the band. 17 mutants, all caught but one equivalent. 47 rows re-stamped (H427's `publish()` range by hand).
+  Tests: backend 15,087 → 15,105 (`tests/test_identity_contract.py` 18); vitest unchanged at 1,462.
+
+- 2026-09-25 H273 eighth adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H273i found no major, three minors and six nits (the named-pipe run-log, the survivors and the records held; real supervisor, coordinator and hub in seven postures):
+  - **The packaged recovery still missed places (m1).** A token in the start environment (where PHONE_ACCESS puts the phone's) or in a moved data home came back after the recovery, and a LAN-bound app with no token left refused to start. PACKAGING and PHONE_ACCESS now remove the tokens from the data home's `.env` wherever it is **and** from the environment the app starts from, unset `JARVIS_HOST` for the restart and set it back after the new tokens, and name `JARVIS_MEMORY_DIR` (n3); ENV-131 follows.
+  - **The hint's advice was wrong and destructive (m2).** A valid user token on an admin verb was "refused", and `rotate admin` revoked the owner's working admin token. The hint now reads the hub's reason for the tier it wanted: it asks for `JARVIS_ADMIN_TOKEN` there, calls refused only a token of the wanted tier, names a hub with no token of the tier, and offers the additive `issue` (`rotate` only for a leaked token). `nerva status` reads the same reason (n4).
+  - **Mutation (m3).** The child's whole environment (M06) and the hint's verb (M12) are pinned.
+  - **Nits.** The supervisor's docstring names the named-pipe limit (n1); ENV-163 and SEC-055 run `token_recover.py` (n2); the seventh bullet's re-stamp note corrected (n5); the test fixture puts back what a load recorded (n6); ENV-069's stale `web.py:483,489` now `:724,730`.
+  12 mutants, all caught. 50 rows re-stamped; H456's range recomputed from the code.
+  Tests: backend 15,075 → 15,087 (`tests/test_h273i_provenance_review.py` 12); vitest unchanged at 1,462.
+
+- 2026-09-25 H667 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H667 found no major, eight minors and nine nits (no live run, no owner root, nothing outside the cache was ever deleted):
+  - **A bad setting stopped the hub (m1).** `~nosuchuser/x` or a NUL byte in `security.sandbox_temp_dir` made `Sandbox()` raise at start. Such a value is skipped with a warning, the setting refuses it on write (and an age outside 1–8760 h), and any other failure falls back to the system temp.
+  - **A relative data root broke execution (m2).** Run directories are absolute.
+  - **Backups took the cache (m3).** `cache/exec` is left out of backups.
+  - **Health said ok (m4), a later choice stranded the cache (m5).** An unreadable, linked, foreign or world-writable managed root is reported failed to the scheduler; the hourly job prunes the managed cache whatever root is chosen now.
+  - **Lock and mtime games (m6), no flock (m7).** The lock moved out of the run directory, to `<root>/.locks/<name>.lock`, where code in the directory cannot touch it; it records `host pid`, so where flock does not work a live pid on this host, or another host, still keeps the directory. A file is dated by the older of mtime and ctime, so a future date keeps nothing forever. A directory removed under a live sandbox comes back 0700 with its lock.
+  - **Test gaps (m8)** filled: the scheduler reads the owner's age, runs off the loop, never raises; the directory's own and subdirectory dates; the 1-hour floor; a lock that is not a file; the probe's descriptors; `~` and whitespace.
+  - **Nits.** A Nerva-specific `nerva-sandbox-` prefix; a directory swapped for a link is only unlinked; a stale claim link is removed; the managed root is made 0700 when ours; Docker binds with `--mount` (a `:` in the data root); `nerva config set` says the root needs a restart; orphan locks are removed.
+  31 mutants (two after their cases were added: orphan locks, the Docker path's re-creation), all caught but three equivalent. PNB-167/168 rewritten. 75 rows re-stamped; H456's range `1041-1047` corrected by hand.
+  Tests: backend 15,047 → 15,075 (`tests/test_exec_cache.py` 32 → 60); vitest unchanged at 1,462.
+
+- 2026-09-25 H586 first adversarial review round (stays equivalent, #1207; headline stays 147/697).
+
+  review-H586 found no major, six minors and nine nits (no leak to /chat, the acknowledgement and the 409 held):
+  - **A slow model read as "no hub" (m1).** The describe call used the client's 30 s; it now waits 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn (exit 1), not a missing hub.
+  - **The clipboard was buffered whole (m2).** The reader's output is read no further than 4 MiB (+1) within 10 s; a reader that says more or hangs is killed.
+  - **A refused raster lost its reason (m3).** The vision route answers a refused body with its first reason as `{error, reason}`, never FastAPI's 422 that echoed the images back (11 MB for two), and the CLI client reads a validation reason too.
+  - **PowerShell from the current directory (m4).** Windows PowerShell comes from the system directory, else a PATH search that leaves out `.` and the working directory.
+  - **Survivors (m5)** pinned: a status without local/destination/binding, the bounded read, exactly 4 MiB, GIF87a, `~`, receipts on no-hub and interrupt, `--json`/plain empty answers, the argv per platform (the PowerShell script's PNG and -STA).
+  - **Platforms (m6).** macOS without pngpaste reads the clipboard through osascript (`«data PNGf…»`); WSL through Windows PowerShell interop.
+  - **Nits.** `--remote-vision` alone is refused; the address is compared as the hub names it (case, default port, trailing slash); "the hub's machine"; the reply is checked like the HUD's (ok, a string of at most 128 KiB); a file is opened once without blocking (a FIFO never hangs). Known limits: the receipt's model stays null; the route's own 403 is told apart by its message.
+  35 mutants, all caught (one after its case was added: a reader that says too much and keeps its pipe open). Test manual: CHT-115, CHT-116 updated. 49 rows re-stamped.
+  Tests: backend 14,997 → 15,047 (`tests/test_h586b_image_review.py` 50); vitest unchanged at 1,462.
+
+- 2026-09-25 H667 sandbox files off `/tmp`, and a prune that touches only its own cache (missing → equivalent, #1207; headline 146 → 147/697).
+
+  The sandbox made its run directory with `tempfile.mkdtemp()` (the system temp root, tmpfs on many distributions) and nothing ever removed it. Now:
+  - **Where:** `JARVIS_EXEC_TEMP_DIR`, then Admin → `security.sandbox_temp_dir` (absolute paths), else the managed cache `<data root>/cache/exec`; each run directory is a private `sandbox-*` (0700). An unusable root falls back to the system temp for that run, with a warning, unmanaged (`agents/core/exec_cache.py`).
+  - **The prune:** hourly (`exec-cache-prune`), managed cache only. A run directory is aged as one group (its newest file anywhere inside), removed after `security.sandbox_temp_max_age_hours` (72 by default) only when no sandbox holds its lock (flock on POSIX, an open handle on Windows) and it is not the hub's own. It is claimed by a rename first, so nothing is half-deleted; links are never followed; entries it did not name are never touched; a root the owner chose is never bulk-deleted.
+  - Not taken: collision-safe task-id directory names (no persistent per-task sandboxes exist; mkdtemp names are unique).
+  Test manual: PNB-167, PNB-168. 25 mutants, all caught (four after their cases were added: a link's old target, a deep fresh file under old directories, an unopenable lock, the registration at start). Records: 36 rows re-stamped; H288's bare `:699` corrected to `:701` by hand; the two scheduler binding pins moved (`orchestrator_bindings.py`).
+  Tests: backend 14,965 → 14,997 (`tests/test_exec_cache.py` 32); vitest unchanged at 1,462.
+
+- 2026-09-25 H586 image input from the terminal: `nerva chat --image PATH` / `--clipboard-image` (partial → equivalent, #1207; headline 145 → 146/697).
+
+  The HUD half (paste, drop and choose, the destination-bound vision route) was already in; the terminal had no image path. Now:
+  - **`nerva chat --image PATH`** (repeatable, up to eight, 4 MiB each) and **`--clipboard-image`** send the images and the question to the hub's vision route (`POST /api/vlm/composer/describe`), the HUD composer's own, and **never to `/chat`**: no agent, session or tool plan sees them, so `--agent`, `--session` and `--reasoning` are refused with images. A file is sent by the type its bytes say, never its name.
+  - **The destination is bound and acknowledged.** The verb reads the hub's vision status and sends its destination and binding with the images (a model changed in between is refused, 409). A destination off this machine is used only when `--remote-vision URL` names it, the terminal's form of the HUD's per-destination acknowledgement.
+  - **The clipboard** is read by the platform's own reader with a fixed argv, no shell and a 10 s timeout: wl-paste (Wayland), xclip (X11), pngpaste (macOS), PowerShell (Windows); with none, the verb says to save the image and pass `--image`.
+  - `-z`, `--json` and `--usage-file` keep their meaning. Test manual: CHT-115, CHT-116. 20 mutants, all caught (two after their cases were added: a clipboard reader that fails but prints, a RIFF file that is not WebP). The HUD composer's two vitest files (10 cases) now run here too.
+  Tests: backend 14,935 → 14,965 (`tests/test_nerva_chat_image.py` 30); vitest unchanged at 1,462.
+
+- 2026-09-25 H273 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273h found no major, four minors and five nits; the sixth round's fixes held (the memo cannot open access; the recovery writes the hub's store in six postures):
+  - **The named-pipe run-log moved to the reader (m1).** The supervisor told its child the default path, so with the path in a named-pipe `.env` the coordinator wrote there while the brief read the pipe's path, and the brief showed no runtime. The supervisor now hands down only a path it found (the process, or a regular `.env`); with a pipe the child reads it as the hub does, and only the supervisor's own events stay in `logs/runtime.jsonl` (Known limits, ENV-164).
+  - **The packaged recovery revived rotated and revoked env tokens (m2).** Deleting `tokens.db` also forgot which `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` values had been superseded, a lost phone's included. PACKAGING.md, PHONE_ACCESS.md and ENV-131 now remove those `.env` lines first, name the `$JARVIS_HOME` path, and say to use a working admin token when there is one.
+  - **The CLI still asked for a token that was set (m3).** A token that was sent and refused is named as refused (expired, revoked or rotated, or the other tier), with the `token_recover.py` verb, on the verbs and on `nerva status`.
+  - **Survivors (m4).** `scripts/token_recover.py` run as documented, as a script, and both spawn sites in the supervisor's `main()` now have cases. The supervisor's two `.env` readers are one.
+  - **Nits.** The revoke residual depends on uptime (ENV-159, `_ever_configured`); `JARVIS_HOME` is process-only (the script's docstring, PHONE_ACCESS); the script's scaffolding and "check the path it prints"; ENV-159 and PHONE_ACCESS use `token_recover.py`; one stale H456 citation fixed (`nerva.py:1025-1031`).
+  Mutation: 12 mutants, all caught (one after the readers merged). Re-stamped 67 rows whose evidence moved (10 with text, all `nerva.py` line shifts, H456's hand-corrected citation among them; corrected by review-H273i n5).
+  Tests: backend 14,921 → 14,935 (`tests/test_h273h_provenance_review.py` 14); vitest unchanged at 1,462.
+
+- 2026-09-25 H315 ninth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315j found no major, three minors and four nits; multi-line answers scan inline again (1–1.7 ms p50 under load, from about 3.4 s) and the other-user start holds:
+  - **A gone fd broke every kernel start (m2, a regression of the eighth round).** With the manager's lock fd closed behind it, the lock read as lost and `_mount` closed the dead fd, raising EBADF on every start. The close tolerates it; only EBADF from `fstat` reads as lost, and any other `fstat` error keeps the lock.
+  - **An orphaned lock file could still cost live mounts (m1).** A start that opened `.lock` before a relock locked the old, orphaned file afterwards and removed the live directory. `_owner_alive` now checks that the file it locked is still the one at `.lock`, and reads the owner as alive otherwise.
+  - **Survivors (m3):** ELOOP, a failed relock's staging file, a root that cannot be listed, non-ASCII text counted once, bytes as `str()` spells them. Each has a case.
+  - **Nits:** strings are sized with the encoder's own function (6–9× cheaper than a `json.dumps` each); separators are counted; a root this user cannot search gives no mount instead of raising; GOV-258 says the shared root must be writable by both users.
+
+  Mutation: this round's 10 mutants were all caught, one after its case was tightened.
+
+  Records:
+  - H315 rewritten;
+  - drifted rows re-read and re-stamped;
+  - GOV-258 extended.
+
+  Tests: backend 14,911 → 14,921 (`tests/test_h315j_todo_review.py` 10); vitest unchanged at 1,462.
+
+- 2026-09-25 H318 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318g found no major, two minors and five nits; the sixth round's fix held (a crash's leftover beside the skill is picked up by nothing):
+  - **A standing that could not be read for a moment read as unsigned (m-1, older than this round).** The change was then applied with nothing to renew, and a shown skill went hidden while the outcome said applied. `owner_standing` now keeps "could not read" apart from "unsigned" (a SKILL.sig that is not UTF-8 still reads as unsigned), and the apply answers `unreadable_signature` and retries at the next decision.
+  - **The crash-safety claim was wider than the code (m-2).** The signature's own renewal stages its file inside the skill (a leftover fails the signature closed), and a crash between the rename and the renewal leaves the skill sandboxed and reported as drifted. The row says so now, instead of "never inside it".
+  - **Nits:** where the temporary file cannot sit beside the folder (the folder linked onto another filesystem, a root the hub cannot write) the folder itself is used instead of failing forever; the staged file is created with the file's mode, so it is never readable wider; a signature that stays unreadable is warned about once per proposal; /v1's reject-only is pinned for a rename and a bundled skill with the hub's own flag texts; the write no longer buffers (the survivor about the flush is gone) and a failed replace leaves no temporary file anywhere; the records' wording is corrected.
+
+  Mutation: this round's 8 mutants were all caught, one after it was rebuilt.
+
+  Records:
+  - H318 rewritten;
+  - 14 drifted rows re-read and re-stamped;
+  - GOV-256 names the new tests.
+
+  Tests: backend 14,904 → 14,911 (`tests/test_h318h_skill_review.py` 7); vitest unchanged at 1,462; `tests/frontend/tools.test.js` +1.
+
+- 2026-09-25 H315 eighth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315i found no major, four minors and four nits; the seventh round's fixes held and its eleven survivors are killed:
+  - **Small multi-line answers queued again (m1).** `_small` charged a string six times its length for any non-printable character, a newline included, so 3–16 KiB log answers went to the single scan thread (a 4 KB answer's p50 rose to 3.5 s under load). It counts the exact encoding now, which also counts a quote or backslash at two (n4).
+  - **The relock left a gap (m2).** It made `.lock` and only then locked it; a start in between took the unheld file and removed the live mounts (157 in 5,235 relocks). The new lock is made and locked under a staging name, then renamed over `.lock`, and a `.lock` that is there is held meanwhile.
+  - **Another user's hub could not start (m3).** Under umask 077, looking into another user's owner directory raised out of the start. Such a directory reads as alive, and one unreadable entry never stops a sweep or a start. GOV-258 now runs the step as a non-root user with `UMask=0077` and expects what really happens (the kernel opened while the directory was unreadable runs without tool calls).
+  - **Six survivors (m4):** a stat error that persists, no lock at start, the walk's two early exits, an owner directory replaced by a link, a huge negative int. Each has a case.
+  - **Nits:** an owner path that is no longer a directory, or an fd that is gone, reads as lost (not "unknown" forever); an empty file name (`""`, `.`, `/`) runs as the default one instead of raising.
+
+  Mutation: this round's 14 mutants were all caught.
+
+  Records:
+  - H315 rewritten;
+  - 12 drifted rows re-read and re-stamped;
+  - GOV-258's step and its expectation corrected.
+
+  Tests: backend 14,888 → 14,904 (`tests/test_h315i_todo_review.py` 16); vitest unchanged at 1,462.
+
+- 2026-09-25 H318 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318f found no major, one minor and four nits; the fifth round's two minors and seven nits held:
+  - **A crash could leave the staged SKILL.md inside the skill (m-1).** The whole-file write put its temporary file in the skill's folder, where one a crash left counted as a member of the skill: the signature failed, the skill was sandboxed, and publish shipped the file. It is staged beside the folder now (same filesystem), flushed to disk before the rename.
+  - **Nits:** a SKILL.sig read that fails (a sharing violation, EIO) is `unreadable_signature` and retried at the next pass, not marked stale; the atomic write keeps the file's mode; SKILL.sig is not put back over new text whose SKILL.md could not be (so the signature matches the text that stays); /v1's reject-only for a refused change is pinned; the route comment above the 422 matches its text. (Windows: replacing a file another process holds open can fail; the rollback then reports `rollback_failed` with the backup, as before.)
+
+  Mutation: this round's 7 mutants (5 Python, 1 /v1, 1 HUD) were all caught.
+
+  Records:
+  - H318 rewritten;
+  - 13 drifted rows re-read and re-stamped (H477's `:334` by content);
+  - GOV-256 names the new tests; HUD bundle rebuilt.
+
+  Tests: backend 14,883 → 14,888 (`tests/test_h318g_skill_review.py` 5); vitest unchanged at 1,462 (one `skill-changes` case extended); `tests/frontend/tools.test.js` +1.
+
+- 2026-09-25 H465 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465f found no major, no minor and seven nits; the fifth round's fixes held and its nine survivors are killed:
+  - a `/refine` that times out or is cancelled refunds its unit on the day `_run` spent it (the day taken before `_run` rolled could only differ where it was wrong);
+  - a pass uses up only the turns that admitted it, so a burst of turns gets the passes the same turns one at a time would (2 for 6 turns at every 3, not 1);
+  - an `[… error` closed only by a later `[1]` or link is prose, not "no local model";
+  - the refusal says "at least half", as the rule is;
+  - a hand-edited budget fraction below one (-0.5, 0.9) is not "reviews off": it warns once and 20 is used;
+  - the `config set` comment claims only what the code does (the typed value is the shell's);
+  - the H465f bullet's H456 wording is corrected (two of the three citations were stale).
+  - Older, outside the row: `mcp.servers` headers (bearer tokens) print in the clear through `nerva config`; noted for the MCP row.
+
+  Mutation: this round's 6 mutants: four caught, two equivalent (the refund's day check and its reset).
+
+  Records:
+  - H465 rewritten;
+  - 57 drifted rows re-read and re-stamped;
+  - GOV-257 names the new tests.
+
+  Tests: backend 14,865 → 14,883 (`tests/test_h465g_refine_review.py` 18); vitest unchanged at 1,462.
+
+- 2026-09-25 H273 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273g found no major, five minors and six nits; the fifth round's fixes held:
+  - **"No local process mints its way back in" was too wide (m1).** It holds where an admin credential was ever configured. A box that only ever had a user token keeps trusting this machine as admin, so after `revoke user --revoke-env` a local process still mints a user token; the user-token lock binds callers from other machines. The docstrings, the row, ENV-159 and PHONE_ACCESS.md now say so, and a test pins it as deliberate.
+  - **The offline recovery could write the wrong store (m2).** Run bare, the store's CLI reads only the process environment, so with the data home named only in a `.env` it wrote a `tokens.db` the hub never read. `scripts/token_recover.py` loads the hub's `.env` files first and says which store it wrote; the CLI hint, INSTALL.md and ENV-131 name it. A packaged build has no Python to run it: PACKAGING.md documents removing `memory/security/tokens.db` instead. (`agents/core/security/**` is the owner's lane, so the store's own CLI is unchanged.)
+  - **The CLI's "withheld" message fired when withholding was not why (m3).** It now names the withheld admin token as one possible cause beside the user token, is built for the client that was refused, and `nerva status` says the same on its `runnable` and `e-stop` lines instead of asking for the admin token that is set.
+  - **A named-pipe `.env` still split the run-log (m4).** The supervisor hands the path it chose to its child, whose load does not override the process, so both write one file; a path set only in a pipe is not honoured under the supervisor (Known limits).
+  - **Nine real survivors (m5):** an issued-only admin token, the generic hint, two `hub_value` layer rules, the supervisor run as a script and an empty run-log value have cases now; the three bare-IPv6 spellings err in the safe direction.
+  - **Nits:** the configured-scope check lists the token table once per store (it stays locked for that store even if the table is later emptied); nothing in the hub calls the store's `purge_expired`, and everything that empties the store is in Known limits; H510's two `web.py` pointers land on the registration comment and the probe-path exemption; an empty `JARVIS_RUNTIME_LOG` is unset on both ends; the hint uses the context's client.
+
+  Mutation: this round's 13 mutants were all caught, one after its case was added (the e-stop status line).
+
+  Records:
+  - H273 rewritten; H510's and H456's `web.py` shorthands remapped by content;
+  - 68 drifted rows re-read and re-stamped;
+  - ENV-131, ENV-159, ENV-162 and ENV-164 updated; `channel_inbox` re-pinned to `web.py:483`.
+
+  Tests: backend 14,847 → 14,865 (`tests/test_h273g_provenance_review.py` 18); vitest unchanged at 1,462.
+
+- 2026-09-25 H318 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318e found no major, two minors and seven nits:
+  - **The old SKILL.sig was read after the write, with nothing behind it (m-1).** A failed read left the new SKILL.md on disk with no renewal and no rollback, and the skill sandboxed. It is now read with SKILL.md, before anything is written, and a failure there is `unreadable_skill` with nothing changed.
+  - **This round's own fixtures were Windows-unsafe (m-2).** The H318 test helpers and fixtures write bytes, so the Windows push lane sees the same files as Linux (five older `test_h318_skill_tools` cases included).
+  - **Nits:**
+    - a SKILL.sig that could not be put back is `signature_not_restored` (the old text is back, the skill untrusted until signed again), not `rollback_failed`; the HUD names it, `unreadable_skill` and `apply_error`;
+    - the background review and /refine supersede their own older proposal when they re-send another origin's text;
+    - SKILL.md is written whole through a sibling temporary file, so a write cut short leaves the old text, and a failed write leaves no backup behind;
+    - /v1 disables Approve for every skill-change card it has no diff for and drops the Decision Inbox pointer (pinned in `tests/frontend/tools.test.js`);
+    - publish's registry row describes the SKILL.md the package ships (the snapshot's bytes);
+    - the 422 says "a link, a special file, or a file that could not be read stably";
+    - the escaped ceiling's boundary and the description cut are pinned.
+
+  Mutation: this round's 16 mutants (11 Python, 2 /v1, 3 HUD) were all caught, one after its case was corrected (the publish row read after the snapshot).
+
+  Records:
+  - H318 rewritten; H350's apply citation now names the whole-file write;
+  - 20 drifted rows re-read and re-stamped (H477's `:334` remapped by content);
+  - GOV-256 names the fourth and fifth rounds' tests;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,837 → 14,847 (`tests/test_h318f_skill_review.py` 10); vitest 1,461 → 1,462 (`skill-changes` 1); `tests/frontend/tools.test.js` +1.
+
+- 2026-09-25 H465 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465e found no major, two minors and seven nits:
+  - **One cut-off among real reviews named the wrong setting (m-1).** `/refine` said the budget went to cut-offs whenever one per-turn pass had been cut off, even on a day of mostly real reviews, and even when the model had answered prose. It now answers `daily_budget_cut_off` only when cut-offs are at least half of the day's spent units, and says "if they were cut off".
+  - **Nine real survivors (m-2):** the refusal's threshold, which pass logs the day's line, the orchestrator's bounded token cap (its model call is now a method, `Orchestrator._review_llm`, so it can be tested), the rollover of `cut_offs_today` in both entry points (both now use `_roll_day`), a `/refine` cut-off counted among them, the corrections cap, and the found-not-kept count against injected and agent facts. Each has a case.
+  - **Nits:**
+    - "masks a model id" was not true: a model id is masked only under a hinted name, and the comment says so;
+    - the daily budget reads within its declared 0–1000 (a hand-edited -3 is no longer "reviews off"), warning once;
+    - `nerva config set` echoed a stored secret (the GA4 private key) into the terminal; it is echoed masked now;
+    - a pass waiting on the model at midnight refunds or counts against the day it spent its unit on;
+    - GOV-257's step turns on `cognition.review_enabled`, and adds a day of real reviews;
+    - the cadence is checked again where a pass starts, so a burst of turns runs one pass, not four;
+    - only a closed `[… error …]` is a backend failure; an unclosed `[Note: … error` is prose.
+
+  Mutation: this round's 20 mutants were all caught.
+
+  Records:
+  - H465 rewritten;
+  - 87 drifted rows re-read and re-stamped; H456's CLI citations pointed at the `--toolsets` lines (two of the three were already stale);
+  - GOV-257 extended.
+
+  Tests: backend 14,803 → 14,837 (`tests/test_h465f_refine_review.py` 34); vitest unchanged at 1,461.
+
+- 2026-09-25 H315 seventh adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315h found no major, three minors and four nits:
+  - **A lock that was never lost was given up over live mounts (m1).** Any error from the `stat` of the owner's `.lock` (ESTALE, EACCES) read as "lost"; the manager then closed the fd that held the lock while its kernels still mounted there, and the next start by another process removed them. Only a `.lock` that is gone or is another file reads as lost now; any other error keeps the lock. A directory that still stands is locked again in place, where its mounts are; a new directory is taken only when that cannot be had.
+  - **Four scan workers made the loop wait (m2).** The scan holds the GIL, so four threads bought no throughput and made the loop's p99 gap 4-5x longer. One thread now; small answers are still scanned inline.
+  - **Eleven survivors (m3):** the fork hook itself, a mount with no `flock`, `bytes` sizes, a raising tool that is not a script, an inflated K2 count, a kept fd, a failed lock's staging directory, `_` at a slice end, a dotfile's name, dict keys, scalars. Each has a case.
+  - **Nits:**
+    - the size walk is bounded and counts what an answer encodes to: a container wider than what is left is refused before it is listed, control characters and `bytes` count their escapes, and a huge int or an object is never small;
+    - the session kernel's own refusals before a cell (e-stop, expired, denied, no kernel, an empty or overlong cell) open no plan revision; an unconfirmed teardown still does, since it also ends a cell that ran; a cell with no mailbox made 0 calls, whatever the kernel says;
+    - a dotted directory in the run's file name no longer leaves a directory per run;
+    - GOV-258 now carries "another user's lock is kept".
+  - An answer too deep to encode (older than this round) is flagged, never raised out of the broker.
+
+  Still open, and older than H315: under Docker and WASM each run mounts the whole shared `work_dir`, so a run can read concurrent runs' scripts and tool-RPC mailboxes; and a cancelled subprocess run keeps running. Both are for their own row.
+
+  Mutation: this round's 23 mutants were all caught, one after its case was added (a lock file replaced while it is being locked).
+
+  Records:
+  - H315 rewritten;
+  - 29 drifted rows re-read and re-stamped;
+  - GOV-258 extended (a lock unreadable for a moment, another user's hub on the same root).
+
+  Tests: backend 14,769 → 14,803 (`tests/test_h315h_todo_review.py` 34); vitest unchanged at 1,461.
+
+- 2026-09-25 H318 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318d found one major, five minors and six nits:
+  - **On Windows, every approved change to a vouched skill failed (MAJOR-1).** `SKILL.md` was written and read in text mode against a byte-exact check, so Windows' `\r\n` never matched the approved text, and a rollback rewrote a CRLF file's line ends and broke the standing it meant to restore. The apply now reads and writes bytes.
+  - **A partial renewal left a new signature over the old text (m-1).** The old `SKILL.sig` is put back with the old `SKILL.md`, or the new one removed if there was none.
+  - **Publish still followed a link planted after its check (m-2).** The package is built from the bytes of one source snapshot, which refuses a linked folder, a link or FIFO member and a file that changed while read.
+  - **skill_view's budget left out the description, and refused files it used to serve (m-3).** A file within 64 KiB on disk is served as before; only escapes past 128 KiB are refused; the description is cut to 2 KiB escaped; the declared budget counts all of it.
+  - **Cards beyond the route's page were called inert in /v1 (m-4).** The route re-binds and names every pending card (`cards`); /v1 holds a card it has no diff for.
+  - **Five survivors (m-5):** a `SKILL.md` swapped after the write, an integrity-only signature with a key configured, a re-bind touching other proposals' cards, the publish route's 422, a body's escapes. Each has a case.
+  - **Nits:**
+    - a refused apply is marked stale with its reason instead of retried every pass;
+    - a failed rollback says `rollback_failed` and that the new text stays;
+    - the tool supersedes by its own origin;
+    - an unreadable `SKILL.sig` reads as unsigned, and one failing proposal never stops the pass;
+    - H318's bound text updated;
+    - /v1 re-reads the action list once the proposals answer.
+
+  Mutation: this round's 17 mutants were all caught, two after their cases were corrected (a file of short lines, a standing that raises).
+
+  Records:
+  - H318 rewritten; H503's publish sentence rewritten;
+  - 21 drifted rows re-read and re-stamped;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,748 → 14,769 (`tests/test_h318e_skill_review.py` 21); vitest unchanged at 1,461.
+
+- 2026-09-25 H465 fourth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465d found no major, two minors and seven nits:
+  - **A day of cut-offs made /refine name the wrong setting (m-1).** Per-turn reviews the model cut off now spend the budget, so after a day of them `/refine` said "try again tomorrow" and named `learning.review_daily_budget`. It now answers `daily_budget_cut_off`, naming `learning.review_max_tokens` rather than the budget, and `GET /api/cognition/learning` counts `cut_offs_today`.
+  - **Seven real survivors (m-2).** The documented values are now accepted through the settings store (a budget, idle gap and max facts of 0, a token cap of 32768, the `idle_gap` cadence, `every_n` 100), not only the bad ones refused; prose that mentions an error midway is malformed, not a backend failure; a `/refine` cut-off leaves the day's INFO line to the per-turn pass; a `review_unparsed` skip reaches the DEBUG log.
+  - **Nits:**
+    - a reply that parses as a review is the model's answer whatever it opens with (`[{"… error …"}]`); only an unparsed reply that opens with a bracketed `[… error …]` or is the local degraded message is a backend failure;
+    - a boolean or NaN budget warns once;
+    - corrections have their own cap, so `review_max_facts` 0 keeps no facts but still records corrections, and `/refine` says what it found;
+    - every knob reads within its declared bounds whatever the stored row (`bounded_learning_int`), the review's own token cap included: a hand-edited -1 no longer means "until the context is full";
+    - older than H465: `nerva config` printed the GA4 service-account JSON (a private key) unmasked; it now masks every key the store encrypts, and a model id;
+    - older than H465: a burst of passes could pass the budget; `run()` checks it again where the unit is spent;
+    - the daily INFO line names the token cap as the cause of a thinking cut-off and as a possible one of a malformed answer.
+
+  Mutation: this round's 19 mutants were all caught, two after their cases were added (prose that mentions an error midway, an out-of-range `every_n`).
+
+  Records:
+  - H465 rewritten;
+  - 99 drifted rows re-read and re-stamped (H288's `:685` and H427's `publish()` range remapped by content);
+  - GOV-257 extended (a day of cut-offs).
+
+  Tests: backend 14,711 → 14,748 (`tests/test_h465e_refine_review.py` 37); vitest unchanged at 1,461.
+
+- 2026-09-25 H318 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H318c found one records major (the stale evidence hash, fixed at 0a941f64), eight minors and seven nits:
+  - **A write between the standing read and the renewal rode into the vouch (m-1).** The standing is now judged on one snapshot of the tree read before the write. After the write, the tree must be that snapshot with only `SKILL.md` replaced by the approved text; the signature or the owner's approval is renewed over exactly those checked bytes (`sign_skill` and `approve` take the snapshot), never a later read.
+  - **A failed renewal was reported as applied (m-3).** The old `SKILL.md` is put back, where the old signature and approval still hold, and the outcome says `changed_during_apply` or `standing_not_renewed`; the proposal stays approved.
+  - **A keyed signature was overwritten while its key was missing (m-4).** The change waits (`signing_key_missing`) and applies once the key is back.
+  - **The /v1 panel called a real card inert while loading (m-2).** It says the change is loading or could not be read, and holds Approve until it knows.
+  - **The file-list bound counted raw bytes (m-5).** `skill_view` counts the bytes the answer carries (escapes included) for the list, a file and the body.
+  - **A proposal whose card was gone could never be decided (m-6).** The route re-binds it.
+  - **Publishing a skill that holds a link silently dropped the file (m-7).** It is refused again (422 `skill_source_refused`).
+  - **Four survivors (m-8):** a bundled flag in `describe`, a gone skill, the pending-only filter, the review's bundled skip. Each has a case.
+  - **Nits:**
+    - the nightly curator pass takes the apply lock;
+    - every origin supersedes its older proposal for a skill (the background review and /refine too), and the route sends a page of 20 with `more` counting the rest;
+    - binding a card withdraws the unbound cards naming the proposal, and a proposal superseded mid-bind gets no card;
+    - the propose-time rename check parses the stripped text the apply parses;
+    - a shipped skill is known by where it lives too, so a drifted one is still refused (tool, review and apply);
+    - both consoles offer reject only for a change the hub will refuse.
+
+  Mutation: this round's 28 mutants (25 Python, 3 HUD) were all caught, four after their cases were added (a renewal over a later read, for an approval and a signature; a drifted shipped skill in `describe` and in the review).
+
+  Records:
+  - H318 rewritten; H503's publish sentence corrected;
+  - 25 drifted rows re-read and re-stamped (H477's `:333` remapped by content);
+  - GOV-256 extended (a missing signing key, a linked publish);
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,689 → 14,711 (`tests/test_h318d_skill_review.py` 22); vitest 1,458 → 1,461 (`skill-changes` 3).
+
+- 2026-09-25 H315 sixth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315g found no major, three minors, five nits, and one older defect outside the row:
+  - **Two runs on the shared sandbox ran each other's code (older than H315).** Every run on the orchestrator's one Sandbox wrote the same `script.py`, so two concurrent `execute_code` runs overwrote each other: one ran the other's script against the other's tool-RPC mailbox and answered it to the wrong caller, possibly across sessions. Each run now writes a file of its own (`script-<random>.py`) and removes it.
+  - **The owner lock could be lost (m1).** Between the `.lock` file's creation and its `flock`, another start could take it and remove the directory; and a lockless owner directory was aged on its own time, which a busy interpreter never moves. The directory is now made and locked under a temporary name and renamed into place; before each mount the manager checks that its lock is still the file there, takes a new directory if not, and gives no mount without a lock; a lockless owner is aged on its newest interpreter.
+  - **One scan worker served every script (m2).** Small answers (under 16 KiB, by a walk that stops at the bound) are scanned inline; large ones go to a pool of four of the scan's own threads.
+  - **Six survivors (m3):** a clean rewrite of a clean item, a refused script between reads, the rewriting turn's own read, a symlinked lock, two lock errors. Each has a case.
+  - **Nits:**
+    - a handler that raised after its script ran opens a plan revision; execute_code's own refusals before any script do not; a K2 cell's call count is the host's, not the kernel's word;
+    - a scan slice never ends inside a word (`you are now|here`);
+    - a forked child rebuilds the scan pool;
+    - the fifth round's records: 30 re-stamped rows, h315d's 27 cases, the escaped backticks;
+    - the lock's other limits (another user's lock is kept; Docker Desktop bind mounts) are in GOV-258.
+
+  Mutation: this round's 16 mutants were all caught, two after their cases were added (a replaced lock file, a cell that zeroes its count).
+
+  Records:
+  - H315 rewritten;
+  - 30 drifted rows re-read and re-stamped;
+  - GOV-258 extended (simultaneous starts, two chats' scripts at once).
+
+  Tests: backend 14,663 → 14,689 (`tests/test_h315g_todo_review.py` 26); vitest unchanged at 1,458.
+
+- 2026-09-25 H273 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H273f found one major (older than H273), four minors and eight nits:
+  - **A local process could mint its way back in after the owner revoked everything (MAJOR-1).** The admin guard still trusted a loopback caller once no admin credential was *active*. After `revoke all --revoke-env`, or once a rotated admin token expired, a caller with no token called `POST /api/admin/rotate-tokens`, got a fresh user token and reopened every user route and MCP. The admin tier now asks what the user tier asks: was a credential of the tier ever configured (an env token, a rotation or a revoke with `--revoke-env`, which leave the store's persistent flag, or an issued token, live or expired). The owner flag on `/chat` follows it. Only a box that never had an admin credential mints its first from loopback; recovery is the offline `token_store rotate admin`.
+  - **An expired managed user token counted as never configured (m1).** An expired row stays in the store, and it counts now. A token issued with `issue` and deleted by a revoke without `--revoke-env` leaves no trace; that residual is under H273's Known limits (closing it needs a flag in `token_store`, the owner's security lane).
+  - **The CLI asked for a token it had withheld (m2).** Against a plain-http hub on another machine, a refused admin verb now says the admin token was withheld and why, and points at https or at running the verb on the hub (ENV-162).
+  - **The supervisor's run-log split from the coordinator's (m3).** With `JARVIS_RUNTIME_LOG` only in a `.env`, the supervisor now reads it through `hub_value`, the value the files give without loading them (loading would make its child read every file key as the process environment's).
+  - **Four survivors (m4):** an admin-only CLI environment, the loopback spellings for the admin token, the coordinator's `run()` load and the reality-evidence harness's load. Each has a case.
+  - **Nits:**
+    - a bare IPv6 hub whose first group is not empty (`0:0:0:0:0:0:0:1`) is read the way http.client dials it;
+    - the `install_smoke` wording says it loads after it builds, through `PluginManager.build`;
+    - the older BACKLOG correction names Known limits, not `remaining`;
+    - H318's `remaining` count is moot (the row is equivalent, `remaining` empty);
+    - the fourth review's unrecorded nits (uvicorn's proxy knobs, a trailing-dot name, the value-material shape, the scaffold before the guards, hub mode in a container, computed names) and `hub_url`'s wildcard binds are under Known limits;
+    - the managed-only behaviour change has its own row (ENV-163);
+    - the coordinator's pre-load logging stays under H410.
+
+  Mutation: this round's 15 mutants: 13 caught at once, one (the admin rule ignoring the env token) after its case was added, one equivalent (`hub_value`'s early process-environment return).
+
+  Records:
+  - H273 rewritten (credential sentence, supervisor, install_smoke, Known limits);
+  - ENV-159 extended to the admin tier; ENV-162..164 added;
+  - 71 drifted rows re-read and re-stamped (H456's `:1213` and three H510 shorthands remapped by content); the `channel_inbox` binding re-pinned to `web.py:458`.
+
+  Tests: backend 14,620 → 14,663 (`tests/test_h273f_provenance_review.py` 43); vitest unchanged at 1,458.
+
+- 2026-09-25 H465 third adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465c found no major, three minors and six nits:
+  - **A per-turn review cut off by the token cap was refunded (m-1).** A local model that always truncates therefore ran a review on every turn, uncapped by `learning.review_daily_budget`. Only the owner who asked (`/refine`) gets the unit back now; a per-turn cut-off spends it and is logged at INFO once a day, naming `learning.review_max_tokens`.
+  - **The settings the replies named could not be set (m-2).** The learning loop's knobs had no declared rows, so the admin API skipped them and `nerva config set` refused them. They are declared now (category `learning`), with the defaults the code already used and bounds (`review_max_tokens` 1–32768, `review_daily_budget` 0–1000). A declared 0 for `review_max_facts` or `review_idle_gap_s` is honoured, and `nerva config get` shows a number named `…max_tokens` instead of masking it as a credential.
+  - **Four survivors (m-3):** an empty reply, a reply cut after an inner `}`, a thinking cut-off's stored result, a cancelled `/refine` that must stay cancelled. Each has a case.
+  - **Nits:**
+    - a JSON object that is not a review (`{}`, `{"error": …}`) is unparsed, not "nothing worth keeping";
+    - a reply that starts with `[` is parsed; only a bracketed `[… error …]` is a backend failure;
+    - the budget reads 2.5 as 2 and warns once about a value that is not a number (infinity and a boolean included);
+    - a budget of 0 says reviews are switched off, not "try tomorrow";
+    - a per-turn pass that does not run leaves a DEBUG line naming why;
+    - critic note 1's line citations and the previous round's record count (54 re-stamps, not 53) are corrected.
+
+  Mutation: this round's 22 mutants: 21 caught, one equivalent (a redundant unset check, since removed).
+
+  Records:
+  - H465 rewritten;
+  - 99 drifted rows re-read and re-stamped (H288's `:667` and H427's `publish()` range remapped by content);
+  - GOV-257 extended (setting the knobs, a budget of 0).
+
+  Tests: backend 14,588 → 14,620 (`tests/test_h465d_refine_review.py` 31, `tests/test_nerva_cli.py` 1); vitest unchanged at 1,458.
+
+- 2026-09-25 H153 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H153e found no major, three minors and six nits:
+  - **Inline code spans were quadratic (MINOR-1).** `to_telegram_html` and `to_slack_mrkdwn` put each code span back with a `replace` over the whole text: 256,000 characters of `` `a` `` took 52 s, and a code-heavy 40,000-character Slack chunk about 1 s on the loop. The spans now go back in one pass (256,000 characters: 0.2 s). The test measures scaling, not an absolute bar.
+  - **The first-read waiters held worker threads (MINOR-2).** Every caller waiting for a fresh receiver's first read parked a thread of the default executor, and the wait comes before authentication. The router now awaits `RECEIVER.astate()`: who reads is decided on the loop, only the read runs on a thread, and a waiter holds none. So a start-up burst is still served and the pool stays free. A thread caller waits in its thread, at most four at once; a write, a reset or another store wakes the waiters (NIT-2).
+  - **Unpinned behaviours (MINOR-3, NIT-1).** A push now strips every format and control character but a newline, a tab, ZWJ and ZWNJ: the TAG plane ("ASCII smuggling"), invisible operators, the interlinear and musical format characters included. It also strips the blank characters (the Hangul fillers, CGJ, the Mongolian selectors, blank braille), and a subdivision flag emoji stays. The cut boundary, the router's quiet-hours end and the link bound have tests.
+  - **Nits:**
+    - an answer JSON cannot carry is answered as its text;
+    - the mutation record reads "all 40";
+    - a poller's failed read shows even while a newer request is out (`State`);
+    - the CHANGELOG notes that a workflow hook's answer no longer carries `result`.
+
+  Mutation: this round's 13 mutants (12 Python, 1 HUD) were all caught.
+
+  Records:
+  - H153 updated;
+  - 7 drifted rows re-read and re-stamped;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,539 → 14,588 (`tests/test_h153e_webhook_review.py` 49); vitest 1,456 → 1,458 (`panel-state` 2).
+
+- 2026-09-25 H315 fifth adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H315f found four minors and four nits:
+  - **Liveness was a pid (m1).** A pid means nothing across pid namespaces. In the shipped image the hub is PID 1 on every start, so a dead container's kernel directories looked alive forever, and a container took a live host process's directories for dead. Each manager now holds an exclusive `flock` on its owner directory's `.lock` for its process's life. A start removes a directory whose lock it can take. A directory with no lock (an older layout) ages out. This also ends the out-of-range pid crash (n1).
+  - **A read beside a script (m2).** A plan read in the same step as a script answered the plan from before it, then overwrote the script's revision, so the next read was refused. Script revisions are now applied after the step's reads.
+  - **The broker's scan (m3).** The K1 loop builds a broker per request, so "skip once tainted" never applied there. The scan now also skips once the context's origin is untrusted. It runs on a thread of its own, never the default pool, and still covers the whole answer, in overlapping 64 KiB slices, so no single regex call holds the loop.
+  - **Mutation (m4).** Seven survivors are now covered. Four have tests: an untrusted replace that changes the text, an untrusted re-parent, the fence's open marker and a cancelled start. The two per-key and refused-start survivors of the last round have tests, and so does a crashed K2 cell. The EPERM case is gone with the pid check. The two moved-item-turn survivors are left: they change only whether the moving turn's own later read is fenced.
+  - **Nits:**
+    - a script that ran cleanly and called nothing opens no revision, so the repeat stop holds across it;
+    - a merge and a replace treat a re-sent status, and a clean rewrite of a tainted item, alike;
+    - the records are corrected: the re-stamp count, two citations beside their claims, the tests list, and the mutation sentence.
+
+  Mutation: this round's 15 mutants were all caught, one after its case was corrected.
+
+  Records:
+  - H315 rewritten;
+  - 30 drifted rows re-read and re-stamped;
+  - GOV-258 extended to the container restart.
+
+  Tests: backend 14,518 → 14,539 (`tests/test_h315f_todo_review.py` 20; one h315d case split in two); vitest unchanged at 1,456.
+
+- 2026-09-25 H465 second adversarial review round (stays equivalent, #1207; headline stays 145/697).
+
+  review-H465b found three minors and six nits:
+  - **A per-turn pass could still run beside /refine (m-1).** The exclusion was checked where a pass is spawned, but a per-turn pass spawned before a /refine waits on the memory lock. It then entered `run()` after the /refine set its flags, ran beside it and labelled its new skill `refine`. `run()` now refuses a per-turn pass while /refine runs (`on_demand`: skipped, not deferred). The label is passed down per pass, never kept on the instance. The claim "either one makes the other wait its turn" is corrected.
+  - **A cut-off review read as nothing (m-2).** An answer cut off mid-JSON by the token cap was "nothing worth keeping". A model that spent its answer thinking was "no local model answered". Both are now named (`review_unparsed`, `review_cut_off`), point to `learning.review_max_tokens` and cost no budget.
+  - **Mutation (m-3).** The unregistered `learning.refine_timeout_s` setting is gone: the bound is the 150 s constant. A new skill's label and a timeout's stored result have cases.
+  - **Nits:**
+    - a budget of 0 means no reviews, and a garbage budget is logged and defaults to 20;
+    - the dead `last_learning_review` field is gone (the API reads the reviewer's own `last_result`);
+    - facts not kept are counted after the injection scan, and only for the owner who asked;
+    - a cancelled /refine costs no budget;
+    - the H288 credit, critic note 1's done-line and its `turn_lease` citation are corrected;
+    - H273's summary was rewritten in its own round.
+
+  Mutation: this round's 14 mutants were all caught.
+
+  Records:
+  - H465 rewritten;
+  - 54 drifted rows re-read and re-stamped (H427's `publish()` shorthand remapped by content; the 54th, H288, drifted with the GOV-257 edit);
+  - GOV-257 extended.
+
+  Tests: backend 14,509 → 14,518 (`tests/test_h465c_refine_review.py` 9); vitest unchanged at 1,456.
+
+- 2026-09-25 H318 second adversarial review round (partial → equivalent, #1207; headline 144 → 145/697).
+
+  review-H318b found two majors, seven minors and seven nits:
+  - **An approved change disabled the skill it improved (M-1).** Writing the new SKILL.md kept none of the skill's standing. A bundled skill became external, and with its code it was sandboxed and dropped from the catalog. A signed skill failed its signature, and one the owner had approved lost the approval. Now:
+    - a bundled skill is refused, when proposed and when applied: it is product source;
+    - an applied change renews a signature that verified and an approval the owner had given, both read fresh before the write;
+    - a skill nothing vouched for gains no vouch, a tampered signature is not renewed, and code changed on disk since the approval does not ride the patch;
+    - the decide answer names the state the skill is left in.
+  - **The owner approved blind (M-2).** The diff lived only in the card's raw JSON, cut at 4,000 characters, and no inbox showed it. `GET /api/skills/proposals` (admin) now serves each pending proposal with its whole diff, built from the ledger, plus its drift and flags (a rename, a bundled skill). The HUD's Decision Inbox shows them under SKILL CHANGES with approve and reject, and the /v1 action panel shows the same diff.
+  - **Minors:**
+    - a superseded proposal's card is withdrawn; one card per proposal, whoever proposed;
+    - the six unpinned mutants have cases;
+    - the file list skill_view returns is bounded (3 KiB of names, `files_more`);
+    - the backup is named by the skill's directory, with a unique suffix;
+    - only the card a proposal queued decides it, and the decide route says so of any other;
+    - publishing to the marketplace signs a staged copy, never the owner's tree.
+  - **Nits:**
+    - applies run one at a time;
+    - a rename is refused;
+    - every outcome is reported;
+    - the settings panel shows a refused save with the hub's reason and keeps the edit;
+    - critic note 21 names the view's limits.
+    - Two are kept by decision and stated: the per-process daily limit, and `skill_propose` still being offered where it refuses.
+
+  Mutation: this round's 31 mutants (26 Python, 5 HUD) were all caught, one after a case was added.
+
+  Records:
+  - H318 rewritten and closed;
+  - 49 drifted rows re-read and re-stamped (H503's publish citation rewritten by hand);
+  - GOV-256 rewritten;
+  - the route snapshots, the API sweep and `schema.gen.ts` regenerated;
+  - HUD bundle rebuilt.
+
+  Tests: backend 14,487 → 14,509 (`tests/test_h318c_skill_review.py` 22); vitest 1,447 → 1,456 (`skill-changes` 8, `settings-json-field` 2 → 3).
+
+- 2026-09-25 H273 fourth adversarial review round (partial → equivalent, #1207). **H318 back to partial** after its second review (headline stays 144/697).
+
+  review-H273e found two majors, four minors and ten nits:
+  - **A lapsed user credential opened MCP (M1, a regression).** The MCP gate asked `_user_token_required()` while the HTTP guard asked `_user_env_token()`. With the env token rotated away and the managed one expired, or everything revoked, every route answered 401 and MCP `tools/list` answered 200 to a local caller with no token. Now one predicate, `_user_credential_required()`, decides the HTTP guard, the MCP transport and MCP's per-tool identity check. Every credential posture is pinned: rotated and expired, revoked, a managed token alone, never configured.
+  - **The coordinator built before the load (M2).** `scripts/coordinator.py` (systemd `jarvis-runtime`) built its Orchestrator before any `.env` load, so with `JARVIS_AUDIT_KEY` only in `.env` its audit rows went unkeyed beside the hub's keyed ones and the shared chain read as tampered. It loads first now, as does the reality-evidence harness.
+  - **`JARVIS_HOST=::1` (m1).** Both `hub_url`s built `http://::1:8080`, which no loopback check recognised, so the doctor and the CLI sent tokens through an `http_proxy`. The address is bracketed now, and an unbracketed IPv6 host is read the way urllib dials it.
+  - **The CLI's admin token (m2).** The CLI sends it only to a hub on this machine or over https, never in clear text to another host.
+  - **`JARVIS_USER_HOME` from a `.env` (m3).** It still splits the stores when `JARVIS_HOME` is unset; moving either half would move an install's history. The earlier bullet's "can no longer split" is corrected, and H273 names it under Known limits.
+  - **Mutation (m4).** The three survivors are pinned: the MCP gate's predicate, and the CLI's trailing-dot and `127.1` spellings. One table of spellings now pins the CLI's loopback rule equal to the doctor's.
+  - **Nits.** The REPL loads `.env` before its logging and imports. A refused root's note gives the real reason. H510's shorthand citations name `agents/web.py`.
+
+  Mutation: this round's 20 mutants were all caught, one after a case was added (the identity check).
+
+  H318's second review (review-H318b) found two majors, so H318 goes back to partial with both in `remaining`. Approving a proposal disables a signed or code-carrying skill, and no approval surface shows the diff. H340 and H351 stay equivalent. H465's second review found no major; its minors are next.
+
+  Records:
+  - H273 rewritten and closed; H318 set partial;
+  - 38 drifted rows re-read and re-stamped;
+  - test manual ENV-159..161.
+
+  Tests: backend 14,439 → 14,487 (`tests/test_h273e_provenance_review.py` 48); vitest unchanged at 1,447.
+
+- 2026-09-25 H315 fourth adversarial review round (partial → equivalent, #1207; headline 143 → 144/697).
+
+  review-H315e found one MAJOR (a regression), three minors and four nits. All are fixed:
+  - **Plan reads after scripts (M1).** Clearing the repeat detector's revision after a script keyed every later read alike, so the third read after scripts was refused and the fourth ended the turn. Each script (`execute_code`) now opens its own revision, whether or not it reported calls: a crashed cell reports none.
+  - **Two processes on one data root (m1).** A kernel manager's start swept the whole mailbox root, deleting the live mounts of the other process (`jarvis-hub` and `jarvis-runtime` share `JARVIS_HOME`). Each manager now keeps its interpreters under `p<pid>-<token>`, and a start removes only a dead process's (and legacy directories older than the idle expiry).
+  - **The broker's scan (m2).** It runs off the event loop, and not at all once the run is tainted.
+  - **Nits.**
+    - The scan flags the fence's own markers, as the loop does.
+    - A same-text replace is no rewrite, as a merge was not: the item keeps its writer and taint, and a status moved by an untrusted turn still taints it.
+    - A failed start leaves no mount; a quarantined start's row owns its directory.
+    - The re-stamp count was said to be corrected; it was not (review-H315f n4), and is now.
+
+  Mutation: the review's five real survivors and the third review's X27 are pinned. This round's 15 mutants were all caught; one needed a case added, and one equivalent branch was removed.
+
+  Records: H315 rewritten and closed; 30 drifted rows re-read and re-stamped (first recorded as 29, review-H315f n4); test manual GOV-258.
+
+  Tests: backend 14,426 → 14,439 (`tests/test_h315e_todo_review.py` 13; two h315d tests follow the new rules); vitest unchanged at 1,447.
+- 2026-09-25 H465 adversarial review round (stays equivalent, #1207). **H273 back to partial** after its fourth review (headline 144 → 143/697).
+
+  review-H465 found one MAJOR, seven minors and seven nits. All are fixed:
+  - **A down model is no review (M-1).** LM Studio and Ollama answer a degraded string rather than raising, so `/refine` said "nothing worth keeping" and spent budget. A degraded reply is now `llm_error` ("reviews never leave this machine") and is refunded, as is a timeout.
+  - **In flight, as it really is.** Every path that dispatches `/refine` holds the turn lease, so a mid-turn `/refine` waits for the turn and then reviews. The records said it refused, and now say it waits. The review is bounded at 150 s, below the lease's 180 s wait.
+  - **The snapshot leaves out commands and their replies and stays contiguous**, so a chat of commands only has nothing to review.
+  - **Living memory off.** Facts found with living memory off are reported, not dropped. `/refine` runs whether or not the learning loop is on, and the records now say so.
+  - **Where approvals wait.** A new skill is said to wait in the pending skills list, and a patch in the Decision Inbox.
+  - **Nits.**
+    - An on-demand review neither resets the per-turn cadence nor runs beside a per-turn review.
+    - Its proposals are labelled `refine`.
+    - An injected correction is not recorded, on both paths.
+    - A refusal does not overwrite the last result.
+    - The guest `/help` hint names `/refine`.
+    - The critic notes no longer link the removed plan.
+    - GOV-257 is rewritten.
+    - The H465 bullet's re-stamp count is corrected to 54.
+
+  Mutation: the review's four real survivors are caught, and this round's 19 mutants were all caught.
+
+  The fourth review of H273 (review-H273e, of `6daa71c1`) re-opens it with two MAJORs:
+  - **The MCP gate opens once the user token lapses.** It asks a different question from the HTTP guard, so while `JARVIS_USER_TOKEN` is set but no valid token remains, MCP answers a local caller.
+  - **The coordinator reads config before the `.env` load.** `scripts/coordinator.py` builds its Orchestrator first, so its audit rows are unsigned while the hub's are signed, and the chain reads as broken.
+
+  It also found four minors. H273 is partial until its fix round.
+
+  Records: H465 rewritten; 53 drifted rows re-read and re-stamped (H427's `publish()` range and H288's GOV-224 citation, 640 → 636, corrected by hand); GOV-257.
+
+  Tests: backend 14,413 → 14,426; vitest unchanged at 1,447.
+- 2026-09-25 H318 adversarial review round (H318 and H351 partial → equivalent, H340 stays equivalent, #1207; headline 142 → 144/697).
+
+  review-H318 found two MAJORs, six minors and nine nits. All are fixed except one nit, kept by decision:
+  - **A self-signed import is still data (M-1).** `skill_view` now rests the "owner's own" reading on `Skill.owner_vouched`: a bundled skill, a keyed signature, or the owner's approval of these exact bytes — the same rule that lets a skill's code load in-process. An unkeyed `SKILL.sig` is a sha256 anyone can compute (SEC-B2); it verifies as integrity-only and vouches for nothing. The flag also scans the description.
+  - **An approved proposal lands (M-2).** Deciding a `skill.patch_proposal` card through `POST /api/actions/{id}/decide` runs `SkillCurator.apply_decisions` at once, whatever the learning-loop flag or the hour. The card carries a unified diff, so the owner sees what they approve.
+  - **Minors.**
+    - The 64 KiB bound holds after the template variables render.
+    - A skill keeps only what a view can serve (`Skill.view_files`: 64 KiB a file, 1 MiB a skill, other files as sizes).
+    - `skill_propose` takes at most 10 proposals a day per process, and a newer proposal from the same agent supersedes its older one.
+    - `skills.template_vars` is refused on write unless every entry would render, and the HUD edits a JSON setting as JSON.
+    - The review's seven real mutation survivors are pinned.
+  - **Nits.**
+    - Signing a skill reloads what `skill_view` serves.
+    - H204's doubled class name is fixed.
+    - The list caps commands at 120 characters, matching the catalog's `\w+`.
+    - A card that failed to queue is queued by the retry.
+    - GOV-254 and GOV-256 cover the self-signed case and the approval, and GOV-256 says an inbound guest is not offered the tool.
+    - Kept by decision: `skill_propose` is still offered where it always refuses.
+
+  Mutation: this round's 25 mutants were all caught, two after a case was added.
+
+  Records: H318, H340 and H351 rewritten (H318 and H351 closed again); 58 drifted rows re-read and re-stamped; test manual GOV-254 and GOV-256.
+
+  Tests: backend 14,397 → 14,413; vitest 1,445 → 1,447 (`settings-json-field.test.tsx` 2).
+- 2026-09-25 H666 adversarial review round (stays equivalent, #1207). **H315 back to partial** after its fourth review, and **H318 and H351 back to partial** after H318's first (headline 145 → 142/697).
+
+  review-H666 found no major, five minors and eight nits. All are fixed:
+  - **The twins agree.** The fuzz found the Python and TS tree builders differing on a whole-valued float id or parent (JSON's `1.0` is `1` in JS). `ref()` now reads it as its number, and both suites read one shared file of 47 cases (`frontend/src/test/todo-tree-cases.json`), so the twins cannot drift apart.
+  - **Pinned in tests.** The mission canvas test clicks done inside a nested row and asserts the step's own idx is posted. The TS boolean case now sits where reading `true` as `1` would show.
+  - **Records.** H288's GOV-224 citation points at GOV-224 again. `frontend/src/api/schema.gen.ts` is regenerated, which also fixes the older `/sessions/todo` drift that made the post-merge `openapi-types` job red.
+  - **Nits.** `tree()` of a non-list is empty. A whitespace-only parent clears, as in Hermes. The refusal sentence names `parent`. GOV-252 starts the mission before looking for finish controls. The docstring names the real twin path. `Mission.plan`'s comment lists `parent`. The H666 bullet's re-stamp count is corrected to 50.
+
+  Mutation: of the review's 51 mutants, three survived; two are now killed and the third is equivalent (a step's idx is its position). Six mutants of this round's guards were all killed.
+
+  The fourth review of H315 (review-H315e, of `dc327354`) re-opens it: one MAJOR, a regression. After a script, every plan read is keyed the same, so the third read after scripts is refused as a repeat and the fourth ends the turn. There are also three minors (the start sweep deletes another process's live kernel mounts; the broker's scan runs unbounded on the event loop; mutation survivors) and four nits. H315 is partial until its fix round.
+
+  The first review of H318 (review-H318, of `3f7dca99`) re-opens H318 and H351 with two MAJORs:
+  - **A self-signed outside skill reads as trusted.** An unkeyed SKILL.sig is a plain sha256, so an outside skill's body goes unfenced.
+  - **An approved `skill_propose` patch is never applied at default settings.** Only the curator applies it, and the curator is off by default and runs only overnight. The owner also approves a card that does not show the change.
+
+  The review also found six minors and nine nits. H340 stays equivalent; its unbounded rendering is one of those minors and is fixed in the same round.
+
+  Tests: backend 14,395 → 14,397; vitest 1,444 → 1,445.
+- 2026-09-25 H465 `/refine [focus]`: the self-improvement review runs on demand (partial → equivalent, #1207; headline 144 → 145/697).
+
+  Hermes' `/refine` forks the memory/skill review against a conversation snapshot, refuses while a turn is in flight and reports back into the chat. Nerva now does the same with its strict-local `BackgroundReviewer`:
+  - **The command**: `/refine [focus]` is owner-only. Its reply lists what was kept, one line per memory or skill change, and says when skill changes wait in the Decision Inbox. Every reason it did nothing is named: turn in flight, a review already running, budget spent, no local model, nothing to review.
+  - **The snapshot**: `Orchestrator.refine` reads the session's newest turns whole, each cut at 2,000 characters and 12,000 in all, and never writes to the session.
+  - **Busy check**: it reuses the turn lease, as critic note 1 asked. Busy means the lock is held and not by this context, so the command's own turn is not refused. No new in-flight set was added.
+  - **The reviewer**: `BackgroundReviewer.run_on_demand` skips the cadence but spends the daily budget, runs one at a time, and adds a focus line to the prompt. The per-turn prompt is byte-identical.
+
+  Mutation: 20 mutants; 18 caught at once, two after cases were added.
+
+  Also in this change: `orchestrator_bindings.py`'s writer inventory is re-pinned. The H318 insert in `autonomy_coordinator.py` shifted 12 pinned lines, a failure the loaded local run had hidden behind a worker timeout.
+
+  Records: H465 closed; 54 drifted rows re-read (first recorded as 53) and re-stamped (H427's `publish()` range corrected by hand; the H288 GOV-224 correction recorded here did not hold and was made in the review round); the build queue drops the plan (72 rows remain), and critic notes 1 and 3 are marked done for H465; test manual GOV-257.
+
+  Tests: backend 14,373 → 14,395 (`tests/test_h465_refine.py` 22); vitest unchanged at 1,444.
+- 2026-09-25 H318 + H340 the model lists, reads and proposes its own skills (H318 partial → equivalent, H340 missing → equivalent, H351 partial → equivalent, #1207; headline 141 → 144/697).
+
+  Built as one change, per critic note 21 (one `skill_view`). Hermes' `skills_list` / `skill_view` / `skill_manage` become three ungated ToolRPC tools in `agents/core/skills/tools.py`:
+  - **`skills_list`** lists what the prompt catalog would show this agent. The catalog's gate is factored into `SkillLoader.catalog_gate` and shared, so a quarantined, sandboxed or signature-mismatched skill, or one declared for other agents, never appears. Injection-flagged rows are left out; the list is paged and filterable.
+  - **`skill_view`** returns the SKILL.md body with its template variables rendered, or one of the skill's files. It reads from the bytes the trust checks ran on at load (`Skill.snapshot`), never the disk now: relative paths inside the skill only, text only, 64 KiB at most. An unknown skill and a hidden one answer alike. The answer is tainted, with a `warning` next to the content (H351), when the skill comes from outside the product and is not trusted here, or its text is injection-flagged.
+  - **`skill_propose`** is authoring as a proposal: a pending `SkillProposalStore` proposal with an approval card, or a new skill written into CDX-8 quarantine. It never writes a live SKILL.md, and accepts only an owner's turn that has read nothing untrusted.
+  - **Template variables (H340)** — `agents/core/skills/template_vars.py` renders `${NERVA_SKILL_DIR}`/`${HERMES_SKILL_DIR}`, `${NERVA_SESSION_ID}`/`${HERMES_SESSION_ID}` and the owner's literal `skills.template_vars` (seeded `{}`) in one pass. It never reads the environment; a value holding `$`, `env:` or `secret:` is dropped.
+  - Posture: all three stay off inbound/guest unless named in `llm.guest_tools` (critic note 22); the tool-profile snapshot and the live tool list are regenerated.
+
+  H326 stays partial, with the disclosure ladder now present; what is left is a category-grouped index, a prompt cache and cross-turn load dedup. A local finding fixed on the way: `test_the_start_reads_nothing_of_its_own_before_the_env_files_are_loaded` (two whole hub starts) gets its own 240 s ceiling. Under a loaded parallel run it crossed the suite's 30 s thread-method timeout, which takes the xdist worker down.
+
+  Mutation: 41 mutants; 33 caught at once. Four survivors were caught after cases were added or fixed (one test was vacuous, its two fixtures on different skill roots). One malformed mutant was rewritten and caught. One guard was redundant and removed. Two added mutants were caught.
+
+  Records: H318, H340 and H351 closed; H326 rewritten (partial); 52 drifted rows re-read and re-stamped (H204's gate citation now names `catalog_gate`); the build queue drops both plans (73 rows remain) and marks critic notes 21 and 22 done for these rows; test manual GOV-253..256; `docs/ARCHITECTURE.md`.
+
+  Tests: backend 14,346 → 14,373 (`tests/test_h318_skill_tools.py` 27); vitest unchanged at 1,444.
+- 2026-09-25 H666 subtasks under a parent (partial → equivalent, #1207; headline 140 → 141/697).
+
+  Hermes nests the agent's subtasks with one optional `parent` per todo item (another item's id, so merge-by-id keeps working) and draws the list through one defensive tree builder. Nerva now does both:
+  - **The tree** — `agents/core/todo_tree.py` (stdlib, the CLI's) and its HUD twin `frontend/src/todo-tree.ts` return `(item, depth)` in depth-first order, depth capped at 4. A missing, self or non-id parent draws at depth 0 in place; cycle members are appended flat. Nothing is dropped or repeated.
+  - **The todo tool** — items take an optional `parent`, cleaned like an id and refused `todo_bad_parent` when it is not one. `""` clears it on a merge and null is "not sent". A move counts toward the plan cap, and a move by an untrusted turn taints the item, as a status does. Re-sending the same parent changes nothing. A flat list answers exactly as before.
+  - **Mission steps** — every step has a nullable `parent`. `POST /api/missions` takes `{title, parent}` entries whose parent is an earlier step's index, so a plan is a forest by construction; anything else answers 400 `bad_plan_step`. Budget charging and the completion gates are unchanged.
+  - **Rendering** — `nerva todo`, the Decision Inbox's plans in flight and the mission canvas draw the indented tree.
+
+  Mutation: 43 mutants of the new guards; 39 caught at once, the other four after cases were added. One unreachable guard was removed.
+
+  Records: H666 closed; 50 drifted rows re-read and re-stamped (47 of them for `agents/cli/nerva.py`; first recorded as 30) (H315's schema line gains `parent?`); its plan left the build queue (75 rows remain); test manual GOV-250..252; `docs/ARCHITECTURE.md`.
+
+  Tests: backend 14,309 → 14,346 (`tests/test_h666_subtasks.py` 37); vitest 1,434 → 1,444 (`todo-tree.test.ts` 8, plans in flight +1, mission canvas +1).
+- 2026-09-25 H315 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
+
+  The review found one major, fixed:
+  - **A failing script handed a page to a clean turn unfenced.** A script or a session-kernel cell that printed a page and then failed answered not ok, and the loop fences an untrusted tool's result only when it is ok. The taint the broker and the kernel raised stayed in the handler's own task. So the page reached a clean turn as plain text, and the model's plan from it was stored clean. Now an `execute_code` result says `tainted` whenever the run printed anything, read untrusted text, or ran on a kernel that held some, and the loop fences it and taints the turn whether the run succeeded or failed. Tested through the real loop, the real subprocess sandbox and the real kernel.
+
+  Minors, fixed:
+  - **A kernel's files end with it.** Each interpreter gets a mailbox directory of its own, removed with it (a reset, a crash, an idle expiry, an eviction), and a start clears what an earlier process left. A clean cell can no longer read a page a tainted one stashed.
+  - The eleven mutants no test caught each got a test (the coordinator's shared-session wiring, a channel session that is the default, the rule that another's turn is untrusted, an untrusted status, the repeat event's count, a failing shared-session getter, `bind`'s default), or were made equivalent by this round.
+
+  Nits, fixed: the broker reads an answer as the loop does (a successful untrusted answer, a declared taint or an injection-scanner flag taints; a refusal or a raising tool does not); a same-text merge is no write, so it moves no writer, turn or label; a script that made tool calls ends the repeat detector's last seen plan; `ToolCallBroker(tainted=)` and the kernel's post-cell mark are gone; the kernel argv comment names the mailbox mount; the H315b test is renamed for what it checks.
+
+  Mutation: 15 mutants of the new guards, 12 caught at once, and three after a test was tightened or added.
+
+  Records: H315 rewritten and closed; 29 drifted rows re-read and re-stamped; the build-queue note; test manual GOV-246 gains the failing-script step, and GOV-249 is new.
+
+  Tests: backend 14,283 → 14,309 (`tests/test_h315d_todo_review.py` 26); vitest unchanged at 1,434.
+- 2026-09-25 H153 fourth adversarial review round (partial → equivalent, #1207; headline 138 → 139/697).
+
+  The review found one major, fixed:
+  - **One delivery could freeze the hub.** A push rendered the whole untrimmed text with `to_plain` and only then cut it. The renderer's regexes are quadratic on one long line and hold the GIL on the event loop, so one GitHub issue of 65,536 `[` froze the whole hub for about 40 s, and a 5 MiB body for hours. Now a push is the text as written: nothing is rendered and nothing is rewritten, so it costs linear time and is cut before it is sent. Telegram sends it with no parse mode or link preview, ntfy unrendered (a new `plain` send), and voice speaks it without the markup.
+  - Every renderer the rest of the hub uses (a model's reply, a streamed preview) bounds its marker spans at 500 characters, and a heading line too, so one long line renders in linear time. A longer span is left as written.
+
+  Minors, fixed:
+  - **The sender's text arrives as written.** `pkg/__init__.py`, an address with `*` or `_`, and a Markdown link are no longer rewritten. What hides or reorders text is dropped instead: bidi overrides and isolates, zero-width spaces, word joiners, the soft hyphen, the BOM, control characters but a newline and a tab. A lone surrogate becomes U+FFFD.
+  - **A burst after a start is answered.** A caller with no receiver state known yet waits for the running first read, at most two seconds, instead of being refused. A slower read still refuses, closed.
+  - **A workflow hook's answer.** It carries ok, the steps that ran and the delivery. It no longer echoes the run's context, which held the sender's text and every step's output. Every answer is encodable (a lone surrogate becomes U+FFFD, a NaN or an infinity null), so a delivery is never a 500 after its push. An output the router cannot read, or an error list that is not a list, is recorded instead.
+  - **`useApi` shows an answer unless a newer one is shown.** A poller slower than its interval (ModelSetupPanel) was starved; `loading` stays until the newest answer lands, and an answer to a request for an earlier address is never shown. A GET's refusal body now rides on its error, so the Webhooks panel reads only the hub's own "unknown category" 404 as a missing row.
+  - The review's twelve unpinned mutants each got a test: the receiver unreadable after the turn, a Telegram refusal of a push, the hour of the allowance, quiet hours and the allowance, the live label, a non-dict workflow result, an overtaken failed read, a slider's audited value, the push note and `loading`.
+
+  Nits, fixed: the last step is the last to run, not the last listed; an hour setting that is not a number (an infinity) keeps its default, for the jobs too; `web` is not listed as ready while no client is connected; the push note says a refused attempt counts; test manual CHN-173 (the 30 s settings reload) and CHN-178 (an early stop pushes the guard's output), and CHN-180 to 184 are new; H153's reseed citation, its mutation record and H200's test split.
+
+  Mutation: 40 mutants of the new guards (32 Python, 8 HUD), each run against its own suites. 39 were caught, and the last (the answer's dict keys) by a test added for it. Four were first written malformed and were rewritten before they counted.
+
+  Records: H153 rewritten and closed; H018's remaining names web's readiness; H200's test split; 31 drifted rows re-read and re-stamped (H288's comma-continued ranges and H456's `validate_action` shorthand by hand); the build-queue note; `docs/ARCHITECTURE.md` notes the bounded spans.
+
+  Tests:
+  - backend 14,222 → 14,283 (`tests/test_h153d_webhook_review.py` 61);
+  - vitest 1,428 → 1,434 (`use-api-sequence` 4, `webhooks-panel` 53 → 55).
+- 2026-09-25 H273 third adversarial review round (partial → equivalent, #1207). **H153 back to partial** after its fourth review and **H315 back to partial** after its third (headline 139 → 138/697).
+
+  The review found two majors, both fixed:
+  - **The start read 31 more names before any `.env` was loaded.** The lifespan ran the boot guards, logging, the orchestrator (audit log, memory, budget ledger) and the router's `detect()` before `plugin_manager.build` loaded the files. So ten `.env` knobs showed as in effect while they were not, among them the audit key and the public-profile gate. Now the hub loads its `.env` files first, once per process (`load_hub_env`): serve.py before it builds the server, the lifespan before its boot guards, and the plugin manager and `agents/run.py` too. A named pipe is read once.
+  - What locates the hub's own files (`JARVIS_APP_ROOT`, `JARVIS_HOME`, `JARVIS_MEMORY_DIR`) is taken from the process environment only. *(Fourth review: that does not stop a split. `JARVIS_USER_HOME` set only in a `.env`, with no `JARVIS_HOME`, still leaves the import-time stores under the default root and the rest under the home. The note says so, and H273's Known limits record it.)* Log redaction is imported first, so a `.env` cannot switch it off.
+  - Both lists are measured, not declared. A subprocess spy covers the import and the whole start up to the load, with and without `JARVIS_HOME`; a second spy checks that every read-again name is read after the load and no before-load name is.
+  - **Two read-again entries were false, and the MCP transport ignored a user token kept in `.env`.** The bind guard now sees the loaded tokens. The OAuth routes use the plugin manager's copy of the OAuth module, which re-reads the client ids after the load. The MCP transport asks `_user_token_required()`. *(Fourth review: the guard asks for more than that, so a lapsed credential opened the transport. Both now ask `_user_credential_required()`.)*
+
+  Minors, fixed:
+  - the doctor sends the admin token only to a hub on this machine, decided by address (127.0.0.2, 127.1, `localhost.` and `::ffff:127.0.0.1` count), `runtime_resolves` included;
+  - every printed name passes the shape check, so control characters never reach the report, and a name shaped like a digest, a seed or an access key id is counted whatever follows its `=`;
+  - hub mode on this machine reads the files the hub names; for a hub on another machine it shows only the names Nerva knows and says why; an empty placeholder is a name;
+  - the shell view sees the five names Nerva reads through a pool, a descriptor or a private constant;
+  - the `nerva` CLI's client refuses a redirect, skips the proxy for a hub on this machine and speaks http(s) only;
+  - the reviewer's twelve surviving mutants are each caught.
+
+  Nits, fixed: bindings resolved in file order as `load_dotenv` resolves them; one parse and one warning per file; the parse cache keyed on inode and ctime too; a `file:` hub address refused by name; a timeout on every hub request; the doctor's check table; the HUD shows the note.
+
+  Mutation: 46 mutants of the new guards (44 Python, 2 HUD), 45 caught. The survivor drops the IPv4-mapped loopback check, which is equivalent on this interpreter.
+
+  H153 is back to partial after its fourth review (review-H153d). A push renders the whole text with `to_plain` before cutting it, and `to_plain` is quadratic on one long line, so one GitHub-sized body freezes the hub for about 40 s. Five minors come with it. Its fix round is next.
+
+  H315 is back to partial after its third review (review-H315d). A script or kernel cell that prints a page and then fails hands the page to a clean turn unfenced: the loop fences only a result that is ok, and the taint the broker and the kernel raise stays in the handler's own task. What the model plans from the page is then stored clean. The kernel's writable mount also outlives a reset, and eleven mutants are not caught. Its fix round follows.
+
+  Records:
+  - H273 rewritten and closed;
+  - H153 and H315 set to partial, with their gaps in `remaining`;
+  - 43 drifted rows re-read and re-stamped. H510 and H691 are rewritten for the single boot pass, H008 and H242 name where the admin token goes, H008 counts `config_sources`, and H557's two stale citations are fixed;
+  - the binding-writer inventory re-pinned for the moved lines;
+  - build-queue notes; test manual ENV-039.
+
+  Tests:
+  - backend 14,148 → 14,222 (`tests/test_h273d_provenance_review.py` 74);
+  - vitest 1,427 → 1,428 (`env-sources` 3 → 4).
+- 2026-09-24 H315 second adversarial review round (stays equivalent after the fixes, #1207). **H273 back to partial** after its third review (headline 140 → 139/697).
+
+  The review found one major, fixed:
+  - **A script laundered untrusted text into the plan.** An item took its taint from the turn's origin, and the loop raises that only after a batch returns. So an `execute_code` script that fetched a page wrote it into the plan as clean text, and a later, clean turn re-read it unfenced. A session kernel carried it further: a clean cell wrote a variable an earlier, tainted cell had filled.
+  - Now the broker that services a script's calls raises the origin once a call reaches an `untrusted_output` tool or answers `tainted`. A script's calls belong to no model turn, so what a script wrote is data even to the turn that ran it. A kernel that has held untrusted text taints every later cell's calls, and the turn that runs the cell, until a reset.
+  - Tested through the real subprocess sandbox and the real session kernel.
+
+  Minors, fixed:
+  - **The new guest default reaches an existing install.** A start replaces exactly the old shipped `llm.guest_tools` (echo, time) with the new one (echo, time, todo), once per store (`settings_migrations`). A list the owner changed is left alone.
+  - **A turn keeps the shared verdict it resolved its session with.** An owner resuming another session no longer lets an in-flight widget turn in.
+  - **Other users' text.** On a session of its own, text written by a turn that is not the owner's (a household member continuing the owner's session, a guest) is untrusted to the owner.
+  - **A turn reads its own plan unfenced.** Each loop run carries a turn token and each item records the turn that wrote it. The owner's Telegram DM no longer reads its own checklist as DATA; a later turn still does.
+  - **The repeat detector keys a plan read on the plan the model last saw.** Reading an unchanged plan again is a repeat once more: the third read is refused and the fourth ends the turn. A read after a change is not.
+  - `todo` stays off the per-tool cap, and the cap's label says so. A start now refreshes every declared setting's label, so a reworded label reaches an existing install.
+  - The reviewer's 12 surviving mutants are each caught: bytes measured as sent, the per-character mark cap with enclosing marks, punctuation-only content, which writer the plan's labels name, the resolver's default (now fail-closed), the CLI's non-object items, and the HUD's tags and age boundaries.
+
+  Nits, fixed:
+  - a status set by an untrusted turn taints the item;
+  - a clean rewrite keeps the taint of an id an untrusted turn chose;
+  - a script's reach on the shared session is narrowed as the turn's offer is;
+  - the plan's labels move only when its list changes;
+  - a status-only merge is never refused as too long;
+  - the capability record's rollback is `compensate`;
+  - the docstrings say "most recently written or read" and that the widget route binds no session;
+  - the docs give the new guest default.
+
+  Mutation: 48 mutants of the new guards (42 backend, 6 HUD):
+  - 38 were caught at once;
+  - two survivors were code with no effect and were removed: a broker per script run, whose raised origin the service loop's one context already carries; and the kernel's mark before a cell, which the broker and the mark after the cell cover;
+  - one is equivalent: the HUD's clamp at zero, since a negative age already reads "just now";
+  - seven got tests. Those tests also catch a new mutant: a broker that keeps its flag without marking the context.
+
+  H273 is back to partial. Its third review found that the before-load note is right for the hub's import but not for the rest of its start. The lifespan reads 31 more names before the `.env` load (`llm_router.detect()` runs before `plugin_manager.build`), so ten `.env` knobs are shown as in effect while they are not, among them the audit key and the public-profile gate. Two entries of the read-again list are false: the tokens in the bind guard, and the OAuth ids behind a second module copy. Separately, the MCP transport checks the user token frozen at import. All of it is in H273's `remaining`, with the doctor minors; the fix round comes next.
+
+  Records:
+  - H315 rewritten;
+  - H273 set to partial, with its gaps in `remaining`;
+  - H456's `remaining` no longer lists `todo` among the tools a job can reach only without a group;
+  - 94 drifted rows re-read and re-stamped (the shorthand cites of H288, H427, H456 and H477 remapped by content);
+  - the build-queue note and critic note 22 updated;
+  - test manual GOV-240 notes the upgrade, and GOV-246 to 248 are new.
+
+  Tests:
+  - backend 14,111 → 14,148 (`tests/test_h315c_todo_review.py` 37);
+  - vitest 1,425 → 1,427 (`plans-in-flight` 8 → 10).
+- 2026-09-24 H153 third adversarial review round (partial → equivalent, #1207; headline 139 → 140/697).
+
+  The review found two majors, both fixed. Each offered channel now gets a real send, tested down to the adapter (`tests/test_h153c_webhook_sends.py`: the router, `send_to_target`, `ChannelManager.send` and its contract, then a recording adapter per channel, plus the real Telegram adapter's HTTP body):
+  - **Pushes answered 500 after the turn.** The quiet-hours check imported `is_night` from a module that has no such name. It now uses `schedule_runtime.is_night` on the router's clock, with the hours taken modulo 24. A test runs the real rule at 3 am and 3 pm. `_deliver` no longer fails loud: whatever fails is recorded on the hook and answered, never a 500 after the turn ran. A failed turn is recorded too, and still answers 500 so the sender's retry runs it again.
+  - **No owner channel received a delivery.** `web` has no receiver in the hub (nothing connects a WebChannel client), so it is no longer offered and is refused by name. ntfy refused the label's " · ". The label is now `Webhook <name> - <event>`, and ntfy gets it as a title folded to printable ASCII and cut to 120 characters.
+
+  Minors, fixed:
+  - **Plain text.** Every push goes as plain text: `to_plain` strips the markup and keeps each link's address in view. Telegram sends it with no parse mode, no link preview and no voice note; a note would also take the chat's pending voice turn.
+  - **A per-hook cap.** A hook pushes at most 30 times an hour. The cap is per process and counts every attempt; a push over it is noted, not sent.
+  - **Deliver only** needs a channel: deliver-only with the log is refused on create and on PATCH, with the reason, and the panel says so before sending. A record from before the rule can still be switched off, and its delivery says the text was dropped.
+  - **Wording.** The quiet-hours and cut notes say where the whole text is: the session for a reply; for deliver-only or workflow text, that it was not kept.
+  - **Changes during the turn.** The hook and the receiver are read again before the push. A hook deleted or switched off, or a receiver switched off, stops it, and a new destination is used.
+  - **Workflows.** A workflow delivers its last step's output, or nothing when the run failed or its last step errored. Every exit after a call is counted records the outcome on the hook: a missing or invalid workflow, a run that raised, no text.
+  - **The receiver read** is single-flight (the others get the last state at once). A reset, a reseed or another store drops a read that was already running.
+  - **A missing receiver row** shows the hub's default ("on · not stored") and can be switched off.
+  - **A typed model id is free text:** `model-select` values are no longer written to the audit row.
+  - **Mutant survivors.** 35 of the reviewer's 42 surviving mutants were real gaps, and each now has a test.
+
+  Nits:
+  - CHN-170 notes that `{payload.x}` reads the body's own `x`;
+  - `useApi` keeps only the newest answer, so a stale "on" can no longer land;
+  - focus goes to the create form when a hook's row is gone;
+  - an untemplated delivery with no text has its own skip reason;
+  - `Content-Length` must be ASCII digits;
+  - the schema names the four destinations as an enum (`schema.gen.ts` regenerated);
+  - the `stored_events` docstring is corrected;
+  - the generation is bumped on a reset and on a store swap.
+
+  Correction to the second round's record: it re-stamped 40 rows, not 38. H315, `needs_review` after af9ba74f edited its test, was re-stamped too.
+
+  CI on fad8fd08 failed on `test_hermes_sprint_status`: H273's test file was edited after its hash was taken. It is re-stamped here.
+
+  Mutation: 92 mutants of the new guards and of the reviewer's survivors (70 backend, 19 panel and Interop, 3 /v1):
+  - 89 were caught at once;
+  - two survivors got tests: a slow failed receiver read, and a reset while a read ran;
+  - the third was equivalent, so its redundant strip was removed.
+
+  Records:
+  - H153 rewritten and back to equivalent;
+  - H157 no longer says the audit carries a model id, and no longer contradicts itself on the reseed's audit row;
+  - H200's counts updated, and H659 notes the push cap;
+  - 32 drifted rows re-read and re-stamped (H683's shorthand checked by hand);
+  - build-queue notes updated;
+  - test manual CHN-170 to 174 rewritten, and new CHN-176 to 179;
+  - `schema.gen.ts` regenerated with openapi-typescript 7.13.0.
+
+  Tests:
+  - backend 14,031 → 14,111 (`tests/test_h153c_webhook_sends.py` 80);
+  - vitest 1,410 → 1,425 (`webhooks-panel` 40 → 53, `interop-live-honesty` 12 → 14);
+  - the /v1 `tools.test.js` 16 → 18.
+- 2026-09-24 H273 second adversarial review round (stays equivalent after the fixes, #1207). H153 back to partial (headline 140 → 139/697).
+
+  The review found one major, fixed: the doctor sent `JARVIS_ADMIN_TOKEN` to whatever answered at the hub address, following a cross-origin redirect or going through an `http_proxy`. Now every request to the hub goes through `doctor.hub_open`, which refuses redirects and never goes through a proxy to a loopback hub. The route is asked without the credential first, and the credential follows a refusal only to a hub on this machine.
+
+  Minors, fixed:
+  - **Before-load keys.** `READ_BEFORE_LOAD` is measured, not remembered. A test imports the hub in a subprocess with the environment spied on, and every Nerva name read there must be listed or declared `READ_AGAIN_AFTER_LOAD` (DEV_MODE, the tokens, the OAuth ids, the trusted proxies). The list now covers the app and data roots, the ASGI root path, the rate limit, CORS, CSP, auto-deep, the analytics cap and the Neo4j defaults. The note says to set them in the process environment.
+  - **Names shown.** The doctor prints a .env name only when the hub reads it, it carries Nerva's prefix, `.env.example` declares it, or it is a plain one-case name with a real value (not empty, not only `=` padding). Everything else is counted (`withheld_env_names`), which closes base32 seeds and hex digests printed as names.
+  - **The hub's names** include reads through a bound mapping (the Telegram group allowlist) and `*_ENV` constants (uvicorn's forwarding knobs).
+  - **Unpinned guards.** The 12 surviving mutants each have a test now.
+
+  Nits:
+  - a second load keeps a file's attribution only while the value it set is unchanged, and recomputes what the files shadow;
+  - `PYTHON_DOTENV_DISABLED` set in the repo .env stops the data-home layer, and files report `disabled` / unread;
+  - a data-home .env that is the repo .env is present;
+  - odd hub payloads keep the table, and "1 key" is singular;
+  - one parse per file;
+  - `${VAR}` in the data home expands in load_dotenv's own order;
+  - no private python-dotenv API;
+  - the settings listings read the posture in their own connection.
+
+  Mutation: 29 mutants of the new guards, 25 caught at once, and tests added for the other four. Records: H273 rewritten. H153 set back to partial with the third review's gaps named, and its fix round follows. 34 drifted rows re-read and re-stamped (H288's shorthand by hand); build-queue notes. Tests: backend 13,967 → 14,031 (tests/test_h273c_provenance_review.py 56, tests/test_doctor_hub_credential.py 8); vitest unchanged at 1,410.
+- 2026-09-24 H315 adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found three majors, all fixed:
+  - **Whose plan.** `todo` keyed on `orch.session_id`, which falls back to the shared default session, the HUD's. A widget visitor, a webhook, a job, a subagent and a direct `POST /api/toolrpc/call` read and replaced the owner's plan. Now the shared session's plan is the owner's: `Orchestrator.on_shared_session` says when a turn runs on it, the offer withholds the tool there from anyone but the owner (`tool_profiles.SESSION_SCOPED_TOOLS`), and the tool refuses them `todo_shared_session` without reading the plan to them. A turn on a session of its own keeps its own plan.
+  - **Taint carry.** A plan carried injected text into a later, clean turn with no fence. Now each item records the posture of the turn that wrote its text and whether that turn was untrusted, and an answer with a tainted item is declared `tainted`, so the loop fences it as DATA and taints the reading turn.
+  - **The repeat detector.** It ended a turn that followed the tool's own "re-read it before the next step" advice. `todo` is no longer counted as a repeat or against a per-tool cap, and the advice now asks for progress updates instead.
+
+  Minors and nits:
+  - the posture is kept per item, so a merge does not relabel a guest's text;
+  - the whole list is capped at 7,000 bytes and pinned whole in `tool_result_store`, so it is never cut;
+  - unknown fields are refused (`todo_unknown_field`);
+  - `todo` now reaches an inbound guest through the default `llm.guest_tools` (echo, time, todo), so an empty list keeps a guest off the tool loop;
+  - the trail carries positions, never ids;
+  - text is NFC with at most three combining marks, and blank-rendering text is no content;
+  - the agent's own reads keep its plan from being dropped, and an empty replace frees the slot;
+  - the capability registry calls it reversible session state;
+  - `nerva todo` exits 1 on a malformed reply and tags each item;
+  - the Decision Inbox tags each item (guest, household or background turn; untrusted source) and says how old a plan is;
+  - API-497 expects 200 with an empty list for an unknown id (a per-route override in `scripts/gen_api_sweep.py`);
+  - the parity entry that changed nothing is gone.
+
+  The first round's record also needs correcting: it said three stale line lists in H456 were corrected; there were two stale cites in one list.
+
+  49 mutants of the new guards (37 backend, 5 CLI, 7 HUD): 45 caught at once, and tests were added for the other four, which now catch them. Records: H315 rewritten; H456 and H298 corrected; 123 drifted rows re-read and re-stamped (H427's, H456's and H477's shorthand and comma cites by hand); build-queue note and critic note 22 updated; test manual GOV-240/241 and new GOV-244/245. Tests: backend 13,911 → 13,967; vitest 1,407 → 1,410.
+- 2026-09-24 H153 second adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found two majors:
+  - **Deliver to was missing.** H153 was marked equivalent although Hermes' "Deliver to" choice and deliver-only were unbuilt and unmentioned, and a create carrying them was answered 200 with the fields dropped.
+  - **The receiver switch failed open.** A settings store that could not be read turned the switched-off receiver back on.
+
+  Fixed:
+  - **Deliver to:** `deliver` is `log` (the default) or one of the owner's own direct-send channels (telegram, web, voice, ntfy), sent through the audited, rate-limited `send_to_target`, labelled with the hook and cut to fit. A push waits out quiet hours as a note on the hook. `deliver_only` skips the agent. A description and the last delivery are shown. Email, a GitHub comment, Discord and Slack are refused by name, and a create with an unknown field is refused.
+  - **Receiver:** `settings_db.read_setting` raises instead of answering the default, and `webhooks.ReceiverSwitch` keeps the last state, treats only a literal true as on, and refuses a receiver never read with its own reason. It is read off the event loop, cached for one second, and seen at once after a write in this process (`settings_db.on_change`).
+  - **Minors:** the settings audit row carries a choice's new value and a reseed is audited; a hand-broken event list is unreadable, not "every event"; rendering is bounded by its caps and a body over 5 MiB is 413; the panel's receiver row never shows a stale or unread state as on, ↻ re-reads it, and the banner warns about retries; Interop and /v1 show hooks refused while it is off.
+  - **Nits:** event names are not cut to fit; ASCII case only; no comma; an empty render is skipped; `{payload.x}` reads a reserved key; the update schema advertises no null; create is last in the tab order; focus returns after a save.
+
+  68 mutants of the new guards (44 backend, 21 panel and Interop, 3 /v1): 67 caught; the 68th removed a stop in `render_prompt` that the loop's next check already made, so that redundant stop was deleted. Records: H153 rewritten; H157, H259, H378, H409, H659, H200 and H270 corrected; 38 rows re-read and re-stamped; test manual CHN-171..175. Also fixed: CI lint (ruff I001 in `scripts/status_sync.py`, 48a1ae67) and the H315 purge test, which assumed no other test had left an ingestion cache behind (af9ba74f). Tests: backend 13,848 → 13,911; vitest 1,394 → 1,407.
+- 2026-09-24 H315 the agent keeps a visible checklist of what it is doing (missing → equivalent, #1207).
+
+  - **The tool:** `agents/core/todo_tool.py` registers an ungated `todo` ToolRPC tool: items `{id, content, status}` with Hermes' four statuses. A call replaces the list, merges by id with merge=true, or reads it with no todos, and always answers with the whole list and its counts.
+  - **Bounds:** 50 items, 200 characters of one printable line (zero-width and bidi characters dropped), at most one item in progress, 256 plans in memory. Eleven named refusals, and a refused call changes nothing.
+  - **The loop:** it never swaps the answer for a "same as call N" stub, so the model re-reads its current plan. `tool_profiles` offers it in every posture as a session-local tool, ungated only, and its docstring now states the posture rule for the other new tools (critic note 22).
+  - **The owner's view:** a `todo_updated` tool event (ids and statuses, never the text); user-guarded, no-store `GET /sessions/todo` and `/sessions/{id}/todo`; `nerva todo [SESSION]`; a "plans in flight" section under the Decision Inbox's decisions, which tags a plan written during a guest turn. A forget clears every plan.
+  - **Records:** 60 mutants, all caught. 104 rows citing the touched files were checked against the diff and re-stamped; every moved citation was verified to land on the same line of code. H456 gains `todo` in its tool enumeration and three of its stale line lists were corrected. H666's "no todo tool" was rewritten, and its plan now points at the todo item's `parent`.
+  - **Also fixed:** `scripts/status_sync.py` could not count the vitest suite since vitest 5 (the JSON report goes to a file); it now names the file and reads it.
+  - **Tests:** backend 13,811 → 13,848; vitest 1,389 → 1,394.
+- 2026-09-24 H273 adversarial review round (stays equivalent after the fixes, #1207).
+
+  The review found four majors, and 12 of its 12 natural mutants survived:
+  - The stdlib parser was python-dotenv's grammar from before 1.2.3, while the lock pins 1.2.3. A UTF-8 BOM, or a quoted Windows path ending in an escaped backslash, threw it off, and the doctor then printed a line of a PEM key as a key name.
+  - A named-pipe `.env` (1Password) was no longer loaded, and the doctor hung on one.
+  - A `JARVIS_USER_HOME` set in the repo `.env` no longer named the data home.
+
+  Fixed:
+  - **Key names:** one read of each file (a regular file or a FIFO) feeds both python-dotenv's own parse, which sets the variables, and the key names. The stdlib port, now 1.2.3's grammar with BOM strip and last-binding semantics, is the broken-install fallback. It is pinned on 25 cases plus a 4,000-file differential fuzz; 100k random files showed no difference.
+  - **Loading:** the data home is resolved after the repo layer. `PYTHON_DOTENV_DISABLED` is honoured. A reload keeps its attribution, and the same file is read once. The route names the files the load actually read. Four keys that serve.py reads before any `.env` carry a "not in effect" note.
+  - **Doctor:**
+    - It reads the running hub's own table when /readyz is ok and the admin credential opens it; otherwise it labels the table a prediction.
+    - It shows every `.env` key, plus the shell keys the hub's code reads (found in agents/ and serve.py), and no other tools' tokens.
+    - It prints only one-case identifiers, counting value material instead (`malformed_env_names`).
+    - It flags a non-UTF-8 `.env` (`env_not_utf8`) and never opens a named pipe.
+    - An unexpected error becomes a named reason, not a crash.
+  - **Settings rows:** they say `unreadable` for a secret whose key is lost, and name a value a product posture puts in effect (`in_effect`, `overlay`); `nerva config list` prints both.
+  - **HUD:** the key list names the layers a key overrides.
+
+  41 mutants, all caught (the first run's one survivor, a bare key counted as overriding, is now pinned). H157's key count corrected (163 in 20 categories), and 69 rows citing the touched files were re-read and re-stamped. Also fixed: CI lint (ruff 0.16.8 UP045 in the webhook update body, 1f6f4ea2). Tests: backend 13,782 → 13,811; vitest 1,388 → 1,389.
+- 2026-09-24 H153 the rest of a Hermes webhook subscription (partial → equivalent, #1207; headline 138 → 139/697).
+  - **Receiver switch:** the setting `webhooks.receiver_enabled` (a toggle, on by default, written through the audited settings route). When it is off, the trigger refuses every delivery with 503, both before reading the body and again after authentication, so a switch-off that lands while a body is still arriving stops that delivery too. The admin routes keep working, and hooks keep their credentials.
+  - **Per-hook event list:** the event is read from the sender's header (GitHub, GitLab, Bitbucket, generic), else from the payload. A delivery of any other event, one that names no event, or one to a hook whose list a hand edit left unreadable is answered 202 and never run. It counts as skipped, not as a call, and the last skipped event is kept. A GitHub hook subscribed to `push` no longer turns `ping` into a turn.
+  - **Prompt template:** `{a.b.0}`, `{event}` and `{payload}`, with keys and indices only (no attribute, format spec or conversion) and each value and the whole text capped. It is what the agent or workflow reads, and the turn stays inbound.
+  - **PATCH** changes `enabled`, `events` and `prompt`; it refuses null, an empty body or an unknown field, and writes an audit row that names the event list and the template's length.
+  - **Panel:** a receiver row (shows on, off or "not read", switches the receiver, and a banner says when it is off), event and template fields when creating a hook, and a detail editor with counts of skipped deliveries.
+  - **Adapted, not copied:** per-subscription skills (the target agent brings its own) and deliver-only (Nerva keeps one governed path from an outside sender to the owner, the inbound turn).
+  - H200 gains the receiver-off banner. Four test-manual rows were added (CHN-167–170). 54 backend cases (red before the build) and 8 vitest cases; 50 mutants, all caught. The OpenAPI snapshot and schema.gen.ts were re-seeded (PATCH is now `update_webhook`). Backend 13,728 → 13,782; frontend 1,380 → 1,388.
+- 2026-09-24 H200 + H153 adversarial review round (#1207): H200 stays equivalent, **H153 back to partial** (headline 139 → 138/697). The review found three majors, all fixed:
+  - **A switch-off leaked for a delivery already in flight.** The trigger checked a copy of the hook taken before the body arrived, so a sender streaming its body slowly still ran a turn after the PATCH answered 200. The switch is now read from the live record after the body.
+  - **Interop mode was stamped LIVE over seeded rows.** Only the webhooks list carried the admin credential, the view started from the demo seed, and any one source marked the whole mode live, so fabricated A2A peers, MCP servers and widgets showed under a green chip. Now all four admin-only sources carry the credential; a failed section says "not connected", never the seed; and when nothing answers, nothing is overwritten (DEMO keeps its seed).
+  - **"Every guard was mutated out" was false:** 12 of the reviewer's 42 mutants survived. This round's 60 mutants (11 backend, 27 panel, 15 Interop, 7 v1) are all caught.
+
+  Also fixed:
+  - Panel: a row's buttons are held while its call is pending; every switch or delete reloads the list whatever the answer (a hook deleted elsewhere is reported gone and its row goes); create is held while a new secret is on screen; buttons name their hook; focus follows the replaced control; only the warning sentence is an alert (the secret is not read aloud); a polite "copied"; a loopback-URL hint; an unencodable id no longer throws.
+  - Audit: the target is quoted, so it cannot pass itself off as the row's id or flags.
+  - Store: a hand-edited non-true `enabled` reads as off; a failed save undoes the change in memory. DELETE of an unknown id says why.
+  - The v1 panel shows why a list was refused, shows a signed hook only its secret, and has a dismiss button.
+
+  H153 still lacks an event filter, a prompt template and a receiver switch; they are built next. Tests: backend +12 (tests/test_h10_8_webhooks.py 23 → 35); vitest +24 (panel 7 → 22, new interop-live-honesty 9); v1 HUD +4. Backend 13,716 → 13,728; frontend 1,356 → 1,380.
+- 2026-09-24 H273 per-key configuration provenance (partial → equivalent, #1207). `agents/core/env_provenance.py` does the layered .env load PluginManager.build used to do with two load_dotenv calls (same precedence: process environment > repo .env > data-home .env, first wins) and records which layer supplied each key and which lower layers it overrides — names and layers only. Its key parser is a stdlib port of python-dotenv's binding grammar, pinned to the library on 19 edge cases. Surfaces: admin-only `GET /api/admin/env/sources` (layer, overridden layers, whether /api/admin/env masks it, the .env paths — never a value); an advisory `config_sources` row in `nerva doctor` that derives the same table offline, prints each configuration key's layer and the .env values a shell value overrides, names the .env paths it read, and carries the table in --json; settings rows say `default` or `set` and `nerva config list` prints it; the HUD's API-keys list shows each key's layer. 32 new backend cases, 3 vitest cases; 16 mutants each caught.
+- 2026-09-24 H428 + H433 second review (both stay equivalent, #1207). The review found the write side of a purge open: a turn embedding slower than the purge's 10 s wait for the store lock landed after the wipe while the forget answered ok. - A write that lands after a purge now removes its own record while it still holds the store lock, remember() carries the generation it started under like turn embeddings, and a purge that had to wipe without the lock reports it in not_erased instead of a clean wipe; the purge never releases a lock it did not take. - Between the purge's two bumps recall serves nothing (the erasing window, closed in a finally). - The late handoff is kept per session and a caller outside any turn leaves none, so an autonomy task can no longer overwrite the owner's; nothing is kept warm under a stale generation. - A KG entity edit that replaces properties, a KG delete cancelled mid-call, and only a consolidation that actually removed a vector drop cached results. - The CLI REPL reads input on a daemon thread, so the loop and the embedding queue run while the owner types, and flushes only on exit (no per-reply stall). - "❓" and "$?" are punctuation; H433 refuses ";also" and its ledger wording is corrected. tests/test_recall_gate.py 116 → 135 (22 fail on 3b4398d2), tests/test_query_rewrite.py 56 → 57; 23 more mutants, including the two the reviewer found surviving, are each caught. Known limit: a turn already running when the purge starts still saves its reply afterwards.
+- 2026-09-24 H200 + H153 inbound webhook management (both partial → equivalent, #1207; built once per critic note 7). `PATCH /api/webhooks/{id}` (admin, strict boolean) switches a hook off without losing its token; the trigger refuses a disabled hook with 403 after authentication, so an unauthenticated caller learns nothing, and a refused delivery is not counted. Create, switch and delete each write a SecurityEvent naming the hook, target and flags, never the token or secret (control characters flattened). A new console **Webhooks** panel (Interop) creates hooks (name, agent/workflow target, HMAC-signed), shows the trigger URL and the token or signing secret exactly once with copy buttons (component state only, dropped on dismiss), lists hooks with an HMAC/token badge, an on/off switch and an expandable detail, and deletes only after an inline confirmation; every call carries the admin credential. Interop mode's list links to it and now fetches with the admin credential; the legacy /v1 panel uses adminFetch. Snapshots, schema.gen.ts, the API sweep and the desktop route allowlist are updated. 11 backend cases red on 1e04e915 + 7 new vitest cases; every guard mutated out was caught.
+- 2026-09-24 H687 second review round (stays equivalent, #1207). - A queued first run is checked against the first-run policy again when it comes to run (`JobRunner.first_run_due`): an edit into a calendar schedule, a reminder or a repeat-limited job, quiet hours that began, or a first slot now near (a scheduler that was down) cancel it and name the reason. A first run the create call asked for (origin `first_run_asked`) is not second-guessed; pause cancels both. - The near-slot margin grows with the cadence: two minutes or a quarter of the gap between slots, from the real cron (`slot_timing`), so "every 12 hours" armed 45 minutes before noon waits for noon. - `is_interval_cron` reads what a cron fires on: '0 0-23/2' and '0 0,12' are intervals like '0 */2' and '0 */12'; '*/5 */2' and '0 9,21' are calendar schedules. - An edit re-queues the first run only when what runs changed (a rename leaves it queued), keeps its origin, and a refused re-queue no longer fails the saved edit. - Without a scheduler the reply says "first run queued", not "now". The CLI and HUD examples use an interval job. H288's jobs.py citations point at `_execute`/`_ask`/`_brief`/`_deliver` again. tests/test_job_first_run.py 41 → 74 cases (28 fail on ccdd7161); every new guard was mutated out and a test failed each time. Known, outside the row: parse_schedule drops a window or day qualifier after an interval ("every 30 minutes between 9 and 17" → '*/30 * * * *').
+- 2026-09-24 H428 + H433 delete round (both stay equivalent, #1207). A second review found that a purge did not stop pre-purge memory from being served: the recall generation was read when a result was stored, not when its recall started, and the purge bumped it before wiping the stores. Fixed: - Every recall reads the generation when it starts; its result is served, handed off or kept warm only while that generation is still current. A result a delete overtook is discarded before the rerank can reinforce it, or after the rerank. - `clear_live_memory` drops queued turn embeddings and invalidates cached recall results before the wipe and again after it, and wipes the vector store and the graph under the manager's store lock (a bounded 10 s wait, then without it). - Single deletes invalidate too: `DELETE /api/kg/entities/{name}`, `DELETE /api/kg/relations` and a consolidation apply with any UPDATE or DELETE. A single vector remove takes the store lock, not the conversation lock. - An empty recall replaces the warm context. Callers without a turn session (autonomy tasks, the nightly reflection, `/api/context/compress`) neither keep, serve nor consume turn state. - Punctuation alone ("?", "…?") is trivial again. The CLI REPL flushes turn embeddings after each reply and on exit; shutdown drops what did not land in 5 s. - H433: NEL is escaped in the data line; an English auxiliary starter ("Do my taxes now.") needs the model's own "?" like the Romanian ones; the graph-keyword rationale is corrected (the graph leg only helps short, entity-like messages). tests/test_recall_gate.py 96 → 116 cases (20 fail on 890e80b6), tests/test_query_rewrite.py 51 → 56 (4 fail on 890e80b6); every new guard was mutated out and a test failed each time.
+- 2026-09-24 H165 in-app documentation (missing → equivalent, #1207): `GET /api/help/docs` and `/api/help/docs/{slug}` (`agents/core/routers/help_docs.py`) are user-guarded and serve a fixed allowlist: the user guide, FLAGS.md, privacy and camera privacy. The slug is never joined into a path, a symlink is refused, and the text is size-capped and no-store. A new console **Documentation** panel (Start group) renders them through a new shared Markdown component, `frontend/src/markdown.tsx` (React nodes only, no innerHTML path; headings with anchors, fences, tables, lists, safe links in a new tab with noopener; no regex lookbehind, so older Safari still parses the bundle). Every document and section is a deep link, offered as "open in a new tab". A setting that FLAGS.md documents gets a "cost ↗" link beside its toggle in the Settings panel, and the posture panel links the flags document. The hub and HUD compute heading anchors identically, pinned by one shared fixture. The desktop route allowlist, snapshots, HUD parity rules, API sweep and schema.gen.ts are updated. 25 backend, 7 + 7 vitest cases. H168's Markdown half now has the primitive; its adoption in chat, shell and artifacts stays owed.
+- 2026-09-24 H687 a recurring instruction runs once immediately, then on its cadence (partial → equivalent, #1207): every creation surface (POST /api/jobs, /remind, `nerva jobs create`, the HUD arm and custom-job notes) goes through `JobRunner.arm`. Hermes' /loop (an interval) fires its first wakeup at once while its cron jobs wait for their first slot, so `first_run_decision` fires an ask/brief/task job or a script/monitor source at creation only on an interval cadence (`is_interval_cron`: every N minutes, hourly, every N hours). A calendar schedule, a reminder, a repeat-limited job (critic note 15), quiet hours and a first slot under two minutes away all wait. The create call's `first_run` (StrictBool; CLI `--first-run/--no-first-run`) overrides and is never stored as an option. The first run is a dispatch request of origin `first_run` that the drain runs without force, so pause, the emergency stop, validation, the repeat reservation and the quiet-hours hold apply. Pausing cancels a not-yet-claimed first run, an edit re-queues it for the edited job, ▶ now folding into it keeps the owner's force, and a refused enqueue still answers 201 with "first run not queued (…)". The 201 body carries the `first_run` receipt and one `confirmation` (it also says when the scheduler is not running). Review round (same PR) fixed pause, stale/duplicate delivery, the half-created job, the scheduler wording and the stored option. 41 + 1 + 3 cases; 674 job/dispatch/command/CLI/API-surface tests pass.
+- 2026-09-24 H433 retrieval query rewriting by a cheap auxiliary model (missing → equivalent, #1207): `agents/core/memory/query_rewrite.py` ports Hermes' rewriter — the latest message, bounded to 4,000 characters and passed only as JSON data the model is told never to obey, becomes one concise question about the user's own history; the answer is filtered (fences, labels, quotes stripped; over 320 characters, not a question, not grounded, instruction-shaped or multi-sentence → "") and any rejection or error recalls on the raw text as before. Asked in the message's language, with Romanian interrogatives, grounding words and instruction phrasing in the filters. Strict-local model only (`LLMRouter.local_backend`), temperature 0, 96 tokens, behind the new seeded toggle `memory.recall_query_rewrite` (off). Built with H428 as critic note 12 asked: the rewrite runs inside the recall bound and after the triviality gate, so a hung local model costs at most `memory.recall_timeout_s`. 26 red-first cases. Review round (same PR): - The rewrite is now the embedding query only; the graph leg keeps the raw message as its keyword, because a whole question never substring-matches an entity. Hermes also keeps the raw text for its context fetch. - A Romanian auxiliary starter counts as a question only when whitespace follows it and the model ends with its own "?", so statements, answers and "E-mail…" are refused. - Second-person pronouns no longer count as grounding. - The answer is NFKC-normalised with format characters removed. "ignoring" and "disregard" count as instruction words. ";", "…" and "?Now" count as a second sentence. U+2028/2029 are escaped in the data line. - The rewrite gets half the recall bound of its own and is cancelled past it; recall then runs on the raw text in the same turn. - The call re-checks the job pin and tells Qwen3 not to think. The filter is described as a quality gate, not a security control. 51 cases, 18 of them failing on the previous commit; strict-local is proven through a real HybridRouter whose only backend is cloud.
+- 2026-09-24 H428 pre-turn recall with a triviality gate, a hard timeout and skip-while-stuck (partial → equivalent after its review round and the warm-up, #1207): `agents/core/memory/recall_gate.is_trivial_prompt` (the Hermes acknowledgement list plus Romanian; a command-shaped slash text, not a path; an emoji-only reaction unless it asks; NFC with format characters removed) skips the embedding and the fused query. `memory.recall_timeout_s` (8 s, seeded; NaN/∞ refused by every number setting) bounds the rewrite, embedding and fused search. The review showed the bound was hollow, so it was fixed: MemoryManager now has a store lock separate from the conversation lock, so a search stuck on Qdrant/Neo4j no longer blocks saving the reply or other sessions. Turn embeddings (`MEMORY_EMBED_TURNS`) are written in the background, serialized, as Hermes' sync_all does, and are flushed for 5 s at shutdown. Every timed-out or cancelled recall is kept as a straggler, and later recalls are skipped while one runs. A pinned job turn is checked before any handoff. The rerank runs after the bound, off the loop. The same-question late-result handoff (a Nerva extension; Hermes discards it) now counts its TTL from completion, and a purge drops it and any queued turn embedding. 91 cases (21 fail on the previous commit); 13,540 backend tests run, with only the two known local 3.11 failures plus the ledger check that the re-stamp fixes. The review found the next-turn warm-up (Hermes' queue_prefetch_all) missing, so it was built. The hits a turn used become its session's warm context, which stands in when the next turn's own recall times out or is skipped behind a stuck one. It is never served across sessions, after a purge, past 10 minutes, to trivial or pinned turns, or when the new recall found nothing. It reuses the turn's own recall instead of a second round-trip. 96 cases.
+- 2026-09-24 H327 the SKILL.md frontmatter contract, agentskills.io/Hermes-compatible (partial → equivalent, #1207): one shared parser, `agents/core/skills/frontmatter.py`, for the loader and the importer. A leading BOM no longer demotes a file to the heading dialect (utf-8-sig reads plus a strip before the fence check), malformed YAML falls back to `key: value` lines as Hermes does, the name is capped at 64 characters and the description at 1024, and every key Hermes recognises now survives normalised on the manifest and on `Skill` (platforms with aliases mapped, environments, triggers, dependencies, tags, related_skills, setup, prerequisites, credential files, the Hermes env-var merge of declared/collect_secrets/legacy names, and the whole `metadata.hermes.*` block). Names only — no environment value is read. Imported frontmatter is bounded and reduced to plain JSON types. 17 red-first cases; 410 skill tests pass. Gating on the fields (H328) and setup capture are separate rows; H328 and H350 were re-read and their now-false sentences rewritten, 13 other drifted rows re-read and re-stamped. Review round (same PR): a YAML alias bomb (2 KB → 64^6 nodes) is cut by a 2,048-node budget per value; NaN, infinities, >64-bit and past-`str()`-limit hex integers become null/"" so discovery and the posture route survive; one broken SKILL.md no longer stops discovery (the signing misconfiguration still does); the key:value fallback reads column-0 keys only, drops matching quotes and yields to the heading dialect when it finds no name/description; identity decisions (Hermes pin gate, migration/rescan slugs) use the strict parse; the closing fence is column-0; platforms/environments/requires_apps read a string as one item and platforms match like Hermes (`darwin`/`win` count, `osx`/`win64` do not); `optional` is truthy; author/license lists are joined; the capped name is stripped and a registry collision is logged; descriptions keep their quotes and fall back to the first body line. 51 cases, 25/25 mutants killed, 454 skill/import/marketplace tests pass.
+- 2026-09-24 merge-train residue removed (fix): `docs/hermes/build-queue.md` (11 blocks) and `docs/HERMES_SPRINT.md` (1 block) reached `main` with unresolved merge-conflict blocks from the 2026-09-23 merge train, so the published build queue listed the eight lot-1 rows both as closed and as in flight. Every block resolved to the lot-1 side (closed rows gone, the lot-1 sprint entry kept), and `tests/test_no_conflict_markers.py` now refuses any tracked file holding a conflict opener or closer (red on the broken tree, green after).
+- 2026-09-23 H130 under a mount, /metrics keeps its per-route labels (fix, Max run «oblique-isle»): `RootPathRoutingMiddleware` hands the router a copied scope so outer policy middleware keeps seeing the logical path — but the router writes `scope["route"]` into that copy, and the outer golden-signals middleware labels every request from the scope it passed down. Every request of a `JARVIS_ROOT_PATH` deployment was therefore counted as `<unmatched>`: one route, no per-endpoint rate/errors/latency. The middleware now hands `route` (and only `route`) back at each outgoing ASGI message — `call_next` returns at `http.response.start` while a streamed body may still run — and again when the app returns or raises. Three regressions, reproduced red first: a routed prefixed request counts under its template, an unrouted one still folds into `<unmatched>`, and the label is on the outer scope before the response starts and after a handler raises. H130 stays equivalent, reassessed with one added sentence; no row count changes.
 - 2026-09-22 H672 a never-ending session picks up a changed persona and a changed tool set at the compaction boundary (missing → partial): the parked mechanism (`agents/core/session_refresh.py`, commit 89b53e85, cherry-picked unchanged with its 17 mutation-proofed tests; its docstring now says which compaction commit each half means) is wired at Nerva's two boundaries, each failing in its own direction. **Nerva is turn-based, so most of Hermes's row was already true between turns** — the skills catalog, the plugin block and ToolRPC → capability registry → tool profile are all re-resolved per run — and that is now pinned rather than assumed. What was not live: the **system prompt**, read once by `Agent._load_soul` in `__init__` and sent for the life of the process, and the **tool set inside one turn**, resolved once at the top of `_run_loop` for up to `llm.tool_loop_max_iterations` model turns. Prompt half: `Agent._read_soul` is the one builder (same file resolution, same H387 scan, same cap as a restart) behind `_load_soul` and the new `Agent.refresh_soul`; `_refresh_souls_at_boundary` calls it for every agent from `_history_for_prompt`'s `publish()` **after the clock CAS** (pinned: a refused `commit_clock` migrates nothing), behind an `os.stat` probe (`_soul_signature`: path, inode, size, mtime, ctime, cap — git's racy rule for a file written in the last two seconds), then gated on byte equality of the builder's whole output (body *and* front-matter) and failing OPEN — a builder that throws keeps the last-good bytes, a file absent for the instant of an editor's rename keeps them with a plain warning, a persona-less agent is simply unchanged — while a persona that is now mostly injection is dropped exactly as a restart would drop it and announced at the same H387 ERROR (`_announce_soul_verdict`, one place for both moments). Tool half: a committed fold in `_run_loop` re-resolves the offer through `_resolve_offer` and `refresh_tools`, failing CLOSED — a resolver that raises withdraws everything, an empty resolution is a revocation, and either ends the loop with a named reply (`tool_loop_withdrawn`) instead of a provider turn on a stale or empty list; `_specs_for` rebuilds the specs and the gate map together, so a model that still names the withdrawn tool gets `tool_not_allowed` locally — pinned by a tool withdrawn through the *profile* while still registered, the one shape the RPC's own refusal cannot fake; between folds the registry is not consulted at all (Nerva's fold is inside one user turn, so Hermes's "mid-turn tool sets stay stable" reads here as *between folds*). **What the suites caught on the first cut, no skeptic needed**: the boundary refresh was a method on `self`, and the compaction-clock tests drive `_history_for_prompt` with a bare `SimpleNamespace` — three tests red, so it is a module function now; and the "revoke everything" test that unregistered `blob` never reached its own boundary — it now empties the offer, not the executor. **An independent review of that cut found 14 items — 4 major, 6 minor, 4 nits — and 13 are addressed here, each code fix neutered once and shown red (8 mutations, 11 distinct tests):** (1) once a session is over budget the conversation-level commit is *every* turn (the compressor recomputes from the raw turns) and the walk is process-wide — 18 full re-reads plus H387 scans per turn, 59 ms on the event loop over the 18 shipped SOULs; the stat probe makes an unchanged persona cost one `os.stat`: 0.55 ms per boundary, 0 reads; (2) a persona quarantined at the boundary was announced only at INFO because the builder ran quiet before the bytes were compared — the verdict is now announced after the comparison, at the ERROR H387 pins at load; (3) the report claimed `ToolRPC.handle` refuses profile revocations live — it does not (it checks toolset, registration and gate), so between folds a profile-revoked tool stays offered *and* executes; the row says so and a control test pins the limit; (4) the gate-map rebuild had no red-able test — revoking by `unregister_tool` gets the identical `tool_not_allowed` from the RPC — so the pin now revokes through the profile; (5) the CAS order was unpinned; (6) a front-matter-only edit was "identical" because equality was on the body — it is on the whole builder output now, and the HUD's `soul["meta"]` follows; (7) the boundary line names the committing session and says the migration is shared; (8) a persona-less agent logged a traceback on every commit; (9–13) docstrings and a mis-named test. 26 wiring tests in `tests/test_h672_compaction_refresh.py`. **Honestly NOT closed:** both boundaries are opt-in (`memory.context_compression`, `llm.tool_loop_enabled`, both default off), so a default install still needs a restart for a persona edit; **profile revocations are not enforced on the execution path** — pre-existing, the executor's gate map moves only at a fold, so a loop that never folds runs a tool the profile withdrew mid-turn until it ends; the persona migration is process-wide (any session's commit, for every session); on the staged shared-route path the turn's budget is computed against the persona in force before the commit (bounded by the cap, self-correcting next turn); the prompt half covers the SOUL only (plugin and skills sections live in the user prompt and were already per-turn); the in-turn boundary does not rebuild `messages[0]`, so a persona change reaches the next turn, not the loop in flight; "a newly configured MCP server appears without a restart" is unverified (it depends on MCP registration into ToolRPC being hot); the lineage row keeps its v1 shape — the note is a log line plus the runtime event; the stale `file_tools.py` comment about `_load_soul` scanning nothing (pre-H387) is left for a hygiene commit, since it would drift five unrelated rows. Records (brought onto main `a46fc9aa`, which carries #1188 and #1189): nine rows cite `agent.py`/`agent_runtime.py`/`orchestrator.py` and are drifted by this branch — and by #1188 on `orchestrator.py`, `telegram.py` and `web.py` — so each was re-read against the diff on its cited paths before its hashes moved: **six kept as written and re-stamped** (H146, H298, H363, H364, H449, H679 — the in-turn re-resolution runs through `_profiled`, which still applies the job toolset on both sides of the profile; the result-spill, cache, reasoning and job-pin mechanism they cite is untouched, and #1188's pairing kwarg and refusal branch are not their subject), **three rewritten** (H387: the ERROR line now comes from `_announce_soul_verdict` behind the `_read_soul` builder, boot and boundary alike; H671 and H673: `publish()` re-reads the personas after the clock CAS, and H673 now carries the staged-route budget limit on its own row). The 12 in-sync rows re-stamped in the first round (H456's line citation moved to `:248-257`, H301 and H391 gain a clause each) stay in sync on the merged tree; H060, H061 and H398, re-stamped in the review round, drifted again under #1188 and are left with it. **needs_review 16 = main's own drift (H060, H061, H068, H071, H104, H108, H130, H135, H139, H398, H477, H510, H523, H683 from #1188; H288 and H684 from #1187), untouched** — #1187's comment-only edit to `orchestrator.py` re-drifted the nine rows above a second time; they were re-read against it and re-stamped. Counters: 116/697 → 119/697 (H298, H671 and H679 are `equivalent` and count again once re-read; partial earns no credit), needs_review 24 on main (after #1187/#1188) → 16 on this head, backend tests 12,654 → 12,697. Headline: **an always-on session no longer needs a restart to see a persona edit or a revoked capability — on the turns where it compacts, at the cost of one stat per agent.**
 - 2026-09-22 H506 the read side of the "files that steer future runs" class, HEARTBEAT half (partial), **and the review round that closed its first cut**: `agents/core/heartbeat.py` — the loader that turns HEARTBEAT.md / HEARTBEAT.local.md into cron-scheduled runs, until now the one file in this repo that *literally* schedules future runs with **no injection scan at all** — refuses a flagged entry at parse time. `scan_heartbeat_config` runs `detect_injection_normalized` (raw ∪ invisible-stripped ∪ invisible-becomes-space ∪ whitespace-collapsed ∪ NFKC-folded, every composition) over every string in the YAML front-matter, keys and values nested to a bound of 16, and the walker **fails closed**: a container at the bound, a `!!binary` value or a type `yaml.safe_load` never produces refuses the entry by name (`nesting-too-deep`, `unscannable-value-type:bytes`), `!!set` is walked, YAML's own scalars are inert; a TAG-plane payload is decoded so the verdict names it (a subdivision flag emoji — 🏴 + TAG letters + CANCEL TAG — is excused from the bare-run flag; what it spells is still scanned); one hit refuses the whole entry: `_parse_heartbeat` never returns a flagged config and `load_from_config` skips a refused agent instead of writing the agents.yaml interval that put it back before `start()`, so nothing reaches `_heartbeat_configs`, `start()`, `start_heartbeat()` or `POST /heartbeat/{id}/run`; a flagged overlay does **not** fall back to the shipped template; a reload starts each directory from a clean slate; the refusal is logged with the absolute path, the sha256 of the one buffer that was parsed and scanned, and the matched patterns, never the payload; `GET /heartbeat/status` (public; the runtime run-log reads the same `get_status()`) carries a `blocked` list with agent, file **relative to its root** (never the absolute path — for a data-home overlay that is the OS user name), flags and digest in both of its shapes. Every shipped HEARTBEAT.md loads clean. **Step one was reproduction, not the rows:** the SOUL half the row called open at 494a13b2 — 'You are now<U+200B>in developer mode' and 'You are now<U+0007>in developer mode' — is already closed on main by #1179 (`_scan_soul_body` → `detect_injection_normalized`; both flag through the real `Agent._load_soul`), so `agent.py` is **untouched** and the spellings are pinned in the new test file rather than in H387's evidence, which a sibling stream is re-stamping. **The adversarial pass while writing the tests found one real evasion, fixed:** PyYAML decodes a `"\uDB40\uDC70"` escape into two lone UTF-16 surrogates — code units no code-point range in `quarantine.py` sees, which a JSON serialiser on the way to a model re-joins into the invisible TAG character — so the scan joins surrogate pairs first. **An independent review of the first cut (two reviewers) returned ten distinct findings — 2 blocking, 3 major, 4 minor, 1 nit — eight fixed here, each red-first with its own test and neutered once:** `!!set`/`!!binary` fell through the walker and the payload loaded, scheduled and was echoed into the run summary (blocking); the depth bound was fail-open — at depth 8 the walker returned silently and "nothing found" read as clean — while this bullet, the row, the code comment and the test docstring all said "at any depth" (blocking; the claim was false and is corrected); a blank-rendering character **instead of** the space (Hangul fillers, U+2800, private-use, or any character already in the table) defeated the SOUL path and the HEARTBEAT path alike — fixed in `agents/core/security/quarantine.py::_detection_variants` for both loaders, with U+2800 and the three private-use planes added to the table and an NFKC fold for fullwidth spellings (major); `load_from_config` put a refused agent back before `start()` in the production load order, so "a refused entry is never scheduled" was overstated (major; corrected); the absolute path on the public route, the flag-emoji false refusal and the stale verdict on reload (minor); the digest from a second read of the file (nit). **Honestly NOT closed, stated precisely:** the Markdown body after the front-matter is discarded by `_parse_heartbeat` and reaches no model, log or scheduler, so it is not scanned (pinned as a tripwire); no heartbeat text is model input today — checklist strings are keyword-routed to skills with constant args and echoed into a logged summary — so this guards the mapping handed to the agent, not a live prompt path; the keyword scanner is literal after normalisation — a Cyrillic homoglyph, a combining overlay, markdown emphasis inside a phrase and a phrase split across two items still scan clean (a confusables fold is a separate `quarantine.py` slice; the homoglyph is pinned as a tripwire); the SOUL cross-line path builds its own normalised copy in `agent.py`, so blank-instead-of-space **and** wrapped across lines is not covered there (agent.py untouched, H387's stream). **Pre-existing and NOT fixed:** the orchestrator's `load_from_config` overwrites every shipped HEARTBEAT.md cron+checklist with the agents.yaml interval, so the shipped roster never runs a checklist at all (separate task); `load_all` keys the config by the front-matter's own `agent:` field, so a *clean* `HEARTBEAT.local.md` in one agent's directory saying `agent: jarvis` replaces Jarvis's schedule; `enabled: false` is parsed and never honoured; AGENTS.md / CLAUDE.md / GEMINI.md / `.cursorrules` / `*.mdc` stay read by external harnesses, not Nerva; no HUD renders the `blocked` list yet (`gap.tsx` and `systems.js` read `heartbeats` only). 47 tests in `tests/test_instruction_files_read_side_scan.py` (22 in the first cut, 25 from the review round), 13 neuters each red on its own test. Records: H506 re-stamped with `quarantine.py` added as evidence and summary/remaining rewritten to what holds; H288 and H684 (heartbeat.py citers, no heartbeat claim in their text, every cited test green) hash-refreshed text-unchanged; the 16 rows #1179 drifted carried unchanged. Backend tests 12,639 → 12,718 on the merged head; headline 116/697, unchanged by this branch; **needs_review 22 = main's own drift from #1187/#1188, untouched here** (a records catch-up on main is owed separately). Brought onto main 97ee1835 by merge, no rebase: the only source conflict was a comment in `heartbeat.py`, because **#1187 landed this branch's refusal bookkeeping without the scan that fills it** — on main today `_blocked` is declared, read by four paths (`load_from_config` withholding the agents.yaml interval, `start()` skipping the job, `get_status()['blocked']`, the resume refusal) and documented in the module docstring as "an entry the injection scan refused is scheduled from neither source", while nothing anywhere in `agents/` ever writes to it and `_parse_heartbeat` is a bare YAML parse: the property is documented and absent until this branch lands. **H351 rewritten as the merge gate required**: the in-place-of-a-separator placement it carried as open is closed by the spaced copy, in both row fields and for the fullwidth spelling too — probed end to end through `prompt_catalog` against main (five shapes advertised there, all dropped here; six legitimate English/Romanian/Arabic/Japanese/emoji/fullwidth descriptions keep their rows on both) and pinned at the catalog, where the row is paid, by seventeen new cases in `tests/test_skills_in_prompt.py` (32 → 49) that fail against the pre-slice module; the `loader.py` docstring drift H351 recorded (a two-copy scan, an "eleven-entry" table against ten) is corrected. Still open in H351: the `\w` command gate is wider than ASCII (the phrase spelled with Hangul fillers is now detected, but narrowing the gate stays worth doing), and the row's own premise — a load-time scan of the skill BODY with `skill_view` fencing — is still absent, so H351 stays partial.
 - 2026-09-22 H481 hardline floor — two #1177-cleared refusals closed, then hardened by an independent review (partial, still the first of three tiers): the catastrophic-command floor stopped clearing two TRUE refusals that PR #1177 had opened, each reproduced against /bin/sh, /bin/dash and /bin/bash first (harmless `echo RAN` stand-ins) and pinned red-first. **(1)** `_strip_case_labels` fired on any `case…esac` text, so `case`/`esac`/`in` used as ordinary words — `(echo case in; reboot); echo esac`, and `$IFS`-spliced `mkfs.ext4$IFS/dev/sda` / `wipefs$IFS-a$IFS/dev/sda` in the same subshell — lost the command the shell runs; the strip now fires only inside a real command-position `case WORD in … esac` region (`_in_command_position`), and on the segment source too, so one-line `case $1 in wipe) rm -rf / ;; esac` refuses while `case $1 in shutdown) echo bye ;; esac` does not. **(2)** `_heredoc_feeds_a_shell` inspected only the stage left of `<<`, so a body piped into a shell (`cat <<EOF | sh` / `| bash`) or written to a file a shell then runs (`cat <<'EOF' >x.sh; sh x.sh`) was treated as data; it now reads the heredoc's own stage and the stages downstream of it, and the file a later shell executes. **Adversarial pass:** an independent review found nine items (three blocking, three major, two minor, one nit); all nine fixed in the same branch, each reproduced against the three shells first — the heredoc rewrite over-refused a shell UPSTREAM of the heredoc's stage (`bash -c echo | cat <<EOF`), an `xargs`-reached shell, a shell with its own script or `-c` line, and a heredoc-written data file handed to a script as an ARGUMENT (`cat > x.yaml <<'EOF'` / `shutdown: graceful` / `EOF` / `bash run.sh x.yaml` was `power_cycle`, the exact config case the heredoc-as-data rule exists for); the command-position check read the compact `if true;then case $1 in` as the word `true;then` and refused the label; the new `case` regex was super-linear on prose (8×4000-char argv: 0.28 → 128 s) and the redirect-target scan quadratic (33.6 KB: 109 ms → 97.5 s) — both replaced by linear single-pass scans (now 14 ms and 201 ms; the maximal 64×4000 argv is 62 → 59 ms and, filled with case/in prose, 18.2 s → 105 ms, faster than main); and the named-shell file-exec claim was overstated — `(sh x.sh)`, `{ sh x.sh; }`, `then sh x.sh`, `cat x.sh | sh`, `sh -c '. x.sh'`, `. x.sh`, `source x.sh`, `tee x.sh <<EOF` and a quoted target all ran the body and returned None; all closed. A 671,995-case differential fuzz vs origin/main returns refusals_added = 55,059 and refusals_cleared = 22,304 — the first pass's 'refusals_cleared = 0' is withdrawn: every cleared case is one of two classes no shell executes (a heredoc into a shell with its own script or `-c` line, `sh -c cat <<EOF`; `case` as an argument or inside heredoc data, where main's unconditional strip invented a `;` command position), every added one is an executing shape, and each fix was neutered once (13 mutations, all red). **Honestly NOT closed:** the middle risky-pattern tier still does not exist (`rm -rf ~/projects` is neither hardline nor classified); the `_PATH_PREFIX` false refusal for path-spelled scripts (`./reboot.sh`, `/opt/app/bin/halt`) is left because any name-only rule clearing it would also clear a true refusal (`./mkfs.sh` is structurally `mkfs.<suffix>` like `/sbin/mkfs.ext4`); six heredoc file-exec gaps stay disclosed and pinned as misses (bare `./x.sh`, a variable-carried name, `BASH_ENV`, a heredoc inside `$( )`, `xargs -I{} sh -c '{}'`, a `;` inside a `( )` pipe stage). Backend tests 12,639 → 12,736 on the pre-merge head, 12,751 merged with main (+97; tests/test_local_transport.py 206 → 278, then → 303 after the second adversarial pass closed three more cleared refusals: a `| (sh)` subshell stage, a `<<<` here-string into a stdin shell, a heredoc inside `<(...)`); Hermes ledger H481 re-stamped, needs_review 24 on the merged head (main's own #1187/#1188 drift, untouched; the sixteen #1179 rows were re-evaluated on main by #1189). Headline: the floor holds again for the two shapes #1177 opened, and the review round made it hold without refusing what no shell runs.

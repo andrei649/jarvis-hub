@@ -2,7 +2,8 @@
 
 Covers the small status surface: component-health (`/api/health/components`), the
 HUD-compatible `/status` snapshot, and the lightweight `/api/status` smoke probe.
-All three are unguarded, exactly as inline.
+All three are unguarded, exactly as inline. H227 adds the admin-only inspector
+(`/api/admin/inspector`): what an agent can do right now, for a given principal.
 
 `/status` leans on web.py's `_sys_info()`, `_enrich_agents()`, and late-bound
 `_list_local_models()` compatibility seam.  The latter delegates to the shared
@@ -10,11 +11,13 @@ local-model inventory, keeping `/status` and `/api/models/local` on one truth so
 """
 
 import sys
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Query
 
 from agents.core.app_state import get_gateway, get_orch
 from agents.core.llm.local_model_inventory import project_llm_status
+from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
 router = APIRouter(tags=["status"])
@@ -102,6 +105,8 @@ async def status():
         "agents_online": sum(1 for a in enriched if a["status"] != "idle"),
         "agents_total": len(enriched),
         "channels": _channel_rows(orch),
+        # H275: the HUD shows a banner while the hub runs in safe mode.
+        "safe_mode": _safe_mode_status(),
     })
 
 
@@ -109,4 +114,36 @@ async def status():
 async def api_status():
     """Return service version, agent count, and health status."""
     from agents import AGENT_COUNT, __version__
-    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok"}
+    from agents.core.lifecycle_budget import WARMUP
+
+    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok", "safe_mode": _safe_mode_status(),
+            "warmup": WARMUP.snapshot()}   # H677: warming while the boot warm-up is still running
+
+
+@router.get("/api/admin/inspector", dependencies=[Depends(admin_guard)])
+async def admin_inspector(agent: str = "jarvis", view: str = "owner",
+                          section: Annotated[list[str] | None, Query()] = None):
+    """H227 — what *agent* can do right now as *view* sees it: status, the tools its
+    profile offers, the skills its prompt names, the MCP servers and the resolved prompt
+    (secrets masked, 64 KB at most). Read-only; ``section`` narrows it (repeatable)."""
+    from agents.core.inspector import SECTIONS, VIEWS, build_inspector
+
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    if view not in VIEWS:
+        return nocache_json({"error": "unknown_view", "views": list(VIEWS)}, status_code=400)
+    if section and any(name not in SECTIONS for name in section):
+        return nocache_json({"error": "unknown_section", "sections": list(SECTIONS)}, status_code=400)
+    try:
+        payload = await build_inspector(orch, agent, view=view, sections=section or None,
+                                        inventory=_web()._list_local_models)
+    except LookupError:
+        return nocache_json({"error": "unknown_agent", "agent": agent}, status_code=404)
+    return nocache_json(payload)
+
+
+def _safe_mode_status() -> dict:
+    from agents.core import safe_mode
+
+    return safe_mode.status()

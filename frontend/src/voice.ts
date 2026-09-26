@@ -19,6 +19,7 @@ import { appUrl } from './base-path';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
 import { SentenceAggregator, unspokenRemainder } from './sentences';
+import { speechText, SpeechStreamFilter } from './speech-text';
 import { streamTts } from './api/ttsStream';
 
 const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utterance
@@ -197,7 +198,10 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     catch (e) { setError(String((e && e.message) || e)); setStat('error'); activeRef.current = false; setActive(false); releaseStream(); return ''; }
   }
 
-  const speak = useCallback(async (text) => {
+  const speak = useCallback(async (reply) => {
+    // H526: the reply as it should be heard — no code, reasoning, markup, emoji or
+    // unread symbols — for the browser voice and the hub alike. Nothing left: silence.
+    const text = speechText(reply, langRef.current);
     if (!text || ttsRef.current === 'off') return;
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     let cancelled = false;
@@ -237,7 +241,9 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
           // Whole-reply fallback (unchanged behavior): synthesize the full reply, then play.
           const res = await fetch(appUrl('/tts'), { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
           if (!cancelled) {
-            if (res.ok) {
+            if (res.status === 204) {
+              // the hub found nothing to say (H526): silence, not a fallback voice
+            } else if (res.ok) {
               const blob = await res.blob();
               if (!cancelled) await playAudioBlob(blob, () => cancelled);
             } else {
@@ -272,6 +278,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (ttsRef.current === 'off') { speakStreamRef.current = null; return; }
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     const session = {
+      filter: new SpeechStreamFilter(),   // H526: code/reasoning split across deltas never spoken
       agg: new SentenceAggregator(),
       chain: Promise.resolve(),
       spoke: false,
@@ -290,16 +297,21 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const enqueueSentence = (session, sentence) => {
     session.chain = session.chain.then(async () => {
       if (session.cancelled || session.failed || !sentence.trim()) return;
+      // H526: the sentence as it should be heard; one with nothing to say (an emoji, a
+      // stray marker) is skipped — any fallback re-normalises it away too.
+      const spoken = speechText(sentence, langRef.current);
+      if (!spoken) return;
       try {
         if (ttsRef.current === 'browser') {
-          await browserSpeak(sentence, langRef.current, () => session.cancelled);
+          await browserSpeak(spoken, langRef.current, () => session.cancelled);
         } else {
           const res = await fetch(appUrl('/tts'), {
             method: 'POST',
             headers: tok({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ text: sentence, lang: langRef.current }),
+            body: JSON.stringify({ text: spoken, lang: langRef.current }),
           });
           if (session.cancelled) return;
+          if (res.status === 204) return;   // the hub found nothing to say: no empty clip
           if (!res.ok) { session.failed = true; return; }
           const blob = await res.blob();
           if (session.cancelled) return;
@@ -317,7 +329,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const pushSpeakDelta = useCallback((delta) => {
     const session = speakStreamRef.current;
     if (!session || session.cancelled || session.failed) return;
-    for (const sentence of session.agg.push(String(delta || ''))) {
+    for (const sentence of session.agg.push(session.filter.push(String(delta || '')))) {
       enqueueSentence(session, sentence);
     }
   }, []);
@@ -328,7 +340,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     speakStreamRef.current = null;
     if (!session) return { complete: false, cancelled: false, spokenSentences: [] };
     if (!session.cancelled && !session.failed) {
-      for (const sentence of session.agg.flush()) enqueueSentence(session, sentence);
+      const tail = [...session.agg.push(session.filter.flush()), ...session.agg.flush()];
+      for (const sentence of tail) enqueueSentence(session, sentence);
     }
     await session.chain;
     return {

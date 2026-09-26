@@ -1,0 +1,2376 @@
+{
+ "about": "H666: the shared cases both tree builders are pinned to (tests/test_h666_subtasks.py and frontend/src/test/todo-tree.test.ts). Items are {id, parent}; expected is [position in items, depth] in drawn order. Regenerate only with a change to both twins.",
+ "cases": [
+  {
+   "name": "dfs order",
+   "items": [
+    {
+     "id": "a",
+     "parent": null
+    },
+    {
+     "id": "b",
+     "parent": null
+    },
+    {
+     "id": "a1",
+     "parent": "a"
+    },
+    {
+     "id": "b1",
+     "parent": "b"
+    },
+    {
+     "id": "a2",
+     "parent": "a"
+    },
+    {
+     "id": "a1x",
+     "parent": "a1"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     5,
+     2
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "depth cap",
+   "items": [
+    {
+     "id": "n0",
+     "parent": null
+    },
+    {
+     "id": "n1",
+     "parent": "n0"
+    },
+    {
+     "id": "n2",
+     "parent": "n1"
+    },
+    {
+     "id": "n3",
+     "parent": "n2"
+    },
+    {
+     "id": "n4",
+     "parent": "n3"
+    },
+    {
+     "id": "n5",
+     "parent": "n4"
+    },
+    {
+     "id": "n6",
+     "parent": "n5"
+    },
+    {
+     "id": "tail",
+     "parent": null
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     3,
+     3
+    ],
+    [
+     4,
+     4
+    ],
+    [
+     5,
+     4
+    ],
+    [
+     6,
+     4
+    ],
+    [
+     7,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "dangling and self",
+   "items": [
+    {
+     "id": "a",
+     "parent": null
+    },
+    {
+     "id": "orphan",
+     "parent": "gone"
+    },
+    {
+     "id": "me",
+     "parent": "me"
+    },
+    {
+     "id": "kid",
+     "parent": "me"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "cycle off a root",
+   "items": [
+    {
+     "id": "x",
+     "parent": "y"
+    },
+    {
+     "id": "root",
+     "parent": null
+    },
+    {
+     "id": "y",
+     "parent": "x"
+    },
+    {
+     "id": "under",
+     "parent": "x"
+    },
+    {
+     "id": "r1",
+     "parent": "root"
+    }
+   ],
+   "expected": [
+    [
+     1,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "integral float parent",
+   "items": [
+    {
+     "id": 0,
+     "parent": null
+    },
+    {
+     "id": 1,
+     "parent": true
+    },
+    {
+     "id": 2,
+     "parent": 0.0
+    },
+    {
+     "id": 3,
+     "parent": 1.0
+    },
+    {
+     "id": 4,
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "text and number ids apart",
+   "items": [
+    {
+     "id": 1,
+     "parent": null
+    },
+    {
+     "id": "1",
+     "parent": null
+    },
+    {
+     "id": "c1",
+     "parent": 1
+    },
+    {
+     "id": "c2",
+     "parent": "1"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "duplicate ids",
+   "items": [
+    {
+     "id": "a",
+     "parent": null
+    },
+    {
+     "id": "a",
+     "parent": null
+    },
+    {
+     "id": "k",
+     "parent": "a"
+    },
+    {
+     "id": "a",
+     "parent": "a"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 0",
+   "items": [
+    {
+     "id": 1,
+     "parent": 2.5
+    },
+    {
+     "id": "e",
+     "parent": null
+    },
+    {
+     "id": "a",
+     "parent": ""
+    },
+    {
+     "id": 3,
+     "parent": "1"
+    },
+    {
+     "id": "b",
+     "parent": "b"
+    },
+    {
+     "id": "c",
+     "parent": 0.0
+    },
+    {
+     "id": "0",
+     "parent": true
+    },
+    {
+     "id": "1",
+     "parent": 1
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     7,
+     1
+    ],
+    [
+     3,
+     2
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 1",
+   "items": [
+    {
+     "id": "b",
+     "parent": 2
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 2",
+   "items": [
+    {
+     "id": "e",
+     "parent": "e"
+    },
+    {
+     "id": "c",
+     "parent": 2
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 3",
+   "items": [
+    {
+     "id": 1,
+     "parent": 1.0
+    },
+    {
+     "id": "e",
+     "parent": null
+    },
+    {
+     "id": "b",
+     "parent": 3
+    },
+    {
+     "id": "d",
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": "a",
+     "parent": "e"
+    },
+    {
+     "id": "0",
+     "parent": "a"
+    },
+    {
+     "id": 3,
+     "parent": "a"
+    },
+    {
+     "id": "a",
+     "parent": "a"
+    },
+    {
+     "id": "c",
+     "parent": "b"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     5,
+     2
+    ],
+    [
+     6,
+     2
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     8,
+     4
+    ],
+    [
+     7,
+     2
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 4",
+   "items": [
+    {
+     "id": "c",
+     "parent": 2
+    },
+    {
+     "id": 2,
+     "parent": false
+    },
+    {
+     "id": "d",
+     "parent": true
+    },
+    {
+     "id": "a",
+     "parent": 2.5
+    },
+    {
+     "id": 1,
+     "parent": 1.0
+    },
+    {
+     "id": 3,
+     "parent": 2
+    }
+   ],
+   "expected": [
+    [
+     1,
+     0
+    ],
+    [
+     0,
+     1
+    ],
+    [
+     5,
+     1
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 5",
+   "items": [
+    {
+     "id": "b",
+     "parent": 2.5
+    },
+    {
+     "id": 3,
+     "parent": 2
+    },
+    {
+     "id": 1,
+     "parent": 0.0
+    },
+    {
+     "id": "d",
+     "parent": "c"
+    },
+    {
+     "id": 1,
+     "parent": ""
+    },
+    {
+     "id": "c",
+     "parent": 2.5
+    },
+    {
+     "id": 1,
+     "parent": false
+    },
+    {
+     "id": 2,
+     "parent": "1"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     7,
+     0
+    ],
+    [
+     1,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "random 6",
+   "items": [
+    {
+     "id": 2,
+     "parent": true
+    },
+    {
+     "id": "0",
+     "parent": 2.5
+    },
+    {
+     "id": 0,
+     "parent": "zz"
+    },
+    {
+     "id": 0,
+     "parent": 0
+    },
+    {
+     "id": 3,
+     "parent": 1.0
+    },
+    {
+     "id": "b",
+     "parent": null
+    },
+    {
+     "id": "c",
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": "1",
+     "parent": 2
+    },
+    {
+     "id": 2,
+     "parent": 3
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     7,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     8,
+     1
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 7",
+   "items": [
+    {
+     "id": "d",
+     "parent": "1"
+    },
+    {
+     "id": 2,
+     "parent": ""
+    },
+    {
+     "id": "d",
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": 3,
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": "e",
+     "parent": 0
+    },
+    {
+     "id": "a",
+     "parent": 0
+    },
+    {
+     "id": 2,
+     "parent": "c"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 8",
+   "items": [
+    {
+     "id": 1,
+     "parent": 2.5
+    },
+    {
+     "id": 0,
+     "parent": 3
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 9",
+   "items": [
+    {
+     "id": "e",
+     "parent": "b"
+    },
+    {
+     "id": "a",
+     "parent": 2
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 10",
+   "items": [
+    {
+     "id": 0,
+     "parent": 2.5
+    },
+    {
+     "id": "1",
+     "parent": 2
+    },
+    {
+     "id": "e",
+     "parent": true
+    },
+    {
+     "id": "0",
+     "parent": true
+    },
+    {
+     "id": "1",
+     "parent": "a"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 11",
+   "items": [
+    {
+     "id": "b",
+     "parent": 0
+    },
+    {
+     "id": "b",
+     "parent": "zz"
+    },
+    {
+     "id": 2,
+     "parent": "1"
+    },
+    {
+     "id": 1,
+     "parent": "1"
+    },
+    {
+     "id": "0",
+     "parent": 3
+    },
+    {
+     "id": "0",
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": 1,
+     "parent": 2.5
+    },
+    {
+     "id": 1,
+     "parent": "c"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     7,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 12",
+   "items": [
+    {
+     "id": "c",
+     "parent": ""
+    },
+    {
+     "id": "c",
+     "parent": 0.0
+    },
+    {
+     "id": "e",
+     "parent": "c"
+    },
+    {
+     "id": "b",
+     "parent": "e"
+    },
+    {
+     "id": "e",
+     "parent": false
+    },
+    {
+     "id": "a",
+     "parent": 2
+    },
+    {
+     "id": 2,
+     "parent": false
+    },
+    {
+     "id": "d",
+     "parent": "1"
+    },
+    {
+     "id": "a",
+     "parent": {
+      "id": "a"
+     }
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     2
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     5,
+     1
+    ],
+    [
+     7,
+     0
+    ],
+    [
+     8,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 13",
+   "items": [
+    {
+     "id": 1,
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": "0",
+     "parent": 1.0
+    },
+    {
+     "id": "d",
+     "parent": 2
+    },
+    {
+     "id": "a",
+     "parent": "d"
+    },
+    {
+     "id": 0,
+     "parent": "e"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 14",
+   "items": [
+    {
+     "id": "1",
+     "parent": 2.5
+    },
+    {
+     "id": 1,
+     "parent": "b"
+    },
+    {
+     "id": 0,
+     "parent": "c"
+    },
+    {
+     "id": "c",
+     "parent": 3
+    },
+    {
+     "id": "b",
+     "parent": null
+    },
+    {
+     "id": 2,
+     "parent": true
+    },
+    {
+     "id": "d",
+     "parent": "zz"
+    },
+    {
+     "id": "a",
+     "parent": 1
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     1,
+     1
+    ],
+    [
+     7,
+     2
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 15",
+   "items": [
+    {
+     "id": "c",
+     "parent": 0
+    },
+    {
+     "id": "b",
+     "parent": "1"
+    },
+    {
+     "id": 0,
+     "parent": "d"
+    },
+    {
+     "id": "d",
+     "parent": false
+    },
+    {
+     "id": 0,
+     "parent": "c"
+    },
+    {
+     "id": "1",
+     "parent": false
+    }
+   ],
+   "expected": [
+    [
+     3,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     0,
+     2
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     1,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "random 16",
+   "items": [
+    {
+     "id": "0",
+     "parent": "d"
+    },
+    {
+     "id": 1,
+     "parent": 2.5
+    },
+    {
+     "id": "c",
+     "parent": false
+    },
+    {
+     "id": 2,
+     "parent": "zz"
+    },
+    {
+     "id": "e",
+     "parent": 1.0
+    },
+    {
+     "id": 0,
+     "parent": 1
+    },
+    {
+     "id": "d",
+     "parent": "e"
+    },
+    {
+     "id": "b",
+     "parent": [
+      0
+     ]
+    }
+   ],
+   "expected": [
+    [
+     1,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     6,
+     2
+    ],
+    [
+     0,
+     3
+    ],
+    [
+     5,
+     1
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     7,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 17",
+   "items": [
+    {
+     "id": 0,
+     "parent": 2
+    },
+    {
+     "id": 1,
+     "parent": 2
+    },
+    {
+     "id": "b",
+     "parent": ""
+    },
+    {
+     "id": 0,
+     "parent": "b"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "random 18",
+   "items": [
+    {
+     "id": "c",
+     "parent": false
+    },
+    {
+     "id": "0",
+     "parent": 2.5
+    },
+    {
+     "id": "a",
+     "parent": 1
+    },
+    {
+     "id": 2,
+     "parent": "1"
+    },
+    {
+     "id": "0",
+     "parent": null
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 19",
+   "items": [
+    {
+     "id": 2,
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": "d",
+     "parent": false
+    },
+    {
+     "id": "d",
+     "parent": "b"
+    },
+    {
+     "id": "a",
+     "parent": 1
+    },
+    {
+     "id": "1",
+     "parent": 1.0
+    },
+    {
+     "id": "d",
+     "parent": null
+    },
+    {
+     "id": "0",
+     "parent": 3
+    },
+    {
+     "id": 0,
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": 1,
+     "parent": 0.0
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     7,
+     0
+    ],
+    [
+     8,
+     1
+    ],
+    [
+     3,
+     2
+    ],
+    [
+     4,
+     2
+    ]
+   ]
+  },
+  {
+   "name": "random 20",
+   "items": [
+    {
+     "id": "1",
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 21",
+   "items": [
+    {
+     "id": 3,
+     "parent": 3
+    },
+    {
+     "id": 1,
+     "parent": 0
+    },
+    {
+     "id": "1",
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": "e",
+     "parent": "c"
+    },
+    {
+     "id": 2,
+     "parent": "a"
+    },
+    {
+     "id": "0",
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 22",
+   "items": [
+    {
+     "id": 0,
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": 2,
+     "parent": 1
+    },
+    {
+     "id": "0",
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 23",
+   "items": [
+    {
+     "id": "a",
+     "parent": 2.5
+    },
+    {
+     "id": 0,
+     "parent": 1
+    },
+    {
+     "id": "d",
+     "parent": 2
+    },
+    {
+     "id": "c",
+     "parent": 2.5
+    },
+    {
+     "id": "b",
+     "parent": "1"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 24",
+   "items": [
+    {
+     "id": "0",
+     "parent": false
+    },
+    {
+     "id": "e",
+     "parent": 0
+    },
+    {
+     "id": "b",
+     "parent": "e"
+    },
+    {
+     "id": "e",
+     "parent": "e"
+    },
+    {
+     "id": "1",
+     "parent": 1.0
+    },
+    {
+     "id": "e",
+     "parent": 0
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     5,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 25",
+   "items": [
+    {
+     "id": 1,
+     "parent": "a"
+    },
+    {
+     "id": "0",
+     "parent": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 26",
+   "items": [
+    {
+     "id": "b",
+     "parent": 3
+    },
+    {
+     "id": "a",
+     "parent": null
+    },
+    {
+     "id": "b",
+     "parent": "c"
+    },
+    {
+     "id": "c",
+     "parent": 1
+    },
+    {
+     "id": "0",
+     "parent": "c"
+    },
+    {
+     "id": "a",
+     "parent": "b"
+    },
+    {
+     "id": 1,
+     "parent": 0.0
+    },
+    {
+     "id": "d",
+     "parent": null
+    },
+    {
+     "id": "a",
+     "parent": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     5,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     7,
+     0
+    ],
+    [
+     8,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 27",
+   "items": [
+    {
+     "id": "d",
+     "parent": "c"
+    },
+    {
+     "id": 1,
+     "parent": null
+    },
+    {
+     "id": 2,
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": 3,
+     "parent": ""
+    },
+    {
+     "id": 3,
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 28",
+   "items": [
+    {
+     "id": "d",
+     "parent": "zz"
+    },
+    {
+     "id": "a",
+     "parent": false
+    },
+    {
+     "id": "b",
+     "parent": false
+    },
+    {
+     "id": "e",
+     "parent": [
+      0
+     ]
+    },
+    {
+     "id": 0,
+     "parent": "e"
+    },
+    {
+     "id": 1,
+     "parent": 0.0
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     5,
+     2
+    ]
+   ]
+  },
+  {
+   "name": "random 29",
+   "items": [
+    {
+     "id": "d",
+     "parent": 2
+    },
+    {
+     "id": "a",
+     "parent": 1.0
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 30",
+   "items": [
+    {
+     "id": "d",
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": "b",
+     "parent": "d"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "random 31",
+   "items": [
+    {
+     "id": "b",
+     "parent": false
+    },
+    {
+     "id": "b",
+     "parent": false
+    },
+    {
+     "id": 0,
+     "parent": false
+    },
+    {
+     "id": "a",
+     "parent": 1
+    },
+    {
+     "id": "b",
+     "parent": "b"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 32",
+   "items": [
+    {
+     "id": 1,
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": "1",
+     "parent": "c"
+    },
+    {
+     "id": "0",
+     "parent": 0
+    },
+    {
+     "id": 3,
+     "parent": 2
+    },
+    {
+     "id": 2,
+     "parent": "d"
+    },
+    {
+     "id": 1,
+     "parent": 1.0
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     5,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     3,
+     1
+    ]
+   ]
+  },
+  {
+   "name": "random 33",
+   "items": [
+    {
+     "id": "0",
+     "parent": true
+    },
+    {
+     "id": "a",
+     "parent": "zz"
+    },
+    {
+     "id": "d",
+     "parent": 1
+    },
+    {
+     "id": 1,
+     "parent": "d"
+    },
+    {
+     "id": 3,
+     "parent": "e"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     4,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 34",
+   "items": [
+    {
+     "id": "d",
+     "parent": "1"
+    },
+    {
+     "id": "d",
+     "parent": null
+    },
+    {
+     "id": 2,
+     "parent": "zz"
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 35",
+   "items": [
+    {
+     "id": 1,
+     "parent": {
+      "id": "a"
+     }
+    },
+    {
+     "id": 1,
+     "parent": true
+    },
+    {
+     "id": "1",
+     "parent": "d"
+    },
+    {
+     "id": "a",
+     "parent": true
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 36",
+   "items": [
+    {
+     "id": "d",
+     "parent": "a"
+    },
+    {
+     "id": 0,
+     "parent": false
+    },
+    {
+     "id": "1",
+     "parent": 2.5
+    },
+    {
+     "id": "c",
+     "parent": "c"
+    },
+    {
+     "id": "1",
+     "parent": "d"
+    },
+    {
+     "id": "1",
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     5,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 37",
+   "items": [
+    {
+     "id": "c",
+     "parent": "b"
+    },
+    {
+     "id": 0,
+     "parent": "b"
+    },
+    {
+     "id": 0,
+     "parent": ""
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 38",
+   "items": [
+    {
+     "id": 1,
+     "parent": "zz"
+    },
+    {
+     "id": "e",
+     "parent": 0
+    },
+    {
+     "id": "d",
+     "parent": "b"
+    },
+    {
+     "id": "b",
+     "parent": null
+    },
+    {
+     "id": 3,
+     "parent": 1
+    },
+    {
+     "id": 1,
+     "parent": true
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     3,
+     0
+    ],
+    [
+     2,
+     1
+    ],
+    [
+     5,
+     0
+    ]
+   ]
+  },
+  {
+   "name": "random 39",
+   "items": [
+    {
+     "id": "a",
+     "parent": ""
+    },
+    {
+     "id": "1",
+     "parent": 1
+    },
+    {
+     "id": "e",
+     "parent": false
+    },
+    {
+     "id": "e",
+     "parent": "e"
+    },
+    {
+     "id": "c",
+     "parent": 0
+    },
+    {
+     "id": 0,
+     "parent": ""
+    },
+    {
+     "id": "b",
+     "parent": 3
+    },
+    {
+     "id": "0",
+     "parent": 1
+    },
+    {
+     "id": "0",
+     "parent": 2.5
+    }
+   ],
+   "expected": [
+    [
+     0,
+     0
+    ],
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     0
+    ],
+    [
+     3,
+     1
+    ],
+    [
+     5,
+     0
+    ],
+    [
+     4,
+     1
+    ],
+    [
+     6,
+     0
+    ],
+    [
+     7,
+     0
+    ],
+    [
+     8,
+     0
+    ]
+   ]
+  }
+ ]
+}

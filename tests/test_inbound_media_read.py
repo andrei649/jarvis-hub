@@ -54,6 +54,13 @@ from agents.core.channels.media_reader import (
 from agents.core.channels.telegram import TelegramChannel
 from agents.core.security.taint import is_untrusted_source
 
+
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 PNG = b"\x89PNG\r\n\x1a\n" + b"not really a png, and it never needs to be"
 
 

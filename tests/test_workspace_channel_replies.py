@@ -24,6 +24,12 @@ CASES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 @pytest.mark.parametrize("channel,reply", CASES)
 def test_workspace_inbox_is_scoped_to_room_not_sender(tmp_path, channel, reply):
     path = tmp_path / "inbox.json"
