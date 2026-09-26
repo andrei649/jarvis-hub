@@ -207,6 +207,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="stt_language",     value="ro",                  label="STT language",       kind="text"),
     dict(category="voice",   key="tts_voice",        value="en-GB-RyanNeural",    label="TTS voice",          kind="text"),
     dict(category="voice",   key="persona_voice_consent", value=False,           label="Allow cloned/persona voice playback (owner consent)", kind="toggle"),
+    # H247 — which surfaces may open a microphone (agents/core/voice/mic.py). "host" is the
+    # hub's own always-on wake-word listener: off until the owner adds it here.
+    dict(category="voice",   key="mic_surfaces",     value=["hud", "mobile"],    label="Surfaces allowed to open a microphone (hud, mobile; add host for the hub's always-on wake word)", kind="tags", opts=["host", "hud", "mobile"]),
     dict(category="voice",   key="sentence_streaming", value=False,               label="Sentence-level TTS streaming (H5.16) — speak the reply sentence-by-sentence so audio starts sooner", kind="toggle"),
     dict(category="voice",   key="dictation_cleanup", value=False,                label="Dictation cleanup (0.24) — strip fillers/stutters + spoken punctuation from STT transcripts", kind="toggle"),
     dict(category="voice",   key="stt_echo_transcripts", value=False,             label="Echo voice-note transcripts on chat channels (H071) — say back what was heard before answering it", kind="toggle"),
@@ -812,6 +815,10 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
+        if err is None and (cat, key) == ("voice", "mic_surfaces"):
+            odd = [v for v in value if v not in spec.get("opts", [])]
+            if odd:
+                err = f"mic_surfaces: {odd} are not surfaces that arm a microphone ({spec.get('opts', [])})"
         if err:
             errors.append(err)
     return errors

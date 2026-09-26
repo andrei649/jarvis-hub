@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H247 one microphone per device, opened only by a surface the owner allowed; every lease named and audited (partial → equivalent, #1207; headline 186 → 187/697).
+
+  Nothing recorded which surface held the microphone: the hub's wake-word pipeline and a HUD hands-free loop on the same machine could both open it, no call said who held it, arming checked no consent and wrote no audit row, and the host pipeline started at boot with neither check. Now (`agents/core/voice/mic.py`, the lease table):
+  - **Surfaces and devices.** `host:hub`, `hud:<tab>`, `mobile:<device>` hold a device's microphone: `host` (the hub's machine — a browser the route sees on loopback, through the trusted-proxy client address, shares it), `remote:hud:<tab>`, `mobile:<device>`. One holder per device: a second is refused naming the holder (409) or takes it over, which pauses the holder and tells it; pause frees the device, resume asks again, stop releases.
+  - **Consent.** `voice.mic_surfaces` (validated: host, hud, mobile; default hud, mobile): the hub's always-on listener opens the host microphone only once the owner adds `host` — `VoiceChannel.start` asks for a lease first and stops/restarts the pipeline when taken over or given back. Withdrawn consent ends a lease at its next renewal.
+  - **Leases lapse and are audited.** A browser or phone lease lapses 45 s after its last renewal (the host's does not); every arm, take-over, pause, stop and refusal is one audit row; a renewal is not.
+  - **Routes** (user-guarded): `GET /api/voice/mic` (holders, paused leases, allowed kinds), `POST /api/voice/mic/arm` (hud or mobile; 403 / 409), `/pause`, `/resume`, `/stop`.
+  - **HUD.** The voice loop arms before `getUserMedia`, renews every 20 s, releases on every end, stops and says who took the microphone, offers **take over**; only a hub refusal blocks (an unreachable hub does not). The voice settings list the MICROPHONES with pause, resume and stop.
+
+  61 mutants: 60 caught (eleven after survivors got cases — one exposed a device name too long for a 64-character client id, fixed); the last was a redundant check, removed. Test manual: CHN-187, CHN-188 (CHN-185 updated: the wake word needs `host` allowed).
+  Tests: backend 17,059 → 17,086 (`tests/test_h247_mic_lease.py` 27); frontend 1,684 → 1,694 (`mic-lease.test.tsx` 10); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; HUD v2 bundle rebuilt. Not in this row: no install path installs a voice engine.
+
 - 2026-09-26 H259 a settings reset shows what it will change, keeps the secrets and can be undone; the HUD marks what differs from the default (partial → equivalent, #1207; headline 185 → 186/697).
 
   The reseed ran `DELETE FROM settings`: every setting, secrets included, gone at once with no preview and no way back; and the HUD could not tell a changed setting from its default. Now (on top of H157's search, export, dry-run import and per-category reset):

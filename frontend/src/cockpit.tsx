@@ -8,6 +8,7 @@ import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
 import { Markdown } from './markdown';
+import { MicLeases } from './mic-leases';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -247,6 +248,11 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
           {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} motion={motion} density="compact" showLabel={false} className="vorb-inline" />}
           <span style={{flex:'none'}}>{voice.error ? '⚠ ' : ''}{label}</span>
+          {/* H247: another surface on this machine holds the microphone — the owner may take it. */}
+          {voice.error && voice.micHolder && typeof voice.takeOver === 'function' && (
+            <button className="tool-btn" style={{padding:'0 6px',fontSize:10}} onClick={() => voice.takeOver()}
+              aria-label={`take the microphone from ${voice.micHolder}`}>take over</button>
+          )}
           {!voice.error && voice.status==='listening' && (
             <span style={{flex:1,height:4,borderRadius:4,background:'var(--panel-line)',overflow:'hidden'}}>
               <span style={{display:'block',height:'100%',width:Math.min(100,Math.round((voice.level||0)*400))+'%',background:'var(--green)',transition:'width .08s'}}/>
@@ -264,6 +270,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
           {row('BARGE-IN', <Seg cur={cfg.barge||'off'} opts={[{v:'off',l:'OFF'},{v:'on',l:'ON'}]} on={(v)=>onCfg({barge:v})} />)}
           {cfg.barge==='on' && <div style={{marginTop:4,color:'var(--ink-3)',fontSize:9,fontFamily:'var(--font-mono)'}}>experimental — talk over the reply to interrupt; needs echo cancellation</div>}
           {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:10,fontFamily:'var(--font-mono)'}}>local STT not installed — pip install faster-whisper</div>}
+          <MicLeases />
         </div>
       )}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" style={{display:'none'}} onChange={event=>{draft.addFiles(Array.from(event.target.files||[]));event.target.value='';}}/>

@@ -373,3 +373,100 @@ async def voice_listening_stream():
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── H247: who holds the microphone ───────────────────────────────
+
+class MicArmBody(BaseModel):
+    surface: str = Field(..., max_length=16)      # "hud" or "mobile"; the host pipeline arms itself
+    client: str = Field(..., max_length=64)
+    take_over: bool = False
+
+
+class MicSurfaceBody(BaseModel):
+    surface: str = Field(..., max_length=81)      # "<kind>:<client>", as a lease names it
+    take_over: bool = False
+
+
+_LOOPBACK = {"127.0.0.1", "::1"}
+
+
+def _mic_device(request: Request, kind: str, client: str) -> str:
+    """The microphone a surface would open. A browser the hub sees on loopback runs on
+    the hub's own machine and shares its microphone; one elsewhere, and every phone,
+    has its own. The client address is the one a trusted proxy vouches for."""
+    if kind == "mobile":
+        return f"mobile:{client}"
+    from agents.core.routers._deps import _web
+
+    host = _web()._real_client_host(request)
+    return "host" if host in _LOOPBACK else f"remote:hud:{client}"
+
+
+def _mic_refusal(refused) -> JSONResponse:
+    status = {"not_consented": 403, "mic_busy": 409}.get(refused.code, 429)
+    body = {"error": refused.code, "detail": refused.message}
+    if refused.holder:
+        body["holder"] = refused.holder
+    return nocache_json(body, status_code=status)
+
+
+@router.get("/api/voice/mic", dependencies=[Depends(user_guard)])
+async def voice_mic_status():
+    """H247 — which surface holds each device's microphone, the paused leases and the
+    kinds the owner allows to arm (``voice.mic_surfaces``)."""
+    from agents.core.voice import mic
+
+    return nocache_json(mic.ARBITER.status())
+
+
+@router.post("/api/voice/mic/arm", dependencies=[Depends(user_guard)])
+async def voice_mic_arm(body: MicArmBody, request: Request):
+    """Arm (or renew) a HUD's or a phone's microphone lease. 403 when the owner has not
+    allowed the kind, 409 naming the holder when the device's microphone is held (unless
+    ``take_over``). A browser or phone renews within 45 s, or its lease lapses."""
+    from agents.core.voice import mic
+
+    if body.surface not in ("hud", "mobile"):
+        return nocache_json({"error": "only a hud or mobile surface arms here"}, status_code=422)
+    try:
+        lease = mic.ARBITER.arm(body.surface, body.client, device=_mic_device(request, body.surface, body.client),
+                                take_over=body.take_over)
+    except ValueError as err:
+        return nocache_json({"error": str(err)}, status_code=422)
+    except mic.MicRefused as refused:
+        return _mic_refusal(refused)
+    return nocache_json({"ok": True, "lease": lease})
+
+
+@router.post("/api/voice/mic/pause", dependencies=[Depends(user_guard)])
+async def voice_mic_pause(body: MicSurfaceBody):
+    """Close a surface's microphone but keep its lease (the host pipeline too)."""
+    from agents.core.voice import mic
+
+    lease = mic.ARBITER.pause(body.surface)
+    if lease is None:
+        return nocache_json({"error": "no such lease"}, status_code=404)
+    return nocache_json({"ok": True, "lease": lease})
+
+
+@router.post("/api/voice/mic/resume", dependencies=[Depends(user_guard)])
+async def voice_mic_resume(body: MicSurfaceBody):
+    """Arm a paused lease again; consent and the device's holder are asked again."""
+    from agents.core.voice import mic
+
+    try:
+        lease = mic.ARBITER.resume(body.surface, take_over=body.take_over)
+    except mic.MicRefused as refused:
+        return _mic_refusal(refused)
+    if lease is None:
+        return nocache_json({"error": "no such lease"}, status_code=404)
+    return nocache_json({"ok": True, "lease": lease})
+
+
+@router.post("/api/voice/mic/stop", dependencies=[Depends(user_guard)])
+async def voice_mic_stop(body: MicSurfaceBody):
+    """Release a surface's lease."""
+    from agents.core.voice import mic
+
+    return nocache_json({"ok": True, "stopped": mic.ARBITER.stop(body.surface)})

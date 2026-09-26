@@ -18,6 +18,7 @@ import { appUrl } from './base-path';
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
+import { armMic, releaseMic, RENEW_MS } from './mic-lease';
 import { SentenceAggregator, unspokenRemainder } from './sentences';
 import { speechText, SpeechStreamFilter } from './speech-text';
 import { streamTts } from './api/ttsStream';
@@ -54,6 +55,10 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const [transcript, setTranscript] = useState('');
   const [level, setLevel] = useState(0);
   const [active, setActive] = useState(false);
+  // H247: who holds the microphone when the hub refused this tab (a take-over is offered).
+  const [micHolder, setMicHolder] = useState<string | null>(null);
+  const renewRef = useRef<any>(null);
+  const leasedRef = useRef(false);
 
   const streamRef = useRef(null);
   const acRef = useRef(null);
@@ -117,6 +122,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   function releaseStream() {
     // First, and unconditionally: the meter stops here, not on an event we hope for.
     if (levelIvRef.current) { clearInterval(levelIvRef.current); levelIvRef.current = null; }
+    dropLease();                         // H247: every end of the loop gives the microphone back
     try { if (recRef.current && recRef.current.state !== 'inactive') recRef.current.stop(); } catch { /* */ }
     try { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); } catch { /* */ }
     try { if (acRef.current) acRef.current.close(); } catch { /* */ }
@@ -381,24 +387,48 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     setLevel(0);
   }
 
-  const start = useCallback(async () => {
+  // H247: the lease is released with the loop, whatever ends it.
+  function dropLease() {
+    if (renewRef.current) { clearInterval(renewRef.current); renewRef.current = null; }
+    if (leasedRef.current) { leasedRef.current = false; releaseMic(); }
+  }
+
+  const start = useCallback(async (opts?: any) => {
     if (!supported) { setError('Voice not supported in this browser'); setStat('error'); return; }
     if (activeRef.current) return;
     if (micMutedRef.current) { setError('Mic is muted — unmute JARVIS to use voice'); setStat('error'); return; }
     if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStat('error'); return; }
-    setError(null);
+    setError(null); setMicHolder(null);
     const gen = ++startGenRef.current;
+    // H247: ask the hub for this device's microphone before opening it.
+    const lease = await armMic(!!(opts && opts.takeOver === true));
+    if (gen !== startGenRef.current) { if (lease.ok) releaseMic(); return; }
+    if (lease.ok === false) {
+      setError(lease.message); setMicHolder(lease.code === 'mic_busy' ? (lease.holder || null) : null); setStat('error');
+      return;
+    }
+    leasedRef.current = true;
     let stream = null;
     try { stream = await ensureStream(gen); } catch {
       // A rejection from a SUPERSEDED start must stay silent: it would otherwise overwrite
       // the OFF state a stop() just set, or report an error over a newer capture that is
       // already running. Only the current generation may publish permission-denied.
       if (gen !== startGenRef.current) return;
+      dropLease();
       setError('Microphone permission denied'); setStat('error'); return;
     }
     // cancelled while the permission prompt was up: never go active, never enter the loop
-    if (!stream || gen !== startGenRef.current) return;
+    if (!stream || gen !== startGenRef.current) { dropLease(); return; }
     activeRef.current = true; setActive(true); setStat('idle');
+    // Renew the lease while the loop runs; a refusal (taken over, consent withdrawn) ends it.
+    renewRef.current = setInterval(async () => {
+      const again = await armMic(false);
+      if (again.ok === false && activeRef.current && gen === startGenRef.current) {
+        stopRef.current();
+        setError(again.code === 'mic_busy' ? `The microphone was taken by ${again.holder}.` : again.message);
+        setMicHolder(again.code === 'mic_busy' ? (again.holder || null) : null); setStat('error');
+      }
+    }, RENEW_MS);
     loop();
   }, [supported, caps]);
 
@@ -408,10 +438,14 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     releaseStream(); setStat('off'); setLevel(0);
   }, []);
+  const stopRef = useRef(stop); stopRef.current = stop;
+
+  /** Take the microphone from the surface that holds it on this device (H247). */
+  const takeOver = useCallback(() => start({ takeOver: true }), [start]);
 
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);
 
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
-  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta };
+  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
 }
