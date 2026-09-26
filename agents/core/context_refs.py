@@ -65,7 +65,7 @@ def _warn_reason(code: str) -> str:
     return {
         "outside_scope": "outside the file roots",
         "symlink_escape": "a link that leads outside the file roots",
-        "secret_path": "a secret-looking path",
+        "secret_path": "a secret-looking path",  # nosec B105 - a refusal reason shown to the owner, not a credential
         "bad_path": "not a usable path",
     }.get(code, "refused")
 

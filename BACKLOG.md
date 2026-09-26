@@ -22,7 +22,7 @@
   - **Shown.** `GET /api/llm/quota` (admin), the HUD Console → Admin → Provider Quota panel (bars, numbers, reset times, holds) and `/usage` (admin).
 
   50 mutants: all caught. Test manual: GOV-279, GOV-280.
-  Tests: backend 16,171 → 16,214 (`tests/test_h373_provider_quota.py` 43); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`).
+  Tests: backend 16,170 → 16,213 (`tests/test_h373_provider_quota.py` 43); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`).
 
 - 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
 
@@ -33,7 +33,7 @@
   - **Completion.** `GET /api/context-refs?prefix=` lists in-scope files and folders (no secrets); the HUD composer shows them while an `@file:` is typed, Tab takes one.
 
   53 mutants: 49 caught, 4 equivalent. Test manual: GOV-277, GOV-278.
-  Tests: backend 16,126 → 16,171 (`tests/test_h579_context_refs.py` 45); vitest 1,507 → 1,510 (`context-refs.test.tsx`).
+  Tests: backend 16,126 → 16,170 (`tests/test_h579_context_refs.py` 44); vitest 1,507 → 1,510 (`context-refs.test.tsx`).
 
 - 2026-09-26 H117 a burst of messages is one turn (missing → equivalent, #1207; headline 165 → 166/697).
 
