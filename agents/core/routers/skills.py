@@ -178,7 +178,8 @@ async def sandbox_status():
         **orch.sandbox.security_status(),
         "tool_rpc": {
             "available": server is not None,
-            "tools": server.tools() if server is not None else [],
+            # Open route: the static schemas, never the live H296 answers.
+            "tools": server.tools(live=False) if server is not None else [],
         },
     }
 

@@ -1922,7 +1922,11 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
         {
             "name": "desktop_run",
             "gated": True,
-            "description": "Propose bounded governed desktop steps for approval.",
+            # H296: with the desktop flags off the tool says so instead of advertising
+            # actions it will refuse.
+            "description": ("Propose bounded governed desktop steps for approval. "
+                            "The desktop operator is switched off on this hub "
+                            "(JARVIS_DESKTOP_HOST, JARVIS_DESKTOP_ISOLATED), so every call is refused."),
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -1932,10 +1936,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
                         "items": {
                             "type": "object",
                             "properties": {
-                                # H296: the actions the step validator accepts, advertised.
-                                "action": {"type": "string", "maxLength": 64, "enum": [
-                                    "click", "launch", "locate", "observe", "read", "screenshot", "type",
-                                ]},
+                                "action": {"type": "string", "maxLength": 64},
                                 "args": {
                                     "type": "object",
                                     "maxProperties": 32,

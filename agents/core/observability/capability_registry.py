@@ -307,8 +307,9 @@ def _session_state_record(tool: dict, capability_id: str, name: str, verificatio
     )
 
 
-def _tool_records(orch) -> list[CapabilityRecord]:
-    """Derive live ToolRPC capabilities only when registration declares identity."""
+def _tool_records(orch, *, live_schemas: bool = True) -> list[CapabilityRecord]:
+    """Derive live ToolRPC capabilities only when registration declares identity.
+    ``live_schemas=False`` takes each tool's static schema, not its H296 override."""
     server = getattr(orch, "tool_rpc", None)
     project = getattr(server, "tools", None)
     if not callable(project):
@@ -316,7 +317,7 @@ def _tool_records(orch) -> list[CapabilityRecord]:
     from agents.core.capability_verification import tool_verification_ref
 
     out = []
-    for tool in project():
+    for tool in (project() if live_schemas else project(live=False)):
         capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
         if not isinstance(capability_id, str) or not capability_id:
             continue
@@ -472,18 +473,19 @@ def _acquired_records(orch) -> list[CapabilityRecord]:
     return out
 
 
-def build_records(orch=None) -> list[CapabilityRecord]:
+def build_records(orch=None, *, live_schemas: bool = True) -> list[CapabilityRecord]:
     """All capability records, overrides applied. Plugins derive statically (their
     lifecycle *state*/policy needs no orchestrator; their live honesty verdict does
     and is omitted when *orch* is None); components and skills need a live
     orchestrator outright (omitted when *orch* is None). Each source is isolated so
-    one failing registry can't blank the whole board."""
+    one failing registry can't blank the whole board. ``live_schemas=False`` gives
+    tools their static schema (see :func:`_tool_records`)."""
     records: list[CapabilityRecord] = []
     for source in (lambda: _missing_records(orch) if orch is not None else [],
                    lambda: _plugin_records(orch),
                    lambda: _action_records(orch),
                    lambda: _acquired_records(orch) if orch is not None else [],
-                   lambda: _tool_records(orch) if orch is not None else [],
+                   lambda: _tool_records(orch, live_schemas=live_schemas) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):
         try:
@@ -500,13 +502,14 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     return [_apply_override(_apply_verification(r)) for r in unique.values()]
 
 
-def snapshot(orch=None) -> dict:
+def snapshot(orch=None, *, live_schemas: bool = True) -> dict:
     """Board-ready view: records + roll-ups + the honest ``harness_pending`` flag.
 
     ``by_state`` / ``by_kind`` are counts; ``harness_pending`` is True while no capability
     is VERIFIED (i.e. the V1 reality harness has yet to promote anything) — the board renders
-    that as "wired, not yet proven" rather than implying verification we can't back."""
-    records = build_records(orch)
+    that as "wired, not yet proven" rather than implying verification we can't back.
+    A surface that answers without a token passes ``live_schemas=False`` (H296)."""
+    records = build_records(orch, live_schemas=live_schemas)
     by_state: dict[str, int] = dict.fromkeys(_ORDER, 0)
     by_kind: dict[str, int] = {}
     for r in records:

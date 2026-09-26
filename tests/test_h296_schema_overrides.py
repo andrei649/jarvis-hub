@@ -29,15 +29,22 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
-from agents.core import agent_runtime, tool_rpc  # noqa: E402
+from agents.core import agent_runtime, autonomy_coordinator, tool_rpc  # noqa: E402
 from agents.core.agent_runtime import AgentToolRuntime  # noqa: E402
 from agents.core.autonomy_coordinator import (  # noqa: E402
     _DESKTOP_RUN_SCHEMA,
     AutonomyCoordinator,
     _desktop_run_overrides,
 )
+from agents.core.desktop_drivers import AccessibilityDriver, DriverChoice  # noqa: E402
+from agents.core.desktop_host import WindowsDesktopDriver  # noqa: E402
 from agents.core.desktop_operator import _DESKTOP_ARG_RULES  # noqa: E402
-from agents.core.environments.targets import TargetRegistry, TerminalTarget  # noqa: E402
+from agents.core.environments.targets import (  # noqa: E402
+    DENY,
+    TargetRegistry,
+    TerminalTarget,
+    default_targets,
+)
 from agents.core.llm.tool_protocol import ToolCall, ToolTurn  # noqa: E402
 from agents.core.media_director import (  # noqa: E402
     DeviceRegistry,
@@ -45,8 +52,13 @@ from agents.core.media_director import (  # noqa: E402
     MediaDirector,
     SessionBoard,
 )
+from agents.core.routers import analytics, multimodal, skills  # noqa: E402
 from agents.core.session_refresh import boundary_note, refresh_prompt, refresh_tools  # noqa: E402
-from agents.core.tool_rpc import ToolRPCServer, advertised_schema  # noqa: E402
+from agents.core.tool_rpc import (  # noqa: E402
+    ToolRPCServer,
+    ToolRPCValidationError,
+    advertised_schema,
+)
 from agents.core.voice import speak_tool  # noqa: E402
 
 SCHEMA = {
@@ -173,10 +185,27 @@ class _Unserialisable:
     lambda: {"description": "x" * (tool_rpc.MAX_OVERRIDE_DESCRIPTION + 1)},
     lambda: {"properties": {"target": {"enum": {"a", "b"}}}},             # a set is not JSON
     lambda: {"properties": {"target": {"default": _Unserialisable()}}},
+    lambda: {"properties": {"target": {"type": "object"}}},              # another type
+    lambda: {"properties": {"target": {"maxLength": 10**6}}},            # a looser bound
+    lambda: {"properties": {"target": {"maxLength": None}}},              # a bound removed
+    lambda: {"required": []},                                             # drops a required name
+    lambda: {"required": ["mode"]},
 ])
 def test_a_hook_that_fails_or_answers_badly_leaves_the_static_schema(hook):
     row = _row(_server(hook))
     assert row["description"] == "Do one thing." and row["input_schema"] == SCHEMA
+
+
+def test_an_override_may_tighten_a_declared_bound_or_enum_but_never_loosen_one():
+    schema = {"type": "object", "properties": {"mode": {"type": "string", "enum": ["a", "b"], "minLength": 1,
+                                                        "maxLength": 8}}}
+    tight = _row(_server(lambda: {"properties": {"mode": {"enum": ["a"], "minLength": 1, "maxLength": 4}}},
+                         schema=schema))
+    assert tight["input_schema"]["properties"]["mode"] == {"type": "string", "enum": ["a"], "minLength": 1,
+                                                           "maxLength": 4}
+    for loose in ({"enum": ["a", "c"]}, {"enum": "a"}, {"minLength": 0}, {"maxLength": 9}):
+        row = _row(_server(lambda loose=loose: {"properties": {"mode": loose}}, schema=schema))
+        assert row["input_schema"] == schema, loose
 
 
 def test_the_longest_allowed_description_is_advertised():
@@ -227,6 +256,33 @@ def test_the_capability_registry_projection_carries_the_live_schema():
     record = next(r for r in capability_registry._tool_records(SimpleNamespace(tool_rpc=server))
                   if r.id == "tool:thing")
     assert record.description == "Live." and record.inputs["properties"]["target"]["enum"] == ["a"]
+
+
+async def test_the_open_routes_serve_the_static_schema_never_the_live_one(monkeypatch):
+    """``/sandbox/status`` and ``/api/metrics/capabilities`` answer without a token; the
+    live answer names the owner's speakers, rooms and machines, so they never carry it."""
+    from types import SimpleNamespace
+
+    server = ToolRPCServer()
+    server.register_tool("speak", _noop, gated=True, description="Say it.", capability_id="tool:speak",
+                         input_schema=json.loads(json.dumps(SCHEMA)),
+                         schema_overrides=lambda: {"description": "Speakers: sonos-master-bedroom.",
+                                                   "properties": {"target": {"enum": ["sonos-master-bedroom",
+                                                                                      "kids_bedroom"]}}})
+    sandbox = SimpleNamespace(_has_docker=False, docker_image="img", timeout=30, security_status=lambda: {})
+    orch = SimpleNamespace(tool_rpc=server, sandbox=sandbox)
+    monkeypatch.setattr(skills, "get_orch", lambda: orch)
+    monkeypatch.setattr(analytics, "get_orch", lambda: orch)
+
+    status = await skills.sandbox_status()
+    metrics = json.loads((await analytics.metrics_capabilities()).body)
+    for body in (json.dumps(status), json.dumps(metrics)):
+        assert "sonos-master-bedroom" not in body and "kids_bedroom" not in body
+    assert status["tool_rpc"]["tools"][0]["input_schema"] == SCHEMA
+    record = next(r for r in metrics["capabilities"] if r["id"] == "tool:speak")
+    assert record["inputs"] == SCHEMA and record["description"] == "Say it."
+    # The model's offer and the guarded inventory still get the live shape.
+    assert "sonos-master-bedroom" in json.dumps(server.tools())
 
 
 # ── the session boundary picks the new shape up (H672) ───────────────────────────
@@ -346,7 +402,7 @@ def test_terminal_run_says_it_is_switched_off(monkeypatch):
 def test_terminal_run_says_when_no_target_is_registered(monkeypatch):
     monkeypatch.setenv("JARVIS_TERMINAL_TARGETS", "1")
     answer = _coordinator([])._terminal_run_overrides()
-    assert set(answer) == {"description"} and "No target is registered" in answer["description"]
+    assert set(answer) == {"description"} and "No target it can run on" in answer["description"]
 
 
 def test_terminal_run_names_the_registered_targets_sorted_and_bounded(monkeypatch):
@@ -357,36 +413,130 @@ def test_terminal_run_names_the_registered_targets_sorted_and_bounded(monkeypatc
     assert many["properties"]["target"]["enum"] == [f"t{i:03d}" for i in range(64)]
 
 
+def test_terminal_run_offers_only_the_default_targets_it_can_run_on(monkeypatch):
+    """The default inventory keeps local-host, bonobo-windows and pi-house as disabled
+    rows until their flags are set; the runner refuses each with target_disabled."""
+    monkeypatch.setenv("JARVIS_TERMINAL_TARGETS", "1")
+    for flag in ("JARVIS_TERMINAL_LOCAL_HOST", "JARVIS_TERMINAL_SSH_HOST"):
+        monkeypatch.delenv(flag, raising=False)
+    assert _coordinator(default_targets())._terminal_run_overrides() == {
+        "properties": {"target": {"enum": ["isolated-sandbox"]}}}
+
+
+def test_terminal_run_leaves_out_what_the_policy_plane_denies_without_auditing_it(monkeypatch):
+    monkeypatch.setenv("JARVIS_TERMINAL_TARGETS", "1")
+    coordinator = _coordinator([
+        _target("ok"),
+        _target("anyone", allowed_agents=frozenset({"*"})),
+        _target("off", enabled=False),
+        _target("ultron-only", allowed_agents=frozenset({"ultron"})),
+        _target("read-only", capabilities=frozenset({"terminal.read"}), approval_required=frozenset()),
+    ])
+    assert coordinator._terminal_run_overrides() == {"properties": {"target": {"enum": ["anyone", "ok"]}}}
+    assert coordinator._targets.audit.entries == []      # a read, not a decision on the chain
+    answer = _coordinator([_target("off", enabled=False)])._terminal_run_overrides()
+    assert set(answer) == {"description"} and "every call is refused" in answer["description"]
+
+
+def test_usable_names_are_exactly_what_authorize_does_not_deny():
+    rows = [_target("ok"), _target("anyone", allowed_agents=frozenset({"*"})), _target("off", enabled=False),
+            _target("ultron-only", allowed_agents=frozenset({"ultron"})),
+            _target("read-only", capabilities=frozenset({"terminal.read"}), approval_required=frozenset())]
+    registry = TargetRegistry(rows)
+    allowed = sorted(row.name for row in rows
+                     if TargetRegistry(rows).authorize(row.name, "jarvis", "terminal.exec").outcome != DENY)
+    assert registry.usable_names("jarvis", "terminal.exec") == allowed == ["anyone", "ok"]
+    assert registry.audit.entries == []
+
+
 def test_the_target_registry_lists_its_names_sorted():
     assert TargetRegistry([_target("b"), _target("a")]).names() == ["a", "b"]
     assert TargetRegistry().names() == []
 
 
-# ── desktop_run: the actions its validator accepts ───────────────────────────────
+# ── desktop_run: the actions this host's driver performs ─────────────────────────
 
-def test_desktop_run_advertises_the_validators_actions_without_touching_the_static_schema():
-    before = json.dumps(_DESKTOP_RUN_SCHEMA, sort_keys=True)
+@pytest.fixture
+def desktop_host(monkeypatch):
+    """The desktop flags on, nothing cached, and ``driver_for_host`` answering *choice*."""
+    monkeypatch.setenv("JARVIS_DESKTOP_HOST", "1")
+    monkeypatch.setenv("JARVIS_DESKTOP_ISOLATED", "1")
+    monkeypatch.setattr(autonomy_coordinator, "_desktop_driver_seen", None)
+    calls = []
+
+    def answer(choice):
+        monkeypatch.setattr(multimodal, "driver_for_host", lambda: calls.append(1) or choice)
+        return calls
+
+    return answer
+
+
+@pytest.mark.parametrize("host,isolated", [("", ""), ("1", ""), ("", "1")])
+def test_desktop_run_says_it_is_switched_off(monkeypatch, host, isolated):
+    monkeypatch.setenv("JARVIS_DESKTOP_HOST", host)
+    monkeypatch.setenv("JARVIS_DESKTOP_ISOLATED", isolated)
+    monkeypatch.setattr(multimodal, "driver_for_host", _boom)       # never probed while off
     answer = _desktop_run_overrides()
-    action = answer["properties"]["steps"]["items"]["properties"]["action"]
-    assert action == {"type": "string", "maxLength": 64, "enum": sorted(_DESKTOP_ARG_RULES)}
+    assert set(answer) == {"description"}
+    assert "switched off" in answer["description"] and "every call is refused" in answer["description"]
+
+
+def test_desktop_run_on_a_host_with_no_driver_says_why(desktop_host):
+    desktop_host(DriverChoice(False, "headless", reason="desktop_platform_unsupported"))
+    answer = _desktop_run_overrides()
+    assert set(answer) == {"description"}
+    assert "desktop_platform_unsupported" in answer["description"]
+    assert "every call is refused" in answer["description"]
+
+
+def test_desktop_run_advertises_what_a_cross_platform_driver_performs(desktop_host):
+    """``launch`` is Windows-only: a macOS or Linux driver answers unsupported_action."""
+    desktop_host(DriverChoice(True, "linux-x11", driver=AccessibilityDriver()))
+    before = json.dumps(_DESKTOP_RUN_SCHEMA, sort_keys=True)
+    action = _desktop_run_overrides()["properties"]["steps"]["items"]["properties"]["action"]
+    assert action == {"type": "string", "maxLength": 64,
+                      "enum": ["click", "locate", "observe", "read", "screenshot", "type"]}
     assert json.dumps(_DESKTOP_RUN_SCHEMA, sort_keys=True) == before
     description, schema = advertised_schema("desktop_run", "d", _DESKTOP_RUN_SCHEMA, _desktop_run_overrides)
-    assert schema["properties"]["steps"]["items"]["properties"]["action"]["enum"] == sorted(_DESKTOP_ARG_RULES)
+    assert schema["properties"]["steps"]["items"]["properties"]["action"]["enum"] == action["enum"]
     assert schema["properties"]["steps"]["maxItems"] == 100
+
+
+def test_desktop_run_on_windows_advertises_launch_too(desktop_host):
+    desktop_host(DriverChoice(True, "windows", driver=WindowsDesktopDriver(host_enabled=True, isolated=True)))
+    action = _desktop_run_overrides()["properties"]["steps"]["items"]["properties"]["action"]
+    assert action["enum"] == sorted(_DESKTOP_ARG_RULES)
+
+
+def test_desktop_run_probes_the_host_once_a_minute_not_on_every_build(desktop_host, monkeypatch):
+    calls = desktop_host(DriverChoice(True, "linux-x11", driver=AccessibilityDriver()))
+    for _ in range(5):
+        _desktop_run_overrides()
+    assert len(calls) == 1
+    monkeypatch.setattr(autonomy_coordinator, "_DESKTOP_DRIVER_TTL", 0.0)
+    _desktop_run_overrides()
+    assert len(calls) == 2
 
 
 # ── speak: the devices and rooms that can announce ───────────────────────────────
 
-def _director(tmp_path, devices, presence_room=""):
+class _MediaDriver:
+    """Stands for a wired driver: speak only asks whether one exists (not the Null one)."""
+
+    supports_duration = False
+
+
+def _director(tmp_path, devices, presence_room="", kinds=("speaker", "tv")):
     registry = DeviceRegistry(path=None)
     for device in devices:
         registry.register(device)
-    return MediaDirector(registry=registry, sessions=SessionBoard(path=None), drivers={},
+    return MediaDirector(registry=registry, sessions=SessionBoard(path=None),
+                         drivers={kind: _MediaDriver() for kind in kinds},
                          local_roots=(tmp_path,), presence=lambda: None, presence_room=presence_room)
 
 
-def _device(id_, room, supports=("announce",), room_default=False):
-    return MediaDevice(id=id_, name=id_, kind="speaker", room=room, supports=supports, room_default=room_default)
+def _device(id_, room, supports=("announce",), room_default=False, kind="speaker"):
+    return MediaDevice(id=id_, name=id_, kind=kind, room=room, supports=supports, room_default=room_default)
 
 
 def _speak(director):
@@ -429,11 +579,60 @@ def test_speak_does_not_list_a_room_named_like_a_device_twice(tmp_path, monkeypa
     assert _speak(director).schema_overrides()["properties"]["target"]["enum"] == ["den"]
 
 
-def test_speak_bounds_the_advertised_targets(tmp_path, monkeypatch):
+def test_speak_leaves_out_a_room_named_like_a_device_that_cannot_announce(tmp_path, monkeypatch):
+    """A device id wins over a room name, so ``kitchen`` means the TV and is refused."""
     monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
-    director = _director(tmp_path, [_device(f"s{i:03d}", "") for i in range(80)])
-    enum = _speak(director).schema_overrides()["properties"]["target"]["enum"]
-    assert enum == [f"s{i:03d}" for i in range(speak_tool.MAX_ADVERTISED_TARGETS)]
+    director = _director(tmp_path, [
+        _device("kitchen", "kitchen", supports=("play",), kind="tv"),
+        _device("spk-1", "kitchen", room_default=True),
+    ])
+    assert _speak(director).schema_overrides()["properties"]["target"]["enum"] == ["spk-1"]
+    with pytest.raises(ToolRPCValidationError, match=speak_tool.REASON_NO_ANNOUNCE):
+        speak_tool._announce_device(director, "kitchen")
+
+
+def test_speak_past_the_bound_lists_nothing_rather_than_a_cut_list(tmp_path, monkeypatch):
+    """A cut enum would close the schema on the rooms and presence:auto it dropped."""
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    exactly = _director(tmp_path, [_device(f"s{i:03d}", "") for i in range(speak_tool.MAX_ADVERTISED_TARGETS)])
+    assert len(_speak(exactly).schema_overrides()["properties"]["target"]["enum"]) == 64
+    director = _director(tmp_path, [_device(f"s{i:03d}", "") for i in range(80)]
+                         + [_device("spk-kitchen", "kitchen", room_default=True)], presence_room="kitchen")
+    answer = _speak(director).schema_overrides()
+    assert set(answer) == {"description"} and answer["description"].startswith(speak_tool.DESCRIPTION)
+    assert "presence:auto" in answer["description"]
+
+
+def test_speak_without_a_media_driver_says_so_instead_of_listing_speakers(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    director = _director(tmp_path, [_device("speaker-kitchen", "kitchen", room_default=True)],
+                         presence_room="kitchen", kinds=())
+    answer = _speak(director).schema_overrides()
+    assert set(answer) == {"description"} and "JARVIS_MEDIA_DRIVERS" in answer["description"]
+
+
+def test_speak_lists_only_the_targets_whose_speaker_has_a_driver(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+    director = _director(tmp_path, [
+        _device("speaker-hall", "hall", room_default=True),
+        _device("cast-kitchen", "kitchen", room_default=True, kind="chromecast"),
+    ], presence_room="kitchen", kinds=("speaker",))
+    assert _speak(director).schema_overrides() == {"properties": {"target": {"enum": ["speaker-hall", "hall"]}}}
+
+
+def test_a_failing_media_director_is_not_logged_on_every_tool_list_build(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("JARVIS_MEDIA_DIRECTOR", "1")
+
+    def get():
+        raise RuntimeError("catalog db at /home/owner/media is corrupt")
+
+    server = ToolRPCServer()
+    speak_tool.register_speak_tool(server, director=get, approved_task=lambda: None,
+                                   authorizer=None, enqueue=None, enabled=True)
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(5):
+            assert "not available right now" in _row(server, "speak")["description"]
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_speak_with_no_announce_speaker_says_so(tmp_path, monkeypatch):

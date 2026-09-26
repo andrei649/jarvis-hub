@@ -99,14 +99,35 @@ SchemaOverrides = Callable[[], Optional[Mapping]]
 #: The longest description an override may advertise.
 MAX_OVERRIDE_DESCRIPTION = 2048
 _OVERRIDE_KEYS = frozenset({"description", "properties", "required"})
+#: Declared bounds an override may only tighten: a maximum may fall, a minimum may rise.
+_UPPER_BOUNDS = ("maxLength", "maxItems", "maxProperties", "maximum")
+_LOWER_BOUNDS = ("minLength", "minItems", "minProperties", "minimum")
+
+
+def _narrows(declared: Mapping, merged: Mapping) -> bool:
+    """Whether *merged* keeps *declared*'s type and does not loosen a bound or an enum
+    it declares. Keys it cannot compare (a pattern, nested items) are the hook's to keep."""
+    if "type" in declared and merged.get("type") != declared["type"]:
+        return False
+    for key in _UPPER_BOUNDS:
+        if key in declared and not (isinstance(merged.get(key), (int, float)) and merged[key] <= declared[key]):
+            return False
+    for key in _LOWER_BOUNDS:
+        if key in declared and not (isinstance(merged.get(key), (int, float)) and merged[key] >= declared[key]):
+            return False
+    if "enum" in declared:
+        enum = merged.get("enum")
+        return isinstance(enum, list) and all(value in declared["enum"] for value in enum)
+    return True
 
 
 def _apply_override(description: str, schema: dict, patch: object) -> tuple[str, dict]:
     """Merge one hook answer over a static (description, schema); raise on anything else.
 
     An answer may carry ``description`` (text), ``properties`` (per-property keys
-    merged over properties the static schema already declares: an override narrows
-    an argument, it never invents one) and ``required`` (names the schema declares).
+    merged over properties the static schema already declares: an override never
+    invents an argument, changes one's type or loosens a bound or enum it declares)
+    and ``required`` (declared names, keeping every name the schema requires).
     ``None`` or ``{}`` means "nothing to change".
     """
     import json
@@ -133,11 +154,15 @@ def _apply_override(description: str, schema: dict, patch: object) -> tuple[str,
             if key not in declared or not isinstance(value, Mapping) or not isinstance(declared[key], Mapping):
                 raise ValueError(f"override for an undeclared or malformed property: {key!r}")
             merged[key] = {**declared[key], **deepcopy(dict(value))}
+            if not _narrows(declared[key], merged[key]):
+                raise ValueError(f"override widens property {key!r}")
         schema = {**schema, "properties": merged}
     if "required" in patch:
         names = patch["required"]
         if not isinstance(names, list) or any(n not in declared for n in names):
             raise ValueError("override required must name declared properties")
+        if not set(names) >= set(schema.get("required") or ()):
+            raise ValueError("override required must keep every required property")
         schema = {**schema, "required": list(names)}
     json.dumps(schema)            # plain JSON only: a set, a NaN or an object cannot reach a model
     return description, schema
@@ -364,11 +389,15 @@ class ToolRPCServer:
                 await asyncio.gather(*tasks, return_exceptions=True)
         return True
 
-    def tools(self) -> "list[dict]":
+    def tools(self, *, live: bool = True) -> "list[dict]":
+        """The registered tools as the model is offered them. ``live=False`` leaves the
+        H296 overrides out: their answers name the owner's speakers, rooms and machines,
+        so a surface that answers without a token serves the static schema."""
         tools = []
         for name, spec in sorted(self._tools.items()):
             description, schema = advertised_schema(
-                name, spec["description"], spec["input_schema"], spec.get("schema_overrides"))
+                name, spec["description"], spec["input_schema"],
+                spec.get("schema_overrides") if live else None)
             row = {
                 "name": name,
                 "gated": spec["gated"],

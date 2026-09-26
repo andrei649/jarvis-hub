@@ -97,15 +97,53 @@ _DESKTOP_RUN_SCHEMA = {
 }
 
 
+_DESKTOP_RUN_DESCRIPTION = "Propose bounded governed desktop steps for approval."
+#: H296 — how long desktop_run trusts one look at this host's desktop driver: the tool
+#: list is built several times a turn, and the host probe touches the OS.
+_DESKTOP_DRIVER_TTL = 60.0
+#: That look: (when, the refusal reason or "", the actions the driver performs).
+_desktop_driver_seen: tuple[float, str, frozenset] | None = None
+
+
+def _desktop_driver_actions() -> tuple[str, frozenset]:
+    """Why this host has no desktop driver ("" when it has one) and what its driver
+    performs, from the same ``driver_for_host`` the approved run binds."""
+    global _desktop_driver_seen
+    import time
+
+    from .desktop_drivers import SUPPORTED_ACTIONS
+    from .routers import multimodal
+
+    now = time.monotonic()
+    seen = _desktop_driver_seen
+    if seen is None or now - seen[0] >= _DESKTOP_DRIVER_TTL:
+        choice = multimodal.driver_for_host()
+        if choice.ok and choice.driver is not None:
+            seen = (now, "", frozenset(getattr(choice.driver, "supported_actions", SUPPORTED_ACTIONS)))
+        else:
+            seen = (now, choice.reason or "desktop_dependency_unavailable", frozenset())
+        _desktop_driver_seen = seen
+    return seen[1], seen[2]
+
+
 def _desktop_run_overrides() -> dict:
-    """H296 — desktop_run names the step actions its validator accepts (the table
-    ``validate_desktop_run_args`` checks), not a free string."""
+    """H296 — desktop_run names the step actions both its validator (the table
+    ``validate_desktop_run_args`` checks) and this host's driver accept, or says why
+    every call is refused: the desktop flags are off, or the host has no driver."""
     from copy import deepcopy
 
     from .desktop_operator import _DESKTOP_ARG_RULES
+    from .routers.multimodal import desktop_host_enabled
 
+    if not desktop_host_enabled():
+        return {"description": _DESKTOP_RUN_DESCRIPTION + " The desktop operator is switched off on this "
+                               "hub (JARVIS_DESKTOP_HOST, JARVIS_DESKTOP_ISOLATED), so every call is refused."}
+    refusal, actions = _desktop_driver_actions()
+    if refusal:
+        return {"description": _DESKTOP_RUN_DESCRIPTION + f" This host has no desktop driver ({refusal}), "
+                               "so every call is refused."}
     steps = deepcopy(_DESKTOP_RUN_SCHEMA["properties"]["steps"])
-    steps["items"]["properties"]["action"]["enum"] = sorted(_DESKTOP_ARG_RULES)
+    steps["items"]["properties"]["action"]["enum"] = sorted(set(_DESKTOP_ARG_RULES) & actions)
     return {"properties": {"steps": steps}}
 
 
@@ -554,8 +592,8 @@ class AutonomyCoordinator:
             "desktop_run",
             _rpc_desktop_run,
             gated=True,
-            description="Propose bounded governed desktop steps for approval.",
-            # H296: the actions the step validator accepts, from its own table.
+            description=_DESKTOP_RUN_DESCRIPTION,
+            # H296: the actions the step validator and this host's driver accept.
             schema_overrides=_desktop_run_overrides,
             input_schema=_DESKTOP_RUN_SCHEMA,
             capability_id="tool:desktop_run",
@@ -1088,17 +1126,19 @@ class AutonomyCoordinator:
         )
 
     def _terminal_run_overrides(self) -> dict:
-        """H296 — terminal_run names the targets actually registered, or says it is off."""
+        """H296 — terminal_run names the targets its runner would run on (enabled, open to
+        this agent, granting terminal.exec — the handler's own agent and capability), or
+        says it is off."""
         from .env_config import env_flag
 
         if not env_flag("JARVIS_TERMINAL_TARGETS"):
             return {"description": "Run one bounded shell command on a named governed target. "
                                    "Terminal targets are switched off on this hub "
                                    "(JARVIS_TERMINAL_TARGETS), so every call is refused."}
-        names = self._target_registry().names()
+        names = self._target_registry().usable_names("jarvis", "terminal.exec")
         if not names:
             return {"description": "Run one bounded shell command on a named governed target. "
-                                   "No target is registered, so every call is refused."}
+                                   "No target it can run on is enabled, so every call is refused."}
         return {"properties": {"target": {"enum": names[:64]}}}
 
     def _target_registry(self):
