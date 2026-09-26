@@ -206,7 +206,7 @@ _NUMBERS_NOT_FORCED = {
     "autonomy.health_min_hrv",
     # retention windows: how long data is kept, not what may run
     "retention.artifact_ttl_days", "retention.conversation_ttl_days", "retention.audit_ttl_days",
-    "retention.ingestion_ttl_days",
+    "retention.ingestion_ttl_days", "retention.min_interval_hours", "retention.min_vacuum_interval_days",
 }
 
 

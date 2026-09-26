@@ -140,7 +140,8 @@ def test_the_stale_list_is_oldest_first_and_bounded(cp):
     assert cp.stale_sessions(T0.isoformat(), limit=2) == ["s0", "s1"]
 
 
-async def test_the_scheduler_runs_it_only_when_set(cp, monkeypatch):
+async def test_the_sweep_runs_the_archiver_only_when_set(cp, monkeypatch):
+    """H262 — the lifecycle sweep's archive phase replaced the 03:40 job."""
     from agents.core.scheduler_service import SchedulerService
 
     _session(cp, "idle", started=(datetime.now(UTC) - timedelta(days=40)).isoformat())
@@ -149,25 +150,27 @@ async def test_the_scheduler_runs_it_only_when_set(cp, monkeypatch):
                            get_setting=lambda key, default=None: settings.get(key, default))
     svc = SchedulerService.__new__(SchedulerService)
     svc._orch = orch
-    assert await svc.run_auto_archive() == {"_scheduler_status": "skipped"}
+    assert await svc.run_retention_purge() == {"_scheduler_status": "skipped"}
     settings["memory.auto_archive_days"] = 30
-    assert await svc.run_auto_archive() == {"archived": 1}
-    orch.checkpoints = SimpleNamespace(stale_sessions=lambda before: 1 / 0)
-    assert await svc.run_auto_archive() == {"_scheduler_status": "failed"}
+    assert (await svc.run_retention_purge())["archived"] == ["idle"]
+    settings["retention.min_interval_hours"] = 1
+    orch.checkpoints = SimpleNamespace(claim_sweep=lambda *a: True, get_state=lambda name: None,
+                                       stale_sessions=lambda before: 1 / 0)
+    assert await svc.run_retention_purge() == {"_scheduler_status": "failed"}
 
 
-def test_the_job_is_scheduled_daily():
+def test_no_separate_archive_job_is_scheduled():
+    """H262 — one hourly lifecycle job; the 03:40 ``session-auto-archive`` is retired."""
     from agents.core.scheduler_service import SchedulerService
 
     jobs = []
     sched = SimpleNamespace(add_job=lambda func, trigger, **kw: jobs.append((func, trigger, kw)))
     svc = SchedulerService(SimpleNamespace(heartbeat_scheduler=SimpleNamespace(scheduler=sched)))
     for name in dir(SchedulerService):                   # every other job stays off the fake scheduler
-        if name.startswith("schedule_") and name not in {"schedule_all", "schedule_auto_archive"}:
+        if name.startswith("schedule_") and name not in {"schedule_all", "schedule_retention"}:
             setattr(svc, name, lambda: None)
     svc.schedule_all()
-    assert jobs == [(svc.run_auto_archive, "cron",
-                     {"hour": 3, "minute": 40, "id": "session-auto-archive", "replace_existing": True})]
+    assert [kw["id"] for _func, _trigger, kw in jobs] == ["data-retention-sweep"]
 
 
 # ── delete for good ──────────────────────────────────────────────────────────────

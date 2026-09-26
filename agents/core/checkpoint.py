@@ -4,6 +4,7 @@ Saves agent execution state for crash recovery and resume.
 Also tracks agent stats for promotion/demotion and structured sessions.
 """
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -19,6 +20,11 @@ CHECKPOINT_DIR = data_path("checkpoints")
 
 
 class CheckpointManager:
+    #: H218 — a session's archived stamp, read from its metadata only when the JSON is valid.
+    _ARCHIVED_SQL = "(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.archived_at') END)"
+    #: H262 — its pin, the same way.
+    _PINNED_SQL = "(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.pinned_at') END)"
+
     def __init__(self, db_path: str = None):
         if db_path is None:
             CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
@@ -80,6 +86,15 @@ class CheckpointManager:
                 revision INTEGER NOT NULL DEFAULT 0,
                 rebuilt_at TEXT NOT NULL,
                 compaction_sha256 TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        # H262 — one row per maintenance job: when it last claimed a run (a compare-and-set
+        # both processes on this data root share) and what it keeps between runs.
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_state (
+                name TEXT PRIMARY KEY,
+                last_run_at REAL,
+                value TEXT DEFAULT '{}'
             )
         """)
         from .session_continuation import initialize
@@ -311,9 +326,9 @@ class CheckpointManager:
             row = cursor.fetchone()
         return dict(zip(columns, row)) if row else None
 
-    def set_archived(self, session_id: str, archived: bool, *, at: str | None = None) -> bool | None:
-        """H218 — stamp (or clear) ``archived_at`` in a session's metadata. Whether the
-        session exists; a session is never created by archiving it. None when the store
+    def _set_stamp(self, session_id: str, key: str, on: bool, at: str | None) -> bool | None:
+        """Stamp (or clear) one ISO timestamp ``key`` in a session's metadata. Whether the
+        session exists; a session is never created by stamping it. None when the store
         could not answer (no connection, a database error): that is not a missing session."""
         if not self._conn:
             return None
@@ -328,29 +343,148 @@ class CheckpointManager:
                     meta = {}
                 if not isinstance(meta, dict):
                     meta = {}
-                if archived:
-                    meta["archived_at"] = at or datetime.now(timezone.utc).isoformat()
+                if on:
+                    meta[key] = at or datetime.now(timezone.utc).isoformat()
                 else:
-                    meta.pop("archived_at", None)
+                    meta.pop(key, None)
                 self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
                                    (json.dumps(meta, ensure_ascii=False), session_id))
                 self._conn.commit()
             return True
         except Exception as e:
-            logger.warning(f"Failed to archive session: {e}")
+            logger.warning(f"Failed to stamp session {key}: {e}")
             return None
 
+    def set_archived(self, session_id: str, archived: bool, *, at: str | None = None) -> bool | None:
+        """H218 — stamp (or clear) ``archived_at`` in a session's metadata (see ``_set_stamp``)."""
+        return self._set_stamp(session_id, "archived_at", archived, at)
+
+    def set_pinned(self, session_id: str, pinned: bool, *, at: str | None = None) -> bool | None:
+        """H262 — stamp (or clear) ``pinned_at``: a pinned chat is never auto-archived and
+        never deleted by retention. Archiving and resuming leave the pin as it is."""
+        return self._set_stamp(session_id, "pinned_at", pinned, at)
+
     def stale_sessions(self, before: str, *, limit: int = 500) -> list[str]:
-        """H218 — unarchived sessions whose last activity (``ended_at``, else
-        ``started_at``) is older than the ISO timestamp ``before``, oldest first."""
+        """H218 — unarchived, unpinned (H262) sessions whose last activity (``ended_at``,
+        else ``started_at``) is older than the ISO timestamp ``before``, oldest first."""
         if not self._conn:
             return []
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT id FROM sessions WHERE {self._ARCHIVED_SQL} IS NULL"  # nosec B608 - fixed SQL fragment
+                f"SELECT id FROM sessions WHERE {self._ARCHIVED_SQL} IS NULL AND {self._PINNED_SQL} IS NULL"  # nosec B608 - fixed SQL fragments
                 " AND COALESCE(ended_at, started_at) IS NOT NULL AND COALESCE(ended_at, started_at) < ?"
                 " ORDER BY COALESCE(ended_at, started_at) LIMIT ?", (before, limit)).fetchall()
         return [r[0] for r in rows]
+
+    #: H262 — what retention may delete: archived, unpinned, idle since before ``?``.
+    _EXPIRED_WHERE = (f"{_ARCHIVED_SQL} IS NOT NULL AND {_PINNED_SQL} IS NULL"
+                      " AND COALESCE(ended_at, started_at) IS NOT NULL AND COALESCE(ended_at, started_at) < ?")
+
+    def expired_sessions(self, before: str, *, limit: int = 500) -> list[str]:
+        """H262 — archived, unpinned sessions idle since before the ISO timestamp ``before``,
+        newest first: a continued chat is newer than the one it continues, so it comes
+        before its parent (whose delete it would otherwise refuse)."""
+        if not self._conn:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT id FROM sessions WHERE {self._EXPIRED_WHERE}"  # nosec B608 - fixed SQL fragments
+                " ORDER BY COALESCE(ended_at, started_at) DESC LIMIT ?", (before, limit)).fetchall()
+        return [r[0] for r in rows]
+
+    def is_expired(self, session_id: str, before: str) -> bool:
+        """H262 — whether one session is still what ``expired_sessions`` found: the check a
+        delete repeats while it holds the turn lease (a turn, an unarchive or a pin in
+        between keeps the chat)."""
+        if not self._conn:
+            return False
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT 1 FROM sessions WHERE id=? AND {self._EXPIRED_WHERE}",  # nosec B608 - fixed SQL fragments
+                (session_id, before)).fetchone()
+        return row is not None
+
+    def session_ids(self) -> set[str]:
+        """H262 — every session id this store has a row for."""
+        if not self._conn:
+            return set()
+        with self._lock:
+            return {r[0] for r in self._conn.execute("SELECT id FROM sessions").fetchall()}
+
+    # ── H262 — the maintenance state rows ────────────────────────
+    def claim_sweep(self, name: str, now: float, min_interval_s: float) -> bool | None:
+        """Claim the maintenance job ``name`` when its last claim is at least
+        ``min_interval_s`` old (or none, or one from the future: the clock went back).
+        One statement, so of two processes sharing this database exactly one claims it.
+        True when claimed, False when not due, None when the store could not answer."""
+        if not self._conn:
+            return None
+        try:
+            with self._lock:
+                cursor = self._conn.execute(
+                    "INSERT INTO maintenance_state (name, last_run_at, value) VALUES (?, ?, '{}') "
+                    "ON CONFLICT(name) DO UPDATE SET last_run_at=excluded.last_run_at "
+                    "WHERE maintenance_state.last_run_at IS NULL OR maintenance_state.last_run_at <= ? "
+                    "OR maintenance_state.last_run_at > ?",
+                    (name, now, now - min_interval_s, now))
+                self._conn.commit()
+            return cursor.rowcount == 1
+        except sqlite3.Error as e:
+            logger.warning(f"Failed to claim the {name} run: {e}")
+            return None
+
+    def get_state(self, name: str) -> dict | None:
+        """``{"last_run_at", "value"}`` of one maintenance row; None when there is none or
+        the store could not answer. A value that does not parse reads as ``{}``."""
+        if not self._conn:
+            return None
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT last_run_at, value FROM maintenance_state WHERE name=?",
+                                         (name,)).fetchone()
+        except sqlite3.Error:
+            return None
+        if row is None:
+            return None
+        try:
+            value = json.loads(row[1] or "{}")
+        except ValueError:
+            value = {}
+        return {"last_run_at": row[0], "value": value if isinstance(value, dict) else {}}
+
+    def put_state(self, name: str, value: dict) -> bool | None:
+        """Write one maintenance row's value (its claim is kept); None when the store
+        could not answer."""
+        if not self._conn:
+            return None
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO maintenance_state (name, last_run_at, value) VALUES (?, NULL, ?) "
+                    "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                    (name, json.dumps(value, ensure_ascii=False, default=str)))
+                self._conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"Failed to write the {name} state: {e}")
+            return None
+
+    def vacuum(self) -> bool:
+        """H262 — give the pages a prune freed back to the disk, then empty the write-ahead
+        log. Whether it ran; another connection busy past the timeout is a False."""
+        if not self._conn:
+            return False
+        try:
+            with self._lock:
+                if self._conn.in_transaction:
+                    self._conn.commit()
+                self._conn.execute("VACUUM")
+                with contextlib.suppress(sqlite3.Error):
+                    self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            return True
+        except sqlite3.Error as e:
+            logger.warning(f"checkpoints.db VACUUM failed: {e}")
+            return False
 
     # H218 — every table that keeps a row under a session's id: its name in a backup,
     # the key column, and whether there can be several. The continuation seed holds the
@@ -492,8 +626,6 @@ class CheckpointManager:
         except Exception as e:
             logger.warning(f"Failed to update session: {e}")
 
-    #: H218 — a session's archived stamp, read from its metadata only when the JSON is valid.
-    _ARCHIVED_SQL = "(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.archived_at') END)"
 
     def get_sessions(self, limit: int = 20, *, archived: bool | None = None) -> list[dict]:
         """The newest sessions; ``archived`` True lists only archived ones, False only

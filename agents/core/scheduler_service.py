@@ -42,7 +42,6 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
-        self.schedule_auto_archive()
         self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
@@ -183,48 +182,25 @@ class SchedulerService:
             logger.warning(f"Failed to schedule WorldView KG sync: {e}")
 
     def schedule_retention(self):
-        """Daily data-retention sweep (H23.10) — prune transcripts, audit and private ingestion past TTL.
+        """The data lifecycle sweep (H23.10, H262) — archive idle chats, prune what is past
+        its retention horizon, then VACUUM what a prune shrank.
 
-        Always registered, but a no-op at run time unless ``retention.enabled`` is
-        set, so the job is harmless by default. Runs at 03:30, off the busy hours.
+        Always registered and hourly, but interval-gated: the sweep runs at most every
+        ``retention.min_interval_hours`` across processes (a claim row in checkpoints.db),
+        and is a no-op unless ``memory.auto_archive_days`` or ``retention.enabled`` is set.
+        Its archive phase replaced the separate 03:40 ``session-auto-archive`` job (H218),
+        so one writer archives. The id is kept, so scheduler-health history carries on.
         """
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
             return
         try:
-            sched.add_job(self.run_retention_purge, "cron", hour=3, minute=30,
+            sched.add_job(self.run_retention_purge, "interval", hours=1,
                           id="data-retention-sweep", replace_existing=True)
-            logger.info("Scheduled data-retention sweep: 03:30 daily (no-op unless retention.enabled)")
+            logger.info("Scheduled the data lifecycle sweep: hourly, run at most every "
+                        "retention.min_interval_hours (no-op unless archiving or retention is on)")
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
-
-    def schedule_auto_archive(self):
-        """H218 — archive idle chats daily at 03:40; a no-op unless
-        ``memory.auto_archive_days`` is set (0, the default, is off)."""
-        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
-        if sched is None:
-            return
-        try:
-            sched.add_job(self.run_auto_archive, "cron", hour=3, minute=40,
-                          id="session-auto-archive", replace_existing=True)
-        except Exception as e:
-            logger.warning(f"Failed to schedule the session auto-archive: {e}")
-
-    async def run_auto_archive(self):
-        from agents.core import session_archive
-
-        days = session_archive.auto_archive_days(
-            self._orch.get_setting(session_archive.SETTING_AUTO_DAYS, 0))
-        if not days:
-            return {"_scheduler_status": "skipped"}
-        try:
-            done = await asyncio.to_thread(
-                session_archive.run_auto_archive, self._orch.checkpoints, days,
-                active=getattr(self._orch, "session_id", None))
-            return {"archived": len(done)}
-        except Exception as e:
-            logger.warning(f"Session auto-archive failed: {e}")
-            return {"_scheduler_status": "failed"}
 
     def schedule_exec_cache_prune(self):
         """Hourly prune of the sandbox's managed run-directory cache (H667).
@@ -610,21 +586,13 @@ class SchedulerService:
             return {"_scheduler_status": "failed"}
 
     async def run_retention_purge(self):
-        """Run the retention sweep off the event loop (file + SQLite I/O)."""
-        if not self._orch.get_setting("retention.enabled", False):
-            return {"_scheduler_status": "skipped"}
+        """Run the data lifecycle sweep (``agents/core/lifecycle_sweep.py``); its blocking
+        file and SQLite work runs off the event loop. Skipped when nothing is switched on or
+        it is not due; a failure is reported as its status, never raised."""
+        from agents.core import lifecycle_sweep
 
-        from agents.core import retention
         try:
-            watcher = getattr(self._orch, "ingestion_watcher", None)
-            result = await asyncio.to_thread(
-                retention.run_retention,
-                self._orch.get_setting,
-                getattr(self._orch, "audit", None),
-                ingestion_pipeline=getattr(watcher, "pipeline", None),
-            )
-            logger.info("Retention sweep complete: %s", result)
-            return result
+            return await lifecycle_sweep.run_sweep(self._orch)
         except Exception as e:
             logger.warning(f"Retention sweep failed: {e}")
             return {"_scheduler_status": "failed"}

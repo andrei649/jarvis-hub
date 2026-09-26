@@ -231,8 +231,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="max_turns",        value=100,                   label="Max turns per session",kind="number"),
     # H413: name a session from its first message (then once by the local model).
     dict(category="memory",  key="session_titles",   value=True,                  label="Title sessions from their first message", kind="toggle"),
-    # H218: archive chats idle for this many days (0 = never), daily at 03:40.
-    dict(category="memory",  key="auto_archive_days", value=0,                    label="Archive chats idle for this many days (0 = never)", kind="number"),
+    # H218: archive chats idle for this many days (0 = never); H262: by the lifecycle sweep.
+    dict(category="memory",  key="auto_archive_days", value=0,                    label="Archive chats idle for this many days (0 = never; pinned chats are never archived)", kind="number"),
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
@@ -430,14 +430,18 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="ambient", key="quiet_hours_start", value=22, label="Ambient quiet-hours start", kind="number"),
     dict(category="ambient", key="quiet_hours_end", value=7, label="Ambient quiet-hours end", kind="number"),
     dict(category="system",  key="error_backlog_sync_enabled", value=True, label="Error backlog sync enabled", kind="toggle"),
-    # retention — data lifecycle (H23.10). A daily sweep prunes data older than the
-    # TTL. OFF by default so nothing is ever surprise-deleted; a TTL of 0 means keep
-    # forever even when enabled.
+    # retention — data lifecycle (H23.10). The lifecycle sweep (H262: hourly, run at most
+    # every min_interval_hours) prunes data older than the TTL. OFF by default so nothing
+    # is ever surprise-deleted; a TTL of 0 means keep forever even when enabled. A chat is
+    # deleted only once it is archived (memory.auto_archive_days, or by hand) and unpinned.
     dict(category="retention", key="artifact_ttl_days", value=0, label="Delete unpinned binary attachments older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
-    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete conversation transcripts older than (days; 0 = keep forever)", kind="number"),
+    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete archived, unpinned chats idle longer than (days; 0 = keep forever; needs chat archiving on)", kind="number"),
     dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="ingestion_ttl_days",   value=0,     label="Delete stale Howard imports/archive after (days; 0 = keep forever)", kind="number"),
+    dict(category="retention", key="min_interval_hours",   value=24,    label="Run the data lifecycle sweep at most every (hours, 1-720)", kind="number"),
+    dict(category="retention", key="vacuum_after_prune",   value=True,  label="Compact a database (VACUUM) after a prune deleted rows from it", kind="toggle"),
+    dict(category="retention", key="min_vacuum_interval_days", value=30, label="Compact the databases at most every (days, 0-365; 0 = after every deleting sweep)", kind="number"),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────
@@ -742,6 +746,15 @@ _LEARNING_INT_BOUNDS = {
 }
 
 
+#: H262 — the data lifecycle's whole-number knobs and their bounds, per (category, key):
+#: a day count or an interval, never a fraction, a bool or a negative.
+_LIFECYCLE_INT_BOUNDS: dict[tuple[str, str], tuple[int, int]] = {
+    ("retention", "conversation_ttl_days"): (0, 36500), ("retention", "audit_ttl_days"): (0, 36500),
+    ("retention", "ingestion_ttl_days"): (0, 36500), ("retention", "min_interval_hours"): (1, 720),
+    ("retention", "min_vacuum_interval_days"): (0, 365), ("memory", "auto_archive_days"): (0, 3650),
+}
+
+
 def bounded_learning_int(key: str, raw: Any, default: int) -> int:
     """A learning knob as its readers use it: an integer within its declared bounds, else
     ``default``. The bounds are enforced on write; this holds them for a row written
@@ -850,6 +863,10 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
+        if err is None and (cat, key) in _LIFECYCLE_INT_BOUNDS:
+            low, high = _LIFECYCLE_INT_BOUNDS[(cat, key)]
+            if type(value) is not int or not low <= value <= high:
+                err = f"{key}: expected a whole number between {low} and {high}"
         if err is None and (cat, key) == ("llm", "cost_confirm_usd_per_mtok") and value < 0:
             err = "cost_confirm_usd_per_mtok: a price in USD per million tokens, 0 or more"
         if err is None and (cat, key) == ("voice", "mic_surfaces"):

@@ -1659,6 +1659,15 @@ class Orchestrator:
         for key in [key for key, sid in channel_sessions.items() if sid == session_id]:
             del channel_sessions[key]
 
+    def live_session_ids(self) -> set[str]:
+        """H262 — every session a chat is on right now: the session in use and each
+        channel chat's. The lifecycle sweep never archives or deletes one of them."""
+        live = {sid for sid in self.__dict__.get("_channel_sessions", {}).values() if sid}
+        current = getattr(self, "session_id", None)
+        if current:
+            live.add(current)
+        return live
+
     def _lease_key(self, session_key: Optional[str]) -> str:
         """Mirror `_resolve_session`'s order so the lease names the session the turn will use."""
         if session_key is not None:

@@ -7,7 +7,8 @@ listed and resumed; the only deletion was the install-wide ``/api/admin/forget``
   archived session leaves ``GET /sessions`` and is listed by ``GET /sessions?archived=1``;
   nothing about it is deleted, and resuming it brings it back.
 - **Auto-archive.** ``memory.auto_archive_days`` (0 = off) archives a session whose last
-  activity is older than that many days, once a day; the session in use is never touched.
+  activity is older than that many days, in the lifecycle sweep's archive phase (H262,
+  ``agents/core/lifecycle_sweep.py``); a pinned session, and one a chat is on, is never touched.
 - **Delete permanently.** Backup first, like the install-wide forget: what the hub keeps
   under the session's id (its rows — the session, checkpoints, clock, continuation seed
   and history binding —, the transcript snapshot and log, the compaction archive, its
@@ -18,6 +19,10 @@ listed and resumed; the only deletion was the install-wide ``/api/admin/forget``
   route is admin-only, needs ``?confirm=DELETE`` and holds the session's turn lease; the
   session in use, and one another chat continues, cannot be deleted. Facts already
   extracted into the knowledge graph and the append-only audit log are not touched.
+- **Retention (H262).** :func:`delete_expired` is the same delete, taken by the lifecycle
+  sweep for an archived, unpinned session idle past the retention horizon; it repeats that
+  check inside the turn lease, and leaves the backups unpruned until the sweep is done, so
+  a bulk sweep never prunes the backups of its own deletes.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -65,16 +71,18 @@ def auto_archive_days(value: Any) -> int:
     return days if 0 < days <= MAX_AUTO_DAYS else 0
 
 
-def run_auto_archive(checkpoints: Any, days: int, *, active: str | None = None,
+def run_auto_archive(checkpoints: Any, days: int, *, active: str | Iterable[str] | None = None,
                      now: datetime | None = None) -> list[str]:
-    """Archive every unarchived session idle for more than ``days`` (never ``active``)."""
+    """Archive every unarchived, unpinned session idle for more than ``days`` — never one
+    in ``active`` (one id, or every session a chat is on)."""
     if days <= 0 or checkpoints is None:
         return []
+    live = {active} if isinstance(active, str) else set(active or ())
     moment = now or _now()
     before = (moment - timedelta(days=days)).isoformat()
     done: list[str] = []
     for sid in checkpoints.stale_sessions(before):
-        if sid == active:
+        if sid in live:
             continue
         if checkpoints.set_archived(sid, True, at=moment.isoformat()):
             done.append(sid)
@@ -240,10 +248,11 @@ def _memory_locks(memory: Any) -> list[asyncio.Lock]:
 
 async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = None, todos: Any = None,
                          notes: Any = None, active: str | None = None, backup_root: Path | None = None,
-                         archive_root: Path | None = None) -> dict:
+                         archive_root: Path | None = None, prune: bool = True) -> dict:
     """Back the session up, then delete it. Raises :class:`SessionDeleteError`
     (``active_session``, ``not_found``, ``has_continuations``, ``backup_failed``,
-    ``recall_unavailable``) before anything is deleted.
+    ``recall_unavailable``) before anything is deleted. ``prune=False`` leaves the older
+    backups for the caller to prune once (the lifecycle sweep's bulk delete).
 
     The caller holds the session's turn lease (the route does). The memory locks are held
     here from the first read to the last delete, so a turn written meanwhile is in the
@@ -289,13 +298,59 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
                 live.pop(session_id, None)
         removed["todo"] = bool(todos.forget(session_id)) if todos is not None else False
         removed["note"] = bool(notes.clear(session_id)) if notes is not None else False
-    pruned = await asyncio.to_thread(prune_backups, root)
+    pruned = await asyncio.to_thread(prune_backups, root) if prune else []
     logger.info("session %s deleted; backup at %s", session_id, backup)
     return {"ok": True, "session": session_id, "backup": str(backup), "removed": removed, "pruned": pruned}
 
 
+def live_session_ids(orch: Any) -> set[str]:
+    """Every session a chat is on right now (the orchestrator's own accessor), else the
+    session in use."""
+    accessor = getattr(orch, "live_session_ids", None)
+    if callable(accessor):
+        return set(accessor())
+    current = getattr(orch, "session_id", None)
+    return {current} if current else set()
+
+
+async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | None = None,
+                        still_eligible: Callable[[], bool] | None = None, prune: bool = True) -> dict:
+    """The permanent delete with what the orchestrator adds around it: refuse a live session
+    (``live``, by default the session in use), hold the session's turn lease
+    (``session_busy`` when a turn keeps it past the wait), repeat ``still_eligible`` inside
+    it (``no_longer_expired``), delete with the chat's checklist and note, and forget the
+    channel binding. Shared by ``DELETE /sessions/{id}`` and the lifecycle sweep."""
+    from agents.core import todo_tool
+
+    active = getattr(orch, "session_id", None)
+    refused = set(live) if live is not None else {active}
+    if session_id in refused:
+        raise SessionDeleteError("active_session")
+    async with orch.turn_lease(session_id) as acquired:
+        if not acquired:
+            raise SessionDeleteError("session_busy")
+        if still_eligible is not None and not await asyncio.to_thread(still_eligible):
+            raise SessionDeleteError("no_longer_expired")
+        result = await delete_session(
+            session_id, checkpoints=orch.checkpoints, memory=getattr(orch, "memory", None), todos=todo_tool.TODOS,
+            notes=getattr(orch, "notes", None), active=active, prune=prune)
+        forget = getattr(orch, "forget_channel_session", None)
+        if callable(forget):
+            forget(session_id)
+    return result
+
+
+async def delete_expired(orch: Any, session_id: str, before: str) -> dict:
+    """H262 — retention's delete of one archived, unpinned session idle since before
+    ``before``: never a session a chat is on, re-checked inside the turn lease, backups
+    left for the sweep to prune once."""
+    checkpoints = orch.checkpoints
+    return await delete_leased(orch, session_id, live=live_session_ids(orch),
+                               still_eligible=lambda: checkpoints.is_expired(session_id, before), prune=False)
+
+
 __all__ = [
     "BACKUP_KEEP_DEFAULT", "BACKUP_SUFFIX", "CONFIRM", "MAX_AUTO_DAYS", "SETTING_AUTO_DAYS",
-    "SessionDeleteError", "auto_archive_days", "collect", "default_backup_dir", "delete_session",
-    "prune_backups", "read_backup", "run_auto_archive",
+    "SessionDeleteError", "auto_archive_days", "collect", "default_backup_dir", "delete_expired", "delete_leased",
+    "delete_session", "live_session_ids", "prune_backups", "read_backup", "run_auto_archive",
 ]

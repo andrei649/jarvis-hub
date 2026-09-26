@@ -307,13 +307,21 @@ async def test_scheduled_retention_clears_distinct_watcher_and_shared_pipelines(
         "retention.audit_ttl_days": 0,
         "retention.ingestion_ttl_days": 90,
     }
+    # H262 — the sweep deletes only within an approved horizon, once it holds the claim.
+    from agents.core.checkpoint import CheckpointManager
+
+    checkpoints = CheckpointManager(str(tmp_path / "checkpoints.db"))
+    checkpoints.initialize()
+    checkpoints.put_state(retention.APPROVED_STATE, {"values": settings})
     orch = SimpleNamespace(
         audit=None,
+        checkpoints=checkpoints,
         ingestion_watcher=SimpleNamespace(pipeline=writer),
         get_setting=lambda key, default=None: settings.get(key, default),
     )
 
     await SchedulerService(orch).run_retention_purge()
+    checkpoints.close()
 
     assert writer.messages == []
     assert writer.my_messages == []

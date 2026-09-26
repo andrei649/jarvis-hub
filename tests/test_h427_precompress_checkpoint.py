@@ -301,21 +301,24 @@ def test_the_archive_is_private_to_the_owner(tmp_path):
     assert stat.S_IMODE(archive.path_for("s").stat().st_mode) == 0o600
 
 
-def test_retention_prunes_the_archive_with_its_session(tmp_path):
+def test_retention_prunes_only_the_orphan_archives(tmp_path):
+    """H262 — a deleted session's archive goes with it through the backup-first delete
+    (tests/test_h262_lifecycle_sweep.py); retention itself prunes only the archives no
+    live transcript or session row claims, once they are older than the horizon."""
     from agents.core import retention
 
     archive, old = TranscriptArchive(tmp_path / "compaction_archive"), time.time() - 120 * 86400
-    for sid in ("old-sess", "fresh-sess", "gone-sess", "new-orphan"):
+    for sid in ("old-sess", "fresh-sess", "gone-sess", "new-orphan", "db-sess"):
         archive.on_pre_compress([{"role": "user", "content": f"{sid}: my bank PIN is 4242"}], session_id=sid)
     for sid in ("old-sess", "fresh-sess"):
         (tmp_path / f"{sid}.jsonl").write_text('{"role": "user"}\n', encoding="utf-8")
     os.utime(tmp_path / "old-sess.jsonl", (old, old))
-    for sid in ("fresh-sess", "gone-sess"):
+    for sid in ("old-sess", "fresh-sess", "gone-sess", "db-sess"):
         os.utime(archive.path_for(sid), (old, old))
-    report = retention.purge_old_conversations(30, root=tmp_path)
-    assert report["deleted"] == ["old-sess"] and report["archives_deleted"] == 2
-    assert archive.read("old-sess") == [] and archive.read("gone-sess") == []   # with its session; left behind
-    assert len(archive.read("fresh-sess")) == 1                                   # its session is live
+    removed = retention.purge_orphan_compaction_archives(tmp_path, time.time() - 30 * 86400, live_ids={"db-sess"})
+    assert removed == 1 and archive.read("gone-sess") == []                      # left behind
+    for sid in ("old-sess", "fresh-sess", "db-sess"):
+        assert len(archive.read(sid)) == 1, sid                                   # its session is live
     assert len(archive.read("new-orphan")) == 1                                   # not old yet
 
 

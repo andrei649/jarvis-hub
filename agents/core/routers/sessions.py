@@ -8,6 +8,9 @@ the other extracted routers. Behavior is unchanged from the inline versions.
 H315 adds the agent's own plans: `GET /sessions/todo` (the ones the agent most
 recently wrote or read) and `GET /sessions/{id}/todo` (one session's), both
 user-guarded and never cached — a plan is work in flight and a stale copy misstates it.
+
+H262 adds the pin (`POST /sessions/{id}/pin` and `/unpin`, user-guarded): a pinned chat is
+never auto-archived and never deleted by retention; each list row carries `pinned_at`.
 """
 
 from uuid import UUID
@@ -25,52 +28,70 @@ router = APIRouter(tags=["sessions"])
 
 @router.get("/sessions", dependencies=[Depends(user_guard)])
 async def get_sessions(archived: bool = False):
-    """The newest sessions; H218: archived ones only with ``?archived=true``, never mixed in."""
+    """The newest sessions; H218: archived ones only with ``?archived=true``, never mixed in.
+    H262: each row carries its ``pinned_at``."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     sessions = orch.checkpoints.get_sessions(limit=20, archived=archived)
     from ..session_titles import title_fields  # H413: each session's title and its source
 
-    return {"sessions": [{**row, **title_fields(row.get("metadata")), **_archived_field(row)} for row in sessions]}
+    return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row)} for row in sessions]}
 
 
-def _archived_field(row: dict) -> dict:
+def _stamp_fields(row: dict) -> dict:
     import json as _json
 
     try:
         meta = _json.loads(row.get("metadata") or "{}")
     except (TypeError, ValueError):
         meta = {}
-    stamp = meta.get("archived_at") if isinstance(meta, dict) else None
-    return {"archived_at": stamp if isinstance(stamp, str) else None}
+    if not isinstance(meta, dict):
+        meta = {}
+    return {key: meta.get(key) if isinstance(meta.get(key), str) else None for key in ("archived_at", "pinned_at")}
 
 
-def _set_archived(session_id: str, archived: bool):
+#: The stamps a route may set or clear: the store's writer and the answer's field.
+_STAMPS = {"archived": "set_archived", "pinned": "set_pinned"}
+
+
+def _set_stamp(session_id: str, field: str, on: bool):
     if not is_valid_session_id(session_id):
         return JSONResponse({"error": "invalid session_id"}, status_code=400)
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    done = orch.checkpoints.set_archived(session_id, archived)
+    done = getattr(orch.checkpoints, _STAMPS[field])(session_id, on)
     if done is None:
         return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
                             status_code=503)
     if not done:
         return JSONResponse({"error": f"session '{session_id}' not found"}, status_code=404)
-    return JSONResponse({"ok": True, "session": session_id, "archived": archived}, headers=_NO_STORE)
+    return JSONResponse({"ok": True, "session": session_id, field: on}, headers=_NO_STORE)
 
 
 @router.post("/sessions/{session_id}/archive", dependencies=[Depends(user_guard)])
 async def archive_session(session_id: str):
     """H218 — put a conversation away: it leaves the list, nothing is deleted."""
-    return _set_archived(session_id, True)
+    return _set_stamp(session_id, "archived", True)
 
 
 @router.post("/sessions/{session_id}/unarchive", dependencies=[Depends(user_guard)])
 async def unarchive_session(session_id: str):
-    """H218 — bring an archived conversation back to the list."""
-    return _set_archived(session_id, False)
+    """H218 — bring an archived conversation back to the list (a pinned one too)."""
+    return _set_stamp(session_id, "archived", False)
+
+
+@router.post("/sessions/{session_id}/pin", dependencies=[Depends(user_guard)])
+async def pin_session(session_id: str):
+    """H262 — pin a conversation: never auto-archived, never deleted by retention."""
+    return _set_stamp(session_id, "pinned", True)
+
+
+@router.post("/sessions/{session_id}/unpin", dependencies=[Depends(user_guard)])
+async def unpin_session(session_id: str):
+    """H262 — take the pin off; the chat is archived and retained like any other again."""
+    return _set_stamp(session_id, "pinned", False)
 
 
 _DELETE_STATUS = {"active_session": 409, "session_busy": 409, "has_continuations": 409, "not_found": 404,
@@ -84,7 +105,7 @@ async def delete_session(session_id: str, confirm: str = ""):
     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
     finishes first (it would write the transcript back, or add a turn the backup never
     saw), and one still running past the lease's wait answers 409 ``session_busy``."""
-    from agents.core import session_archive, todo_tool
+    from agents.core import session_archive
 
     if not is_valid_session_id(session_id):
         return JSONResponse({"error": "invalid session_id"}, status_code=400)
@@ -94,19 +115,9 @@ async def delete_session(session_id: str, confirm: str = ""):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    active = getattr(orch, "session_id", None)
     try:
-        if session_id == active:
-            raise session_archive.SessionDeleteError("active_session")
-        async with orch.turn_lease(session_id) as acquired:
-            if not acquired:
-                raise session_archive.SessionDeleteError("session_busy")
-            result = await session_archive.delete_session(
-                session_id, checkpoints=orch.checkpoints, memory=orch.memory, todos=todo_tool.TODOS,
-                notes=getattr(orch, "notes", None), active=active)
-            forget = getattr(orch, "forget_channel_session", None)
-            if callable(forget):
-                forget(session_id)
+        # H262: the steps the lifecycle sweep's delete shares (session_archive.delete_leased).
+        result = await session_archive.delete_leased(orch, session_id)
     except session_archive.SessionDeleteError as exc:
         return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason},
                             status_code=_DELETE_STATUS.get(exc.reason, 500))
@@ -165,7 +176,7 @@ async def resume_session(req: Request):
     orch.session_id = sid
     checkpoints = getattr(orch, "checkpoints", None)
     if checkpoints is not None:
-        checkpoints.set_archived(sid, False)   # H218: resuming an archived chat brings it back
+        checkpoints.set_archived(sid, False)   # H218: resuming an archived chat brings it back (H262: pin kept)
     history = await orch.memory.get_history(sid)
     from agents.core.memory.recap import render_recap
 
