@@ -269,7 +269,8 @@ def _remind(ctx: CommandContext) -> str:
     when, sep, message = ctx.args.partition("|")
     when, message = when.strip(), message.strip()
     if not sep or not when or not message:
-        return "Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes"
+        return ("Usage: /remind <when> | <message> — e.g. /remind every weekday at 7 | stand-up in 15 minutes, "
+                "or once: /remind in 30m | stretch, /remind tomorrow at 9 | call the bank")
     try:
         job, _first_run, confirmation = runner.arm(
             name=message[:60],

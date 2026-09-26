@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H450 say when in plain words: one-shots, compact intervals, repeat counts (partial → equivalent, #1207; headline 178 → 179/697).
+
+  Every job was a cron, so `in 30m` and an ISO time were refused, and worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` were silently armed as a DAILY `0 9 * * *`. Now (`agents/core/autonomy/nl_schedule.py`, `jobs.py`), as Hermes' schedule syntax:
+  - **One-shots.** A delay (`in 30m`, `in 1h30m`, `peste 2 ore`), an ISO time anchored to the scheduler's zone (or its own offset), or a day word with a time (`tomorrow at 9`, `mâine la 9`, `today at 18:00`, `once at 9am`). It is stored as `@at <UTC ISO>` and armed as a date trigger. It runs once: attempts are reserved before any executor, a later firing is skipped as `one-shot already ran`, and a new time re-arms it. It never takes H687's first run, even when one is asked for. A passed, date-only, impossible or over-a-year time is refused by name, and so is a delay with more words ("in 2 hours at 9").
+  - **Compact intervals.** `every 2h`, `every 30m`, bare `2h`/`30m`, `la fiecare 2 ore`. An interval a cron cannot keep (`every 45 minutes` fired at :00 and :45) is refused with the divisors to use.
+  - **Repeat counts.** `normalize_repeat` takes `forever | once | 1x | N | 3 times | de 3 ori` on every surface.
+  - **Where it shows.** `/remind in 30m | stretch` works; the HUD jobs panel shows `once at …` and marks a spent one-shot `done`.
+
+  62 mutants, all caught after fourteen cases were added. One survivor was a real bug, "in 2 hours at 9" read as a daily 9 o'clock; it is now refused. Test manual: GOV-283.
+  Tests: backend 16,701 → 16,818 (`tests/test_h450_schedule_words.py` 117); frontend 1,634 → 1,636 (`jobs.test.tsx`, `jobs-first-run.test.ts`).
+
 - 2026-09-26 H526 a spoken reply sounds like speech, not read-out markdown (partial → equivalent, #1207; headline 177 → 178/697).
 
   Only Telegram voice notes and the gated speak tool cleaned their text; `/tts`, `/tts/stream`, the wake-word pipeline, the voice channel, the HUD's live voice and mobile read emoji, list bullets, table pipes, `<think>` blocks and `&`/`%`/`->` aloud. Now one normaliser (`agents/core/voice/speech_text.py`, twin `frontend/src/speech-text.ts`, both pinned by the same 47 cases) sits in front of every entry point, as Hermes' speech cleaning:

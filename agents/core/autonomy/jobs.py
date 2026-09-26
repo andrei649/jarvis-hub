@@ -129,7 +129,9 @@ class Job:
 
     @property
     def runnable(self) -> bool:
-        return self.enabled and not self.paused_reason and (not self.options.get("repeat") or self.attempts < self.options["repeat"])
+        return (self.enabled and not self.paused_reason
+                and (not self.options.get("repeat") or self.attempts < self.options["repeat"])
+                and not (is_one_shot(self.cron) and self.attempts >= 1))   # H450: a one-shot runs once
 
     def as_dict(self) -> dict:
         return {
@@ -152,6 +154,8 @@ class Job:
             "options": dict(self.options),
             "attempts": self.attempts,
             "last_delivery_status": self.last_delivery_status,
+            "one_shot": is_one_shot(self.cron),
+            "run_at": run_at(self.cron).isoformat() if is_one_shot(self.cron) else None,
         }
 
 
@@ -221,7 +225,42 @@ def _field_values(field: str, low: int, high: int) -> int:
     return max(1, total)
 
 
+#: A one-shot (H450) is stored in the cron column as this prefix and a UTC ISO time.
+ONE_SHOT_PREFIX = "@at "
+ONE_SHOT_SPENT = "one-shot already ran"
+
+
+def is_one_shot(cron: object) -> bool:
+    """A run-once job (``@at <UTC ISO>``), not a cron cadence."""
+    return isinstance(cron, str) and cron.startswith(ONE_SHOT_PREFIX)
+
+
+def run_at(cron: object) -> datetime | None:
+    """When a one-shot runs (aware, UTC), or None for a cron. Raises ValueError on a
+    malformed one-shot."""
+    if not is_one_shot(cron):
+        return None
+    value = datetime.fromisoformat(str(cron)[len(ONE_SHOT_PREFIX):])
+    if value.tzinfo is None:
+        raise ValueError("a one-shot time carries its zone")
+    return value.astimezone(UTC)
+
+
+def schedule_trigger(cron: str, timezone):
+    """The APScheduler trigger a stored schedule means: a date for a one-shot, else a cron."""
+    if is_one_shot(cron):
+        from apscheduler.triggers.date import DateTrigger
+
+        return DateTrigger(run_date=run_at(cron), timezone=timezone)
+    from apscheduler.triggers.cron import CronTrigger
+
+    return CronTrigger(**cron_kwargs(cron), timezone=timezone)
+
+
 def fires_per_day(cron: str) -> float:
+    if is_one_shot(cron):
+        run_at(cron)
+        return 1.0
     match = _CRON_RE.match(cron)
     if not match:
         raise ValueError("a cron expression has five fields")
@@ -229,17 +268,23 @@ def fires_per_day(cron: str) -> float:
     return float(_field_values(minute, 0, 59) * _field_values(hour, 0, 23))
 
 
-def resolve_schedule(text: str) -> tuple[str, str]:
-    """Plain words or a raw five-field cron → (cron, description). Raises ValueError."""
+def resolve_schedule(text: str, *, now: datetime | None = None, zone=None) -> tuple[str, str]:
+    """Plain words or a raw five-field cron → (cron, description). Raises ValueError.
+
+    A one-shot (H450: ``in 30m``, ``2026-10-01 09:00``, ``tomorrow at 9``) comes back as
+    ``@at <UTC ISO>``; *now* and *zone* anchor it (the clock and the local zone by default).
+    """
     raw = (text or "").strip()
     if not raw:
         raise ValueError("say when — e.g. 'every weekday at 7' or '0 7 * * 1-5'")
     if _CRON_RE.match(raw) and not re.search(r"[A-Za-z]{3,}", raw):
         cron, description = raw, f"cron {raw}"
     else:
-        parsed = parse_schedule(raw)
+        parsed = parse_schedule(raw, now=now, zone=zone)
         if not parsed.get("ok"):
             raise ValueError(parsed.get("error") or "could not understand the schedule")
+        if parsed.get("at"):
+            return ONE_SHOT_PREFIX + parsed["at"], parsed["description"]
         cron, description = parsed["cron"], parsed["description"]
     try:
         rate = fires_per_day(cron)
@@ -355,6 +400,33 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     return errors
 
 
+_REPEAT_FOREVER = {"", "forever", "unlimited", "always", "infinite", "∞", "mereu", "la nesfârșit",
+                   "la nesfarsit", "pentru totdeauna"}
+_REPEAT_WORDS = {"once": 1, "o dată": 1, "o data": 1, "one time": 1, "twice": 2, "de două ori": 2,
+                 "de doua ori": 2}
+_REPEAT_COUNT = re.compile(r"^(?:x\s*(\d+)|(\d+)\s*(?:x|times?)?|de\s+(\d+)\s+ori)$")
+
+
+def normalize_repeat(value: Any) -> int | None:
+    """``forever | once | 1x | N | "3 times" | "de 3 ori"`` → attempts (1-10000), or None
+    for unlimited. Anything else raises ValueError (H450)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = " ".join(value.strip().lower().split())
+        if text in _REPEAT_FOREVER:
+            return None
+        if text in _REPEAT_WORDS:
+            return _REPEAT_WORDS[text]
+        match = _REPEAT_COUNT.match(text)
+        if not match:
+            raise ValueError(f"repeat must be forever, once, Nx or a count, not {value!r}")
+        value = int(next(g for g in match.groups() if g))
+    if type(value) is not int or not 1 <= value <= 10000:
+        raise ValueError("repeat must be null or an integer from 1 to 10000 attempts")
+    return value
+
+
 def validate_options(options: Any, *, check_scripts: bool = True, url_screen=None) -> dict:
     if not isinstance(options, dict):
         raise ValueError("options must be an object")
@@ -396,9 +468,8 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
             problem = script_problem(source)
             if problem:
                 raise ValueError(problem)
-    repeat = options.get("repeat")
-    if repeat is not None and (type(repeat) is not int or not 1 <= repeat <= 10000):
-        raise ValueError("repeat must be null or an integer from 1 to 10000 attempts")
+    if "repeat" in options:
+        options = {**options, "repeat": normalize_repeat(options["repeat"])}
     if "deliver" in options:
         targets = options["deliver"]
         if not isinstance(targets, list) or len(targets) > 8 or any(
@@ -489,6 +560,8 @@ def first_run_policy(job, *, quiet: bool = False, seconds_to_slot: float | None 
       first run.
     Checked when the job is armed and again when the queued run comes to run.
     """
+    if is_one_shot(job.cron):
+        return False, "one-shot"
     options = job.options or {}
     if options.get("repeat"):
         return False, "repeat-limited"
@@ -513,6 +586,10 @@ def first_run_decision(job, *, explicit: bool | None = None, quiet: bool = False
     """
     if not job.runnable:
         return False, "not runnable"
+    if is_one_shot(job.cron):
+        # H450: never early, even when asked — it would spend the only run and leave the
+        # time the owner chose unserved.
+        return False, "one-shot"
     if explicit is not None:
         return bool(explicit), "asked" if explicit else "opted out"
     return first_run_policy(job, quiet=quiet, seconds_to_slot=seconds_to_slot, slot_gap=slot_gap)
@@ -526,6 +603,11 @@ _FIRST_RUN_NOTES = {
 
 def arm_confirmation(job, first_run: dict | None, *, why: str = "", scheduler_alive: bool = True) -> str:
     """The one wording every creation surface uses for what happens next."""
+    if is_one_shot(job.cron):
+        text = f"{job.schedule_text}: runs once at {run_at(job.cron):%Y-%m-%d %H:%M} UTC"
+        if not scheduler_alive:
+            text += " — the scheduler is not running, so nothing fires until it is"
+        return text
     cadence = f"{job.schedule_text} ({job.cron})"
     if first_run:
         # Without a scheduler nothing drains the queue: the run is queued, not "now".
@@ -768,7 +850,7 @@ class JobStore:
         errors = validate_action(action, options)
         if errors:
             raise ValueError("; ".join(errors))
-        cron, _description = resolve_schedule(schedule_text)
+        cron, _description = resolve_schedule(schedule_text, zone=self._schedule_zone())
         with self._lock:
             count = self._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
             if count >= MAX_JOBS:
@@ -884,10 +966,29 @@ class JobStore:
             text = str(schedule_text).strip()
             if not text:
                 raise ValueError("a job needs a schedule")
-            cron, _description = resolve_schedule(text)
+            cron, _description = resolve_schedule(text, zone=self._schedule_zone())
             fields["schedule_text"] = text
             fields["cron"] = cron
-        return self.update(job_id, **fields)
+        job = self.update(job_id, **fields)
+        if is_one_shot(job.cron) and job.cron != current.cron:
+            # H450: a one-shot given a new time is a new run, whatever the old one spent.
+            job = self._reset_attempts(job_id)
+        return job
+
+    def _reset_attempts(self, job_id: str) -> Job:
+        with self._lock:
+            self._conn.execute("UPDATE jobs SET attempts = 0 WHERE id = ?", (job_id,))
+            self._conn.commit()
+        job = self.get(job_id)
+        if job is None:  # pragma: no cover — deleted between the two statements
+            raise KeyError(job_id)
+        return job
+
+    def _schedule_zone(self):
+        """The zone a one-shot said in words is anchored to: the scheduler's, once a
+        runner has bound it (``schedule_zone``), else the local one."""
+        zone = getattr(self, "schedule_zone", None)
+        return zone() if callable(zone) else None
 
     def claim_tick(self, job_id: str, slot: str) -> bool:
         with self._lock:
@@ -901,7 +1002,8 @@ class JobStore:
         with self._lock:
             cursor = self._conn.execute(
                 "UPDATE jobs SET attempts = attempts + 1 WHERE id = ? AND "
-                "(json_extract(options, '$.repeat') IS NULL OR attempts < json_extract(options, '$.repeat'))",
+                "(json_extract(options, '$.repeat') IS NULL OR attempts < json_extract(options, '$.repeat')) "
+                "AND (cron NOT LIKE '@at %' OR attempts < 1)",
                 (job_id,),
             )
             self._conn.commit()
@@ -1017,6 +1119,8 @@ class JobRunner:
         quiet: Callable[[], bool] | None = None,
     ) -> None:
         self.store = store
+        # H450: one-shots said in words are anchored to the scheduler's zone.
+        self.store.schedule_zone = self.scheduler_timezone
         self._orch = orch
         self._scheduler = scheduler
         self._now = now
@@ -1063,6 +1167,10 @@ class JobRunner:
         sched = self._scheduler()
         if sched is None:
             return False
+        if is_one_shot(job.cron):
+            sched.add_job(self.fire, "date", args=[job.id], id=f"job-{job.id}", replace_existing=True,
+                          misfire_grace_time=300, run_date=run_at(job.cron))
+            return True
         sched.add_job(
             self.fire,
             "cron",
@@ -1155,7 +1263,6 @@ class JobRunner:
 
     async def tick(self, now: datetime | None = None) -> list[JobRun]:
         """Fallback ticker; never competes with the running APScheduler. No catch-up burst."""
-        from apscheduler.triggers.cron import CronTrigger
         if self.scheduler_alive():
             raise ValueError("scheduler is running; manual tick would compete with it")
         await self.reconcile_scripts()
@@ -1167,9 +1274,10 @@ class JobRunner:
         for job in self.store.list():
             if not job.runnable:
                 continue
-            trigger = CronTrigger(**cron_kwargs(job.cron), timezone=timezone)
-            due = trigger.get_next_fire_time(None, slot)
-            if due == slot and self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+            due = schedule_trigger(job.cron, timezone).get_next_fire_time(None, slot)
+            # A one-shot's time need not fall on a minute: it is due in the minute it is in.
+            if due is not None and due.replace(second=0, microsecond=0) == slot \
+                    and self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
                 runs.append(await self.fire(job.id))
         return runs
 
@@ -1220,13 +1328,12 @@ class JobRunner:
 
     def slot_timing(self, job: Job, now: datetime | None = None) -> tuple[float, float | None] | None:
         """Seconds until the job's next cron slot and from it to the one after, in the
-        scheduler's timezone, or None when the cron cannot be read."""
-        from apscheduler.triggers.cron import CronTrigger
-
+        scheduler's timezone, or None when the cron cannot be read. A one-shot has no slot
+        after its own."""
         try:
             timezone = self.scheduler_timezone()
             current = (now or datetime.now(UTC)).astimezone(timezone)
-            trigger = CronTrigger(**cron_kwargs(job.cron), timezone=timezone)
+            trigger = schedule_trigger(job.cron, timezone)
             due = trigger.get_next_fire_time(None, current)
             after = trigger.get_next_fire_time(due, due) if due is not None else None
         except Exception:
@@ -1346,9 +1453,10 @@ class JobRunner:
                 return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
                                              status=STATUS_SKIPPED, summary="configuration changed after request claim")
         if not force and not job.runnable:
+            spent = is_one_shot(job.cron) and job.attempts >= 1
             return self.store.record_run(
                 job_id, started_at=started, finished_at=utc_now(), status=STATUS_SKIPPED,
-                summary=f"paused: {job.paused_reason or 'disabled'}",
+                summary=ONE_SHOT_SPENT if spent else f"paused: {job.paused_reason or 'disabled'}",
             )
         if estop.check_paused(f"job:{job_id}", logger):
             return self.store.record_run(
@@ -1362,9 +1470,14 @@ class JobRunner:
                 raise ValueError('; '.join(errors))
         except ValueError as exc:
             return self._failed(job, started, exc)
+        if is_one_shot(job.cron) and not self.store.reserve_attempt(job_id):
+            # H450: the one run is reserved before any executor, script ones included.
+            self.unregister(job_id)
+            return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
+                                         status=STATUS_SKIPPED, summary=ONE_SHOT_SPENT)
         if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
             return await self._script_runtime.fire(job, started)
-        if not self.store.reserve_attempt(job_id):
+        if not is_one_shot(job.cron) and not self.store.reserve_attempt(job_id):
             self.unregister(job_id)
             return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
                                          status=STATUS_SKIPPED, summary="repeat limit exhausted")

@@ -71,6 +71,26 @@ describe('JobsPanel', () => {
     expect(screen.getAllByText('paused').length).toBe(1);
   });
 
+  it('shows a one-shot by its time, and as done once it has run (H450)', async () => {
+    const at = '2026-10-01T06:00:00+00:00';
+    const local = new Date(at);
+    const pad = (n) => String(n).padStart(2, '0');
+    const label = `once at ${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())} ${pad(local.getHours())}:${pad(local.getMinutes())}`;
+    const ONCE = { ...JOB, id: 'aaa111aaa111', name: 'call mum', schedule_text: 'tomorrow at 9', cron: `@at ${at}`,
+      one_shot: true, run_at: at, attempts: 0, options: {} };
+    const SPENT = { ...ONCE, id: 'bbb222bbb222', name: 'dentist', attempts: 1, runnable: false };
+    mockFetch({
+      'GET /api/jobs/blueprints': BLUEPRINTS,
+      'GET /api/jobs': { jobs: [ONCE, SPENT, JOB], scheduler: { alive: true, registered: [], jobs: 3, runnable: 2, paused: 0 } },
+    });
+    render(<JobsPanel />);
+    await waitFor(() => expect(screen.getByText('call mum')).toBeTruthy());
+    expect(screen.getAllByText(`tomorrow at 9 · ${label}`).length).toBe(2);
+    expect(screen.getAllByText('done').length).toBe(1);
+    expect(screen.getAllByText('on').length).toBe(2);
+    expect(screen.queryByText(/@at/)).toBeNull();
+  });
+
   it('arms a blueprint with the owner parameters and prints the schedule', async () => {
     const calls = mockFetch({
       'GET /api/jobs/blueprints': BLUEPRINTS,
