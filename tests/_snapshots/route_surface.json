@@ -299,6 +299,7 @@
   "POST /api/admin/backup/verify",
   "POST /api/admin/export",
   "POST /api/admin/forget",
+  "POST /api/admin/llm/providers/probe",
   "POST /api/admin/llm/test",
   "POST /api/admin/mcp",
   "POST /api/admin/mcp/{name}/connect",

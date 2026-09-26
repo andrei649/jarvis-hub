@@ -299,6 +299,7 @@
   "POST /api/admin/backup/verify": "backup_verify_api_admin_backup_verify_post",
   "POST /api/admin/export": "export_data_api_admin_export_post",
   "POST /api/admin/forget": "forget_data_api_admin_forget_post",
+  "POST /api/admin/llm/providers/probe": "admin_llm_providers_probe_api_admin_llm_providers_probe_post",
   "POST /api/admin/llm/test": "admin_llm_test_api_admin_llm_test_post",
   "POST /api/admin/mcp": "admin_mcp_add_api_admin_mcp_post",
   "POST /api/admin/mcp/{name}/connect": "admin_mcp_connect_api_admin_mcp__name__connect_post",

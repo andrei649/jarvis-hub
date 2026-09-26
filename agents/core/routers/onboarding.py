@@ -191,11 +191,38 @@ def _provider_residency_state(inventory: dict, provider: str | None) -> str:
 #: a backend that is not the one its route names, or a route this check does not know —
 #: an indirect fallback) · ``provider_offline`` · ``configured_not_resident``.
 #: ready=None: ``router_unavailable`` · ``inventory_unavailable`` · ``residency_unknown``.
+#: H380 — a selected cloud route whose provider did not accept its key.
+CLOUD_PROBE_REASONS = frozenset({
+    "cloud_auth_failed", "cloud_forbidden", "cloud_rate_limited", "cloud_error",
+    "cloud_unreachable", "cloud_refused", "cloud_not_configured",
+})
 MODEL_READINESS_REASONS = frozenset({
-    "resident", "cloud_selected",
+    "resident", "cloud_selected", *CLOUD_PROBE_REASONS,
     "route_unselected", "provider_unresolved", "provider_offline", "configured_not_resident",
     "router_unavailable", "inventory_unavailable", "residency_unknown",
 })
+
+
+#: The route's provider name (``_selected_provider``) → the provider profile it uses.
+_PROBE_PROFILES = {"claude": "anthropic", "gemini": "gemini"}
+
+
+async def _cloud_probe(llm_router, provider: str) -> dict | None:
+    """H380: the provider's own verdict on the key this route would use (cached and
+    rate-limited in ``provider_probe``), or None when no profile names it."""
+    from agents.core.llm import provider_probe
+
+    profile_id = _PROBE_PROFILES.get(provider, provider)
+    pool = {"anthropic": "_anthropic_pool", "gemini": "_gemini_pool"}.get(profile_id)
+    key = None
+    try:
+        key = getattr(getattr(llm_router, pool, None), "current_key", lambda: None)() if pool else None
+    except Exception:
+        key = None
+    try:
+        return await provider_probe.probe(profile_id, key=key or None)
+    except KeyError:
+        return None
 
 
 async def _model_snapshot() -> dict:
@@ -230,6 +257,7 @@ async def _model_snapshot() -> dict:
             "selected_provider": None,
             "selected_model": None,
             "cloud_configured": False,
+            "cloud_probe": None,
         }
 
     cloud_configured = bool(
@@ -271,14 +299,21 @@ async def _model_snapshot() -> dict:
     )
 
     ready: bool | None
+    probe = None
     if not route_selected:
         ready, reason = False, "route_unselected"
     elif provider is None:
         ready, reason = False, "provider_unresolved"
     elif route in _CLOUD_ROUTE_PROVIDERS or route == _COMPATIBLE_ROUTE:
         # The router itself chose this cloud backend (policy, spend cap and fallback
-        # mode already applied) and handed back the very object its route names.
-        ready, reason = True, "cloud_selected"
+        # mode already applied) and handed back the very object its route names. H380:
+        # it is runnable only when the provider accepts the key it would use.
+        probe = await _cloud_probe(llm_router, provider)
+        verdict = (probe or {}).get("verdict")
+        if probe is None or verdict in ("ok", "no_listing"):
+            ready, reason = True, "cloud_selected"
+        else:
+            ready, reason = False, f"cloud_{verdict}"
     elif not inventory_available:
         ready, reason = None, "inventory_unavailable"
     elif (provider, selected_model) in resident_pairs:
@@ -303,6 +338,9 @@ async def _model_snapshot() -> dict:
         "selected_provider": provider,
         "selected_model": selected_model if route_selected else None,
         "cloud_configured": cloud_configured,
+        # H380: what the provider said about the key (no key, no body).
+        "cloud_probe": None if probe is None else {
+            k: probe.get(k) for k in ("provider", "verdict", "status_code", "checked_at", "cached")},
     }
 
 

@@ -676,6 +676,28 @@ async def admin_llm_test():
     return {"results": results}
 
 
+class ProviderProbeRequest(BaseModel):
+    provider: str | None = None
+    force: bool = False
+
+
+@router.post("/api/admin/llm/providers/probe", dependencies=[Depends(admin_guard)])
+async def admin_llm_providers_probe(req: ProviderProbeRequest):
+    """H380 — prove each configured cloud provider accepts its key: one authenticated
+    read of its model list (cached, rate-limited; the key and the body never returned).
+    ``provider`` probes one; ``force`` re-probes a verdict older than the minimum
+    interval."""
+    from agents.core.llm import provider_probe
+
+    if req.provider:
+        try:
+            result = await provider_probe.probe(req.provider.strip().lower(), force=req.force)
+        except KeyError:
+            return JSONResponse({"error": f"unknown provider {safe_reflect(req.provider)}"}, status_code=404)
+        return nocache_json({"providers": [result]})
+    return nocache_json({"providers": await provider_probe.probe_all(force=req.force)})
+
+
 # ── Admin Charts endpoint ──────────────────────────────────────
 
 @router.get("/api/admin/stats", dependencies=[Depends(admin_guard)])

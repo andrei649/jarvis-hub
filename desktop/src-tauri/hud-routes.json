@@ -274,6 +274,8 @@
     "/v2/console/vlm-describe/",
     "/v2/console/auth-profiles",
     "/v2/console/auth-profiles/",
+    "/v2/console/provider-check",
+    "/v2/console/provider-check/",
     "/v2/console/system-profile",
     "/v2/console/system-profile/"
   ],

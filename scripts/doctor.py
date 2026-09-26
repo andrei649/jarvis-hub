@@ -23,7 +23,9 @@ readyz              advisory   no server answering ``/readyz`` at the hub's addr
                                started, not ready, or ``hub_url_invalid``)
 runtime_resolves    advisory   the route a Jarvis turn takes does not resolve to a usable
                                model (``configured_not_resident``, ``route_unselected``,
-                               ``residency_unknown`` …) — read from the running hub; with
+                               ``residency_unknown``, and for a cloud route a key its
+                               provider refused — ``cloud_auth_failed``, ``cloud_forbidden``,
+                               ``cloud_unreachable`` … (H380)) — read from the running hub; with
                                no ready hub it is ``skip`` (``skipped:hub_down``), never ok
 config_sources      advisory   informational: which layer supplied each configuration key
                                (process environment > repo .env > data-home .env, first

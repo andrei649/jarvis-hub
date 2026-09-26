@@ -6604,6 +6604,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/llm/providers/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Llm Providers Probe
+         * @description H380 — prove each configured cloud provider accepts its key: one authenticated
+         *     read of its model list (cached, rate-limited; the key and the body never returned).
+         *     ``provider`` probes one; ``force`` re-probes a verdict older than the minimum
+         *     interval.
+         */
+        post: operations["admin_llm_providers_probe_api_admin_llm_providers_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/stats": {
         parameters: {
             query?: never;
@@ -10665,6 +10688,16 @@ export interface components {
         PromoteRequest: {
             /** Bench Agent */
             bench_agent: string;
+        };
+        /** ProviderProbeRequest */
+        ProviderProbeRequest: {
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
         };
         /**
          * PublishBody
@@ -20850,6 +20883,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_llm_providers_probe_api_admin_llm_providers_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

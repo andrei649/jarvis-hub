@@ -34,6 +34,17 @@ def _isolated_analytics():
 
 
 @pytest.fixture(autouse=True)
+def _cloud_keys_accepted(monkeypatch):
+    """H380: a selected cloud route asks its provider; here every provider accepts."""
+    from agents.core.routers import onboarding
+
+    async def accepted(llm_router, provider):
+        return {"provider": provider, "verdict": "ok", "status_code": 200, "checked_at": 0.0, "cached": False}
+
+    monkeypatch.setattr(onboarding, "_cloud_probe", accepted)
+
+
+@pytest.fixture(autouse=True)
 def _inventory_truth(monkeypatch):
     from agents.core.routers import onboarding
 
@@ -430,8 +441,37 @@ def test_model_block_names_why_the_route_is_or_is_not_runnable(client, monkeypat
     assert mismatch["selected_provider"] is None
     assert mismatch["selected_model"] == "test-pretender-model"
 
+    # H380: a cloud route whose provider does not accept the key is not runnable.
+    monkeypatch.setattr(web, "orch", _FakeOrch(router=cloud_router), raising=False)
+    refused = []
+    for verdict in ("auth_failed", "forbidden", "rate_limited", "error", "unreachable", "refused",
+                    "not_configured"):
+        async def said(llm_router, provider, verdict=verdict):
+            return {"provider": "gemini", "verdict": verdict, "status_code": None,
+                    "checked_at": 1.0, "cached": True, "models": 3}
+
+        monkeypatch.setattr(onboarding, "_cloud_probe", said)
+        block = _get(client)["model"]
+        assert (block["ready"], block["reason"]) == (False, f"cloud_{verdict}")
+        assert block["active_provider"] is None and block["selected_provider"] == "gemini"
+        assert block["cloud_probe"] == {"provider": "gemini", "verdict": verdict, "status_code": None,
+                                        "checked_at": 1.0, "cached": True}
+        refused.append(block)
+    for verdict in ("ok", "no_listing"):
+        async def fine(llm_router, provider, verdict=verdict):
+            return {"provider": "gemini", "verdict": verdict}
+
+        monkeypatch.setattr(onboarding, "_cloud_probe", fine)
+        assert (_get(client)["model"]["ready"], _get(client)["model"]["reason"]) == (True, "cloud_selected")
+
+    async def no_profile(llm_router, provider):
+        return None
+
+    monkeypatch.setattr(onboarding, "_cloud_probe", no_profile)
+    assert _get(client)["model"]["reason"] == "cloud_selected" and _get(client)["model"]["cloud_probe"] is None
+
     # Every reason the hub can name is exercised above — a new one needs a case here.
-    verdicts = (cold, warm, stuck, offline, unknown, unverified, cloud, no_route, mismatch)
+    verdicts = (cold, warm, stuck, offline, unknown, unverified, cloud, no_route, mismatch, *refused)
     assert {v["reason"] for v in verdicts} == onboarding.MODEL_READINESS_REASONS
 
     # The compatible-adapter route is trusted only when the router handed back the very

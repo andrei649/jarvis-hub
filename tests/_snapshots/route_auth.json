@@ -303,6 +303,7 @@
   "POST /api/admin/backup/verify": "admin",
   "POST /api/admin/export": "admin",
   "POST /api/admin/forget": "admin",
+  "POST /api/admin/llm/providers/probe": "admin",
   "POST /api/admin/llm/test": "admin",
   "POST /api/admin/mcp": "admin",
   "POST /api/admin/mcp/{name}/connect": "admin",

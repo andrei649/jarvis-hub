@@ -117,5 +117,6 @@ export const CONSOLE_PANELS = [
   {"id": "lm-studio", "label": "LM Studio", "group": "Admin", "component": "LMStudioPanel"},
   {"id": "vlm-describe", "label": "Vlm Describe", "group": "Admin", "component": "VlmDescribePanel"},
   {"id": "auth-profiles", "label": "Auth Profiles", "group": "Admin", "component": "AuthProfilesPanel"},
+  {"id": "provider-check", "label": "Provider Check", "group": "Admin", "component": "ProviderCheckPanel"},
   {"id": "system-profile", "label": "System Profile", "group": "Admin", "component": "SystemProfilePanel"},
 ] as const;

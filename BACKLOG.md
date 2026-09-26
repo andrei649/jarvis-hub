@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H380 a configured cloud key is proven to work before a turn finds out (missing → equivalent, #1207; headline 160 → 161/697).
+
+  "Configured" meant a key variable was non-empty, and a cloud route was "ready" because the router had a key — a wrong or revoked key was discovered by the first failed turn. Now (`agents/core/llm/provider_probe.py`):
+  - **The probe.** One authenticated model-list GET per cloud provider with the key the hub would use (pool first), through `llm_async_client` (egress-ledgered; the host-protocol mandate applies). Verdicts: ok, no_listing, auth_failed, forbidden, rate_limited, error, unreachable, refused, not_configured, not_cloud. Never the key or the body; cached 300 s per key, a forced re-check throttled for 30 s.
+  - **Where.** `POST /api/admin/llm/providers/probe` (admin; one or all, `force`), the Console's Provider Check panel (probes only when asked), and the command-center model block: a selected cloud route is runnable only when its provider accepts the route's key, otherwise `cloud_<verdict>` — which `nerva doctor` (`runtime_resolves`) and `nerva status` now report.
+
+  38 mutants, all caught. Test manual: ENV-173, ENV-174.
+  Tests: backend 15,766 → 15,796 (`tests/test_h380_provider_probe.py` 30); vitest 1,503 → 1,506 (`provider-check-panel.test.tsx` 3).
+
 - 2026-09-26 H328 a skill is shown where it makes sense: the host OS, the environment, the channel, and the tools this turn is offered (missing → equivalent, #1207; headline 159 → 160/697).
 
   H327 kept `platforms`, `environments` and `metadata.hermes.*`, but nothing read them. Now (`agents/core/skills/visibility.py`), Hermes' four gates, split the same way:
