@@ -6,16 +6,18 @@ HEALTHCHECK, but nothing wrote to ``NOTIFY_SOCKET``: the shipped unit was
 README said to cron a curl instead. Now, when systemd starts the hub under
 ``Type=notify``:
 
-- ``READY=1`` is sent once the lifespan has finished and ``/readyz`` would answer 200
-  (the orchestrator and its agents are loaded), so ``systemctl start`` returns when
-  the hub can serve, and units ordered ``After=`` it wait for that;
+- ``READY=1`` is sent once the server has bound its port and ``/readyz`` would answer
+  200 (the orchestrator and its agents are loaded), so ``systemctl start`` returns
+  when the hub can serve, and units ordered ``After=`` it wait for that;
 - ``WATCHDOG=1`` is sent every half ``WATCHDOG_USEC`` by a task on the event loop, so
   a loop that hangs stops the heartbeat and systemd restarts the hub
   (``Restart=on-failure``);
-- ``STOPPING=1`` is sent when the lifespan begins to shut down.
+- ``STOPPING=1`` is sent as the server begins to shut down, before it drains.
 
-With ``NOTIFY_SOCKET`` unset (a shell, Docker, launchd, Windows) every call is a
-no-op. A message that cannot be sent is logged at debug and never raises: the
+Only the server knows those moments (uvicorn runs the app's lifespan before it binds),
+so ``serve.py`` runs :class:`NotifyingServer`; a raw ``uvicorn agents.web:app`` says
+nothing. With ``NOTIFY_SOCKET`` unset (a shell, Docker, launchd, Windows) every call
+is a no-op. A message that cannot be sent is logged at debug and never raises: the
 protocol is advisory to the process that runs it.
 """
 from __future__ import annotations
@@ -24,13 +26,22 @@ import asyncio
 import logging
 import os
 import socket
+import time
+from collections.abc import Callable, Mapping
+
+import uvicorn
 
 from .env_config import env_str
 
 logger = logging.getLogger("jarvis.sd_notify")
 
-#: The shortest heartbeat accepted: a WATCHDOG_USEC below 2 s would busy the loop.
-MIN_WATCHDOG_SECONDS = 1.0
+#: The shortest heartbeat taken from WATCHDOG_USEC (a shorter one would busy the loop),
+#: unless the deadline itself is shorter: a ping must always land inside it.
+MIN_WATCHDOG_SECONDS = 0.1
+
+#: How long a message is retried while the service manager's queue is full. READY is
+#: sent once and must not be lost to a busy manager; the event loop is never held longer.
+SEND_TIMEOUT_SECONDS = 1.0
 
 
 def _address() -> str | bytes | None:
@@ -56,29 +67,45 @@ def notify(message: str) -> bool:
     address = _address()
     if address is None or not hasattr(socket, "AF_UNIX"):
         return False
+    data = message.encode("utf-8", "replace")
+    deadline = time.monotonic() + SEND_TIMEOUT_SECONDS
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
             sock.setblocking(False)
-            sock.sendto(message.encode("utf-8", "replace"), address)
-        return True
+            while True:
+                try:
+                    sock.sendto(data, address)
+                    return True
+                except BlockingIOError:            # the manager's queue is full: wait for room
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.01)
     except OSError as exc:
         logger.debug("sd_notify %r not sent: %s", message.split("=", 1)[0], exc)
         return False
+
+
+def _decimal(raw: str) -> int | None:
+    """An ASCII decimal, as systemd writes them; None for anything else (``int()``
+    refuses digits such as ``²`` that ``isdigit()`` accepts)."""
+    return int(raw) if raw.isascii() and raw.isdigit() else None
 
 
 def watchdog_seconds() -> float | None:
     """Half of ``WATCHDOG_USEC``, when the watchdog is armed for this process.
 
     systemd sets ``WATCHDOG_PID`` to the main PID; a child that inherited the
-    variables must not ping on its parent's behalf.
+    variables must not ping on its parent's behalf. Without ``WATCHDOG_PID`` any
+    process is armed, as in libsystemd.
     """
-    raw = env_str("WATCHDOG_USEC").strip()
-    if not raw.isdigit() or int(raw) <= 0:
+    usec = _decimal(env_str("WATCHDOG_USEC").strip())
+    if not usec:
         return None
     pid = env_str("WATCHDOG_PID").strip()
-    if pid and (not pid.isdigit() or int(pid) != os.getpid()):
+    if pid and _decimal(pid) != os.getpid():
         return None
-    return max(MIN_WATCHDOG_SECONDS, int(raw) / 1_000_000 / 2)
+    deadline = usec / 1_000_000
+    return min(max(MIN_WATCHDOG_SECONDS, deadline / 2), deadline * 0.8)
 
 
 async def _heartbeat(interval: float) -> None:
@@ -88,18 +115,18 @@ async def _heartbeat(interval: float) -> None:
 
 
 class Notifier:
-    """The hub's side of the protocol, driven by the lifespan."""
+    """The hub's side of the protocol, driven by :class:`NotifyingServer`."""
 
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self.ready_sent = False
 
-    def ready(self, readiness: dict | None = None) -> bool:
+    def ready(self, readiness: Mapping) -> bool:
         """``READY=1`` once the hub is ready (``readiness`` is ``/readyz``'s body), and
         the watchdog heartbeat from then on. A hub that is not ready says why instead."""
         if not enabled():
             return False
-        if readiness is not None and not readiness.get("ready"):
+        if not readiness.get("ready"):
             notify(f"STATUS=not ready: {readiness.get('reason') or 'starting'}")
             return False
         self.ready_sent = notify("READY=1\nSTATUS=serving")
@@ -122,3 +149,27 @@ class Notifier:
 
 
 NOTIFIER = Notifier()
+
+
+class NotifyingServer(uvicorn.Server):
+    """uvicorn's server, speaking the protocol at the moments only the server knows.
+
+    uvicorn runs the app's lifespan *before* it binds the port: READY from the lifespan
+    reached systemd while nothing listened, and a bind that then failed left
+    ``systemctl start`` reporting success. Here READY follows the bind, decided by
+    ``readiness()`` (``/readyz``'s body). And STOPPING opens the shutdown, before the
+    drain: the lifespan's teardown runs after it, and not at all on a forced exit.
+    """
+
+    def __init__(self, config: uvicorn.Config, readiness: Callable[[], Mapping]) -> None:
+        super().__init__(config)
+        self._readiness = readiness
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets=sockets)      # a failed bind exits here, unannounced
+        if self.started:
+            NOTIFIER.ready(self._readiness())
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        await NOTIFIER.stopping()
+        await super().shutdown(sockets=sockets)

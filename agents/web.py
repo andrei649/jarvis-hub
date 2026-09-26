@@ -638,20 +638,16 @@ async def lifespan(application: FastAPI):
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
         f"{list(orch.skills.skills.keys())} skills"
     )
-    # H283 — tell systemd (Type=notify) the hub is ready once /readyz would say so,
-    # and keep its watchdog fed from the event loop; a no-op without NOTIFY_SOCKET.
     # H161 — the memory/disk watch: read what the last run left (a suspected OOM
     # restart) and mark this run as not yet cleanly stopped.
     from agents.core import resource_pressure
     resource_pressure.monitor().start()
-    from agents.core.routers.ops import readiness_snapshot
-    from agents.core.sd_notify import NOTIFIER
-    NOTIFIER.ready(readiness_snapshot())
+    # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
+    # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
-    await NOTIFIER.stopping()
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion

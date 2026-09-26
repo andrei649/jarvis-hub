@@ -60,14 +60,16 @@ The hub exposes machine-facing probes (H23.11) a monitor can poll:
 - `GET /healthz` → `200` while the process serves (liveness).
 - `GET /readyz`  → `200` once the orchestrator + agents are loaded, `503` while starting.
 
-The unit is `Type=notify` (H283): the hub sends `READY=1` to systemd once the
-orchestrator and its agents are loaded (the moment `/readyz` would answer 200), so
-`systemctl start jarvis-hub` returns when it can serve, and units ordered
-`After=jarvis-hub.service` wait for that. It feeds systemd's watchdog
-(`WatchdogSec=60`) with `WATCHDOG=1` every 30 s from its event loop: if the loop hangs,
-the pings stop and systemd restarts the hub (`Restart=on-failure`). On stop it sends
-`STOPPING=1` before draining. `systemctl status jarvis-hub` shows its `STATUS=` line.
-Outside systemd (no `NOTIFY_SOCKET`) none of this runs.
+The unit is `Type=notify` (H283): the hub sends `READY=1` to systemd once its port is
+bound and the orchestrator and its agents are loaded (the moment `/readyz` answers
+200), so `systemctl start jarvis-hub` returns when it can serve, and units ordered
+`After=jarvis-hub.service` wait for that; a bind that fails is never announced. It feeds
+systemd's watchdog (`WatchdogSec=60`) with `WATCHDOG=1` every 30 s from its event loop:
+if the loop hangs, the pings stop and systemd restarts the hub (`Restart=on-failure`).
+On stop it sends `STOPPING=1` before draining. `systemctl status jarvis-hub` shows its
+`STATUS=` line. `serve.py` (the unit's `ExecStart`) speaks the protocol; a raw
+`uvicorn agents.web:app` does not, so keep `serve.py` in a `Type=notify` unit. Outside
+systemd (no `NOTIFY_SOCKET`) none of this runs.
 
 For a monitor outside systemd, the probes still work:
 
@@ -76,9 +78,11 @@ curl -fsS http://127.0.0.1:8080/readyz >/dev/null || systemctl restart jarvis-hu
 ```
 
 To tell the model about the machine it runs on (a proxy, how credentials are handled
-here, where the shared drives are), set `JARVIS_ENVIRONMENT_HINT` in the env file, with
-`\n` for a line break. It is given to every agent as a description of the machine, not
-as instructions, at most 2,000 characters.
+here, where the shared drives are), set `JARVIS_ENVIRONMENT_HINT` in the env file, in
+double quotes, with `\n` for a line break (a quoted value may also span real lines).
+Unquoted, systemd drops the backslash and the hub receives a plain `n`. It is given to
+every agent as a description of the machine, not as instructions, at most 2,000
+characters; `nerva prompt-size`, run with the same variable, counts it.
 
 ## Notes
 

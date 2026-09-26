@@ -167,7 +167,7 @@ def test_the_refusal_names_the_holder():
 def test_serve_takes_the_lock_before_starting():
     src = (REPO / "serve.py").read_text(encoding="utf-8")
     main = src[src.index("def main():"):]
-    assert main.index("install_identity.acquire_hub_lock()") < main.index("uvicorn.Server(config).run()")
+    assert main.index("install_identity.acquire_hub_lock()") < main.index("NotifyingServer(config, readiness_snapshot).run()")
     assert "raise SystemExit(f\"Nerva is already running on this data root: {exc}\")" in main
 
 

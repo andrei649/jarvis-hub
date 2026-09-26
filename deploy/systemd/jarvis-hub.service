@@ -19,10 +19,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# H283: the hub tells systemd when it is ready (sd_notify READY=1, once /readyz would
-# answer 200) and feeds the watchdog from its event loop (WATCHDOG=1 every half
-# WatchdogSec), so `systemctl start` returns when it can serve and a hung loop is
-# restarted (Restart=on-failure). Only the main process may notify.
+# H283: the hub tells systemd when it is ready (sd_notify READY=1, once its port is
+# bound and /readyz answers 200) and feeds the watchdog from its event loop (WATCHDOG=1
+# every half WatchdogSec), so `systemctl start` returns when it can serve and a hung
+# loop is restarted (Restart=on-failure). Only the main process may notify, and only
+# serve.py speaks the protocol: keep it as ExecStart.
 Type=notify
 NotifyAccess=main
 WatchdogSec=60

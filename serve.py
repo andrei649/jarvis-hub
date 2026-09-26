@@ -237,8 +237,6 @@ def probe_bind(host: str, port: int) -> None:
 
 
 def main():
-    import uvicorn
-
     from agents.core.env_provenance import load_hub_env
 
     # H273: the .env files come first, so the server, the posture guards and the bind
@@ -274,8 +272,12 @@ def main():
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
     # shutdown (graceful channel stop + pooled-client close), bounded by
-    # timeout_graceful_shutdown above.
-    uvicorn.Server(config).run()
+    # timeout_graceful_shutdown above. H283: this subclass tells systemd READY once the
+    # port is bound and /readyz would say ready, and STOPPING before the drain.
+    from agents.core.routers.ops import readiness_snapshot
+    from agents.core.sd_notify import NotifyingServer
+
+    NotifyingServer(config, readiness_snapshot).run()
 
 
 if __name__ == "__main__":
