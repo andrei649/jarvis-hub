@@ -182,6 +182,13 @@ async def switch_skill(body: SkillSwitchBody):
                                               if restored else "the switch could not be recorded and a later "
                                               "change landed first; check the skill switches",
                                      "reason": "audit_failed", "restored": restored}, status_code=503)
+    if audited and body.enabled:
+        # The months a skill spent switched off are not neglect: its idle clock restarts
+        # now, so the curator's next pass does not archive it (batch-6 verify of H329 F9).
+        usage = getattr(orch, "skill_usage", None)
+        if usage is not None and callable(getattr(usage, "bump", None)):
+            for name in outcome["changed"]:
+                usage.bump(name, "switch_on")
     return {"ok": True, "enabled": body.enabled, "channel": channel or None, "changed": outcome["changed"],
             "unchanged": outcome["unchanged"], "essential": outcome["essential"],
             "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"], "audited": audited,

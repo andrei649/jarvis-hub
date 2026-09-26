@@ -1132,9 +1132,11 @@ def apply_import(changes: dict[str, dict[str, Any]]) -> int:
 
 def reset_kept(cat: str) -> list[str]:
     """The settings of *cat* a reset leaves alone: its secrets (stored credentials an
-    export never carries could not be got back, review-H157 m5)."""
+    export never carries could not be got back, review-H157 m5) and the rows only their
+    own route writes (ROUTE_ONLY, the skill switches)."""
     return sorted(spec["key"] for spec in DEFAULTS
-                  if spec["category"] == cat and is_secret_setting(cat, spec["key"]))
+                  if spec["category"] == cat
+                  and (is_secret_setting(cat, spec["key"]) or (cat, spec["key"]) in ROUTE_ONLY))
 
 
 def posture_overridden(cat: str) -> list[str]:
@@ -1292,9 +1294,11 @@ def undo_last_reset() -> dict[str, Any] | None:
 
 
 def reset_kept_all() -> list[str]:
-    """Every secret setting, as ``category.key``: what a reset of every category leaves."""
+    """Every secret setting and route-only row, as ``category.key``: what a reset of every
+    category leaves."""
     return sorted(f"{spec['category']}.{spec['key']}" for spec in DEFAULTS
-                  if is_secret_setting(spec["category"], spec["key"]))
+                  if is_secret_setting(spec["category"], spec["key"])
+                  or (spec["category"], spec["key"]) in ROUTE_ONLY)
 
 
 def posture_overridden_all() -> list[str]:

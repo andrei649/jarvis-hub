@@ -792,3 +792,50 @@ def test_the_skill_list_is_not_open_to_the_network(monkeypatch, tmp_path):
     assert lan.get("/skills").status_code in (401, 403)
     monkeypatch.setattr(web, "USER_TOKEN", "h329-user")
     assert lan.get("/skills", headers={"X-User-Token": "h329-user"}).status_code == 200
+
+
+def test_a_skill_switched_back_on_is_not_archived_for_its_time_off(monkeypatch, tmp_path):
+    """Batch 6 verify: the switch-on restarts the idle clock, so the months a skill spent
+    switched off never count as neglect on the next curator pass."""
+    from datetime import UTC, datetime, timedelta
+
+    from agents.core.skills.curator import SkillCurator
+    from agents.core.skills.usage import ORIGIN_AGENT, SkillUsageStore, latest_activity_at
+
+    client, orch = _client(monkeypatch, tmp_path)
+    usage = SkillUsageStore(path=tmp_path / "usage.json")
+    orch.skill_usage = usage
+    usage.note_created("Weather Intel", ORIGIN_AGENT)
+    usage._items["Weather Intel"]["last_used_at"] = (datetime.now(UTC) - timedelta(days=120)).isoformat()
+    _store(disabled=["Weather Intel"])
+    assert _post(client, {"skill": "weather", "enabled": True}).json()["changed"] == ["Weather Intel"]
+    anchor = latest_activity_at(usage.get("Weather Intel"))
+    assert anchor is not None and datetime.now(UTC) - anchor < timedelta(minutes=1)
+    curator = SkillCurator(SimpleNamespace(skills=orch.skills.skills), usage, archive_dir=tmp_path / "archive",
+                           now=lambda: datetime.now(UTC) + timedelta(days=10))
+    out = asyncio.run(curator.run())
+    assert "Weather Intel" not in out["lifecycle"]["archived"]
+
+
+def test_a_switch_off_or_a_failed_switch_on_does_not_restart_the_clock(monkeypatch, tmp_path):
+    from agents.core.skills.usage import ORIGIN_AGENT, SkillUsageStore, latest_activity_at
+
+    client, orch = _client(monkeypatch, tmp_path, log=_Log(fail=True))
+    usage = SkillUsageStore(path=tmp_path / "usage.json")
+    orch.skill_usage = usage
+    usage.note_created("Weather Intel", ORIGIN_AGENT)
+    _store(disabled=["Weather Intel"])
+    assert _post(client, {"skill": "weather", "enabled": True}).status_code == 503     # not recorded, not kept
+    assert latest_activity_at(usage.get("Weather Intel")) is None
+    client, orch = _client(monkeypatch, tmp_path)
+    orch.skill_usage = usage
+    _post(client, {"skill": "spotify", "enabled": False})
+    assert latest_activity_at(usage.get("Spotify") or {}) is None
+
+
+def test_a_reset_names_the_switch_rows_it_keeps():
+    from agents.core import settings_db
+
+    kept = settings_db.reset_kept("skills")
+    assert "disabled" in kept and "channel_disabled" in kept
+    assert {"skills.disabled", "skills.channel_disabled"} <= set(settings_db.reset_kept_all())

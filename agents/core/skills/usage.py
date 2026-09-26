@@ -33,7 +33,10 @@ ORIGIN_BUNDLED = "bundled"      # shipped with the repo (default for untracked)
 
 _BUMP_KEYS = {"use": ("use_count", "last_used_at"),
               "view": ("view_count", "last_viewed_at"),
-              "patch": ("patch_count", "last_patched_at")}
+              "patch": ("patch_count", "last_patched_at"),
+              # A recorded switch-on restarts the idle clock: a switched-off skill records
+              # no use, and the curator must not count that time as neglect.
+              "switch_on": ("switch_on_count", "last_switched_on_at")}
 
 
 def _now_iso() -> str:
@@ -51,9 +54,9 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def latest_activity_at(record: dict) -> datetime | None:
-    """Newest use/view/patch timestamp (creation intentionally excluded)."""
+    """Newest use/view/patch/switch-on timestamp (creation intentionally excluded)."""
     latest = None
-    for key in ("last_used_at", "last_viewed_at", "last_patched_at"):
+    for key in ("last_used_at", "last_viewed_at", "last_patched_at", "last_switched_on_at"):
         dt = _parse_iso(record.get(key))
         if dt is not None and (latest is None or dt > latest):
             latest = dt
