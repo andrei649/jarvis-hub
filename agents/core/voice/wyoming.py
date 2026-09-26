@@ -12,6 +12,7 @@ from typing import Awaitable, Callable, Optional
 from agents.core.env_config import env_flag
 from agents.core.media_director import MediaError
 from agents.core.satellite_hub import SatelliteHub, SatellitePrincipal
+from agents.core.voice import listening
 
 logger = logging.getLogger("jarvis.voice.wyoming")
 
@@ -23,6 +24,10 @@ _MAX_EVENT_TYPE = 64
 
 TextHandler = Callable[[str], Awaitable[str]]
 RoomTextHandler = Callable[[str, "VoiceRequestContext"], Awaitable[str]]
+
+
+#: H222 — Wyoming events a satellite sends while it captures, and the state they mean.
+LISTEN_EVENTS = {"detection": "listening", "voice-started": "listening", "voice-stopped": "thinking"}
 
 
 def room_aware_voice_enabled() -> bool:
@@ -244,15 +249,29 @@ class WyomingServer:
         writer.write(encode_event(event))
         await writer.drain()
 
+    def _listening_source(self, principal: SatellitePrincipal | None) -> str | None:
+        """H222: whose listening state an event may set — an authenticated satellite,
+        or (with authentication off) the one anonymous ``satellite``; never an
+        unauthenticated peer when authentication is required."""
+        if principal is not None:
+            return listening.satellite_source(principal.satellite_id)
+        return None if self._require_auth else listening.satellite_source(None)
+
     async def handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         principal: SatellitePrincipal | None = None
+        heard: str | None = None                      # H222: the source this connection lit up
         try:
             while True:
                 event = await read_event(reader)
                 if event is None:
                     break
+                if event.type in LISTEN_EVENTS:
+                    source = self._listening_source(principal)
+                    if source is not None and listening.set_state(source, LISTEN_EVENTS[event.type]):
+                        heard = source
+                    continue
                 if self._require_auth and event.type == "satellite-auth":
                     if principal is not None:
                         result = {"ok": False, "reason": "already_authenticated"}
@@ -304,12 +323,21 @@ class WyomingServer:
                         )
                         continue
 
-                response = await self.dispatch(event, context=context)
-                if response is not None:
-                    await self._write(writer, response)
+                source = self._listening_source(principal) if event.type == "transcript" else None
+                if source is not None and listening.set_state(source, "thinking"):
+                    heard = source
+                try:
+                    response = await self.dispatch(event, context=context)
+                    if response is not None:
+                        await self._write(writer, response)
+                finally:
+                    if source is not None:
+                        listening.set_state(source, "off")
         except (asyncio.IncompleteReadError, ConnectionError, WyomingProtocolError):
             pass
         finally:
+            if heard is not None:
+                listening.set_state(heard, "off")
             with suppress(Exception):
                 writer.close()
 

@@ -7562,6 +7562,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/voice/listening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Listening
+         * @description Whether the hub or a satellite is listening now: each source's state, the loudest
+         *     one and ``mic_open``. Nothing here can open or close a mic.
+         */
+        get: operations["voice_listening_api_voice_listening_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/listening/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Listening Stream
+         * @description Every change of the listening state, as server-sent events (read-only).
+         */
+        get: operations["voice_listening_stream_api_voice_listening_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vlm/status": {
         parameters: {
             query?: never;
@@ -22358,6 +22399,46 @@ export interface operations {
         };
     };
     voice_capabilities_api_voice_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_listening_api_voice_listening_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_listening_stream_api_voice_listening_stream_get: {
         parameters: {
             query?: never;
             header?: never;

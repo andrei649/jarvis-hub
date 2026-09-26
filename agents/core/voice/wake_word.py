@@ -8,6 +8,8 @@ import asyncio
 import logging
 from typing import Callable
 
+from . import listening
+
 logger = logging.getLogger("jarvis.voice.wake_word")
 
 try:
@@ -51,6 +53,7 @@ class WakeWordDetector:
             frames_per_buffer=1280,
         )
         self._running = True
+        listening.set_state(listening.HUB, "armed")   # H222: the mic is open for the wake word
         logger.info("Wake word detection started")
         await self._listen_loop()
 
@@ -73,8 +76,13 @@ class WakeWordDetector:
                 logger.error(f"Wake word error: {e}")
                 await asyncio.sleep(0.1)
 
+    @property
+    def running(self) -> bool:
+        return self._running
+
     def stop(self):
         self._running = False
+        listening.set_state(listening.HUB, "off")
         if self._stream:
             self._stream.stop_stream()
             self._stream.close()

@@ -25,6 +25,7 @@ import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
 import { DesktopControls, notifyDesktopConversation, useDesktopConversation } from './desktop';
+import { useListeningIndicator } from './listening';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
@@ -392,6 +393,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   },[runTurn,runVision,thinking]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
+  useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
   voiceRef.current = voice;
 
   // Leaving DEMO is a provenance boundary, not just a URL toggle. Clear every

@@ -233,6 +233,8 @@
   "GET /api/vlm/composer/status",
   "GET /api/vlm/status",
   "GET /api/voice/capabilities",
+  "GET /api/voice/listening",
+  "GET /api/voice/listening/stream",
   "GET /api/voice/wyoming",
   "GET /api/webhooks",
   "GET /api/widget/{token}",

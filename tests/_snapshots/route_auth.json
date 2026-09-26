@@ -233,6 +233,8 @@
   "GET /api/vlm/composer/status": "user",
   "GET /api/vlm/status": "user",
   "GET /api/voice/capabilities": "open",
+  "GET /api/voice/listening": "user",
+  "GET /api/voice/listening/stream": "user",
   "GET /api/voice/wyoming": "open",
   "GET /api/webhooks": "admin",
   "GET /api/widget/{token}": "open",

@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H222 the tray says when Nerva is listening, outside its windows (missing → equivalent, #1207; headline 174 → 175/697).
+
+  Mic state lived only inside the HUD page and was a static mute flag; the voice pipeline, the wake-word detector and the satellites published nothing. Now (`agents/core/voice/listening.py`, `frontend/src/listening.ts`, `desktop/src-tauri/src/indicator.rs`), as Hermes' listening indicator:
+  - **State.** One registry per process: `hub` is `armed` while the wake-word detector holds the mic, then `listening` → `thinking` → `speaking` through a capture and back (a `finally`, so no early end or failure leaves it lit); an authenticated Wyoming satellite's `detection`/`voice-started` marks `satellite:<id>` until it is answered or disconnects. The loudest state wins (an open mic first) and a stuck transient state expires after 120 s. Get / set / subscribe in process only.
+  - **Read-only surfaces.** `GET /api/voice/listening` and `/stream` (user-guarded, GET-only: nothing can set it over HTTP).
+  - **Outside the window.** In the desktop app the HUD follows the stream with its own token (polling as fallback), adds its own mic, and tells the shell (`desktop_listening`, local HUD windows only); the tray shows `● listening` / `○ wake word` in the menu bar (macOS; next to the icon on Linux) and names the state in its tooltip (macOS, Windows). No control on it can open or close a mic.
+
+  65 mutants: 64 caught after five cases were added; the other was a redundant check, removed. Test manual: CHN-185, PGE-250.
+  Tests: backend 16,456 → 16,500 (`tests/test_h222_listening.py` 44), frontend 1,556 → 1,567 (`src/test/listening.test.tsx` 8, `src/test/desktop-listening.test.ts` 3).
+
 - 2026-09-26 H182 keep the machine awake while a turn runs, know when it is on battery (missing → equivalent, #1207; headline 173 → 174/697).
 
   Nerva had no power assertion, no battery reading, no resume events and no battery-aware throttling, and the desktop webview was throttled in the background. Now (`agents/core/power.py`, `agents/core/routers/power.py`, `frontend/src/power-chip.tsx`, `desktop/src-tauri/src/throttling.rs`), as Hermes' keep-awake and power awareness:

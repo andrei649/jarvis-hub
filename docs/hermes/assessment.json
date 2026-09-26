@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "6a7af979b8bd7ef244ce02b8b9d06c4f3976c05f",
-  "assessed_at": "2026-09-26T09:45:38Z",
+  "base_sha": "00a88d040d981328cb90c157f5e21ea8a1d21e19",
+  "assessed_at": "2026-09-26T10:09:19Z",
   "reviews": [
     {
       "id": "H001",
@@ -303,7 +303,7 @@
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
@@ -1107,7 +1107,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -1192,7 +1192,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -1273,7 +1273,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -1494,7 +1494,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/cockpit.tsx",
@@ -1502,7 +1502,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "6eda8dc0462af980f5ebae1fc13ee8ba73302d35f92981f048ea3eceb5872407"
+          "sha256": "4104dbd37585f617403f71292e069c8560bd1ae58d4df68d48888f1d7bef41a8"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -1636,7 +1636,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -1648,7 +1648,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "6eda8dc0462af980f5ebae1fc13ee8ba73302d35f92981f048ea3eceb5872407"
+          "sha256": "4104dbd37585f617403f71292e069c8560bd1ae58d4df68d48888f1d7bef41a8"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -2167,7 +2167,7 @@
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
@@ -2184,7 +2184,7 @@
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
@@ -2263,7 +2263,7 @@
       "evidence": [
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         },
         {
           "path": "desktop/src-tauri/tauri.conf.json",
@@ -2279,7 +2279,7 @@
         },
         {
           "path": "frontend/src/desktop.tsx",
-          "sha256": "3f32362b2f8421321f86ebf3b9ae7137c7c97b64f4f5c57b0a498140ef48071e"
+          "sha256": "f6b91c97d0db29b84f2fc7e7bd87f1eb4da883cf5aa580e57d7dd54980c87a54"
         },
         {
           "path": "frontend/src/test/desktop.test.tsx",
@@ -2332,7 +2332,7 @@
         },
         {
           "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         },
         {
           "path": "tests/test_h182_power.py",
@@ -2517,7 +2517,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -2570,7 +2570,7 @@
       "id": "H220",
       "row_sha256": "765d4e507aa22a50b7bde5a3972b342c301ef50855453885062b79b414c92f93",
       "status": "partial",
-      "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:480). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:449, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
+      "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:480). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:451, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
       "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1866-1873), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1656).",
       "evidence": [
         {
@@ -2591,7 +2591,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/locality.ts",
@@ -2626,37 +2626,49 @@
     {
       "id": "H222",
       "row_sha256": "a0137dfe40d7e77569cca7d32c43650f61bfcfee02417948e4cd9189651b135e",
-      "status": "missing",
-      "summary": "Mic state is shown only inside the HUD page: the TopBar MIC badge (frontend/src/shell.tsx:59), the wall's MIC footer (frontend/src/wall.tsx:395) and the cockpit mic button. All three are fed by GET /api/trust/status (agents/core/routers/oauth.py:216). Its `mic` field comes from _trust_status (agents/core/routers/oauth.py:180), which derives it solely from the JARVIS_MIC_MUTED env flag (agents/core/routers/oauth.py:193), not from the voice pipeline's listening state. The desktop shell (desktop/src-tauri/src/main.rs) creates only the main and floating windows and a tray icon (desktop/src-tauri/src/main.rs:244) with a static 'Nerva' tooltip (desktop/src-tauri/src/main.rs:246). VoicePipeline (agents/core/voice/pipeline.py:19) and WakeWordDetector (agents/core/voice/wake_word.py:26) keep their running state private. tests/test_trust_api.py (9 pass) covers the trust-status route only.",
-      "remaining": "None of the accepted requirement exists. Missing: (1) an indicator surface outside the main window (a small always-on-top window or a tray icon/tooltip that changes with state) that shows listening state when the HUD is unfocused or hidden; (2) a get/set/on-state API for listening/wake state, since VoicePipeline, WakeWordDetector and the satellite hub publish none; (3) a push of state changes to the desktop shell. The trust-status `mic` value is a static env-flag mute switch, not a live 'I am listening' signal. The indicator must stay read-only: turning the mic on is a device permission, not a control on this surface.",
+      "status": "equivalent",
+      "summary": "Nerva shows whether it is listening outside its main window, as Hermes does. agents/core/voice/listening.py keeps one process-wide, thread-safe listening state per source (ListeningState, STATE). The host's own voice path publishes it: the wake-word detector marks hub armed once it holds the mic open and off when it stops (WakeWordDetector.start, stop; agents/core/voice/wake_word.py), and a capture marks hub listening while it records, thinking while it transcribes and answers, speaking while it plays the reply, and falls back to armed (or off when the detector is not running) in a finally, so an early end or a failure never leaves it lit (VoicePipeline._capture_and_process; stop marks it off; agents/core/voice/pipeline.py). Wyoming satellites publish it too: an authenticated satellite's detection or voice-started marks satellite:<id> listening and voice-stopped marks it thinking; a transcript marks it thinking while it is answered and clears it after; a closed connection clears whatever it lit; with authentication required an unauthenticated peer can set nothing, and with authentication off the one anonymous satellite is named satellite (LISTEN_EVENTS, WyomingServer._listening_source, handle_connection; agents/core/voice/wyoming.py). The API is get / set / on-change in process: set_state (a bounded, printable source name and one of off, armed, listening, thinking, speaking; off forgets the source; at most 32 sources), snapshot (each source's state, the loudest by ORDER — listening, then armed, both an open mic, then thinking, speaking, off — mic_open, and a seq that moves on every change), subscribe and unsubscribe (callbacks run outside the lock and a failing one is ignored). A transient state not re-said for 120 s expires, and the expiry moves seq, so a crashed capture never leaves the indicator on; an armed mic stays. GET /api/voice/listening answers the snapshot and GET /api/voice/listening/stream pushes it on every change with keepalives (agents/core/routers/voice.py); both are user-guarded and GET-only, so nothing can set the state over HTTP. Every writer and reader loads the one agents.core.voice.listening module (a test pins it, since core.X and agents.core.X load as different modules here). The push to the desktop shell: frontend/src/listening.ts follows the stream with the HUD's own token (EventSource cannot send one) and falls back to polling every 5 s; it combines the hub's state with the window's own mic (useVoice active counts as listening), and only inside the desktop app forwards the loudest to the shell (setDesktopListening in frontend/src/desktop.tsx sends only changes and re-sends after a refused call; a closing window sends off). The indicator surface is the tray icon (desktop/src-tauri/src/main.rs): a desktop_listening command, allowed only to the local HUD windows (verify, capability allow-desktop-listening, build.rs manifest), records each window's state on a board and shows the loudest (desktop/src-tauri/src/indicator.rs): a menu-bar title while a mic is open (● listening, ○ wake word) — shown on macOS and next to the icon on Linux, not on Windows — and a tooltip naming the state on macOS and Windows. It is read-only: nothing on the tray or in the command can open or close a mic. Tests: tests/test_h222_listening.py (44), including the capture's state trail, every early end, a failing transcription, authenticated, unauthenticated and anonymous satellites and a satellite dropping mid-capture, the stream framing, the routes and guard, the shell's command, permission and capability, and the rustc unit tests of indicator.rs; src/test/listening.test.tsx (8) and src/test/desktop-listening.test.ts (3). 65 mutants: 64 killed after five cases were added; the other was a redundant check, removed. The desktop crate was not compiled here: its tray calls were checked against the Tauri 2.11.5 source.",
+      "remaining": "",
       "evidence": [
         {
-          "path": "frontend/src/shell.tsx",
-          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
-        },
-        {
-          "path": "frontend/src/wall.tsx",
-          "sha256": "7e24bd75516eb0a1c52a2720397d013c8a22a9dd05ea5d7f841f725f5c5fa482"
-        },
-        {
-          "path": "agents/core/routers/oauth.py",
-          "sha256": "00a9e666026282006421bacac7b9c6cfab62c7db92e05236e5bbf8dd666b02a0"
-        },
-        {
-          "path": "desktop/src-tauri/src/main.rs",
-          "sha256": "dd8cc00dd90e22f2a17cd365923546e59a8324236896f0bb4bab59787a455d12"
+          "path": "agents/core/voice/listening.py",
+          "sha256": "1c959f26bd3cf12568b3453a07e44954dfa8c9050587b0f0f4abf1052365562c"
         },
         {
           "path": "agents/core/voice/pipeline.py",
-          "sha256": "8cedbc7d29cde22137981ba36525b15b192d6a546489e49939f8244e0a8534ba"
+          "sha256": "3cee12d9d4a8df89d987baabf3dbb22e711ba757425296f47a5e65addbad4060"
         },
         {
           "path": "agents/core/voice/wake_word.py",
-          "sha256": "8056ebed1eb60946a613d6dbaf63f621ff057123c0ec4020e277ee88920f8de0"
+          "sha256": "95afc160772bc6744ed63fd6635c2b875e36dafe4913658234f49e5680af286d"
         },
         {
-          "path": "tests/test_trust_api.py",
-          "sha256": "cb9d7f27a4354c739d4d3dba37ee3c23da231448e7c9f83489e0fc20cb58e8f3"
+          "path": "agents/core/voice/wyoming.py",
+          "sha256": "195fbcae5ed16ac72bc607bf189175fb50aa141e09896a6967667bac5e65bcfb"
+        },
+        {
+          "path": "agents/core/routers/voice.py",
+          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
+        },
+        {
+          "path": "frontend/src/listening.ts",
+          "sha256": "0fae3138a575ea52a2e33c00baa872885223c60679aaa56e628a1229cb4bf806"
+        },
+        {
+          "path": "frontend/src/desktop.tsx",
+          "sha256": "f6b91c97d0db29b84f2fc7e7bd87f1eb4da883cf5aa580e57d7dd54980c87a54"
+        },
+        {
+          "path": "desktop/src-tauri/src/indicator.rs",
+          "sha256": "b36feb7e90050e7a59d0a35565e633305304919612115989de586bcafd970aa7"
+        },
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
+        },
+        {
+          "path": "tests/test_h222_listening.py",
+          "sha256": "1b80d5bcdeefb3d4b6abc77bd9648c8e76c6b9d629064bafad64fa2229c86b31"
         }
       ]
     },
@@ -2835,16 +2847,16 @@
       "id": "H247",
       "row_sha256": "94ecae68de964160b1410e6c7447d58441b6ba51b64f157d1d85737879946f4f",
       "status": "partial",
-      "summary": "The voice primitives exist; per-surface mic arbitration does not. Host side: `WakeWordDetector` (agents/core/voice/wake_word.py:26) runs inside `VoicePipeline`, which `VoiceChannel.start` (agents/core/channels/voice.py:24) starts. That channel is registered at boot with wake words from `general.wake_words` (agents/web.py:528). Browser side: frontend/src/voice.ts captures through getUserMedia, VAD-segments one utterance, and has 'hands-free' and 'ptt' modes (frontend/src/voice.ts:73). TTS and STT are user-guarded routes: `POST /tts`, `POST /api/voice/stt` and `GET /api/voice/capabilities` (agents/core/routers/voice.py:42, agents/core/routers/voice.py:187, agents/core/routers/voice.py:286). Per-chat spoken replies (the `/voice` toggle) are covered by tests/test_voice_mode.py. `config.set` maps to the admin settings PUT, and `ping` maps to `GET /healthz` (agents/core/routers/ops.py:42).",
+      "summary": "The voice primitives exist; per-surface mic arbitration does not. Host side: `WakeWordDetector` (agents/core/voice/wake_word.py:28) runs inside `VoicePipeline`, which `VoiceChannel.start` (agents/core/channels/voice.py:24) starts. That channel is registered at boot with wake words from `general.wake_words` (agents/web.py:528). Browser side: frontend/src/voice.ts captures through getUserMedia, VAD-segments one utterance, and has 'hands-free' and 'ptt' modes (frontend/src/voice.ts:73). TTS and STT are user-guarded routes: `POST /tts`, `POST /api/voice/stt` and `GET /api/voice/capabilities` (agents/core/routers/voice.py:44, agents/core/routers/voice.py:189, agents/core/routers/voice.py:288). Per-chat spoken replies (the `/voice` toggle) are covered by tests/test_voice_mode.py. `config.set` maps to the admin settings PUT, and `ping` maps to `GET /healthz` (agents/core/routers/ops.py:42).",
       "remaining": "The adaptation's one required concept is missing. No arm/pause/resume/stop/status call carries a surface identity. Nothing records which surface (HUD browser loop, mobile, satellite, host pipeline) holds the microphone, so the host pipeline and a browser hands-free loop on the same machine can both open the device. No status call answers who holds the mic. Arming does not pass the capture-consent policy the governance requires; the policy that exists (mobile/src/screens/capturePolicy.ts) covers passive capture only. Arming also writes no audit event, and the host pipeline starts at boot with neither check. The separate open item that no install path installs a voice engine is outside this row.",
       "evidence": [
         {
           "path": "agents/core/voice/wake_word.py",
-          "sha256": "8056ebed1eb60946a613d6dbaf63f621ff057123c0ec4020e277ee88920f8de0"
+          "sha256": "95afc160772bc6744ed63fd6635c2b875e36dafe4913658234f49e5680af286d"
         },
         {
           "path": "agents/core/voice/pipeline.py",
-          "sha256": "8cedbc7d29cde22137981ba36525b15b192d6a546489e49939f8244e0a8534ba"
+          "sha256": "3cee12d9d4a8df89d987baabf3dbb22e711ba757425296f47a5e65addbad4060"
         },
         {
           "path": "agents/core/channels/voice.py",
@@ -2856,7 +2868,7 @@
         },
         {
           "path": "agents/core/routers/voice.py",
-          "sha256": "c5830f6a9842dc186e9c1a138497ef38322d633bb3a0b994536536b20c9d7470"
+          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
         },
         {
           "path": "agents/core/routers/ops.py",
@@ -3933,7 +3945,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "tests/test_h309_pointer.py",
@@ -6077,7 +6089,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/shell.tsx",
@@ -6089,7 +6101,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "6eda8dc0462af980f5ebae1fc13ee8ba73302d35f92981f048ea3eceb5872407"
+          "sha256": "4104dbd37585f617403f71292e069c8560bd1ae58d4df68d48888f1d7bef41a8"
         },
         {
           "path": "tests/test_openapi_ts_typegen_gate.py",
@@ -6834,7 +6846,7 @@
         },
         {
           "path": "tests/_snapshots/route_auth.json",
-          "sha256": "e272a8f22bf7761b0b43206151942c7be685e435322b979cbdcfbad344a845dc"
+          "sha256": "f848c3d18931c09a518e525fdcdc3221b4d5e79524b45c3aadcae7d6436d9f46"
         }
       ]
     },
@@ -7866,7 +7878,7 @@
       "id": "H526",
       "row_sha256": "c0ff1630bf0df6ff10e1d684eb77dbd04b6cbf400f94cc68abfdbf325e5aa4b2",
       "status": "partial",
-      "summary": "A pure, offline speech normaliser exists, but only chat-channel voice notes and the gated speak tool use it. agents/core/channels/spoken_reply.py:73 speakable() drops fenced code (_FENCE_RE, :56). It strips bold/italic/heading/inline-code markers through to_plain() in agents/core/channels/render.py and replaces URLs with the word \"link\" (:57). It then folds newlines and whitespace to single spaces and cuts at a sentence boundary within 1,500 chars. Its callers are SpokenReply.__call__ (:196), used by Telegram's per-chat voice mode (agents/core/channels/telegram.py _speak) and the /voice command, and, since HEQ lot 1 (H313), the gated speak ToolRPC tool (registered only while JARVIS_MEDIA_DIRECTOR is on): its preflight refuses text with nothing speakable (agents/core/voice/speak_tool.py:352) and its approved run synthesizes through SpokenReply (agents/core/voice/speak_tool.py:508), so a model-chosen room announcement gets speakable()'s cleaning and the speakable() gaps listed at the end. The main speech paths do not normalise:\n- POST /tts passes req.text straight to TTSEngine.speak (agents/core/routers/voice.py:57), and /tts/stream splits the raw text (:115).\n- TTSEngine.speak removes only the twelve Fish [emotion] tags (agents/core/voice/tts.py:47, :167).\n- The HUD voice loop sends the raw reply and each raw streamed sentence to /tts (frontend/src/voice.ts:238, :297), fed by raw token deltas (frontend/src/app.tsx:329).\n- Mobile ttsFetchBase64 posts raw text (mobile/src/api/client.ts:2387).\n- The wake-word VoicePipeline speaks the raw response (agents/core/voice/pipeline.py:60), and so does VoiceChannel.send (agents/core/channels/voice.py:41).\nspeakable() itself also has gaps. A probe on a mixed markdown sample kept emoji, \"- \" list bullets, table pipes and |---| separator rows, a <think> block, and the symbols & % ->. Its URL regex also swallows the closing parenthesis that to_plain() puts after a link, producing \"doc (link\". <think> blocks are removed upstream only, by strip_thinking() in agents/core/llm/base.py on model output, not by any speech normaliser.",
+      "summary": "A pure, offline speech normaliser exists, but only chat-channel voice notes and the gated speak tool use it. agents/core/channels/spoken_reply.py:73 speakable() drops fenced code (_FENCE_RE, :56). It strips bold/italic/heading/inline-code markers through to_plain() in agents/core/channels/render.py and replaces URLs with the word \"link\" (:57). It then folds newlines and whitespace to single spaces and cuts at a sentence boundary within 1,500 chars. Its callers are SpokenReply.__call__ (:196), used by Telegram's per-chat voice mode (agents/core/channels/telegram.py _speak) and the /voice command, and, since HEQ lot 1 (H313), the gated speak ToolRPC tool (registered only while JARVIS_MEDIA_DIRECTOR is on): its preflight refuses text with nothing speakable (agents/core/voice/speak_tool.py:352) and its approved run synthesizes through SpokenReply (agents/core/voice/speak_tool.py:508), so a model-chosen room announcement gets speakable()'s cleaning and the speakable() gaps listed at the end. The main speech paths do not normalise:\n- POST /tts passes req.text straight to TTSEngine.speak (agents/core/routers/voice.py:59), and /tts/stream splits the raw text (:117).\n- TTSEngine.speak removes only the twelve Fish [emotion] tags (agents/core/voice/tts.py:47, :167).\n- The HUD voice loop sends the raw reply and each raw streamed sentence to /tts (frontend/src/voice.ts:238, :297), fed by raw token deltas (frontend/src/app.tsx:330).\n- Mobile ttsFetchBase64 posts raw text (mobile/src/api/client.ts:2387).\n- The wake-word VoicePipeline speaks the raw response (agents/core/voice/pipeline.py:66), and so does VoiceChannel.send (agents/core/channels/voice.py:41).\nspeakable() itself also has gaps. A probe on a mixed markdown sample kept emoji, \"- \" list bullets, table pipes and |---| separator rows, a <think> block, and the symbols & % ->. Its URL regex also swallows the closing parenthesis that to_plain() puts after a link, producing \"doc (link\". <think> blocks are removed upstream only, by strip_thinking() in agents/core/llm/base.py on model output, not by any speech normaliser.",
       "remaining": "Apply one speech normaliser at every TTS entry point: POST /tts, /tts/stream, TTSEngine.speak (and with it VoicePipeline, VoiceChannel.send and SpokenReply), the HUD per-sentence streaming path and mobile. Today only Telegram voice notes, /voice and the gated speak tool (H313) go through speakable(), and the speak tool shares its gaps. The normaliser must also:\n- remove emoji\n- strip list markers and tables\n- drop <think> blocks, including unclosed ones\n- expand symbols (&, %, ->, °) for RO and EN\n- stop the URL regex from eating the link's closing parenthesis\n- keep Fish [emotion] tags intact.\nOn the streaming path, a fenced code block split across token deltas must not be spoken.",
       "evidence": [
         {
@@ -7883,7 +7895,7 @@
         },
         {
           "path": "agents/core/routers/voice.py",
-          "sha256": "c5830f6a9842dc186e9c1a138497ef38322d633bb3a0b994536536b20c9d7470"
+          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
         },
         {
           "path": "agents/core/voice/tts.py",
@@ -7891,7 +7903,7 @@
         },
         {
           "path": "agents/core/voice/pipeline.py",
-          "sha256": "8cedbc7d29cde22137981ba36525b15b192d6a546489e49939f8244e0a8534ba"
+          "sha256": "3cee12d9d4a8df89d987baabf3dbb22e711ba757425296f47a5e65addbad4060"
         },
         {
           "path": "agents/core/channels/voice.py",
@@ -7911,7 +7923,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "mobile/src/api/client.ts",
@@ -8406,7 +8418,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "equivalent",
-      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:240). App.submit sends an image draft to runVision (frontend/src/app.tsx:390, frontend/src/app.tsx:365). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1476). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:319), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:290) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2119), dispatched before any /chat body is built (agents/cli/nerva.py:1771). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1862; _read_image, agents/cli/nerva.py:1872). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:1972): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:1947; _clipboard_image, agents/cli/nerva.py:2057). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2182). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
+      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:240). App.submit sends an image draft to runVision (frontend/src/app.tsx:391, frontend/src/app.tsx:366). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1476). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:320), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:290) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2119), dispatched before any /chat body is built (agents/cli/nerva.py:1771). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1862; _read_image, agents/cli/nerva.py:1872). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:1972): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:1947; _clipboard_image, agents/cli/nerva.py:2057). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2182). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
       "remaining": "",
       "evidence": [
         {
@@ -8419,7 +8431,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "10211cf81d64752054bcd3877a648f1738b305c1ad8fa2b69ce38a59a407dbf9"
+          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
         },
         {
           "path": "frontend/src/vision-turn.ts",
@@ -9300,7 +9312,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "39dd747a685bcd98e9fa1c04d05a2e4d249c6324192801760ad6fcab813fdfa2"
+          "sha256": "3040e0d331f93c85f0919a236c0c04350e6afe393c68504022609dcd921915bb"
         },
         {
           "path": "agents/core/file_tools.py",

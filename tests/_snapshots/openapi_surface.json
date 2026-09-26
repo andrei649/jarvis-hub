@@ -233,6 +233,8 @@
   "GET /api/vlm/composer/status": "composer_status_api_vlm_composer_status_get",
   "GET /api/vlm/status": "vlm_status_api_vlm_status_get",
   "GET /api/voice/capabilities": "voice_capabilities_api_voice_capabilities_get",
+  "GET /api/voice/listening": "voice_listening_api_voice_listening_get",
+  "GET /api/voice/listening/stream": "voice_listening_stream_api_voice_listening_stream_get",
   "GET /api/voice/wyoming": "wyoming_status_api_voice_wyoming_get",
   "GET /api/webhooks": "list_webhooks_api_webhooks_get",
   "GET /api/widget/{token}": "widget_snippet_api_widget__token__get",

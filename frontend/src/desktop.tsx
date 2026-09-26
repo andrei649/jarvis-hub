@@ -6,6 +6,16 @@ type Action = 'show' | 'hide' | 'reset' | 'handoff' | 'drag' | 'resize';
 type Capabilities = { compositor: string; positioning: boolean; alwaysOnTop: boolean };
 function bridge() { return (window as any).__TAURI__?.core; }
 export function isFloatingDesktop() { return !!bridge() && new URLSearchParams(window.location.search).get('desktop') === 'floating'; }
+export function hasDesktopBridge() { return !!bridge(); }
+// H222: tell the shell's tray whether this window has Nerva listening. Only a change is
+// sent; a refused call is sent again with the next change.
+let lastListening = '';
+export function setDesktopListening(state: string) {
+  const core = bridge();
+  if (!core || state === lastListening) return;
+  lastListening = state;
+  Promise.resolve(core.invoke('desktop_listening', { state })).catch(() => { lastListening = ''; });
+}
 export function notifyDesktopConversation() {
   if (!bridge() || typeof BroadcastChannel === 'undefined') return;
   const channel = new BroadcastChannel('nerva-desktop-conversation');

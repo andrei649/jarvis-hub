@@ -6,6 +6,7 @@ Covers the browser-facing voice loop's server side:
   default off → 409); frames one sentence's audio at a time so playback starts after #1.
 - `POST /api/voice/stt` — transcribe a raw browser MediaRecorder blob via local Whisper.
 - `GET /api/voice/capabilities` — honest report of what the host's voice engines can do.
+- `GET /api/voice/listening` + `/stream` — H222: whether a mic path is open, read-only.
 
 The `_STT_ENGINE` singleton + `_stt_engine()` accessor and the `TTSRequest` model /
 `_tts_stream_enabled()` helper are voice-only (no external use, no test rebinds them),
@@ -13,6 +14,7 @@ so they move here with the domain. No orchestrator dependency.
 """
 
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -313,3 +315,52 @@ async def voice_capabilities():
             "edge_tts": has_edge, "kokoro": has_kokoro,
         },
     })
+
+
+# ── H222: listening state (read-only) ────────────────────────────
+
+LISTENING_TICK = 0.25          # seconds between reads of the in-process state
+LISTENING_KEEPALIVE = 60       # idle ticks between keepalive comments (15 s)
+
+
+@router.get("/api/voice/listening", dependencies=[Depends(user_guard)])
+async def voice_listening():
+    """Whether the hub or a satellite is listening now: each source's state, the loudest
+    one and ``mic_open``. Nothing here can open or close a mic."""
+    from agents.core.voice import listening
+
+    return nocache_json(listening.snapshot())
+
+
+async def listening_events(read=None, *, sleep=asyncio.sleep, tick: float = LISTENING_TICK,
+                           keepalive_every: int = LISTENING_KEEPALIVE, max_iterations: Optional[int] = None):
+    """SSE frames: the state once, then again every time ``seq`` moves; keepalives between."""
+    if read is None:
+        from agents.core.voice import listening
+
+        read = listening.snapshot
+    last = None
+    idle = 0
+    i = 0
+    while max_iterations is None or i < max_iterations:
+        i += 1
+        snap = read()
+        if snap.get("seq") != last:
+            last = snap.get("seq")
+            idle = 0
+            yield f"data: {json.dumps({'type': 'listening', **snap})}\n\n"
+        else:
+            idle += 1
+            if keepalive_every and idle % keepalive_every == 0:
+                yield ": keepalive\n\n"
+        await sleep(tick)
+
+
+@router.get("/api/voice/listening/stream", dependencies=[Depends(user_guard)])
+async def voice_listening_stream():
+    """Every change of the listening state, as server-sent events (read-only)."""
+    return StreamingResponse(
+        listening_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

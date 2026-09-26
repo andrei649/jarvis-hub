@@ -326,6 +326,7 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/voice/pipeline.py` | Wake → STT → TTS coordinator | `VoicePipeline` |
+| `agents/core/voice/listening.py` | H222: whether Nerva is listening — per-source state (`hub`: `armed` while the wake-word detector holds the mic, `listening`/`thinking`/`speaking` through a capture; `satellite:<id>` from an authenticated Wyoming satellite's `detection`/`voice-started`/`voice-stopped` until answered or disconnected), the loudest (an open mic first) and `mic_open`; stale transient states expire; get/set/subscribe in process only; read-only `GET /api/voice/listening` + `/stream`; the HUD (`frontend/src/listening.ts`) forwards it with its own mic to the desktop tray (`desktop_listening`, `desktop/src-tauri/src/indicator.rs`: menu-bar title while a mic is open, tooltip names the state) | `STATE`, `set_state`, `snapshot`, `subscribe` |
 | `agents/core/voice/stt.py` | faster-whisper STT | `STTEngine` |
 | `agents/core/voice/tts.py` | TTS fallback chain (XTTS→ElevenLabs→Fish Audio→edge-tts→Kokoro); inline `[emotion]` tags pass through to Fish, stripped for other backends | `TTSEngine.speak`, `strip_emotion_tags` |
 | `agents/core/voice/speak_tool.py` | Model-callable `speak` (H313): TTS clip spooled under the owner's media root, announced on a room/device through `media.present` after durable approval | `SpeakTool`, `register_speak_tool` |
