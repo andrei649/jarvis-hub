@@ -58,7 +58,7 @@ LABELS = {
 # the environment while the hub is imported and started, and fail on a Nerva name read
 # before the load that is in none of these lists.
 READ_BEFORE_LOAD = frozenset({
-    "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_ROOT_PATH",
+    "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_PROFILE", "JARVIS_ROOT_PATH",
     "JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_CSP", "JARVIS_DISABLE_CSP",
     "JARVIS_AUTO_DEEP", "JARVIS_ANALYTICS_MAX_EVENTS",
     "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD", "JARVIS_LOG_REDACTION",
@@ -66,7 +66,7 @@ READ_BEFORE_LOAD = frozenset({
 # What locates the hub's own files. A file cannot move them: the stores opened while the
 # hub was imported would stay under one root and the rest would follow the file, so a .env
 # value is recorded, with the note, and never put in the environment.
-FROM_PROCESS_ONLY = frozenset({"JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR"})
+FROM_PROCESS_ONLY = frozenset({"JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_PROFILE"})
 # A name a file may set that the hub also reads before any file can: the file's value
 # reaches only what runs after the load.
 SPLIT_NOTES = {

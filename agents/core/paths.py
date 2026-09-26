@@ -43,6 +43,7 @@ CWD-relative paths (``Path("skills")``, ``Path("agents/<id>/SOUL.md")``)
 anchors on it so the app works regardless of the working directory.
 """
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -137,15 +138,46 @@ def ensure_user_home() -> "Path | None":
     return home
 
 
+#: H689 — ``JARVIS_PROFILE=<name>`` runs an isolated hub: its own data root (settings,
+#: memory, credentials, install id, hub lock) under ``<root>/profiles/<name>``.
+PROFILE_ENV = "JARVIS_PROFILE"
+_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+
+
+def _profile_raw() -> str:
+    from agents.core.env_config import env_str
+
+    return env_str(PROFILE_ENV).strip()
+
+
+def profile_name() -> "str | None":
+    """The active profile, or None for the default one (unset, blank or ``default``)."""
+    raw = _profile_raw()
+    if not raw or raw == "default":
+        return None
+    return raw if _PROFILE_RE.match(raw) else None
+
+
+def profile_error() -> "str | None":
+    """Why ``JARVIS_PROFILE`` is refused (``serve.py`` stops on it), or None."""
+    raw = _profile_raw()
+    if raw and not _PROFILE_RE.match(raw):   # "default" is a valid name
+        return (f"{PROFILE_ENV}={raw!r} is not a profile name: use 1-32 lowercase letters, "
+                "digits, '-' or '_', starting with a letter or digit")
+    return None
+
+
 def data_root() -> Path:
-    """Return the runtime-data root (honors $JARVIS_HOME / $JARVIS_MEMORY_DIR)."""
+    """Return the runtime-data root (honors $JARVIS_HOME / $JARVIS_MEMORY_DIR, and
+    $JARVIS_PROFILE as a sub-root of it)."""
     env = os.environ.get("JARVIS_HOME", "").strip() or os.environ.get("JARVIS_MEMORY_DIR", "").strip()
     if env:
-        return Path(env).expanduser()
-    home = user_home()
-    if home is not None:
-        return home / "memory"
-    return _DEFAULT_ROOT
+        base = Path(env).expanduser()
+    else:
+        home = user_home()
+        base = home / "memory" if home is not None else _DEFAULT_ROOT
+    profile = profile_name()
+    return base / "profiles" / profile if profile else base
 
 
 def data_path(*parts) -> Path:

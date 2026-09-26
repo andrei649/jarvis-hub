@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H689 one durable install identity, one hub per data root, isolated profiles (missing → equivalent, #1207; headline 172 → 173/697).
+
+  The only install-level id was an analytics value that a broken record re-minted; nothing named the install, a second hub could run on the same root, and `JARVIS_PROFILE` was forwarded but never read. Now (`agents/core/install_identity.py`, `agents/core/paths.py`, `serve.py`), as Hermes' install identity and profiles:
+  - **The id.** One 32-hex id in `<data root>/install_id`. It is minted once under an in-process lock and a cross-process file lock, written atomically (fsync of the file and the folder) and read back. When it cannot be read or kept, the answer is `None`, never a new id, and a file holding anything else is left as it is.
+  - **Consumers.** The activation clock carries the id and no longer re-mints over an unreadable record. Node grants are issued as `node:<id>@<install>`. Channel deeplinks and satellite pairings carry the install id, and another install's is refused (`other_install`).
+  - **One hub per root.** `serve.py` holds `<data root>/hub.lock` for the life of the process; a second hub on the same root stops with the holder's pid.
+  - **Profiles.** `JARVIS_PROFILE=<name>` puts everything under `<data root>/profiles/<name>`: settings, memory, credentials (the secrets store resolves under the root the process starts with), install id and lock. A bad name stops the start. It is read from the process environment only (`env_provenance`).
+
+  32 mutants: 30 caught; the other two were a redundant check (removed) and an unpinned refusal (now pinned). Test manual: ENV-175, ENV-176.
+  Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43; `test_first_run_first_action.py` now pins the no-re-mint rule).
+
 - 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697).
 
   Sessions could only be listed and resumed, and the only deletion was the install-wide forget. Now (`agents/core/session_archive.py`, `agents/core/checkpoint.py`, `agents/core/routers/sessions.py`), as Hermes' Archived Chats:

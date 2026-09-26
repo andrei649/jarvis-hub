@@ -244,6 +244,18 @@ def main():
     # Posture guards run first (they must fail-closed even on a taken port); only
     # then do we tell the owner *why* the bind is about to fail (H042).
     probe_bind(config.host, config.port)
+    # H689: one hub per data root (per profile); a second one is told who holds it.
+    from agents.core import install_identity
+    from agents.core.paths import data_root, profile_error
+
+    refused = profile_error()
+    if refused:
+        raise SystemExit(refused)
+    try:
+        install_identity.acquire_hub_lock()
+    except install_identity.HubAlreadyRunning as exc:
+        raise SystemExit(f"Nerva is already running on this data root: {exc}") from None
+    print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
     # Packaged installs: create + announce the owner's data folder up front so
     # first-run users know exactly where their memory/config/skills live.
     from agents.core.paths import ensure_user_home

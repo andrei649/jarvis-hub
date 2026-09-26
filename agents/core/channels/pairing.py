@@ -248,6 +248,13 @@ def _secret_matches(entry: object, candidate: str) -> bool:
     return hmac.compare_digest(stored, _digest(salt, candidate))
 
 
+def _install_id() -> str:
+    """H689 — this install's id ('' when it is unavailable)."""
+    from agents.core.install_identity import install_id
+
+    return install_id() or ""
+
+
 def _fresh_link_id(existing: Mapping) -> str:
     """An opaque, unused key for a deeplink entry."""
     while True:
@@ -708,6 +715,7 @@ class SenderPairing(JsonStore):
                 self._deeplinks.pop(oldest, None)
             self._deeplinks[_fresh_link_id(self._deeplinks)] = {
                 "channel": str(channel or "telegram"),
+                "hub": _install_id(),          # H689: redeemable only on this install
                 "created_at": moment,
                 "expires_at": moment + max(1.0, float(ttl)),
                 **_hash_secret(token),
@@ -752,6 +760,8 @@ class SenderPairing(JsonStore):
             self._save()
         if entry.get("channel") and entry["channel"] != channel:
             return {"ok": False, "reason": "wrong_channel"}
+        if entry.get("hub") and entry["hub"] != _install_id():
+            return {"ok": False, "reason": "other_install"}
         record = self.approve(channel, sender_id, name=name)
         return {"ok": True, "status": ALLOWED, "channel": channel,
                 "sender_id": sender_id, "record": record}
