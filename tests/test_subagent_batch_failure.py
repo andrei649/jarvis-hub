@@ -419,9 +419,11 @@ async def test_the_responses_backend_notes_its_failure():
 
     model = sorted(MODELS)[0]         # a model it knows, that this account cannot use
 
+    async def body():                   # a real stream: nothing is read until someone reads it
+        yield json.dumps({"error": {"message": f"The model `{model}` does not exist"}}).encode()
+
     def handler(request):
-        return httpx.Response(404, json={"error": {"message": f"The model `{model}` does not exist"}},
-                              request=request)
+        return httpx.Response(404, content=body(), request=request)
 
     backend = ResponsesBackend("sk-test", transport=httpx.MockTransport(handler))
     with pe.provider_failure_scope() as notes:
@@ -766,3 +768,40 @@ async def test_a_done_child_lists_no_failure():
     m = _mgr(runner)
     await m.spawn("t")
     assert "failure" not in m.list()[0]
+
+
+def test_a_status_less_failure_is_classified_by_its_words():
+    with pe.provider_failure_scope() as notes:
+        pe.note_provider_failure("ollama", "foo", RuntimeError('model "foo" not found, try pulling it first'))
+        pe.note_provider_failure("ollama", "foo", RuntimeError("out of memory"))
+    assert [n.kind for n in notes] == ["model_not_found", "error"]
+
+
+async def test_defaults_that_are_not_an_object_never_break_a_spawn():
+    async def runner(task, session_id, agent):
+        return {"output": "ok"}
+
+    out = await _mgr(runner, selection_defaults=lambda: "qwen3:8b").spawn("t")
+    assert out["ok"] is True and out["selection"]["source"] == "parent"
+
+
+async def test_a_batch_item_with_an_unknown_key_is_refused():
+    out = await _mgr().spawn_batch([{"task": "a", "priority": "high"}])
+    assert out["ok"] is False and out["reason"] == "invalid_batch" and out["index"] == 0
+
+
+async def test_an_invalid_batch_records_no_consent_even_when_confirmed(monkeypatch):
+    class _Audit:
+        def __init__(self):
+            self.rows = []
+
+        def log(self, event):
+            self.rows.append(event)
+
+    audit = _Audit()
+    body = {"tasks": [{"task": "a", "model": "claude-fable-5", "overrides": {"temperature": 9}}],
+            "confirm_expensive": True}
+    async with _client(_mgr(), monkeypatch, audit) as client:
+        r = await client.post("/api/subagents/batch", json=body)
+    assert r.status_code == 422 and r.json()["reason"] == "invalid_selection"
+    assert audit.rows == []

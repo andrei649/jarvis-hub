@@ -600,3 +600,33 @@ def test_the_provider_options_match_the_pinnable_providers(store):
 
     [row] = [r for r in store.DEFAULTS if r["category"] == "autonomy" and r["key"] == "subagent_provider"]
     assert set(row["opts"]) == {""} | set(PROVIDERS)
+
+
+def test_an_extra_body_key_longer_than_64_characters_is_refused():
+    assert rc.validate_overrides({"extra_body": {"k" * 64: 1}}).extra_body == {"k" * 64: 1}
+    with pytest.raises(ValueError):
+        rc.validate_overrides({"extra_body": {"k" * 65: 1}})
+
+
+async def test_a_provider_pin_narrows_the_data_policy_question(monkeypatch):
+    # A :free slug served by the local Ollama is not OpenRouter's training tier.
+    seen = _Seen()
+    async with _client(_Orch(_mgr(seen), _Audit()), monkeypatch) as client:
+        r = await client.post("/api/subagents/spawn", json={
+            "task": "t", "model": "meta-llama/llama-4-maverick:free", "provider": "ollama"})
+    assert r.status_code == 200 and len(seen.calls) == 1
+
+
+def test_the_cli_reads_the_stored_subagent_provider_not_llms(store, monkeypatch):
+    import io
+
+    from agents.cli import nerva
+
+    monkeypatch.setattr(nerva, "_audit_log", lambda: _Audit(), raising=False)
+    store.put_category("autonomy", {"subagent_provider": "ollama"})
+    out, err = io.StringIO(), io.StringIO()
+    code = nerva.main(["config", "set", "autonomy.subagent_model", "meta-llama/llama-4-maverick:free"],
+                      context=nerva.Context(environ={}, out=out, err=err))
+    # Served by the stored provider (ollama), the slug is not a training tier: no question.
+    assert code == 0, err.getvalue()
+    assert store.get_value("autonomy", "subagent_model") == "meta-llama/llama-4-maverick:free"
