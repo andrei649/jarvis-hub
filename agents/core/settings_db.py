@@ -215,6 +215,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),
+    # H427: fail closed when the pre-compression checkpoint did not land (Hermes compression.checkpoint_required).
+    dict(category="memory",  key="compression_checkpoint_required", value=False, label="Keep the transcript uncompressed unless its evicted turns were archived", kind="toggle"),
     dict(category="memory",  key="compression_summarizer", value=False,           label="LLM summarizer for evicted context (strict-local only)", kind="toggle"),
     dict(category="memory",  key="compression_keep_first", value=0,               label="Protect first N turns from compression", kind="number"),
     # Two-tier compaction. Fractions of the MODEL's own window rather than a

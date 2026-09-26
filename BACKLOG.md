@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697).
+
+  The compressor summarised the middle of a conversation and the evicted turns left the prompt with nothing checking they had landed anywhere (the store keeps only the last `memory.max_turns`). Now (`agents/core/memory/precompress.py`), as Hermes' `on_pre_compress`:
+  - **The hook.** `ContextCompressor.compress` awaits the checkpoint with exactly the turns the summary replaces and the whole transcript, before building the summary. Versioned contract (API v2; new keyword arguments passed only when a provider's signature takes them; synchronous providers run off the loop).
+  - **The shipped provider.** `TranscriptArchive` appends each evicted turn once (hash of speaker, time, content) to a per-session JSONL under the data folder, fsynced before it returns; images as `[image]`.
+  - **Fail closed.** With `memory.compression_checkpoint_required` (off by default), a failing checkpoint or none landing keeps the transcript exactly as it was (no summary, no lineage row), and a turn that cannot fit uncompressed is refused. Every checkpoint and abort is in the signed intent log (`memory.precompress_checkpoint` / `memory.precompress_abort`), without turn text.
+
+  51 mutants: 49 caught, 2 equivalent. Test manual: GOV-273, GOV-274.
+  Tests: backend 16,035 → 16,079 (`tests/test_h427_precompress_checkpoint.py` 44); vitest 1,507.
+
 - 2026-09-26 H659 a retried external request returns the original run instead of starting a second one (missing → equivalent, #1207; headline 163 → 164/697).
 
   A sender that timed out and retried got a second approval card (`/api/actions/request`), a second turn or owner message (`/api/webhooks/{id}`), or a second A2A inbox row. Now (`agents/core/idempotency.py`), as in Hermes:

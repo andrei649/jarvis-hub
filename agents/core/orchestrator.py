@@ -327,6 +327,25 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     return billable_input, usage.output_tokens, usage.cache_read
 
 
+def _precompress_checkpoint(orch, sid: str):
+    """H427 — the checkpoint the compressor awaits before it evicts turns: every
+    registered provider (the transcript archive by default) sees them first, and with
+    ``memory.compression_checkpoint_required`` on, a checkpoint that did not land keeps
+    the transcript uncompressed. Audited in the signed intent log."""
+    from .memory import precompress
+
+    registered = getattr(orch, "precompress_providers", None)
+    providers = list(registered) if registered is not None else precompress.default_providers()
+    required = orch.get_setting(precompress.SETTING_REQUIRED, False) is True
+    audit = getattr(orch, "action_audit", None)
+
+    async def _checkpoint(evicted, transcript):
+        await precompress.run_checkpoint(providers, evicted, transcript, required=required,
+                                         session_id=sid, audit=audit)
+
+    return _checkpoint
+
+
 def _refresh_souls_at_boundary(orchestrator) -> list[str]:
     """H672 — a compaction commit is the safe migration point for the personas in force.
 
@@ -3623,6 +3642,7 @@ class Orchestrator:
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
             keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
             structured=summarizer is not None,
+            checkpoint=_precompress_checkpoint(self, sid),   # H427
         )
         cache = getattr(self, "_ctx_summary_cache", None)
         if cache is None:
@@ -3669,6 +3689,10 @@ class Orchestrator:
             prior=prior,
             anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
+        if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
+            # H427 — a required checkpoint did not land, so nothing was evicted; a prompt
+            # that cannot fit uncompressed is refused rather than sent over the window.
+            raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
         def publish():
             if result["compressed"] and snapshot is not None:
                 # This synchronous CAS and publication have no cancellation point between

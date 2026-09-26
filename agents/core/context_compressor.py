@@ -307,12 +307,16 @@ class ContextCompressor:
 
     def __init__(self, summarizer: Optional[Callable[[str], Awaitable[str]]] = None,
                  max_tokens: int = 2000, keep_recent: int = 4,
-                 keep_first: int = 0, structured: bool = False) -> None:
+                 keep_first: int = 0, structured: bool = False,
+                 checkpoint: Optional[Callable[["list[dict]", "list[dict]"], Awaitable[Any]]] = None) -> None:
         self._summarize = summarizer
         self.max_tokens = max_tokens
         self.keep_recent = keep_recent
         self.keep_first = max(0, int(keep_first))
         self.structured = structured
+        # H427: awaited with exactly the turns about to be summarised away (and the whole
+        # transcript) before the summary replaces them; CheckpointAborted keeps them.
+        self._checkpoint = checkpoint
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
@@ -496,6 +500,15 @@ class ContextCompressor:
             result = await self.compress(working, prior=prior)
         finally:
             self.keep_first, self.keep_recent, self.max_tokens = previous
+        if result.get("checkpoint_aborted"):
+            # H427 — fail closed: the transcript is kept exactly as it came in (not even its
+            # images dropped), and no lineage row claims a compaction that did not happen.
+            return {
+                "compressed": False, "kept": rows, "kept_first": [], "summary": "",
+                "evicted": 0, "tokens": used, "covered": 0, "tier": "none",
+                "images_dropped": 0, "lineage": None,
+                "checkpoint_aborted": result["checkpoint_aborted"], "window": window,
+            }
 
         row = lineage_row(
             session_id=session_id, summary=result.get("summary", ""),
@@ -536,6 +549,15 @@ class ContextCompressor:
             if s and 0 < c <= len(older):
                 prior_summary, covered = s, c
         new_older = older[covered:]
+
+        if self._checkpoint is not None:
+            from .memory.precompress import CheckpointAborted
+            try:
+                await self._checkpoint(list(older), list(turns))
+            except CheckpointAborted as exc:
+                return {"compressed": False, "kept": list(turns), "kept_first": [],
+                        "summary": "", "evicted": 0, "tokens": total, "covered": 0,
+                        "checkpoint_aborted": str(exc)}
 
         summary = ""
         if self._summarize is not None:
