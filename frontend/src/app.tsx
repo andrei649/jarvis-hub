@@ -16,6 +16,7 @@ import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
+import { noticeMessages } from './turn-notices';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
@@ -332,6 +333,9 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        // H674: what the owner should know beside the reply (e.g. the summary was deferred).
+        const notes = noticeMessages(evt, fmtTimeShort(new Date()));
+        if (notes.length) setMessages((m) => [...m, ...notes]);
         turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
         setThinking(null);
         resolve(finalText);

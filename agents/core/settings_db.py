@@ -242,6 +242,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="memory",  key="backup_auto_enabled", value=True,                label="Nightly local backup", kind="toggle"),
     dict(category="memory",  key="backup_keep",     value=7,                     label="Backups to keep", kind="number"),
     dict(category="memory",  key="compression_summary_max_tokens", value=256,     label="Compression summary budget (tokens)", kind="number"),
+    # H674 — a compaction summary never holds a turn past this; the summarizer is cut after this long quiet.
+    dict(category="memory",  key="compression_max_turn_hold_seconds", value=10,   label="Wait at most this many seconds for a conversation summary before answering (0 = never wait)", kind="number"),
+    dict(category="memory",  key="compression_summary_idle_seconds", value=60,    label="Stop a conversation summary that sends nothing for this many seconds", kind="number"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,
     # so it could not be enabled from the admin UI at all (put_category refuses

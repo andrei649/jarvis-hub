@@ -3551,12 +3551,40 @@ class Orchestrator:
             model = router.active_model or DEFAULT_LOCAL_MODEL
             max_tokens = int(self.get_setting(
                 "memory.compression_summary_max_tokens", 256) or 256)
-            return await backend.generate(
+            # H674: streamed, and cut after the inactivity deadline with nothing
+            # received, instead of holding the backend's whole read budget; a
+            # degraded reply raises here, so it never becomes the summary.
+            from .compaction_hold import IDLE_SETTING, idle_seconds, stream_summary
+            return await stream_summary(
+                backend, idle_seconds(self.get_setting(IDLE_SETTING, 60)),
                 model=model, prompt=prompt,
                 system="You compress conversation context. Output only the summary.",
                 max_tokens=max_tokens, temperature=0.2)
 
         return _summarize
+
+    def _summary_gate(self, sid: str, cache: dict, prior):
+        """H674 — the bounded hold for this turn's LLM summary (see ``compaction_hold``).
+
+        A summary that lands after the turn went on seeds this session's merge prior —
+        only if no newer turn has replaced the prior this one started from — and is
+        never published through the compaction clock: no prompt was built from it."""
+        from .compaction_hold import HOLD_SETTING, SummaryHold, hold_seconds
+
+        holds = getattr(self, "_summary_holds", None)
+        if holds is None:
+            holds = self._summary_holds = SummaryHold()
+        hold = hold_seconds(self.get_setting(HOLD_SETTING, 10))
+
+        async def gate(make, covered):
+            def seed(summary: str) -> None:
+                if cache.get(sid) is prior:
+                    cache[sid] = {"summary": summary, "covered": covered}
+                    logger.info("deferred compaction summary landed; it seeds the next turn")
+
+            return await holds.wait(sid, make, hold, seed)
+
+        return gate
 
     def _compaction_model(self) -> str:
         """The model whose window bounds this session's context.
@@ -3692,17 +3720,18 @@ class Orchestrator:
         summarizer = None
         if self.get_setting("memory.compression_summarizer", False):
             summarizer = self._compression_summarizer()
+        cache = getattr(self, "_ctx_summary_cache", None)
+        if cache is None:
+            cache = self._ctx_summary_cache = {}
+        prior = cache.get(sid) if summarizer is not None else None
         compressor = ContextCompressor(
             summarizer=summarizer,
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
             keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
             structured=summarizer is not None,
             checkpoint=_precompress_checkpoint(self, sid),   # H427
+            gate=self._summary_gate(sid, cache, prior) if summarizer is not None else None,   # H674
         )
-        cache = getattr(self, "_ctx_summary_cache", None)
-        if cache is None:
-            cache = self._ctx_summary_cache = {}
-        prior = cache.get(sid) if summarizer is not None else None
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
         # than by a fixed token budget that is wrong for every model but one.
@@ -3756,7 +3785,17 @@ class Orchestrator:
                 if committed is None:
                     raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
                 prompt_clock.set(committed)
-            if summarizer is not None and result["compressed"]:
+            if result.get("summary_deferred"):
+                # H674 — the turn went on without its summary: say so, and leave the
+                # merge prior to the summary still being written (a digest here would
+                # overwrite it).
+                from .compaction_hold import DEFERRED_NOTICE, NOTICE_CODE
+                from .turn_notices import record_turn_notice
+                logger.info("compaction summary deferred for this turn (%s); the turn used %s",
+                            "memory.compression_max_turn_hold_seconds",
+                            "the digest" if result["summary"] else "its turns verbatim")
+                record_turn_notice(NOTICE_CODE, DEFERRED_NOTICE)
+            elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
                 cache[sid] = {"summary": result["summary"],
                                           "covered": result["covered"]}
@@ -4429,6 +4468,9 @@ class Orchestrator:
         warmup = getattr(self, "_warmup_task", None)
         if warmup is not None:
             await wait_task(warmup, TASK_CANCEL_BUDGET, "model warm-up")
+        summary_holds = getattr(self, "_summary_holds", None)
+        if summary_holds is not None:
+            await summary_holds.aclose(TASK_CANCEL_BUDGET)   # H674: deferred summaries
         router = getattr(self, "llm_router", None)
         if router is not None:
             await bounded(router.aclose(), CLOSE_STEP_BUDGET, "LLM router close")

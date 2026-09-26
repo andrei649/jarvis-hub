@@ -427,7 +427,10 @@ class LLMBackend(ABC):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
+        # Not streamed, so there is nothing to report as activity (``on_activity``,
+        # H674) until the whole answer is in.
         full = await self.generate(model, prompt, system, max_tokens, temperature)
         if on_token:
             await _emit(on_token, full)
@@ -585,6 +588,7 @@ class LMStudioBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
         payload = {
             "model": model,
@@ -617,6 +621,8 @@ class LMStudioBackend(LLMBackend):
                         await resp.aread()
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
+                        if line and on_activity is not None:
+                            on_activity()     # H674: any chunk, reasoning included, is life
                         if line.startswith("data: "):
                             chunk = line[6:]
                             if chunk.strip() == "[DONE]":
@@ -838,6 +844,7 @@ class OllamaBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
         payload = {
             "model": model,
@@ -863,6 +870,8 @@ class OllamaBackend(LLMBackend):
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if line.strip():
+                        if on_activity is not None:
+                            on_activity()     # H674: any chunk, thinking included, is life
                         try:
                             data = json.loads(line)
                             if "error" in data or data.get("type") == "error":

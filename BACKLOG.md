@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H674 a conversation summary never holds the turn past a short bound, and a silent summarizer is cut (partial → equivalent, #1207; headline 180 → 181/697).
+
+  Compaction awaited the strict-local summarizer inline, bounded only by the backend's read timeout (120 s for Ollama, a total-duration wait on a non-streaming call), and nothing said why a turn was slow. Now, with Hermes' two clocks (`agents/core/compaction_hold.py`):
+  - **The hold.** A turn waits at most `memory.compression_max_turn_hold_seconds` (10 s, 0 = never) for the LLM summary, one per session at a time. Past it the turn goes on with its turns verbatim when they still fit the window under the owner's budget, else the deterministic digest. The summary keeps being written and seeds the next turn's iterative merge. It never goes through the compaction clock, and never replaces a newer prior. A turn cancelled while it waits still leaves its summary; shutdown stops what is still being written.
+  - **The owner is told.** `notices` on `/chat` and every `/chat/stream` end event (`agents/core/turn_notices.py`), shown by the HUD as a line under the reply: “The conversation summary is taking longer than usual…”.
+  - **The inactivity deadline.** The summarizer streams and is cut after `memory.compression_summary_idle_seconds` (60 s) with nothing received. Any chunk is life, reasoning included: a new `on_activity` on the Ollama and LM Studio streams. A slow stream that keeps talking is never cut, and a degraded reply (`⚠️ …`) is never taken as the summary.
+
+  72 mutants: 70 caught after nine survivors got cases, two equivalent (one removed from the code). Test manual: GOV-285, GOV-286.
+  Tests: backend 16,869 → 16,921 (`tests/test_h674_compaction_hold.py` 52); frontend 1,636 → 1,640 (`turn-notices.test.ts`); OpenAPI types regenerated (`ChatResponse.notices`, `TurnNotice`); HUD v2 bundle rebuilt.
+
 - 2026-09-26 H677 warm up before accepting work; every shutdown wait has a short budget; one slow chat never holds another (partial → equivalent, #1207; headline 179 → 180/697).
 
   The local model's warm-up was fire-and-forget, so a message right after boot raced the cold load; each channel stop, cancelled task and close was awaited with no bound; and Telegram's poll loop awaited every turn, so one chat's slow answer (or a 180 s lease wait) held every other chat. Now, as Hermes' lifecycle:

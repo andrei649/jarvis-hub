@@ -10154,6 +10154,11 @@ export interface components {
              * @default false
              */
             warming: boolean;
+            /**
+             * Notices
+             * @default []
+             */
+            notices: components["schemas"]["TurnNotice"][];
         };
         /** ClimateControlBody */
         ClimateControlBody: {
@@ -11230,6 +11235,13 @@ export interface components {
             source: string;
             /** Target */
             target?: string | null;
+        };
+        /** TurnNotice */
+        TurnNotice: {
+            /** Code */
+            code: string;
+            /** Text */
+            text: string;
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {

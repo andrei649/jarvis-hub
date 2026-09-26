@@ -1074,6 +1074,11 @@ class ChatRequest(BaseModel):
         return v
 
 
+class TurnNotice(BaseModel):
+    code: str
+    text: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     # The turn's reply is prose ("…this action requires approval"), which names
@@ -1084,6 +1089,9 @@ class ChatResponse(BaseModel):
     # H677: True when the turn was served while the local model was still warming up
     # (the boot gate expired first), so a slow first reply is named, not mysterious.
     warming: bool = False
+    # H674: what the owner should know beside the reply (e.g. the conversation summary
+    # was still being written), one per kind: {"code", "text"}.
+    notices: list[TurnNotice] = []
 
 
 # ── mount static files ────────────────────────────────────────────
@@ -1204,6 +1212,7 @@ async def chat(req: ChatRequest, request: Request):
     # queued an action and *then* raised still left those rows on the queue, and
     # answering "Internal error." with an empty list would hide them.
     queued_approvals: list[int] = []
+    turn_notices: list[dict] = []
     try:
         if req.session_id is not None:
             from agents.core.session_continuation import ContinuationRefused, prepare_session
@@ -1228,6 +1237,8 @@ async def chat(req: ChatRequest, request: Request):
         # returning, so this is the only place that still holds the list once the
         # reply is in hand. The turn appends to THIS list (see turn_approvals).
         sink, approvals_token = open_turn_approvals()
+        from agents.core.turn_notices import open_turn_notices, reset_turn_notices
+        notices, notices_token = open_turn_notices()      # H674, bound here for the same reason
         from agents.core.lifecycle_budget import WARMUP
         warming = WARMUP.warming
         try:
@@ -1241,15 +1252,17 @@ async def chat(req: ChatRequest, request: Request):
                                                     **({"session_id": req.session_id} if req.session_id is not None else {}))
         finally:
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             reset_turn_approvals(approvals_token)
+            reset_turn_notices(notices_token)
             reset_turn_principal(principal_token)
             context_refs.reset_attached(attached_token)
-        return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming)
+        return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming, notices=turn_notices)
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals)
+        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals, notices=turn_notices)
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
@@ -1269,6 +1282,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     # the runner just before it announces the end, because the sink lives in the
     # runner task's context and the consumer below is what has to report it.
     queued_approvals: list[int] = []
+    turn_notices: list[dict] = []
 
     async def on_token(token: str):
         await queue.put(("token", token))
@@ -1281,10 +1295,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(principal) if principal is not None else None
         sink, approvals_token = open_turn_approvals()
+        from agents.core.turn_notices import open_turn_notices, reset_turn_notices
+        notices, notices_token = open_turn_notices()             # H674
         attached_token = context_refs.bind_attached(attached)   # H579: bound in the task, as above
 
         async def end(text: str) -> None:
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             await queue.put(("end", text))
 
         try:
@@ -1310,9 +1327,11 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             # non-stream path used to. The ids go out even here: whatever the turn
             # queued before it raised is still sitting on the approval queue.
             queued_approvals[:] = sink
+            turn_notices[:] = notices
             await queue.put(("error", ""))
         finally:
             reset_turn_approvals(approvals_token)
+            reset_turn_notices(notices_token)
             context_refs.reset_attached(attached_token)
             if principal_token is not None:
                 reset_turn_principal(principal_token)
@@ -1327,13 +1346,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals, 'warming': warming})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals, 'warming': warming})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting

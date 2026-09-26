@@ -197,7 +197,7 @@ def test_a_turn_served_while_warming_is_marked(monkeypatch):
     assert client.post("/chat", json={"message": "hi"}).json()["warming"] is False
     lb.WARMUP.track(asyncio.Future(loop=asyncio.new_event_loop()))
     reply = client.post("/chat", json={"message": "hi"}).json()
-    assert reply == {"reply": "Salut!", "pending_approvals": [], "warming": True}
+    assert reply == {"reply": "Salut!", "pending_approvals": [], "warming": True, "notices": []}
 
 
 def test_a_streamed_turn_served_while_warming_is_marked(monkeypatch):
