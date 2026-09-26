@@ -710,3 +710,39 @@ def test_a_google_prefixed_pin_on_gemini_asks_gemini_for_that_model():
     assert model == "gemini-2.5-pro"
     with selection_scope({"model": "openai/gpt-4.1"}), pytest.raises(SelectionError):
         apply_selection(router, "jarvis", backend, "gemini-2.5-flash", "cloud")
+
+
+async def test_a_pinned_window_that_clamps_the_childs_budget_says_so():
+    from agents.core import agent as agent_mod
+    from agents.core.llm.job_selection import selection_scope
+
+    sent = []
+
+    class _Backend:
+        async def generate(self, model, prompt, system, max_tokens, temperature):
+            sent.append(max_tokens)
+            return "ok"
+
+    a = agent_mod.Agent.__new__(agent_mod.Agent)
+    a.tool_runtime = None
+    backend = _Backend()
+    with selection_scope({"model": "m"}) as sel, \
+            rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 5000})) as frame:
+        sel.lifetime.resolved = (backend, "m", 4000)          # a 4000-token window: a 1000 cap
+        max_tokens, temperature = rc.apply_generation_overrides(10, 0.7)
+        await a._generate_response(backend, "m", "p", "", max_tokens, temperature)
+    assert sent == [1000] and frame.dropped == {"max_tokens"} and frame.taken() == set()
+
+
+async def test_an_openrouter_request_that_sends_another_budget_marks_it_not_taken():
+    from agents.core.llm.openrouter import OpenRouterBackend
+
+    def handler(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]}, request=request)
+
+    backend = OpenRouterBackend(api_key="sk-or-test", client=httpx.AsyncClient(
+        base_url="https://openrouter.test/api/v1", transport=httpx.MockTransport(handler)))
+    with rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 50})) as frame:
+        rc.apply_generation_overrides(10, 0.7)
+        await backend.generate("vendor/m", "p", max_tokens=40)
+    assert frame.dropped == {"max_tokens"}

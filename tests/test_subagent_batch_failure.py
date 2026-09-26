@@ -677,12 +677,12 @@ def test_the_coordinator_names_the_model_the_router_would_pick():
     asked = []
 
     def select_backend(agent, prompt):
-        asked.append((agent, current_selection()))
+        asked.append((agent, prompt, current_selection()))
         return object(), "claude-sonnet-x", "cloud"
 
     coord = SimpleNamespace(_orch=SimpleNamespace(llm_router=SimpleNamespace(select_backend=select_backend)))
     assert AutonomyCoordinator._subagent_fallback_model(coord, "foo") == "claude-sonnet-x"
-    assert asked == [("jarvis", None)]                       # asked outside any pin
+    assert asked == [("jarvis", "", None)]                   # asked outside any pin, for no task
     assert AutonomyCoordinator._subagent_fallback_model(coord, "claude-sonnet-x") is None
 
     def broken(agent, prompt):
