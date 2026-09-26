@@ -2,6 +2,8 @@
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
+**Pruned** (2026-09-26): the 41 rows closed so far (H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
+
 **How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
@@ -47,63 +49,24 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 | Row | Name | Now | Est. h | Critic notes |
 |---|---|---|---:|---|
-| [H586](#h586) | Paste or attach a screenshot into the conversation (vision & image paste) | partial | 5 |  |
-| [H667](#h667) | Never assume /tmp is real storage; prune only the cache you own | missing | 5 | [14](#critic-note-14) |
-| [H670](#h670) | The default identity prompt is a behavior contract, and it lives in one file | partial | 5 | [29](#critic-note-29) |
-| [H145](#h145) | Read the system logs from the UI | missing | 6 | [32](#critic-note-32) |
-| [H157](#h157) | Edit every configuration key from the UI | partial | 6 | [6](#critic-note-6) |
-| [H283](#h283) | Know what kind of machine this is, and tell the model | partial | 6 | [29](#critic-note-29), [31](#critic-note-31) |
-| [H285](#h285) | Choose which skills, plugins and MCP servers load at startup | partial | 6 | [8](#critic-note-8), [24](#critic-note-24) |
-| [H296](#h296) | Adapt a tool's advertised schema to the live configuration | missing | 6 |  |
-| [H314](#h314) | Let the model decide what to remember | partial | 6 | [22](#critic-note-22) |
-| [H350](#h350) | Skill authoring linter and validator | missing | 6 |  |
-| [H441](#h441) | Getting back into a conversation: continue, resume, and a free recap | partial | 6 | [3](#critic-note-3), [4](#critic-note-4) |
-| [H501](#h501) | Warn about a dangerous deployment posture before it becomes an incident | partial | 6 |  |
-| [H504](#h504) | Fail loudly when TLS trust is misconfigured instead of silently not verifying | partial | 6 |  |
 | [H512](#h512) | See who authenticated, who failed, and when | partial | 6 |  |
-| [H526](#h526) | Make a spoken reply sound like speech rather than read-out markdown | partial | 6 |  |
 | [H696](#h696) | A small default skill bundle with a large on-demand catalog, re-pinned to the current release | partial | 6 | [21](#critic-note-21), [25](#critic-note-25) |
-| [H117](#h117) | Message batching and debounce (treat a burst as one turn) | missing | 7 | [1](#critic-note-1), [16](#critic-note-16) |
-| [H275](#h275) | Boot into a known-good state when customizations break the install | missing | 7 | [8](#critic-note-8), [24](#critic-note-24) |
-| [H328](#h328) | Conditional skill visibility (OS platform, runtime environment, channel, tool availability) | missing | 7 | [23](#critic-note-23) |
 | [H334](#h334) | Importing skills from an upstream project at a verified pin | partial | 7 | [25](#critic-note-25) |
-| [H380](#h380) | Prove a configured cloud provider actually works | missing | 7 | [26](#critic-note-26) |
-| [H450](#h450) | Say when in plain words (schedule syntax) | partial | 7 | [15](#critic-note-15) |
-| [H659](#h659) | A retried external request returns the original run instead of starting a second one | missing | 7 | [7](#critic-note-7), [27](#critic-note-27) |
-| [H674](#h674) | Compression cannot stall the user: bounded holds, inactivity deadlines and derived thresholds | partial | 7 | [11](#critic-note-11), [13](#critic-note-13) |
-| [H677](#h677) | Boot warm-up before accepting work, and every shutdown wait has a short explicit budget | partial | 7 | [1](#critic-note-1), [11](#critic-note-11), [16](#critic-note-16) |
-| [H156](#h156) | Edit an agent's persona and description from the UI | partial | 8 |  |
-| [H161](#h161) | Warn when the box is running out of memory or disk | partial | 8 |  |
-| [H168](#h168) | Shared UI primitives the pages lean on (markdown, destructive-action confirmation, schema-driven fields) | partial | 8 |  |
-| [H209](#h209) | Keyboard shortcut customisation with a recorder and conflict detection | missing | 8 |  |
-| [H227](#h227) | "What can it do right now" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers | partial | 8 |  |
-| [H247](#h247) | Wake word arming per surface, push-to-talk capture, TTS, and liveness/config primitives | partial | 8 |  |
-| [H259](#h259) | Reset to defaults, scoped and previewed, plus export/import of the whole configuration | partial | 8 | [6](#critic-note-6), [28](#critic-note-28) |
 | [H262](#h262) | Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep | partial | 8 | [5](#critic-note-5), [14](#critic-note-14), [28](#critic-note-28) |
-| [H309](#h309) | Show the user where something is, in their UI | missing | 8 | [22](#critic-note-22) |
-| [H373](#h373) | See how much provider quota is left before hitting the wall | missing | 8 | [26](#critic-note-26) |
-| [H378](#h378) | Be warned before choosing a model that is very expensive or trains on your data | partial | 8 | [9](#critic-note-9) |
 | [H410](#h410) | Universal secret redaction on every log record | partial | 8 | [32](#critic-note-32) |
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
 | [H464](#h464) | Park a run on real async work instead of poking it | partial | 8 |  |
-| [H507](#h507) | Warn the model when the code it just wrote contains a known-dangerous pattern | missing | 8 |  |
 | [H613](#h613) | Choose how it sounds and how it hears (TTS / STT provider matrix) | partial | 8 |  |
 | [H681](#h681) | Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed | partial | 8 |  |
-| [H689](#h689) | One stable identity for this install, and per-profile isolation of its runtime artifacts | missing | 8 |  |
 | [H277](#h277) | Separate models for separate jobs (vision, video, approval judging) | partial | 9 |  |
 | [H487](#h487) | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | partial | 9 | [27](#critic-note-27) |
 | [H513](#h513) | Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning | partial | 9 | [9](#critic-note-9) |
 | [H114](#h114) | Per-channel personality, skills and verbosity | partial | 10 | [17](#critic-note-17), [18](#critic-note-18), [29](#critic-note-29) |
 | [H174](#h174) | Uninstall from inside the app, with a pre-flight summary of exactly what goes | partial | 10 | [28](#critic-note-28) |
 | [H220](#h220) | Usage and cost accounting surface | partial | 10 | [10](#critic-note-10) |
-| [H222](#h222) | Always-visible microphone / wake-word state indicator | missing | 10 | [31](#critic-note-31) |
 | [H243](#h243) | Completions (filesystem paths, slash commands) and provider/model options (list, save key, disconnect) | partial | 10 | [26](#critic-note-26) |
-| [H329](#h329) | Turning individual skills off without uninstalling them | missing | 10 | [23](#critic-note-23), [24](#critic-note-24) |
-| [H413](#h413) | Session auto-titling | missing | 10 | [4](#critic-note-4) |
 | [H425](#h425) | Destructive forget: retract a fact and everything derived from it | partial | 10 | [28](#critic-note-28) |
 | [H440](#h440) | Automatic session titles and continuation lineage | partial | 10 | [4](#critic-note-4) |
-| [H490](#h490) | Start with zero customization to prove a bug is not your own setup | missing | 10 | [8](#critic-note-8) |
-| [H594](#h594) | Have the agent pick up a project's conventions automatically (context files) | missing | 10 | [29](#critic-note-29) |
 | [H596](#h596) | Keep working when one API key is rate-limited (credential pools) | partial | 10 | [26](#critic-note-26), [30](#critic-note-30) |
 | [H063](#h063) | Session reset policy and expiry/stall watchers | partial | 12 |  |
 | [H204](#h204) | Capabilities hub — skills and toolsets management | partial | 12 | [24](#critic-note-24) |
@@ -112,9 +75,7 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H468](#h468) | Review as a state, not a block (request-review / request-changes / reopen) | missing | 12 |  |
 | [H472](#h472) | Subscribe a chat to a work item's terminal events — including waking the agent | partial | 12 | [2](#critic-note-2), [3](#critic-note-3) |
 | [H478](#h478) | Bot-to-bot messaging between machines | partial | 12 |  |
-| [H579](#h579) | Pull a file or slice of a file into a message inline (@ context references) | missing | 12 |  |
 | [H686](#h686) | The operator can see how the model is actually performing right now, and choose which fields to see | partial | 12 | [10](#critic-note-10) |
-| [H182](#h182) | Keep the machine awake through a turn, and be aware of power/battery state | missing | 14 | [31](#critic-note-31) |
 | [H396](#h396) | Turn exit reasons, a completion explainer and per-turn accounting | partial | 14 | [10](#critic-note-10) |
 | [H409](#h409) | Outbound signed lifecycle webhooks | partial | 14 | [7](#critic-note-7) |
 | [H416](#h416) | Unified deadline and budget layer | partial | 16 | [11](#critic-note-11) |
@@ -122,107 +83,55 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 
 ## H586
 
-**Paste or attach a screenshot into the conversation (vision & image paste)** (docs-features) — partial, ~5 h.
-
-Files: `agents/cli/nerva.py`, `tests/test_nerva_cli_vision.py (new)`, `tests/test_cli_fish_completion.py (only if the command-tree snapshot changes)`
-
-Plan: In agents/cli/nerva.py, add `nerva chat --image PATH` (repeatable, at most 8) and `--clipboard`. `--clipboard` reads the image with `wl-paste --type image/png` or `xclip -selection clipboard -t image/png -o`, or `pngpaste -` on macOS: argv lists, no shell, a 5 s timeout and a 4 MiB cap. Check PNG/JPEG/GIF/WebP magic bytes locally and build data URIs. GET /api/vlm/composer/status to learn the destination and binding, and require `--remote-ok` when status.local is false. Then POST /api/vlm/composer/describe with {prompt, images, expected_destination, expected_binding, remote_ack}. Print the response on stdout, and the model/destination provenance on stderr under -z. Map 503 to exit 1, 409 and 403 to exit 1 with a named reason, and a missing clipboard tool to exit 2. Tests in tests/test_nerva_cli_vision.py use an injected fake HubClient. The first red test is test_chat_image_posts_to_composer_describe. Then cover: a remote destination without --remote-ok refused before any POST; an oversized or non-image file refused; a 409 binding change surfaced; a fake clipboard executable on PATH read correctly.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H586`.
 
 ## H667
 
-**Never assume /tmp is real storage; prune only the cache you own** (delta) — missing, ~5 h. Critic notes: [14](#critic-note-14).
-
-Files: `agents/core/sandbox.py`, `agents/core/orchestrator.py`, `agents/core/paths.py`, `agents/core/retention.py`, `agents/core/scheduler_service.py`, `agents/core/settings_db.py`, `tests/test_exec_temp_root.py`
-
-Plan: Add exec_temp_root() (in agents/core/paths.py or a new agents/core/exec_cache.py). Resolution order: settings security.sandbox_temp_dir / env JARVIS_EXEC_TEMP_DIR (owner-pointed, flagged unmanaged), else data_path('cache','exec') (managed, created 0o700). Change Sandbox.__init__ to Path(tempfile.mkdtemp(dir=exec_temp_root())) and have the orchestrator construction use it. Add prune_exec_cache(max_age_hours=72, root=None, live=()): return immediately unless the root is the managed dir; treat each top-level sandbox dir as a group whose age is the newest mtime inside it; skip dirs in `live` (the orchestrator's current sandbox.work_dir); rmtree stale groups; return counts. Wire it into run_retention or an hourly SchedulerService job. The first red test in tests/test_exec_temp_root.py: with JARVIS_HOME=tmp_path, Sandbox(allow_wasm=False).work_dir is under tmp_path/'cache'/'exec' (it fails today with /tmp/...). Then add: a stale group containing one fresh .log survives; a fully stale group is removed; the live dir survives; an owner-pointed root is never pruned.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H667`.
 
 ## H670
 
-**The default identity prompt is a behavior contract, and it lives in one file** (delta) — partial, ~5 h. Critic notes: [29](#critic-note-29).
-
-Files: `agents/_system/IDENTITY.md`, `SOUL.md`, `agents/core/agent.py`, `agents/core/orchestrator.py`, `agents/core/soul_versioning.py`, `agents/core/prompt_size.py`, `tests/test_identity_contract.py`
-
-Plan: Create agents/_system/IDENTITY.md with the behaviour spec (reply sizing, the four named prohibitions, anti-sycophancy line, earned-depth rule) and an HTML maintainer comment banning 'be targeted and efficient in your exploration'. Add a repo-root SOUL.md with the same text, or a pointer to it. In agents/core/agent.py, add _load_identity_contract(), resolving user_souls_dir()/IDENTITY.local.md first and then agents/_system/IDENTITY.md, passed through _scan_soul_body and _cap_soul_body. Expose the combined system prompt as contract + '\n\n' + soul body, and use it at orchestrator.py:1985 and in Agent.generate_response/stream so the cached prefix stays stable. Record the contract in SoulVersionStore under a reserved id '_identity'. Update prompt_size.py so the shared cost counts it once. The first red test in tests/test_identity_contract.py: for every active agent built by Orchestrator.load_agents, the system prompt passed to the backend contains the reply-sizing sentence (it fails today). Also add: an override file wins; the contract file does not contain 'efficient in your exploration'; the injection-scan quarantine applies to the contract.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H670`.
 
 ## H145
 
-**Read the system logs from the UI** (web) — missing, ~6 h. Critic notes: [32](#critic-note-32).
-
-Files: `agents/core/log.py`, `agents/cli/nerva.py`, `agents/core/routers/admin.py`, `frontend/src/panels/logs.tsx`, `frontend/src/console-routes.ts`, `tests/test_admin_logs_route.py`, `frontend/src/panels/logs.test.tsx`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
-
-Plan: Reader: move `log_path` from agents/cli/nerva.py into agents/core/log.py. Add `tail_log(lines, level=None, component=None, file_index=0, max_lines=500)` there. It reverse-reads in blocks (never the whole file) and parses `_LOG_FORMAT` into {ts, level, component, text}. It runs each returned line through the same SecretScanner that SecretRedactionFilter uses. The CLI `cmd_logs` switches to this reader. Endpoint: add `GET /api/admin/logs` (admin_guard) with params file (jarvis.log or rotation N), level, component and lines (500 or fewer). It returns {enabled, file, lines[]}; when file logging is off it returns `enabled:false` plus the `system.log_to_file` hint. Page: add frontend/src/panels/logs.tsx with segmented Level/Component/Lines filters, regex level colouring and a 5 s auto-refresh toggle with a Live badge, and register it under Admin in frontend/src/console-routes.ts. Regenerate the route snapshots and schema.gen.ts. First red test: tests/test_admin_logs_route.py. Without an admin token the route is refused. A 10k-line file returns only the newest 500 lines. A line holding a synthetic `ghp_...` token comes back masked. level=ERROR drops INFO lines. A missing file returns enabled:false.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H145`.
 
 ## H157
 
-**Edit every configuration key from the UI** (web) — partial, ~6 h. Critic notes: [6](#critic-note-6).
-
-Files: `agents/core/routers/admin.py`, `agents/core/settings_db.py`, `frontend/src/gap.tsx`, `tests/test_admin_settings_io.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
-
-Plan: Export: add `GET /api/admin/settings/export` in agents/core/routers/admin.py. It returns {schema:'nerva.settings.v1', exported_at, values:{category:{key:value}}}; secret-kind and secret-hint keys are left out and named under `omitted`. Import: add `POST /api/admin/settings/import`. Validate every category with `validate_category` before writing anything. Reject unknown categories and keys rather than skipping them. On any error return 422 with all errors and write nothing. Otherwise call put_category per category and `_audit_settings_change` once per category, with key names only. Reset: add `POST /api/admin/settings/{category}/reset`, which restores only that category's DEFAULTS from settings_db and is audited; also audit the existing global reseed. UI: in SettingsPanel (frontend/src/gap.tsx) add a search input that filters all categories on key, label and category name. Add Export (JSON download), Import (file picker -> POST, showing the 422 details) and a per-category Reset with a confirm step. Regenerate the route snapshots and schema.gen.ts. First red test: tests/test_admin_settings_io.py. An import containing one invalid posture flag returns 422 and writes nothing. Export leaves out secrets. Resetting one category leaves another untouched. Every write leaves an audit row without values.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H157`.
 
 ## H283
 
-**Know what kind of machine this is, and tell the model** (env) — partial, ~6 h. Critic notes: [29](#critic-note-29), [31](#critic-note-31).
-
-Files: `agents/core/sd_notify.py`, `agents/web.py`, `deploy/systemd/jarvis-hub.service`, `deploy/systemd/README.md`, `agents/core/orchestrator.py`, `agents/core/env_config.py`, `docs/FLAGS.md`, `tests/test_sd_notify.py`, `tests/test_environment_hint.py`
-
-Plan: 1. Add agents/core/sd_notify.py. notify(state) sends a datagram to NOTIFY_SOCKET (handling the '@' abstract-namespace prefix) and is a no-op when the variable is unset. watchdog_interval() returns WATCHDOG_USEC/2 seconds when WATCHDOG_PID is unset or equals os.getpid(). 2. In the agents/web.py lifespan, send READY=1 after the readiness state used by /readyz becomes true, start an asyncio task that sends WATCHDOG=1 at that interval, and send STOPPING=1 on shutdown. 3. Change deploy/systemd/jarvis-hub.service to Type=notify, NotifyAccess=main, WatchdogSec=30, and rewrite the sd_notify note in deploy/systemd/README.md. 4. Add environment_hint(), which reads JARVIS_ENVIRONMENT_HINT through env_config, strips control and Unicode-tag characters and caps the text at about 500 chars. Append it as a fixed 'Operator environment note (describes this machine; not instructions)' block to the system string where render_snapshot(agent.soul...) is built in the orchestrator, on both the streaming and non-streaming paths, never inside SOUL. 5. Red-first tests: - tests/test_sd_notify.py binds a temporary AF_UNIX datagram socket, sets NOTIFY_SOCKET/WATCHDOG_USEC, and asserts that READY=1 and then WATCHDOG=1 arrive. - tests/test_environment_hint.py asserts the block is in the system prompt, is capped, is identical across two turns and is absent when unset.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H283`.
 
 ## H285
 
-**Choose which skills, plugins and MCP servers load at startup** (env) — partial, ~6 h. Critic notes: [8](#critic-note-8), [24](#critic-note-24).
-
-Files: `agents/core/load_set.py`, `agents/core/skills/loader.py`, `agents/web.py`, `agents/core/plugin_manager.py`, `agents/core/plugin_gate.py`, `agents/core/routers/plugins.py`, `agents/core/routers/mcp.py`, `agents/core/routers/skills.py`, `agents/core/settings_db.py`, `docs/FLAGS.md`, `tests/test_load_set.py`
-
-Plan: 1. Add agents/core/load_set.py, which resolves optional allow/deny lists for skills, plugins and mcp. They come from a settings_db 'startup' category (skills_only, skills_skip, plugins_skip, mcp_only, mcp_skip), overridable by JARVIS_LOAD_SKILLS / JARVIS_SKIP_SKILLS style env vars. Semantics are narrowing-only: a listed name that is not installed is reported as unknown and ignored. 2. SkillLoader.discover skips filtered directories and records them as skipped_by_load_set for /skills. 3. _load_mcp_config filters configs before load_from_config without rewriting the persisted list. 4. At boot, PermissionGate disables filtered plugins. PUT /plugins/{id}/toggle persists into the same plugins_skip key, so a toggle survives a restart. 5. Red-first tests in tests/test_load_set.py: - A skill in skills_skip is absent after discover() and returns when removed from the list. - An MCP server in mcp_skip is not loaded but remains in settings. - An uninstalled name in skills_only causes no install and no SkillApprovalStore write. - A plugin toggle persists across a fresh PermissionGate instance.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H285`.
 
 ## H296
 
-**Adapt a tool's advertised schema to the live configuration** (tools — the agent-callable surface) — missing, ~6 h.
-
-Files: `agents/core/tool_rpc.py`, `agents/core/observability/capability_registry.py`, `agents/core/autonomy_coordinator.py`, `tests/test_tool_schema_overrides.py`
-
-Plan: agents/core/tool_rpc.py register_tool: add schema_override: Callable[[], dict] | None = None and store it on the spec. In tools(), compute effective = deepcopy(static). If an override is set, call it and require a dict. Shallow-merge its top-level keys, merging 'properties' key by key so that enum narrowing works as in Hermes. On an exception or a non-dict result, log a warning (rate-limited per tool) and use the static schema. Validate call args in handle() against the same effective schema, so a narrowed enum is also enforced. In agents/core/observability/capability_registry.py (the ToolRPC-derived record at the input_schema read), take the effective schema from server.tools() at snapshot time so registry mode advertises the same narrowed schema. Wire overrides in agents/core/autonomy_coordinator.py: terminal_run gets a 'target' enum of the currently registered governed terminal targets (no enum when there are none); desktop_run gets steps.items.properties.action as an enum of the desktop driver's supported actions on this OS. Red-first tests in tests/test_tool_schema_overrides.py: an override returning an enum shows up in tools(); changing the backing value changes the next tools() without re-registration; an override that raises yields the static schema plus one warning; AgentRuntime's ToolSpec receives the narrowed schema; terminal_run's advertised target enum equals the registered targets.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H296`.
 
 ## H314
 
-**Let the model decide what to remember** (tools — the agent-callable surface) — partial, ~6 h. Critic notes: [22](#critic-note-22).
-
-Files: `agents/core/memory/write_tool.py`, `agents/core/autonomy_coordinator.py`, `agents/core/cognition/memory.py`, `tests/_snapshots/tool_profiles.json`, `tests/test_memory_write_tool.py`
-
-Plan: Add agents/core/memory/write_tool.py with register_memory_write(server, living_getter, memory_getter, audit_getter, kernel_getter). The tool is `memory`, with schema {operations: array maxItems 8 of {target: enum, action: add|remove, text: string maxLength 300}}. At call time, narrow the target enum and the description to the stores that are enabled: core and user when cognition memory_enabled is on, note when orch.memory.remember exists. Preflight injection-scans every text (quarantine.detect_injection_normalized) and refuses the whole batch on any flag or invalid op, so nothing partial is applied. Apply the ops by adding a CoreMemory.remove(fact) alongside put, or through memory.remember for notes. Append one SecurityEvent per op to the audit chain (orch.intent_log / AuditLogger) holding the store, action and a hash of the text, so the write can be undone. Graph edges are out of scope unless they go through the kernel-mediated kg.write with a capability token. Return the full current contents of each touched store. Register it next to register_search_memory as ungated (reversible tier), withhold it from inbound/guest postures in tool_profiles, and update the snapshot. First red test, in tests/test_memory_write_tool.py: `memory` is in the registry. Then test that the target enum is narrowed when cognition memory is off, that a flagged op rejects the whole batch, that each applied op writes an audit row, and that remove undoes add.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H314`.
 
 ## H350
 
-**Skill authoring linter and validator** (skills) — missing, ~6 h.
-
-Files: `agents/core/skills/validator.py`, `agents/core/skills/importer.py`, `agents/core/skills/marketplace.py`, `agents/core/skills/proposals.py`, `agents/core/skills/loader.py`, `scripts/skill_lint.py`, `tests/test_skill_validator.py`
-
-Plan: Add agents/core/skills/validator.py with validate_skill_md(text, *, expected_name=None) -> list[Issue(field, code, message, severity)]. Hard errors: missing or unclosed '---' fence; YAML error or non-mapping; missing name; a name that fails importer._safe_slug or differs from expected_name; missing description; a description over 1024 chars or with line breaks; empty body; text over 256 KiB. The heading dialect gets its own branch requiring '# name' and '> description', or switch generate_skill to frontmatter output. Add lint_skill_md(text) for advisory warnings: no usage/'When to use' section, description over 200 chars, missing version, undocumented commands. Wire the hard validator, before any disk write, into: SkillImporter._save_skill and _import_local_skill (return False / status 'rejected', reason 'invalid_skill_md'); SkillMarketplace.publish_skill and install_from_zip (raise ValueError carrying the issues); SkillProposalStore.apply (refuse and mark rejected before writing rec['proposed']); SkillLoader.generate_skill (validate the rendered text before mkdir). Add scripts/skill_lint.py <path...> that prints issues and exits non-zero on errors. Red-first tests in tests/test_skill_validator.py: a broken-fence SKILL.md passed to _save_skill returns False and leaves the tree untouched (today it writes and then loads as name=<dir>, description=''); an approved proposal with an empty description is refused; install_from_zip with a nameless frontmatter raises; the pinned Hermes fixture in tests/test_hermes_import.py still validates.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H350`.
 
 ## H441
 
-**Getting back into a conversation: continue, resume, and a free recap** (memory) — partial, ~6 h. Critic notes: [3](#critic-note-3), [4](#critic-note-4).
-
-Files: `agents/core/session_recap.py`, `agents/core/routers/sessions.py`, `agents/core/commands.py`, `agents/core/memory/conversation.py`, `frontend/src/gap.tsx`, `mobile/src/components/SessionsModal.tsx`, `tests/test_session_recap.py`, `frontend/src/test/sessions-panel-recap.test.tsx`
-
-Plan: 1. Add agents/core/session_recap.py with render_recap(turns, max_exchanges=10, max_chars=280). It is a pure function with no LLM or router import. It pairs user and assistant turns, keeps the last N exchanges, truncates each side, and collapses tool calls to '[k tool calls: a, b]' when the assistant turn carries a 'tools' list. Persist that list by adding an optional tools field to Turn and to_dict in agents/core/memory/conversation.py, filled from the tool-loop trace. 2. Return {recap: render_recap(history)} alongside turns from resume_session in agents/core/routers/sessions.py. 3. Register SlashCommand('recap', ...) in build_default_registry. It renders the current session (ctx.orch.session_id) from orch.memory.get_history, so it works on Telegram, Slack and Discord through the existing command plane. 4. In frontend/src/gap.tsx SessionsPanel, show the returned recap after resume and add a recap button. Show the recap in the mobile SessionsModal. 5. Tests. Red first in tests/test_session_recap.py: '/recap' dispatch currently returns None/unknown, and the resume response lacks 'recap'. Then assert exchange bounding, truncation and tool collapsing. Assert that no LLM is called by monkeypatching the router's generate to raise. Add a vitest test for the HUD panel.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H441`.
 
 ## H501
 
-**Warn about a dangerous deployment posture before it becomes an incident** (security) — partial, ~6 h.
-
-Files: `agents/core/host_posture.py`, `agents/core/boot_guards.py`, `agents/core/routers/security.py`, `scripts/doctor.py`, `frontend/src/gap.tsx`, `tests/test_host_posture.py`, `tests/test_doctor.py`
-
-Plan: 1. Create agents/core/host_posture.py with pure, injectable functions: - `running_as_root(geteuid=os.geteuid)`, which reuses host_probe._process_elevated for Windows; - `sshd_password_auth(root=Path('/etc/ssh'))`: parse sshd_config line by line, expand `Include` globs relative to /etc/ssh in place, apply sshd's first-obtained-value-wins rule outside Match blocks, and return True, False or None, where None means unreadable. A missing directive means True, the sshd default; - `ephemeral_data_root(data_root, mountinfo=Path('/proc/self/mountinfo'), markers=...)`: in a container, find the longest mount point prefixing data_root. If it is the overlay root (mount point '/'), the data root is ephemeral. 2. Add `host_posture_report()` returning {root, ssh_password_auth, ephemeral_data_root, warnings[]}. 3. Call it once from the web lifespan next to enforce_boot_posture, and log each warning with the Hermes-style consequence text. It never raises and never blocks. 4. Add a `host` section to /api/security/posture. 5. Add doctor checks that report WARN or FAIL-with-reason without failing the install gate, and show the warnings on the HUD security page. Red-first tests with a tmp /etc/ssh tree: - a PasswordAuthentication no line in a .d fragment included before the main file's yes resolves per sshd precedence; - an absent directive resolves to True; - a fake mountinfo with only an overlay '/' plus /.dockerenv flags ephemeral, and one with a bind mount covering data_root does not; - geteuid=0 produces a warning; - the posture JSON contains the host section.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H501`.
 
 ## H504
 
-**Fail loudly when TLS trust is misconfigured instead of silently not verifying** (security) — partial, ~6 h.
-
-Files: `agents/core/tls_trust.py`, `agents/core/http_client.py`, `agents/core/llm/egress.py`, `agents/core/boot_guards.py`, `agents/core/llm/providers/__init__.py`, `docs/FLAGS.md`, `tests/test_tls_trust.py`, `tests/test_plugin_egress.py`, `tests/test_llm_egress_ledger.py`
-
-Plan: 1. Create agents/core/tls_trust.py. - Move tls_verify here; http_client re-exports it for compatibility. - Add `validate_ca_environment(environ=None, certifi_where=...) -> list[Problem]`. For each of JARVIS_CA_BUNDLE, SSL_CERT_FILE, REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE, check that it exists and is a file, that ssl.create_default_context(cafile=...) loads it, and that len(ctx.get_ca_certs()) >= 1, tolerating NotImplementedError. For SSL_CERT_DIR, check that it is a directory. For certifi, also require at least 1024 bytes. Each Problem carries the variable name and a repair string such as `unset SSL_CERT_FILE` or `export JARVIS_CA_BUNDLE=/path/to/corp-root.pem`. - Name the variable that actually supplied the value in the warning. - Add `verify_for(target_id, base_url)`. It returns tls_verify() unless an explicit per-target setting (e.g. JARVIS_TLS_INSECURE_TARGETS, a comma list of provider ids or hosts) names this target. In that case it returns False and logs WARNING 'TLS verification DISABLED for <base_url> (<target>)' once per client. 2. Call validate_ca_environment from the lifespan. A set-but-broken variable raises SystemExit with the repair lines, matching Hermes' fail-loudly behaviour. 3. In llm_async_client, default trust_env=False and pass verify=verify_for(backend, kwargs.get('base_url')) unless the caller passes verify or a transport. 4. Update docs/FLAGS.md. Red-first tests: - validate_ca_environment with SSL_CERT_FILE pointing at a missing file, and at a file with zero PEM certs, returns a Problem naming SSL_CERT_FILE; - llm_async_client('anthropic') with JARVIS_CA_BUNDLE set to a self-signed CA gets an SSLContext that includes it; - verify_for with the target listed returns False and emits a WARNING containing the URL; - a bad CA path never yields False.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H504`.
 
 ## H512
 
@@ -234,11 +143,7 @@ Plan: 1) agents/core/security/types.py: add SecurityEventType members AUTH_SUCCE
 
 ## H526
 
-**Make a spoken reply sound like speech rather than read-out markdown** (media) — partial, ~6 h.
-
-Files: `agents/core/voice/speech_text.py`, `agents/core/voice/tts.py`, `agents/core/channels/spoken_reply.py`, `agents/core/routers/voice.py`, `frontend/src/sentences.ts`, `frontend/src/voice.ts`, `tests/test_speech_text_normalize.py`, `tests/test_spoken_reply.py`, `frontend/src/test/voice-stream-speak.test.tsx`
-
-Plan: 1. Create agents/core/voice/speech_text.py with normalize_for_speech(text, lang='ro'). Move speakable()'s cleaning there and extend it: - drop fenced code, including an unclosed fence to end of text - apply channels/render.to_plain - strip leading list markers (-, *, +, 1.) and heading hashes - drop table separator rows and turn cell pipes into commas - remove emoji (Unicode So/Sk and variation selectors / ZWJ) - remove <think>...</think> and an unclosed <think> to end - replace URLs with 'link' without consuming a trailing ')' (e.g. r'https?://[^\s)]+') - expand & % -> → ° + = per lang (ro: și/la sută/spre; en: and/percent/to) - fold newlines - leave the twelve Fish [emotion] tags untouched. 2. Call it at the top of TTSEngine.speak() in agents/core/voice/tts.py, before the Fish branch. That covers /tts, /tts/stream, VoicePipeline, VoiceChannel.send and SpokenReply. Have speakable() delegate to it and keep only the length cap. 3. In frontend/src/sentences.ts SentenceAggregator (used by voice.ts pushSpeakDelta), suppress text inside an open ``` fence so code streamed across deltas is never enqueued. The first red test is new tests/test_speech_text_normalize.py: POST /tts via TestClient with a stub TTSEngine recording its text, body '## Plan\n- **one** 😀 & 50%'. The recorded text must contain no '#', '*', leading '-' or emoji, and must contain 'și'/'la sută'. Add a vitest case in frontend/src/test/voice-stream-speak.test.tsx: a fenced block pushed as deltas produces no /tts call.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H526`.
 
 ## H696
 
@@ -250,27 +155,15 @@ Plan: 1. Read upstream's current release tag (v2026.8.31 or newer) from the publ
 
 ## H117
 
-**Message batching and debounce (treat a burst as one turn)** (platforms) — missing, ~7 h. Critic notes: [1](#critic-note-1), [16](#critic-note-16).
-
-Files: `agents/core/channels/burst.py`, `agents/core/channels/gateway.py`, `agents/core/channels/telegram.py`, `agents/core/settings_db.py`, `tests/test_gateway_burst_debounce.py`
-
-Plan: 1. Add agents/core/channels/burst.py with a BurstCoalescer keyed on (channel, chat_id, sender). It buffers fragments for a sliding window (setting channels.burst_debounce_seconds, default 0.35) under a hard cap (1.0s, and a maximum fragment count and byte size), then releases one merged text joined with newlines. 2. Call it in Gateway.route before _inbound_meta and the handler, so taint and detect_injection run on the merged text. The absorbed fragments return None (no reply). Only the final caller gets the handler's answer. 3. Make Telegram's _poll_loop dispatch without blocking on each receive, so fragments from one getUpdates batch can coalesce. Group photos by media_group_id. 4. Tests. Red first: three route() calls within the window invoke the handler once with the merged text. Then: injection flags are computed on the merged text (a phrase split across two fragments is flagged); different chat_ids never merge; the hard cap flushes a long burst; observe_only messages are not merged into answered turns.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H117`.
 
 ## H275
 
-**Boot into a known-good state when customizations break the install** (env) — missing, ~7 h. Critic notes: [8](#critic-note-8), [24](#critic-note-24).
-
-Files: `agents/core/safe_mode.py`, `agents/core/skills/loader.py`, `agents/web.py`, `agents/core/agent.py`, `agents/core/heartbeat.py`, `agents/core/plugin_manager.py`, `agents/core/routers/ops.py`, `serve.py`, `frontend/src/gap.tsx`, `docs/FLAGS.md`, `tests/test_safe_mode.py`
-
-Plan: 1. Add agents/core/safe_mode.py with safe_mode_enabled(), which reads JARVIS_SAFE_MODE through env_config. 2. Consult it at each load site: - SkillLoader.discover loads only SKILLS_DIR (skip the user root and generated skills). - _load_mcp_config returns before load_from_config, and _save_mcp_config must refuse to persist while safe mode is on so the saved server list is not overwritten with an empty one. - soul_path_for skips both SOUL.local.md candidates, and the heartbeat overlay lookup does the same. - PluginManager.build / extension activation skips owner-activated extensions. 3. Add safe_mode: true to the /status and /readyz payloads and show a HUD banner. 4. Add a --safe-mode flag to serve.py that sets the env var before the app imports. 5. Red-first tests in tests/test_safe_mode.py: - With the flag set, a skill in the data-home skills dir is absent from discover(). - A settings-stored MCP server is not loaded and is still present in settings after boot. - soul_path_for returns the shipped SOUL.md even when SOUL.local.md exists. - PermissionGate/kernel/egress decisions for a fixed set of actions are identical with and without the flag.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H275`.
 
 ## H328
 
-**Conditional skill visibility (OS platform, runtime environment, channel, tool availability)** (skills) — missing, ~7 h. Critic notes: [23](#critic-note-23).
-
-Files: `agents/core/skills/loader.py`, `agents/core/skills/visibility.py`, `agents/core/agent.py`, `tests/test_skill_visibility.py`
-
-Plan: After H327, add agents/core/skills/visibility.py with readiness(skill, *, os_name) -> ('ready'|'unsupported', reason) for the platforms hard gate (sys.platform mapped to macos/linux/windows, plus a Termux escape) and offer_visible(skill, *, environment, surface, offered_tools) -> (bool, reason) for the soft gates. Environment detection covers docker (/.dockerenv), s6 and kanban. The surface comes from tool_profiles.classify_turn. Tool gating uses requires_toolsets/requires_tools (hide when absent) and fallback_for_* (hide when the premium tool IS offered). Call offer_visible and readiness in SkillLoader.prompt_catalog, with a new surface/offered_tools argument threaded from Agent.build_prompt, and log each hidden name at INFO. In parse_command/Skill.execute, refuse only the platforms gate, with the message 'unsupported on <os>'. Soft-hidden skills still execute when named explicitly. Expose readiness in Skill.to_dict and /skills. Red-first tests in tests/test_skill_visibility.py: a platforms:[macos] skill is absent from prompt_catalog on linux and its command refuses; an environments:[docker] skill is hidden outside docker but still executes when named; session_platforms:[telegram] is hidden on the operator surface; a fallback_for_tools:[web_search] skill is hidden when web_search is offered and shown when it is not. The first test to go red: the macOS skill is not in prompt_catalog() on linux.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H328`.
 
 ## H334
 
@@ -282,101 +175,51 @@ Plan: 1. agents/core/routers/skills.py skills_import: remove the app_state.dev_m
 
 ## H380
 
-**Prove a configured cloud provider actually works** (providers) — missing, ~7 h. Critic notes: [26](#critic-note-26).
-
-Files: `agents/core/llm/provider_probe.py`, `agents/core/llm/providers/__init__.py`, `agents/core/routers/models_llm.py`, `frontend/src/gap.tsx`, `scripts/doctor.py`, `tests/test_provider_probe.py`
-
-Plan: 1. Create agents/core/llm/provider_probe.py with `async probe_provider(profile, *, client=None, now=...)`. Use a client built by llm_async_client(f"probe:{profile.id}", timeout=10, follow_redirects=False, trust_env=False) and a real User-Agent. Map profile ids to endpoints: anthropic GET https://api.anthropic.com/v1/models with x-api-key and anthropic-version headers; gemini GET v1beta/models with the x-goog-api-key header, never in the query string; openrouter, openai-compatible, openai-responses and xai GET {base}/models with a Bearer token. Add a `supports_health_check` field to ProviderProfile so local and unsupported profiles are skipped. Return {id, state: ok|auth_failed|forbidden|rate_limited|unreachable|error|not_configured, http_status, model_count, checked_at}. The result carries no key and no body text. Use `fallback_models` when the listing is unsupported. Keep a module-level TTL cache (about 10 min) and a per-provider asyncio.Lock with a minimum interval, so concurrent callers share one request. 2. Add admin routes: GET /api/llm/providers (catalog plus cached probe state) and POST /api/llm/providers/{id}/probe (forced, rate-limited). Follow the jarvis-add-route skill and regenerate the schema. 3. Add a 'Test key' control per provider in the HUD model panel. 4. Optionally add a `providers` check to scripts/doctor.py that reads the route. 5. Write tests with httpx.MockTransport. These go red first: a 401 must yield auth_failed; the serialized result must not contain the key string or a body canary; a second call inside the TTL must make no second request; the probe must create an `llm:probe:*` row in EGRESS_MONITOR; an unconfigured profile must return not_configured without any request.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H380`.
 
 ## H450
 
-**Say when in plain words (schedule syntax)** (automation) — partial, ~7 h. Critic notes: [15](#critic-note-15).
-
-Owner gate: none
-
-Files: `agents/core/autonomy/nl_schedule.py`, `agents/core/autonomy/jobs.py`, `agents/core/routers/jobs.py`, `frontend/src/panels/jobs.tsx`, `tests/test_h10_27_nl_schedule.py`, `tests/test_owner_jobs.py`
-
-Plan: Extend resolve_schedule in agents/core/autonomy/jobs.py so it returns a typed schedule {kind: cron|once, cron|run_at, description}, checking families in a fixed order. (a) `every <N><m|h|d>` and bare `<N><m|h>`: recurring interval, still subject to the 5-minute floor. (b) EN/RO natural phrases, as nl_schedule does today. (c) Raw five-field cron. (d) ISO date/datetime: a naive value is anchored to JobRunner.scheduler_timezone(), a past instant is refused, and the result is a one-shot. (e) `in <N> <unit>`: a one-shot at now+delta. Make nl_schedule refuse any text containing a date or `tomorrow` instead of dropping it into the bare-time→daily branch. Add a `run_at` column to the jobs table with a migration. Register one-shots with APScheduler's 'date' trigger in JobRunner.register, make tick() fire a due one-shot exactly once via claim_tick, and have Job.runnable return false after it fires. Add normalize_repeat(value) in validate_options that maps 'forever'/None→null, 'once'/'1x'→1 and digits→int, as the single chokepoint. Show run_at in the HUD jobs list. Red-first test in tests/test_h10_27_nl_schedule.py: resolve_schedule('in 30m') returns kind 'once' (currently raises), and resolve_schedule('2026-10-01 09:00') does not return '0 9 * * *'. Add store/tick tests in tests/test_owner_jobs.py covering a one-shot firing once and a naive timestamp anchored to the scheduler zone.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H450`.
 
 ## H659
 
-**A retried external request returns the original run instead of starting a second one** (delta) — missing, ~7 h. Critic notes: [7](#critic-note-7), [27](#critic-note-27).
-
-Files: `agents/core/idempotency.py`, `agents/core/routers/actions.py`, `agents/core/routers/webhooks.py`, `agents/core/routers/a2a.py`, `agents/core/a2a.py`, `tests/test_idempotency.py`
-
-Plan: 1) New agents/core/idempotency.py with IdempotencyStore(sqlite at data_path('idempotency.db'), WAL). Table idempotency(scope TEXT, key TEXT, fingerprint TEXT, status TEXT, result_ref TEXT, created_at REAL, PRIMARY KEY(scope,key)). reserve(scope, key, fingerprint) runs inside BEGIN IMMEDIATE and returns ('new', None), ('replay', row) or ('conflict', row) on a fingerprint mismatch. complete(scope, key, status, result_ref); a TTL prune; a `durable` property that is True only for file-backed storage. The fingerprint is the sha256 of method, path and canonical body. Store no bodies. 2) validate_key(): ^[\x21-\x7e]{1,255}$, otherwise 400 {'error':'invalid_idempotency_key'}. 3) Wire into POST /api/actions/request (scope 'actions:'+principal), POST /api/webhooks/{hook_id} (scope 'webhook:'+hook_id, after auth and before mark_called/handle_input) and POST /api/a2a/task (scope 'a2a:'+peer_id, after the signature check and before the inbox append). A replay returns the stored action id / inbox id / response summary with 200 and never calls q.request, handle_input or receive_task again; a conflict returns 409/422. 4) Red-first test in tests/test_idempotency.py: two POST /api/actions/request calls with the same Idempotency-Key produce one pending action and the same id. It fails today with two. Add tests for invalid keys (400), scope isolation between two webhooks, and survival across a store reopen.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H659`.
 
 ## H674
 
-**Compression cannot stall the user: bounded holds, inactivity deadlines and derived thresholds** (delta) — partial, ~7 h. Critic notes: [11](#critic-note-11), [13](#critic-note-13).
-
-Files: `agents/core/orchestrator.py`, `agents/core/context_compressor.py`, `agents/core/settings_db.py`, `agents/core/llm/base.py`, `tests/test_compression_timing.py`
-
-Plan: Add settings memory.compression_max_turn_hold_seconds (default 10) and memory.compression_inactivity_seconds (default 60) in settings_db.py. In _compression_summarizer, use the backend's streaming generate (on_token) wrapped in an inactivity watchdog that resets on every token and raises TimeoutError after the inactivity window with no tokens, so compress() falls back to the digest. In ContextCompressor.compress, or in _history_for_prompt around compressor.compact, wait on the summarizer task with asyncio.wait_for(asyncio.shield(task), hold). On expiry use _fallback_digest for this turn, append a runtime notice ('context summary deferred'), and attach a done-callback that stores the eventual summary in _ctx_summary_cache[sid] only. Do not call commit_clock for the deferred summary. The first red test in tests/test_compression_timing.py: an orchestrator stub with compression_summarizer=True and a never-returning backend.generate must return from _history_for_prompt within hold+0.5s with a digest (it hangs today). Also add: a summarizer yielding a token every 0.2s for 2s with inactivity=0.5s is kept; a silent one is cut at 0.5s.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H674`.
 
 ## H677
 
-**Boot warm-up before accepting work, and every shutdown wait has a short explicit budget** (delta) — partial, ~7 h. Critic notes: [1](#critic-note-1), [11](#critic-note-11), [16](#critic-note-16).
-
-Files: `agents/web.py`, `agents/core/orchestrator.py`, `agents/core/channels/manager.py`, `agents/core/channels/telegram.py`, `agents/core/routers/status.py`, `agents/core/settings_db.py`, `tests/test_boot_warmup_gate.py`, `tests/test_shutdown_budgets.py`
-
-Plan: In agents/web.py lifespan, after `await orch.load_agents()` and before `await orch.start_channels()`, add: if orch._warmup_task: try await asyncio.wait_for(asyncio.shield(orch._warmup_task), timeout=get_value('agent','startup_warmup_timeout',20)) except TimeoutError: log the timeout and keep going. Set orch.warmup_state to 'ready' or 'warming' and surface it in the status route. Tag replies with a 'served_while_warming' flag while the task is not done. In ChannelManager.stop_all, wrap each ch.stop() in asyncio.wait_for(..., channel_stop_budget) and log overruns. In Orchestrator._cancel_task, wrap `await task` in asyncio.wait_for(asyncio.shield(task), interrupt_grace default 1.5s). Wrap plugin_manager.close_all and each aclose step in the same way. Lower the lease wait for channel turns from Telegram, or dispatch Telegram updates per chat in tasks. The first red test in tests/test_boot_warmup_gate.py: a TestClient lifespan whose router.warm_up sleeps 0.3s must see warm-up done before the first request is served (it fails today). Also add: warm_up sleeping 10s with timeout=0.2 lets startup finish in under 1s. In tests/test_shutdown_budgets.py: a channel whose stop() never returns does not keep lifespan teardown past the budget.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H677`.
 
 ## H156
 
-**Edit an agent's persona and description from the UI** (web) — partial, ~8 h.
-
-Files: `agents/core/routers/agents_api.py`, `agents/core/routers/admin.py`, `agents/core/soul_versioning.py`, `agents/core/agent.py`, `frontend/src/modes.tsx`, `frontend/src/gap.tsx`, `tests/test_soul_edit_route.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
-
-Plan: Edit route: add `PUT /api/admin/agents/{agent_id}/soul` {content, message} (admin_guard). Resolve the agent directory by enumeration, as the GET does. Run `_scan_soul_body` and answer 422 if the content is blocked. Seed SoulVersionStore with the current on-disk SOUL as v1 when its history is empty, then commit. Write the file atomically to user_souls_dir()/<id>/SOUL.local.md (or the repo-local SOUL.local.md when there is no data home). Call `_load_soul()` on orch.agents[id] so the next turn uses the new persona. Emit a SecurityEvent with agent id, version and hash, never the content. Rollback: `/api/admin/prompts/{id}/rollback` must go through the same apply path. Description: add a `description` front-matter field, and `POST /api/admin/agents/{id}/description/draft`, which asks the router for a one-paragraph description and returns it as a proposal without saving it. Saving goes through the PUT. UI: add an Edit button in the Dossier (frontend/src/modes.tsx) that loads the live SOUL into the PromptsPanel editor, with Preview then Apply. Regenerate the route snapshots and schema.gen.ts. First red test: tests/test_soul_edit_route.py. After a PUT, GET /api/agents/{id}/soul returns the new text and the agent's system prompt contains it. Blocked content gets 422 and changes nothing. An audit row is written. A rollback rewrites the file.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H156`.
 
 ## H161
 
-**Warn when the box is running out of memory or disk** (web) — partial, ~8 h.
-
-Files: `agents/core/resource_pressure.py`, `agents/core/routers/status.py`, `agents/core/autonomy/observer.py`, `frontend/src/pressure-banner.tsx`, `frontend/src/app.tsx`, `frontend/src/api/schema.gen.ts`, `tests/test_resource_pressure.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/test/pressure-banner.test.tsx`
-
-Plan: 1. Add agents/core/resource_pressure.py with a pure classify(sample, state) that returns ranked conditions in Hermes order: disk_critical > memory_critical > oom_restart_suspected > disk_elevated > memory_elevated. Reuse observer.DEFAULT_THRESHOLDS and probe the data-dir volume as well as '/'. 2. Read the boot id from /proc/sys/kernel/random/boot_id, falling back to psutil.boot_time(). Persist a small atomic state file under the data dir holding the last sample, the boot id and a clean-shutdown marker. Flag oom_restart_suspected when the process starts on the same boot id without a clean-shutdown marker after a sample with elevated/critical memory. 3. Clear a condition only after N consecutive samples below the elevated threshold minus a margin (confirmed recovery). 4. Expose GET /api/system/pressure (user_guard, nocache) returning {boot_id, conditions, worst} and POST /api/system/pressure/dismiss {condition, boot_id}. Store dismissals keyed by (condition, boot_id) so a new boot re-arms them, and do not block on autonomy.mode or ESTOP. 5. Add frontend/src/pressure-banner.tsx: poll the route, show only the worst undismissed condition with a dismiss control, and mount it in app.tsx beside ActionFailureBanner. 6. Tests to write red-first: tests/test_resource_pressure.py for ranking/worst-only, a dismissal re-arming on a new boot id, a flapping sample not clearing, and the OOM-restart suspicion after an unclean restart; route snapshot updates; frontend/src/test/pressure-banner.test.tsx for worst-only rendering and dismiss.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H161`.
 
 ## H168
 
-**Shared UI primitives the pages lean on (markdown, destructive-action confirmation, schema-driven fields)** (web) — partial, ~8 h.
-
-Files: `frontend/src/markdown.tsx`, `frontend/src/cockpit.tsx`, `frontend/src/shell.tsx`, `frontend/src/artifacts.tsx`, `frontend/src/confirm.tsx`, `frontend/src/panel-kit.tsx`, `frontend/src/gap.tsx`, `frontend/src/modes3.tsx`, `frontend/src/panels/trust-ops.tsx`, `frontend/src/panels/marketplace-admin.tsx`, `frontend/src/test/markdown.test.tsx`, `frontend/src/test/confirm.test.tsx`, `frontend/src/test/kill-switch-refusal.test.tsx`
-
-Plan: 1. Add frontend/src/markdown.tsx exporting <Markdown text/>. Use a line-based block parser (headings, bullet and ordered lists, ``` fences as <pre><code>, pipe tables as <table>, paragraphs) and an inline tokenizer (bold, italic, inline code, [label](url)). Emit React elements only; anything unrecognised stays as a text node. Render links only for http(s) or same-origin paths, with target=_blank rel='noopener noreferrer'. 2. Replace renderRich in cockpit.tsx (both bubble sites) and shell.tsx, and MarkdownBody in artifacts.tsx, keeping artifacts' 4,000-char bound. 3. Add frontend/src/confirm.tsx exporting <ConfirmAction tier={RiskTier} phrase? onConfirm/>. Tiers 0-1 take a two-step click; tiers 2-3 take a typed phrase with the confirm button disabled until it matches. Export the tier constants mirroring agents/core/autonomy/policy.py RiskTier. 4. Migrate KillSwitchPanel (HALT ALL two-step, disengage typed), forget-me, acquisition purge, marketplace remove, trust-ops rotate and the modes3 ESTOP pause onto it. 5. Tests to write red-first: frontend/src/test/markdown.test.tsx (a list, fence and table render as ul/pre/table; '<script>', '<iframe>' and 'javascript:' links stay inert text; no dangerouslySetInnerHTML in the source); frontend/src/test/confirm.test.tsx (a tier-3 action does not fire until the phrase matches, and a tier-1 action needs two clicks); update kill-switch-refusal.test.tsx so HALT ALL requires the second click.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H168`.
 
 ## H209
 
-**Keyboard shortcut customisation with a recorder and conflict detection** (desktop) — missing, ~8 h.
-
-Files: `frontend/src/keybinds.ts`, `frontend/src/panels/keyboard-shortcuts.tsx`, `frontend/src/app.tsx`, `frontend/src/shell.tsx`, `frontend/src/test/keybinds.test.ts`, `frontend/src/test/keyboard-shortcuts-panel.test.tsx`, `frontend/src/test/app-routing.test.tsx`
-
-Plan: Create frontend/src/keybinds.ts, exporting: an ACTIONS registry of {id:'nav.cockpit'…'nav.comms','palette.toggle','ambient.open','cinema.open','console.toggle','cinema.orb','cinema.mesh','cinema.brain','shortcuts.open', category, label, defaultChord}; eventToChord(e), which normalises mod (meta or ctrl); loadOverrides/saveOverrides, with localStorage wrapped in try/catch; resolveBindings(overrides), returning chord→actionId plus a conflicts map; and setBinding(id, chord), which throws on an unknown id. The registry holds no approval/decision action, and setBinding refuses any id whose category is 'approval'. Refactor app.tsx onKey and the shell.tsx Cinema effect to look up eventToChord(e) in resolveBindings() and dispatch by action id; keep the input/textarea and role=log bail-outs. Add panels/keyboard-shortcuts.tsx: a modal opened by mod+/ with category sections and a search box. Clicking a row enters record mode ('Press a key…'): the next keydown sets the binding and Esc cancels. Add a reset button per row, reset-all, and an 'Also bound to <label>' note when conflicts are non-empty. Red-first tests: keybinds.test.ts asserts that rebinding nav.memory from '4' to 'g' makes 'g' switch to memory and '4' no-op, that conflict detection works, and that an approval id is refused. Then a panel test for the recorder and reset. Keep app-routing.test.tsx green.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H209`.
 
 ## H227
 
-**"What can it do right now" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers** (tui) — partial, ~8 h.
-
-Files: `agents/core/inspector.py`, `agents/core/routers/status.py`, `agents/cli/nerva.py`, `frontend/src/panels/inspector.tsx`, `frontend/src/console-routes.ts`, `tests/test_inspector.py`, `tests/test_nerva_cli.py`, `frontend/src/panels/inspector.test.tsx`, `tests/_snapshots/route_auth.json`
-
-Plan: Add agents/core/inspector.py with build_inspector(orch, agent_id, surface, principal). It returns a dict with these sections. status: version, backend, model/state from project_llm_status, and context budget from llm.tool_loop_context_tokens. tools: the ToolProfileResolver.resolve result for this agent, surface and principal, each entry with gated/untrusted_output. skills: prompt_catalog(agent_id) rows plus a count by skill. mcp: MCPManager servers with transport, trust tier, connected flag and visible tool count. system_prompt: the text Agent.build_prompt would send for an empty user turn, including the frozen core block, the skills block and _runtime_state_block, with secrets redacted and capped at 64 KB. Serve it at GET /api/admin/inspector?agent=jarvis (admin_guard; record it in the route_auth snapshot). Add a `nerva inspect [--section tools|skills|prompt|mcp] [--json]` verb that renders those sections read-only from the same payload, and a HUD InspectorPanel that reads the same route with collapsible sections. First red test, in tests/test_inspector.py: the payload's tools equal ToolProfileResolver's set for a guest principal, not the raw registry. Then test that system_prompt contains the skills block and core-memory header, and that tests/test_nerva_cli.py inspect output matches the --json payload.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H227`.
 
 ## H247
 
-**Wake word arming per surface, push-to-talk capture, TTS, and liveness/config primitives** (tui) — partial, ~8 h.
-
-Files: `agents/core/voice/mic_arbiter.py`, `agents/core/voice/pipeline.py`, `agents/core/channels/voice.py`, `agents/core/routers/voice.py`, `agents/core/settings_db.py`, `frontend/src/voice.ts`, `tests/test_mic_arbiter.py`, `frontend/src/test/voice.test.tsx`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`, `frontend/src/api/schema.gen.ts`
-
-Plan: Arbiter: add agents/core/voice/mic_arbiter.py, a process-wide MicArbiter with arm(surface, client_id), pause(surface), resume(surface), stop(surface) and status() -> {holder, since, armed:[...]}. A second surface arming while another holds the mic is refused and told who the holder is; there is no silent preemption. Routes: add `POST /api/voice/wake/{arm,pause,resume,stop}` and `GET /api/voice/wake/status` (user_guard) to agents/core/routers/voice.py. Consent and audit: arm requires a new capture-consent setting (`voice.mic_capture_consent`, default off, in settings_db). Every arm and stop writes a SecurityEvent with surface and action, never audio. Host pipeline: VoicePipeline/VoiceChannel.start takes the 'host' lease before opening the device and releases it on stop/pause. Browser: frontend/src/voice.ts calls arm when hands-free/PTT starts and stop on release, and shows 'mic held by <surface>' when refused. Regenerate the route snapshots and schema.gen.ts. First red test: tests/test_mic_arbiter.py. While the host holds the mic, a hud arm gets 409 naming 'host'. Once host pauses, the hud arm succeeds. Without consent, arm is refused. Each arm/stop leaves an audit row. Add a vitest for the refusal path in voice.ts.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H247`.
 
 ## H259
 
-**Reset to defaults, scoped and previewed, plus export/import of the whole configuration** (config) — partial, ~8 h. Critic notes: [6](#critic-note-6), [28](#critic-note-28).
-
-Files: `agents/core/settings_db.py`, `agents/core/routers/admin.py`, `frontend/src/gap.tsx`, `tests/test_admin_settings_mutations.py`
-
-Plan: 1) In settings_db add defaults(category=None), built from DEFAULTS, and reset_category(cat), which rewrites only that category's rows to their defaults. 2) Add GET /api/admin/settings/defaults returning {category: {key: default}}. Add POST /api/admin/settings/reset/preview {category}, returning [{key, current, default}] for differing keys with secret values masked. Change POST /api/admin/settings/reset {category|'all'} (and re-route /reseed) so it enqueues a 'settings.reset' task at the irreversible/ask tier through the autonomy worker, and apply reset_category only when the approved task executes. /reseed must stop calling init_db(force=True) directly. 3) Add GET /api/admin/settings/export, returning non-secret values as JSON with secret-kind keys omitted or redacted. Add POST /api/admin/settings/import/preview, which runs validate_category per category and returns the diff without writing; the HUD loads it into the dirty form state and the existing PUT saves it. 4) In the HUD SettingsPanel add changed-vs-default markers, a per-category 'reset to defaults' that only edits the form (like Hermes), and export/import buttons. Red-first test: set a value, POST /api/admin/settings/reseed, and assert the value survives until the queued reset is approved. It fails today because the wipe is immediate.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H259`.
 
 ## H262
 
@@ -388,27 +231,15 @@ Plan: 1) Add settings retention.archive_days (0 = off), retention.vacuum_after_p
 
 ## H309
 
-**Show the user where something is, in their UI** (tools — the agent-callable surface) — missing, ~8 h. Critic notes: [22](#critic-note-22).
-
-Files: `agents/core/canvas.py`, `agents/core/autonomy_coordinator.py`, `frontend/src/hud-pointer.tsx`, `frontend/src/app.tsx`, `frontend/src/test/hud-pointer.test.tsx`, `tests/test_h12_18_canvas.py`
-
-Plan: agents/core/canvas.py: add a 'tip' element type {target: anchor id matching ^[a-z0-9][a-z0-9._-]{0,63}$, title at most 80 chars and text at most 200 chars, both through _s} and a 'tour' type {steps: at most 12 of {target, title, text}}, and add both to ALLOWED_TYPES. Register an ungated read-only ToolRPC tool 'ui_point' (args: target, text, title?, steps?) in agents/core/autonomy_coordinator.py next to the other read-only tools. It posts through orch.canvas.post(agent, 'tip'|'tour', payload) and returns the element id; add it to the default tool profile. Frontend: put data-hud-anchor attributes on the main panels and settings controls. Add a HudPointerOverlay component (frontend/src/hud-pointer.tsx), mounted in app.tsx, that reads /api/canvas. It shows the newest undismissed tip as an arrow bubble anchored to document.querySelector('[data-hud-anchor="<target>"]') and pages tour steps with Next/Prev; an unresolved anchor falls back to a toast showing the caption. No screen dimming. Red-first: in tests/test_h12_18_canvas.py, post('tip') with script-bearing text comes back sanitised and a malformed target is rejected (today both fail with 'unknown element type'); a tool test asserts 'ui_point' is offered to the model and posts exactly one element; the vitest frontend/src/test/hud-pointer.test.tsx renders the bubble next to a stub anchor and pages a two-step tour.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H309`.
 
 ## H373
 
-**See how much provider quota is left before hitting the wall** (providers) — missing, ~8 h. Critic notes: [26](#critic-note-26).
-
-Files: `agents/core/llm/rate_limit_tracker.py`, `agents/core/llm/egress.py`, `agents/core/llm/hybrid_router.py`, `agents/core/routers/models_llm.py`, `agents/core/commands.py`, `frontend/src/gap.tsx`, `tests/test_provider_rate_limit_tracker.py`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/openapi_surface.json`
-
-Plan: 1. Add agents/core/llm/rate_limit_tracker.py. It parses OpenAI, OpenRouter and xAI x-ratelimit-{limit,remaining,reset}-{requests,tokens}, Anthropic anthropic-ratelimit-{requests,tokens,input-tokens,output-tokens}-{limit,remaining,reset}, and retry-after into a per-(provider, profile) snapshot. 2. Feed the tracker from an httpx response event hook added in llm_async_client, so every backend reports without per-backend code. 3. Persist a 429 with its retry-after to an atomic shared file under the data dir. HybridRouter._cloud_permitted and the backend request path check that file before sending, which stops retry amplification across processes. 4. Expose admin GET /api/llm/rate-limits and a /usage slash command, and show usage bars in the HUD LLM status panel. 5. Tests, red first: a MockTransport response carrying ratelimit headers yields a snapshot with remaining and reset; a 429 with retry-after written by one router instance makes a second instance refuse before any request.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H373`.
 
 ## H378
 
-**Be warned before choosing a model that is very expensive or trains on your data** (providers) — partial, ~8 h. Critic notes: [9](#critic-note-9).
-
-Files: `agents/core/llm/selection_guards.py`, `agents/core/llm/providers/__init__.py`, `agents/core/routers/admin.py`, `agents/cli/nerva.py`, `agents/core/llm/job_selection.py`, `frontend/src/gap.tsx`, `tests/test_model_selection_guards.py`
-
-Plan: 1. Add a data_policy field ('no-training' | 'trains-on-inputs' | 'unknown') to ProviderProfile, with an optional per-model override, sourced from the vendors' published terms (e.g. OpenRouter ':free' variants and the free Gemini tier). 2. Add agents/core/llm/selection_guards.py with a registry of guards run once per selection, returning ok, confirm_required or ack_required with details: - cost_guard reads cost_estimator.MODELS and requires confirm_expensive above a $/M threshold setting. - data_policy_guard requires acknowledge_training for trains-on-inputs and writes a SecurityEvent consent row to orch.audit. 3. Call the registry server-side in admin_put_category for llm model and provider keys before put_category (409 with guard details), in agents/cli/nerva.py settings set, and in job_selection.validate_pins. 4. Add a confirm dialog to the HUD settings. 5. Tests, red first in tests/test_model_selection_guards.py: PUT llm.claude_model=claude-fable-5 without confirmation currently returns 200 and must return 409; with confirmation it returns 200. A trains-on model without acknowledgement gets 409; with acknowledgement there is an audit consent row.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H378`.
 
 ## H410
 
@@ -438,11 +269,7 @@ Plan: 1. Add a nullable `barrier` JSON column to the runs table in work_runs.py:
 
 ## H507
 
-**Warn the model when the code it just wrote contains a known-dangerous pattern** (security) — missing, ~8 h.
-
-Files: `agents/core/security/code_guidance.py`, `agents/core/file_tools.py`, `agents/core/skills/marketplace.py`, `agents/core/skills/loader.py`, `docs/FLAGS.md`, `tests/test_code_guidance.py`, `tests/test_file_tools_code_guidance.py`
-
-Plan: 1) New agents/core/security/code_guidance.py: a frozen tuple of Rule(id, category, regex, extensions, message) with about 25 rules as in the Hermes row. Include per-extension filters (.py/.js/.ts/.go/.yml under .github/workflows/, .html) and lookbehind guards so `model.eval()` / `.eval(` method calls and `yaml.load(..., Loader=SafeLoader)` do not match. Add scan(path, content) -> list[Finding] with bounded output (cap findings and chars), and render_guidance(findings) -> short string. Env kill switch JARVIS_CODE_GUIDANCE (default on, warn-only; no blocking mode). 2) FileTools.classify_mutation: when the path/content matches, add labels `security_guidance` (bounded string, within ToolRPC _MAX_LABEL_CHARS) and extend/merge `notice` so the owner's approval card title says it. The function must stay a pure function of the args so the H506 intake/execute label match still holds, and it must merge with instruction_labels instead of overwriting `class`. 3) FileTools._mutate success result: add `security_guidance` (list of {rule, line, message}) so the model sees it in the tool result. 4) Run the same scan over SKILL.md/main.py in SkillMarketplace.install_skill/install_from_zip and SkillLoader.generate_skill, and include the findings in their results and the review/approve payloads. 5) Document the flag in docs/FLAGS.md. Red-first tests: tests/test_code_guidance.py (each rule positive and negative, `model.eval()` negative, extension filter) and tests/test_file_tools_code_guidance.py (write_file of `pickle.load(f)` returns security_guidance; classify_mutation returns a security_guidance label; a SOUL.md write keeps class=agent_instructions; kill switch off yields no key). The first test to go red: assert 'security_guidance' in (await ft.write_file({...pickle.load...}, approved=True)).
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H507`.
 
 ## H613
 
@@ -462,11 +289,7 @@ Plan: Extend SubAgentManager.spawn(..., model=None, provider=None, overrides=Non
 
 ## H689
 
-**One stable identity for this install, and per-profile isolation of its runtime artifacts** (delta) — missing, ~8 h.
-
-Files: `agents/core/install_identity.py`, `agents/core/paths.py`, `agents/core/first_action.py`, `agents/core/node_mesh.py`, `agents/core/satellite_hub.py`, `agents/core/channels/pairing.py`, `agents/core/environments/__init__.py`, `agents/web.py`, `tests/test_install_identity.py`, `tests/test_node_mesh_h12_17.py`
-
-Plan: 1. New module agents/core/install_identity.py with get_install_id() -> str | None, backed by data_root()/install_id (exactly 32 lowercase hex characters). - Mint only if the file is absent: take an exclusive lock on data_root()/install_id.lock (fcntl.flock on POSIX; msvcrt.locking on Windows after a 1-byte pre-write; plus a module threading.Lock), then re-check inside the lock. - Write secrets.token_hex(16) via tempfile.mkstemp in the same directory, fsync, os.replace, fsync the directory on POSIX, then re-read and compare. - Return None, and log, when the file is unreadable or malformed or cannot be persisted. Never overwrite a malformed file and never return an unpersisted value. 2. Wire the consumers: - node_mesh.register_node records the hub install id in each registration and in the grant's source/scope. - satellite_hub pairings and channels/pairing.py link records carry it. - first_action.mark_installed takes its install_id from get_install_id() instead of uuid4. 3. Isolation: at web lifespan start, take an exclusive hub lock and PID file under data_root(). Refuse a second hub on the same root with a named error, and detect a stale PID. Either implement JARVIS_PROFILE as data_root()/profiles/<name> (data, token store/vault, PID) or drop it from JARVIS_CHILD_ALLOWED_ENV. 4. Red tests first, in tests/test_install_identity.py: - Two multiprocessing workers minting concurrently get the same id. - A read-only directory returns None and leaves no file. - A corrupted file returns None, not a new id. - The id is stable across calls and restarts. - A second hub-lock acquisition on the same root fails. - first_action reuses the stored id.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H689`.
 
 ## H277
 
@@ -520,13 +343,7 @@ Plan: Backend: extend apm_summary with by_locality = {local, cloud, unknown}, ea
 
 ## H222
 
-**Always-visible microphone / wake-word state indicator** (desktop) — missing, ~10 h. Critic notes: [31](#critic-note-31).
-
-Owner gate: a visual check of the native always-on-top indicator window on a real desktop session (macOS/Windows/X11) is hardware-bound; code and unit tests are not
-
-Files: `agents/core/voice/state.py`, `agents/core/voice/pipeline.py`, `agents/core/routers/voice.py`, `desktop/src-tauri/src/main.rs`, `desktop/src-tauri/src/policy.rs`, `desktop/src-tauri/hud-routes.json`, `frontend/src/indicator.tsx`, `frontend/src/test/indicator.test.tsx`, `tests/test_voice_state.py`, `tests/_snapshots/route_auth.json`
-
-Plan: Add agents/core/voice/state.py with a VoiceStateBroker singleton: {state: idle|listening|wake_detected|capturing|speaking|muted, source: 'local'|'satellite:<id>', since}, plus subscribe(). Update it from VoicePipeline.start/stop/_on_wake_word/_capture_and_process, from TTS playback, and from satellite hub audio sessions; the JARVIS_MIC_MUTED env flag forces 'muted'. Expose GET /api/voice/state and an SSE stream at /api/voice/state/stream (user_guard), both read-only. Desktop: in main.rs setup(), build a small undecorated, always-on-top, non-focusable 'indicator' WebviewWindow loading the HUD route /indicator (add it to hud-routes.json and the policy.rs allow-list). Update the tray tooltip, e.g. 'Nerva — listening', from a Tauri command the indicator page calls on each state change, and add indicator_show/indicator_hide commands. Frontend: frontend/src/indicator.tsx renders a dot and label from the SSE stream, with no mic toggle. Red-first tests: tests/test_voice_state.py (pipeline start gives listening; the wake callback gives wake_detected; the env mute gives muted; the route returns the broker state); a Rust unit test in policy.rs allowing the indicator label/URL; a vitest for indicator rendering and read-only behaviour.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H222`.
 
 ## H243
 
@@ -538,19 +355,11 @@ Plan: Provider list: add `GET /api/admin/llm/providers` (admin_guard) in agents/
 
 ## H329
 
-**Turning individual skills off without uninstalling them** (skills) — missing, ~10 h. Critic notes: [23](#critic-note-23), [24](#critic-note-24).
-
-Files: `agents/core/settings_db.py`, `agents/core/skills/loader.py`, `agents/core/routers/skills.py`, `agents/core/kernel/registry.py`, `frontend/src/gap.tsx`, `tests/test_skill_disable.py`, `tests/_snapshots/route_auth.json`, `tests/_snapshots/route_surface.json`, `tests/_snapshots/openapi_surface.json`
-
-Plan: 1) Settings: add skills.disabled (JSON list) and skills.platform_disabled (JSON map from surface to list) in settings_db, plus an ESSENTIAL_SKILLS frozenset in loader. 2) SkillLoader: add is_disabled(name, surface=None). prompt_catalog skips disabled skills and logs the name. parse_command/Skill.execute return a named refusal ('skill <name> is disabled') instead of running. Skill.to_dict and GET /skills carry `disabled`. 3) Routes: POST /api/skills/{name}/disable {surface?} behind admin_guard makes a direct settings write plus a SETTINGS_CHANGE audit row, and refuses essential skills. POST /api/skills/{name}/enable submits a permission.grant Action to the kernel and applies the settings write only on GRANT or approved QUEUE, so the audit carries the approver. Support category toggles by matching metadata.hermes.category. Update the route snapshots. 4) HUD: a per-skill toggle and a category toggle in the skills panel in frontend/src/gap.tsx that calls these routes. 5) Nothing is deleted: the skill directory, usage store rows, signature and approval must be untouched. Red-first tests in tests/test_skill_disable.py: a disabled skill is absent from prompt_catalog and its command refuses; SKILL.sig, usage counters and the approval row are unchanged after disable→enable; enable crosses permission.grant (kernel stub sees kind permission.grant); an essential skill cannot be disabled; a platform_disabled entry for 'inbound' hides the skill only on that surface. The first test to go red: POST /api/skills/<name>/disable returns 404.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H329`.
 
 ## H413
 
-**Session auto-titling** (agent-core) — missing, ~10 h. Critic notes: [4](#critic-note-4).
-
-Files: `agents/core/session_titles.py (new)`, `agents/core/checkpoint.py`, `agents/core/memory/manager.py`, `agents/core/orchestrator.py`, `frontend/src/gap.tsx`, `mobile/src/components/SessionsModal.tsx`, `tests/test_session_auto_title.py (new)`
-
-Plan: Add agents/core/session_titles.py. instant_title(text) returns the first ~8 words with whitespace collapsed and control characters stripped, capped at 60 characters. Write it to sessions.summary (or a new title column with a migration) when the first user turn of a session is recorded, and only if empty. Schedule upgrade_title(session_id, first_turns) once per session (a metadata flag guards re-fire) on a background task. It picks a local backend only and refuses any cloud or openrouter backend, using the prompt 'Give this conversation a short title of at most 6 words. Do not answer it.' Accept a non-empty single line of at most 60 characters. Render s.summary || s.id in the HUD SESSIONS card (gap.tsx); mobile already renders summary. Red-first test (tests/test_session_auto_title.py): after the first handle_input on a fresh session, checkpoints.get_sessions()[0]['summary'] equals the first words. With a fake local backend the title is replaced once and never again. With only a cloud backend configured, the upgrade is skipped and the instant title remains.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H413`.
 
 ## H425
 
@@ -570,19 +379,11 @@ Plan: 1. agents/core/checkpoint.py: add title TEXT and title_source TEXT ('deriv
 
 ## H490
 
-**Start with zero customization to prove a bug is not your own setup** (security) — missing, ~10 h. Critic notes: [8](#critic-note-8).
-
-Files: `agents/core/safe_mode.py`, `agents/core/env_config.py`, `agents/core/agent.py`, `agents/core/heartbeat.py`, `agents/core/file_tools.py`, `agents/core/orchestrator.py`, `agents/core/mcp/client.py`, `agents/core/routers/security.py`, `agents/serve.py`, `frontend/src/gap.tsx`, `docs/FLAGS.md`, `tests/test_safe_mode.py`
-
-Plan: 1. Create agents/core/safe_mode.py with `safe_mode_enabled()`, which reads env_flag('JARVIS_SAFE_MODE'), and `SAFE_MODE_SKIPS`, a documented tuple of the extension points it disables. 2. Gate each extension point on safe_mode_enabled(): - soul_path_for and the heartbeat overlay use only the shipped template; - file_tools skips instruction-file and .local overlay injection; - the orchestrator skips SkillLoader.discover() of user and marketplace skills, plugin registration, MCPManager startup, hooks and webhooks, memory recall and WorldView context; - the runtime autonomy-level overrides from the settings DB are ignored in favour of the code defaults. The worker must use the stricter of the two, never looser. 3. Make the launch path accept `--safe-mode` by setting the env var before load_agents. 4. Log one boot WARNING and add `safe_mode: {enabled, skipped: [...]}` to GET /api/security/posture. Show a HUD banner. 5. Document it in docs/FLAGS.md. Red-first tests in tests/test_safe_mode.py: - with JARVIS_SAFE_MODE=1, a tmp SOUL.local.md is not used by soul_path_for; - a tmp skill dir yields zero discovered skills; - MCPManager.start is never called; - instruction files are not injected; - the posture payload reports enabled=True; - ANTHROPIC_API_KEY is still readable; - no autonomy level is looser than the default.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H490`.
 
 ## H594
 
-**Have the agent pick up a project's conventions automatically (context files)** (docs-features) — missing, ~10 h. Critic notes: [29](#critic-note-29).
-
-Files: `agents/core/context_files.py (new)`, `agents/core/orchestrator.py`, `agents/core/file_tools.py (record touched directories)`, `agents/core/settings_db.py`, `tests/test_context_files.py (new)`
-
-Plan: 1) New agents/core/context_files.py with `discover(cwd, scope: FileScope) -> list[ContextFile]`. Find the git root (the nearest ancestor with .git, clamped to the FileScope root) and walk root→cwd collecting AGENTS.md (plus its .local overlay, matching file_tools naming), .cursorrules and .cursor/rules/*.mdc. SOUL.md is never loaded. Resolve each file with FileScope.resolve. Cap each file at 16 KiB with a truncation marker and the total at 48 KiB, ordered with the nearest directory last. Run detect_injection on each file; a flagged file becomes `[BLOCKED context file <path>: <reason>]`. `render_project_context(files)` emits a header plus a caveat line, in the same way core_block does. 2) Orchestrator: add a `_project_context_block()` next to _living_core_memory_block, cached per (session, cwd, file mtimes). For progressive discovery, FileTools and terminal environments record the directories they touch, and the next turn includes those directories' AGENTS.md. When a non-empty block is injected, call mark_turn_recall_tainted(). 3) Add a cognition toggle project_context_files (default on) and list the loaded files in the turn's cognition trace. 4) Tests first in tests/test_context_files.py. The first red test is test_walks_git_root_to_cwd. Then cover: budgets and truncation; .mdc compatibility; SOUL.md ignored; an injection line blocked; outside-scope and symlink files refused; the taint mark set; a subdirectory discovered after a file-tool touch.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H594`.
 
 ## H596
 
@@ -658,11 +459,7 @@ Plan: 1) Add an optional `endpoint` to the peer record (add_peer and A2APeerBody
 
 ## H579
 
-**Pull a file or slice of a file into a message inline (@ context references)** (docs-features) — missing, ~12 h.
-
-Files: `agents/core/context_refs.py (new)`, `agents/core/orchestrator.py`, `agents/web.py`, `agents/core/routers/ (new user-guarded completion route)`, `frontend/src/cockpit.tsx`, `tests/test_context_refs.py (new)`, `frontend/src/test/context-refs-completion.test.tsx (new)`
-
-Plan: 1) New agents/core/context_refs.py with `expand_references(message, scope: FileScope, per_ref_bytes=64 KiB, total_bytes=256 KiB) -> Expansion(text, attached, warnings)`. Grammar: `@file:<path>`, optionally followed by `#L<a>-<b>` or `#L<a>`; quoted paths are allowed for spaces. Resolve each path with FileScope.resolve and turn FileScopeError reasons (outside_scope, symlink_escape, secret_path, bad_path) into inline `[warning: ...]` lines; never raise. Reject binary files (a NUL byte in the first 8 KiB, or undecodable UTF-8). Slice by a 1-based inclusive line range, truncate with a marker, and append `\n\n--- Attached Context ---\n` blocks headed `path#Lrange`. 2) Call it in Orchestrator.handle_input, inside the turn's action-origin binding and before routing and memory save. When anything is attached, call mark_turn_recall_tainted() so kernel GRANT decisions become QUEUE. 3) Completion: add user-guarded GET /api/context-refs/complete?prefix= returning at most 50 in-scope entries with secret names filtered, and an `@` popup in InputBar (frontend/src/cockpit.tsx). `nerva chat` is covered by the server-side expansion. 4) Tests first in tests/test_context_refs.py. The first red test is test_expands_line_range, which fails because the module is missing. Then cover: outside-root, `..`, symlink and secret refusals rendered as warnings; binary detection; size caps; the taint mark set only when content is attached; and a GRANT-class action queued in a turn that attached a reference. Add a frontend test for the @ popup.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H579`.
 
 ## H686
 
@@ -674,13 +471,7 @@ Plan: In Orchestrator, after each streamed turn, build self._last_turn_stats[ses
 
 ## H182
 
-**Keep the machine awake through a turn, and be aware of power/battery state** (desktop) — missing, ~14 h. Critic notes: [31](#critic-note-31).
-
-Owner gate: Optional owner smoke test on a real laptop (on battery, lid/idle sleep) to confirm each OS honours the assertion; all logic is testable with mocks.
-
-Files: `agents/core/power.py`, `agents/core/orchestrator.py`, `agents/core/hardware.py`, `agents/core/system_profiles.py`, `agents/core/kernel/registry.py`, `agents/web.py`, `desktop/src-tauri/src/main.rs`, `desktop/src-tauri/tauri.conf.json`, `frontend/src/gap.tsx`, `docs/FLAGS.md`, `tests/test_power.py`
-
-Plan: 1. New module agents/core/power.py. - A reference-counted KeepAwake guard: - Linux: a `systemd-inhibit --what=idle:sleep --who=Nerva --why=turn sleep infinity` child, or a logind DBus Inhibit fd. - macOS: `caffeinate -i -w <hub pid>`. - Windows: ctypes SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED), released with ES_CONTINUOUS. - Default off behind JARVIS_KEEP_AWAKE (documented in docs/FLAGS.md). Turning it on from the HUD crosses the kernel as host.control. - The guard is released when the last concurrent turn ends, on exception, on lifespan shutdown and at exit. - power_state() reads psutil.sensors_battery() (percent, plugged; None → 'unknown'). - A poller publishes battery and resume changes on the existing SSE/event bus, and a posture knob pauses or throttles background autonomy (heartbeats/jobs) on battery below a threshold. 2. Wrap Orchestrator.process and the streaming chat path in the guard. 3. Desktop shell: disable the webview's background throttling while a stream is active (Tauri window background-throttling setting / command invoked by the HUD on stream start and end). 4. Red tests first, in tests/test_power.py with mocked subprocess, ctypes and psutil: - Flag off → no inhibitor is ever created. - Flag on → exactly one inhibitor is held across two overlapping turns and released after the last. - The inhibitor is released when a turn raises and on shutdown. - A desktop with no battery → 'unknown', not an error. - On battery below the threshold, background work is skipped with a named reason. - The HUD toggle route requires the host.control kernel decision.
+Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H182`.
 
 ## H396
 

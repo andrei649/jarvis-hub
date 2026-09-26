@@ -55,6 +55,8 @@ beforeEach(() => {
 });
 
 const puts = () => calls.filter((c) => c.method === 'PUT' && c.url === '/api/admin/settings/llm');
+// The resend runs after the typed phrase and a re-render; a loaded runner can take past waitFor's 1 s.
+const SLOW = { timeout: 5000 };
 
 async function editModel() {
   render(<SettingsPanel />);
@@ -72,9 +74,9 @@ describe('selection guards — H378', () => {
     expect(confirm.disabled).toBe(true);                                       // typed, like a money action
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: FABLE } });
     fireEvent.click(confirm);
-    await waitFor(() => expect(puts()).toHaveLength(2));
+    await waitFor(() => expect(puts()).toHaveLength(2), SLOW);
     expect(puts()[1].body).toEqual({ values: { claude_model: FABLE }, confirm_expensive: true });
-    await waitFor(() => expect(screen.queryByText(/save 1 change/)).toBeNull());   // saved, the edit is gone
+    await waitFor(() => expect(screen.queryByText(/save 1 change/)).toBeNull(), SLOW);   // saved, the edit is gone
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
@@ -104,7 +106,7 @@ describe('selection guards — H378', () => {
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: FABLE } });
     fireEvent.click(within(dialog).getByRole('button', { name: /choose it anyway/ }));
     const posts = () => calls.filter((c) => c.method === 'POST' && c.url === '/api/jobs');
-    await waitFor(() => expect(posts()).toHaveLength(2));
+    await waitFor(() => expect(posts()).toHaveLength(2), SLOW);
     expect(posts()[1].body.confirm_expensive).toBe(true);
     expect(posts()[1].body.options).toEqual({ model: FABLE });
     expect(posts()[1].body.blueprint).toBe('digest');

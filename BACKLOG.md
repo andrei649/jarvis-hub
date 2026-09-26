@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 Review round, batch 3 (H328, H380, H507, H350, H579): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
+
+  - **H328** (6 findings). A refusal quotes only the OS names Nerva knows and counts the rest, so no manifest text reaches a reply; the platform gate runs after the scope and trust gates, so `skill_view` never tells a hidden skill from a missing one; only code that would run is refused (a code-less skill goes to the model), and a bare command word matches only a skill that runs here; `skills_list` and the catalog past its cap log every hide; reading the turn's offer leaves nothing bound.
+  - **H380** (13 findings). OpenRouter is asked about its key at `/key` (its model list answers anyone); `check all providers` keeps a gateway's `OPENAI_API_KEY` away from api.openai.com; a 400 naming a bad key (Gemini, xAI) is `auth_failed`; a 404/405 proves nothing; the key is read as the router reads it; a key the 429 guard holds is `rate_limited` for the hold; concurrent callers share one request; the command center waits at most 4 s; a transient verdict lasts 30 s and never sends the owner to first run; the probe takes its backend's proxy setting; the hint names the provider; a changed base URL is probed afresh.
+  - **H507** (11 findings). Every rule is linear and every scan bounded in time, so a crafted megabyte no longer holds the event loop, and a cut scan says so; the gated write's answer and the pause reply carry the warnings; the card scans the file the write lands on; a package padded with assets is still scanned; `- run: |` blocks, wrapped and nested calls, more `child_process` and `createCipher` spellings, CR and U+2028 lines and shell dotfiles are read right; safe mode forces the switch back on.
+  - **H350** (12 findings). A lone carriage return is refused (the loader would read the lines it ends as one); the registry install and the import route answer 422 with the problems; a refusal or a generation's problems never outlive their call; a heading file framed by fences is read as headings; the zip install's folder is the validated name, never another skill's; the text import report names each rejected skill; repeated lines are one problem; the lint names an oversized file's real size; the bytes checked are the bytes written; a repeated key points at its last occurrence.
+  - **H579** (12 findings). The message stays as typed and the attachment reaches the model only in that turn's prompt: before, it reached commands, skills and memory as the owner's words. The file cannot close its fence and an injection is flagged; a line range never reads a line whole; the composer offers the reference types; an odd or denied path is a warning, not a 500; quoted paths, references after brackets and quotes, distinct-reference counting and the header's lines are right.
+
+  - **Seams.** H507's forced switch joins H275's list of safe-mode readers; H507 and H350 each reset `generate_skill`'s lists at its start (one reset now); two H507 size-cut tests pin the scan clocks, since a loaded runner cut the scan by time first, and H378's settings test gives the resend 5 s (a full vitest run took it past 1 s). The HUD bundle is rebuilt for the H380 panel and the H579 composer.
+  - **Mutation.** 151 mutants over the five fixes: 122 caught at once, 27 after 23 cases were added, 2 equivalent. H456's comma-listed `nerva.py` lines were recomputed by hand; the Hermes build queue drops its 41 closed rows (a one-line stub keeps each anchor the critic notes link to).
+
+  Tests: backend 17,277 → 17,439; vitest 1,699 → 1,702.
+
 - 2026-09-26 H689b a profile's credentials are its own (partial → equivalent for H689, #1207; headline 185 → 186/697).
 
   The review found that every profile still loaded the repo `.env` and the data-home `.env`, which hold the provider keys, the channel bot tokens, the admin token and the token keys. Now (`agents/core/env_provenance.py`):
@@ -276,13 +289,13 @@
 - 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
 
   The owner pasted file contents by hand; nothing expanded @-references. Now (`agents/core/context_refs.py`), as Hermes' context references:
-  - **Expanded.** `@file:path` and `@file:path#L10-40` (also `#L7`, `#L2-L3`, a quoted path) in what the owner sends on `/chat` and `/chat/stream` (the HUD and `nerva chat`; never a channel message) are attached under `--- Attached Context ---`, fenced as file content, not instructions.
-  - **Guarded.** Resolved through the file tools' FileScope (outside the roots, traversal, symlink escape and secret paths refused); 8 references, 64 KB each, 128 KB in all, counted in bytes; binary files skipped; every problem is a ⚠ line, never a failed message.
+  - **Expanded.** `@file:path` and `@file:path#L10-40` (also `#L7`, `#L2-L3`, a quoted path) in what the owner sends on `/chat` and `/chat/stream` (the HUD and `nerva chat`; never a channel message) are attached for the turn under `--- Attached Context ---`: the message stays as typed (commands, skills and memory never see the file) and the section follows it only in the model prompt, in a fence the file cannot close, flagged when it reads as an injection.
+  - **Guarded.** Resolved through the file tools' FileScope (outside the roots, traversal, symlink escape and secret paths refused); 8 references, 64 KB each, 128 KB in all, counted in bytes; binary files skipped; a line range never reads a line whole; every problem is a ⚠ line, never a failed message. The limit counts distinct references.
   - **Tainted.** A turn that attached anything raises its origin to untrusted recall, so an action planned from attached text escalates GRANT → QUEUE.
-  - **Completion.** `GET /api/context-refs?prefix=` lists in-scope files and folders (no secrets); the HUD composer shows them while an `@file:` is typed, Tab takes one.
+  - **Completion.** `GET /api/context-refs?prefix=` lists in-scope files and folders (no secrets); the HUD composer offers the reference types while `@` is typed, then the paths (quoted when spaced); Tab takes one.
 
   53 mutants: 49 caught, 4 equivalent. Test manual: GOV-277, GOV-278.
-  Tests: backend 16,126 → 16,170 (`tests/test_h579_context_refs.py` 44); vitest 1,507 → 1,510 (`context-refs.test.tsx`).
+  Tests: backend 16,126 → 16,170 (`tests/test_h579_context_refs.py` 44, 70 after the review round); vitest 1,507 → 1,510 (`context-refs.test.tsx`, 6 after the review round).
 
 - 2026-09-26 H117 a burst of messages is one turn (missing → equivalent, #1207; headline 165 → 166/697).
 
@@ -327,30 +340,30 @@
 - 2026-09-26 H507 the agent is warned when code it writes contains a known-dangerous pattern (missing → equivalent, #1207; headline 161 → 162/697).
 
   Nothing looked at what the model wrote: `file_write` returned ok/path/bytes, the approval card only named instruction files, and a skill install checked contracts and signatures, never code. Now (`agents/core/code_guidance.py`), warn-only:
-  - **The table.** 25 rules by file type plus a GitHub Actions check: pickle/dill/marshal, `yaml.load` without SafeLoader, `torch.load` without `weights_only`, `os.system`, `shell=True`, `eval`/`exec`/`new Function`, `child_process.exec`, a Go shell `exec.Command`, SQL f-strings, `mktemp`, innerHTML/`document.write`/`dangerouslySetInnerHTML`, ECB, `createCipher`, TLS verification off (Python/Node/Go), XXE flags, a remote `<script>` without SRI, and `${{ github.event.* }}` inside a `run:` step. Guards keep `model.eval()`, SafeLoader, `regex.exec`, comments and non-code files quiet.
-  - **Where it shows.** The `file_write` approval card (`code_warnings`, count, a title notice — never a class, so H506's binding is untouched), the write result the model reads (“warnings, not refusals”), and the result of a marketplace install (`code_warnings` on the route) or a generated skill. Nothing is ever blocked; a failing scan never fails a write. Switch: `security.code_guidance`.
+  - **The table.** 26 rules by file type plus a GitHub Actions check (every rule linear; a scan stops at 0.5 s, a skill folder at 2 s, and says when it was cut): pickle/dill/marshal, `yaml.load` without SafeLoader, `torch.load` without `weights_only`, `os.system`, `shell=True`, `eval`/`exec`/`new Function`, `child_process.exec`, a Go shell `exec.Command`, SQL f-strings, `mktemp`, innerHTML/`document.write`/`dangerouslySetInnerHTML`, ECB, `createCipher`, TLS verification off (Python/Node/Go), XXE flags, a remote `<script>` without SRI, and `${{ github.event.* }}` inside a `run:` step. Guards keep `model.eval()`, SafeLoader, `regex.exec`, comments and non-code files quiet.
+  - **Where it shows.** The `file_write` approval card (`code_warnings`, count, a title notice — never a class, so H506's binding is untouched; the file the write lands on is scanned too), the gated call's answer and the tool loop's pause reply, the write result the model reads (“warnings, not refusals”), and the result of a marketplace install (`code_warnings` on the route) or a generated skill. Nothing is ever blocked; a failing scan never fails a write. Switch: `security.code_guidance`.
 
   46 mutants: 44 caught, 2 equivalent. Test manual: GOV-267, GOV-268.
-  Tests: backend 15,796 → 15,879 (`tests/test_h507_code_guidance.py` 83); vitest 1,506.
+  Tests: backend 15,796 → 15,879 (`tests/test_h507_code_guidance.py` 83, 136 after the review round); vitest 1,506.
 
 - 2026-09-26 H380 a configured cloud key is proven to work before a turn finds out (missing → equivalent, #1207; headline 160 → 161/697).
 
   "Configured" meant a key variable was non-empty, and a cloud route was "ready" because the router had a key — a wrong or revoked key was discovered by the first failed turn. Now (`agents/core/llm/provider_probe.py`):
-  - **The probe.** One authenticated model-list GET per cloud provider with the key the hub would use (pool first), through `llm_async_client` (egress-ledgered; the host-protocol mandate applies). Verdicts: ok, no_listing, auth_failed, forbidden, rate_limited, error, unreachable, refused, not_configured, not_cloud. Never the key or the body; cached 300 s per key, a forced re-check throttled for 30 s.
-  - **Where.** `POST /api/admin/llm/providers/probe` (admin; one or all, `force`), the Console's Provider Check panel (probes only when asked), and the command-center model block: a selected cloud route is runnable only when its provider accepts the route's key, otherwise `cloud_<verdict>` — which `nerva doctor` (`runtime_resolves`) and `nerva status` now report.
+  - **The probe.** One authenticated GET per cloud provider (the model list; OpenRouter's `/key`, since its list answers anyone) with the key the hub would use (a pool only for Anthropic and Gemini, as the router reads it), through `llm_async_client` (egress-ledgered; the host-protocol mandate applies). Verdicts: ok, no_listing, auth_failed, forbidden, rate_limited, error, unreachable, refused, not_configured, not_cloud. Only `ok` proves the key. Never the key or the body; cached 300 s per key and URL (a transient verdict 30 s), one request shared by concurrent callers, a forced re-check throttled for 30 s.
+  - **Where.** `POST /api/admin/llm/providers/probe` (admin; one or all, `force`), the Console's Provider Check panel (probes only when asked), and the command-center model block: a selected cloud route is not runnable when its provider refuses the route's key, unknown when the provider said nothing about it, and runnable through a 429 (`cloud_<verdict>`; the command center waits at most 4 s) — which `nerva doctor` (`runtime_resolves`) and `nerva status` now report.
 
   38 mutants, all caught. Test manual: ENV-173, ENV-174.
-  Tests: backend 15,766 → 15,796 (`tests/test_h380_provider_probe.py` 30); vitest 1,503 → 1,506 (`provider-check-panel.test.tsx` 3).
+  Tests: backend 15,766 → 15,796 (`tests/test_h380_provider_probe.py` 30; `test_h380b_provider_probe_review.py` 35 after the review round); vitest 1,503 → 1,506 (`provider-check-panel.test.tsx` 3).
 
 - 2026-09-26 H328 a skill is shown where it makes sense: the host OS, the environment, the channel, and the tools this turn is offered (missing → equivalent, #1207; headline 159 → 160/697).
 
   H327 kept `platforms`, `environments` and `metadata.hermes.*`, but nothing read them. Now (`agents/core/skills/visibility.py`), Hermes' four gates, split the same way:
-  - **Hard — `platforms`.** A skill for another OS is `unsupported` here: left out of every offer, `skill_view` answers `skill_unsupported` (`readiness_status: unsupported`), its command is refused; `GET /skills` and the Skill Switches panel say so. Termux counts as linux + android.
+  - **Hard — `platforms`.** A skill for another OS is `unsupported` here: left out of every offer, `skill_view` answers `skill_unsupported` (`readiness_status: unsupported`), its command words are not matched and `skill:<name>` is refused when it has code to run; `GET /skills` and the Skill Switches panel say so. Termux counts as linux + android.
   - **Soft — hidden from the catalog and `skills_list` only; named explicitly, it still works.** `environments` (docker/container, s6, `kanban` = a turn with no human, plus `JARVIS_SKILL_ENVIRONMENTS`); `session_platforms` per channel (`cli` = HUD/voice; an unbound turn is not gated); `requires_tools/toolsets` and `fallback_for_tools/toolsets` against the tools this turn is offered (`AgentToolRuntime.offered_names`, bound around the catalog; the tool loop's own offer inside it; not applied when unknown).
   - Every hide is logged once per skill and gate. The unbound principal's `unknown` channel now counts as no channel (also for H329's switches).
 
   42 mutants, all caught. Test manual: GOV-265, GOV-266.
-  Tests: backend 15,733 → 15,766 (`tests/test_h328_skill_visibility.py` 33); vitest 1,503 (panel case extended).
+  Tests: backend 15,733 → 15,766 (`tests/test_h328_skill_visibility.py` 33, 40 after the review round); vitest 1,503 (panel case extended).
 
 - 2026-09-25 H329 a skill can be switched off without uninstalling it, everywhere or on one channel (missing → equivalent, #1207; headline 158 → 159/697).
 
@@ -445,14 +458,14 @@
   A malformed SKILL.md used to fall through to the heading parser and register under its folder's name with an empty description. `agents/core/skills/validate.py` now checks both dialects the loader reads:
   - **Frontmatter** (agentskills.io / Hermes): a closed fence, a YAML mapping, a folder-safe `name` of at most 64 characters, a `description` of at most 1,024, and a body.
   - **Headings** (Nerva's code-skill format): `# Name` and a `> description`, and never a second of either, since the loader takes the last one. A body is advised, not required: the commands may live in `main.py`.
-  - **Every document**: at most 64 KiB (what `skill_view` serves), UTF-8, no NUL.
-  - **Every write path runs it** and names each problem with its field and line: the import (GitHub, manifest and local, dry runs included, before any backup or marker), marketplace publish and zip install (422 `invalid_skill_md`), `generate_skill`, `skill_propose` (`skill_propose_invalid`), the background review, and the apply of a proposal recorded before the check.
+  - **Every document**: at most 64 KiB (what `skill_view` serves), UTF-8, no NUL, and no lone carriage return (the loader splits on a line feed alone).
+  - **Every write path runs it** and names each problem with its field and line: the import (GitHub, manifest and local, dry runs included, before any backup or marker), marketplace publish, zip and registry install (422 `invalid_skill_md`; the zip install's folder is the validated name, never another skill's), the import route (422), `generate_skill`, `skill_propose` (`skill_propose_invalid`), the background review, and the apply of a proposal recorded before the check.
   - **`nerva skills lint PATH…`** adds advice: unknown keys, a short or "when"-less description, name vs folder, a long body, no section, an open fence, trailing spaces, home-folder paths. It exits 1 on an error (or on advice with `--strict`), and `--json` is available.
   - **Found on the way:** a generated skill's name had no length cap, so one long word in the task text made a folder name the filesystem refused. It is capped at 48 characters before its stamp.
   - **Fixtures:** those that wrote a SKILL.md with no description, or proposed a whole file with no frontmatter, now write real documents.
 
   46 mutants, 45 caught (five after cases were added), one equivalent. 74 rows re-stamped; H456's list and H477's `(:341)` recomputed by hand. Test manual: GOV-259, GOV-260.
-  Tests: backend 15,371 → 15,426 (`tests/test_h350_skill_validator.py` 54, `test_h318c` +1).
+  Tests: backend 15,371 → 15,426 (`tests/test_h350_skill_validator.py` 54, `test_h318c` +1; after the review round 52, plus `test_h350b_skill_validator_review.py` 43).
 
 - 2026-09-25 H157 first adversarial review round (stays equivalent, #1207; headline stays 150/697).
 
