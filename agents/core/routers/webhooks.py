@@ -20,6 +20,7 @@ receiver are read again after the turn, before anything is pushed.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import math
@@ -547,34 +548,61 @@ async def trigger_webhook(hook_id: str, request: Request):
         return nocache_json({"error": "webhook disabled"}, status_code=403)
 
     # H659 — reserved after authentication (a caller without the token or secret cannot
-    # burn a key) and before the delivery is counted, run or sent.
-    started = idempotency.begin(request, f"webhook:{hook_id}", raw)
+    # burn a key) and before the delivery is counted, run or sent; off the event loop.
+    started = await asyncio.to_thread(idempotency.begin, request, f"webhook:{hook_id}", raw)
     if started.refusal is not None:
         return started.refusal
     if started.replay is not None:
         return idempotency.replayed(started.replay.ref or {}, started.replay.status_code or 200)
+    # A turn can outlast the stale window: the claim stays fresh while it runs, so a retry
+    # waits for it rather than running a second one beside it.
+    kept = started.claim.kept_alive() if started.claim is not None else contextlib.nullcontext()
     try:
-        response = await _run_delivery(orch, store, hook, live, hook_id, raw, request)
+        async with kept:
+            response = await _run_delivery(orch, store, hook, live, hook_id, raw, request)
     except BaseException:
         if started.claim is not None:
             started.claim.release()     # the delivery did not finish: its retry runs
         raise
     if started.claim is not None:
-        if response.status_code >= 500:
-            started.claim.release()
+        if _attempt_failed(store, hook, live, response):
+            await asyncio.to_thread(started.claim.release)
         else:
-            started.claim.done(_public_outcome(response), response.status_code)
+            await asyncio.to_thread(started.claim.done, _public_outcome(response), response.status_code)
     return response
+
+
+def _answer_body(response) -> dict:
+    try:
+        body = json.loads(response.body)
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _attempt_failed(store, hook: dict, live: dict, response) -> bool:
+    """Whether a delivery did not do what it was sent for, so its retry must run: a 5xx, an
+    agent turn that produced no answer (a failed model call is answered as text, never
+    raised), or a deliver-only push that did not go out. A turn that answered is kept even
+    when its push failed: a retry would run a second turn."""
+    if response.status_code >= 500:
+        return True
+    body = _answer_body(response)
+    if "skipped" in body:
+        return False
+    if store.delivers_only(live):
+        delivery = body.get("delivery")
+        return isinstance(delivery, dict) and delivery.get("ok") is False
+    if hook["target_type"] == "agent":
+        from agents.core.orchestrator import is_failed_turn_reply
+
+        return is_failed_turn_reply(hook["target"], body.get("response"))
+    return False
 
 
 def _public_outcome(response) -> dict:
     """What a replayed delivery answers: whether it ran and where, never its reply or steps."""
-    try:
-        body = json.loads(response.body)
-    except Exception:
-        body = {}
-    if not isinstance(body, dict):
-        body = {}
+    body = _answer_body(response)
     return {k: body[k] for k in ("ok", "target", "skipped", "error") if isinstance(body.get(k), (bool, str))}
 
 

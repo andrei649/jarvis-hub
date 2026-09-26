@@ -4,6 +4,7 @@ Opt-in, allowlisted, approval-gated. The public routes (agent-card, inbound task
 authenticate by peer HMAC, not a user token; management routes are admin-gated.
 """
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -70,7 +71,7 @@ async def a2a_receive_task(request: Request):
     # second inbox row. The key is reserved only for an authenticated peer, in its scope.
     started = idempotency.Begin()
     if registry.verify_peer(peer_id, raw, signature):
-        started = idempotency.begin(request, f"a2a:{peer_id}", raw)
+        started = await asyncio.to_thread(idempotency.begin, request, f"a2a:{peer_id}", raw)
         if started.refusal is not None:
             return started.refusal
         if started.replay is not None:
@@ -91,7 +92,7 @@ async def a2a_receive_task(request: Request):
             started.claim.release()
         raise
     if started.claim is not None:
-        started.claim.done({k: receipt.get(k) for k in ("id", "status", "accepted")})
+        await asyncio.to_thread(started.claim.done, {k: receipt.get(k) for k in ("id", "status", "accepted")})
     return nocache_json(receipt)
 
 

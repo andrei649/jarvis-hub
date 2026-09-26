@@ -105,6 +105,17 @@ def _is_failed_agent_reply(agent_id: str | None, response: object) -> bool:
     )
 
 
+def is_failed_turn_reply(agent_id: str | None, response: object) -> bool:
+    """Whether a turn's reply says it produced no answer: a failure marker or degraded
+    reply, the no-model line, or a turn that was refused. A failed model call is answered
+    as one of these, never raised, so a caller that must know whether the turn ran asks
+    here (H659: a webhook delivery gives its idempotency key back)."""
+    from .session_continuation import CONTINUATION_REFUSED_REPLY
+
+    return _is_failed_agent_reply(agent_id, response) or response in (
+        NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY, CONTINUATION_REFUSED_REPLY)
+
+
 def _log_task_result(task: "asyncio.Task") -> None:
     """B6: done-callback so a fire-and-forget task's exception isn't swallowed."""
     try:
@@ -246,6 +257,12 @@ _TURN_LEASE_MAX_WAIT_SECONDS = 180.0
 _TURN_LEASE_TABLE_LIMIT = 1024
 TURN_BUSY_REPLY = (
     "I'm still working on your previous message — send that again in a moment."
+)
+# First-run UX: what a turn answers when no model is loaded (see `_call_agents_parallel`).
+NO_MODEL_REPLY = (
+    "No language model is loaded yet. Start LM Studio (or Ollama) "
+    "and load a model, then try again — or enable DEMO mode in the "
+    "HUD to preview the interface."
 )
 _held_turn_leases: contextvars.ContextVar = contextvars.ContextVar(
     "nerva_held_turn_leases", default=frozenset()
@@ -4074,11 +4091,7 @@ class Orchestrator:
                 # nothing. Return one friendly, actionable line instead — on every
                 # channel (web/telegram/discord/CLI), not just the HUD.
                 if "No LLM backend available" in str(e):
-                    return agent_id, (
-                        "No language model is loaded yet. Start LM Studio (or Ollama) "
-                        "and load a model, then try again — or enable DEMO mode in the "
-                        "HUD to preview the interface."
-                    ), 0.0, current_action_origin()
+                    return agent_id, NO_MODEL_REPLY, 0.0, current_action_origin()
                 return agent_id, f"[{agent_id} error: {e}]", 0.0, current_action_origin()
 
         valid_ids = [aid for aid in agent_ids if aid in self.agents]

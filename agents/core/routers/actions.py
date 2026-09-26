@@ -60,7 +60,7 @@ async def actions_request(req: Request):
         body = {}
     if not (body or {}).get("tool"):
         return JSONResponse({"error": "tool required"}, status_code=400)
-    started = idempotency.begin(req, "actions", raw)
+    started = await asyncio.to_thread(idempotency.begin, req, "actions", raw)
     if started.refusal is not None:
         return started.refusal
     if started.replay is not None:
@@ -73,7 +73,7 @@ async def actions_request(req: Request):
             started.claim.release()
         raise
     if started.claim is not None:
-        started.claim.done({"action_id": action.get("id")})
+        await asyncio.to_thread(started.claim.done, {"action_id": action.get("id")})
     return nocache_json({"ok": True, "action": action})
 
 

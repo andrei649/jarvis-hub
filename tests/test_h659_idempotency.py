@@ -68,17 +68,18 @@ def test_the_fingerprint_cannot_be_shifted_across_its_parts():
 # ── the store ────────────────────────────────────────────────────────────────────
 
 def test_a_first_request_reserves_and_a_retry_waits_until_it_is_done(store):
-    assert store.reserve("s", "k", "fp").state == "new"
+    first = store.reserve("s", "k", "fp")
+    assert first.state == "new" and first.attempt
     assert store.reserve("s", "k", "fp").state == "in_progress"
-    assert store.complete("s", "k", "fp", {"id": "a1"}, 202) is True
+    assert store.complete("s", "k", "fp", {"id": "a1"}, 202, attempt=first.attempt) is True
     got = store.reserve("s", "k", "fp")
     assert (got.state, got.ref, got.status_code) == ("replay", {"id": "a1"}, 202)
 
 
 def test_the_same_key_for_a_different_request_is_a_conflict(store):
-    store.reserve("s", "k", "fp")
+    first = store.reserve("s", "k", "fp")
     assert store.reserve("s", "k", "other").state == "conflict"
-    store.complete("s", "k", "fp", {"id": "a1"})
+    store.complete("s", "k", "fp", {"id": "a1"}, attempt=first.attempt)
     assert store.reserve("s", "k", "other").state == "conflict"
 
 
@@ -89,18 +90,20 @@ def test_two_callers_never_share_a_key(store):
 
 
 def test_only_a_pending_reservation_with_its_fingerprint_is_completed_or_released(store):
-    store.reserve("s", "k", "fp")
-    assert store.complete("s", "k", "other", {"id": 1}) is False
-    assert store.release("s", "k", "other") is False
-    assert store.complete("s", "k", "fp", {"id": 1}) is True
-    assert store.complete("s", "k", "fp", {"id": 2}) is False          # done once
-    assert store.release("s", "k", "fp") is False                     # a finished run stays
+    a = store.reserve("s", "k", "fp").attempt
+    assert store.complete("s", "k", "other", {"id": 1}, attempt=a) is False
+    assert store.release("s", "k", "other", attempt=a) is False
+    assert store.complete("s", "k", "fp", {"id": 1}, attempt="another attempt") is False
+    assert store.release("s", "k", "fp", attempt="another attempt") is False
+    assert store.complete("s", "k", "fp", {"id": 1}, attempt=a) is True
+    assert store.complete("s", "k", "fp", {"id": 2}, attempt=a) is False          # done once
+    assert store.release("s", "k", "fp", attempt=a) is False                     # a finished run stays
     assert store.reserve("s", "k", "fp").ref == {"id": 1}
 
 
 def test_a_released_key_runs_again(store):
-    store.reserve("s", "k", "fp")
-    assert store.release("s", "k", "fp") is True
+    a = store.reserve("s", "k", "fp").attempt
+    assert store.release("s", "k", "fp", attempt=a) is True
     assert store.count() == 0
     assert store.reserve("s", "k", "fp").state == "new"
 
@@ -113,14 +116,92 @@ def test_an_abandoned_first_attempt_is_taken_over_after_the_stale_window(store):
     assert store.reserve("s", "k", "fp", now=1_000.0 + idem.STALE_PENDING_SECONDS + 1).state == "in_progress"
 
 
+def test_a_slow_first_attempt_cannot_undo_the_attempt_that_took_over(store):
+    first = store.reserve("s", "k", "fp", now=1_000.0)
+    second = store.reserve("s", "k", "fp", now=1_000.0 + idem.STALE_PENDING_SECONDS)
+    assert second.state == "new" and second.attempt != first.attempt
+    # the first attempt fails late: the key stays with the second, and a retry still waits
+    assert store.release("s", "k", "fp", attempt=first.attempt) is False
+    assert store.reserve("s", "k", "fp", now=1_000.0 + idem.STALE_PENDING_SECONDS + 1).state == "in_progress"
+    # or it finishes late: the outcome kept is the second attempt's
+    assert store.complete("s", "k", "fp", {"id": "first"}, attempt=first.attempt) is False
+    assert store.complete("s", "k", "fp", {"id": "second"}, attempt=second.attempt) is True
+    assert store.reserve("s", "k", "fp", now=1_000.0 + idem.STALE_PENDING_SECONDS + 2).ref == {"id": "second"}
+
+
+def test_an_attempt_that_keeps_its_reservation_alive_is_never_taken_over(store):
+    first = store.reserve("s", "k", "fp", now=1_000.0)
+    assert store.touch("s", "k", "fp", attempt=first.attempt, now=1_500.0) is True
+    assert store.reserve("s", "k", "fp", now=1_000.0 + idem.STALE_PENDING_SECONDS).state == "in_progress"
+    assert store.touch("s", "k", "fp", attempt="another attempt") is False
+    store.complete("s", "k", "fp", {"id": 1}, attempt=first.attempt)
+    assert store.touch("s", "k", "fp", attempt=first.attempt) is False      # a finished run is not pending
+
+
+async def test_a_claim_keeps_its_reservation_alive_while_the_request_runs(store, monkeypatch):
+    import asyncio
+    import time
+
+    monkeypatch.setattr(idem, "HEARTBEAT_SECONDS", 0.01)
+    stale = time.time() - idem.STALE_PENDING_SECONDS - 1
+    got = store.reserve("s", "k", "fp", now=stale)
+    async with idem.Claim(store, "s", "k", "fp", got.attempt).kept_alive():
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            with sqlite3.connect(store.path) as conn:
+                if conn.execute("SELECT updated_at FROM idempotency").fetchone()[0] > stale:
+                    break
+    assert store.reserve("s", "k", "fp").state == "in_progress"                     # a retry waits
+    assert store.complete("s", "k", "fp", {"id": 1}, attempt=got.attempt) is True   # and the first still holds it
+
+
+def test_a_file_written_before_attempts_were_fenced_is_upgraded(tmp_path):
+    with sqlite3.connect(tmp_path / "idem.db") as conn:
+        conn.execute(
+            "CREATE TABLE idempotency (scope TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL,"
+            " state TEXT NOT NULL, ref TEXT, status_code INTEGER, created_at REAL NOT NULL,"
+            " updated_at REAL NOT NULL, PRIMARY KEY (scope, key))")
+        conn.execute("INSERT INTO idempotency VALUES ('s', 'k', 'fp', 'done', '{\"id\": 1}', 200, ?, ?)",
+                     (9e12, 9e12))
+    s = IdempotencyStore(tmp_path / "idem.db")
+    assert s.reserve("s", "k", "fp").ref == {"id": 1}
+    got = s.reserve("s", "k2", "fp")
+    assert s.complete("s", "k2", "fp", {"id": 2}, attempt=got.attempt) is True
+
+
+def test_the_expiry_sweep_is_a_bounded_batch_on_an_index(store):
+    rows = [("s", f"old-{i}", "fp", "done", "{}", 200, float(i), float(i)) for i in range(3 * idem.PURGE_BATCH)]
+    with sqlite3.connect(store.path) as conn:
+        conn.executemany("INSERT INTO idempotency (scope, key, fingerprint, state, ref, status_code, created_at,"
+                         " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        plan = conn.execute("EXPLAIN QUERY PLAN SELECT rowid FROM idempotency WHERE created_at < 1"
+                            " ORDER BY created_at").fetchall()
+    assert "INDEX" in " ".join(str(step[-1]) for step in plan)
+    now = idem.TTL_SECONDS + 3 * idem.PURGE_BATCH
+    assert store.reserve("s", "new", "fp", now=now).state == "new"
+    assert store.count() == 2 * idem.PURGE_BATCH + 1         # one batch per request, never the whole day
+    store.reserve("s", "newer", "fp", now=now)
+    assert store.count() == idem.PURGE_BATCH + 2
+
+
+def test_an_expired_key_runs_again_before_the_sweep_reaches_it(store):
+    rows = [("s", f"old-{i}", "fp", "done", "{}", 200, 1.0, 1.0) for i in range(idem.PURGE_BATCH)]
+    with sqlite3.connect(store.path) as conn:
+        conn.executemany("INSERT INTO idempotency (scope, key, fingerprint, state, ref, status_code, created_at,"
+                         " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    a = store.reserve("s", "k", "fp", now=1_000.0).attempt
+    store.complete("s", "k", "fp", {"id": 1}, attempt=a)
+    assert store.reserve("s", "k", "fp", now=1_000.0 + idem.TTL_SECONDS + 1).state == "new"
+
+
 def test_a_stale_reservation_for_a_different_request_is_still_a_conflict(store):
     store.reserve("s", "k", "fp", now=0.0)
     assert store.reserve("s", "k", "other", now=10 * idem.STALE_PENDING_SECONDS).state == "conflict"
 
 
 def test_rows_expire_after_the_ttl(store):
-    store.reserve("s", "k", "fp", now=5_000.0)
-    store.complete("s", "k", "fp", {"id": 1})
+    a = store.reserve("s", "k", "fp", now=5_000.0).attempt
+    store.complete("s", "k", "fp", {"id": 1}, attempt=a)
     assert store.reserve("s", "k", "fp", now=5_000.0 + idem.TTL_SECONDS - 1).state == "replay"
     assert store.reserve("s", "k", "fp", now=5_000.0 + idem.TTL_SECONDS + 1).state == "new"
     assert idem.TTL_SECONDS == 86_400
@@ -128,8 +209,8 @@ def test_rows_expire_after_the_ttl(store):
 
 def test_a_reservation_survives_a_restart(tmp_path):
     first = IdempotencyStore(tmp_path / "idem.db")
-    first.reserve("s", "k", "fp")
-    first.complete("s", "k", "fp", {"action_id": "abc"})
+    a = first.reserve("s", "k", "fp").attempt
+    first.complete("s", "k", "fp", {"action_id": "abc"}, attempt=a)
     again = IdempotencyStore(tmp_path / "idem.db")
     assert first.durable and again.durable
     assert again.reserve("s", "k", "fp").ref == {"action_id": "abc"}
@@ -206,17 +287,17 @@ def test_the_default_store_lives_in_the_data_folder(tmp_path, monkeypatch):
 
 
 def test_only_a_reference_is_stored_never_a_body(store, tmp_path):
-    store.reserve("s", "k", "fp")
+    a = store.reserve("s", "k", "fp").attempt
     with pytest.raises(ValueError):
-        store.complete("s", "k", "fp", {"reply": "x" * idem.MAX_REF_BYTES})
-    store.complete("s", "k", "fp", {"id": "a1"})
+        store.complete("s", "k", "fp", {"reply": "x" * idem.MAX_REF_BYTES}, attempt=a)
+    store.complete("s", "k", "fp", {"id": "a1"}, attempt=a)
     rows = sqlite3.connect(tmp_path / "idem.db").execute("SELECT * FROM idempotency").fetchall()
     assert rows[0][:6] == ("s", "k", "fp", "done", '{"id": "a1"}', 200)
 
 
 def test_an_unreadable_reference_replays_as_empty(store, tmp_path):
-    store.reserve("s", "k", "fp")
-    store.complete("s", "k", "fp", {"id": 1})
+    a = store.reserve("s", "k", "fp").attempt
+    store.complete("s", "k", "fp", {"id": 1}, attempt=a)
     with sqlite3.connect(tmp_path / "idem.db") as conn:
         conn.execute("UPDATE idempotency SET ref='not json'")
     assert store.reserve("s", "k", "fp").ref == {}
@@ -313,10 +394,26 @@ def test_a_claim_never_raises_when_the_store_fails(caplog):
         def release(self, *a, **k):
             raise RuntimeError("gone")
 
-    claim = idem.Claim(_Broken(), "s", "k", "fp")
+    claim = idem.Claim(_Broken(), "s", "k", "fp", "a1")
     claim.done({"id": 1})
     claim.release()
     assert sum("idempotency" in r.getMessage() for r in caplog.records) == 2
+
+
+def test_an_outcome_that_could_not_be_written_is_written_again(store, monkeypatch):
+    got = store.reserve("s", "k", "fp")
+    real, tries = store.complete, []
+
+    def locked_twice(*a, **k):
+        tries.append(1)
+        if len(tries) < 3:
+            raise sqlite3.OperationalError("database is locked")
+        return real(*a, **k)
+
+    monkeypatch.setattr(store, "complete", locked_twice)
+    idem.Claim(store, "s", "k", "fp", got.attempt).done({"id": 1})
+    assert len(tries) == 3
+    assert store.reserve("s", "k", "fp").ref == {"id": 1}      # a retry replays, never runs again
 
 
 def test_a_replay_is_marked_as_such():
@@ -562,6 +659,166 @@ def test_the_outcome_kept_for_a_replay_is_public_only():
     assert _public_outcome(JSONResponse({"ok": 1, "target": None, "skipped": "why"})) == {"skipped": "why"}
 
 
+@pytest.fixture
+def real_turn(monkeypatch, tmp_path, store):
+    """The hub with the orchestrator's real turn: only the agent's model call is replaced.
+    The orchestrator answers a failed model call as text instead of raising (review F1)."""
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.app_state import get_orch
+    from agents.core.routers import webhooks as router
+    from agents.core.webhooks import WebhookStore
+
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-admin-secret")
+    monkeypatch.setattr(router, "_webhook_store", WebhookStore(path=tmp_path / "wh.json"))
+    with TestClient(web.app, raise_server_exceptions=False) as client:
+        orch = get_orch()
+        agent = orch.agents.get("jarvis")
+        if agent is None:
+            pytest.skip("the jarvis agent is not loaded on this hub")
+        calls, state = [], {"answer": "all clear"}
+
+        async def process(text, context, **kwargs):
+            calls.append(text)
+            if isinstance(state["answer"], BaseException):
+                raise state["answer"]
+            return state["answer"]
+
+        monkeypatch.setattr(agent, "process", process)
+        yield client, calls, state
+
+
+@pytest.mark.parametrize("failure", [
+    RuntimeError("connection refused"),                  # "[jarvis error: connection refused]"
+    TimeoutError(),                                      # "[jarvis timeout]"
+    RuntimeError("No LLM backend available"),            # the no-model line
+    "⚠️ I can't reach the local model right now.",       # a degraded backend reply
+], ids=["error", "timeout", "no-model", "degraded"])
+def test_a_turn_the_model_failed_gives_the_key_back(real_turn, store, failure):
+    client, calls, state = real_turn
+    hook = _hook(client)
+    state["answer"] = failure
+    first = _deliver(client, hook, "build failed", key="gh-1")
+    assert first.status_code == 200 and len(calls) == 1
+    assert store.count() == 0
+    state["answer"] = "all clear"
+    retry = _deliver(client, hook, "build failed", key="gh-1")
+    assert idem.REPLAYED_HEADER not in retry.headers and retry.json()["response"] == "all clear"
+    assert len(calls) == 2
+    again = _deliver(client, hook, "build failed", key="gh-1")
+    assert again.headers[idem.REPLAYED_HEADER] == "true" and len(calls) == 2
+
+
+def test_a_turn_that_answered_is_kept(real_turn, store):
+    client, calls, _state = real_turn
+    hook = _hook(client)
+    assert _deliver(client, hook, "x", key="k").json()["response"] == "all clear"
+    assert _deliver(client, hook, "x", key="k").headers[idem.REPLAYED_HEADER] == "true"
+    assert len(calls) == 1
+
+
+def test_a_deliver_only_push_that_failed_gives_the_key_back(hub, store, monkeypatch):
+    from agents.core.routers import webhooks as router
+
+    client, turns, _state = hub
+    hook = _hook(client, deliver="telegram", deliver_only=True)
+    sent = []
+
+    async def push(orch, store_, live, text, event, *, in_session):
+        sent.append(text)
+        if len(sent) == 1:
+            return {"channel": "telegram", "ok": False, "reason": "telegram is down"}
+        return {"channel": "telegram", "ok": True}
+
+    monkeypatch.setattr(router, "_push", push)
+    first = _deliver(client, hook, "x", key="k")
+    assert first.status_code == 200 and first.json()["delivery"]["ok"] is False
+    retry = _deliver(client, hook, "x", key="k")
+    assert idem.REPLAYED_HEADER not in retry.headers and retry.json()["delivery"]["ok"] is True
+    again = _deliver(client, hook, "x", key="k")
+    assert again.headers[idem.REPLAYED_HEADER] == "true"
+    assert sent == ["x", "x"] and turns == []
+
+
+def test_a_slow_delivery_keeps_its_key_alive(hub, store, monkeypatch):
+    import asyncio
+
+    from agents.core.app_state import get_orch
+
+    client, _turns, _state = hub
+    monkeypatch.setattr(idem, "HEARTBEAT_SECONDS", 0.01)
+    hook = _hook(client)
+    seen = []
+
+    async def slow_turn(text, **kwargs):
+        with sqlite3.connect(store.path) as conn:        # as if the turn had run for an hour
+            conn.execute("UPDATE idempotency SET updated_at = 0")
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            with sqlite3.connect(store.path) as conn:
+                seen.append(conn.execute("SELECT updated_at FROM idempotency").fetchone()[0])
+            if seen[-1] > 0:
+                break
+        return "done"
+
+    monkeypatch.setattr(get_orch(), "handle_input", slow_turn)
+    assert _deliver(client, hook, "x", key="k").status_code == 200
+    assert seen[-1] > 0
+
+
+def _store_calls_on_the_loop(store, monkeypatch) -> list:
+    import asyncio
+
+    on_loop = []
+
+    def spied(name, real):
+        def spy(*a, **k):
+            try:
+                asyncio.get_running_loop()
+                on_loop.append(name)
+            except RuntimeError:
+                pass
+            return real(*a, **k)
+        return spy
+
+    for name in ("reserve", "complete"):
+        monkeypatch.setattr(store, name, spied(name, getattr(store, name)))
+    return on_loop
+
+
+def test_a_delivery_never_waits_on_the_store_on_the_event_loop(hub, store, monkeypatch):
+    client, _turns, _state = hub
+    hook = _hook(client)
+    on_loop = _store_calls_on_the_loop(store, monkeypatch)
+    _deliver(client, hook, "x", key="k")
+    assert _deliver(client, hook, "x", key="k").headers[idem.REPLAYED_HEADER] == "true"
+    assert on_loop == []
+
+
+def test_an_action_request_never_waits_on_the_store_on_the_event_loop(actions, store, monkeypatch):
+    client, _q = actions
+    on_loop = _store_calls_on_the_loop(store, monkeypatch)
+    client.post("/api/actions/request", json={"tool": "a"}, headers={idem.HEADER: "k"})
+    assert client.post("/api/actions/request", json={"tool": "a"}, headers={idem.HEADER: "k"}).json()["replayed"]
+    assert on_loop == []
+
+
+def test_a_turn_that_ran_is_kept_even_when_its_push_failed(hub, store, monkeypatch):
+    from agents.core.routers import webhooks as router
+
+    client, turns, _state = hub
+    hook = _hook(client, deliver="telegram")
+
+    async def push(orch, store_, live, text, event, *, in_session):
+        return {"channel": "telegram", "ok": False, "reason": "telegram is down"}
+
+    monkeypatch.setattr(router, "_push", push)
+    _deliver(client, hook, "x", key="k")
+    again = _deliver(client, hook, "x", key="k")
+    assert again.headers[idem.REPLAYED_HEADER] == "true" and turns == ["x"]   # a retry is not a second turn
+
+
 # ── POST /api/a2a/task ───────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -669,3 +926,12 @@ def test_the_receipt_kept_is_the_public_one(a2a, tmp_path):
     rows = sqlite3.connect(tmp_path / "idem.db").execute("SELECT scope, ref FROM idempotency").fetchall()
     assert rows[0][0] == "a2a:alice" and "do not keep" not in rows[0][1]
     assert set(json.loads(rows[0][1])) == {"id", "status", "accepted"}
+
+
+def test_a_peer_task_never_waits_on_the_store_on_the_event_loop(a2a, store, monkeypatch):
+    client, registry = a2a
+    peer = registry.add_peer("alice")
+    on_loop = _store_calls_on_the_loop(store, monkeypatch)
+    _send(client, peer, {"task": {}}, key="k")
+    assert _send(client, peer, {"task": {}}, key="k").headers[idem.REPLAYED_HEADER] == "true"
+    assert on_loop == []
