@@ -360,6 +360,31 @@ async def test_a_put_back_that_fails_is_logged_and_not_recorded(rig, tmp_path, c
 
 
 @pytest.mark.asyncio
+async def test_a_put_back_of_one_ring_of_two_records_that_ring(rig, tmp_path, caplog):
+    """Batch 6 verify: the put-back record names exactly the rings restored, even
+    when another ring could not be put back."""
+    log = _intent_log(tmp_path)
+    record = log.record
+    rig.living.user_core.put("before")
+
+    def record_after_a_concurrent_user_put(**kwargs):
+        rig.living.user_core.put("from another thread")          # only the user ring moves
+        return record(**kwargs)
+
+    log.record = record_after_a_concurrent_user_put
+    rig.state["audit"] = log
+    with caplog.at_level(logging.ERROR, logger="jarvis.memory_tool"):
+        reply = await _call(rig, {"operations": [_op("add", text="m"), _op("add", "user", text="u")]})
+    assert reply["reason"] == "memory_write_failed"
+    assert rig.living.core.list() == []                             # the memory ring is put back
+    assert "user ring could not be put back" in caplog.text
+    record(actor="owner", action="other", why="the next record")
+    assert _chain(tmp_path) == ["memory.write", "memory.write_reverted", "other"]
+    put_back = [e for e in log.list() if e["action"] == "memory.write_reverted"][0]
+    assert put_back["metadata"]["targets"] == ["memory"]
+
+
+@pytest.mark.asyncio
 async def test_a_forget_between_the_read_and_the_write_wins(rig, monkeypatch):
     rig.living.core.put("old")
     real_plan = memory_tool.plan

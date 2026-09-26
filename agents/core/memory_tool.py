@@ -341,11 +341,11 @@ def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, li
         written.append(target)
 
 
-def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]]) -> bool:
-    """Put back rings a write changed, when the call cannot keep it. False, and logged, when
-    a ring could not be put back (another writer moved it in between, or it cannot be
-    saved): that write stays."""
-    restored = True
+def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]]) -> list[str]:
+    """Put back rings a write changed, when the call cannot keep it. The rings actually put
+    back, sorted; a ring that could not be (another writer moved it in between, or it
+    cannot be saved) is logged and its write stays."""
+    restored: list[str] = []
     for target in written:
         if written[target] == original[target]:
             continue
@@ -353,10 +353,11 @@ def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str
             ok = getattr(living, TARGETS[target]).compare_and_set(written[target], original[target])
         except Exception:
             ok = False
-        if not ok:
+        if ok:
+            restored.append(target)
+        else:
             logger.error("memory: the %s ring could not be put back; the write it holds stays", target)
-            restored = False
-    return restored
+    return sorted(restored)
 
 
 def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
@@ -380,8 +381,9 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
             _record(audit, actor, "memory.undo", "the owner undid a memory write", str(ref),
                     {"ref": str(ref), "targets": targets})
         except BaseException:
-            if _revert(living, before, now):
-                _record_put_back(audit, actor, "memory.undo_reverted", str(ref), targets)
+            restored = _revert(living, before, now)
+            if restored:
+                _record_put_back(audit, actor, "memory.undo_reverted", str(ref), restored)
             raise
         store.drop(str(ref))
     return {"ok": True, "ref": str(ref), "memory": before["memory"], "user": before["user"]}
@@ -496,8 +498,9 @@ def register_memory_tool(
                                 {"ref": ref, "targets": changed, "operations": rows})
                     except BaseException:
                         # A write is never kept unrecorded: put the rings back.
-                        if _revert(mem, after, before):
-                            _record_put_back(sink, actor, "memory.write_reverted", ref, changed)
+                        restored = _revert(mem, after, before)
+                        if restored:
+                            _record_put_back(sink, actor, "memory.write_reverted", ref, restored)
                         undo_store.drop(ref)
                         raise
         except MemoryToolError as exc:
