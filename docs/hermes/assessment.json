@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "278fe4b1e0ec52437eaba43a91655f71ca264ed6",
-  "assessed_at": "2026-09-26T03:02:12Z",
+  "base_sha": "707f7f5aaf278f7113eb4692a97a16176e958127",
+  "assessed_at": "2026-09-26T03:32:23Z",
   "reviews": [
     {
       "id": "H001",
@@ -433,7 +433,7 @@
         },
         {
           "path": "tests/test_telegram_group_gate.py",
-          "sha256": "624726054fab62e30dabbb1078b390d2c69117f911c8477b0f4538048ff6b440"
+          "sha256": "73305aacabe0bf2d8028a180f26eae041fa1566d7b8ffab80aa61fb232f389a9"
         }
       ]
     },
@@ -570,23 +570,23 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -623,7 +623,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/core/channels/inbound_media.py",
@@ -643,7 +643,7 @@
         },
         {
           "path": "tests/test_inbound_voice_read.py",
-          "sha256": "15ada43c9a080101fdc8c118896e3a2f2e37a6eaefbb3ea5985887d57b4693c4"
+          "sha256": "f9e43a035061d287dcf63fe138b2be085a99c2b5827841221119239be8a349dd"
         },
         {
           "path": "tests/test_voice_mode.py",
@@ -655,7 +655,7 @@
         },
         {
           "path": "tests/test_telegram_voice_reply.py",
-          "sha256": "28ee1c698612c30681f680fbeadb06456404a4fde7845650e900fd86e554cf8a"
+          "sha256": "3021117889f54adfd8e9644f62ab26487489e28a0b2206396d9dec49cd14b6e8"
         }
       ]
     },
@@ -693,19 +693,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -722,19 +722,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -751,19 +751,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -780,19 +780,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -838,7 +838,7 @@
         },
         {
           "path": "tests/test_channel_render_slack_discord.py",
-          "sha256": "7fb827ef09db7f743ecb65b739596cbae3eeee94f087bc0571e464d4d18b4bc9"
+          "sha256": "82acece8244c1ed7ab0319b0be070646af63bdb47a894e0d0cfcb8b45f92deb7"
         }
       ]
     },
@@ -851,23 +851,23 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "tests/test_telegram_streaming.py",
@@ -892,7 +892,7 @@
       "row_sha256": "772dbe6813680421be38906f32a7ebe5dd746817b070c5d4e4f7455046e285ba",
       "status": "partial",
       "summary": "Telegram photos are read, not only recognised. `classify` (agents/core/channels/inbound_media.py) recognises the ten attachment kinds in `RECOGNISED_KINDS` and turns a missing file handle, a declared size above the 20 MB bot ceiling or an unreadable kind into a named reason, so the sender gets one plain line from `describe` instead of silence. `InboundImageReader` (agents/core/channels/media_reader.py) describes a photo through a proven-local VLM and hands the description to the turn as data, never as instructions. Locality follows the `screen_locator` rule: `is_local` derives only from `resolve_vlm_config().is_local`, `TelegramChannel._read_image` asks `refusal()` before any download, and `_backend_call` checks again against the `VLMBackend` built for the URL it will actually post to, so a non-loopback VLM receives no bytes. `_download_file` bounds the transfer by the bytes that actually arrive, not by the sender-chosen `file_size`, and `_safe_file_path` rejects any `getFile` path that is not Telegram-shaped before it enters the bot-token URL. The description is folded to one line, capped and wrapped in the Wave 5a `fence_tool_result` fence, deliberately without the `spotlight` datamark, which would replace spaces with '▁' and blind the gateway's `detect_injection`; a photo with '<<END UNTRUSTED>>' written on it cannot close its own fence. The caption never reaches the describer: it travels separately as the sender's question. The turn goes through the normal door, so `Gateway._inbound_meta` marks it `inbound:telegram` and runs the detector over exactly what the model reads. Voice notes are read on the other path: a transcript is the sender's own words and travels unfenced as an ordinary turn (`inbound_voice`, row H071). `ChannelDescriptor` separates `recognises_media` from `reads_media` with the subset invariant checked at construction, and `READABLE_KINDS` is exactly {photo, voice}.",
-      "remaining": "Only photos and voice notes, only on Telegram. Not delivered: reading audio files, video, video notes, animations, documents and stickers (recognised, answered with 'reading … is not wired up yet'); a disk cache under a media directory so vision tools can open a local path (bytes stay in memory for one call); photo-burst batching and media-group (album) debounce; location and venue pins (recognised as `location`, deliberately not echoed, not read); caching of media from observed group messages and from replied-to messages; media ingestion on WhatsApp, Discord, Teams, Google Chat and email (those adapters pass text only). Documented limitation, not solved: taint cannot be tracked through the model; what travels is the coarse fact that the turn read untrusted material, and the channel's `inbound` origin is what keeps an action derived from a photo in approval. `mark_turn_recall_tainted()` is not called here because it would be a no-op (escalate-only over an already untrusted origin). UNVERIFIED on real services: the suite is hermetic; no real Telegram message received, no local VLM actually called, `getFile` and the download exercised only against a fake client.",
+      "remaining": "Only photos and voice notes, only on Telegram. Not delivered: reading audio files, video, video notes, animations, documents and stickers (recognised, answered with 'reading … is not wired up yet'); a disk cache under a media directory so vision tools can open a local path (bytes stay in memory for one call); location and venue pins (recognised as `location`, deliberately not echoed, not read); caching of media from observed group messages and from replied-to messages; media ingestion on WhatsApp, Discord, Teams, Google Chat and email (those adapters pass text only). Documented limitation, not solved: taint cannot be tracked through the model; what travels is the coarse fact that the turn read untrusted material, and the channel's `inbound` origin is what keeps an action derived from a photo in approval. `mark_turn_recall_tainted()` is not called here because it would be a no-op (escalate-only over an already untrusted origin). UNVERIFIED on real services: the suite is hermetic; no real Telegram message received, no local VLM actually called, `getFile` and the download exercised only against a fake client.",
       "evidence": [
         {
           "path": "agents/core/channels/media_reader.py",
@@ -908,7 +908,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -916,15 +916,15 @@
         },
         {
           "path": "tests/test_inbound_media_read.py",
-          "sha256": "9576a6460a92fa07a3e48464bfbdcf817765064e7db1ebaffc8ac1aed6a3b153"
+          "sha256": "c950a31ab3e53846d0863bb4d2373ca7d24de063c3001d8052a5394b4bd9f729"
         },
         {
           "path": "tests/test_inbound_voice_read.py",
-          "sha256": "15ada43c9a080101fdc8c118896e3a2f2e37a6eaefbb3ea5985887d57b4693c4"
+          "sha256": "f9e43a035061d287dcf63fe138b2be085a99c2b5827841221119239be8a349dd"
         },
         {
           "path": "tests/test_telegram_inbound_media.py",
-          "sha256": "e871d544c600e4e8460fd05dc6727b6ff0e895a410f96eaa4ac327e445b989a0"
+          "sha256": "96b7b500d4fd5285dcf995f4648e785aed98bf6da2111839562e699fede4635f"
         }
       ]
     },
@@ -941,7 +941,7 @@
         },
         {
           "path": "tests/test_telegram_group_gate.py",
-          "sha256": "624726054fab62e30dabbb1078b390d2c69117f911c8477b0f4538048ff6b440"
+          "sha256": "73305aacabe0bf2d8028a180f26eae041fa1566d7b8ffab80aa61fb232f389a9"
         }
       ]
     },
@@ -954,19 +954,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -1031,25 +1031,33 @@
     {
       "id": "H117",
       "row_sha256": "a3a011966ab39e62fb477f52ee4f0c402fd368f63a6f63381b4efb7806aa6d17",
-      "status": "missing",
-      "summary": "A burst of messages still becomes one turn per message. Telegram's _poll_loop (agents/core/channels/telegram.py:399) awaits self.receive once per update (agents/core/channels/telegram.py:477), so three fragments run three sequential turns. Gateway.route (agents/core/channels/gateway.py:64) hands every message straight to the handler. It runs detect_injection on each fragment separately, in _inbound_meta (agents/core/channels/gateway.py:168-173). The only concurrency control is the per-session turn_lease (agents/core/orchestrator.py:1601) behind _channel_turn (agents/core/orchestrator.py:1552). It serialises turns, and a turn that waits past the bound gets TURN_BUSY_REPLY (agents/core/orchestrator.py:245) instead of being merged. A scratch probe routed three fragments concurrently through Gateway.route: the handler ran three times, once per fragment.",
-      "remaining": "There is no debounce or merge window anywhere in agents/core/channels/. Client-side splits, photo and album (media_group_id) bursts, and text-plus-attachment pairs are not coalesced into one turn. There are no debounce knobs: no window, no hard cap, no per-chat serialisation of the merged turn. There is no guarantee that the injection scan runs on the merged text rather than per fragment.",
+      "status": "equivalent",
+      "summary": "A burst of messages is one turn. agents/core/channels/batching.py holds the rules. Coalescer (agents/core/channels/batching.py:57) holds turn pieces per (conversation, sender) and merges them in arrival order, joined by newlines, into one turn. Each piece extends the batch window of WINDOW_SECONDS 0.35 (Hermes' _busy_text_debounce_seconds), never past HARD_CAP_SECONDS 1.0 from the first piece (Hermes' hard cap; deadline at agents/core/channels/batching.py:84). A batch of MAX_PARTS 32 pieces flushes at once. JARVIS_INBOUND_BATCH_MS and JARVIS_INBOUND_BATCH_MAX_MS set the window and cap for every channel (configured(), agents/core/channels/batching.py:114); a window of 0 turns batching off. Telegram's poll loop (agents/core/channels/telegram.py:404) hands each update to _handle_update (agents/core/channels/telegram.py:427). It queues what the update reads as: a text fragment, or what an attachment was read as (a photo's description, a voice note's transcript, its caption). So a client-split long message, an album (one update per photo) and a photo followed by its question each become one turn (_queue_turn, agents/core/channels/telegram.py:505). While pieces are held, the loop polls getUpdates with timeout 0 instead of the 25 s long poll (agents/core/channels/telegram.py:809), so the batch flushes when its window closes. A button tap or an observed group message first flushes what was said before it, and stopping flushes what is held (agents/core/channels/telegram.py:425). Discord and Slack, whose messages arrive as events, use AsyncBatcher (agents/core/channels/batching.py:124). It flushes each batch from its own timer and delivers batches for one key one at a time, under a per-key lock, in order. Discord keys by channel and author (agents/core/channels/discord.py:88); Slack keys by channel, member and thread, and with batching off still returns the handler's answer (agents/core/channels/slack.py:363). A stopping Discord or Slack channel discards held pieces and cancels their timers, as Slack's shutdown already discards its undelivered event queue. The merged text is what the gateway receives, so its prompt-injection scan runs on the whole message. The scan now collapses whitespace first (agents/core/channels/gateway.py:175), so a payload split across pieces, or across lines, reads as the sentence it is. Per-chat order is kept: a flush hands the merged turn over before anything later from that chat is processed. tests/test_h117_message_batching.py (47 cases) covers the coalescer (defaults, order, empty pieces, window, cap, wait on the earliest batch, full batch, off) and the Telegram loop: one poll, across polls within the window, after the window, the hard cap, senders and chats kept apart, a photo and its question, an album, a button tap, an observed message, stop, a full batch, batching off, the voice mark, the environment knobs, and the getUpdates timeout. It also covers AsyncBatcher (window, cap, one at a time, off with its answer, full batch with its timer cancelled, an empty batch, drain and discard, a failing delivery logged), Discord and Slack bursts, their stop, and a split injection payload caught in the merged turn. The per-message tests of the Telegram, Discord and Slack channels run with batching off, since they test each message on its own. There are 61 mutants: 59 killed and 2 equivalent (returning or breaking on a batch that is already gone; a delay of exactly zero).",
+      "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/channels/gateway.py",
-          "sha256": "3e15a385534c36d69efaef59b71713c9a69155ea9c9b9595f309eefda9f8ee16"
+          "path": "agents/core/channels/batching.py",
+          "sha256": "2363cba2b92b81d892ce5d2dbc35dd5a93af832e673482b7d8085770ddefc653"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
-          "path": "agents/core/orchestrator.py",
-          "sha256": "0947ee439df5a88bca721b39d86d60a73d31fae46cf323e1e0aec6358424ebd4"
+          "path": "agents/core/channels/discord.py",
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
-          "path": "tests/test_turn_lease.py",
-          "sha256": "f5a2f9ce420ccda151c45759e5a99ecee9253711099e0f1af46f33c082cad10d"
+          "path": "agents/core/channels/slack.py",
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
+        },
+        {
+          "path": "agents/core/channels/gateway.py",
+          "sha256": "f82f94c36c89eb1e9b80b452d374c0f042737b54d428ddb33e8fe2babf191c9a"
+        },
+        {
+          "path": "tests/test_h117_message_batching.py",
+          "sha256": "bb7934a4a2aa4444ddc98aae191b903273487290416dc9307e0ad72fb9430610"
         }
       ]
     },
@@ -1062,19 +1070,19 @@
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/descriptor.py",
@@ -1708,7 +1716,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -1764,7 +1772,7 @@
       "id": "H153",
       "row_sha256": "4cf373559835467b03603fea55b6ed2f0a4f3cb840b0dbc4a0fb9db3b73bc510",
       "status": "equivalent",
-      "summary": "Built in #1207 in five rounds. The first round shipped with H200 (critic note 7). After an adversarial review reopened it, the second round added the receiver switch, an event list and a prompt template. After a second review, the third added where a delivery goes (Hermes' Deliver to and deliver only), a description and a receiver switch that fails closed. A third review (review-H153c) found that as shipped, Deliver to reached none of the owner's channels, and the fourth round made a real send reach each offered channel, tested through the real path down to the channel adapter. A fourth review (review-H153d) found that the fourth round's plain-text rendering let one delivery freeze the hub, and rewrote the sender's file names and addresses; the fifth round sends the text as written, bounds every renderer, and fixes the review's minors. A fifth review (review-H153e) found no major; its three minors (inline code spans still quadratic in two renderers, first-read waiters holding worker threads, eight unpinned behaviours) and six nits are fixed.\n\nBackend CRUD is admin-guarded, and the store serves every change without a restart:\n- GET, POST, PATCH and DELETE /api/webhooks (agents/core/routers/webhooks.py:174, agents/core/routers/webhooks.py:180, agents/core/routers/webhooks.py:193, agents/core/routers/webhooks.py:220) list, create, update and delete hooks.\n- A create that carries a field it does not know (Hermes' skills, deliver_chat_id) is refused with 422, never silently dropped (agents/core/routers/webhooks.py:86).\n- WebhookStore.create (agents/core/webhooks.py:486) mints a token and, when signed, an HMAC signing secret. Both are returned once, and every list masks them (agents/core/webhooks.py:635). A save that fails undoes the change in memory.\n\n(1) The receiver card (Hermes' platform-level toggle). The setting webhooks.receiver_enabled is a declared toggle, on by default. It is written through the audited PUT /api/admin/settings/webhooks, and the audit row ends with the value (receiver_enabled=false). A reseed is audited too (agents/core/routers/admin.py:266). When the switch is off, the trigger refuses every delivery with 503. It checks before the body is read and again after authentication, so a switch that lands while a sender streams its body stops that delivery (agents/core/routers/webhooks.py:238).\n- It fails closed (agents/core/webhooks.py:251):\n  - only a literal true is on, and a missing row is the declared default;\n  - when the settings store cannot be read, settings_db.read_setting raises instead of answering the default (agents/core/settings_db.py:615), so the last state read or written stays in force;\n  - a receiver never read is refused with \"the webhook receiver's state cannot be read\".\n- It is read off the event loop, and by one caller at a time: while a read runs, every other caller gets the last state at once. A caller with no state known yet (the first read after a start) waits for that read, at most two seconds, so a burst that arrives while it runs is answered, and a read slower than that is still refused, closed. The router waits on the event loop (agents/core/webhooks.py:377): who reads is decided on the loop, only the read runs on a worker thread, and a waiter holds none, so a burst on a slow fresh receiver leaves the default executor free (review-H153e MINOR-2). A caller from a thread waits in it, at most four at once (RECEIVER_FIRST_READ_WAITERS, agents/core/webhooks.py:247); any other is refused, closed. A write, a reset or another store wakes the waiters. A state is used for a second before the store is read again. A read that a write, a reset, a reseed or another store overtook while it ran is dropped, a failed one included. A write in this process is seen at once; one from another process (nerva config set) within the second.\n- The admin routes keep working, and hooks keep their credentials.\n- The panel's receiver row shows on, off, or \"not read\" with the reason:\n  - a failed re-read drops the last state instead of showing it;\n  - an answer is shown unless a newer one already is, so an earlier read never overwrites a newer one and a poller slower than its interval still sees each answer (frontend/src/panel-kit.tsx:20);\n  - ↻ re-reads it;\n  - a stored value that is not true or false is shown as off;\n  - a store with no row yet, which the hub answers with its own 404 naming the category, shows the hub's default, \"on · not stored\", and can be switched off, because the write creates the row (frontend/src/panels/webhooks.tsx:196); any other 404 (a proxy's) is a failed read.\n- Interop and the /v1 panel show every hook as refused while the switch is off.\n\n(2) The New-subscription modal: name, description, agent or workflow target, target id, HMAC signing (the secret, shown once), an event list, a prompt template, where the result goes and deliver only. Create is last in the tab order (frontend/src/panels/webhooks.tsx:385).\n- Events: up to 32 printable names of 1 to 64 characters, no comma, stored stripped and kept once each, ignoring ASCII case (agents/core/webhooks.py:137).\n  - The delivery's event comes from the sender's header (X-GitHub-Event, X-Gitlab-Event, X-Event-Key, X-Event-Type, X-Webhook-Event), else from the payload's event or type (agents/core/webhooks.py:121). It is bounded when read but never cut to the 64-character limit, so a longer name matches no subscription.\n  - A hook with a list runs only the deliveries whose event is on it. Every other delivery is answered 202 with the reason, never run, and counted as skipped (agents/core/webhooks.py:605). That includes a delivery that names no event, and a list a hand edit broke (null, not a list, an item that is not a name).\n- Template: {a.b.0} reads the JSON payload by key and list index, {event} is the event, {payload} the whole body, and {payload.x} a payload key the template reserves (agents/core/webhooks.py:173).\n  - Nothing else is read. A missing value is empty, a string is used as is and anything else as JSON.\n  - The work is bounded by the caps (agents/core/webhooks.py:157): each path is read once per render, a value is encoded only up to 4,000 characters, and substitution stops at 16,000.\n  - A template that renders nothing is skipped, not run. So is an untemplated delivery with no text, which gets its own reason.\n- A body over 5 MiB is refused with 413 before it is read whole (agents/core/routers/webhooks.py:235).\n\n(3) Deliver to and deliver only (agents/core/routers/webhooks.py:354, agents/core/routers/webhooks.py:366).\n- deliver is log (the default: the reply stays in the sender's response and the session) or one of the owner's own channels that something receives: telegram, voice or ntfy (agents/core/webhooks.py:70). Names are matched exactly.\n- web is refused by name: nothing in the hub connects a client to the web channel, so a push there would never arrive. /api/channels/targets and nerva send --list say the same: web is not ready while no client is connected (agents/core/channels/outbound.py:88).\n- The reply, or a workflow's last step, goes through send_to_target and ChannelManager.send to the owner's own destination (Telegram's owner chat). send_to_target writes an IntentLog row per send. The text is labelled \"Webhook <name> - <event>\", and each channel carries the label its own way:\n  - ntfy gets it as its title, folded to printable ASCII and cut to 120 characters;\n  - telegram and voice get it on the first line.\n- The text goes as written: nothing is rendered and nothing is rewritten, so a file name, an address and a Markdown link arrive as the sender wrote them, and a link shows its address. What hides or reorders text is dropped: every format and control character but a newline, a tab, a zero-width joiner and non-joiner (the bidi controls and marks, zero-width spaces, word joiners, invisible operators, the soft hyphen, the BOM, the TAG plane), and the characters that render blank (the Hangul fillers, the grapheme joiner, the Mongolian selectors, the blank braille pattern); a subdivision flag emoji stays (agents/core/routers/webhooks.py:312; review-H153e NIT-1). A lone surrogate becomes U+FFFD (agents/core/routers/webhooks.py:338). Telegram sends it with no parse mode, no link preview and no voice note, and ntfy unrendered (agents/core/channels/outbound.py:208, agents/core/channels/telegram.py:320, agents/core/channels/ntfy.py:137). Voice speaks it without the markup. A longer text is cut at 4,000 characters with a note that says where the rest is (the session for a reply, nowhere for deliver-only text).\n- Nothing on the push path renders, so a delivery costs linear time in its text: one long line cannot hold the event loop. The renderers the rest of the hub uses bound every marker span (a link, bold, italic, a heading line), and put inline code spans back in one pass (agents/core/channels/render.py:52; review-H153e MINOR-1), so one long line costs linear time there too, and a span past the bound is left as written (agents/core/channels/render.py:40).\n- The hook is read again after the turn. If it was deleted or switched off, or the receiver was switched off or cannot be read, nothing is pushed and the hook says why; a hook moved to another destination is pushed there, labelled with its name as it is then.\n- Quiet hours (ambient.quiet_hours_start/end, 22 to 7 by default, hours taken modulo 24, the jobs' own reading, agents/core/routers/webhooks.py:275) keep every push off the phone and the speaker. An hour setting that is not a number (an infinity, NaN, text) keeps its default, for the jobs too (agents/core/autonomy/jobs.py:82). The push is noted on the hook, not held for the morning as a job's message is.\n- A hook makes at most 30 push attempts an hour (agents/core/webhooks.py:422, per process). An attempt the channel refused counts, and the panel says so; a push held by quiet hours spends none. A push over it is noted, not sent.\n- deliver_only skips the agent: the rendered text goes straight to the destination, and no turn runs. It needs a channel: deliver-only with the log is refused on create and on PATCH, with the reason (agents/core/webhooks.py:101). A record from before that rule can still be switched off, and its delivery says the text was dropped.\n- A workflow delivers its last step's output, or nothing when the run failed or its last step returned an error, never an earlier step's output (agents/core/routers/webhooks.py:439). The last step is the last to run, in the pipeline's batch order, not the last listed, and a run that stopped early delivers the last step that ran (agents/core/routers/webhooks.py:415). An output the router cannot read is recorded, and nothing is pushed.\n- Each delivery's outcome (channel, ok, reason, time) is kept on the hook and shown in its detail pane, and the response carries it too. Every exit after a call is counted is recorded, a missing or invalid workflow and a failed turn included (agents/core/webhooks.py:695).\n- A delivery that fails is recorded and answered 200. Every answer is encodable whatever the sender or a step put in it: a lone surrogate becomes U+FFFD, a NaN or an infinity null, and anything else JSON cannot carry (a date, bytes, a set, an object) its text (agents/core/routers/webhooks.py:464), so a delivery is never a 500 after its push. A workflow hook answers with ok, the steps that ran and the delivery, never the run's context, which holds the sender's text and every step's output. A failed turn itself still answers 500, so the sender's retry runs it again.\n\n(4) The subscriptions list with per-route enable/disable and delete. PATCH /api/webhooks/{hook_id} (agents/core/webhooks.py:553) takes any of enabled (a strict boolean), events, prompt, deliver, deliver_only and description, and changes them in place. It refuses:\n- null (and its schema advertises none);\n- an empty body;\n- an unknown field;\n- a destination the create would refuse.\n\nThe schema names the four destinations as an enum. A hook switched off keeps its token and secret. The trigger refuses it with 403 after authentication, from the live record, before the event filter.\n\nEach row has an on/off switch, an HMAC or token badge, an event-count badge, the destination (none for the log) and delete with an inline confirmation. The detail pane shows the description, the calls, the skipped deliveries, where the result goes, how a push goes (on a hook that pushes) and how the last delivery went. It edits all of them and opens at the hook's own destination. After a save focus returns to the hook's row, or to the create form when the hook is gone. The legacy /v1 panel lists, creates and deletes through adminFetch, and shows the receiver as the hub reads it and each destination (agents/web/static/tools.js:341).\n\n(5) The restart banners. Nerva needs no restart for either kind of change: the receiver switch is a setting read at most a second old, and hook CRUD is served live.\n\nAudit: create, switch, update and delete each write a SecurityEvent (agents/core/routers/webhooks.py:142). It names:\n- the hook id;\n- the target as a JSON string;\n- the event list;\n- the template's length (never its text);\n- the destination and deliver only;\n- the signed and enabled flags.\n\nIt never records the token or secret. A switch alone is recorded as enable or disable; any other change is an update. The receiver switch is audited by the settings route, with its value, and a choice setting's value is in its row (a toggle, a select, a number, a slider). A nerva config set from the shell writes no audit row (H378).\n\nDeliveries: an agent-target delivery goes through handle_input(channel=\"webhook\"). origin_for_channel (agents/core/action_origin.py:36) classifies that channel as inbound, so the payload is tainted and the kernel's GRANT->QUEUE escalation applies. A workflow target runs its pipeline (agents/core/routers/workflows.py:37) under the inbound action origin. The sender waits for the push as well as the turn. A retried delivery that carries an Idempotency-Key is not run again; it gets the first outcome back (H659, agents/core/routers/webhooks.py:551). One without a key runs again.\n\nAdapted, not copied:\n- Deliver to: Hermes offers log, Telegram, Discord, Slack, email and a GitHub comment. Nerva offers the log and the owner's own telegram, voice and ntfy, and refuses the rest by name with a 422 (agents/core/webhooks.py:75):\n  - Email is never an outbound side effect of an inbound delivery (the rule ChannelManager.send keeps).\n  - A GitHub comment writes to someone else's system, so the hook's agent proposes it through the governed write-back path, one approval each.\n  - Discord and Slack are reply-only transports here, with no home channel to address.\n  - The web HUD has no push receiver yet.\n- Per-subscription skills: a Nerva hook targets an agent or a workflow, and the agent brings its own skills to the turn. Hermes' own modal does not expose skills either.\n\nTests:\n- tests/test_h153_webhook_subscriptions.py (54 cases) covers the receiver, the event filter, the template and the update.\n- tests/test_h10_8_webhooks.py (35) covers the switch, the audit and the in-flight race.\n- tests/test_h153b_webhook_delivery.py (63) covers the second round with fakes for the send and the clock.\n- tests/test_h153c_webhook_sends.py (80, the fourth round) runs the real path, the router through send_to_target and ChannelManager to a recording adapter per channel. It covers:\n  - each channel (tests/test_h153c_webhook_sends.py:104), with and without a turn;\n  - the real quiet-hours rule on a fixed clock (tests/test_h153c_webhook_sends.py:273);\n  - the real Telegram adapter's HTTP body (tests/test_h153c_webhook_sends.py:229);\n  - fail-soft delivery (tests/test_h153c_webhook_sends.py:319);\n  - a switch thrown during the turn (tests/test_h153c_webhook_sends.py:455);\n  - the workflow rule (tests/test_h153c_webhook_sends.py:534);\n  - the push cap, the single-flight receiver (tests/test_h153c_webhook_sends.py:605), and the audit of free text.\n- tests/test_h153d_webhook_review.py (61 cases, the fifth round) covers:\n  - a long line of brackets pushed at once, and the text as written on Telegram and ntfy (tests/test_h153d_webhook_review.py:67);\n  - every renderer in linear time on one long line (tests/test_h153d_webhook_review.py:129);\n  - the hidden characters, the first-read burst (tests/test_h153d_webhook_review.py:151), the workflow answer and the encodable answers (tests/test_h153d_webhook_review.py:253);\n  - the last step as run, the unreadable receiver after the turn, a Telegram refusal, the hour of the allowance, quiet hours and the allowance, the live label, an overtaken failed read, a slider's audited value, the hour settings and web's readiness.\n- tests/test_h153e_webhook_review.py (49 cases, the sixth round) covers the renderers' scaling on inline code spans, the restore's escaping, an ordinary long link, the waiter cap and wake, a burst through astate holding one thread, every hidden character and what stays, the cut boundary, the quiet-hours end and the encodable answer; frontend/src/test/panel-state.test.tsx (2) a failed poll shown while loading.\n- frontend/src/test/webhooks-panel.test.tsx has 55 cases, frontend/src/test/use-api-sequence.test.tsx 4 (a poller slower than its interval, loading until the newest answer, an earlier answer never over a newer one, another address), frontend/src/test/interop-live-honesty.test.tsx 14 and the /v1 tests/frontend/tools.test.js 18.\n\nMutation:\n- The fourth round: 92 mutants of its guards and of the reviewer's 35 unpinned survivors (70 backend, 20 panel and Interop, 2 /v1). Three no longer applied to the final code; the reviewer replayed the 89 that apply, and each is caught.\n- The fifth round: 40 mutants of its guards (32 Python, 8 HUD), each run against its own suites. All 40 are caught, one of them (the answer's dict keys) by a test added for it. Four were first written malformed and were rewritten before they counted.\n- The fifth review's own 68 mutants left eight unpinned behaviours (five hidden characters, the cut boundary, the quiet-hours end, the link bound); each has a test now. This round's 13 mutants (12 Python, 1 HUD) were all caught.\n- The fourth review's own 104 mutants left 20 survivors: seven equivalent, one a strengthening (catching an infinite hour, now the code) and twelve unpinned. Each of the twelve now has a test.",
+      "summary": "Built in #1207 in five rounds. The first round shipped with H200 (critic note 7). After an adversarial review reopened it, the second round added the receiver switch, an event list and a prompt template. After a second review, the third added where a delivery goes (Hermes' Deliver to and deliver only), a description and a receiver switch that fails closed. A third review (review-H153c) found that as shipped, Deliver to reached none of the owner's channels, and the fourth round made a real send reach each offered channel, tested through the real path down to the channel adapter. A fourth review (review-H153d) found that the fourth round's plain-text rendering let one delivery freeze the hub, and rewrote the sender's file names and addresses; the fifth round sends the text as written, bounds every renderer, and fixes the review's minors. A fifth review (review-H153e) found no major; its three minors (inline code spans still quadratic in two renderers, first-read waiters holding worker threads, eight unpinned behaviours) and six nits are fixed.\n\nBackend CRUD is admin-guarded, and the store serves every change without a restart:\n- GET, POST, PATCH and DELETE /api/webhooks (agents/core/routers/webhooks.py:174, agents/core/routers/webhooks.py:180, agents/core/routers/webhooks.py:193, agents/core/routers/webhooks.py:220) list, create, update and delete hooks.\n- A create that carries a field it does not know (Hermes' skills, deliver_chat_id) is refused with 422, never silently dropped (agents/core/routers/webhooks.py:86).\n- WebhookStore.create (agents/core/webhooks.py:486) mints a token and, when signed, an HMAC signing secret. Both are returned once, and every list masks them (agents/core/webhooks.py:635). A save that fails undoes the change in memory.\n\n(1) The receiver card (Hermes' platform-level toggle). The setting webhooks.receiver_enabled is a declared toggle, on by default. It is written through the audited PUT /api/admin/settings/webhooks, and the audit row ends with the value (receiver_enabled=false). A reseed is audited too (agents/core/routers/admin.py:266). When the switch is off, the trigger refuses every delivery with 503. It checks before the body is read and again after authentication, so a switch that lands while a sender streams its body stops that delivery (agents/core/routers/webhooks.py:238).\n- It fails closed (agents/core/webhooks.py:251):\n  - only a literal true is on, and a missing row is the declared default;\n  - when the settings store cannot be read, settings_db.read_setting raises instead of answering the default (agents/core/settings_db.py:615), so the last state read or written stays in force;\n  - a receiver never read is refused with \"the webhook receiver's state cannot be read\".\n- It is read off the event loop, and by one caller at a time: while a read runs, every other caller gets the last state at once. A caller with no state known yet (the first read after a start) waits for that read, at most two seconds, so a burst that arrives while it runs is answered, and a read slower than that is still refused, closed. The router waits on the event loop (agents/core/webhooks.py:377): who reads is decided on the loop, only the read runs on a worker thread, and a waiter holds none, so a burst on a slow fresh receiver leaves the default executor free (review-H153e MINOR-2). A caller from a thread waits in it, at most four at once (RECEIVER_FIRST_READ_WAITERS, agents/core/webhooks.py:247); any other is refused, closed. A write, a reset or another store wakes the waiters. A state is used for a second before the store is read again. A read that a write, a reset, a reseed or another store overtook while it ran is dropped, a failed one included. A write in this process is seen at once; one from another process (nerva config set) within the second.\n- The admin routes keep working, and hooks keep their credentials.\n- The panel's receiver row shows on, off, or \"not read\" with the reason:\n  - a failed re-read drops the last state instead of showing it;\n  - an answer is shown unless a newer one already is, so an earlier read never overwrites a newer one and a poller slower than its interval still sees each answer (frontend/src/panel-kit.tsx:20);\n  - ↻ re-reads it;\n  - a stored value that is not true or false is shown as off;\n  - a store with no row yet, which the hub answers with its own 404 naming the category, shows the hub's default, \"on · not stored\", and can be switched off, because the write creates the row (frontend/src/panels/webhooks.tsx:196); any other 404 (a proxy's) is a failed read.\n- Interop and the /v1 panel show every hook as refused while the switch is off.\n\n(2) The New-subscription modal: name, description, agent or workflow target, target id, HMAC signing (the secret, shown once), an event list, a prompt template, where the result goes and deliver only. Create is last in the tab order (frontend/src/panels/webhooks.tsx:385).\n- Events: up to 32 printable names of 1 to 64 characters, no comma, stored stripped and kept once each, ignoring ASCII case (agents/core/webhooks.py:137).\n  - The delivery's event comes from the sender's header (X-GitHub-Event, X-Gitlab-Event, X-Event-Key, X-Event-Type, X-Webhook-Event), else from the payload's event or type (agents/core/webhooks.py:121). It is bounded when read but never cut to the 64-character limit, so a longer name matches no subscription.\n  - A hook with a list runs only the deliveries whose event is on it. Every other delivery is answered 202 with the reason, never run, and counted as skipped (agents/core/webhooks.py:605). That includes a delivery that names no event, and a list a hand edit broke (null, not a list, an item that is not a name).\n- Template: {a.b.0} reads the JSON payload by key and list index, {event} is the event, {payload} the whole body, and {payload.x} a payload key the template reserves (agents/core/webhooks.py:173).\n  - Nothing else is read. A missing value is empty, a string is used as is and anything else as JSON.\n  - The work is bounded by the caps (agents/core/webhooks.py:157): each path is read once per render, a value is encoded only up to 4,000 characters, and substitution stops at 16,000.\n  - A template that renders nothing is skipped, not run. So is an untemplated delivery with no text, which gets its own reason.\n- A body over 5 MiB is refused with 413 before it is read whole (agents/core/routers/webhooks.py:235).\n\n(3) Deliver to and deliver only (agents/core/routers/webhooks.py:354, agents/core/routers/webhooks.py:366).\n- deliver is log (the default: the reply stays in the sender's response and the session) or one of the owner's own channels that something receives: telegram, voice or ntfy (agents/core/webhooks.py:70). Names are matched exactly.\n- web is refused by name: nothing in the hub connects a client to the web channel, so a push there would never arrive. /api/channels/targets and nerva send --list say the same: web is not ready while no client is connected (agents/core/channels/outbound.py:88).\n- The reply, or a workflow's last step, goes through send_to_target and ChannelManager.send to the owner's own destination (Telegram's owner chat). send_to_target writes an IntentLog row per send. The text is labelled \"Webhook <name> - <event>\", and each channel carries the label its own way:\n  - ntfy gets it as its title, folded to printable ASCII and cut to 120 characters;\n  - telegram and voice get it on the first line.\n- The text goes as written: nothing is rendered and nothing is rewritten, so a file name, an address and a Markdown link arrive as the sender wrote them, and a link shows its address. What hides or reorders text is dropped: every format and control character but a newline, a tab, a zero-width joiner and non-joiner (the bidi controls and marks, zero-width spaces, word joiners, invisible operators, the soft hyphen, the BOM, the TAG plane), and the characters that render blank (the Hangul fillers, the grapheme joiner, the Mongolian selectors, the blank braille pattern); a subdivision flag emoji stays (agents/core/routers/webhooks.py:312; review-H153e NIT-1). A lone surrogate becomes U+FFFD (agents/core/routers/webhooks.py:338). Telegram sends it with no parse mode, no link preview and no voice note, and ntfy unrendered (agents/core/channels/outbound.py:208, agents/core/channels/telegram.py:325, agents/core/channels/ntfy.py:137). Voice speaks it without the markup. A longer text is cut at 4,000 characters with a note that says where the rest is (the session for a reply, nowhere for deliver-only text).\n- Nothing on the push path renders, so a delivery costs linear time in its text: one long line cannot hold the event loop. The renderers the rest of the hub uses bound every marker span (a link, bold, italic, a heading line), and put inline code spans back in one pass (agents/core/channels/render.py:52; review-H153e MINOR-1), so one long line costs linear time there too, and a span past the bound is left as written (agents/core/channels/render.py:40).\n- The hook is read again after the turn. If it was deleted or switched off, or the receiver was switched off or cannot be read, nothing is pushed and the hook says why; a hook moved to another destination is pushed there, labelled with its name as it is then.\n- Quiet hours (ambient.quiet_hours_start/end, 22 to 7 by default, hours taken modulo 24, the jobs' own reading, agents/core/routers/webhooks.py:275) keep every push off the phone and the speaker. An hour setting that is not a number (an infinity, NaN, text) keeps its default, for the jobs too (agents/core/autonomy/jobs.py:82). The push is noted on the hook, not held for the morning as a job's message is.\n- A hook makes at most 30 push attempts an hour (agents/core/webhooks.py:422, per process). An attempt the channel refused counts, and the panel says so; a push held by quiet hours spends none. A push over it is noted, not sent.\n- deliver_only skips the agent: the rendered text goes straight to the destination, and no turn runs. It needs a channel: deliver-only with the log is refused on create and on PATCH, with the reason (agents/core/webhooks.py:101). A record from before that rule can still be switched off, and its delivery says the text was dropped.\n- A workflow delivers its last step's output, or nothing when the run failed or its last step returned an error, never an earlier step's output (agents/core/routers/webhooks.py:439). The last step is the last to run, in the pipeline's batch order, not the last listed, and a run that stopped early delivers the last step that ran (agents/core/routers/webhooks.py:415). An output the router cannot read is recorded, and nothing is pushed.\n- Each delivery's outcome (channel, ok, reason, time) is kept on the hook and shown in its detail pane, and the response carries it too. Every exit after a call is counted is recorded, a missing or invalid workflow and a failed turn included (agents/core/webhooks.py:695).\n- A delivery that fails is recorded and answered 200. Every answer is encodable whatever the sender or a step put in it: a lone surrogate becomes U+FFFD, a NaN or an infinity null, and anything else JSON cannot carry (a date, bytes, a set, an object) its text (agents/core/routers/webhooks.py:464), so a delivery is never a 500 after its push. A workflow hook answers with ok, the steps that ran and the delivery, never the run's context, which holds the sender's text and every step's output. A failed turn itself still answers 500, so the sender's retry runs it again.\n\n(4) The subscriptions list with per-route enable/disable and delete. PATCH /api/webhooks/{hook_id} (agents/core/webhooks.py:553) takes any of enabled (a strict boolean), events, prompt, deliver, deliver_only and description, and changes them in place. It refuses:\n- null (and its schema advertises none);\n- an empty body;\n- an unknown field;\n- a destination the create would refuse.\n\nThe schema names the four destinations as an enum. A hook switched off keeps its token and secret. The trigger refuses it with 403 after authentication, from the live record, before the event filter.\n\nEach row has an on/off switch, an HMAC or token badge, an event-count badge, the destination (none for the log) and delete with an inline confirmation. The detail pane shows the description, the calls, the skipped deliveries, where the result goes, how a push goes (on a hook that pushes) and how the last delivery went. It edits all of them and opens at the hook's own destination. After a save focus returns to the hook's row, or to the create form when the hook is gone. The legacy /v1 panel lists, creates and deletes through adminFetch, and shows the receiver as the hub reads it and each destination (agents/web/static/tools.js:341).\n\n(5) The restart banners. Nerva needs no restart for either kind of change: the receiver switch is a setting read at most a second old, and hook CRUD is served live.\n\nAudit: create, switch, update and delete each write a SecurityEvent (agents/core/routers/webhooks.py:142). It names:\n- the hook id;\n- the target as a JSON string;\n- the event list;\n- the template's length (never its text);\n- the destination and deliver only;\n- the signed and enabled flags.\n\nIt never records the token or secret. A switch alone is recorded as enable or disable; any other change is an update. The receiver switch is audited by the settings route, with its value, and a choice setting's value is in its row (a toggle, a select, a number, a slider). A nerva config set from the shell writes no audit row (H378).\n\nDeliveries: an agent-target delivery goes through handle_input(channel=\"webhook\"). origin_for_channel (agents/core/action_origin.py:36) classifies that channel as inbound, so the payload is tainted and the kernel's GRANT->QUEUE escalation applies. A workflow target runs its pipeline (agents/core/routers/workflows.py:37) under the inbound action origin. The sender waits for the push as well as the turn. A retried delivery that carries an Idempotency-Key is not run again; it gets the first outcome back (H659, agents/core/routers/webhooks.py:551). One without a key runs again.\n\nAdapted, not copied:\n- Deliver to: Hermes offers log, Telegram, Discord, Slack, email and a GitHub comment. Nerva offers the log and the owner's own telegram, voice and ntfy, and refuses the rest by name with a 422 (agents/core/webhooks.py:75):\n  - Email is never an outbound side effect of an inbound delivery (the rule ChannelManager.send keeps).\n  - A GitHub comment writes to someone else's system, so the hook's agent proposes it through the governed write-back path, one approval each.\n  - Discord and Slack are reply-only transports here, with no home channel to address.\n  - The web HUD has no push receiver yet.\n- Per-subscription skills: a Nerva hook targets an agent or a workflow, and the agent brings its own skills to the turn. Hermes' own modal does not expose skills either.\n\nTests:\n- tests/test_h153_webhook_subscriptions.py (54 cases) covers the receiver, the event filter, the template and the update.\n- tests/test_h10_8_webhooks.py (35) covers the switch, the audit and the in-flight race.\n- tests/test_h153b_webhook_delivery.py (63) covers the second round with fakes for the send and the clock.\n- tests/test_h153c_webhook_sends.py (80, the fourth round) runs the real path, the router through send_to_target and ChannelManager to a recording adapter per channel. It covers:\n  - each channel (tests/test_h153c_webhook_sends.py:104), with and without a turn;\n  - the real quiet-hours rule on a fixed clock (tests/test_h153c_webhook_sends.py:273);\n  - the real Telegram adapter's HTTP body (tests/test_h153c_webhook_sends.py:229);\n  - fail-soft delivery (tests/test_h153c_webhook_sends.py:319);\n  - a switch thrown during the turn (tests/test_h153c_webhook_sends.py:455);\n  - the workflow rule (tests/test_h153c_webhook_sends.py:534);\n  - the push cap, the single-flight receiver (tests/test_h153c_webhook_sends.py:605), and the audit of free text.\n- tests/test_h153d_webhook_review.py (61 cases, the fifth round) covers:\n  - a long line of brackets pushed at once, and the text as written on Telegram and ntfy (tests/test_h153d_webhook_review.py:67);\n  - every renderer in linear time on one long line (tests/test_h153d_webhook_review.py:129);\n  - the hidden characters, the first-read burst (tests/test_h153d_webhook_review.py:151), the workflow answer and the encodable answers (tests/test_h153d_webhook_review.py:253);\n  - the last step as run, the unreadable receiver after the turn, a Telegram refusal, the hour of the allowance, quiet hours and the allowance, the live label, an overtaken failed read, a slider's audited value, the hour settings and web's readiness.\n- tests/test_h153e_webhook_review.py (49 cases, the sixth round) covers the renderers' scaling on inline code spans, the restore's escaping, an ordinary long link, the waiter cap and wake, a burst through astate holding one thread, every hidden character and what stays, the cut boundary, the quiet-hours end and the encodable answer; frontend/src/test/panel-state.test.tsx (2) a failed poll shown while loading.\n- frontend/src/test/webhooks-panel.test.tsx has 55 cases, frontend/src/test/use-api-sequence.test.tsx 4 (a poller slower than its interval, loading until the newest answer, an earlier answer never over a newer one, another address), frontend/src/test/interop-live-honesty.test.tsx 14 and the /v1 tests/frontend/tools.test.js 18.\n\nMutation:\n- The fourth round: 92 mutants of its guards and of the reviewer's 35 unpinned survivors (70 backend, 20 panel and Interop, 2 /v1). Three no longer applied to the final code; the reviewer replayed the 89 that apply, and each is caught.\n- The fifth round: 40 mutants of its guards (32 Python, 8 HUD), each run against its own suites. All 40 are caught, one of them (the answer's dict keys) by a test added for it. Four were first written malformed and were rewritten before they counted.\n- The fifth review's own 68 mutants left eight unpinned behaviours (five hidden characters, the cut boundary, the quiet-hours end, the link bound); each has a test now. This round's 13 mutants (12 Python, 1 HUD) were all caught.\n- The fourth review's own 104 mutants left 20 survivors: seven equivalent, one a strengthening (catching an infinite hour, now the code) and twelve unpinned. Each of the twelve now has a test.",
       "remaining": "",
       "evidence": [
         {
@@ -1789,7 +1797,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/core/channels/ntfy.py",
@@ -3492,7 +3500,7 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:368, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:316-321), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:653). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:279, validated at :720; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1201-1204). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:368, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:316-321), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:655). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:279, validated at :720; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1201-1204). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
       "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1598-1631) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:44-59) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1201-1204). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:652-655). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
@@ -3569,7 +3577,7 @@
         },
         {
           "path": "docs/test-manual/07-autonomy-governance.md",
-          "sha256": "4d2a8da3fb2852234e5db67e067429a6e319374dd1ec07b7edd739595c4fa0ec"
+          "sha256": "223974c338515d4cd267d10ba0dc0f652a057ad5708e89350fa6230c90dacaae"
         }
       ]
     },
@@ -4222,7 +4230,7 @@
         },
         {
           "path": "docs/test-manual/07-autonomy-governance.md",
-          "sha256": "4d2a8da3fb2852234e5db67e067429a6e319374dd1ec07b7edd739595c4fa0ec"
+          "sha256": "223974c338515d4cd267d10ba0dc0f652a057ad5708e89350fa6230c90dacaae"
         }
       ]
     },
@@ -4660,7 +4668,7 @@
         },
         {
           "path": "docs/test-manual/07-autonomy-governance.md",
-          "sha256": "4d2a8da3fb2852234e5db67e067429a6e319374dd1ec07b7edd739595c4fa0ec"
+          "sha256": "223974c338515d4cd267d10ba0dc0f652a057ad5708e89350fa6230c90dacaae"
         }
       ]
     },
@@ -6125,7 +6133,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "tests/test_jobs_media.py",
@@ -7061,7 +7069,7 @@
       "id": "H497",
       "row_sha256": "4881e46b31b10a3a0c0fe8fee731b7373b6fd2196f645f7730e813da20185e1b",
       "status": "partial",
-      "summary": "**Gap (a) of four, plus the row's `chmod 0600 atomic writes` clause.** Both pairing credentials stop being written in the clear: `SenderPairing._code` becomes `_code_hash`, and each deeplink entry moves from being keyed by its raw token to being keyed by an opaque 8-byte id with the token's salted digest inside the entry. Verification hashes the candidate and `hmac.compare_digest`s two fixed-length hex digests, so neither the length nor any prefix of the stored credential leaks and the deeplink failure reasons stay indistinguishable. A one-time migration accepts a pre-H497 plaintext file, rehashes it in memory and rewrites it, preserving each link's channel, `created_at` and `expires_at` — an upgrade never locks the owner out nor resurrects a spent link. `_digest` encodes with `surrogatepass` so a lone surrogate (from a hand-edited store, or from the body of the one pairing route a stranger is meant to reach) misses instead of raising. `atomic_write_json` lands every JsonStore file owner-only. **The review found three false claims and all three are corrected — two of them by changing the code rather than the prose.** (1) The module docstring said the store \"holds nothing that can pair anybody\". True of a 192-bit deeplink token; **false of the pairing code**, which is whatever the owner typed: a four-digit code was recovered from the file by exhausting 10,000 candidates in **0.006 s** and then used to pair. The code is now stretched with PBKDF2-HMAC-SHA256 at 240,000 rounds, `kdf` and `rounds` stored beside each digest so raising the count later cannot lock an owner out, and a record written by the first cut is upgraded in place on the next successful pair — the one moment the plaintext is in hand — while a FAILED guess leaves it untouched. The deeplink token stays on plain SHA-256, deliberately: `redeem_deeplink` hashes once per outstanding link, so a slow hash there is a CPU lever for any stranger sending `/start junk`, and at 192 bits there is nothing for stretching to buy. (2) The salt comment defended leaving the code unstretched by pointing at the store-wide guess budget — an ONLINE control held in memory, which has no bearing on an attacker who has read the file, the exact threat at-rest hashing answers. Rewritten to say what stretching does and does not promise. (3) `atomic_write_json` claimed its chmod-before-replace ordering left no readable window. It left a shorter one: `write_text` creates the tmp at `0o666 & ~umask` and the whole payload is in it before the chmod runs. The tmp is now created EMPTY through a descriptor opened 0600 and closed again (json_store.py:74) before the unchanged `Path.write_text` call at json_store.py:78 opens that existing file — a mode `write_text` leaves alone — so no byte of a pairing digest ever lands in a file whose mode the umask chose; pinned by a test that neutralises `os.chmod` and still requires 0600. **#1179 (adversarial wave two) touched only this row's test file; `pairing.py` and `json_store.py` are byte-identical to the #1171 state.** The review claimed every inbound `/start` costs 240k rounds outside any budget. It does not, for two reasons worth keeping apart. First, `/start` never reaches the code KDF at all: a Telegram `/start <payload>` is routed by `TelegramChannel._maybe_pair_deeplink` (agents/core/channels/telegram.py:486-524) to `redeem_deeplink`, which is one plain-SHA-256 `_digest` per outstanding link, and every other chat message reaches `gate_inbound` through `ChannelGateway.route` with `code=kwargs.get(\"pairing_code\")` (agents/core/channels/gateway.py:82), a kwarg no channel in the tree ever sets — so the one path on which a stranger can spend a KDF run is `POST /api/channels/pairing/request`, the route the new test's docstring names (tests/test_pairing_secrets_at_rest.py:469). Second, on that path the KDF sits behind a budget: `_code_guess_budget_spent` (pairing.py:599) is store-wide and is consulted at pairing.py:580, BEFORE `_code_matches` at pairing.py:585, so a stranger rotating sender ids — the per-sender bucket is keyed on an id the caller chose — buys at most `_MAX_CODE_GUESSES_PER_WINDOW` = 10 KDF runs per 10-minute window however many ids they present, and a request presenting no code never reaches the KDF at all. `test_the_kdf_a_stranger_can_trigger_stays_inside_the_guess_budget` (tests/test_pairing_secrets_at_rest.py:466) now pins that by counting `_stretch` calls rather than timing them, so a slow CI box cannot fail it: 60 requests from 60 fresh ids → 10 runs with 50 turned away `rate_limited` (with the budget check removed it is 60 runs and 0 refusals — re-reproduced at this re-verification), and zero runs for a code-less request. That is the code-side counterpart of the deeplink decision above — the token stays unstretched because nothing budgets `redeem_deeplink`'s per-link compare; the code may be stretched because its compare sits behind one. Nothing in #1179's persona-scan (`agent.py`, `quarantine.py`) or MCP-stdio (`mcp/client.py`) work touches this row. **Second slice (2026-09-22) — one store per process, and the one-use claim made true for the deeplink path.** The module promised a deeplink is \"one use, ever\", and inside one instance it was; production held two. The orchestrator registers the long-lived `sender_pairing` (the gateway gates on it, the pairing router mints and revokes on it) and `TelegramChannel` was built in `web.py` without one, so `_maybe_pair_deeplink` opened a throwaway `SenderPairing()` per `/start <token>`. A `JsonStore` reads its file once and every save writes the whole in-memory state back, so the two were two stores, not two views of one: a token redeemed over Telegram was spent in the throwaway and still outstanding in the orchestrator's copy, whose next save — any save; a stranger knocking is enough — wrote it back to disk, where the next throwaway redeemed it again and paired a second sender. With a relocated data root the two did not even share a file (the registry spelled a cwd-relative `memory_logs/sender_pairing.json`, the throwaway used `data_path(...)`), so under `JARVIS_HOME` no link ever redeemed. Fixed by wiring, not by hardening the store: `TelegramChannel` takes `pairing=` and `web.py` passes `gateway.pairing`, the same object by identity; an adapter handed nothing refuses to pair rather than building one (same reply as a bad token, a warning naming the cause, the message still swallowed); the registry entry spells the path through `data_path(\"sender_pairing.json\")`. Five tests in `tests/test_telegram_pairing_shared_store.py` pin the resurrection with two instances over one file as the premise, a spent link staying spent after the owner's store saves, `revoke_deeplinks()` reaching the live adapter, an un-wired channel building nothing, and the real lifespan handing the channel `orch.sender_pairing` under the data root; red-proofed against the unpatched sources.",
+      "summary": "**Gap (a) of four, plus the row's `chmod 0600 atomic writes` clause.** Both pairing credentials stop being written in the clear: `SenderPairing._code` becomes `_code_hash`, and each deeplink entry moves from being keyed by its raw token to being keyed by an opaque 8-byte id with the token's salted digest inside the entry. Verification hashes the candidate and `hmac.compare_digest`s two fixed-length hex digests, so neither the length nor any prefix of the stored credential leaks and the deeplink failure reasons stay indistinguishable. A one-time migration accepts a pre-H497 plaintext file, rehashes it in memory and rewrites it, preserving each link's channel, `created_at` and `expires_at` — an upgrade never locks the owner out nor resurrects a spent link. `_digest` encodes with `surrogatepass` so a lone surrogate (from a hand-edited store, or from the body of the one pairing route a stranger is meant to reach) misses instead of raising. `atomic_write_json` lands every JsonStore file owner-only. **The review found three false claims and all three are corrected — two of them by changing the code rather than the prose.** (1) The module docstring said the store \"holds nothing that can pair anybody\". True of a 192-bit deeplink token; **false of the pairing code**, which is whatever the owner typed: a four-digit code was recovered from the file by exhausting 10,000 candidates in **0.006 s** and then used to pair. The code is now stretched with PBKDF2-HMAC-SHA256 at 240,000 rounds, `kdf` and `rounds` stored beside each digest so raising the count later cannot lock an owner out, and a record written by the first cut is upgraded in place on the next successful pair — the one moment the plaintext is in hand — while a FAILED guess leaves it untouched. The deeplink token stays on plain SHA-256, deliberately: `redeem_deeplink` hashes once per outstanding link, so a slow hash there is a CPU lever for any stranger sending `/start junk`, and at 192 bits there is nothing for stretching to buy. (2) The salt comment defended leaving the code unstretched by pointing at the store-wide guess budget — an ONLINE control held in memory, which has no bearing on an attacker who has read the file, the exact threat at-rest hashing answers. Rewritten to say what stretching does and does not promise. (3) `atomic_write_json` claimed its chmod-before-replace ordering left no readable window. It left a shorter one: `write_text` creates the tmp at `0o666 & ~umask` and the whole payload is in it before the chmod runs. The tmp is now created EMPTY through a descriptor opened 0600 and closed again (json_store.py:74) before the unchanged `Path.write_text` call at json_store.py:78 opens that existing file — a mode `write_text` leaves alone — so no byte of a pairing digest ever lands in a file whose mode the umask chose; pinned by a test that neutralises `os.chmod` and still requires 0600. **#1179 (adversarial wave two) touched only this row's test file; `pairing.py` and `json_store.py` are byte-identical to the #1171 state.** The review claimed every inbound `/start` costs 240k rounds outside any budget. It does not, for two reasons worth keeping apart. First, `/start` never reaches the code KDF at all: a Telegram `/start <payload>` is routed by `TelegramChannel._maybe_pair_deeplink` (agents/core/channels/telegram.py:531-569) to `redeem_deeplink`, which is one plain-SHA-256 `_digest` per outstanding link, and every other chat message reaches `gate_inbound` through `ChannelGateway.route` with `code=kwargs.get(\"pairing_code\")` (agents/core/channels/gateway.py:82), a kwarg no channel in the tree ever sets — so the one path on which a stranger can spend a KDF run is `POST /api/channels/pairing/request`, the route the new test's docstring names (tests/test_pairing_secrets_at_rest.py:469). Second, on that path the KDF sits behind a budget: `_code_guess_budget_spent` (pairing.py:599) is store-wide and is consulted at pairing.py:580, BEFORE `_code_matches` at pairing.py:585, so a stranger rotating sender ids — the per-sender bucket is keyed on an id the caller chose — buys at most `_MAX_CODE_GUESSES_PER_WINDOW` = 10 KDF runs per 10-minute window however many ids they present, and a request presenting no code never reaches the KDF at all. `test_the_kdf_a_stranger_can_trigger_stays_inside_the_guess_budget` (tests/test_pairing_secrets_at_rest.py:466) now pins that by counting `_stretch` calls rather than timing them, so a slow CI box cannot fail it: 60 requests from 60 fresh ids → 10 runs with 50 turned away `rate_limited` (with the budget check removed it is 60 runs and 0 refusals — re-reproduced at this re-verification), and zero runs for a code-less request. That is the code-side counterpart of the deeplink decision above — the token stays unstretched because nothing budgets `redeem_deeplink`'s per-link compare; the code may be stretched because its compare sits behind one. Nothing in #1179's persona-scan (`agent.py`, `quarantine.py`) or MCP-stdio (`mcp/client.py`) work touches this row. **Second slice (2026-09-22) — one store per process, and the one-use claim made true for the deeplink path.** The module promised a deeplink is \"one use, ever\", and inside one instance it was; production held two. The orchestrator registers the long-lived `sender_pairing` (the gateway gates on it, the pairing router mints and revokes on it) and `TelegramChannel` was built in `web.py` without one, so `_maybe_pair_deeplink` opened a throwaway `SenderPairing()` per `/start <token>`. A `JsonStore` reads its file once and every save writes the whole in-memory state back, so the two were two stores, not two views of one: a token redeemed over Telegram was spent in the throwaway and still outstanding in the orchestrator's copy, whose next save — any save; a stranger knocking is enough — wrote it back to disk, where the next throwaway redeemed it again and paired a second sender. With a relocated data root the two did not even share a file (the registry spelled a cwd-relative `memory_logs/sender_pairing.json`, the throwaway used `data_path(...)`), so under `JARVIS_HOME` no link ever redeemed. Fixed by wiring, not by hardening the store: `TelegramChannel` takes `pairing=` and `web.py` passes `gateway.pairing`, the same object by identity; an adapter handed nothing refuses to pair rather than building one (same reply as a bad token, a warning naming the cause, the message still swallowed); the registry entry spells the path through `data_path(\"sender_pairing.json\")`. Five tests in `tests/test_telegram_pairing_shared_store.py` pin the resurrection with two instances over one file as the premise, a spent link staying spent after the owner's store saves, `revoke_deeplinks()` reaching the live adapter, an un-wired channel building nothing, and the real lifespan handing the channel `orch.sender_pairing` under the data root; red-proofed against the unpatched sources.",
       "remaining": "**The row names four hardening gaps; (a) is closed, (c) is closed for the deeplink path, (b) and (d) are open.** (c) *revocation reaching live adapters*: `revoke_deeplinks()` and `unpair()` now act on the one object the Telegram adapter redeems from and the gateway consults on every message, so there is no second copy for a link or an approval to survive in — pinned by `test_revoking_on_the_shared_store_reaches_the_live_telegram_adapter`. Slack and Discord have no deeplink path and gate through the same gateway instance. Still outstanding, from the row itself: (b) *no lockout after N failed attempts* — the row wants a 1 h lockout after 5 failed approvals, checked BEFORE the pending lookup so a code already in flight cannot be brute-forced past it; there is still only a rate limit and an in-memory guess budget, both of which reset on restart. (d) *no admin-vs-user command split on channels*, so any paired sender gets every command; the row wants a split with an always-allowed floor of `{help, whoami}`. **Unaddressed from the Hermes column:** pairing-code GENERATION (8 characters from a 32-char unambiguous alphabet via `secrets.choice`) and the code's 1 h TTL — the code here never expires; \"max 3 pending per platform\" (the store bounds 200 globally); \"1 request per user per 10 min\" (it is 5); `unauthorized_dm_behavior` treating inbox-shaped platforms differently from chat-shaped ones; and the ordered authorization union (allow-all flag → pairing approvals → per-platform allowlist → global allowlist → global allow-all → default DENY), which is still an ad-hoc sequence in `is_allowed`/`gate_inbound`. **Two honest limits of the second slice.** The store itself still has no defence against a second instance — the guarantee is one instance per process by construction, and the premise test says so in words. And an install that had relocated its data root (`JARVIS_HOME`) and paired senders through the HUD kept them in `<cwd>/memory_logs/sender_pairing.json`; the store now opens under the data root, so those senders are held once more until re-approved (the owner's allowlisted ids never lived in that file and are unaffected). **And the limit carried from the first slice.** Stretching is a work factor, not a wall: a four-digit code goes from milliseconds to minutes, an eight-character mixed-alphabet code becomes infeasible, and **nothing enforces a floor on what the owner types** — `PairingCodeBody` caps the length at 128 and sets no minimum — while generating the code for them, the row's own prescription, is not implemented.",
       "evidence": [
         {
@@ -7070,7 +7078,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/web.py",
@@ -7082,7 +7090,7 @@
         },
         {
           "path": "agents/core/channels/gateway.py",
-          "sha256": "3e15a385534c36d69efaef59b71713c9a69155ea9c9b9595f309eefda9f8ee16"
+          "sha256": "f82f94c36c89eb1e9b80b452d374c0f042737b54d428ddb33e8fe2babf191c9a"
         },
         {
           "path": "tests/test_telegram_pairing_shared_store.py",
@@ -7778,7 +7786,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -7847,7 +7855,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "agents/core/routers/voice.py",
@@ -7924,7 +7932,7 @@
         },
         {
           "path": "tests/test_inbound_voice_read.py",
-          "sha256": "15ada43c9a080101fdc8c118896e3a2f2e37a6eaefbb3ea5985887d57b4693c4"
+          "sha256": "f9e43a035061d287dcf63fe138b2be085a99c2b5827841221119239be8a349dd"
         },
         {
           "path": "tests/test_voice_stt.py",
@@ -9272,7 +9280,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "4e29f7373c6117e96f1aa6641eb895dfe84528cf4fba6e982eeb8b05b439278c"
+          "sha256": "d4769bf1c9d2b5336d43e40273e432c771799f6d3bdf49c28a6362d0382daea0"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -9717,7 +9725,7 @@
       "id": "H677",
       "row_sha256": "5ac75f49427170eb59639204f64f8cb976be4f35dee6a6dbb737fad278aeb038",
       "status": "partial",
-      "summary": "Boot posture is gated. The lifespan runs enforce_boot_posture (agents/web.py:463, agents/core/boot_guards.py:324) and awaits orch.load_agents (agents/web.py:505), which covers backend detection, SOUL loading and plugin build, before the app serves. The local-model warm-up is not a gate: load_agents starts LLMRouter.warm_up (agents/core/llm/router.py:231) as a fire-and-forget task (agents/core/orchestrator.py:893-895). A message that arrives right after boot therefore races the cold model load, with no bounded wait, no warming state and no mark on the reply that it was served during warm-up. Shutdown has one explicit budget: serve.py:98 sets uvicorn timeout_graceful_shutdown from JARVIS_SHUTDOWN_TIMEOUT (default 10s, pinned in tests/test_h2311_operability.py). The lifespan teardown steps have no budget. ChannelManager.stop_all awaits each ch.stop() in turn (agents/core/channels/manager.py:120-122). _cancel_task awaits the cancelled task with no timeout (agents/core/orchestrator.py:1356-1358). Plugin close_all and aclose follow, also unbounded. Channel turns take the session lease (agents/core/orchestrator.py:1559) with a 180s maximum wait (agents/core/orchestrator.py:243). The Telegram poll loop handles updates one at a time (agents/core/channels/telegram.py:403, awaiting receive at agents/core/channels/telegram.py:477), so one lease waiter delays unrelated chats for up to 180s.",
+      "summary": "Boot posture is gated. The lifespan runs enforce_boot_posture (agents/web.py:463, agents/core/boot_guards.py:324) and awaits orch.load_agents (agents/web.py:505), which covers backend detection, SOUL loading and plugin build, before the app serves. The local-model warm-up is not a gate: load_agents starts LLMRouter.warm_up (agents/core/llm/router.py:231) as a fire-and-forget task (agents/core/orchestrator.py:893-895). A message that arrives right after boot therefore races the cold model load, with no bounded wait, no warming state and no mark on the reply that it was served during warm-up. Shutdown has one explicit budget: serve.py:98 sets uvicorn timeout_graceful_shutdown from JARVIS_SHUTDOWN_TIMEOUT (default 10s, pinned in tests/test_h2311_operability.py). The lifespan teardown steps have no budget. ChannelManager.stop_all awaits each ch.stop() in turn (agents/core/channels/manager.py:120-122). _cancel_task awaits the cancelled task with no timeout (agents/core/orchestrator.py:1356-1358). Plugin close_all and aclose follow, also unbounded. Channel turns take the session lease (agents/core/orchestrator.py:1559) with a 180s maximum wait (agents/core/orchestrator.py:243). The Telegram poll loop handles updates one at a time (agents/core/channels/telegram.py:416, awaiting each turn, batched per H117, at agents/core/channels/telegram.py:524), so one lease waiter delays unrelated chats for up to 180s.",
       "remaining": "(1) Bounded warm-up gate: in the lifespan, before orch.start_channels(), await the warm-up task with asyncio.wait_for(asyncio.shield(...)) under a startup_warmup_timeout setting (default 20s). On timeout, log, open anyway and let warm-up finish in the background. Expose a warming state on the status/health surface and mark turns served before warm-up completed. (2) Explicit short budgets on every teardown wait: per-channel stop, cancelled-task awaits (interrupt grace of about 1-2s), plugin close_all and aclose steps. Log each overrun so a wedged step cannot use up the service-manager stop budget. (3) A short turn-lease wait for sequentially dispatched channels such as Telegram, or per-chat concurrent dispatch. (4) Tests: warm-up completes before serving; a hung warm-up does not block past its budget; a hung channel stop does not hold teardown.",
       "evidence": [
         {
@@ -9742,7 +9750,7 @@
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "serve.py",
@@ -9986,28 +9994,28 @@
       "id": "H683",
       "row_sha256": "5f437791c8a597a2037685ac8ce18b77c91cac834c8be7d6d9b30b607a0e17cf",
       "status": "partial",
-      "summary": "Re-read on main at 55d625f4. Telegram has the partial-then-edit mechanism: TelegramDraft (agents/core/channels/telegram.py:54) sends the first token as a message, then edits it in place through _edit_message (telegram.py:347) at most once per STREAM_EDIT_INTERVAL (telegram.py:50, 1.2 s) and only when the visible text changed; finish() (telegram.py:127) settles the final text in the streamed message, sends overflow as new messages, retries markup Telegram rejects as plain text and falls back to a fresh send when the final edit fails. The adapter declares supports_edit=True (telegram.py:170) and exposes begin_stream (telegram.py:363). The real caller is Orchestrator._begin_channel_draft (agents/core/orchestrator.py:1566), invoked for every non-observed channel turn (orchestrator.py:1446): it opens a draft only when the adapter has begin_stream, its descriptor says supports_edit, the owner setting channels.streaming_replies is on (orchestrator.py:1574) and the delivery router would send to this source; the turn then runs through handle_input_stream with on_token=draft.push (orchestrator.py:1563) and draft.finish (orchestrator.py:1491) replaces the whole-reply send. The conservative default is declarative rather than a stub: ChannelDescriptor.supports_edit defaults to False (agents/core/channels/descriptor.py:36), so an adapter that declares nothing gets the whole reply. Slack and Discord are deliberately excluded from streaming (orchestrator.py:1571) because their replies go through the governed channel.reply approval queue (_queue_workspace_reply, orchestrator.py:1500-1501); test_edit_support_alone_cannot_publish_unapproved_tokens pins that an editable transport alone cannot publish tokens before that approval. Tests: 82 passed, 1 skipped (tests/test_slack_socket_mode.py needs slack_sdk, absent on this box) across tests/test_telegram_streaming.py, tests/test_workspace_channel_replies.py and tests/test_slack_socket_mode.py. #1188's change to telegram.py (the process's shared SenderPairing handed in at construction, deeplink pairing refused when none is wired) does not touch the draft, edit or send paths.",
-      "remaining": "(1) No edit or delete in the base contract: ChannelAdapter (agents/core/channels/base.py:14) still declares only abstract start/stop/send plus receive, and no adapter implements a delete operation (no delete_message or deleteMessage anywhere in agents/), so a sealed streamed preview cannot be removed and there is no base method that fails loudly for a channel that cannot edit; the fallback to a whole reply is silent. (2) Slack and Discord do not stream: both descriptors declare supports_edit=True (agents/core/channels/slack.py:102, agents/core/channels/discord.py:32) but neither adapter implements begin_stream or an edit call (Slack's send posts via chat_postMessage only, slack.py:329), and _begin_channel_draft refuses both because a streamed draft would publish tokens before the channel.reply approval; streaming there needs an approval contract that covers output not yet generated. (3) No acknowledgement at ingest: Telegram sends a typing chat action only while reading an inbound attachment (telegram.py:613) and a record_voice action before a spoken reply, so an ordinary text message gets no receipt signal until the first streamed token or the whole reply; Slack and Discord send none (the Slack Socket Mode envelope ack is a transport ack to Slack, not a signal the sender sees).",
+      "summary": "Re-read on main at 55d625f4. Telegram has the partial-then-edit mechanism: TelegramDraft (agents/core/channels/telegram.py:55) sends the first token as a message, then edits it in place through _edit_message (telegram.py:352) at most once per STREAM_EDIT_INTERVAL (telegram.py:51, 1.2 s) and only when the visible text changed; finish() (telegram.py:128) settles the final text in the streamed message, sends overflow as new messages, retries markup Telegram rejects as plain text and falls back to a fresh send when the final edit fails. The adapter declares supports_edit=True (telegram.py:171) and exposes begin_stream (telegram.py:368). The real caller is Orchestrator._begin_channel_draft (agents/core/orchestrator.py:1566), invoked for every non-observed channel turn (orchestrator.py:1446): it opens a draft only when the adapter has begin_stream, its descriptor says supports_edit, the owner setting channels.streaming_replies is on (orchestrator.py:1574) and the delivery router would send to this source; the turn then runs through handle_input_stream with on_token=draft.push (orchestrator.py:1563) and draft.finish (orchestrator.py:1491) replaces the whole-reply send. The conservative default is declarative rather than a stub: ChannelDescriptor.supports_edit defaults to False (agents/core/channels/descriptor.py:36), so an adapter that declares nothing gets the whole reply. Slack and Discord are deliberately excluded from streaming (orchestrator.py:1571) because their replies go through the governed channel.reply approval queue (_queue_workspace_reply, orchestrator.py:1500-1501); test_edit_support_alone_cannot_publish_unapproved_tokens pins that an editable transport alone cannot publish tokens before that approval. Tests: 82 passed, 1 skipped (tests/test_slack_socket_mode.py needs slack_sdk, absent on this box) across tests/test_telegram_streaming.py, tests/test_workspace_channel_replies.py and tests/test_slack_socket_mode.py. #1188's change to telegram.py (the process's shared SenderPairing handed in at construction, deeplink pairing refused when none is wired) does not touch the draft, edit or send paths.",
+      "remaining": "(1) No edit or delete in the base contract: ChannelAdapter (agents/core/channels/base.py:14) still declares only abstract start/stop/send plus receive, and no adapter implements a delete operation (no delete_message or deleteMessage anywhere in agents/), so a sealed streamed preview cannot be removed and there is no base method that fails loudly for a channel that cannot edit; the fallback to a whole reply is silent. (2) Slack and Discord do not stream: both descriptors declare supports_edit=True (agents/core/channels/slack.py:102, agents/core/channels/discord.py:32) but neither adapter implements begin_stream or an edit call (Slack's send posts via chat_postMessage only, slack.py:333), and _begin_channel_draft refuses both because a streamed draft would publish tokens before the channel.reply approval; streaming there needs an approval contract that covers output not yet generated. (3) No acknowledgement at ingest: Telegram sends a typing chat action only while reading an inbound attachment (telegram.py:658) and a record_voice action before a spoken reply, so an ordinary text message gets no receipt signal until the first streamed token or the whole reply; Slack and Discord send none (the Slack Socket Mode envelope ack is a transport ack to Slack, not a signal the sender sees).",
       "evidence": [
         {
           "path": "agents/core/channels/slack.py",
-          "sha256": "d8e234990773f4545b9a0f3e3ab0e7ff71ed2ff782f5bb39c9019b7b24883a96"
+          "sha256": "f34c20474526f02acd39f9625b77d0298ae3b4b3dd6b7fd5c53ed785bfa99aed"
         },
         {
           "path": "agents/core/channels/discord.py",
-          "sha256": "afa87b537fdbf1943259ae25e18e1df87a1b10c0d35a69c1cea22e995dcc062e"
+          "sha256": "5016803f7a177ed5cdac59cdb9659e3149058d38dc944d73b1936609cc317d1d"
         },
         {
           "path": "tests/test_workspace_channel_replies.py",
-          "sha256": "c361161514468bbd415d49afde7f749d8bd1df6b803320b17195e928bcc40c45"
+          "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
         },
         {
           "path": "tests/test_slack_socket_mode.py",
-          "sha256": "ae69c575724eb37b2f9393d0f8baf666cbc9fab06725502ad9e4c95c58e29a89"
+          "sha256": "563905e9b0089234f06fe3044f01812b6f6bcc43c1692011e46d3c99bec9dae9"
         },
         {
           "path": "agents/core/channels/telegram.py",
-          "sha256": "c6ee0ab8047f95071f8fc004d93ad1e971746d80037bb834482375f812b9aaf1"
+          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
         },
         {
           "path": "tests/test_telegram_streaming.py",

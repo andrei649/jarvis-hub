@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H117 a burst of messages is one turn (missing → equivalent, #1207; headline 165 → 166/697).
+
+  A Telegram-split long message, an album (one update per photo) or a photo followed by “what is this?” ran one turn per piece. Now (`agents/core/channels/batching.py`), as Hermes' text/photo/album batching:
+  - **The window.** Pieces from the same sender in the same conversation within 0.35 s of each other are merged in order into one turn, never waiting past 1.0 s from the first piece (32 pieces flush at once). `JARVIS_INBOUND_BATCH_MS` / `JARVIS_INBOUND_BATCH_MAX_MS` set it for every channel; 0 turns it off.
+  - **Where.** Telegram's poll loop (polling without the long wait while pieces are held; a button tap or observed message flushes first; stopping flushes); Discord and Slack via a timer-per-key batcher that delivers in order (Slack keyed by thread too; a stopping channel discards, as Slack already does with undelivered events).
+  - **Scanned whole.** The gateway's injection scan runs on the merged text, now with whitespace collapsed, so a payload split across pieces or lines is caught.
+
+  61 mutants: 59 caught, 2 equivalent. Test manual: GOV-275, GOV-276.
+  Tests: backend 16,079 → 16,126 (`tests/test_h117_message_batching.py` 47); vitest 1,507.
+
 - 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697).
 
   The compressor summarised the middle of a conversation and the evicted turns left the prompt with nothing checking they had landed anywhere (the store keeps only the last `memory.max_turns`). Now (`agents/core/memory/precompress.py`), as Hermes' `on_pre_compress`:

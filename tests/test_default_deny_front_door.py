@@ -58,6 +58,12 @@ _FRONT_DOOR_VARS = (
 
 
 @pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
+@pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     for var in _FRONT_DOOR_VARS:
         monkeypatch.delenv(var, raising=False)

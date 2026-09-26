@@ -27,6 +27,14 @@ from agents.core.channels.telegram import TelegramChannel, TelegramDraft
 from agents.core.channels.voice_mode import ALWAYS, OFF, VOICE, VoiceModeStore
 
 _update_ids = itertools.count(1)
+
+
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 OGG = b"OggS" + b"pretend"
 SAID = "cât e ceasul"
 REPLY = "**Este** ora 10.\n\n```\nnot spoken\n```"

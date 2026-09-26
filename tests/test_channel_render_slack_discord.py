@@ -22,6 +22,12 @@ from agents.core.channels.render import render, render_outbound, to_slack_mrkdwn
 from agents.core.channels.slack import SLACK_MAX_MESSAGE_LENGTH, SlackChannel  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _one_turn_per_message(monkeypatch):
+    """These tests are about each message on its own; H117's batching has its own tests."""
+    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
+
+
 def test_descriptors_declare_the_dialect_and_the_cap():
     assert SlackChannel.descriptor.dialect == DIALECT_SLACK_MRKDWN
     assert SlackChannel.descriptor.max_message_length == SLACK_MAX_MESSAGE_LENGTH == 40_000

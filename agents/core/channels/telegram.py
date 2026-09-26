@@ -6,6 +6,7 @@ responses back as Telegram replies.
 Uses the PermissionGate to enforce domain restrictions.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -179,6 +180,10 @@ class TelegramChannel(ChannelAdapter):
                  group_policy: Optional[GroupPolicy] = None,
                  pairing=None):
         super().__init__("telegram", handler)
+        # H117: a burst from one sender (a split message, an album, a photo then its
+        # question) is held for the batch window and handed over as one turn.
+        from .batching import Coalescer, configured
+        self._batch = Coalescer(*configured())
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}"
         self.client = httpx.AsyncClient(timeout=15.0)
@@ -399,89 +404,129 @@ class TelegramChannel(ChannelAdapter):
     async def _poll_loop(self):
         while self._running:
             try:
-                updates = await self._get_updates()
+                # H117: while pieces of a burst are held, poll without the long wait so
+                # the batch flushes when its window closes, not 25 s later.
+                wait = self._batch.wait()
+                if wait is None:
+                    updates = await self._get_updates()
+                else:
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    updates = await self._get_updates(timeout=0)
                 for up in updates:
                     self._offset = up["update_id"] + 1
-                    # Decision-inbox button taps arrive as callback_query updates.
-                    cb = up.get("callback_query")
-                    if cb:
-                        await self._handle_callback(cb)
-                        continue
-                    msg = up.get("message") or up.get("edited_message")
-                    if not msg:
-                        continue
-                    uid = msg["from"]["id"]
-                    if self.allowed_users and uid not in self.allowed_users:
-                        logger.info("Ignored message from user %s", log_safe(uid))
-                        continue
-                    text = msg.get("text", "")
-                    chat_id = msg["chat"]["id"]
-                    # A photo, a voice note or a captioned image used to land
-                    # here and be dropped by `if not text`, with no reply and
-                    # nothing the sender could learn from. Recognise it first;
-                    # a text-only message is unaffected (classify returns None).
-                    attachment = classify(msg)
-                    if not text and attachment is None:
-                        continue
-                    # A `/start <token>` deeplink pairs this sender and stops here:
-                    # the payload is a credential, so it must never be forwarded to
-                    # the orchestrator, echoed, or logged as message text.
-                    if await self._maybe_pair_deeplink(text, uid, chat_id):
-                        continue
-                    chat = msg.get("chat") or {}
-                    # A caption is the sender's own words about what they sent,
-                    # so it is what the group gate must judge and what the turn
-                    # carries — with its own entity list, or an @mention in a
-                    # caption would not count as addressing the bot.
-                    spoken = turn_text(attachment, text) if attachment else text
-                    decision = gate_message(
-                        self.group_policy,
-                        chat_type=chat.get("type", "private"),
-                        chat_id=chat_id,
-                        thread_id=msg.get("message_thread_id"),
-                        text=spoken,
-                        entities=msg.get("entities") or msg.get("caption_entities") or (),
-                        reply_to_from_id=(
-                            ((msg.get("reply_to_message") or {}).get("from") or {}).get("id")
-                        ),
-                        bot_id=self._bot_id,
-                        bot_username=self._bot_username,
-                    )
-                    if decision.action == OBSERVE:
-                        if decision.text:
-                            await self.receive(
-                                decision.text, chat_id=chat_id, sender=str(uid),
-                                observe_only=True,
-                            )
-                        continue
-                    if decision.action != ANSWER:
-                        logger.debug("Ignored group message (%s)", decision.reason)
-                        continue
-                    turn = decision.text
-                    if attachment is not None:
-                        logger.info("Telegram inbound media: %s", attachment.to_dict())
-                        read, why = await self._read_attachment(
-                            attachment, decision.text, chat_id)
-                        if read:
-                            turn = read
-                        else:
-                            # Nothing was read. Say exactly that, rather than
-                            # answering about a file nobody opened — and rather
-                            # than arriving into silence, which is what this
-                            # whole path exists to stop.
-                            await self.send(describe(attachment, note=why), chat_id=chat_id)
-                    # Pass the sender id so the gateway's H12.19 pairing gate can
-                    # hold unknown senders for approval (no-op unless enabled).
-                    if turn:
-                        try:
-                            await self.receive(turn, chat_id=chat_id, sender=str(uid))
-                        finally:
-                            # A turn the router answered with nothing must not leave
-                            # its voice mark behind for the next, typed, question.
-                            self._voice_turns.discard(chat_id)
+                    await self._handle_update(up)
+                for key in self._batch.due():
+                    await self._flush_turn(key)
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
-                await __import__("asyncio").sleep(3)
+                await asyncio.sleep(3)
+        # Stopping never drops what a sender already said: held pieces go out now.
+        await self._flush_all_turns()
+
+    async def _handle_update(self, up: dict) -> None:
+        """One update: a button tap, an ignored message, or a turn piece to batch (H117)."""
+        # Decision-inbox button taps arrive as callback_query updates.
+        cb = up.get("callback_query")
+        if cb:
+            await self._flush_all_turns()      # what was said before the tap goes first
+            await self._handle_callback(cb)
+            return
+        msg = up.get("message") or up.get("edited_message")
+        if not msg:
+            return
+        uid = msg["from"]["id"]
+        if self.allowed_users and uid not in self.allowed_users:
+            logger.info("Ignored message from user %s", log_safe(uid))
+            return
+        text = msg.get("text", "")
+        chat_id = msg["chat"]["id"]
+        # A photo, a voice note or a captioned image used to land
+        # here and be dropped by `if not text`, with no reply and
+        # nothing the sender could learn from. Recognise it first;
+        # a text-only message is unaffected (classify returns None).
+        attachment = classify(msg)
+        if not text and attachment is None:
+            return
+        # A `/start <token>` deeplink pairs this sender and stops here:
+        # the payload is a credential, so it must never be forwarded to
+        # the orchestrator, echoed, or logged as message text.
+        if await self._maybe_pair_deeplink(text, uid, chat_id):
+            return
+        chat = msg.get("chat") or {}
+        # A caption is the sender's own words about what they sent,
+        # so it is what the group gate must judge and what the turn
+        # carries — with its own entity list, or an @mention in a
+        # caption would not count as addressing the bot.
+        spoken = turn_text(attachment, text) if attachment else text
+        decision = gate_message(
+            self.group_policy,
+            chat_type=chat.get("type", "private"),
+            chat_id=chat_id,
+            thread_id=msg.get("message_thread_id"),
+            text=spoken,
+            entities=msg.get("entities") or msg.get("caption_entities") or (),
+            reply_to_from_id=(
+                ((msg.get("reply_to_message") or {}).get("from") or {}).get("id")
+            ),
+            bot_id=self._bot_id,
+            bot_username=self._bot_username,
+        )
+        if decision.action == OBSERVE:
+            if decision.text:
+                await self._flush_all_turns()
+                await self.receive(
+                    decision.text, chat_id=chat_id, sender=str(uid),
+                    observe_only=True,
+                )
+            return
+        if decision.action != ANSWER:
+            logger.debug("Ignored group message (%s)", decision.reason)
+            return
+        turn = decision.text
+        if attachment is not None:
+            logger.info("Telegram inbound media: %s", attachment.to_dict())
+            read, why = await self._read_attachment(
+                attachment, decision.text, chat_id)
+            if read:
+                turn = read
+            else:
+                # Nothing was read. Say exactly that, rather than
+                # answering about a file nobody opened — and rather
+                # than arriving into silence, which is what this
+                # whole path exists to stop.
+                await self.send(describe(attachment, note=why), chat_id=chat_id)
+        # Pass the sender id so the gateway's H12.19 pairing gate can
+        # hold unknown senders for approval (no-op unless enabled). H117: the
+        # piece is held so a burst from this sender becomes one turn.
+        if turn:
+            await self._queue_turn(chat_id, uid, turn)
+
+    async def _queue_turn(self, chat_id, uid, turn: str) -> None:
+        if not self._batch.enabled:
+            await self._deliver_turn(chat_id, uid, turn)
+            return
+        key = (chat_id, str(uid))
+        if self._batch.add(key, turn):
+            await self._flush_turn(key)
+
+    async def _flush_turn(self, key) -> None:
+        held = self._batch.pop(key)
+        if held is not None and held.text:
+            await self._deliver_turn(key[0], key[1], held.text)
+
+    async def _flush_all_turns(self) -> None:
+        for key in self._batch.held_keys():
+            await self._flush_turn(key)
+
+    async def _deliver_turn(self, chat_id, uid, turn: str) -> None:
+        try:
+            await self.receive(turn, chat_id=chat_id, sender=str(uid))
+        finally:
+            # A turn the router answered with nothing must not leave
+            # its voice mark behind for the next, typed, question.
+            self._voice_turns.discard(chat_id)
+
 
     async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:
         """Redeem a ``/start <token>`` deeplink. True when this message was one.
@@ -761,14 +806,14 @@ class TelegramChannel(ChannelAdapter):
         except Exception:
             return None
 
-    async def _get_updates(self) -> list:
+    async def _get_updates(self, timeout: int = 25) -> list:
         # The read timeout must exceed the 25s long-poll, or httpx aborts every
         # idle cycle at the client's 15s default and churns the connection. Let
         # failures propagate — _poll_loop logs and backs off 3s; swallowing them
         # here turned an outage into an unthrottled tight reconnect loop.
         resp = await self.client.get(
             f"{self.api_base}/getUpdates",
-            params={"offset": self._offset, "timeout": 25},
+            params={"offset": self._offset, "timeout": timeout},
             timeout=httpx.Timeout(15.0, read=30.0),
         )
         resp.raise_for_status()
