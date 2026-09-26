@@ -45,6 +45,7 @@ anchors on it so the app works regardless of the working directory.
 import os
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 # agents/core/paths.py → parents[2] is the repo root.
@@ -90,14 +91,15 @@ def app_root() -> Path:
     return _REPO_ROOT
 
 
-def user_home() -> "Path | None":
+def user_home(environ: "Mapping[str, str] | None" = None) -> "Path | None":
     """The owner's data folder, or None when not active (plain dev checkout).
 
     $JARVIS_USER_HOME always wins; a frozen build defaults to
     ``~/Documents/Nerva``. Returning None keeps every overlay/scaffold path
-    inert so dev + test behavior is unchanged.
+    inert so dev + test behavior is unchanged. *environ* answers for another
+    environment than this process's (the doctor's prediction).
     """
-    env = os.environ.get("JARVIS_USER_HOME", "").strip()
+    env = str((os.environ if environ is None else environ).get("JARVIS_USER_HOME", "") or "").strip()
     if env:
         return Path(env).expanduser()
     if is_frozen():
@@ -141,48 +143,53 @@ def ensure_user_home() -> "Path | None":
 #: H689 — ``JARVIS_PROFILE=<name>`` runs an isolated hub: its own data root (settings,
 #: memory, secret store, install id, hub lock) at ``<root>-profiles/<name>``, beside the
 #: default root and never inside it, so the default hub's forget, backup and restore never
-#: reach another profile. The ``.env`` files stay shared (``env_provenance``).
+#: reach another profile. H689b — its credentials too: its hub reads ``<profile root>/.env``
+#: and neither shared ``.env`` (``env_provenance.load_hub_env``).
 PROFILE_ENV = "JARVIS_PROFILE"
 _PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
-def _profile_raw() -> str:
+def _profile_raw(environ: "Mapping[str, str] | None" = None) -> str:
+    if environ is not None:
+        return str(environ.get(PROFILE_ENV, "") or "").strip()
     from agents.core.env_config import env_str
 
     return env_str(PROFILE_ENV).strip()
 
 
-def profile_name() -> "str | None":
+def profile_name(environ: "Mapping[str, str] | None" = None) -> "str | None":
     """The active profile, or None for the default one (unset, blank or ``default``)."""
-    raw = _profile_raw()
+    raw = _profile_raw(environ)
     if not raw or raw == "default":
         return None
     return raw if _PROFILE_RE.match(raw) else None
 
 
-def profile_error() -> "str | None":
+def profile_error(environ: "Mapping[str, str] | None" = None) -> "str | None":
     """Why ``JARVIS_PROFILE`` is refused (:func:`data_root` raises it), or None."""
-    raw = _profile_raw()
+    raw = _profile_raw(environ)
     if raw and not _PROFILE_RE.match(raw):   # "default" is a valid name
         return (f"{PROFILE_ENV}={raw!r} is not a profile name: use 1-32 lowercase letters, "
                 "digits, '-' or '_', starting with a letter or digit")
     return None
 
 
-def data_root() -> Path:
+def data_root(environ: "Mapping[str, str] | None" = None) -> Path:
     """Return the runtime-data root (honors $JARVIS_HOME / $JARVIS_MEMORY_DIR, and
     $JARVIS_PROFILE as a sibling root beside it). A profile name that is refused raises:
-    the default root is never used in its place."""
-    env = os.environ.get("JARVIS_HOME", "").strip() or os.environ.get("JARVIS_MEMORY_DIR", "").strip()
+    the default root is never used in its place. *environ* answers for another
+    environment than this process's."""
+    source = os.environ if environ is None else environ
+    env = str(source.get("JARVIS_HOME", "") or "").strip() or str(source.get("JARVIS_MEMORY_DIR", "") or "").strip()
     if env:
         base = Path(env).expanduser()
     else:
-        home = user_home()
+        home = user_home(environ)
         base = home / "memory" if home is not None else _DEFAULT_ROOT
-    profile = profile_name()
+    profile = profile_name(environ)
     if profile:
         return base.parent / f"{base.name}-profiles" / profile
-    refused = profile_error()
+    refused = profile_error(environ)
     if refused:
         raise RuntimeError(refused)
     return base

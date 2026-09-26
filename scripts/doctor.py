@@ -681,16 +681,24 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         else:
             values = None      # another machine's files: only names Nerva knows are shown
     else:
-        repo_env = root / ".env"
-        table = ep.derive(repo_env, _home_env, env)
         where = f"predicted from this shell's environment ({why})"
-        home = _home_env(ep.after_repo_layer(repo_env, env))
-        detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
-        for path in (home, repo_env):                 # the first layer's value wins, as in the load
+        profile_env = ep.profile_env_file(env)
+        if profile_env is not None:
+            # H689b — a profile's hub reads its own root's .env and neither shared file.
+            table = ep.derive(None, profile_env, env)
+            detail = (f"profile .env {_file_state(ep, profile_env)}; the repo and data-home .env are "
+                      f"{ep.PROFILE_NOT_READ}")
+            sources = (("user_env", profile_env),)
+        else:
+            repo_env = root / ".env"
+            table = ep.derive(repo_env, _home_env, env)
+            home = _home_env(ep.after_repo_layer(repo_env, env))
+            detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
+            sources = (("repo_env", repo_env), ("user_env", home))
+        for _label, path in reversed(sources):          # the first layer's value wins, as in the load
             if path is not None:
                 values.update(ep.raw_values(path))
-        unreadable = [label for label, path in (("repo_env", repo_env), ("user_env", home))
-                      if path is not None and _not_utf8(path)]
+        unreadable = [label for label, path in sources if path is not None and _not_utf8(path)]
         if ep.dotenv_disabled(env):
             detail += "; PYTHON_DOTENV_DISABLED is set: no .env file is loaded"
     names = hub_env_names(root)

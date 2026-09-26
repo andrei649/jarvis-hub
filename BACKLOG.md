@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H689b a profile's credentials are its own (partial → equivalent for H689, #1207; headline 185 → 186/697).
+
+  The review found that every profile still loaded the repo `.env` and the data-home `.env`, which hold the provider keys, the channel bot tokens, the admin token and the token keys. Now (`agents/core/env_provenance.py`):
+  - **One file.** A profile's hub reads `<profile root>/.env` (`profile_env_file`) and neither shared file; the process environment still wins. A refused profile name stops the load rather than fall back to the shared files.
+  - **Said everywhere.** The load reports the shared files as not read by a profile, `hub_value` (the read that never loads) follows the same rule, `serve.py` names the profile's config file at start, and the doctor predicts the profile's table from its own `.env`; `paths.data_root` answers for a given environment so the doctor finds the root the hub does.
+
+  14 mutants, all caught (four after their cases were added: the load's own rules on a profile's file, a profile root from a given data home, a refused name for a given environment, the doctor listing no shared key). Test manual: ENV-183 (ENV-176 updated).
+  Tests: backend 17,264 → 17,277 (`tests/test_h689b_profile_env.py` 13).
+
 - 2026-09-26 Review round, batch 2 (H441, H296, H285, H689, H490): the adversarial review's confirmed findings fixed red-first; H689 goes back to partial (#1207; headline 186 → 185/697).
 
   - **H441** (5 findings). `/recap` on the owner's shared session (a widget visitor, a webhook, MCP, cross-channel sessions) answers only the owner and refuses anyone else before reading a turn; a turn's tools survive an explicit session load and a continuation's seed; the `/recap` line is left out in any case; a non-ASCII digit is the default count; a huge turn is cut before it is cleaned. Stays equivalent.
@@ -205,7 +214,7 @@
   - **The id.** One 32-hex id in `<data root>/install_id`. It is minted once under an in-process lock and a cross-process file lock, written atomically (fsync of the file and the folder) and read back. When it cannot be read or kept, the answer is `None`, never a new id, and a file holding anything else is left as it is.
   - **Consumers.** The activation clock carries the id and no longer re-mints over an unreadable record. Node grants are issued as `node:<id>@<install>`. Channel deeplinks and satellite pairings carry the install id, and another install's is refused (`other_install`).
   - **One hub per root.** `serve.py` and the app lifespan (so a bare `uvicorn agents.web:app`, as in docker-compose and CI) hold `<data root>/hub.lock`; a second hub on the same root is refused with the holder's pid. The id, its lock and `hub.lock` are on the forget keep list.
-  - **Profiles.** `JARVIS_PROFILE=<name>` gives the profile its own data root beside the default one, `<data root>-profiles/<name>`: settings, memory, the SecretStore and `tokens/`, install id and lock. The `.env` files (repo and data home), which hold the provider keys, bot tokens and the admin token, are shared by every profile (still open). A bad name stops every entry: `data_root()` raises, and `serve.py` stops before it imports the hub. It is read from the process environment only (`env_provenance`).
+  - **Profiles.** `JARVIS_PROFILE=<name>` gives the profile its own data root beside the default one, `<data root>-profiles/<name>`: settings, memory, the SecretStore and `tokens/`, install id and lock. Its credentials too (H689b): the profile's hub reads only `<data root>-profiles/<name>/.env`, never the repo or data-home `.env`. A bad name stops every entry: `data_root()` raises, and `serve.py` stops before it imports the hub. It is read from the process environment only (`env_provenance`).
 
   32 mutants: 30 caught; the other two were a redundant check (removed) and an unpinned refusal (now pinned). Test manual: ENV-175, ENV-176.
   Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43, 58 after the review round; `test_first_run_first_action.py` now pins the no-re-mint rule).

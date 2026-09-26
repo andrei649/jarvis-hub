@@ -433,6 +433,24 @@ def _hub_home_env():
     return home / ".env" if home is not None else None
 
 
+#: H689b — why a profile's load leaves the shared files out (``files()`` reports it).
+PROFILE_NOT_READ = "not read by a profile: it reads only its own .env"
+
+
+def profile_env_file(environ: Mapping[str, str] | None = None) -> Path | None:
+    """H689b — the one ``.env`` a profile's hub reads, ``<profile root>/.env``; None for the
+    default hub (no profile, blank or ``default``). A refused profile name raises, as
+    ``data_root`` does: its hub never falls back to the shared files."""
+    from .paths import data_root, profile_error, profile_name
+
+    refused = profile_error(environ)
+    if refused:
+        raise RuntimeError(refused)
+    if not profile_name(environ):
+        return None
+    return data_root(environ) / ".env"
+
+
 def load_hub_env() -> dict[str, dict]:
     """The hub's own load of its .env files, before anything else it starts reads.
 
@@ -449,19 +467,38 @@ def load_hub_env() -> dict[str, dict]:
     if _HUB_LOADED is None:
         from .security import log_redaction  # noqa: F401  (snapshots JARVIS_LOG_REDACTION)
 
-        _HUB_LOADED = load_layered_env(REPO_ENV_FILE, _hub_home_env)
+        # H689b — a profile's hub reads its own root's .env and neither shared file: its
+        # credentials (provider keys, bot tokens, the admin token) are the profile's.
+        profile_env = profile_env_file()
+        if profile_env is None:
+            _HUB_LOADED = load_layered_env(REPO_ENV_FILE, _hub_home_env)
+        else:
+            _HUB_LOADED = load_layered_env(None, profile_env)
+            _FILES[REPO_ENV] = {"path": None, "kind": PROFILE_NOT_READ, "present": False, "read": False}
     return _HUB_LOADED
 
 
 def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
     """The value *key* has in the hub once its .env files are loaded, without loading
     them: the process environment, then the repo .env, then the data-home .env that the
-    first two name (``JARVIS_USER_HOME``). For a process that must not load, such as
+    first two name (``JARVIS_USER_HOME``); for a profile, the process environment, then
+    the profile's own .env (H689b). For a process that must not load, such as
     ``scripts/runtime_supervisor.py``, whose child would then read every file key as
     the process environment's (review-H273f m3). None when no layer sets it."""
     env = dict(os.environ if environ is None else environ)
     if key in env:
         return env[key]
+    try:
+        profile_env = profile_env_file(env)
+    except RuntimeError:                   # a refused profile name: its hub does not start
+        return None
+    if profile_env is not None:            # H689b — a profile's own .env, nothing shared
+        if dotenv_disabled(env) or key in FROM_PROCESS_ONLY:
+            return None
+        parsed = _file_bindings(profile_env)
+        if parsed is None or parsed[1] is None:
+            return None
+        return hub_values(parsed[1], env).get(key)
     merged = after_repo_layer(REPO_ENV_FILE, env)
     if key in merged:
         return merged[key]
@@ -510,6 +547,6 @@ __all__ = [
     "FROM_PROCESS_ONLY", "LABELS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
     "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
     "env_file_keys", "files", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env", "load_layered_env",
-    "note_for", "provenance", "raw_values", "text_keys",
+    "note_for", "profile_env_file", "provenance", "raw_values", "text_keys",
 ]
 

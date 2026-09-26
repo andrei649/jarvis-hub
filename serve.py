@@ -262,10 +262,14 @@ def main():
     print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
     # Packaged installs: create + announce the owner's data folder up front so
     # first-run users know exactly where their memory/config/skills live.
+    from agents.core.env_provenance import profile_env_file
     from agents.core.paths import ensure_user_home
+    profile_env = profile_env_file()   # H689b: a profile's config is its own .env
+    if profile_env is not None:
+        print(f"Profile config: {profile_env}  (a profile reads only its own .env)")
     home = ensure_user_home()
     if home is not None:
-        print(f"Your data lives in: {home}  (config: {home / '.env'})")
+        print(f"Your data lives in: {home}" + ("" if profile_env is not None else f"  (config: {home / '.env'})"))
     print(f"Nerva starting at http://{config.host}:{config.port}")
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
