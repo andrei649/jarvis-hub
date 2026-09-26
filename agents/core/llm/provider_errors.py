@@ -100,7 +100,7 @@ async def read_error_head(response) -> None:
             if len(head) >= ERROR_HEAD_BYTES:
                 break
     except Exception:  # noqa: BLE001 — classification is best-effort
-        pass
+        logging.getLogger(__name__).debug("error body not readable for classification", exc_info=True)
     with contextlib.suppress(Exception):
         response.nerva_error_head = bytes(head[:ERROR_HEAD_BYTES]).decode("utf-8", "replace")
 

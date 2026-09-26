@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H681 a delegated sub-agent runs on its own model and settings, and a failed one says why (partial → equivalent, #1207; headline 187 → 188/697).
+
+  A child always ran on the parent's model, and a failed model call came back as `done` with an empty answer — ten children sent to a model the provider did not know read as ten successes. Now:
+  - **Per-child settings.** `spawn(model=, provider=, overrides=)`, the `/api/subagents/spawn` body and the new `autonomy.subagent_model` / `autonomy.subagent_provider` settings (validated like a job pin; precedence explicit → setting → the parent's route, recorded as `selection.source`). Overrides are bounded: `max_tokens` 1..65536, `temperature` 0..2, `extra_body` ≤ 4 KB and only sampling keys (so nothing reaches reasoning, paid tools, price, retention or the owner's provider routing). The record says which overrides a request actually carried; a value the Claude wire fit or a budget changed is listed as ignored. A `google/` pin on Gemini asks Gemini for that model instead of silently using its default.
+  - **Honest failure.** `Orchestrator.process_detailed` returns `(text, error)` (`process()` answers as before); only the fixed failure replies count, so an answer that opens with `[` is still an answer. A failed turn is `failed` / `provider_failed`, never `done`. Every backend notes a failed call (provider, the model asked for, HTTP status, one kind) and never keeps the provider's text.
+  - **Batch report.** `spawn_batch` / `POST /api/subagents/batch` (≤ 16, within the free slots) returns one `subagent_model_rejected` notice when every child failed because the provider does not know the setting's model, naming the setting and what the router would run them on instead.
+  - Every model chosen this way passes the H378 guards (spawn, batch, the setting's write, import and `nerva config set`). The Console's SUB-AGENTS panel takes a model, shows each child's model and failure, confirms a guarded model by resending with the flags the hub named, and runs a batch.
+
+  Reviewed adversarially before the push: 1 MAJOR (a JSON-array answer read as a failure), 4 MINOR and 2 NIT fixed. 135 mutants: 129 killed (21 by cases added after the first passes), 6 equivalent. Test manual: GOV-291, GOV-292.
+  Tests: backend 17,655 → 17,850 (`tests/test_subagent_request_overrides.py` 98, `tests/test_subagent_batch_failure.py` 97); vitest 1,730 → 1,739.
+
 - 2026-09-26 H410 no credential or Romanian identifier reaches a log, from any process (partial → equivalent, #1207; headline 186 → 187/697).
 
   The H495 filter masked credentials by their *shape*. What it let through: an opaque token carried by something that names it (`?access_token=…`, `client_secret=…`, `X-Api-Key: …`, `Authorization: Token …`), a CNP or an IBAN, and every record from the coordinator and the MCP stdio bridge, which logged through a bare `basicConfig`. Now (`agents/core/log_catalogue.py`, additive, outside `security/`):

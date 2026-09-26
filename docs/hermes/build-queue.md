@@ -2,7 +2,7 @@
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
-**Pruned** (2026-09-26): the 42 rows closed so far (H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
+**Pruned** (2026-09-26): the 43 rows closed so far (H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
 
 **How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
 
@@ -56,7 +56,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
 | [H464](#h464) | Park a run on real async work instead of poking it | partial | 8 |  |
 | [H613](#h613) | Choose how it sounds and how it hears (TTS / STT provider matrix) | partial | 8 |  |
-| [H681](#h681) | Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed | partial | 8 |  |
 | [H277](#h277) | Separate models for separate jobs (vision, video, approval judging) | partial | 9 |  |
 | [H487](#h487) | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | partial | 9 | [27](#critic-note-27) |
 | [H513](#h513) | Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning | partial | 9 | [9](#critic-note-9) |
@@ -276,11 +275,7 @@ Plan: 1) agents/core/voice/tts.py: add `_speak_piper(text, voice)` for `piper:<m
 
 ## H681
 
-**Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed** (delta) — partial, ~8 h.
-
-Files: `agents/core/subagents.py`, `agents/core/autonomy_coordinator.py`, `agents/core/routers/mesh.py`, `agents/core/orchestrator.py`, `agents/core/settings_db.py`, `tests/test_subagent_request_overrides.py`, `tests/test_subagent_batch_failure.py`
-
-Plan: Extend SubAgentManager.spawn(..., model=None, provider=None, overrides=None). Record them on the spawn record and pass them to runners that accept a `selection` kwarg (the same additive contract as blocked/steer). Add model/provider/overrides fields, validated with job_selection.validate_pins, to SubAgentSpawnBody. Add settings autonomy.subagent_model and autonomy.subagent_provider. In _subagent_runner, resolve explicit, then setting, then none, and run orch.process inside selection_scope({...}). Give process a variant, or a sibling method, that returns (text, error) so the runner can raise SubAgentProviderError(error) on '' or a degraded reply; the manager then records failed with {'error': 'provider_failed', 'detail': ...}. Add spawn_batch(tasks, ...) and a POST /api/subagents/batch route. After gather, if every child failed and each detail matches /model.*(not found|does not exist|unknown)/i AND contains the configured subagent model name, return a single notice {'kind': 'subagent_model_rejected', 'model': ..., 'setting': 'autonomy.subagent_model', 'fallback': bool}. The first red test in tests/test_subagent_request_overrides.py: spawn('t', model='m1') must reach the runner with current_selection().model == 'm1' (TypeError today). In tests/test_subagent_batch_failure.py: a runner returning '' gives status failed; a batch in which all errors are "model 'foo' not found" with configured foo yields one notice; errors naming 'bar' yield none.
+Closed in #1207 (equivalent): its plan was built, with the settings named `autonomy.subagent_model` / `autonomy.subagent_provider`, failures noted by the backends rather than matched in their sanitized replies, and `extra_body` limited to sampling keys. The row's record: `python3 scripts/hermes_status.py show H681`.
 
 ## H689
 
