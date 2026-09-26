@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H507 the agent is warned when code it writes contains a known-dangerous pattern (missing → equivalent, #1207; headline 161 → 162/697).
+
+  Nothing looked at what the model wrote: `file_write` returned ok/path/bytes, the approval card only named instruction files, and a skill install checked contracts and signatures, never code. Now (`agents/core/code_guidance.py`), warn-only:
+  - **The table.** 25 rules by file type plus a GitHub Actions check: pickle/dill/marshal, `yaml.load` without SafeLoader, `torch.load` without `weights_only`, `os.system`, `shell=True`, `eval`/`exec`/`new Function`, `child_process.exec`, a Go shell `exec.Command`, SQL f-strings, `mktemp`, innerHTML/`document.write`/`dangerouslySetInnerHTML`, ECB, `createCipher`, TLS verification off (Python/Node/Go), XXE flags, a remote `<script>` without SRI, and `${{ github.event.* }}` inside a `run:` step. Guards keep `model.eval()`, SafeLoader, `regex.exec`, comments and non-code files quiet.
+  - **Where it shows.** The `file_write` approval card (`code_warnings`, count, a title notice — never a class, so H506's binding is untouched), the write result the model reads (“warnings, not refusals”), and the result of a marketplace install (`code_warnings` on the route) or a generated skill. Nothing is ever blocked; a failing scan never fails a write. Switch: `security.code_guidance`.
+
+  46 mutants: 44 caught, 2 equivalent. Test manual: GOV-267, GOV-268.
+  Tests: backend 15,796 → 15,879 (`tests/test_h507_code_guidance.py` 83); vitest 1,506.
+
 - 2026-09-26 H380 a configured cloud key is proven to work before a turn finds out (missing → equivalent, #1207; headline 160 → 161/697).
 
   "Configured" meant a key variable was non-empty, and a cloud route was "ready" because the router had a key — a wrong or revoked key was discovered by the first failed turn. Now (`agents/core/llm/provider_probe.py`):

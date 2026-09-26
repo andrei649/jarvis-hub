@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**161 / 697 = 23.1% echivalente complet în evaluarea documentată.**
+**162 / 697 = 23.2% echivalente complet în evaluarea documentată.**
 
-Din acestea, **53** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **54** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **53** au fost reevaluate pe cod în această livrare; **108** păs
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 161 | 23.1% |
+| Echivalent | 162 | 23.2% |
 | Parțial | 350 | 50.2% |
-| Lipsă | 79 | 11.3% |
+| Lipsă | 78 | 11.2% |
 | Exclus intenționat | 107 | 15.4% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 590 rânduri; progres 161/590 = **27.3%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
+**Ținta acceptată în produs:** 590 rânduri; progres 162/590 = **27.5%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
 **Acoperirea reevaluării curente:** 224/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -40,7 +40,7 @@ Din acestea, **53** au fost reevaluate pe cod în această livrare; **108** păs
 | agent-core | 36 | 8 | 15 | 9 | 4 | 0 |
 | memory | 27 | 11 | 13 | 1 | 2 | 0 |
 | automation | 32 | 2 | 24 | 3 | 3 | 0 |
-| security | 34 | 9 | 17 | 3 | 5 | 0 |
+| security | 34 | 10 | 17 | 2 | 5 | 0 |
 | media | 27 | 7 | 16 | 3 | 1 | 0 |
 | acp-mcp-dev | 33 | 3 | 13 | 11 | 6 | 0 |
 | docs-features | 48 | 10 | 24 | 5 | 9 | 0 |
@@ -49,7 +49,7 @@ Din acestea, **53** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-09-26T00:36:05Z`. Cod inspectat: `3f493f0a4c6288222b111e3240095ae6e367a7f9`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-09-26T01:17:50Z`. Cod inspectat: `6e2da03afafb037df19dee6e6ef4e67afdb6d9aa`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

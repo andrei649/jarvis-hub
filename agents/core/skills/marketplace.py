@@ -166,6 +166,8 @@ class SkillMarketplace:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # Guard concurrent publish/install from async task runners (H7.4).
         self._lock = threading.Lock()
+        # H507 — what the last install's code looks like (warn-only; never blocks).
+        self.last_install_warnings: list = []
         # 0.58 wiring: when a version-history ledger is attached, publish/install/
         # uninstall are recorded so a rollback target can be derived. Opt-in;
         # None → behaviour is byte-identical to before.
@@ -856,6 +858,18 @@ class SkillMarketplace:
             self._place(package, target_dir, staging)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+        from agents.core.code_guidance import scan_tree
+
+        try:
+            self.last_install_warnings = scan_tree(target_dir)
+        except Exception:
+            logger.warning("code guidance for an installed skill failed", exc_info=True)
+            self.last_install_warnings = []
+        if self.last_install_warnings:
+            logger.warning("Installed skill package has %d code warning(s): %s",
+                           len(self.last_install_warnings),
+                           ", ".join(sorted({w["rule"] for w in self.last_install_warnings})))
 
         # Avoid logging the package-derived name/path (log-injection); signature
         # reason is a fixed label.

@@ -202,6 +202,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
+    # H507: warn-only; code the agent writes is checked for known-dangerous patterns.
+    dict(category="security",key="code_guidance",    value=True,                  label="Warn when code the agent writes has a known-dangerous pattern", kind="toggle"),
     dict(category="security",key="sandbox_timeout",  value=30,                    label="Sandbox timeout (s)",kind="number"),
     dict(category="security",key="sandbox_memory",   value=256,                   label="Sandbox max memory (MB)",kind="number"),
     dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; empty = the managed cache under the data root, pruned after the age below; a directory you choose here or in JARVIS_EXEC_TEMP_DIR is yours and never pruned; to keep a pruned cache on a bigger disk, move the data root (JARVIS_HOME) or bind-mount cache/exec, since a linked cache is not pruned; restart to apply)", kind="text"),

@@ -592,6 +592,8 @@ class SkillLoader:
         self.skills: dict[str, Skill] = {}
         # H350 — why the last generate_skill refused its document (empty when it did not).
         self.last_generation_problems: list = []
+        # H507 — what the last generated skill's code looks like (warn-only).
+        self.last_generation_warnings: list = []
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
@@ -1085,6 +1087,7 @@ Agent-generated skill from successful task completion.
         from .validate import validate_skill_md
 
         self.last_generation_problems = validate_skill_md(skill_md)
+        self.last_generation_warnings = []
         if self.last_generation_problems:
             logger.warning("Skill generation refused: %s",
                            "; ".join(str(p) for p in self.last_generation_problems))
@@ -1170,6 +1173,17 @@ def register(skill):
                 self._usage.note_created(registered, "agent")
             except Exception:
                 logger.debug("usage provenance note skipped", exc_info=True)
+        from ..code_guidance import scan_tree
+
+        try:
+            self.last_generation_warnings = scan_tree(skill_dir)
+        except Exception:
+            logger.warning("code guidance for a generated skill failed", exc_info=True)
+            self.last_generation_warnings = []
+        if self.last_generation_warnings:
+            logger.warning("Generated skill '%s' has %d code warning(s): %s", skill_name,
+                           len(self.last_generation_warnings),
+                           ", ".join(sorted({w["rule"] for w in self.last_generation_warnings})))
         logger.info(
             "Generated skill '%s' from %s — quarantined PENDING REVIEW (not active)",
             skill_name,

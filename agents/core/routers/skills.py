@@ -458,6 +458,12 @@ async def skills_imported():
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
 
+def _install_warnings(orch) -> dict:
+    """H507 — the installed package's code warnings (warn-only), when there are any."""
+    found = getattr(getattr(orch, "marketplace", None), "last_install_warnings", None)
+    return {"code_warnings": list(found)} if isinstance(found, list) and found else {}
+
+
 class PublishSkillBody(BaseModel):
     name: str
 
@@ -550,7 +556,7 @@ async def marketplace_install(body: InstallSkillBody):
         ok = orch.marketplace.install_skill(body.name)
         if ok:
             orch.skills.discover()
-            return {"ok": True, "installed": body.name}
+            return {"ok": True, "installed": body.name, **_install_warnings(orch)}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
     except BrokerOnlyInstall:
         # Not a moderation verdict: an acquired package's code never lands in
@@ -597,7 +603,7 @@ async def marketplace_install_zip(body: InstallZipBody):
         ok = orch.marketplace.install_from_zip(zip_bytes)
         if ok:
             orch.skills.discover()
-            return {"ok": True}
+            return {"ok": True, **_install_warnings(orch)}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
     except SkillDocumentInvalid as e:
         return _invalid_skill_md(e, "the package's SKILL.md is not valid, and nothing was installed")

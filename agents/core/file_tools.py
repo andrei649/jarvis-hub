@@ -956,7 +956,16 @@ class FileTools:
         data = content.encode("utf-8")
         if len(data) > self.max_bytes:
             return {"ok": False, "reason": "too_large"}
-        return await self._mutate(args.get("path"), "write", data, approved=approved)
+        result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        if result.get("ok") is True:
+            # H507: warn-only — the model reads what it just wrote that looks dangerous.
+            from .code_guidance import result_fields
+
+            try:
+                result.update(result_fields(str(result.get("path") or args.get("path") or ""), content))
+            except Exception:
+                logger.warning("code guidance for a file write failed", exc_info=True)
+        return result
 
     async def delete_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
         return await self._mutate(args.get("path"), "delete", b"", approved=approved)
@@ -1154,7 +1163,21 @@ class FileTools:
         # spelled name has already been checked, so nothing in the class slips past.
         with contextlib.suppress(FileScopeError, OSError, ValueError):
             names.append(self.scope.resolve(raw_path).name)
-        return instruction_labels(*names)
+        classed = instruction_labels(*names)
+        # H507: code-pattern warnings ride on the same card. They never set a class, so
+        # the approval stays bound to what H506 classes the write as.
+        content = (args or {}).get("content")
+        if not isinstance(raw_path, str) or not isinstance(content, str):
+            return classed
+        from .code_guidance import labels as code_labels
+
+        warned = code_labels(raw_path, content)
+        if warned is None:
+            return classed
+        if classed is None:
+            return warned
+        notice = f"{classed['notice']}; {warned['notice']}"[:200]
+        return {**warned, **classed, "notice": notice}
 
     def preflight(self, name: str) -> Callable[[dict], Mapping]:
         spec = FILE_TOOL_SPECS[name]
