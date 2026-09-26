@@ -3,6 +3,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { V2 } from './data';
 
+// Bolt Optimization: Pre-compute static hexagon SVG path string to avoid per-frame math & string allocations during 60ms ticks
+const HEX_PATH_15 = (() => {
+  let p = '';
+  for (let i = 0; i < 6; i++) {
+    const a = (i * 60 - 90) * Math.PI / 180;
+    p += (i ? 'L' : 'M') + (Math.cos(a) * 15) + ',' + (Math.sin(a) * 15);
+  }
+  return p + 'Z';
+})();
+
 function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocusId, motion, t }) {
   const W = 640, H = 460, CX = W/2, CY = H/2;
   const R_TASK = 250; // outer ring where per-agent task nodes sit (V1's task-fan)
@@ -50,8 +60,9 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
 
   // which packets are live (a few links pulse)
   const livePackets = useMemo(() => {
-    const active = agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id);
-    return links.filter(l => active.includes(l.a) || active.includes(l.b)).slice(0,6);
+    // Bolt Optimization: Use Set for O(1) link lookups instead of O(N) array scans
+    const active = new Set(agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id));
+    return links.filter(l => active.has(l.a) || active.has(l.b)).slice(0,6);
   }, [links, agents]);
 
   const focused = focusId;
@@ -100,14 +111,15 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   const drawTasks = focused ? focusedTaskPos : positionedTasks;
   const taskColor = s => (s==='running'||s==='active') ? 'var(--accent)' : (s==='blocked'||s==='held'||s==='pending') ? 'var(--amber)' : (s==='error'||s==='failed'||s==='denied') ? 'var(--red)' : 'var(--ink-3)';
 
-  function hexPath(cx, cy, r){
-    let p='';
-    for(let i=0;i<6;i++){ const a=(i*60-90)*Math.PI/180; p+=(i?'L':'M')+(cx+Math.cos(a)*r)+','+(cy+Math.sin(a)*r); }
-    return p+'Z';
-  }
-
-  const activeCount = agents.filter(a=>a.status==='active').length;
-  const busyCount = agents.filter(a=>a.status==='busy').length;
+  // Bolt Optimization: Memoize active and busy agent counts to avoid running double .filter() on every 60ms animation tick
+  const { activeCount, busyCount } = useMemo(() => {
+    let active = 0, busy = 0;
+    for (const a of agents) {
+      if (a.status === 'active') active++;
+      else if (a.status === 'busy') busy++;
+    }
+    return { activeCount: active, busyCount: busy };
+  }, [agents]);
 
   return (
     <div className="net-wrap">
@@ -196,7 +208,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
             <g key={a.id} className={cls} transform={`translate(${p.x},${p.y})`}
               onClick={()=>{ onSelect(a.id); setFocusId(focused===a.id?null:a.id); }}
               onMouseEnter={()=>{ setHover(a.id); setTip({a, x:p.x, y:p.y}); }}>
-              <path className="net-hex" d={hexPath(0,0,15)}/>
+              <path className="net-hex" d={HEX_PATH_15}/>
               <path className="net-glyph" d={V2.glyphFor(a.id)} transform="scale(.9)"
                 stroke={a.status==='active'||activeId===a.id?'var(--accent-light)':a.status==='busy'?'var(--amber)':'var(--ink-3)'}/>
               {(a.status==='active') && <circle r="20" fill="none" stroke="var(--accent)" strokeWidth=".7" opacity=".4" className="ambient-anim" style={{animation:motion==='calm'?'none':'pulse-green 2.6s infinite'}}/>}
