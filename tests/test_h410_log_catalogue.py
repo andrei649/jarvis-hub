@@ -59,6 +59,7 @@ def _logger(name: str):
     ("GET /login?password=hunter2 HTTP/1.1", "hunter2"),
     ("GET /s3?X-Amz-Signature=0a1b2c3d4e5f", "0a1b2c3d4e5f"),
     ("GET /hook?token=abc", "abc"),
+    ("GET /x?a=1;sig=0a1b2c3d", "0a1b2c3d"),
     ("body client_secret=Zx81kdfLq0PaW3", "Zx81kdfLq0PaW3"),
     ("form refresh_token=Zx81kdfLq0PaW3&grant_type=refresh_token", "Zx81kdfLq0PaW3"),
     ('json {"access_token": "Zx81kdfLq0PaW3", "expires_in": 3600}', "Zx81kdfLq0PaW3"),
@@ -70,10 +71,11 @@ def _logger(name: str):
     ("x-goog-api-key: 9f8e7d6c5b4a3f2e", "9f8e7d6c5b4a3f2e"),
     ("Authorization: Token abcd1234efgh5678ijkl", "abcd1234efgh5678ijkl"),
     ("Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"),
+    ("Proxy-Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"),
     ("Authorization: Bearer short1", "short1"),
     ("{'Authorization': 'Token abcd1234efgh5678ijkl'}", "abcd1234efgh5678ijkl"),
     ("Authorization: abcd1234efgh5678ijkl", "abcd1234efgh5678ijkl"),
-    ("Cookie: session=abc123; theme=dark", "session=abc123"),
+    ("Cookie: theme=dark; session=abc123", "session=abc123"),
     ("Set-Cookie: sid=abc123def; HttpOnly", "sid=abc123def"),
 ])
 def test_an_opaque_credential_is_masked_by_its_name(line, secret):
@@ -104,11 +106,35 @@ def test_the_masked_line_keeps_everything_around_the_credential():
     "the order 4000000000000 shipped",           # 13 digits, not a CNP
     "RO49AAAA1B31007593840001",                  # IBAN-shaped, checksum fails
     "an api key is required",
+    "client_secret=unset",                       # under six characters: not a credential
+    "Authorization: insufficient scope",         # no digit, no scheme
+    "Authorization: 401 from upstream",          # a digit, but short
+    "prompt token: 123456 of 200000",            # a bare `token` key is a count, not a secret
 ])
 def test_ordinary_text_is_left_alone(line):
     logger, _, buf = _logger("jarvis.test.h410.plain")
     logger.info(line)
     assert buf.getvalue().strip() == line
+
+
+def test_a_value_the_first_filter_named_keeps_its_name():
+    """A JWT in a named field is masked by the H495 filter first; the catalogue does not
+    rename it, and a header is named as a header."""
+    logger, _, buf = _logger("jarvis.test.h410.names2")
+    jwt = "eyJ" + "a" * 10 + "." + "b" * 10 + "." + "c" * 10
+    logger.info(f'{{"access_token": "{jwt}"}}')
+    logger.info("X-Api-Key: 9f8e7d6c5b4a3f2e")
+    assert buf.getvalue().splitlines() == ['{"access_token": "[REDACTED:jwt]"}', "X-Api-Key: [REDACTED:api_key_header]"]
+
+
+def test_a_secret_split_across_the_format_and_an_argument_is_named_by_what_matched():
+    """The IBAN only exists once the line is rendered; the argument is masked whole and
+    named after the finding that holds, not a 13-digit number that fails its checksum."""
+    logger, _, buf = _logger("jarvis.test.h410.straddle")
+    logger.info("ref 4000000000000 iban RO49AAAA1B31%s", "007593840000")
+    out = buf.getvalue().strip()
+    assert "007593840000" not in out and "4000000000000" in out
+    assert out.endswith("[REDACTED:ro_iban]")
 
 
 def test_a_cnp_and_an_iban_are_masked_only_when_their_checksum_holds():

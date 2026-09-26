@@ -57,11 +57,12 @@ QUERY_PARAMS = (
     "signature", "sig", "x-amz-signature", "x-amz-security-token", "x-amz-credential",
     "session", "sessionid", "session_id", "jwt",
 )
-#: Body, form and structured-log keys whose value is a credential.
+#: Body, form and structured-log keys whose value is a credential (hyphenated header
+#: names are the header rule's: ``\b`` would find ``api-key`` inside ``X-Api-Key``).
 SECRET_KEYS = (
-    "access_token", "refresh_token", "id_token", "client_secret", "api_key", "api-key", "apikey",
+    "access_token", "refresh_token", "id_token", "client_secret", "api_key", "apikey",
     "secret_key", "private_key", "auth_token", "session_token", "app_secret", "webhook_secret",
-    "signing_secret", "access_key", "x-api-key",
+    "signing_secret", "access_key",
 )
 #: Headers whose whole value is a credential.
 SECRET_HEADERS = (
@@ -101,12 +102,13 @@ def _rules() -> tuple[_Rule, ...]:
           for qt in ('"', "'")),
         # client_secret=Zx81…  (unquoted: a credential-looking value, 6 chars or more)
         _Rule("secret_field", re.compile(rf"(\b(?:{k})\s*[=:]\s*){_NOT_MASKED}[^\s&,;\"'<>(){{}}\[\]]{{6,}}", i), 1),
-        # Authorization: Token abc…   /   'Authorization': 'Basic …'
+        # Authorization: Token abc…   /   'Authorization': 'Basic …'  (Proxy-Authorization too:
+        # \b holds after its hyphen)
         _Rule("auth_header", re.compile(
-            rf"(\b(?:proxy-)?authorization[\"']?\s*[:=]\s*[\"']?(?:{s})\s+){_NOT_MASKED}[^\s,;\"']+", i), 1),
+            rf"(\bauthorization[\"']?\s*[:=]\s*[\"']?(?:{s})\s+){_NOT_MASKED}[^\s,;\"']+", i), 1),
         # Authorization: abc123…  (no scheme: 12 chars or more, with a digit)
         _Rule("auth_header", re.compile(
-            rf"(\b(?:proxy-)?authorization[\"']?\s*[:=]\s*[\"']?)(?!(?:{s})\s){_NOT_MASKED}"
+            rf"(\bauthorization[\"']?\s*[:=]\s*[\"']?)(?!(?:{s})\s){_NOT_MASKED}"
             rf"(?=[^\s,;\"']*\d)[^\s,;\"']{{12,}}", i), 1),
         # X-Api-Key: 9f8e…   /   'x-api-key': '…'
         _Rule("api_key_header", re.compile(
