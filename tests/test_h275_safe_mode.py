@@ -451,6 +451,24 @@ def test_the_heartbeat_overlay_gives_way_to_the_shipped_schedule(tmp_path, monke
     assert safe_mode.status()["skipped"] == []
 
 
+def test_outside_safe_mode_the_data_homes_heartbeat_overlay_still_wins_over_the_repos(tmp_path, monkeypatch):
+    """The review round rebuilt the overlay lookup; a normal boot keeps its precedence."""
+    from agents.core.heartbeat import HeartbeatScheduler
+
+    agents_dir = tmp_path / "agents"
+    (agents_dir / "baz").mkdir(parents=True)
+    (agents_dir / "baz" / "HEARTBEAT.md").write_text(_HB.format(agent="baz", item="shipped step"), encoding="utf-8")
+    (agents_dir / "baz" / "HEARTBEAT.local.md").write_text(_HB.format(agent="baz", item="repo step"), encoding="utf-8")
+    home = tmp_path / "Nerva"
+    (home / "souls" / "baz").mkdir(parents=True)
+    (home / "souls" / "baz" / "HEARTBEAT.local.md").write_text(_HB.format(agent="baz", item="home step"),
+                                                               encoding="utf-8")
+    monkeypatch.setenv("JARVIS_USER_HOME", str(home))
+    beats = HeartbeatScheduler(agents_dir=str(agents_dir))
+    beats.load_all()
+    assert "home step" in str(beats._heartbeat_configs["baz"])
+
+
 def test_an_unreadable_souls_folder_does_not_stop_a_safe_boot(tmp_path, monkeypatch):
     """Review-H275 F2: an overlay safe mode passes over is not probed in a way that can
     raise, so a souls folder that cannot be read (EACCES) is left out, not fatal."""
@@ -542,6 +560,18 @@ def test_a_job_created_edited_or_resumed_in_safe_mode_stays_off_the_scheduler(jo
     assert safe_mode.status()["skipped"] == ["owner_jobs"]
     monkeypatch.delenv(safe_mode.ENV_NAME)
     assert runner.register_all() == 1 and f"job-{job.id}" in sched.jobs
+
+
+def test_the_confirmation_says_the_first_run_waits_while_the_scheduler_runs(jobs, monkeypatch):
+    """In safe mode the scheduler is alive but holds no owner job: the first run is queued,
+    not "now", and the confirmation says why."""
+    runner, sched = jobs
+    sched.running = True
+    _on(monkeypatch)
+    _job, first_run, confirmation = runner.arm(**_REMIND, first_run=True)
+    assert first_run is not None
+    assert confirmation.startswith("first run queued, then ") and "safe mode" in confirmation
+    assert "first run now" not in confirmation
 
 
 def test_a_manual_tick_fires_no_owner_job_in_safe_mode(jobs, monkeypatch):
