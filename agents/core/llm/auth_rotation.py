@@ -156,14 +156,17 @@ class AuthProfilePool:
         self._active = (self._active + 1) % len(self._profiles)
         return self._profiles[self._active]
 
-    def report_failure(self, key: Optional[str] = None) -> Optional[AuthProfile]:
-        """Mark a profile failed (exponential cooldown) and rotate away from it."""
+    def report_failure(self, key: Optional[str] = None, cooldown: float = 0.0) -> Optional[AuthProfile]:
+        """Mark a profile failed (exponential cooldown) and rotate away from it.
+
+        ``cooldown`` is a floor: a key the shared 429 guard holds (H373) cools at least
+        as long as its hold, so the pool does not come back to it while it is held."""
         p = self._find(key)
         if p is None:
             return None
         p.failures += 1
         backoff = min(self._base * (2 ** (p.failures - 1)), self._max)
-        p.cooldown_until = self._clock() + backoff
+        p.cooldown_until = self._clock() + max(backoff, cooldown)
         return self.rotate()
 
     def report_success(self, key: Optional[str] = None) -> None:

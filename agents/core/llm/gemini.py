@@ -20,6 +20,7 @@ from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .gemini_context import CachedContentRejected, GeminiRequestBinding
 from .provider_errors import GEMINI_DEGRADED_REPLY, log_provider_failure
+from .quota import ProviderRateLimited
 from .tool_dialects import (
     gemini_usage,
     GEMINI_FINISH_REASONS,
@@ -193,14 +194,21 @@ class GeminiBackend(LLMBackend):
     def _rotate_after_failure(
         self,
         binding: GeminiRequestBinding,
-        exc: httpx.HTTPStatusError,
+        exc: httpx.HTTPStatusError | ProviderRateLimited,
         *,
         attempt: int,
         attempts: int,
     ) -> GeminiRequestBinding | None:
-        if self.auth_pool is None or not is_rotatable_status(exc.response.status_code):
+        if self.auth_pool is None:
             return None
-        self.auth_pool.report_failure(binding.lease.profile_id)
+        if isinstance(exc, ProviderRateLimited):
+            # H373 — the shared 429 guard held this key and sent nothing: cool it for the
+            # whole hold and fail over, as on a 429.
+            self.auth_pool.report_failure(binding.lease.profile_id, cooldown=exc.retry_in)
+        elif is_rotatable_status(exc.response.status_code):
+            self.auth_pool.report_failure(binding.lease.profile_id)
+        else:
+            return None
         if attempt + 1 >= attempts:
             return None
         return self._next_auth_binding(binding)
@@ -293,7 +301,7 @@ class GeminiBackend(LLMBackend):
                 return self._finalize_cloud(text)
             except ReasoningEffortRefused:
                 raise
-            except httpx.HTTPStatusError as exc:
+            except (httpx.HTTPStatusError, ProviderRateLimited) as exc:
                 log_provider_failure(
                     logger,
                     provider="Gemini",
@@ -402,7 +410,7 @@ class GeminiBackend(LLMBackend):
                 return turn
             except ReasoningEffortRefused:
                 raise
-            except httpx.HTTPStatusError as exc:
+            except (httpx.HTTPStatusError, ProviderRateLimited) as exc:
                 log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
                 next_binding = self._rotate_after_failure(
                     binding,
@@ -534,7 +542,7 @@ class GeminiBackend(LLMBackend):
                 return self._finalize_cloud(text)
             except ReasoningEffortRefused:
                 raise
-            except httpx.HTTPStatusError as exc:
+            except (httpx.HTTPStatusError, ProviderRateLimited) as exc:
                 log_provider_failure(
                     logger,
                     provider="Gemini",

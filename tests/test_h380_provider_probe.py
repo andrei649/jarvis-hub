@@ -148,6 +148,28 @@ def test_anything_else_is_an_error():
     assert result["verdict"] == "error"
 
 
+def test_a_key_the_shared_429_guard_holds_is_rate_limited_for_as_long_as_the_hold(monkeypatch, caplog):
+    """H373 review F3: the probe's client carries the shared 429 guard, so a held key is
+    refused before sending; that is ``rate_limited``, not an error, and kept no longer than the hold."""
+    import agents.core.http_client as http_client
+    from agents.core.llm import quota
+
+    monkeypatch.setattr(http_client, "host_is_local", lambda host: False)
+    held = httpx.Request("GET", "https://x", headers={"x-api-key": KEY})
+    quota.get_store().block("anthropic", quota.key_fingerprint(held), 20)   # under the 30 s transient cap
+    hub, clock = _Hub(), _Clock()
+    with caplog.at_level(logging.WARNING, logger="jarvis.llm.provider_probe"):
+        result = _probe("anthropic", hub, key=KEY, clock=clock)
+    assert result["verdict"] == "rate_limited" and result["working"] is False and hub.requests == []
+    assert set(result) == set(provider_probe._result(get_profile("anthropic"), "ok"))   # nothing private
+    assert "failed" not in caplog.text
+    clock.t += 19
+    assert _probe("anthropic", hub, key=KEY, clock=clock)["cached"] is True
+    assert provider_probe.last("anthropic", key=KEY, clock=clock)["verdict"] == "rate_limited"
+    clock.t += 2                                                   # the hold is over: asked afresh
+    assert provider_probe.last("anthropic", key=KEY, clock=clock) is None
+
+
 def test_a_wrong_host_protocol_is_refused_before_sending():
     from agents.core.observability.egress_monitor import EGRESS_MONITOR
 

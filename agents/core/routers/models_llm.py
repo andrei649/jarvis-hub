@@ -434,9 +434,9 @@ async def llm_quota():
 
     try:
         rows = await asyncio.to_thread(quota.usage)
+        return nocache_json({"ok": True, "providers": rows})   # built here: a row JSON cannot carry is a 503 too
     except Exception:
         return nocache_json({"ok": False, "reason": "quota_unavailable", "providers": []}, status_code=503)
-    return nocache_json({"ok": True, "providers": rows})
 
 
 @router.get("/api/llm/auth-profiles", dependencies=[Depends(admin_guard)])

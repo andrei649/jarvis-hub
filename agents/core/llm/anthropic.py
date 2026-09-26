@@ -12,6 +12,7 @@ from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
+from .quota import ProviderRateLimited
 from .reasoning_effort import apply_anthropic, parse_overrides
 from .tool_dialects import (
     ANTHROPIC_FINISH_REASONS,
@@ -89,6 +90,14 @@ class ClaudeBackend(LLMBackend):
     def _build_messages(self, prompt: str, system: str = "") -> list[dict]:
         return [{"role": "user", "content": prompt}]
 
+    def _fail_over_held(self, key: str, exc: ProviderRateLimited) -> bool:
+        """Cool a key the shared 429 guard holds for its whole hold, and say whether another
+        key is left to try (H373: the refusal sent nothing, so failing over is safe)."""
+        if self.auth_pool is None or self.auth_pool.size < 2:
+            return False
+        self.auth_pool.report_failure(key, cooldown=exc.retry_in)
+        return True
+
     async def _post_messages(self, payload: dict) -> tuple[dict | None, str]:
         """POST /messages once per healthy auth profile, failing over on rotatable errors (H12.20).
 
@@ -116,6 +125,12 @@ class ClaudeBackend(LLMBackend):
                 if self.auth_pool is not None and is_rotatable_status(status) and self.auth_pool.size > 1:
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
+                return None, f"[Claude API error: {e}]"
+            except ProviderRateLimited as e:
+                # H373 — held by the shared 429 guard, refused before sending: the next key.
+                last_err = str(e)
+                if self._fail_over_held(key, e):
+                    continue
                 return None, f"[Claude API error: {e}]"
             except Exception as e:
                 return None, f"[Claude API error: {e}]"
@@ -197,76 +212,86 @@ class ClaudeBackend(LLMBackend):
             "stream": True,
         }
         self._fit_to_wire(payload, model)
-        full = ""
-        raw_usage = {}
-        started = completed = usage_failed = final_output = False
-        stream_key = self._active_key()
-        try:
-            async with self.client.stream(
-                "POST",
-                f"{ANTHROPIC_API_BASE}/messages",
-                headers=self._headers(),
-                json=payload,
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        chunk = line[6:]
-                        if chunk.strip() == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(chunk)
-                            event_type = data.get("type", "")
-                            if "error" in data or event_type == "error":
-                                usage_failed = True
-                            if event_type == "message_start":
-                                started = True
-                                raw = (data.get("message") or {}).get("usage")
-                                raw_usage = dict(raw) if isinstance(raw, dict) else {}
-                                if not isinstance(raw, dict):
-                                    usage_failed = True
-                            elif event_type == "message_delta":
-                                raw = data.get("usage")
-                                # A start/intermediate count is not final output.
-                                final_output = (isinstance(raw, dict)
-                                                and type(raw.get("output_tokens")) is int
-                                                and raw["output_tokens"] >= 0)
-                                if not isinstance(raw, dict):
-                                    usage_failed = True
-                                if isinstance(raw, dict):
-                                    # Deltas are cumulative snapshots, not increments.
-                                    raw_usage.update(raw)
-                            elif event_type == "content_block_delta":
-                                delta = data.get("delta", {})
-                                # Only the answer's own deltas. H364 makes thinking
-                                # reachable on this stream for the first time, and a
-                                # reasoning delta must never be concatenated into the
-                                # reply — so the block type decides, not the presence
-                                # of a `text` key.
-                                text = (
-                                    delta.get("text", "")
-                                    if delta.get("type") == "text_delta"
-                                    else ""
-                                )
-                                if text:
-                                    full += text
-                                    if on_token:
-                                        await _emit(on_token, text)
-                            elif event_type == "message_stop":
-                                completed = True
+        # H373 — a key the shared 429 guard holds is refused before a byte is sent, so
+        # nothing has streamed yet and the next key in the pool is tried in its place.
+        attempts = max(1, self.auth_pool.size if self.auth_pool else 1)
+        for attempt in range(attempts):
+            full = ""
+            raw_usage = {}
+            started = completed = usage_failed = final_output = False
+            stream_key = self._active_key()
+            try:
+                async with self.client.stream(
+                    "POST",
+                    f"{ANTHROPIC_API_BASE}/messages",
+                    headers=self._headers(),
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if line.startswith("data: "):
+                            chunk = line[6:]
+                            if chunk.strip() == "[DONE]":
                                 break
-                        except json.JSONDecodeError:
-                            usage_failed = True
-                            continue
-        except httpx.HTTPStatusError as e:
-            usage_failed = True
-            # Rotatable error → cool this key down so the next call fails over (H12.20).
-            if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
-                self.auth_pool.report_failure(stream_key)
-            full = f"[Claude API stream error: {e}]"
-        except Exception as e:
-            usage_failed = True
-            full = f"[Claude API stream error: {e}]"
+                            try:
+                                data = json.loads(chunk)
+                                event_type = data.get("type", "")
+                                if "error" in data or event_type == "error":
+                                    usage_failed = True
+                                if event_type == "message_start":
+                                    started = True
+                                    raw = (data.get("message") or {}).get("usage")
+                                    raw_usage = dict(raw) if isinstance(raw, dict) else {}
+                                    if not isinstance(raw, dict):
+                                        usage_failed = True
+                                elif event_type == "message_delta":
+                                    raw = data.get("usage")
+                                    # A start/intermediate count is not final output.
+                                    final_output = (isinstance(raw, dict)
+                                                    and type(raw.get("output_tokens")) is int
+                                                    and raw["output_tokens"] >= 0)
+                                    if not isinstance(raw, dict):
+                                        usage_failed = True
+                                    if isinstance(raw, dict):
+                                        # Deltas are cumulative snapshots, not increments.
+                                        raw_usage.update(raw)
+                                elif event_type == "content_block_delta":
+                                    delta = data.get("delta", {})
+                                    # Only the answer's own deltas. H364 makes thinking
+                                    # reachable on this stream for the first time, and a
+                                    # reasoning delta must never be concatenated into the
+                                    # reply — so the block type decides, not the presence
+                                    # of a `text` key.
+                                    text = (
+                                        delta.get("text", "")
+                                        if delta.get("type") == "text_delta"
+                                        else ""
+                                    )
+                                    if text:
+                                        full += text
+                                        if on_token:
+                                            await _emit(on_token, text)
+                                elif event_type == "message_stop":
+                                    completed = True
+                                    break
+                            except json.JSONDecodeError:
+                                usage_failed = True
+                                continue
+            except ProviderRateLimited as e:
+                usage_failed = True
+                full = f"[Claude API stream error: {e}]"
+                if self._fail_over_held(stream_key, e) and attempt + 1 < attempts:
+                    continue
+            except httpx.HTTPStatusError as e:
+                usage_failed = True
+                # Rotatable error → cool this key down so the next call fails over (H12.20).
+                if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
+                    self.auth_pool.report_failure(stream_key)
+                full = f"[Claude API stream error: {e}]"
+            except Exception as e:
+                usage_failed = True
+                full = f"[Claude API stream error: {e}]"
+            break
         answer = self._finalize_cloud(full)
         if started and completed and final_output and not usage_failed:
             report_text_usage(anthropic_usage({"usage": raw_usage}))

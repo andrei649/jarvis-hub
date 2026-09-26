@@ -39,6 +39,18 @@ describe('ProviderQuotaPanel — H373', () => {
     expect(screen.getByText('1 held after a 429')).toBeTruthy();
   });
 
+  it('names the model a row is for, since a 429 holds one model of a key (review F4)', async () => {
+    reply = { status: 200, body: { ok: true, providers: [
+      { backend: 'gemini', key: 'abcdef123456', model: 'gemini-2.5-pro', blocked: true, blocked_for: 40, block_status: 429, quota: {} },
+      { backend: 'gemini', key: 'abcdef123456', model: 'gemini-2.5-flash', blocked: false, quota: {
+        requests: { limit: 10, remaining: 9, left: 0.9, resets_in: null } } },
+    ] } };
+    render(<ProviderQuotaPanel />);
+    await waitFor(() => expect(screen.getByText('gemini · gemini-2.5-pro · key abcdef')).toBeTruthy());
+    expect(screen.getByText('gemini · gemini-2.5-flash · key abcdef')).toBeTruthy();
+    expect(screen.getByText('1 held after a 429')).toBeTruthy();
+  });
+
   it('says where the numbers come from when none were seen yet, and is an admin panel', async () => {
     reply = { status: 200, body: { ok: true, providers: [] } };
     render(<ProviderQuotaPanel />);

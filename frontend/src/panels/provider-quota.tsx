@@ -1,8 +1,9 @@
 /* H373 — how much quota each cloud provider says is left. `GET /api/llm/quota` answers what
    the providers' own responses reported (requests and tokens left, when they reset), from
    every process on this hub, and any shared 429 hold: after a 429 every process holds
-   requests on that key until the provider's retry-after. Read-only; keys show only as a
-   short fingerprint. */
+   requests to that model on that key (the whole key when the request named no model) until
+   the provider's retry-after. One row per backend, model and key. Read-only; keys show only
+   as a short fingerprint. */
 import React from 'react';
 import { Card, Row, State, Tag, arr, asLive, mono, useApi } from '../panel-kit';
 
@@ -33,9 +34,9 @@ export function ProviderQuotaPanel() {
       <State e={d.e} loading={d.loading} n={rows.length} />
       {!d.e && !d.loading && !rows.length ? <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>it is read from each cloud provider's responses</div> : null}
       {rows.map((row: any) => (
-        <div key={`${row.backend}:${row.key}`} style={{ marginBottom: 6 }}>
+        <div key={`${row.backend}:${row.key}:${row.model || ''}`} style={{ marginBottom: 6 }}>
           <Row>
-            <span style={{ ...mono }}>{row.backend}{row.key ? ` · key ${String(row.key).slice(0, 6)}` : ''}</span>
+            <span style={{ ...mono }}>{row.backend}{row.model ? ` · ${row.model}` : ''}{row.key ? ` · key ${String(row.key).slice(0, 6)}` : ''}</span>
             {row.blocked ? <Tag c="var(--red)">held {secs(row.blocked_for)} after a {row.block_status}</Tag> : null}
           </Row>
           {Object.entries(row.quota || {}).map(([kind, q]: [string, any]) => (
