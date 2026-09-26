@@ -31,6 +31,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { appUrl } from '../base-path';
 import { apiDelete, apiPatch, apiPost, apiPut } from '../api/client';
+import { ConfirmAction, RISK_TIER } from '../confirm';
 import { Card, Row, State, Tag, arr, asLive, inpS, mono, refusalReason, taS, useApi } from '../panel-kit';
 
 const HOOKS_PATH = '/api/webhooks';
@@ -215,8 +216,8 @@ export function WebhooksPanel() {
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   // A click that unmounts the focused button hands focus to the control that
-  // replaced it (M3): "delete…" → "delete for good", "keep it" → "delete…",
-  // "I have saved it" → the create form.
+  // replaced it (M3): "delete…" → "delete for good" (ConfirmAction's own), "keep it"
+  // → "delete…", "I have saved it" → the create form.
   const focusable = useRef<Record<string, HTMLElement | null>>({});
   const [focusKey, setFocusKey] = useState('');
   useEffect(() => {
@@ -278,10 +279,13 @@ export function WebhooksPanel() {
       })
       .finally(() => { hold(hook.id, false); list.reload(); if (gone) setFocusKey('create'); });
   };
-  const remove = (hook: any) => {
+  // H168 — the confirmation is ConfirmAction's (tier 1, two steps), opened and closed by
+  // this page: it stays open when the hub refuses, so the owner can fix the credential and
+  // try again, and the returned promise holds its buttons while the DELETE is in flight.
+  const remove = (hook: any): Promise<void> => {
     hold(hook.id, true);
     let gone = false;
-    apiDelete(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { admin: true })
+    return apiDelete(`${HOOKS_PATH}/${encodeURIComponent(hook.id)}`, { admin: true })
       .then(() => { gone = true; setConfirming(''); setNote(''); })
       .catch((err: any) => {
         if (err && err.status === 404) {
@@ -324,7 +328,7 @@ export function WebhooksPanel() {
       .catch(refused)
       .finally(() => { hold(RECEIVER, false); receiver.reload(); });
   };
-  const ask = (id: string) => { setConfirming(id); setFocusKey(`confirm:${id}`); };
+  const ask = (id: string) => setConfirming(id);   // ConfirmAction takes focus as it opens
   const keep = (id: string) => { setConfirming(''); setFocusKey(`ask:${id}`); };
   const dismiss = () => { setCreated(null); setFocusKey('create'); };
 
@@ -413,12 +417,9 @@ export function WebhooksPanel() {
                   {hook.enabled ? 'switch off' : 'switch on'}
                 </button>
                 {confirming === hook.id ? (
-                  <>
-                    <button ref={focusRef(`confirm:${hook.id}`)} className="tool-btn" disabled={held}
-                      onClick={() => remove(hook)} aria-label={`delete ${label} for good`}>delete for good</button>
-                    <button className="tool-btn" disabled={held} onClick={() => keep(hook.id)}
-                      aria-label={`keep ${label}`}>keep it</button>
-                  </>
+                  <ConfirmAction tier={RISK_TIER.REVERSIBLE} armed onCancel={() => keep(hook.id)} onConfirm={() => remove(hook)}
+                    label={`delete ${label}`} armedLabel="delete for good" confirmAriaLabel={`delete ${label} for good`}
+                    cancelLabel="keep it" cancelAriaLabel={`keep ${label}`} busy={held} />
                 ) : (
                   <button ref={focusRef(`ask:${hook.id}`)} className="tool-btn" disabled={held}
                     onClick={() => ask(hook.id)} aria-label={`delete ${label}…`}>delete…</button>

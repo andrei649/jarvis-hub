@@ -1,7 +1,7 @@
 /* HUD v2 · SHELL — topbar, nav, ticker, right column, ambient, palette */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph, Reactor, Meter, statusClass, fmtTime, fmtTimeShort, fmtDate } from './primitives';
-import { renderRich } from './cockpit';
+import { Bubble } from './cockpit';
 import { isExecutingAgent, NeuralMesh } from './mesh';
 import { VoiceOrb } from './orb';
 import { BriefingWall } from './wall';
@@ -141,7 +141,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
           {decisions.map((d,i)=>(
             <div className="dcard" key={d._id}>
               <div className="dh"><span className="who">{d.who}</span><span className={'kind '+d.kind}>{d.kindLabel}</span></div>
-              <div className="db">{renderRich(d.body)}</div>
+              <div className="db"><Bubble text={d.body} /></div>
               <div className="da">{d.actions.map((a,j)=><button key={j} className={a.primary?'primary':''} onClick={()=>onDecision(d._id)}>{a.l}</button>)}</div>
             </div>
           ))}

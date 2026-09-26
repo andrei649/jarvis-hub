@@ -20,6 +20,7 @@ import { ProviderCheckPanel } from './panels/provider-check';
 import { ProviderQuotaPanel } from './panels/provider-quota';
 import { InspectorPanel } from './panels/inspector';
 import { refusalText } from './soul-edit';
+import { ConfirmAction, RISK_TIER } from './confirm';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
@@ -763,8 +764,15 @@ export function KillSwitchPanel() {
         : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
       {/* The button stays live even when the state is unknown: with `halted` false
           it sends engage=true, and halting on an unknown state is the safe
-          direction. Only the claim about current state is withheld. */}
-      <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+          direction. Only the claim about current state is withheld. H168: halting is
+          one click (a stop never waits for a second one); disengaging lets every agent
+          act again, so it takes the typed phrase. */}
+      <span style={{ marginLeft: 'auto' }}>
+        {halted
+          ? <ConfirmAction tier={RISK_TIER.EXTERNAL} label="disengage" phrase="DISENGAGE"
+              prompt="type DISENGAGE to let every agent act again:" onConfirm={toggle} />
+          : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
+      </span></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
       {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
@@ -3191,14 +3199,12 @@ export function BackupPanel() {
   const verify = () => actA('/api/admin/backup/verify', {}, (r) => setMsg(r && r.ok ? 'restore-drill OK · ' + (r.file_count || 0) + ' files' : 'verify failed'));
   const exportMe = () => actA('/api/admin/export', {}, (r) => setMsg(r && r.bytes ? 'export written · ' + sz(r.bytes) : 'export written'));
   // forget-me (C9, destructive) — the backend requires {"confirm":"FORGET"}; the UI mirrors
-  // that hard-to-fat-finger acknowledgement with a typed-confirmation reveal. Backup-first.
-  const [armed, setArmed] = useState(false);
-  const [confirm, setConfirm] = useState('');
+  // that hard-to-fat-finger acknowledgement with the tier-3 typed confirmation (H168).
+  // Backup-first.
   const forget = () => {
-    if (confirm !== 'FORGET') return;
     actA('/api/admin/forget', { confirm: 'FORGET' }, (r) => {
       setMsg(r && r.ok !== false ? 'forgotten · backup-first purge complete' : 'forget failed');
-      setArmed(false); setConfirm(''); reload();
+      reload();
     });
   };
   return (
@@ -3219,16 +3225,10 @@ export function BackupPanel() {
         <button className="tool-btn" onClick={exportMe}>export my data</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      {!armed
-        ? <button className="tool-btn" style={{ marginTop: 8, color: 'var(--red)' }} onClick={() => setArmed(true)}>forget me…</button>
-        : (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, color: 'var(--red)' }}>type FORGET to erase all content (backup-first):</span>
-            <input value={confirm} onChange={(ev) => setConfirm(ev.target.value)} placeholder="FORGET" style={{ ...inpS, width: 90 }} />
-            <button className="tool-btn" disabled={confirm !== 'FORGET'} style={{ color: confirm === 'FORGET' ? 'var(--red)' : 'var(--ink-3)' }} onClick={forget}>confirm erase</button>
-            <button className="tool-btn" onClick={() => { setArmed(false); setConfirm(''); }}>cancel</button>
-          </div>
-        )}
+      <div style={{ marginTop: 8 }}>
+        <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="forget me…" phrase="FORGET" armedLabel="confirm erase"
+          prompt="type FORGET to erase all content (backup-first):" style={{ color: 'var(--red)' }} onConfirm={forget} />
+      </div>
     </Card>
   );
 }
@@ -3952,6 +3952,8 @@ export function CameraPanel() {
   );
 }
 
+/* The phrase the acquisition ledger purge takes, typed (H168), and sent to the hub. */
+const PURGE_PHRASE = 'PURGE ACQUISITION DETAIL';
 /* H32.6 — owner-visible acquisition lifecycle and hash-only audit projection.
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
@@ -3976,7 +3978,6 @@ export function AcquisitionPanel() {
   const reuse = data.reuse || {};
   const reuseRate = Math.round(Math.max(0, Math.min(1, Number(reuse.reuse_rate) || 0)) * 100);
   const [outcome, setOutcome] = useState('');
-  const [purgeConfirmation, setPurgeConfirmation] = useState('');
   const [entrypoint, setEntrypoint] = useState('run');
   const [cases, setCases] = useState('[{"input": {}, "expected": null}]');
   const gaps = arr(requests.d, 'requests').slice(0, 50);
@@ -3997,12 +3998,11 @@ export function AcquisitionPanel() {
       .then((result: any) => setOutcome(`export ready · ${Number(result.summary?.count || 0)} summarized events`))
       .catch((error) => setOutcome(`refused · ${error?.message || 'export_failed'}`));
   };
+  // H168: the tier-3 typed confirmation guards it; the hub checks the phrase again.
   const purgeLedger = () => {
-    if (purgeConfirmation !== 'PURGE ACQUISITION DETAIL') return;
-    apiPost('/api/acquisition/ledger/purge', { confirm: purgeConfirmation }, { admin: true })
+    apiPost('/api/acquisition/ledger/purge', { confirm: PURGE_PHRASE }, { admin: true })
       .then((result: any) => {
         setOutcome(`purged · ${Number(result.purged || 0)} detailed events`);
-        setPurgeConfirmation('');
         reload();
       })
       .catch((error) => setOutcome(`refused · ${error?.message || 'purge_failed'}`));
@@ -4122,22 +4122,9 @@ export function AcquisitionPanel() {
                 </span>
               </Row>
             ))}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginTop: 10 }}>
-            <input
-              aria-label="acquisition purge confirmation"
-              value={purgeConfirmation}
-              onChange={(event) => setPurgeConfirmation(event.target.value)}
-              maxLength={64}
-              placeholder="type PURGE ACQUISITION DETAIL"
-              style={inpS}
-            />
-            <button
-              className="tool-btn"
-              type="button"
-              disabled={purgeConfirmation !== 'PURGE ACQUISITION DETAIL'}
-              onClick={purgeLedger}
-              aria-label="Purge acquisition detail"
-            >purge detail</button>
+          <div style={{ marginTop: 10 }}>
+            <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="purge detail" ariaLabel="Purge acquisition detail"
+              phrase={PURGE_PHRASE} armedLabel="purge detail" onConfirm={purgeLedger} />
           </div>
         </section>
         {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}

@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H168 one confirmation graded like the approval queue, and agent text rendered as Markdown everywhere it is shown (partial → equivalent, #1207; headline 184 → 185/697).
+
+  Destructive confirmation was hand-rolled in seven panels, each its own shape, and none said how risky the action was in the approval queue's terms; chat bubbles and decision cards rendered only `**bold**` (lists, fences, tables and links showed as raw characters), and canvas artifacts had a private renderer of their own. Now:
+  - **One confirmation, graded by `RiskTier`** (`frontend/src/confirm.tsx`, `ConfirmAction`): READ_ONLY one click, REVERSIBLE two steps, EXTERNAL and IRREVERSIBLE_OR_MONEY a phrase typed exactly; an unknown tier takes the most; `tests/test_confirm_tiers.py` ties `RISK_TIER` to `agents/core/autonomy/policy.py`. Focus follows the control that replaced the one pressed, Escape cancels, Enter confirms only on a match; a promise keeps it open until it lands, and a refusal keeps it armed to retry.
+  - **Every site migrated.** Kill switch: HALT ALL stays one click (an emergency stop never waits), disengage is typed (`DISENGAGE`); forget-me (`FORGET`) and acquisition purge typed; trust-ops rotation types the scope; marketplace uninstall types the folder it deletes (the `rmtree` has no undo); webhook delete and the ESTOP pause are two steps.
+  - **Markdown everywhere agent text is shown.** Chat bubbles (agent and vision) and decision cards go through the shared React-only renderer (`Bubble`, memoised per text, so a streamed token re-parses one bubble), and canvas Markdown artifacts too (bounded to 4,000 code points at render as well as on save). A new `breaks` option keeps single newlines as line breaks there; documents keep paragraph joining. The owner's own words stay literal. Closes test-manual gap G22.
+
+  51 mutants: 48 caught, eight after survivors got cases (a cancelled phrase re-opening pre-filled, an open confirmation's cancel, artifact line breaks, a row's held switch, the uninstall closing and its empty folder, the rotation's clear-on-success and keep-on-refusal); three were equivalent and that code went. Test manual: SHL-223, SHL-224 (SHL-104, SHL-133, SHL-185 and G22 updated).
+  Tests: backend 17,033 → 17,035 (`tests/test_confirm_tiers.py`); frontend 1,656 → 1,677 (`confirm.test.tsx` 11, `markdown-adoption.test.tsx` 6, `markdown.test.tsx` +1, `kill-switch-refusal.test.tsx` +1, `marketplace-admin.test.tsx` +1, `webhooks-panel.test.tsx` +1; the purge, marketplace and artifact tests follow the new steps); HUD v2 bundle rebuilt.
+
 - 2026-09-26 H156 edit an agent's persona in the UI, live on its next turn; draft its description with the local model (partial → equivalent, #1207; headline 183 → 184/697).
 
   The Prompts panel versioned persona text in a side history, and nothing wrote it where the model reads it: a commit or a rollback changed a JSON file while the agent kept its old persona, and nothing seeded the history, audited it, or let the owner edit or describe an agent from its Dossier. Now one apply path (`agents/core/soul_edit.py`):

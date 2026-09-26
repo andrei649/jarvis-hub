@@ -7,6 +7,7 @@ import { V2 } from './data';
 import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
+import { Markdown } from './markdown';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -73,7 +74,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
         ) : m.role==='vision' ? (
           <div className="msg agent" key={i}>
             <div className="mtag"><span className="who">VISION ANALYSIS</span><span className="ts">{m.ts}</span></div>
-            <div className="bubble">{renderRich(m.text)}</div>
+            <div className="bubble"><Bubble text={m.text} /></div>
             <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
           </div>
         ) : (
@@ -89,7 +90,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
                 </span>
               )}
             </div>
-            <div className="bubble">{renderRich(m.text)}</div>
+            <div className="bubble"><Bubble text={m.text} /></div>
             {m.prov && (
               <div className="prov-chip" onClick={()=>onProv(m.prov)}>
                 <Icon d={ICONS.shield} size={12}/>
@@ -118,11 +119,14 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
     </div>
   );
 }
-function renderRich(text){
-  // bold **x**
-  const parts = String(text).split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((p,i)=> p.startsWith('**') ? <b key={i} style={{color:'var(--accent-light)'}}>{p.slice(2,-2)}</b> : p);
-}
+/* H168 — agent text is Markdown, rendered by the one shared, React-only renderer
+   (markdown.tsx): lists, fences, tables and http(s)/same-origin links render; raw HTML
+   and any other link stay text; a single newline is a line break. Memoised on the
+   text, so a streamed token re-parses only the bubble it lands in. The owner's own
+   turns are shown as typed. */
+const Bubble = React.memo(function Bubble({ text }: { text: string }) {
+  return <Markdown text={text} className="md md-inline" breaks />;
+});
 
 /* ---- Cognition trace ---- */
 function CognitionStream({ trace, t }) {
@@ -313,4 +317,4 @@ function traceFromCognition(cog, text){
   };
 }
 
-export { Conversation, CognitionStream, buildTrace, traceFromCognition, InputBar, renderRich };
+export { Conversation, CognitionStream, buildTrace, traceFromCognition, InputBar, Bubble };

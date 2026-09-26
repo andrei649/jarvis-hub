@@ -99,4 +99,17 @@ describe('Markdown — heading anchors', () => {
     const { container } = render(<Markdown text={'# Title\n## `A`\n## `A`\n```\n# fenced\n```'} />);
     expect([...container.querySelectorAll('h1, h2')].map((h) => h.id)).toEqual(['title', 'a', 'a-2']);
   });
+
+  it('H168 — breaks: a single newline is a line break; without it the lines join', () => {
+    const joined = render(<Markdown text={'one **a**\ntwo\n\nthree'} />).container;
+    expect(joined.querySelector('br')).toBeNull();
+    expect([...joined.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['one a two', 'three']);
+    const broken = render(<Markdown text={'one **a**\ntwo\nthe `end`\n\nthree'} breaks />).container;
+    const [first, second] = broken.querySelectorAll('p');
+    expect(first.querySelectorAll('br')).toHaveLength(2);
+    expect(first.textContent).toBe('one atwothe end');
+    expect(first.querySelector('strong').textContent).toBe('a');
+    expect(first.querySelector('code').textContent).toBe('end');
+    expect(second.querySelector('br')).toBeNull();
+  });
 });

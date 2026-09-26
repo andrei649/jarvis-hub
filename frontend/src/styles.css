@@ -309,7 +309,7 @@ input { font-family: inherit; }
 .dcard .dh .kind { margin-left:auto; font-size:9px; font-weight:600; padding:2px 8px; border-radius:10px; }
 .dcard .kind.anticip { background:var(--accent-faint); color:var(--accent-light); } .dcard .kind.signal { background:rgba(167,139,250,.14); color:var(--violet); }
 .dcard .kind.nudge { background:rgba(65,245,155,.14); color:var(--green); } .dcard .kind.alert { background:rgba(255,90,82,.14); color:var(--red); }
-.dcard .db { font-size:12.5px; line-height:1.5; color:var(--ink); } .dcard .db b { color:var(--accent-light); font-weight:600; }
+.dcard .db { font-size:12.5px; line-height:1.5; color:var(--ink); }
 .dcard .da { display:flex; gap:7px; margin-top:10px; }
 .dcard .da button { font-size:11px; font-weight:600; padding:6px 12px; border-radius:var(--radius); border:1px solid var(--panel-line); background:transparent; color:var(--ink-2); transition:all .15s; }
 .dcard .da button.primary { background:var(--accent); border-color:var(--accent); color:var(--void); }
@@ -779,12 +779,7 @@ input { font-family: inherit; }
 .art-body { margin-top:8px; font-size:12.5px; line-height:1.55; color:var(--ink); overflow-wrap:anywhere; min-width:0; }
 .art-title { font-weight:600; color:var(--ink); margin-bottom:4px; }
 .art-plain { white-space:pre-wrap; }
-.art-md .art-h { font-weight:600; color:var(--accent-light); margin:6px 0 3px; }
-.art-md .art-h1 { font-size:14px; } .art-md .art-h2 { font-size:13px; } .art-md .art-h3 { font-size:12.5px; }
-.art-md ul, ul.art-md { margin:4px 0; padding-left:18px; } .art-md li { margin:2px 0; }
-.art-md code { font-family:var(--font-mono); font-size:11px; background:var(--void); border:1px solid var(--panel-line); border-radius:3px; padding:0 4px; }
-.art-md b { color:var(--accent-light); }
-.art-line { margin:2px 0; }
+ul.art-md { margin:4px 0; padding-left:18px; } ul.art-md li { margin:2px 0; }
 .art-link { color:var(--accent-light); }
 .art-metric { display:flex; align-items:baseline; gap:10px; }
 .art-metric .art-mlabel { font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
@@ -856,4 +851,9 @@ input { font-family: inherit; }
 .md th { color:var(--ink-2); font-weight:600; }
 .md blockquote { margin:6px 0; padding-left:10px; border-left:2px solid var(--panel-line); color:var(--ink-2); }
 .md hr { border:0; border-top:1px solid var(--panel-line); margin:10px 0; }
+/* H168 — agent text in a chat bubble or a decision card: the container's own size and
+   colour, no outer margin, bold in the accent as before; artifacts keep the accent too. */
+.md.md-inline { font-size:inherit; line-height:inherit; color:inherit; }
+.md.md-inline > :first-child { margin-top:0; } .md.md-inline > :last-child { margin-bottom:0; }
+.md.md-inline strong, .md.art-md strong { color:var(--accent-light); font-weight:600; }
 .md a { color:var(--accent-light); }

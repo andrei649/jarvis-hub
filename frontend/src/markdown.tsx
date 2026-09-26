@@ -95,7 +95,10 @@ export function headingAnchor(text: string): string {
   return String(text ?? '').replace(/`/g, '').toLowerCase().replace(/[^a-z0-9_.]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
+/** *breaks*: a single newline inside a paragraph is a line break (GitHub's comment
+    flavour), for chat replies and notes written line by line; without it the lines of
+    a paragraph join, as in a document. */
+export function Markdown({ text, className, breaks = false }: { text: string; className?: string; breaks?: boolean }) {
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
   const blocks: React.ReactNode[] = [];
   const anchors = new Map<string, number>();  // a repeated anchor gets -2, -3 … like GitHub's
@@ -165,7 +168,11 @@ export function Markdown({ text, className }: { text: string; className?: string
     const paragraph = [line.trim()];
     i += 1;
     while (i < lines.length && lines[i].trim() && !startsBlock(lines, i)) { paragraph.push(lines[i].trim()); i += 1; }
-    blocks.push(<p key={key}>{renderInline(paragraph.join(' '), `p${key}-`)}</p>);
+    blocks.push(<p key={key}>{breaks
+      ? paragraph.flatMap((part, n) => [
+        ...(n ? [<br key={`b${n}`} />] : []),
+        <React.Fragment key={`f${n}`}>{renderInline(part, `p${key}-${n}-`)}</React.Fragment>])
+      : renderInline(paragraph.join(' '), `p${key}-`)}</p>);
   }
   return <div className={className || 'md'}>{blocks}</div>;
 }

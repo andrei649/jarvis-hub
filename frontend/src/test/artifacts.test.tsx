@@ -90,7 +90,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
       payload: { title: 'Evil', body: '<script>alert(1)</script>\n<img src=x onerror=alert(2)>\n<iframe src="https://evil.example"></iframe>' },
     }]);
     const { container } = render(<ArtifactsPanel refreshKey={0} lang="en" />);
-    expect(await screen.findByText('<script>alert(1)</script>')).toBeTruthy();
+    expect(await screen.findByText(/<script>alert\(1\)<\/script>/)).toBeTruthy();   // H168: one line of a paragraph
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('iframe')).toBeNull();
     expect(container.querySelector('img')).toBeNull();   // the <img …> stays literal text

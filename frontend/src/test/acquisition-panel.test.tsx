@@ -78,9 +78,12 @@ describe('AcquisitionPanel (H32.6)', () => {
     fireEvent.click(screen.getByRole('button', { name: /export acquisition ledger/i }));
     await waitFor(() => expect(screen.getByText(/export ready · 2 summarized events/i)).toBeTruthy());
 
-    const purge = screen.getByLabelText('acquisition purge confirmation');
-    fireEvent.change(purge, { target: { value: 'PURGE ACQUISITION DETAIL' } });
+    // H168: the purge arms first, then takes the typed phrase (tier 3).
     fireEvent.click(screen.getByRole('button', { name: /purge acquisition detail/i }));
+    const purge = screen.getByLabelText('type PURGE ACQUISITION DETAIL to confirm Purge acquisition detail');
+    expect(screen.getByText('purge detail').closest('button').disabled).toBe(true);
+    fireEvent.change(purge, { target: { value: 'PURGE ACQUISITION DETAIL' } });
+    fireEvent.click(screen.getByText('purge detail'));
     await waitFor(() => expect(screen.getByText(/purged · 1 detailed events/i)).toBeTruthy());
 
     const adminCalls = vi.mocked(global.fetch).mock.calls.filter(([url]) => /revoke|rollback|ledger/.test(String(url)));

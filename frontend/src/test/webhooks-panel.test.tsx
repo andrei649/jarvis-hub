@@ -232,6 +232,23 @@ describe('WebhooksPanel after review', () => {
     expect(screen.queryByText('delete for good')).toBeNull();
   });
 
+  it('an open delete confirmation is held while the same row switches (H168)', async () => {
+    let release;
+    const real = global.fetch;
+    global.fetch = vi.fn((url, init = {}) => ((init.method || 'GET') === 'PATCH'
+      ? new Promise((resolve) => { release = () => resolve(real(url, init)); })
+      : real(url, init)));
+    render(<WebhooksPanel />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'delete ci…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'switch off ci' }));
+    expect(screen.getByRole('button', { name: 'delete ci for good' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'keep ci' }).disabled).toBe(true);
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'delete ci for good' }).disabled).toBe(false));
+    expect(sent('DELETE')).toHaveLength(0);
+  });
+
   it('a refused delete keeps the confirmation, says why, and still reloads', async () => {
     const real = global.fetch;
     global.fetch = vi.fn((url, init = {}) => ((init.method || 'GET') === 'DELETE'
