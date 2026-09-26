@@ -70,7 +70,7 @@ async def context_ref_completions(prefix: str = Query("", max_length=1024)):
 
     try:
         items = await asyncio.to_thread(context_refs.complete, prefix)
-    except Exception:
-        return nocache_json({"ok": False, "reason": "no_file_roots", "types": list(context_refs.REFERENCE_TYPES),
+    except Exception:           # JARVIS_FILE_ROOTS names a root that cannot be used (unset, it is the workspace)
+        return nocache_json({"ok": False, "reason": "file_roots_unusable", "types": list(context_refs.REFERENCE_TYPES),
                              "items": []}, status_code=503)
     return nocache_json({"ok": True, "types": list(context_refs.REFERENCE_TYPES), "items": items})

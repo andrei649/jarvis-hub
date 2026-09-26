@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React, { useState } from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
-import { CONTEXT_REFS_PATH, ContextRefHints, acceptRef, typedRef, useContextRefs } from '../context-refs';
+import { CONTEXT_REFS_PATH, ContextRefHints, acceptRef, typedRef, typedType, useContextRefs } from '../context-refs';
 
 let calls;
 
@@ -54,9 +54,53 @@ describe('context refs — H579', () => {
     fireEvent.keyDown(box, { key: 'Tab' });
     expect(box.value).toBe('read @file:src/');
     await waitFor(() => expect(calls.some((u) => u.endsWith('?prefix=src%2F'))).toBe(true));
+    await waitFor(() => expect(screen.getByText('@file:setup.py')).toBeTruthy());
     fireEvent.mouseDown(screen.getByText('@file:setup.py'));
     expect(box.value).toBe('read @file:setup.py ');
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('offers the reference types while an @ is typed, and Tab takes one', async () => {
+    render(<Composer />);
+    const box = screen.getByLabelText('composer');
+    fireEvent.change(box, { target: { value: 'explain @' } });
+    await waitFor(() => expect(screen.getByText(/^@file:\s/)).toBeTruthy());   // the first hint ends in ⇥
+    fireEvent.keyDown(box, { key: 'Tab' });
+    expect(box.value).toBe('explain @file:');
+    await waitFor(() => expect(screen.getByText('@file:setup.py')).toBeTruthy());
+    fireEvent.change(box, { target: { value: 'mail @fx' } });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(typedType('see @fi')).toBe('@fi');
+    expect(typedType('me@fi')).toBeNull();
+    expect(acceptRef('explain @fi', '@file:')).toBe('explain @file:');
+  });
+
+  it('never offers a list fetched for what was typed before', async () => {
+    global.fetch = vi.fn(async (url) => {
+      calls.push(String(url));
+      const items = String(url).endsWith('?prefix=n') ? [{ ref: '@file:notes.md', kind: 'file' }]
+        : [{ ref: '@file:AGENTS.md', kind: 'file' }, { ref: '@file:app.py', kind: 'file' }, { ref: '@file:notes.md', kind: 'file' }];
+      return { ok: true, status: 200, json: async () => ({ ok: true, types: ['file'], items }), text: async () => '' };
+    });
+    render(<Composer />);
+    const box = screen.getByLabelText('composer');
+    fireEvent.change(box, { target: { value: 'read @file:' } });
+    await waitFor(() => expect(screen.getByText('@file:app.py')).toBeTruthy());
+    fireEvent.change(box, { target: { value: 'read @file:n' } });
+    expect(screen.queryByText(/AGENTS\.md/)).toBeNull();
+    fireEvent.keyDown(box, { key: 'Tab' });
+    expect(box.value).toBe('read @file:n');
+    await waitFor(() => expect(screen.getByText(/^@file:notes\.md/)).toBeTruthy());
+    fireEvent.keyDown(box, { key: 'Tab' });
+    expect(box.value).toBe('read @file:notes.md ');
+  });
+
+  it('completes inside a quoted path, and a quoted directory stays open', () => {
+    expect(typedRef('see @file:"my no')).toBe('my no');
+    expect(typedRef('see @file:"my notes.md" ')).toBeNull();
+    expect(acceptRef('see @file:"my', '@file:"my dir/"')).toBe('see @file:"my dir/');
+    expect(acceptRef('see @file:"my dir/', '@file:"my dir/a b.md"')).toBe('see @file:"my dir/a b.md" ');
   });
 
   it('shows nothing when the hub refuses', async () => {

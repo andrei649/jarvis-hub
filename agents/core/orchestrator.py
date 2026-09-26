@@ -3147,6 +3147,11 @@ class Orchestrator:
         runtime truth aligned across the two surfaces. ``freeze_core=False`` is the
         inspector's look (H227): the core block is shown, not frozen.
         """
+        from .context_refs import attached_block
+
+        attachments = attached_block()   # H579: this turn's @file: section, never stored with the message
+        if attachments:
+            text = f"{text}\n\n{attachments}"
         base = text
         if history:
             base = f"Context:\n{history}\n\nUser: {text}"

@@ -1232,11 +1232,12 @@ async def chat(req: ChatRequest, request: Request):
                 await prepare_session(orch, req.session_id)
             except ContinuationRefused as exc:
                 return JSONResponse({"error": exc.reason}, status_code=exc.status)
-        # H579: @file:path references in the owner's own message are attached inline.
+        # H579: @file:path references in the owner's own message are attached for this turn:
+        # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
         expansion = await asyncio.to_thread(context_refs.expand, req.message)
         # H10.21: inject the active session's notes as persistent context.
-        message = expansion.text
+        message = req.message
         notes = getattr(orch, "notes", None)
         if notes is not None:
             prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
@@ -1244,7 +1245,7 @@ async def chat(req: ChatRequest, request: Request):
                 message = prefix + message
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(_web_principal(request))
-        attached_token = context_refs.bind_attached(expansion.any_attached)
+        attached_token = context_refs.bind_attached(expansion)
         # Opened here, not inside the turn: the turn resets its own binds before
         # returning, so this is the only place that still holds the list once the
         # reply is in hand. The turn appends to THIS list (see turn_approvals).
@@ -1278,7 +1279,7 @@ async def chat(req: ChatRequest, request: Request):
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=False):
+                             attached=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1392,13 +1393,13 @@ async def chat_stream(req: ChatRequest, request: Request):
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
     agent_override = req.agent if req.agent != "jarvis" else None
-    # H579: @file:path references are attached here too, as on /chat.
+    # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs
     expansion = await asyncio.to_thread(context_refs.expand, req.message)
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
-    message = expansion.text
+    message = req.message
     notes = getattr(orch, "notes", None)
     if notes is not None:
         prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
@@ -1406,7 +1407,7 @@ async def chat_stream(req: ChatRequest, request: Request):
             message = prefix + message
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
-                           attached=expansion.any_attached),
+                           attached=expansion),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
