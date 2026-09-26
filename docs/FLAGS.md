@@ -434,17 +434,37 @@ at once — there is no per-channel form; set it only on a box that talks to nob
 
 ### `JARVIS_CA_BUNDLE`
 
-**Default: unset** (`agents/core/http_client.py`). A PEM file of extra certificate
-authorities to trust for plugin egress. Every plugin client is built `trust_env=False` — so a
-hostile environment cannot silently redirect egress through a proxy nobody chose — and
-therefore verifies against certifi alone. Behind a TLS-inspecting proxy or a private CA that
-means every outbound call fails, the search backend swallows the error, and `web_search`
-answers `count: 0`: indistinguishable from "nothing found". Point this at the inspecting
-proxy's root and it works and stays verified. `SSL_CERT_FILE` is honoured as a second
-spelling. **It can only ADD.** There is no value of either variable that turns certificate
-checking off, and none that removes an anchor the box already trusted; a path that does not
-exist, or a bundle that will not load, degrades to the default store with a warning — the
-stricter side of the mistake. On a home LAN you will never need it.
+**Default: unset** (`agents/core/tls_trust.py`, re-exported by `agents/core/http_client.py`).
+A PEM file of extra certificate authorities to trust for plugin **and model** egress. Every
+plugin client is built `trust_env=False` — so a hostile environment cannot silently redirect
+egress through a proxy nobody chose — and therefore verified against certifi alone. Behind a
+TLS-inspecting proxy or a private CA that meant every outbound call failed, the search backend
+swallowed the error, and `web_search` answered `count: 0`: indistinguishable from "nothing
+found". Point this at the inspecting proxy's root and it works and stays verified. Since H504
+every model backend's client (`llm_async_client`: Anthropic, Gemini, OpenRouter, OpenAI
+Responses, xAI, LM Studio, Ollama, the VLM) verifies against the same anchor, always as an
+explicit SSLContext, so httpx never reads `SSL_CERT_FILE` on its own. `SSL_CERT_FILE` is
+honoured as a second spelling. **It can only ADD.** There is no value of either variable that
+turns certificate checking off, and none that removes an anchor the box already trusted.
+
+**At start (H504) a broken value stops the hub.** The lifespan checks every CA variable that is
+set — `JARVIS_CA_BUNDLE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` (each must be
+a file that loads and holds at least one certificate; a pinned self-signed server certificate
+counts) and `SSL_CERT_DIR` (each entry a directory) — and certifi itself. A problem is printed
+with the variable, its value, what is wrong, a command that repairs it for this shell (and the
+`.env` file that set it, when one did), instead of an unnamed `FileNotFoundError` on the first
+model call. On a home LAN you will never need any of this.
+
+### `JARVIS_TLS_INSECURE_TARGETS`
+
+**Default: unset** (`agents/core/tls_trust.py` `verify_for`). Comma-separated model provider
+ids (`ollama`, `lm-studio`, `vlm`, …) or hosts (`gpu.lan`) whose clients are built **without**
+certificate verification — for a LAN model server on a self-signed certificate you cannot
+anchor. Matching is exact (case-insensitive, a trailing dot ignored): `lan` does not match
+`gpu.lan`. It is the only way verification is ever off: a bad CA path never is. Every client
+built that way logs a WARNING naming its URL, and the start logs the list once. **The hardened
+profile (`JARVIS_HARDENED=1`) ignores the list** and logs an ERROR instead. Prefer
+`JARVIS_CA_BUNDLE` with the server's certificate: that keeps the check on.
 
 ### `JARVIS_TRUSTED_PROXIES`
 
@@ -613,7 +633,8 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
 | `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |
-| `JARVIS_CA_BUNDLE` | unset (`http_client.py`) | Extra CA roots for plugin egress (adds only; verification always on) | A root you add is trusted for every plugin fetch — point it at your own proxy's CA, nothing else | Unset + restart: back to certifi alone |
+| `JARVIS_CA_BUNDLE` | unset (`tls_trust.py`) | Extra CA roots for plugin and model egress (adds only; verification stays on); every set CA variable and certifi validated at start | A root you add is trusted for every plugin fetch and model call — point it at your own proxy's CA, nothing else; a broken CA variable refuses boot with its repair | Unset + restart: back to certifi alone |
+| `JARVIS_TLS_INSECURE_TARGETS` | unset (`tls_trust.py` `verify_for`) | Named model provider ids or hosts get clients with certificate verification **off**, each announced by a WARNING naming the URL | A listed target can be impersonated by anyone on the path — list only a LAN server you cannot anchor; ignored (ERROR) under `JARVIS_HARDENED=1` | Unset + restart: every client verifies again |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |

@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H504 fail loudly when TLS trust is misconfigured, never quietly off (partial → equivalent, #1207; headline 176 → 177/697).
+
+  Plugin egress had a trust anchor; model egress bypassed it, nothing was checked at start, and a bad `SSL_CERT_FILE` surfaced as an unnamed `FileNotFoundError` on the first model call. Now (`agents/core/tls_trust.py`), as Hermes' TLS trust:
+  - **Boot validation.** Every CA variable that is set — `JARVIS_CA_BUNDLE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` (a file that loads and holds a certificate; a pinned self-signed server certificate counts), `SSL_CERT_DIR` (directories) — and certifi itself. A broken one stops the start (lifespan, beside the boot guards) with the variable, its value, what is wrong, a repair command for this shell and the `.env` file that set it.
+  - **Model egress on the anchor.** `llm_async_client` gives every model backend's client an explicit SSLContext of certifi plus the owner's root, so `JARVIS_CA_BUNDLE` reaches Anthropic, Gemini, OpenRouter, OpenAI Responses, xAI, LM Studio, Ollama and the VLM, and httpx never reads `SSL_CERT_FILE` on its own.
+  - **Per-target off switch.** `JARVIS_TLS_INSECURE_TARGETS` (provider ids or exact hosts) is the only way verification is off: each such client logs a WARNING naming its URL, the start logs the list, the hardened profile ignores it (ERROR), and a bad CA path never means off.
+
+  Proved end to end against a real HTTPS server only the test's CA signed. 48 mutants: 46 caught after three cases were added; one was redundant code (removed), one is equivalent. Test manual: SEC-215.
+  Tests: backend 16,542 → 16,587 (`tests/test_h504_tls_trust.py` 45).
+
 - 2026-09-26 H501 warn about a dangerous host posture before it becomes an incident (partial → equivalent, #1207; headline 175 → 176/697).
 
   The bind guard already refused an unauthenticated network bind; nothing looked at the host. Now (`agents/core/host_posture.py`), as Hermes' posture warnings — three read-only checks that never block, each `ok`/`warn`/`unknown` with the fix:

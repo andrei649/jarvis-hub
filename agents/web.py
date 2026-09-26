@@ -461,6 +461,10 @@ async def lifespan(application: FastAPI):
     # They run here so every entry point enforces the same posture.
     from core.boot_guards import enforce_boot_posture
     enforce_boot_posture()
+    # H504: a CA variable that is set but cannot be trusted as written stops the start
+    # here, named with its repair — not as an unnamed FileNotFoundError on a model call.
+    from agents.core.tls_trust import enforce_ca_environment
+    enforce_ca_environment()
     # Packaged installs / $JARVIS_USER_HOME: scaffold the owner's data folder
     # (Documents/Jarvis — README, .env, memory/, skills/, souls/) BEFORE any
     # store opens under the data root. Idempotent no-op in a plain dev checkout.
