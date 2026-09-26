@@ -350,7 +350,8 @@ Two front-ends, shared engines — full subsystem doc: **`docs/VOICE.md`**.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
-| `agents/core/checkpoint.py` | SQLite checkpoints + session records | `CheckpointManager.save/restore/initialize` |
+| `agents/core/checkpoint.py` | SQLite checkpoints + session records (H413: the session title in the row's metadata, compare-and-set) | `CheckpointManager.save/restore/initialize`, `session_title`, `set_session_title` |
+| `agents/core/session_titles.py` | H413: session titles — the first message's first words at once, then one strict-local model name after the turn's reply (JSON hand-over, filtered answer); `title_fields` for `GET /sessions`, `/sessions`, the HUD card and mobile; switch `memory.session_titles` | `instant_title`, `clean_model_title`, `model_title`, `title_fields` |
 | `agents/core/http_client.py` | Per-plugin egress client: manifest policy, SSRF resolution and IP pinning per hop, kernel mediation, circuit breaker, egress ledger; `JARVIS_CA_BUNDLE` adds a trust anchor without ever weakening verification | `PluginHTTPClient`, `tls_verify`, `strict_egress_enabled`, `PluginEgressError` |
 | `agents/core/settings_db.py` | SQLite runtime settings (categories incl. the `agents` timeouts: `agent_timeout_seconds`, `reasoning_timeout_seconds`) | `get_all`, `get_category`, `put_category`, `init_db`, `DEFAULTS` |
 | `agents/core/bench.py` | Latency/throughput benchmarks | `LatencyBenchmark.record`, `get_summary` |

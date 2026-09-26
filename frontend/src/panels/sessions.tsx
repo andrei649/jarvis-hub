@@ -57,7 +57,11 @@ export function SessionsPanel() {
     {list.slice(0, 12).map((s: any, i: number) => {
       const sid = s?.session_id || s?.id || (typeof s === 'string' ? s : '');
       return <Row key={i}>
-        <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>
+        {/* H413: the session's title (its first words, then the local model's name); the id stays visible. */}
+        {s?.title
+          ? <span style={{ fontSize: 12, color: 'var(--ink)' }} title={sid}>{s.title}
+              <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
+          : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s?.turns ?? s?.count ?? ''}</span>
         {sid && <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>
           {busy === sid ? 'resuming…' : 'resume'}

@@ -209,11 +209,14 @@ def _sessions(ctx: CommandContext) -> str:
     rows = checkpoints.get_sessions(limit=5) if checkpoints is not None else []
     if not rows:
         return "No sessions recorded."
+    from agents.core.session_titles import title_fields
+
     lines = []
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
-        lines.append(f"{sid}  {started}".rstrip())
+        title = title_fields(row.get("metadata"))["title"]   # H413
+        lines.append(f"{sid}  {started}  {title}".rstrip())
     return "Recent sessions:\n" + "\n".join(lines)
 
 

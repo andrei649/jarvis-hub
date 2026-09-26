@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H413 a conversation is named from its first message, then by the local model (missing → equivalent, #1207; headline 162 → 163/697).
+
+  Sessions were listed by id: the HUD card, `/sessions` and the mobile resume list showed `3f9c…` for every conversation, because nothing wrote a title. Now (`agents/core/session_titles.py`), in two stages as in Hermes:
+  - **At once.** The first user message's first words, cleaned (no control or invisible characters, one line) and cut at a word boundary to 60 characters, are the title the moment the turn is stored. A slash command is not a title; the next real message is.
+  - **Then once, after the reply.** The strict-local model (never a cloud backend; temperature 0, 24 tokens, `/no_think` for Qwen3, refused under a job pin) is asked to *name* the conversation, the message handed over as a JSON string it must not follow. A one-line answer of 1–10 words, with no URL and nothing instruction- or refusal-shaped, replaces the first-words title. It is started only when the turn's reply is final, so it never competes with the answer.
+  - **Where it lives.** `metadata.title` / `title_source` on the session row, written by compare-and-set (the model's name replaces only a first-words title, never a newer or unknown-source one). It shows on `GET /sessions`, `/sessions`, the HUD SESSIONS card (title + short id) and the mobile resume list. Switch: `memory.session_titles`.
+
+  67 mutants: 65 caught, 2 equivalent. Test manual: GOV-269, GOV-270.
+  Tests: backend 15,879 → 15,965 (`tests/test_h413_session_titles.py` 86); vitest 1,506 → 1,507 (`sessions-title.test.tsx`).
+
 - 2026-09-26 H507 the agent is warned when code it writes contains a known-dangerous pattern (missing → equivalent, #1207; headline 161 → 162/697).
 
   Nothing looked at what the model wrote: `file_write` returned ok/path/bytes, the approval card only named instruction files, and a skill install checked contracts and signatures, never code. Now (`agents/core/code_guidance.py`), warn-only:

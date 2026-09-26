@@ -271,6 +271,9 @@ def current_principal() -> Principal:
 _TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_turn_meter_maps", default=None
 )
+#: H413: the turn's deferred session-title upgrade, started once its reply is final
+#: (Hermes titles after the first response, so the title call never competes with it).
+_TURN_TITLE: contextvars.ContextVar = contextvars.ContextVar("jarvis_turn_title", default=None)
 
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
@@ -1794,6 +1797,7 @@ class Orchestrator:
         # CLI turn never appends into a neighbour's.
         approvals_token = bind_turn_approvals()
         meter_token = _TURN_METER_MAPS.set({})
+        title_token = _TURN_TITLE.set([])
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -1804,6 +1808,10 @@ class Orchestrator:
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            titles = _TURN_TITLE.get()
+            _TURN_TITLE.reset(title_token)
+            if titles:
+                self._start_title_upgrades(titles)
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -1822,6 +1830,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._title_session(text)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
 
         outcome = await self._dispatch_command(text)
@@ -1971,6 +1980,7 @@ class Orchestrator:
         origin_token = bind_turn_action_origin(channel)
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
+        title_token = _TURN_TITLE.set([])
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
@@ -1981,6 +1991,10 @@ class Orchestrator:
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            titles = _TURN_TITLE.get()
+            _TURN_TITLE.reset(title_token)
+            if titles:
+                self._start_title_upgrades(titles)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -1998,6 +2012,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._title_session(text)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
 
         outcome = await self._dispatch_command(text)
@@ -2638,6 +2653,85 @@ class Orchestrator:
             # message for its context fetch).
             return await self.memory.recall(query, top_k=k, keyword=text)
         return await self.memory.recall(text, top_k=k)
+
+    def _title_session(self, text: str) -> None:
+        """H413 — name a session from its first message: at once from its first words,
+        then once in the background by the strict-local model, started after the turn's
+        reply (never alongside it). Never raises; an already-titled session (or
+        ``memory.session_titles`` off) is left alone."""
+        from . import session_titles
+
+        try:
+            manager = getattr(self, "checkpoints", None)
+            session = str(getattr(self, "session_id", "") or "")
+            if manager is None or not session or self.get_setting(session_titles.SETTING, True) is False:
+                return
+            if manager.session_title(session).get("title"):
+                return
+            title = session_titles.instant_title(text)
+            if not title or not manager.set_session_title(session, title, session_titles.FIRST_WORDS):
+                return
+            generate = self._session_titler()
+        except Exception:
+            logger.warning("session title skipped", exc_info=True)
+            return
+        if generate is None:
+            return
+        pending = (manager, session, text, generate)
+        deferred = _TURN_TITLE.get()
+        if deferred is not None:
+            deferred.append(pending)        # started by handle_input once the reply is final
+        else:
+            self._start_title_upgrades([pending])
+
+    def _start_title_upgrades(self, pending) -> None:
+        """Start each deferred H413 title upgrade as a background task (kept referenced)."""
+        if not pending:
+            return
+        tasks = getattr(self, "_title_tasks", None)
+        if tasks is None:
+            tasks = self._title_tasks = set()
+        for manager, session, text, generate in pending:
+            try:
+                task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+            except RuntimeError:            # no running loop: no upgrade, the instant title stays
+                return
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+
+    @staticmethod
+    async def _upgrade_session_title(manager, session: str, text: str, generate) -> bool:
+        """The local model's name replaces the first-words title, and only that one."""
+        from . import session_titles
+
+        title = await session_titles.model_title(text, generate)
+        if not title:
+            return False
+        return bool(await asyncio.to_thread(
+            manager.set_session_title, session, title, session_titles.MODEL,
+            replace=(session_titles.FIRST_WORDS,)))
+
+    def _session_titler(self):
+        """Strict-local generate() for the H413 session title, or ``None`` (as the H433
+        query rewrite: ``LLMRouter.local_backend`` only, never a cloud backend)."""
+        router = getattr(self, "llm_router", None)
+        if router is None:
+            return None
+
+        async def _generate(*, system: str, prompt: str) -> str:
+            from .llm.job_selection import SelectionError, current_selection
+            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .session_titles import MAX_TOKENS, TEMPERATURE
+            if current_selection() is not None:
+                raise SelectionError("job model pins exclude the auxiliary session title")
+            backend = router.local_backend      # strict-local; raises if none
+            model = router.active_model or DEFAULT_LOCAL_MODEL
+            if "qwen3" in model.lower():
+                prompt = f"{prompt}\n/no_think"
+            return await backend.generate(model=model, prompt=prompt, system=system,
+                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+
+        return _generate
 
     def _query_rewriter(self):
         """Strict-local generate() for the H433 query rewrite, or ``None``.

@@ -210,6 +210,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="sandbox_temp_max_age_hours", value=72,          label="Prune the managed sandbox cache's idle run directories after (hours, 1-8760)", kind="number"),
     # memory
     dict(category="memory",  key="max_turns",        value=100,                   label="Max turns per session",kind="number"),
+    # H413: name a session from its first message (then once by the local model).
+    dict(category="memory",  key="session_titles",   value=True,                  label="Title sessions from their first message", kind="toggle"),
     dict(category="memory",  key="context_window",   value=6,                     label="Context window (turns)",kind="number"),
     dict(category="memory",  key="context_compression", value=False,              label="Compress long context (hot path)", kind="toggle"),
     dict(category="memory",  key="compression_max_tokens", value=2000,            label="Context compression budget (tokens)", kind="number"),

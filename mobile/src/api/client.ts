@@ -2347,6 +2347,9 @@ export type SessionInfo = {
   ended_at?: string;
   turn_count?: number;
   summary?: string;
+  /** H413: the session's title (its first words, then the local model's name). */
+  title?: string;
+  title_source?: string;
 };
 
 export type HistoryTurn = {

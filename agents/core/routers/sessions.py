@@ -29,7 +29,9 @@ async def get_sessions():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     sessions = orch.checkpoints.get_sessions(limit=20)
-    return {"sessions": sessions}
+    from ..session_titles import title_fields  # H413: each session's title and its source
+
+    return {"sessions": [{**row, **title_fields(row.get("metadata"))} for row in sessions]}
 
 
 _NO_STORE = {"Cache-Control": "no-store"}
