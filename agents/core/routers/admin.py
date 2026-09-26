@@ -51,7 +51,7 @@ from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
 logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
-from agents.core.settings_db import get_all, get_category, put_category, validate_category
+from agents.core.settings_db import get_all, get_category, put_category, route_only_problems, validate_category
 from agents.core.security.types import SecurityEvent, SecurityEventType
 from agents.core.security.token_store import SCOPES, get_token_store
 
@@ -195,7 +195,8 @@ async def _guard_selection(changes: dict, *, confirm_expensive: bool,
 async def admin_put_category(category: str, body: AdminPutBody):
     # AUD-8: reject a malformed write (wrong type / off the select allow-list) with
     # 422 before it can corrupt a setting the rest of the system reads back + trusts.
-    errors = validate_category(category, body.values)
+    # review-H329 F1: a row only its own route writes (the skill switches) is refused here.
+    errors = validate_category(category, body.values) + route_only_problems(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
     guarded = await _guard_selection({category: body.values}, confirm_expensive=body.confirm_expensive,

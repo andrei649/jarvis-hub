@@ -24,11 +24,11 @@ export function SkillSwitchesPanel() {
   const channelOk = where === '' || CHANNEL_RE.test(where);
   const categories = Array.from(new Set(names.map((n) => map[n]?.category).filter((c) => typeof c === 'string' && c))).sort();
 
-  const flip = (target: { skill?: string; category?: string }, enabled: boolean) => {
+  const flip = (target: { skill?: string; category?: string }, enabled: boolean, here = where) => {
     if (!channelOk) return;
     const key = `${target.skill || target.category}:${enabled}`;
     const body: any = { ...target, enabled };
-    if (where) body.channel = where;
+    if (here) body.channel = here;
     setBusy(key);
     setMsg(null);
     actA(SWITCH_PATH, body,
@@ -36,8 +36,15 @@ export function SkillSwitchesPanel() {
         const changed = arr(r, 'changed');
         const kept = arr(r, 'essential');
         const note = r && r.audited === false && changed.length ? ' · not recorded in the intent log' : '';
+        // review-H329 F3/F6: a skill still off everywhere, or a switch the hub could not store.
+        const offAll = arr(r, 'off_everywhere');
+        const unstored = arr(r, 'unstorable');
+        const more = (offAll.length && changed.length ? ` · still off everywhere: ${offAll.join(', ')}` : '')
+          + (unstored.length ? ` · could not be stored: ${unstored.join(', ')}` : '');
         setMsg(changed.length
-          ? `switched ${enabled ? 'on' : 'off'} ${where ? `on ${where}` : 'everywhere'} · ${changed.join(', ')}${note}`
+          ? `switched ${enabled ? 'on' : 'off'} ${here ? `on ${here}` : 'everywhere'} · ${changed.join(', ')}${note}${more}`
+          : offAll.length ? `still off everywhere · ${offAll.join(', ')}`
+          : unstored.length ? `not switched off · could not be stored: ${unstored.join(', ')}`
           : kept.length ? `essential, stays on · ${kept.join(', ')}` : 'nothing to change');
         setBusy(null); reload();
       },
@@ -57,6 +64,8 @@ export function SkillSwitchesPanel() {
         const s = map[n] || {};
         const chans = arr(s, 'disabled_channels');
         const offHere = where ? chans.includes(where) || s.disabled : s.disabled;
+        // Off everywhere: a switch-on for one channel would leave it off there too (review-H329 F3).
+        const onEverywhere = !!s.disabled && !!where;
         return (
           <Row key={n}>
             <span style={{ ...mono, color: offHere ? 'var(--ink-3)' : 'var(--accent-light)' }}>{n}</span>
@@ -68,7 +77,8 @@ export function SkillSwitchesPanel() {
               ? <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>always on</span>
               : <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!channelOk || busy !== null}
                   aria-label={`${offHere ? 'switch on' : 'switch off'} ${n}`}
-                  onClick={() => flip({ skill: n }, !!offHere)}>{offHere ? 'switch on' : 'switch off'}</button>}
+                  onClick={() => flip({ skill: n }, !!offHere, onEverywhere ? '' : where)}>
+                  {offHere ? (onEverywhere ? 'switch on everywhere' : 'switch on') : 'switch off'}</button>}
           </Row>
         );
       })}

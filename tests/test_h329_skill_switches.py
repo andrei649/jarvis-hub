@@ -26,6 +26,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import settings_db  # noqa: E402
+from agents.core.skills import loader as loader_mod  # noqa: E402
 from agents.core.skills import switches  # noqa: E402
 from agents.core.skills.loader import Skill, SkillLoader  # noqa: E402
 
@@ -38,10 +39,12 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
     monkeypatch.setattr(settings_db, "_initialized", False)
     monkeypatch.setattr(settings_db, "_wal_set", False)
+    # The shipped skills tree: an essential skill is the shipped copy (review-H329 F2).
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path / "skills")
     yield
 
 
-def _skill(tmp_path, folder, name, *, command=None, category=None, calls=None):
+def _skill(tmp_path, folder, name, *, command=None, category=None, calls=None, shipped=False):
     path = tmp_path / "skills" / folder
     path.mkdir(parents=True, exist_ok=True)
     (path / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
@@ -52,6 +55,7 @@ def _skill(tmp_path, folder, name, *, command=None, category=None, calls=None):
         manifest["hermes"] = {"category": category}
     skill = Skill(name, path, manifest)
     skill.trusted = True
+    skill.external = not shipped
     skill.view_files = {"SKILL.md": f"# {name}\n".encode()}
     record = calls if calls is not None else []
 
@@ -129,9 +133,8 @@ def test_off_on_one_channel_only(tmp_path):
 
 
 def test_an_essential_skill_is_never_off(tmp_path):
-    monitor = _skill(tmp_path, "security_monitor", "Security Monitor")
+    monitor = _skill(tmp_path, "security_monitor", "Security Monitor", shipped=True)
     assert switches.is_essential(monitor)
-    assert switches.is_essential(_skill(tmp_path, "other", "security_monitor"))
     assert not switches.is_essential(_skill(tmp_path, "weather", "Weather Intel"))
     _store(disabled=["Security Monitor"], channel_disabled={"telegram": ["security_monitor"]})
     assert switches.off_reason(monitor, "telegram") == ""
@@ -153,7 +156,7 @@ def test_a_command_of_a_switched_off_skill_is_refused_and_not_counted(tmp_path):
     _store(disabled=["Weather Intel"])
     reply = asyncio.run(weather.execute("weather", "cluj", {"channel": "web"}))
     assert reply == ("[skill:Weather Intel] is switched off everywhere; "
-                     "the owner can switch it back on in Settings → Skills")
+                     "the owner can switch it back on in Console → Trust → Skill Switches")
     assert calls == [("weather", "cluj")] and uses == [("Weather Intel", "use")]
 
 
@@ -262,7 +265,7 @@ def test_apply_off_on_a_channel(tmp_path):
 
 
 def test_apply_never_switches_an_essential_skill_off(tmp_path):
-    monitor = _skill(tmp_path, "security_monitor", "Security Monitor")
+    monitor = _skill(tmp_path, "security_monitor", "Security Monitor", shipped=True)
     out = switches.apply([monitor], enabled=False, channel="telegram")
     assert out["essential"] == ["Security Monitor"] and out["changed"] == []
     assert out["state"] == {"disabled": [], "channel_disabled": {}}
@@ -311,7 +314,7 @@ def _client(monkeypatch, tmp_path, *, log=None):
     skills = [_skill(tmp_path, "weather", "Weather Intel", category="info"),
               _skill(tmp_path, "news", "News", category="Info"),
               _skill(tmp_path, "spotify", "Spotify"),
-              _skill(tmp_path, "security_monitor", "Security Monitor", category="info")]
+              _skill(tmp_path, "security_monitor", "Security Monitor", category="info", shipped=True)]
     orch = MagicMock()
     orch.skills = SimpleNamespace(skills={s.name: s for s in skills})
     orch.intent_log = log if log is not None else _Log()
@@ -497,9 +500,15 @@ def test_nerva_skills_off_on_and_list():
     code, out, _err, calls = _cli(["skills", "on", "--category", "info"],
                                   {"POST /api/skills/switch": {"changed": [], "unchanged": ["News"], "essential": [], "audited": False}})
     assert calls[0][2] == {"enabled": True, "category": "info"} and out.strip() == "News: already on everywhere"
-    code, out, _err, _calls = _cli(["skills", "off", "security_monitor"],
-                                   {"POST /api/skills/switch": {"changed": [], "unchanged": [], "essential": ["Security Monitor"]}})
-    assert out.strip() == "Security Monitor: essential, stays on"
+    code, out, _err, _calls = _cli(["skills", "on", "--category", "info", "--channel", "telegram"],
+                                   {"POST /api/skills/switch": {"changed": [], "unchanged": [], "essential": [],
+                                                                "off_everywhere": ["Spotify"]}})
+    assert out.strip() == "Spotify: still off everywhere (switch it on without --channel)"   # review-H329 F3
+    code, out, _err, _calls = _cli(["skills", "off", "--category", "info"],
+                                   {"POST /api/skills/switch": {"changed": [], "unchanged": [], "essential": ["Security Monitor"],
+                                                                "unstorable": ["Notes\xa0Pro"]}})
+    assert out.splitlines() == ["Notes\xa0Pro: not switched off; the switch could not be stored",
+                                "Security Monitor: essential, stays on"]
     code, out, _err, _calls = _cli(["skills", "off", "spotify"],
                                    {"POST /api/skills/switch": {"changed": ["Spotify"], "audited": False}})
     assert "could not record" in out
@@ -519,3 +528,267 @@ def test_nerva_skills_needs_one_target_and_a_real_listing():
     assert code == 2 and calls == []
     code, _out, err, _calls = _cli(["skills", "list"], {"GET /skills": {"error": "x"}})
     assert code == 1 and "no skills" in err
+
+
+def test_a_refused_essential_switch_off_is_an_error_at_the_cli():
+    """review-H329 F10: the route answers 409 for one essential skill, never a 200."""
+    from agents.cli.client import HubError
+
+    def refuse(body):
+        raise HubError(409, "Security Monitor is essential and cannot be switched off")
+
+    code, out, err, _calls = _cli(["skills", "off", "security_monitor"], {"POST /api/skills/switch": refuse})
+    assert code == 1 and out == ""
+    assert err.strip() == "HTTP 409: Security Monitor is essential and cannot be switched off"
+
+
+# ── review round ─────────────────────────────────────────────────────────────────
+
+def _admin_write(client, method, path, body=None):
+    return client.request(method, path, json=body if body is not None else {},
+                          headers={"X-Admin-Token": _TOKEN})
+
+
+def test_the_settings_routes_never_write_a_switch(monkeypatch, tmp_path):
+    """review-H329 F1: only the switch route writes the two rows, so a switch-on is never
+    made without its intent-log record: a settings write, an import and a reset refuse or
+    leave them."""
+    client, orch = _client(monkeypatch, tmp_path)
+    orch.intent_log = None
+    _store(disabled=["Weather Intel"], channel_disabled={"telegram": ["Spotify"]})
+    stored = switches.state()
+    resp = _admin_write(client, "PUT", "/api/admin/settings/skills", {"values": {"disabled": []}})
+    assert resp.status_code == 422 and "Skill Switches" in " ".join(resp.json()["details"])
+    resp = _admin_write(client, "PUT", "/api/admin/settings/skills",
+                        {"values": {"channel_disabled": {}, "auto_generate": False}})
+    assert resp.status_code == 422 and settings_db.get_value("skills", "auto_generate") is True
+    assert _admin_write(client, "PUT", "/api/admin/settings/skills",
+                        {"values": {"auto_generate": False}}).status_code == 200
+    resp = _admin_write(client, "POST", "/api/admin/settings/import", {"settings": {"skills": {"disabled": []}}})
+    assert resp.status_code == 422 and "skills.disabled" in " ".join(resp.json()["details"])
+    same = {"settings": {"skills": {"disabled": ["Weather Intel"]}}}         # an older export, unchanged
+    assert _admin_write(client, "POST", "/api/admin/settings/import", same).status_code == 200
+    assert _admin_write(client, "POST", "/api/admin/settings/skills/reset").status_code == 200
+    assert _admin_write(client, "POST", "/api/admin/settings/reseed").status_code == 200
+    assert switches.state() == stored
+    doc = settings_db.export_settings()
+    assert {"disabled", "channel_disabled"}.isdisjoint(doc["settings"]["skills"])
+    assert {"skills.disabled", "skills.channel_disabled"} <= {e["setting"] for e in doc["excluded"]}
+    rows = {r["key"]: r for r in settings_db.get_category("skills")}
+    assert "Skill Switches" in rows["disabled"]["written_by"] and "written_by" not in rows["auto_generate"]
+
+
+def test_nerva_config_set_never_writes_a_switch():
+    """review-H329 F1: `nerva config set` names the command that does."""
+    from agents.cli.nerva import Context, main
+
+    _store(disabled=["Weather Intel"])
+    out, err = io.StringIO(), io.StringIO()
+    ctx = Context(environ={}, out=out, err=err, inp=io.StringIO(""), client_factory=lambda env: None)
+    assert main(["config", "set", "skills.disabled", ""], context=ctx) == 1
+    assert "nerva skills on" in err.getvalue() and switches.state()["disabled"] == ["Weather Intel"]
+
+
+def test_only_the_shipped_security_monitor_is_essential(monkeypatch, tmp_path):
+    """review-H329 F2: an imported skill that takes the monitor's folder or name has a switch."""
+    assert not switches.is_essential(_skill(tmp_path, "other", "security_monitor", shipped=True))
+    assert not switches.is_essential(_skill(tmp_path, "security_monitor", "Totally Safe Helper"))     # external
+    assert not switches.is_essential(_skill(tmp_path / "mine", "security_monitor", "Security Monitor", shipped=True))
+    client, orch = _client(monkeypatch, tmp_path)
+    helper = _skill(tmp_path / "mine", "security_monitor", "Totally Safe Helper")
+    orch.skills.skills = {"Totally Safe Helper": helper}
+    resp = _post(client, {"skill": "security_monitor", "enabled": False})
+    assert resp.status_code == 200 and resp.json()["changed"] == ["Totally Safe Helper"]
+    assert switches.off_reason(helper, "web") == "everywhere"
+
+
+def test_switching_on_one_channel_a_skill_off_everywhere_says_so(monkeypatch, tmp_path):
+    """review-H329 F3: it stays off there, so the answer never reads "already on"."""
+    client, orch = _client(monkeypatch, tmp_path)
+    spotify = orch.skills.skills["Spotify"]
+    assert _post(client, {"skill": "spotify", "enabled": False}).status_code == 200
+    resp = _post(client, {"skill": "spotify", "enabled": True, "channel": "telegram"})
+    assert resp.status_code == 409 and resp.json()["reason"] == "off_everywhere"
+    assert "on everywhere" in resp.json()["error"]
+    assert switches.off_reason(spotify, "telegram") == "everywhere"
+    assert [r["action"] for r in orch.intent_log.rows] == ["skill.disable"]
+    out = switches.apply([spotify], enabled=True, channel="telegram")
+    assert out["changed"] == [] and out["unchanged"] == [] and out["off_everywhere"] == ["Spotify"]
+    _store(disabled=["Spotify"], channel_disabled={"telegram": ["Spotify"]})
+    both = switches.apply([spotify], enabled=True, channel="telegram")       # its channel entry goes, it stays off
+    assert both["changed"] == ["Spotify"] and both["off_everywhere"] == ["Spotify"]
+
+
+def test_a_turn_with_no_principal_hides_a_skill_off_on_its_channel(tmp_path):
+    """review-H329 F4: an mcp, webhook or workflow turn binds no principal; the catalog
+    reads the channel handle_input was given, the one a command is refused on."""
+    from agents.core.orchestrator import Orchestrator
+
+    loader = _loader(_skill(tmp_path, "spotify", "Spotify"))
+    _store(channel_disabled={"mcp": ["Spotify"]})
+    seen = []
+
+    async def turn(*args, **kwargs):
+        seen.append([r["skill"] for r in loader.prompt_catalog()])
+        return "ok"
+
+    asyncio.run(Orchestrator.handle_input(SimpleNamespace(_handle_input=turn), "t", channel="mcp"))
+    asyncio.run(Orchestrator.handle_input(SimpleNamespace(_handle_input=turn), "t", channel="voice"))
+    asyncio.run(Orchestrator.handle_input_stream(SimpleNamespace(_handle_input_stream=turn), "t", channel="mcp"))
+    assert seen == [[], ["Spotify"], []]
+    assert switches.current_channel() == ""                                 # the turn's binding is reset
+
+
+def test_a_cycle_keeps_the_usage_count_the_approval_and_the_signature(monkeypatch, tmp_path):
+    """review-H329 F5: GOV-263's claim on a real loader, usage store and approval store."""
+    from agents.core.skills import signing
+    from agents.core.skills.approval import SkillApprovalStore
+    from agents.core.skills.usage import ORIGIN_AGENT, SkillUsageStore
+
+    client, orch = _client(monkeypatch, tmp_path)
+    mine = tmp_path / "mine"
+    folder = mine / "notes_pro"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("# Notes Pro\n\n> Keeps notes.\n", encoding="utf-8")
+    (folder / "main.py").write_text("def register(skill):\n    pass\n", encoding="utf-8")
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path / "shipped")
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: mine)
+    approvals = SkillApprovalStore(tmp_path / "private" / "approvals.json")
+    approvals.approve(folder)
+    signing.sign_skill(folder)
+    usage = SkillUsageStore(path=tmp_path / "usage.json")
+    usage.note_created("Notes Pro", ORIGIN_AGENT)
+    usage.bump("Notes Pro", "use")
+    loader = SkillLoader(approval_store=approvals)
+    loader.attach_usage(usage)
+    loader.discover()
+    orch.skills = loader
+
+    def standing():
+        skill = loader.skills["Notes Pro"]
+        return (usage.get("Notes Pro")["use_count"], usage.get("Notes Pro")["state"], approvals.is_approved(folder),
+                signing.verify_skill(folder), skill.trusted, skill.owner_vouched, _tree(folder))
+
+    before = standing()
+    assert before[0] == 1 and before[2] is True
+    assert _post(client, {"skill": "notes_pro", "enabled": False}).json()["changed"] == ["Notes Pro"]
+    assert "switched off" in asyncio.run(loader.skills["Notes Pro"].execute("x", "", {"channel": "web"}))
+    assert standing() == before
+    assert _post(client, {"skill": "notes_pro", "enabled": True}).json()["changed"] == ["Notes Pro"]
+    loader.discover()
+    assert standing() == before
+
+
+def test_a_switch_off_the_store_cannot_hold_is_refused_and_not_recorded(monkeypatch, tmp_path):
+    """review-H329 F6: a name the read would drop, or one past the caps, is never reported
+    switched off (nor recorded) while the skill stays on."""
+    client, orch = _client(monkeypatch, tmp_path)
+    odd = _skill(tmp_path, "notes_pro", "Notes\xa0Pro", category="info")
+    orch.skills.skills["Notes\xa0Pro"] = odd
+    resp = _post(client, {"skill": "notes_pro", "enabled": False})
+    assert resp.status_code == 409 and resp.json()["reason"] == "unstorable"
+    assert orch.intent_log.rows == [] and switches.state() == {"disabled": [], "channel_disabled": {}}
+    body = _post(client, {"category": "info", "enabled": False}).json()
+    assert body["unstorable"] == ["Notes\xa0Pro"] and "Notes\xa0Pro" not in body["changed"]
+    assert orch.intent_log.rows[0]["metadata"]["skills"] == body["changed"]
+    weather = orch.skills.skills["Weather Intel"]
+    _store(disabled=[f"n{i}" for i in range(switches.MAX_NAMES)], channel_disabled={})
+    out = switches.apply([weather], enabled=False)
+    assert out["unstorable"] == ["Weather Intel"] and out["changed"] == []
+    _store(disabled=[], channel_disabled={f"c{i}": ["x"] for i in range(switches.MAX_CHANNELS)})
+    assert switches.apply([weather], enabled=False, channel="telegram")["unstorable"] == ["Weather Intel"]
+    assert switches.apply([weather], enabled=False, channel="c0")["changed"] == ["Weather Intel"]
+    assert switches.off_reason(weather, "c0") == "on c0"
+
+
+def test_a_switch_on_an_unreadable_store_writes_nothing(monkeypatch, tmp_path):
+    """review-H329 F7: the base of a write is read strictly, so a locked store never
+    becomes an empty base that erases every other switch."""
+    import sqlite3
+
+    client, orch = _client(monkeypatch, tmp_path)
+    _store(disabled=["Evil", "Other"], channel_disabled={"telegram": ["Spotify"]})
+    real, fails = settings_db.get_conn, [2]
+
+    def flaky():
+        if fails[0]:
+            fails[0] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return real()
+
+    monkeypatch.setattr(settings_db, "get_conn", flaky)
+    with pytest.raises(settings_db.SettingsUnreadable):
+        switches.apply([orch.skills.skills["News"]], enabled=False)
+    fails[0] = 2
+    resp = _post(client, {"skill": "news", "enabled": False})
+    assert resp.status_code == 500 and resp.json()["reason"] == "write_failed"
+    monkeypatch.setattr(settings_db, "get_conn", real)
+    assert switches.state() == {"disabled": ["Evil", "Other"], "channel_disabled": {"telegram": ["Spotify"]}}
+
+
+def test_an_unrecorded_switch_on_is_followed_by_its_revert_in_the_log(monkeypatch, tmp_path):
+    """review-H329 F8: IntentLog keeps an entry whose save failed and writes it with the
+    next one; the route records the revert after it, so the file never shows a switch-on
+    that did not stay."""
+    import json
+
+    from agents.core.persistence import json_store
+    from agents.core.security.anchor import IntentLog
+
+    log = IntentLog(tmp_path / "intent_log.json", secret_key="h329")
+    client, _orch = _client(monkeypatch, tmp_path, log=log)
+    _store(disabled=["Weather Intel"])
+    real, calls = json_store.atomic_write_json, []
+
+    def flaky(path, data, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise OSError("disk full")
+        return real(path, data, **kwargs)
+
+    monkeypatch.setattr(json_store, "atomic_write_json", flaky)
+    assert _post(client, {"skill": "weather", "enabled": True}).json()["restored"] is True
+    assert switches.state()["disabled"] == ["Weather Intel"]
+    assert _post(client, {"skill": "spotify", "enabled": False}).json()["audited"] is True
+    saved = json.loads((tmp_path / "intent_log.json").read_text(encoding="utf-8"))
+    assert [(e["action"], e["cause"]) for e in saved] == [
+        ("skill.enable", "skills.switch"), ("skill.disable", "skills.switch.revert"), ("skill.disable", "skills.switch")]
+    assert saved[1]["metadata"]["skills"] == ["Weather Intel"] and log.verify()["ok"] is True
+
+
+def test_the_curator_never_archives_a_skill_switched_off_everywhere(tmp_path):
+    """review-H329 F9: a switched-off skill cannot record use, so its idle clock is the
+    owner's switch, not neglect; archiving it would cost its approval at the next start."""
+    from datetime import UTC, datetime, timedelta
+
+    from agents.core.skills.curator import SkillCurator
+    from agents.core.skills.usage import ORIGIN_AGENT, SkillUsageStore
+
+    kept, idle, local = (_skill(tmp_path, "kept_helper", "Kept Helper"), _skill(tmp_path, "idle_helper", "Idle Helper"),
+                         _skill(tmp_path, "local_helper", "Local Helper"))
+    loader = SimpleNamespace(skills={s.name: s for s in (kept, idle, local)})
+    usage = SkillUsageStore(path=tmp_path / "usage.json")
+    for skill in (kept, idle, local):
+        usage.note_created(skill.name, ORIGIN_AGENT)
+    _store(disabled=["kept helper"], channel_disabled={"telegram": ["Local Helper"]})
+    curator = SkillCurator(loader, usage, archive_dir=tmp_path / "archive",
+                           now=lambda: datetime.now(UTC) + timedelta(days=100))
+    out = asyncio.run(curator.run())
+    assert sorted(out["lifecycle"]["archived"]) == ["Idle Helper", "Local Helper"]
+    assert "Kept Helper" in loader.skills and kept.path.exists()
+
+
+def test_the_skill_list_is_not_open_to_the_network(monkeypatch, tmp_path):
+    """review-H329 F11: GET /skills carries the owner's switches and channel names."""
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.routers import _deps
+
+    _client(monkeypatch, tmp_path)
+    monkeypatch.delitem(web.app.dependency_overrides, _deps.user_guard)    # the suite's no-op guard
+    _store(channel_disabled={"telegram": ["Spotify"]})
+    lan = TestClient(web.app, client=("192.168.1.77", 5555), base_url="http://192.168.1.10:8000")
+    assert lan.get("/skills").status_code in (401, 403)
+    monkeypatch.setattr(web, "USER_TOKEN", "h329-user")
+    assert lan.get("/skills", headers={"X-User-Token": "h329-user"}).status_code == 200

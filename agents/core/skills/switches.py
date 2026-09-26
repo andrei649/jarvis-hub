@@ -20,12 +20,16 @@ without a restart.
 
 :data:`ESSENTIAL_SKILLS` cannot be switched off: the security monitor is how the owner
 sees an open port or a new device on the network, and a switch that hid it would hide
-exactly what the owner needs to see. A stored entry for one is ignored.
+exactly what the owner needs to see. Only the shipped copy is essential, never an
+imported skill that takes its folder or name (review-H329 F2). A stored entry for one is
+ignored.
 
 Switching off narrows what the hub does and is always allowed. Switching back on widens
 it, so it is the owner's act only: the admin route records it in the intent log and
 refuses when it cannot (a switch-off that cannot be recorded still applies and says
-so). No tool the model is offered writes these rows.
+so). That route is the rows' only writer: a settings write, an import, a reset and
+``nerva config set`` refuse or leave them (``settings_db.ROUTE_ONLY``, review-H329 F1).
+No tool the model is offered writes these rows.
 
 This is not the H285 load set (``loadset.skills_*``), which keeps a skill from being
 loaded at all at boot, for a skill that breaks the hub; a switched-off skill is loaded
@@ -33,10 +37,12 @@ and listed, only not used.
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import threading
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("jarvis.skills.switches")
@@ -44,7 +50,7 @@ logger = logging.getLogger("jarvis.skills.switches")
 CATEGORY = "skills"
 GLOBAL_KEY = "disabled"
 CHANNEL_KEY = "channel_disabled"
-#: Skills (folder names) that cannot be switched off.
+#: Shipped skills (folder names) that cannot be switched off.
 ESSENTIAL_SKILLS: frozenset[str] = frozenset({"security_monitor"})
 MAX_NAMES = 256
 MAX_NAME_CHARS = 128
@@ -52,6 +58,10 @@ MAX_CHANNELS = 32
 CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,31}$")
 
 _WRITE_LOCK = threading.Lock()
+#: The channel ``handle_input`` was given for the turn in progress (review-H329 F4: an
+#: mcp, webhook or workflow turn binds no principal, so the catalog read "no channel"
+#: while a command of the same turn was refused on its channel).
+_TURN_CHANNEL: contextvars.ContextVar[str] = contextvars.ContextVar("nerva_skill_turn_channel", default="")
 
 
 def _key(value: Any) -> str:
@@ -122,6 +132,18 @@ def state() -> dict:
     }
 
 
+def strict_state() -> dict:
+    """:func:`state`, but a store that cannot be read raises
+    ``settings_db.SettingsUnreadable`` instead of reading as no switches: a write built on
+    that would erase every other switch (review-H329 F7)."""
+    from agents.core.settings_db import read_setting
+
+    return {
+        GLOBAL_KEY: clean_names(read_setting(CATEGORY, GLOBAL_KEY)[1]),
+        CHANNEL_KEY: clean_channel_map(read_setting(CATEGORY, CHANNEL_KEY)[1]),
+    }
+
+
 def identities(skill: Any) -> set[str]:
     """The names an owner may use for ``skill`` at the route or the CLI: its name and its
     folder (a stored entry is always the name)."""
@@ -139,17 +161,37 @@ def _entry(skill: Any) -> str:
 
 
 def is_essential(skill: Any) -> bool:
-    return bool(identities(skill) & {_key(n) for n in ESSENTIAL_SKILLS})
+    """Whether ``skill`` is the shipped copy of an essential skill: loaded as the
+    product's own (not external) from its place in the shipped tree. A name or a folder
+    an imported skill can also carry is not enough (review-H329 F2)."""
+    path = getattr(skill, "path", None)
+    if path is None or getattr(skill, "external", True) or Path(path).name not in ESSENTIAL_SKILLS:
+        return False
+    from .loader import _shipped_location
+
+    return _shipped_location(Path(path))
+
+
+def bind_turn_channel(channel: Any) -> contextvars.Token:
+    """Bind the channel of the turn ``handle_input`` runs (``""`` when it is not one)."""
+    return _TURN_CHANNEL.set(clean_channel(channel))
+
+
+def reset_turn_channel(token: contextvars.Token) -> None:
+    _TURN_CHANNEL.reset(token)
 
 
 def current_channel() -> str:
-    """The channel of the turn in progress, or ``""`` outside a bound turn."""
-    try:
-        from agents.core.orchestrator import current_principal
+    """The channel of the turn in progress: the one ``handle_input`` was given, else the
+    bound principal's, or ``""`` outside a turn."""
+    channel = _TURN_CHANNEL.get()
+    if not channel:
+        try:
+            from agents.core.orchestrator import current_principal
 
-        channel = clean_channel(getattr(current_principal(), "channel", ""))
-    except Exception:
-        return ""
+            channel = clean_channel(getattr(current_principal(), "channel", ""))
+        except Exception:
+            return ""
     # A turn nobody bound says "unknown": that is no channel, not one named "unknown".
     return "" if channel == "unknown" else channel
 
@@ -177,7 +219,7 @@ def off_reason(skill: Any, channel: str | None = None, *, current: dict | None =
 def refusal(skill: Any, reason: str) -> str:
     """The reply a command of a switched-off skill gets instead of running."""
     return (f"[skill:{getattr(skill, 'name', '?')}] is switched off {reason}; "
-            "the owner can switch it back on in Settings → Skills")
+            "the owner can switch it back on in Console → Trust → Skill Switches")
 
 
 def _without(names: Iterable[str], drop: set[str]) -> list[str]:
@@ -189,15 +231,22 @@ def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
 
     Essential skills are never switched off (they are returned under ``essential``).
     Switching on removes the entries that name the skill (ignoring case): every entry
-    when no channel is given, that channel's otherwise.
-    Returns ``{"changed", "unchanged", "essential", "state", "before"}``."""
+    when no channel is given, that channel's otherwise; a skill switched on for one
+    channel that stays off everywhere is also named under ``off_everywhere`` (review-H329
+    F3). A switch-off the rows cannot hold (a name the read drops, or past MAX_NAMES /
+    MAX_CHANNELS) is not written and is named under ``unstorable`` (F6). The base is read
+    strictly: an unreadable store raises and nothing is written (F7).
+    Returns ``{"changed", "unchanged", "essential", "off_everywhere", "unstorable",
+    "state", "before"}``, ``state`` being what this call left."""
     from agents.core.settings_db import put_category
 
     changed: list[str] = []
     unchanged: list[str] = []
     essential: list[str] = []
+    off_everywhere: list[str] = []
+    unstorable: list[str] = []
     with _WRITE_LOCK:
-        now = state()
+        now = strict_state()
         before = {GLOBAL_KEY: list(now[GLOBAL_KEY]), CHANNEL_KEY: {k: list(v) for k, v in now[CHANNEL_KEY].items()}}
         glob = list(now[GLOBAL_KEY])
         chans = {k: list(v) for k, v in now[CHANNEL_KEY].items()}
@@ -213,24 +262,34 @@ def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
                 if present:
                     unchanged.append(name)
                     continue
+                # What the read would drop must not be reported (and recorded) as off.
+                full = bool(channel) and not target and sum(1 for names in chans.values() if names) >= MAX_CHANNELS
+                if full or len(clean_names([*target, name])) != len(target) + 1:
+                    unstorable.append(name)
+                    continue
                 target.append(name)
                 changed.append(name)
                 continue
             # On everywhere clears every entry; on for one channel clears that channel's.
             lists = [target] if channel else [glob, *chans.values()]
+            still_off = bool(channel) and bool(ids & {_key(n) for n in glob})
             if not any(ids & {_key(n) for n in names} for names in lists):
-                unchanged.append(name)
+                (off_everywhere if still_off else unchanged).append(name)
                 continue
             for names in lists:
                 names[:] = _without(names, ids)
             changed.append(name)
+            if still_off:
+                off_everywhere.append(name)
         chans = {k: v for k, v in chans.items() if v}
         if changed:
             updated, skipped = put_category(CATEGORY, {GLOBAL_KEY: glob, CHANNEL_KEY: chans})
             if skipped or updated != 2:
                 raise RuntimeError(f"the skill switches could not be saved: {skipped}")
-        return {"changed": changed, "unchanged": unchanged, "essential": essential, "state": state(),
-                "before": before}
+        # What a read now returns, without a second read that could fail after the write.
+        return {"changed": changed, "unchanged": unchanged, "essential": essential,
+                "off_everywhere": off_everywhere, "unstorable": unstorable,
+                "state": {GLOBAL_KEY: clean_names(glob), CHANNEL_KEY: clean_channel_map(chans)}, "before": before}
 
 
 def restore(before: dict, expected: dict) -> bool:
@@ -246,7 +305,8 @@ def restore(before: dict, expected: dict) -> bool:
 
 
 __all__ = [
-    "CATEGORY", "CHANNEL_KEY", "ESSENTIAL_SKILLS", "GLOBAL_KEY", "apply", "channel_map_problem",
-    "clean_channel", "clean_channel_map", "clean_names", "current_channel", "identities",
-    "is_essential", "off_reason", "refusal", "restore", "state",
+    "CATEGORY", "CHANNEL_KEY", "ESSENTIAL_SKILLS", "GLOBAL_KEY", "apply", "bind_turn_channel",
+    "channel_map_problem", "clean_channel", "clean_channel_map", "clean_names", "current_channel",
+    "identities", "is_essential", "off_reason", "refusal", "reset_turn_channel", "restore", "state",
+    "strict_state",
 ]

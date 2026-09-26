@@ -82,14 +82,26 @@ class SkillCurator:
     # ── pass 1: lifecycle ────────────────────────────────────────────────────
 
     def _lifecycle_pass(self) -> dict:
+        from . import switches
+
         stale_days = int(self._get("learning.curator_stale_days", 30) or 30)
         archive_days = int(self._get("learning.curator_archive_days", 90) or 90)
         now = self._now()
         marked_stale, archived, considered = [], [], 0
+        try:
+            switched = switches.strict_state()
+        except Exception:
+            logger.warning("skill switches unreadable; lifecycle pass skipped", exc_info=True)
+            return {"considered": 0, "stale": [], "archived": []}
 
         for name in list(getattr(self._loader, "skills", {}).keys()):
             try:
                 if not self._usage.curatable(name):
+                    continue
+                skill = self._loader.skills.get(name)
+                # review-H329 F9: a skill switched off everywhere records no use; its idle
+                # clock is the owner's switch, not neglect, and archiving it costs its approval.
+                if skill is not None and switches.off_reason(skill, current=switched) == "everywhere":
                     continue
                 considered += 1
                 rec = self._usage.get(name) or {}

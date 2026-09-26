@@ -41,6 +41,22 @@ describe('SettingsPanel — a JSON setting', () => {
     expect(puts[0].body).toEqual({ values: { template_vars: '{team: ops' } });
   });
 
+  it('shows a setting only its own route writes, with where to change it, and no edit box (review-H329 F1)', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      const body = u.includes('/api/admin/settings')
+        ? { skills: [{ key: 'channel_disabled', label: 'Skills switched off on one channel', value: { telegram: ['Spotify'] },
+                       kind: 'json', default: {}, written_by: 'Console → Trust → Skill Switches (POST /api/skills/switch)' }] }
+        : { docs: [] };
+      return { ok: true, status: 200, json: async () => body };
+    });
+    render(<SettingsPanel />);
+    await waitFor(() => expect(screen.getByText(/change it in Console → Trust → Skill Switches/)).toBeTruthy());
+    expect(screen.getByText('{"telegram":["Spotify"]}')).toBeTruthy();
+    expect(screen.queryByLabelText('json value of channel_disabled')).toBeNull();
+    expect(screen.queryByLabelText('put skills.channel_disabled back to its default')).toBeNull();
+  });
+
   it('says when the hub refuses the save, with its reason, and keeps the edit (review-H318b n-4)', async () => {
     global.fetch = vi.fn(async (url, init = {}) => {
       const u = String(url);

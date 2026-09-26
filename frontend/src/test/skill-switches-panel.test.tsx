@@ -61,6 +61,33 @@ describe('SkillSwitchesPanel — H329', () => {
     expect(posts()[0].body).toEqual({ skill: 'Spotify', enabled: true, channel: 'telegram' });
   });
 
+  it('switches a skill off everywhere back on everywhere, even with a channel typed (review-H329 F3)', async () => {
+    body.skills['Weather Intel'].disabled = true;
+    switchReply = () => reply(200, { ok: true, changed: ['Weather Intel'], unchanged: [], essential: [], audited: true });
+    render(<SkillSwitchesPanel />);
+    await waitFor(() => expect(screen.getByLabelText('switch on Weather Intel')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('channel'), { target: { value: 'telegram' } });
+    expect(screen.getByLabelText('switch on Weather Intel').textContent).toBe('switch on everywhere');
+    fireEvent.click(screen.getByLabelText('switch on Weather Intel'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('switched on everywhere · Weather Intel'));
+    expect(posts()[0].body).toEqual({ skill: 'Weather Intel', enabled: true });
+  });
+
+  it('says which skills stay off everywhere or could not be stored (review-H329 F3, F6)', async () => {
+    switchReply = () => reply(200, { ok: true, changed: [], unchanged: [], essential: [], audited: false,
+      off_everywhere: ['Spotify'], unstorable: [] });
+    render(<SkillSwitchesPanel />);
+    await waitFor(() => expect(screen.getByLabelText('switch on category info')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('channel'), { target: { value: 'telegram' } });
+    fireEvent.click(screen.getByLabelText('switch on category info'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('still off everywhere · Spotify'));
+    switchReply = () => reply(200, { ok: true, changed: ['Weather Intel'], unchanged: [], essential: [], audited: true,
+      off_everywhere: [], unstorable: ['Notes Pro'] });
+    fireEvent.click(screen.getByLabelText('switch off category info'));
+    await waitFor(() => expect(screen.getByRole('status').textContent)
+      .toBe('switched off on telegram · Weather Intel · could not be stored: Notes Pro'));
+  });
+
   it('refuses a malformed channel before posting', async () => {
     render(<SkillSwitchesPanel />);
     await waitFor(() => expect(screen.getByLabelText('switch off Weather Intel')).toBeTruthy());

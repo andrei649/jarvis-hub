@@ -354,7 +354,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # H340 — literal text a skill body may name as ${key} (skill_view renders it); never a
     # secret or an environment variable: a value holding "$", "env:" or "secret:" is ignored.
     dict(category="skills",  key="template_vars",    value={},                    label="Skill template variables — JSON {\"name\": \"literal text\"}, used as ${name} in a skill body", kind="json"),
-    # H329: switched off, not uninstalled (skills/switches.py); the skill switch route writes them.
+    # H329: switched off, not uninstalled (skills/switches.py); only the skill switch route
+    # writes them (ROUTE_ONLY).
     dict(category="skills",  key="disabled",         value=[],                    label="Skills switched off everywhere (kept installed)", kind="tags"),
     dict(category="skills",  key="channel_disabled", value={},                    label="Skills switched off on one channel — JSON {\"telegram\": [\"Spotify\"]}", kind="json"),
     # H32 governed acquisition — an independent owner switch. Product Posture
@@ -589,10 +590,13 @@ def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
     """H273 review — the stored row says ``default``, but a selected posture may put
     another value in effect: name it, so ``source`` is never the whole story.
     H259 — a declared setting that is not a secret also carries its ``default``, so
-    the HUD can mark a changed one and put it back."""
+    the HUD can mark a changed one and put it back. A row only its own route writes
+    names it (``written_by``), so the HUD shows it without an edit box."""
     spec = _SPEC.get((category, row["key"]))
     if spec is not None and not is_secret_setting(category, row["key"]):
         row["default"] = spec["value"]
+    if (category, row["key"]) in ROUTE_ONLY:
+        row["written_by"] = ROUTE_ONLY[(category, row["key"])]
     name, applies = posture
     forced = applies.get(f"{category}.{row['key']}", _NO_OVERLAY)
     if forced is not _NO_OVERLAY:
@@ -807,6 +811,21 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     return None
 
 
+#: Declared settings one route writes, never a generic settings write (review-H329 F1):
+#: switching a skill back on widens what the hub does, so it goes through the skill switch
+#: route, which records it in the intent log and refuses when it cannot. A settings write,
+#: an import and ``nerva config set`` refuse them; an export and a reset leave them out.
+ROUTE_ONLY: dict[tuple[str, str], str] = {
+    ("skills", "disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
+    ("skills", "channel_disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
+}
+
+
+def route_only_problems(cat: str, keys) -> list[str]:
+    """Why a generic write of ``keys`` of ``cat`` is refused: one line per route-only key."""
+    return [f"{key}: changed only in {ROUTE_ONLY[(cat, key)]}" for key in keys if (cat, key) in ROUTE_ONLY]
+
+
 def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
     """Validate a settings write; return a list of human-readable errors (empty = ok).
 
@@ -991,6 +1010,8 @@ def export_settings() -> dict:
         reason = None
         if (cat, key) in EXPORT_EXCLUDED:
             reason = "holds credentials by design"
+        elif (cat, key) in ROUTE_ONLY:
+            reason = f"changed only in {ROUTE_ONLY[(cat, key)]}"
         elif is_secret_setting(cat, key):
             reason = "a secret"
         elif spec.get("kind") not in _CHOICE_KINDS and _looks_like_credential(value):
@@ -1048,6 +1069,10 @@ def plan_import(doc: Any) -> tuple[dict[str, dict[str, Any]], list[str]]:
             current = stored.get((cat, key), _SPEC[(cat, key)]["value"])
             if not _same_value(value, current):
                 changes.setdefault(cat, {})[key] = value
+    # An unchanged route-only row (an older export) passes; a change is refused (review-H329 F1).
+    refused = [f"{cat}.{err}" for cat in sorted(changes) for err in route_only_problems(cat, sorted(changes[cat]))]
+    if refused:
+        return {}, refused
     return changes, []
 
 
@@ -1127,12 +1152,14 @@ def posture_overridden(cat: str) -> list[str]:
 
 def _reset_specs(cat: str | None) -> list[dict[str, Any]] | None:
     """The declared settings a reset of *cat* (every category when None) may move: all
-    but the secrets. None for a category nothing declares."""
+    but the secrets and the rows only their own route writes (review-H329 F1). None for a
+    category nothing declares."""
     if cat is not None and not any(spec["category"] == cat for spec in DEFAULTS):
         return None
     return [spec for spec in DEFAULTS
             if (cat is None or spec["category"] == cat)
-            and not is_secret_setting(spec["category"], spec["key"])]
+            and not is_secret_setting(spec["category"], spec["key"])
+            and (spec["category"], spec["key"]) not in ROUTE_ONLY]
 
 
 def plan_reset(cat: str | None) -> dict[str, dict[str, Any]] | None:

@@ -885,6 +885,11 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         if spec is None:
             ctx.err.write(f"{ns.name} is not a declared setting (see `nerva config list`)\n")
             return EXIT_FAILED
+        if (category, key) in settings.ROUTE_ONLY:
+            # review-H329 F1: the skill switches have one writer, which records a switch-on.
+            ctx.err.write(f"{ns.name} is changed only through the skill switch route: "
+                          "use `nerva skills on|off`\n")
+            return EXIT_FAILED
         try:
             value = _coerce(ns.value, str(spec.get("kind", "text")))
         except ValueError as exc:
@@ -1351,6 +1356,10 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"switched {ns.action} {where}: {', '.join(changed)}")
     for name in (reply.get("unchanged") or []) if isinstance(reply, dict) else []:
         ctx.say(f"{name}: already {ns.action} {where}")
+    for name in (reply.get("off_everywhere") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: still off everywhere (switch it on without --channel)")
+    for name in (reply.get("unstorable") or []) if isinstance(reply, dict) else []:
+        ctx.say(f"{name}: not switched off; the switch could not be stored")
     for name in (reply.get("essential") or []) if isinstance(reply, dict) else []:
         ctx.say(f"{name}: essential, stays on")
     if changed and isinstance(reply, dict) and not reply.get("audited"):

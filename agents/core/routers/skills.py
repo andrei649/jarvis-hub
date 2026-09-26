@@ -34,7 +34,9 @@ def _invalid_skill_md(exc: SkillDocumentInvalid, message: str) -> JSONResponse:
                         status_code=422)
 
 
-@router.get("/skills")
+# A user route (review-H329 F11): each skill says where the owner switched it off, and
+# the switches name the owner's channels.
+@router.get("/skills", dependencies=[Depends(user_guard)])
 async def list_skills():
     orch = get_orch()
     if not orch:
@@ -136,6 +138,18 @@ async def switch_skill(body: SkillSwitchBody):
         logger.warning("skill switch failed", exc_info=True)
         return JSONResponse({"error": "the skill switches could not be saved", "reason": "write_failed"},
                             status_code=500)
+    if body.skill and not outcome["changed"]:
+        # One skill the switch did nothing for, and "unchanged" would be untrue (review-H329 F3, F6).
+        name = targets[0].name
+        if outcome["off_everywhere"]:
+            return JSONResponse({"error": f"{name} is switched off everywhere; switch it on everywhere "
+                                          f"(no channel) to use it on {channel}", "reason": "off_everywhere"},
+                                status_code=409)
+        if outcome["unstorable"]:
+            return JSONResponse({"error": f"{name} cannot be stored as a switch (a name of at most "
+                                          f"{switches.MAX_NAME_CHARS} printable characters, at most "
+                                          f"{switches.MAX_NAMES} skills and {switches.MAX_CHANNELS} channels)",
+                                 "reason": "unstorable"}, status_code=409)
     audited = False
     if outcome["changed"]:
         where = f"on {channel}" if channel else "everywhere"
@@ -152,12 +166,25 @@ async def switch_skill(body: SkillSwitchBody):
             if body.enabled:
                 # Never widened unrecorded: put the switches back as they were.
                 restored = await asyncio.to_thread(switches.restore, outcome["before"], outcome["state"])
+                if restored:
+                    # IntentLog keeps an entry whose save failed and writes it with the next
+                    # one, so the revert follows it (review-H329 F8).
+                    try:
+                        audit.record(actor="owner", action="skill.disable",
+                                     why=f"the switch-on of {', '.join(outcome['changed'])} could not be "
+                                         "recorded, so it was not kept",
+                                     cause="skills.switch.revert",
+                                     metadata={"skills": outcome["changed"], "channel": channel or None,
+                                               "category": body.category or None})
+                    except Exception:
+                        logger.warning("skill switch revert not recorded in the intent log", exc_info=True)
                 return JSONResponse({"error": "the switch could not be recorded, so it was not kept"
                                               if restored else "the switch could not be recorded and a later "
                                               "change landed first; check the skill switches",
                                      "reason": "audit_failed", "restored": restored}, status_code=503)
     return {"ok": True, "enabled": body.enabled, "channel": channel or None, "changed": outcome["changed"],
-            "unchanged": outcome["unchanged"], "essential": outcome["essential"], "audited": audited,
+            "unchanged": outcome["unchanged"], "essential": outcome["essential"],
+            "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"], "audited": audited,
             "switches": outcome["state"]}
 
 

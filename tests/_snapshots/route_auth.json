@@ -286,7 +286,7 @@
   "GET /sessions": "user",
   "GET /sessions/todo": "user",
   "GET /sessions/{session_id}/todo": "user",
-  "GET /skills": "open",
+  "GET /skills": "user",
   "GET /skills/imported": "open",
   "GET /status": "open",
   "GET /sw-v2.js": "open",
