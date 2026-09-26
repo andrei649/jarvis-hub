@@ -14,16 +14,20 @@ them. Nerva does the same:
   signature accepts them, so an older provider keeps working. A synchronous provider runs off
   the event loop and must return only once its write is durable.
 - **The shipped provider.** :class:`TranscriptArchive` appends each evicted turn once (by its
-  content hash) to a per-session JSONL file under the data folder, flushed and fsynced before
-  it returns, so what a summary replaced can always be read back.
+  content hash) to a per-session JSONL file under the data folder (owner-only), flushed and
+  fsynced before it returns, so what a summary replaced can always be read back. It is a raw
+  copy, not an extraction into memory: recall never reads it. It runs only when
+  ``memory.persist`` is on, and retention prunes it with its session.
 - **Fail closed.** With ``memory.compression_checkpoint_required`` on, a checkpoint provider
   that raises, or no checkpoint provider succeeding, aborts the compaction
   (:class:`CheckpointAborted`): the compressor keeps the uncompressed transcript, and a turn
   whose uncompressed prompt would not fit the model's window is refused instead of sent.
   With it off (the default), a failing provider is logged and compaction proceeds.
-- **Audited.** Every checkpoint writes ``memory.precompress_checkpoint`` and every abort
-  ``memory.precompress_abort`` to the signed intent log (turn counts, provider names and the
-  reason — never the turns themselves).
+- **Audited.** A checkpoint that landed turns not landed before (or had a provider fail)
+  writes ``memory.precompress_checkpoint``, and every abort ``memory.precompress_abort``, to
+  the signed intent log, off the event loop (turn counts, provider names and the reason —
+  never the turns themselves). Over budget the same evicted turns come back every turn, so a
+  checkpoint that landed nothing new writes nothing.
 """
 from __future__ import annotations
 
@@ -45,6 +49,7 @@ SETTING_REQUIRED = "memory.compression_checkpoint_required"
 AUDIT_CHECKPOINT = "memory.precompress_checkpoint"
 AUDIT_ABORT = "memory.precompress_abort"
 _OPTIONAL_KWARGS = ("evidence_messages", "require_checkpoint", "checkpoint_api_version", "session_id")
+_APPEND = os.O_RDWR | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0)
 
 
 class CheckpointAborted(RuntimeError):
@@ -82,12 +87,19 @@ async def _call(provider: Any, messages: list, offered: dict) -> Any:
     return await asyncio.to_thread(hook, messages, **kwargs)
 
 
-def _audit(audit: Any, event: str, fields: dict) -> None:
+def _landed(result: Any, evicted: int) -> int:
+    """How many turns a provider newly landed: its own ``archived`` count, else all of them."""
+    count = result.get("archived") if isinstance(result, dict) else None
+    return count if type(count) is int else evicted
+
+
+async def _audit(audit: Any, event: str, fields: dict) -> None:
+    """One intent-log row, off the event loop (the log rewrites its whole file)."""
     log = getattr(audit, "log", None)
     if not callable(log):
         return
     try:
-        log(event, fields)
+        await asyncio.to_thread(log, event, fields)
     except Exception:
         logger.warning("pre-compress checkpoint: the audit row could not be written", exc_info=True)
 
@@ -107,31 +119,34 @@ async def run_checkpoint(providers, messages: list, evidence_messages: list, *, 
     }
     landed: list[str] = []
     failed: list[str] = []
+    fresh = 0
     for provider in list(providers or []):
         name = provider_name(provider)
         counts = is_checkpoint_provider(provider)
         try:
-            await _call(provider, messages, offered)
+            result = await _call(provider, messages, offered)
         except Exception as exc:
             failed.append(name)
             if required and counts:
                 reason = f"{name} failed the pre-compress checkpoint: {type(exc).__name__}"
-                _audit(audit, AUDIT_ABORT, {"session": session_id, "evicted": len(messages),
-                                            "provider": name, "reason": reason, "required": True})
+                await _audit(audit, AUDIT_ABORT, {"session": session_id, "evicted": len(messages),
+                                                  "provider": name, "reason": reason, "required": True})
                 logger.error("pre-compress checkpoint: %s; the transcript stays uncompressed", reason)
                 raise CheckpointAborted(reason) from exc
             logger.warning("pre-compress checkpoint: %s failed (%s)", name, type(exc).__name__)
             continue
         if counts:
             landed.append(name)
+            fresh = max(fresh, _landed(result, len(messages)))
     if required and not landed:
         reason = f"No active memory provider completed pre-compress checkpoint API v{CHECKPOINT_API_VERSION}"
-        _audit(audit, AUDIT_ABORT, {"session": session_id, "evicted": len(messages),
-                                    "provider": "", "reason": reason, "required": True})
+        await _audit(audit, AUDIT_ABORT, {"session": session_id, "evicted": len(messages),
+                                          "provider": "", "reason": reason, "required": True})
         logger.error("pre-compress checkpoint: %s; the transcript stays uncompressed", reason)
         raise CheckpointAborted(reason)
-    _audit(audit, AUDIT_CHECKPOINT, {"session": session_id, "evicted": len(messages),
-                                     "providers": landed, "failed": failed, "required": bool(required)})
+    if fresh or failed:
+        await _audit(audit, AUDIT_CHECKPOINT, {"session": session_id, "evicted": len(messages), "archived": fresh,
+                                               "providers": landed, "failed": failed, "required": bool(required)})
     return {"evicted": len(messages), "providers": landed, "failed": failed}
 
 
@@ -157,7 +172,8 @@ def _archived_content(content: Any) -> str:
 
 
 class TranscriptArchive:
-    """Append each evicted turn once to ``<root>/<session hash>.jsonl``, fsynced before returning."""
+    """Append each evicted turn once to ``<root>/<session hash>.jsonl`` (0600 in a 0700
+    folder), fsynced before returning."""
 
     name = "transcript_archive"
     checkpoint_api_version = CHECKPOINT_API_VERSION
@@ -176,22 +192,23 @@ class TranscriptArchive:
 
     def _known(self, path: Path) -> set[str]:
         key = str(path)
-        if key not in self._seen:
+        if not path.exists():
+            self._seen[key] = set()      # never written, or removed underneath (retention, a delete, forget)
+        elif key not in self._seen:
             seen: set[str] = set()
-            if path.exists():
-                with path.open("r", encoding="utf-8") as handle:
-                    for line in handle:
-                        try:
-                            seen.add(str(json.loads(line)["id"]))
-                        except (ValueError, KeyError, TypeError):
-                            continue
+            with path.open("rb") as handle:
+                for line in handle:
+                    try:
+                        seen.add(str(json.loads(line)["id"]))
+                    except (ValueError, KeyError, TypeError):   # also a line cut inside a character
+                        continue
             self._seen[key] = seen
         return self._seen[key]
 
     def on_pre_compress(self, messages: list, *, session_id: str = "", **_kwargs: Any) -> dict:
         path = self.path_for(session_id)
         with self._lock:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             seen = self._known(path)
             fresh = []
             for turn in messages or []:
@@ -208,9 +225,13 @@ class TranscriptArchive:
                     "archived_at": time.time(),
                 })
             if fresh:
-                with path.open("a", encoding="utf-8") as handle:
+                with os.fdopen(os.open(path, _APPEND, 0o600), "a+b") as handle:
+                    if handle.seek(0, os.SEEK_END):
+                        handle.seek(-1, os.SEEK_END)
+                        if handle.read(1) != b"\n":
+                            handle.write(b"\n")    # a torn last line (a crash mid-append) ends here
                     for record in fresh:
-                        handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+                        handle.write((json.dumps(record, ensure_ascii=False, default=str) + "\n").encode("utf-8"))
                     handle.flush()
                     os.fsync(handle.fileno())
                 seen.update(r["id"] for r in fresh)
@@ -222,7 +243,7 @@ class TranscriptArchive:
         if not path.exists():
             return []
         out = []
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("rb") as handle:
             for line in handle:
                 try:
                     record = json.loads(line)

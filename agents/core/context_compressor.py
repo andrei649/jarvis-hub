@@ -507,12 +507,17 @@ class ContextCompressor:
         finally:
             self.keep_first, self.keep_recent, self.max_tokens = previous
         if result.get("checkpoint_aborted"):
-            # H427 — fail closed: the transcript is kept exactly as it came in (not even its
-            # images dropped), and no lineage row claims a compaction that did not happen.
+            # H427 — fail closed: no turn is summarised away. Dropping old images evicts
+            # no turn, so that tier stands, and the caller refuses only what still does not fit.
+            row = lineage_row(
+                session_id=session_id, summary="", evicted=0,
+                images_dropped=dropped, tier="images", model=model,
+            ) if dropped else None
+            self._emit(sink, row)
             return {
-                "compressed": False, "kept": rows, "kept_first": [], "summary": "",
-                "evicted": 0, "tokens": used, "covered": 0, "tier": "none",
-                "images_dropped": 0, "lineage": None,
+                "compressed": bool(dropped), "kept": working, "kept_first": [],
+                "summary": "", "evicted": 0, "tokens": used_after, "covered": 0,
+                "tier": "images", "images_dropped": dropped, "lineage": row,
                 "checkpoint_aborted": result["checkpoint_aborted"], "window": window,
             }
 

@@ -363,11 +363,15 @@ def _precompress_checkpoint(orch, sid: str):
     """H427 — the checkpoint the compressor awaits before it evicts turns: every
     registered provider (the transcript archive by default) sees them first, and with
     ``memory.compression_checkpoint_required`` on, a checkpoint that did not land keeps
-    the transcript uncompressed. Audited in the signed intent log."""
+    the transcript uncompressed. Audited in the signed intent log. With ``memory.persist``
+    off the archive writes nothing to disk, so a required checkpoint fails closed."""
     from .memory import precompress
 
     registered = getattr(orch, "precompress_providers", None)
-    providers = list(registered) if registered is not None else precompress.default_providers()
+    if registered is not None:
+        providers = list(registered)
+    else:
+        providers = precompress.default_providers() if orch.get_setting("memory.persist", True) else []
     required = orch.get_setting(precompress.SETTING_REQUIRED, False) is True
     audit = getattr(orch, "action_audit", None)
 
@@ -3782,8 +3786,9 @@ class Orchestrator:
             anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
         if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
-            # H427 — a required checkpoint did not land, so nothing was evicted; a prompt
-            # that cannot fit uncompressed is refused rather than sent over the window.
+            # H427 — a required checkpoint did not land, so no turn was evicted (old images
+            # may be); a prompt that cannot fit unsummarised is refused rather than sent over
+            # the window.
             raise CompactionClockRefused(CONTEXT_REFUSED_REPLY)
         def publish():
             if result["compressed"] and snapshot is not None:

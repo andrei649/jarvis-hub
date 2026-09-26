@@ -8,7 +8,8 @@ Three data classes are handled:
   * **conversation transcripts** — the session ``<sid>.json`` / ``<sid>.jsonl``
     files under the data root, deleted by last-activity mtime. Only confirmed
     sessions (validated id, denylisting the non-conversation journals) are
-    eligible, so config JSON like ``notes.json`` is never touched.
+    eligible, so config JSON like ``notes.json`` is never touched. A pruned
+    session's ``compaction_archive/`` file (H427) goes with it.
   * **audit log** — pruned through ``AuditLogger.prune_before`` so the Merkle
     hash-chain is re-anchored and stays verifiable.
   * **Howard private ingestion** — the raw ``ingestion/`` drop and derived
@@ -75,7 +76,26 @@ def purge_old_conversations(ttl_days: int, root: Optional[Path] = None,
             for p in paths:
                 p.unlink()
             report["deleted"].append(sid)
+    report["archives_deleted"] = _purge_compaction_archives(root, report["deleted"], cutoff)
     return report
+
+
+def _purge_compaction_archives(root: Path, pruned: list[str], cutoff: float) -> int:
+    """H427 — the compaction archive shares its session's lifetime: a pruned session's file
+    goes with it, and one whose session is already gone once it is older than the TTL."""
+    from agents.core.memory.precompress import TranscriptArchive
+
+    archive = TranscriptArchive(root / "compaction_archive")
+    if not archive.root.is_dir():
+        return 0
+    gone = {archive.path_for(sid).name for sid in pruned}
+    live = {archive.path_for(jl.stem).name for jl in root.glob("*.jsonl")}
+    removed = 0
+    for path in archive.root.glob("*.jsonl"):
+        if path.name in gone or (path.name not in live and path.stat().st_mtime < cutoff):
+            path.unlink()
+            removed += 1
+    return removed
 
 
 def purge_old_audit(ttl_days: int, audit_logger, now: Optional[float] = None) -> dict:

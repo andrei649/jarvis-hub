@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import stat
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -89,8 +92,8 @@ async def test_every_provider_sees_exactly_the_evicted_turns_and_the_whole_trans
     call = first.calls[0]
     assert call["messages"] == TURNS[1:3] and call["evidence"] == TURNS
     assert (call["required"], call["version"], call["session"]) == (False, 2, "s1")
-    assert audit.rows == [(pc.AUDIT_CHECKPOINT, {"session": "s1", "evicted": 2, "providers": ["a", "b"],
-                                                 "failed": [], "required": False})]
+    assert audit.rows == [(pc.AUDIT_CHECKPOINT, {"session": "s1", "evicted": 2, "archived": 2,
+                                                 "providers": ["a", "b"], "failed": [], "required": False})]
 
 
 async def test_a_provider_gets_copies_it_cannot_change_the_transcript_through():
@@ -136,7 +139,28 @@ async def test_when_not_required_a_failing_provider_is_noted_and_compaction_goes
 async def test_when_not_required_nothing_landing_is_not_an_abort():
     audit = _Audit()
     got = await pc.run_checkpoint([], TURNS[:1], TURNS, required=False, audit=audit)
-    assert got["providers"] == [] and audit.rows[0][0] == pc.AUDIT_CHECKPOINT
+    assert got["providers"] == [] and audit.rows == []       # nothing landed, nothing to record
+
+
+async def test_turns_already_archived_write_no_new_audit_row(tmp_path):
+    # Over budget, the compressor hands the same evicted turns over on every turn: only
+    # a checkpoint that landed something new is recorded, with how many it was.
+    audit, archive = _Audit(), TranscriptArchive(tmp_path)
+    for evicted in (TURNS[:2], TURNS[:2], TURNS[:3]):
+        await pc.run_checkpoint([archive], evicted, TURNS, required=True, session_id="s", audit=audit)
+    assert [row[1]["archived"] for row in audit.rows] == [2, 1]
+    assert [row[1]["evicted"] for row in audit.rows] == [2, 3]
+
+
+async def test_the_audit_row_is_written_off_the_event_loop():
+    threads = []
+
+    class _Threaded:
+        def log(self, event, fields):
+            threads.append(threading.get_ident())
+
+    await pc.run_checkpoint([_Provider()], TURNS[:1], TURNS, required=False, audit=_Threaded())
+    assert threads and threads[0] != threading.get_ident()
 
 
 async def test_when_required_a_failing_checkpoint_aborts_at_once(caplog):
@@ -205,8 +229,6 @@ async def test_the_audit_never_breaks_a_checkpoint(caplog):
 # ── the transcript archive ───────────────────────────────────────────────────────
 
 def test_the_archive_writes_each_evicted_turn_once_and_fsyncs(tmp_path, monkeypatch):
-    import os
-
     synced = []
     real = os.fsync
     monkeypatch.setattr(os, "fsync", lambda fd: (synced.append(fd), real(fd)))
@@ -237,6 +259,64 @@ def test_a_damaged_line_is_skipped_not_fatal(tmp_path):
     again = TranscriptArchive(tmp_path)
     assert again.on_pre_compress(TURNS[:2], session_id="s") == {"archived": 1, "known": 2}
     assert [r.get("content") for r in again.read("s")] == ["turn 0", None, "turn 1"]
+
+
+def test_a_line_cut_inside_a_multibyte_character_is_skipped_not_fatal(tmp_path):
+    archive = TranscriptArchive(tmp_path)
+    archive.on_pre_compress(TURNS[:1], session_id="s")
+    with archive.path_for("s").open("ab") as handle:
+        handle.write('{"id": "x", "content": "ș'.encode()[:-1] + b"\n")
+    again = TranscriptArchive(tmp_path)
+    assert again.on_pre_compress(TURNS[:2], session_id="s") == {"archived": 1, "known": 2}
+    assert [r["content"] for r in again.read("s")] == ["turn 0", "turn 1"]
+
+
+def test_a_torn_last_line_does_not_swallow_the_next_record(tmp_path):
+    archive = TranscriptArchive(tmp_path)
+    archive.on_pre_compress(TURNS[:1], session_id="s")
+    with archive.path_for("s").open("a", encoding="utf-8") as handle:
+        handle.write('{"id": "torn", "role": "us')             # a crash mid-append
+    again = TranscriptArchive(tmp_path)
+    assert again.on_pre_compress(TURNS[1:3], session_id="s") == {"archived": 2, "known": 3}
+    assert [r["content"] for r in again.read("s")] == ["turn 0", "turn 1", "turn 2"]
+
+
+def test_a_file_removed_underneath_is_written_again(tmp_path):
+    archive = TranscriptArchive(tmp_path)
+    archive.on_pre_compress(TURNS[:1], session_id="s")
+    archive.path_for("s").unlink()                             # retention, a session delete, forget
+    assert archive.on_pre_compress(TURNS[:1], session_id="s") == {"archived": 1, "known": 1}
+    assert len(archive.read("s")) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
+def test_the_archive_is_private_to_the_owner(tmp_path):
+    previous = os.umask(0o022)
+    try:
+        archive = TranscriptArchive(tmp_path / "arch")
+        archive.on_pre_compress(TURNS[:1], session_id="s")
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(archive.root.stat().st_mode) == 0o700
+    assert stat.S_IMODE(archive.path_for("s").stat().st_mode) == 0o600
+
+
+def test_retention_prunes_the_archive_with_its_session(tmp_path):
+    from agents.core import retention
+
+    archive, old = TranscriptArchive(tmp_path / "compaction_archive"), time.time() - 120 * 86400
+    for sid in ("old-sess", "fresh-sess", "gone-sess", "new-orphan"):
+        archive.on_pre_compress([{"role": "user", "content": f"{sid}: my bank PIN is 4242"}], session_id=sid)
+    for sid in ("old-sess", "fresh-sess"):
+        (tmp_path / f"{sid}.jsonl").write_text('{"role": "user"}\n', encoding="utf-8")
+    os.utime(tmp_path / "old-sess.jsonl", (old, old))
+    for sid in ("fresh-sess", "gone-sess"):
+        os.utime(archive.path_for(sid), (old, old))
+    report = retention.purge_old_conversations(30, root=tmp_path)
+    assert report["deleted"] == ["old-sess"] and report["archives_deleted"] == 2
+    assert archive.read("old-sess") == [] and archive.read("gone-sess") == []   # with its session; left behind
+    assert len(archive.read("fresh-sess")) == 1                                   # its session is live
+    assert len(archive.read("new-orphan")) == 1                                   # not old yet
 
 
 def test_each_session_has_its_own_file_named_by_a_hash(tmp_path):
@@ -345,7 +425,7 @@ async def test_nothing_over_budget_calls_no_checkpoint():
     assert out["compressed"] is False and called == []
 
 
-async def test_compact_fails_closed_with_the_transcript_untouched():
+async def test_compact_fails_closed_with_no_turn_evicted():
     sink = []
     rows = LONG[:6] + [{"role": "user", "content": "data:image/png;base64,AAAA"}] + LONG[6:]
 
@@ -355,12 +435,27 @@ async def test_compact_fails_closed_with_the_transcript_untouched():
     comp = ContextCompressor(max_tokens=500, checkpoint=checkpoint)
     policy = CompactionPolicy(protect_head=1, protect_last_n=2, per_model={"m": 4000})
     out = await comp.compact(rows, model="m", policy=policy, session_id="s", sink=sink.append)
-    assert out["kept"] == rows and out["kept_first"] == [] and out["compressed"] is False
-    assert (out["tier"], out["images_dropped"], out["lineage"], out["evicted"]) == ("none", 0, None, 0)
+    # Every turn is kept; only the old image is dropped, which evicts no turn.
+    assert out["kept"] == rows[:6] + [{"role": "user", "content": "[image dropped to fit the context window]",
+                                       "image_dropped": True}] + rows[7:]
+    assert out["kept_first"] == [] and out["compressed"] is True and out["summary"] == ""
+    assert (out["tier"], out["images_dropped"], out["evicted"]) == ("images", 1, 0)
     assert out["checkpoint_aborted"] == "no archive" and out["window"] == 4000
-    assert out["tokens"] == comp._used(rows, None)
-    assert sink == []                              # no lineage row for a compaction that did not happen
+    assert out["tokens"] == comp._used(out["kept"], None) < comp._used(rows, None)
+    assert sink == [out["lineage"]] and out["lineage"]["tier"] == "images"   # no summarize row
     assert (comp.keep_first, comp.keep_recent, comp.max_tokens) == (0, 4, 500)
+
+
+async def test_compact_fails_closed_without_images_keeps_the_transcript_untouched():
+    sink = []
+
+    async def checkpoint(evicted, transcript):
+        raise CheckpointAborted("no archive")
+
+    comp = ContextCompressor(max_tokens=500, checkpoint=checkpoint)
+    out = await comp.compact(LONG, model="m", policy=CompactionPolicy(per_model={"m": 4000}), sink=sink.append)
+    assert out["kept"] == LONG and out["compressed"] is False and out["images_dropped"] == 0
+    assert out["lineage"] is None and sink == [] and out["tokens"] == comp._used(LONG, None)
 
 
 # ── the orchestrator ─────────────────────────────────────────────────────────────
@@ -374,12 +469,12 @@ def _store(tmp_path):
     return manager
 
 
-def _stub(manager, *, required=False, providers=None, window=100_000, audit=None):
+def _stub(manager, *, required=False, providers=None, window=100_000, audit=None, rows=LONG, persist=True):
     settings = {"memory.context_compression": True, "memory.compression_max_tokens": 500,
-                pc.SETTING_REQUIRED: required}
+                pc.SETTING_REQUIRED: required, "memory.persist": persist}
 
     async def history(*args):
-        return [dict(t) for t in LONG]
+        return [dict(t) for t in rows]
 
     stub = SimpleNamespace(
         session_id="a", checkpoints=manager, get_setting=lambda key, default=None: settings.get(key, default),
@@ -451,6 +546,22 @@ async def test_a_prompt_that_cannot_fit_uncompressed_is_refused(tmp_path):
     manager.close()
 
 
+async def test_a_prompt_that_fits_once_its_old_images_are_dropped_is_not_refused(tmp_path):
+    from agents.core.orchestrator import Orchestrator
+
+    manager = _store(tmp_path)
+    shot = {"role": "user", "content": "look at this", "image": "AAAA"}
+    rows = LONG[:4] + [shot, shot] + LONG[4:]
+    comp = ContextCompressor()
+    with_images = comp._used(rows, None)
+    assert comp._used([{k: v for k, v in t.items() if k != "image"} for t in rows], None) < with_images - 2000
+    stub = _stub(manager, required=True, providers=[], window=with_images - 1, rows=rows)
+    out = await Orchestrator._history_for_prompt(stub, 12)
+    assert "[summary" not in out and "[image dropped to fit the context window]" in out
+    assert all(t["content"] in out for t in LONG)
+    manager.close()
+
+
 async def test_only_a_literal_true_requires_the_checkpoint(tmp_path):
     from agents.core.orchestrator import Orchestrator
 
@@ -470,6 +581,24 @@ async def test_a_hub_without_registered_providers_uses_the_archive(tmp_path, mon
         stub = _stub(None)
         await _precompress_checkpoint(stub, "a")(TURNS[:1], TURNS)
         assert len(archive.read("a")) == 1
+    finally:
+        pc.set_default_providers(None)
+
+
+async def test_with_persist_off_the_archive_writes_nothing_and_a_requirement_fails_closed(tmp_path):
+    from agents.core.orchestrator import _precompress_checkpoint
+
+    archive = TranscriptArchive(tmp_path / "arch")
+    pc.set_default_providers([archive])
+    try:
+        await _precompress_checkpoint(_stub(None, persist=False), "a")(TURNS[:1], TURNS)
+        assert not archive.root.exists()
+        with pytest.raises(CheckpointAborted):
+            await _precompress_checkpoint(_stub(None, persist=False, required=True), "a")(TURNS[:1], TURNS)
+        assert not archive.root.exists()
+        registered = _Provider("memory")                    # a provider the owner registered still runs
+        await _precompress_checkpoint(_stub(None, persist=False, providers=[registered]), "a")(TURNS[:1], TURNS)
+        assert registered.calls
     finally:
         pc.set_default_providers(None)
 
