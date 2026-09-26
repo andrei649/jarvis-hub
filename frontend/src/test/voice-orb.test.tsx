@@ -145,12 +145,12 @@ describe('CinemaMesh — orb stage', () => {
     expect(container.querySelector('.cin-stage .nmesh')).toBeTruthy();
     expect(container.querySelector('.cin-stage .vorb')).toBeNull();
 
-    fireEvent.click(getByTitle('voice orb (o)'));
+    fireEvent.click(getByTitle('voice orb (O)'));
     expect(container.querySelector('.cin-stage .vorb')).toBeTruthy();
     expect(container.querySelector('.cin-stage .nmesh')).toBeNull();
     expect(container.querySelector('.cin-stage .vorb').getAttribute('data-status')).toBe('listening');
 
-    fireEvent.click(getByTitle('neural mesh (n)'));
+    fireEvent.click(getByTitle('neural mesh (N)'));
     expect(container.querySelector('.cin-stage .nmesh')).toBeTruthy();
   });
 
@@ -158,20 +158,20 @@ describe('CinemaMesh — orb stage', () => {
     const { container, getByTitle } = render(
       <CinemaMesh agents={AGENTS} voice={{ status: 'idle', error: 'Microphone permission denied' }} onExit={() => {}} t={{}} />,
     );
-    fireEvent.click(getByTitle('voice orb (o)'));
+    fireEvent.click(getByTitle('voice orb (O)'));
     expect(container.querySelector('.cin-stage .vorb').getAttribute('data-status')).toBe('error');
   });
 
   it('falls back to off with no voice loop wired', () => {
     const { container, getByTitle } = render(<CinemaMesh agents={AGENTS} onExit={() => {}} t={{}} />);
-    fireEvent.click(getByTitle('voice orb (o)'));
+    fireEvent.click(getByTitle('voice orb (O)'));
     expect(container.querySelector('.cin-stage .vorb').getAttribute('data-status')).toBe('off');
   });
 
   it('Esc still exits from the orb stage', () => {
     const onExit = vi.fn();
     const { getByTitle } = render(<CinemaMesh agents={AGENTS} onExit={onExit} t={{}} />);
-    fireEvent.click(getByTitle('voice orb (o)'));
+    fireEvent.click(getByTitle('voice orb (O)'));
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onExit).toHaveBeenCalled();
   });

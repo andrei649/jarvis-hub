@@ -12,7 +12,9 @@ import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
-import { type Overrides, bindings as shortcutBindings, loadOverrides, matchAction, saveOverrides } from './shortcuts';
+import {
+  type Overrides, bindings as shortcutBindings, chordOf, displayChord, firesInInputs, matchAction, useShortcutOverrides,
+} from './shortcuts';
 import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
@@ -68,7 +70,12 @@ function ModeStub({ label }) {
   );
 }
 
-function App({ floating = false }: { floating?: boolean } = {}) {
+function App({ floating = false, shortcuts, onWorld }: {
+  floating?: boolean;
+  /** H209: the page's shortcut overrides when the caller shows them too (World's button). */
+  shortcuts?: [Overrides, (next: Overrides) => void];
+  onWorld?: () => void;
+} = {}) {
   const appearance = useAppearance();
   const { look, density, scanline, dotgrid, accent } = appearance.preferences;
   const motion = appearance.motion;
@@ -208,38 +215,44 @@ function App({ floating = false }: { floating?: boolean } = {}) {
 
   // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
   // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
-  const [shortcutOverrides, setShortcutOverrides] = useState<Overrides>(() => loadOverrides());
+  const ownShortcuts = useShortcutOverrides();
+  const [shortcutOverrides, changeShortcuts] = shortcuts || ownShortcuts;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const changeShortcuts = useCallback((next: Overrides) => { setShortcutOverrides(next); saveOverrides(next); }, []);
   useEffect(() => {
     const list = shortcutBindings(shortcutOverrides);
     function onKey(e) {
       if (floating || shortcutsOpen) return;   // the panel owns the keyboard while it is open
       const action = matchAction(e, list, 'global');
       if (!action) return;
-      if (action.id === 'session.palette') { e.preventDefault(); setPalette((p) => !p); return; }
-      if (action.id === 'session.shortcuts') { e.preventDefault(); setPalette(false); setShortcutsOpen(true); return; }
-      if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
+      // A field owns its keys: only the palette and the panel answer there, on a chord held
+      // with Ctrl/⌘ or Alt, so no letter typed into it (a password included) is eaten.
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
+      if ((tag === 'input' || tag === 'textarea') && !firesInInputs(action)) return;
+      if (action.id === 'session.palette') { e.preventDefault(); setPalette((p) => !p); return; }
+      // Not over Cinema, which paints above the panel: it would open unseen.
+      if (action.id === 'session.shortcuts' && !cinema) { e.preventDefault(); setPalette(false); setShortcutsOpen(true); return; }
+      if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       // The chat transcript is now in the tab order (cockpit.tsx `.convo`), so it is a
       // place a keyboard user reads FROM. Without this, typing a digit while reading
       // jumps to another mode and drops focus to <body>; `a` opens the ambient overlay.
       // Same reasoning as the input/textarea bail: a surface you are reading or typing
       // into owns its keys.
       if (e.target && e.target.closest && e.target.closest('[role="log"]')) return;
-      if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
-      else if (action.id === 'view.ambient') setAmbient(true);
-      else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
-      else if (action.id === 'view.console') { e.preventDefault(); setConsoleOpen((c) => !c); }
-      else if (action.id === 'composer.focus') {
+      if (action.id === 'composer.focus') {
         const box = document.querySelector('[data-composer]') as HTMLInputElement | null;
         if (box) { e.preventDefault(); box.focus(); }
+        return;
       }
+      e.preventDefault();   // a rebound chord (Ctrl+J, Ctrl+D) runs the HUD action, not the browser's too
+      if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
+      else if (action.id === 'view.world') onWorld?.();
+      else if (action.id === 'view.ambient') setAmbient(true);
+      else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
+      else if (action.id === 'view.console') setConsoleOpen((c) => !c);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ambient, cinema, shortcutOverrides, shortcutsOpen]);
+  }, [ambient, cinema, shortcutOverrides, shortcutsOpen, onWorld]);
 
   // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
   // can't send the user token, so this only attaches where the guard is
@@ -519,7 +532,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         )}
         <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
           llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp}
-          onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} t={t} />
+          onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} shortcutOverrides={shortcutOverrides} t={t} />
         <DesktopControls />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
@@ -588,10 +601,11 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
       {!floating && <PointerOverlay enabled={!demo} />}
-      <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title="console (`)"
+      <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title={`console (${displayChord(chordOf(shortcutOverrides, 'view.console'))})`}
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
+        onShortcuts={() => setShortcutsOpen(true)} shortcutOverrides={shortcutOverrides}
         ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
       {shortcutsOpen && <ShortcutsPanel overrides={shortcutOverrides} onChange={changeShortcuts} onClose={() => setShortcutsOpen(false)} />}

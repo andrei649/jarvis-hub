@@ -7,7 +7,7 @@ import { VoiceOrb } from './orb';
 import { BriefingWall } from './wall';
 import { runningTasks } from './task-state';
 import { V2 } from './data';
-import { bindings as shortcutBindings, matchAction } from './shortcuts';
+import { bindings as shortcutBindings, chordOf, displayChord, matchAction } from './shortcuts';
 
 const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; sep?: boolean; locked?: boolean }> = [
   { id:'cockpit', icon:'cockpit', tkey:'cockpit', live:true },
@@ -31,7 +31,7 @@ const MODES: Array<{ id?: string; icon?: string; tkey?: string; live?: boolean; 
   { id:'admin', icon:'admin', tkey:'admin' },
 ];
 
-function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, t }){
+function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, llm, demo, setDemo, serverUp, onPalette, onAmbient, onJobs = () => {}, shortcutOverrides = {}, t }){
   const tr = trust || { mic:'on', strict_local:false };
   const lm = llm || { state:'unknown', model:null };
   const enabled = agents.length;
@@ -68,7 +68,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
         <button className="tool-btn" onClick={()=>setDemo&&setDemo(!demo)} title="toggle demo data (seeded sample vs live-only)" style={demo?{color:'var(--amber)',borderColor:'var(--amber)'}:undefined}>{demo?'◐ demo':'○ demo'}</button>
         <button className="tool-btn" onClick={()=>setLang(lang==='en'?'ro':'en')} title="language"><Icon d={ICONS.globe} size={13}/>{t.langName}</button>
         <button className="tool-btn" onClick={onAmbient} title="ambient"><Icon d={ICONS.ambient} size={13}/>{t.enterAmbient}</button>
-        <button className="tool-btn" onClick={onPalette} title="command palette">⌘K</button>
+        <button className="tool-btn" onClick={onPalette} title="command palette">{displayChord(chordOf(shortcutOverrides, 'session.palette'))}</button>
       </div>
     </div>
   );
@@ -243,7 +243,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
 }
 
 /* COMMAND PALETTE */
-function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }){
+function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, onShortcuts = () => {}, shortcutOverrides = {}, ui, t }){
   const [q,setQ]=useState('');
   const [sel,setSel]=useState(0);
   const inputRef=useRef(null);
@@ -251,25 +251,29 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
   // ui = { look, setLook, density, setDensity, motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }
   // Appearance choices are synchronized by App; this palette stays the control surface.
   const u = ui || {};
+  // H209: a hint is the key the registry binds now, so a rebinding never leaves a dead one here.
+  const key = (id) => displayChord(chordOf(shortcutOverrides, id));
   const cmds = useMemo(()=>[
     { g:'Go to', items:[
-      { name:'Cockpit', hint:'1', act:()=>onMode('cockpit'), icon:'cockpit' },
-      { name:'Chat · focus', hint:'9', act:()=>onMode('chat'), icon:'chat' },
+      { name:'Cockpit', hint:key('mode.cockpit'), act:()=>onMode('cockpit'), icon:'cockpit' },
+      { name:'Chat · focus', hint:key('mode.chat'), act:()=>onMode('chat'), icon:'chat' },
       { name:'Projects · rooms & missions', hint:'', act:()=>onMode('projects'), icon:'projects' },
-      { name:'Agents', hint:'2', act:()=>onMode('agents'), icon:'agents' },
-      { name:'Trust Center', hint:'3', act:()=>onMode('trust'), icon:'trust' },
-      { name:'Memory & Knowledge', hint:'4', act:()=>onMode('memory'), icon:'memory' },
-      { name:'Autonomy', hint:'5', act:()=>onMode('autonomy'), icon:'autonomy' },
-      { name:'Build', hint:'6', act:()=>onMode('build'), icon:'build' },
-      { name:'Observe', hint:'7', act:()=>onMode('observe'), icon:'observe' },
-      { name:'Interop', hint:'8', act:()=>onMode('interop'), icon:'interop' },
+      { name:'Agents', hint:key('mode.agents'), act:()=>onMode('agents'), icon:'agents' },
+      { name:'Trust Center', hint:key('mode.trust'), act:()=>onMode('trust'), icon:'trust' },
+      { name:'Memory & Knowledge', hint:key('mode.memory'), act:()=>onMode('memory'), icon:'memory' },
+      { name:'Autonomy', hint:key('mode.autonomy'), act:()=>onMode('autonomy'), icon:'autonomy' },
+      { name:'Build', hint:key('mode.build'), act:()=>onMode('build'), icon:'build' },
+      { name:'Observe', hint:key('mode.observe'), act:()=>onMode('observe'), icon:'observe' },
+      { name:'Interop', hint:key('mode.interop'), act:()=>onMode('interop'), icon:'interop' },
       { name:'Finance', hint:'', act:()=>onMode('finance'), icon:'finance' },
       { name:'Health', hint:'', act:()=>onMode('health'), icon:'health' },
       { name:'Knowledge', hint:'', act:()=>onMode('knowledge'), icon:'knowledge' },
       { name:'Family · local', hint:'', act:()=>onMode('family'), icon:'family' },
-      { name:'Comms · inbox', hint:'0', act:()=>onMode('comms'), icon:'comms' },
+      { name:'Comms · inbox', hint:key('mode.comms'), act:()=>onMode('comms'), icon:'comms' },
       { name:'Admin · settings', hint:'', act:()=>onMode('admin'), icon:'admin' },
       { name:'Ambient mode', hint:'', act:onAmbient, icon:'ambient' },
+      // Always here, so no rebinding can shut the panel away (Reset all lives inside it).
+      { name:'Keyboard shortcuts', hint:key('session.shortcuts'), act:onShortcuts, icon:'bolt' },
     ]},
     { g:'Theme', items:[
       { name:'Accent · Cyan', act:()=>setAccent('cyan'), icon:'bolt' },
@@ -291,7 +295,7 @@ function Palette({ open, onClose, onMode, setAccent, setLang, onAmbient, ui, t }
       { name:'Scanline · '+(u.scanline==='off'?'On':'Off'), act:()=>u.setScanline&&u.setScanline(u.scanline==='off'?'on':'off'), icon:'bolt' },
       { name:'Dot grid · '+(u.dotgrid==='on'?'Off':'On'), act:()=>u.setDotgrid&&u.setDotgrid(u.dotgrid==='on'?'off':'on'), icon:'bolt' },
     ]},
-  ],[onMode,setAccent,setLang,onAmbient,u.look,u.density,u.motion,u.scanline,u.dotgrid]);
+  ],[onMode,setAccent,setLang,onAmbient,onShortcuts,shortcutOverrides,u.look,u.density,u.motion,u.scanline,u.dotgrid]);
   const flat = useMemo(()=>{
     const f=[]; cmds.forEach(grp=>grp.items.forEach(it=>{ if(!q||it.name.toLowerCase().includes(q.toLowerCase())) f.push({...it,g:grp.g}); })); return f;
   },[cmds,q]);
@@ -362,12 +366,13 @@ function stripTags(s){ return String(s).replace(/<[^>]+>/g,'').replace(/\*\*/g,'
 
 /* Cinema stage switcher — mesh (who is working) · orb (voice state) · brain (the
    full briefing wall). Rendered inside the cinema frame, or floating over the wall. */
-function StagePicker({ stage, setStage, floating = false }: any) {
+function StagePicker({ stage, setStage, floating = false, overrides = {} }: any) {
+  const key = (id) => displayChord(chordOf(overrides, id));
   return (
     <div className={'cin-stage-pick' + (floating ? ' wl-pick' : '')}>
-      <button className={stage === 'mesh' ? 'on' : ''} onClick={() => setStage('mesh')} title="neural mesh (n)">mesh</button>
-      <button className={stage === 'orb' ? 'on' : ''} onClick={() => setStage('orb')} title="voice orb (o)">orb</button>
-      <button className={stage === 'brain' ? 'on' : ''} onClick={() => setStage('brain')} title="briefing wall (b)">brain</button>
+      <button className={stage === 'mesh' ? 'on' : ''} onClick={() => setStage('mesh')} title={`neural mesh (${key('cinema.mesh')})`}>mesh</button>
+      <button className={stage === 'orb' ? 'on' : ''} onClick={() => setStage('orb')} title={`voice orb (${key('cinema.orb')})`}>orb</button>
+      <button className={stage === 'brain' ? 'on' : ''} onClick={() => setStage('brain')} title={`briefing wall (${key('cinema.brain')})`}>brain</button>
     </div>
   );
 }
@@ -390,7 +395,7 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
     const h = (e) => {
       if (e.key === 'Escape') { onExit(); return; }
       const action = matchAction(e, list, 'cinema');
-      if (action) setStage(action.id.slice('cinema.'.length));
+      if (action) { e.preventDefault(); setStage(action.id.slice('cinema.'.length)); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -422,7 +427,7 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
           agents={agents} tasks={tasks} decisions={decisions} calendar={calendar} heartbeat={heartbeat}
           llm={llm} trust={trust} sources={sources} localPct={localPct} voice={voice}
           serverUp={serverUp} demo={demo} clock={clock} motion={motion} localPctSource={localPctSource} onExit={onExit} />
-        <StagePicker stage={stage} setStage={setStage} floating />
+        <StagePicker stage={stage} setStage={setStage} overrides={shortcutOverrides || {}} floating />
       </>
     );
   }
@@ -433,7 +438,7 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
         <div className="cin-tag" key={tag}>{TAGS[tag % TAGS.length]}</div>
       </div>
       <div className="cin-stage">
-        <StagePicker stage={stage} setStage={setStage} />
+        <StagePicker stage={stage} setStage={setStage} overrides={shortcutOverrides || {}} />
         {stage === 'orb'
           ? <VoiceOrb status={(voice && voice.error) ? 'error' : (voice && voice.status) || 'off'} level={(voice && voice.level) || 0} motion={motion} />
           : <NeuralMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} cinema={true} motion={motion} onSelect={() => {}} t={t} />}

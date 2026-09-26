@@ -5,7 +5,7 @@ import { V2 } from './data';
 import { Icon, ICONS } from './ui';
 import { useHudRoute, navigateHud, closeHudOverlay } from './hud-routing';
 import { RouteBoundary } from './route-boundary';
-import { bindings, loadOverrides, matchAction } from './shortcuts';
+import { chordOf, displayChord, useShortcutOverrides } from './shortcuts';
 const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
 
 /* The bottom-left WORLD button's geometry, and the strip the mode rail gives up for it.
@@ -29,12 +29,15 @@ function WorldAwareApp() {
     if (next) navigateHud('/v2/world');
     else closeHudOverlay();
   }, []);
+  const openWorld = useCallback(() => setOpen(true), [setOpen]);
+  // H209: App dispatches World's key from its one handler (the Shortcuts panel and the
+  // overlays own the keyboard there), with the same live overrides this button's hint shows.
+  const shortcuts = useShortcutOverrides();
 
   useEffect(() => {
     function onKey(e) {
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-      if (matchAction(e, bindings(loadOverrides()), 'global')?.id === 'view.world') setOpen(true);   // H209
       if (e.key === 'Escape' && logicalPath(window.location.pathname) === '/v2/world') setOpen(false);
     }
     window.addEventListener('keydown', onKey);
@@ -63,11 +66,11 @@ function WorldAwareApp() {
           becomes reachable this reservation has to grow a `.tabs` case, and the test
           pins the arithmetic rather than the selector so that stays a visible decision. */}
       <style>{`.rail { padding-bottom: ${RAIL_RESERVED_PX}px; }`}</style>
-      <App />
+      <App shortcuts={shortcuts} onWorld={openWorld} />
       <button
         className="tool-btn"
         onClick={() => setOpen(true)}
-        title="World Intelligence (W)"
+        title={`World Intelligence (${displayChord(chordOf(shortcuts[0], 'view.world'))})`}
         style={{ position: 'fixed', left: WORLD_BUTTON_INSET, bottom: WORLD_BUTTON_INSET, zIndex: 60, height: WORLD_BUTTON_HEIGHT, borderColor: 'var(--accent-dim)', color: 'var(--accent-light)' }}
       >
         <Icon d={ICONS.globe} size={13}/> WORLD

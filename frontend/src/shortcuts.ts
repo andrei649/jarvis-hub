@@ -9,6 +9,8 @@
    or label names one is refused when the registry is built, so a key can never approve,
    reject or decide anything — those stay a deliberate click on the card. */
 
+import { useCallback, useState } from 'react';
+
 export type Scope = 'global' | 'cinema';
 export type Category = 'Navigation' | 'View' | 'Composer' | 'Session';
 export type ShortcutAction = {
@@ -17,7 +19,7 @@ export type ShortcutAction = {
   label: string;
   chord: string;          // the default, e.g. "mod+k", "1", "`"
   scope: Scope;
-  /** Works while typing in an input (only chords with a modifier may). */
+  /** Works while typing in an input (only on a chord held with mod or alt). */
   inInputs?: boolean;
 };
 
@@ -63,21 +65,28 @@ export const ACTIONS: ShortcutAction[] = defineActions([
 ]);
 
 const MODIFIER_KEYS = new Set(['control', 'meta', 'alt', 'shift', 'os', 'altgraph', 'capslock', 'fn']);
+const MODIFIER_NAMES = new Set([...MODIFIER_KEYS, 'mod', 'ctrl', 'cmd']);
 
-/** A chord in its one spelling: modifiers in the order mod, alt, shift, then the key. */
+/** A chord's parts, the key last; the "+" key stays one part ("mod++" is mod, then +). */
+function splitChord(chord: string): string[] {
+  const parts = chord.split('+');
+  if (parts.length > 1 && parts[parts.length - 1] === '' && parts[parts.length - 2] === '') parts.splice(-2, 2, '+');
+  return parts;
+}
+
+/** A chord in its one spelling: modifiers in the order mod, alt, shift, then the key.
+    Space is spelled "space", so trimming can never turn it into no key at all. */
 export function normalizeChord(raw: string): string {
-  const parts = String(raw || '').toLowerCase().split('+').map((p) => p.trim());
-  let key = parts.pop() || '';
-  if (key === '' && parts.length && parts[parts.length - 1] === '') { parts.pop(); key = '+'; }
+  const parts = splitChord(String(raw || '').toLowerCase()).map((p) => (p && !p.trim() ? 'space' : p.trim()));
+  const key = parts.pop() || '';
   const mods = new Set(parts.map((p) => (p === 'ctrl' || p === 'cmd' || p === 'meta' ? 'mod' : p)));
   const out = ['mod', 'alt', 'shift'].filter((m) => mods.has(m));
-  if (key === 'space') key = ' ';
   return [...out, key].join('+');
 }
 
 /** The chord a key event spells, or null for a lone modifier. */
 export function chordFromEvent(e: { key?: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean }): string | null {
-  const key = String(e.key || '').toLowerCase();
+  const key = e.key === ' ' ? 'space' : String(e.key || '').toLowerCase();
   if (!key || MODIFIER_KEYS.has(key) || key === 'dead' || key === 'unidentified') return null;
   const mods: string[] = [];
   if (e.metaKey || e.ctrlKey) mods.push('mod');
@@ -88,8 +97,23 @@ export function chordFromEvent(e: { key?: string; metaKey?: boolean; ctrlKey?: b
 }
 
 export function displayChord(chord: string, mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || '')): string {
-  return chord.split('+').map((p) => (p === 'mod' ? (mac ? '⌘' : 'Ctrl') : p === 'alt' ? (mac ? '⌥' : 'Alt')
-    : p === 'shift' ? (mac ? '⇧' : 'Shift') : p === ' ' ? 'Space' : p.length === 1 ? p.toUpperCase() : p)).join(mac ? '' : '+');
+  return splitChord(chord).map((p) => (p === 'mod' ? (mac ? '⌘' : 'Ctrl') : p === 'alt' ? (mac ? '⌥' : 'Alt')
+    : p === 'shift' ? (mac ? '⇧' : 'Shift') : p === 'space' ? 'Space' : p.length === 1 ? p.toUpperCase() : p)).join(mac ? '' : '+');
+}
+
+/** Whether action *id* may answer *chord*: it must end in a real key, and an action that works
+    while typing (inInputs) needs mod or alt held, so a letter typed into a field never fires it. */
+export function acceptsChord(id: string, chord: string): boolean {
+  const action = ACTIONS.find((a) => a.id === id);
+  const parts = splitChord(normalizeChord(chord));
+  const key = parts.pop() || '';
+  if (!action || !key || MODIFIER_NAMES.has(key)) return false;
+  return !action.inInputs || parts.includes('mod') || parts.includes('alt');
+}
+
+/** Whether *b* answers while the focus is in an input or a textarea. */
+export function firesInInputs(b: Binding): boolean {
+  return !!b.inInputs && acceptsChord(b.id, b.current);
 }
 
 export type Overrides = Record<string, string>;
@@ -100,7 +124,7 @@ export function readOverrides(raw: unknown): Overrides {
   if (!raw || typeof raw !== 'object') return out;   // an array's indices are no action ids
   const known = new Set(ACTIONS.map((a) => a.id));
   for (const [id, chord] of Object.entries(raw as Record<string, unknown>)) {
-    if (!known.has(id) || typeof chord !== 'string' || !chord || chord.length > 40) continue;
+    if (!known.has(id) || typeof chord !== 'string' || chord.length > 40 || !acceptsChord(id, chord)) continue;
     out[id] = normalizeChord(chord);
   }
   return out;
@@ -118,6 +142,13 @@ export function saveOverrides(overrides: Overrides, storage: Storage | undefined
   } catch { /* storage off: the change lasts this page */ }
 }
 
+/** The overrides one page dispatches and shows, kept in state so they hold with storage off. */
+export function useShortcutOverrides(): [Overrides, (next: Overrides) => void] {
+  const [overrides, setOverrides] = useState<Overrides>(() => loadOverrides());
+  const change = useCallback((next: Overrides) => { setOverrides(next); saveOverrides(next); }, []);
+  return [overrides, change];
+}
+
 export type Binding = ShortcutAction & { current: string; custom: boolean };
 
 export function bindings(overrides: Overrides = {}): Binding[] {
@@ -132,16 +163,23 @@ export function conflictsFor(id: string, chord: string, list: Binding[]): Bindin
   return list.filter((b) => b.id !== id && b.current === chord);
 }
 
-/** The action a key event triggers in *scope*: the first one bound to its chord. */
+/** The chord action *id* answers now, for a hint next to it. */
+export function chordOf(overrides: Overrides, id: string): string {
+  return overrides[id] ?? ACTIONS.find((a) => a.id === id)?.chord ?? '';
+}
+
+/** The action a key event triggers in *scope*: the first one bound to its chord. Shift+letter
+    falls back to the bare letter, as these keys always did, unless shift+letter is bound itself. */
 export function matchAction(e: Parameters<typeof chordFromEvent>[0], list: Binding[], scope: Scope): Binding | null {
   const chord = chordFromEvent(e);
   if (!chord) return null;
-  return list.find((b) => b.scope === scope && b.current === chord) || null;
+  const bound = (c: string) => list.find((b) => b.scope === scope && b.current === c) || null;
+  return bound(chord) || (/^shift\+[a-z]$/.test(chord) ? bound(chord.slice('shift+'.length)) : null);
 }
 
 export function rebind(overrides: Overrides, id: string, chord: string): Overrides {
   const action = ACTIONS.find((a) => a.id === id);
-  if (!action) return overrides;
+  if (!action || !acceptsChord(id, chord)) return overrides;
   const next = { ...overrides };
   const normal = normalizeChord(chord);
   if (normal === action.chord) delete next[id];

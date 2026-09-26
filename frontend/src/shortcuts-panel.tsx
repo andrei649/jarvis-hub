@@ -3,7 +3,8 @@
    reset-all, and an "Also bound to" note when two actions share a chord. */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  CATEGORIES, type Overrides, bindings, chordFromEvent, conflictsFor, displayChord, rebind, resetBinding, searchBindings,
+  CATEGORIES, type Overrides, acceptsChord, bindings, chordFromEvent, conflictsFor, displayChord, rebind, resetBinding,
+  searchBindings,
 } from './shortcuts';
 
 export function ShortcutsPanel({ overrides, onChange, onClose }: {
@@ -21,12 +22,13 @@ export function ShortcutsPanel({ overrides, onChange, onClose }: {
         e.stopPropagation();
         if (e.key === 'Escape') { setRecording(null); return; }
         const chord = chordFromEvent(e);
-        if (!chord) return;                       // a lone modifier: keep listening
+        if (!chord || !acceptsChord(recording, chord)) return;   // a lone modifier, or a key this action may not take: keep listening
         onChange(rebind(overrides, recording, chord));
         setRecording(null);
         return;
       }
-      if (e.key === 'Escape') onClose();
+      // This Escape is the panel's: the Console, World or Ambient beneath it stays open.
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
     };
     window.addEventListener('keydown', h, true);
     return () => window.removeEventListener('keydown', h, true);
@@ -61,7 +63,7 @@ export function ShortcutsPanel({ overrides, onChange, onClose }: {
                     </span>
                     <button type="button" aria-label={`Rebind ${b.label}`} onClick={() => setRecording(b.id)}
                       style={{ fontFamily: 'var(--font-mono)', minWidth: 90 }}>
-                      {recording === b.id ? 'Press a key…' : displayChord(b.current)}
+                      {recording === b.id ? (b.inInputs ? 'Press Ctrl/⌘ or Alt + a key…' : 'Press a key…') : displayChord(b.current)}
                     </button>
                     <button type="button" aria-label={`Reset ${b.label}`} disabled={!b.custom}
                       onClick={() => onChange(resetBinding(overrides, b.id))}>↺</button>

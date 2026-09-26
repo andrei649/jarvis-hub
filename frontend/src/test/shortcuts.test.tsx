@@ -6,8 +6,8 @@ import React from 'react';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import {
   ACTIONS, CATEGORIES, FORBIDDEN_TARGET, STORAGE_KEY, bindings, chordFromEvent, conflictsFor, defineActions,
-  displayChord, loadOverrides, matchAction, normalizeChord, readOverrides, rebind, resetBinding, saveOverrides,
-  searchBindings,
+  displayChord, firesInInputs, loadOverrides, matchAction, normalizeChord, readOverrides, rebind, resetBinding,
+  saveOverrides, searchBindings,
 } from '../shortcuts';
 import { ShortcutsPanel } from '../shortcuts-panel';
 
@@ -59,8 +59,17 @@ describe('chords', () => {
     expect(normalizeChord('shift+alt+cmd+P')).toBe('mod+alt+shift+p');
     expect(normalizeChord('meta+/')).toBe('mod+/');
     expect(normalizeChord('mod++')).toBe('mod++');
-    expect(normalizeChord('space')).toBe(' ');
+    expect(normalizeChord('space')).toBe('space');
     expect(normalizeChord('')).toBe('');
+  });
+
+  it('spell Space one way, so a recorded Space stays a key (F1)', () => {
+    expect(chordFromEvent(ev(' '))).toBe('space');
+    expect(chordFromEvent(ev(' ', { ctrlKey: true }))).toBe('mod+space');
+    for (const raw of [' ', 'space', 'Space', 'space ']) expect(normalizeChord(raw)).toBe('space');
+    expect(normalizeChord('mod+ ')).toBe('mod+space');
+    for (const raw of [' ', 'mod+ ', 'space', 'mod++', '+']) expect(normalizeChord(normalizeChord(raw))).toBe(normalizeChord(raw));
+    expect(displayChord('mod+space', false)).toBe('Ctrl+Space');
   });
 
   it('are read from key events', () => {
@@ -77,10 +86,16 @@ describe('chords', () => {
   it('are shown the platform way', () => {
     expect(displayChord('mod+k', true)).toBe('⌘K');
     expect(displayChord('mod+alt+shift+p', false)).toBe('Ctrl+Alt+Shift+P');
-    expect(displayChord(' ', false)).toBe('Space');
+    expect(displayChord('space', false)).toBe('Space');
     expect(displayChord('arrowup', false)).toBe('arrowup');
     expect(displayChord('alt+x', true)).toBe('⌥X');
     expect(displayChord('shift+x', true)).toBe('⇧X');
+  });
+
+  it('show the + key on a Mac (F11)', () => {
+    expect(displayChord('+', true)).toBe('+');
+    expect(displayChord('mod++', true)).toBe('⌘+');
+    expect(displayChord('mod++', false)).toBe('Ctrl++');
   });
 });
 
@@ -89,6 +104,25 @@ describe('overrides', () => {
     expect(readOverrides({ 'view.ambient': 'Ctrl+J', 'nope': 'x', 'view.cinema': 3, 'mode.chat': '', 'mode.trust': 'x'.repeat(41) }))
       .toEqual({ 'view.ambient': 'mod+j' });
     for (const raw of [null, 'x', [], 7]) expect(readOverrides(raw)).toEqual({});
+  });
+
+  it('drop a chord with no key, so a stored "mod+" cannot lock the panel out (F1)', () => {
+    expect(readOverrides({ 'session.shortcuts': 'mod+', 'view.ambient': ' ', 'view.cinema': 'ctrl', 'mode.chat': 'shift+' }))
+      .toEqual({ 'view.ambient': 'space' });
+    expect(rebind({}, 'session.shortcuts', 'mod+')).toEqual({});
+    expect(rebind({}, 'view.ambient', 'alt')).toEqual({});
+  });
+
+  it('give the palette and the panel only a chord held with Ctrl/⌘ or Alt (F3)', () => {
+    expect(rebind({}, 'session.palette', 'p')).toEqual({});
+    expect(rebind({}, 'session.shortcuts', 'shift+/')).toEqual({});
+    expect(rebind({}, 'session.palette', 'Alt+P')).toEqual({ 'session.palette': 'alt+p' });
+    expect(rebind({}, 'session.shortcuts', 'Ctrl+Space')).toEqual({ 'session.shortcuts': 'mod+space' });
+    expect(readOverrides({ 'session.palette': 'p', 'session.shortcuts': 'mod+j', 'view.ambient': 'p' }))
+      .toEqual({ 'session.shortcuts': 'mod+j', 'view.ambient': 'p' });
+    const list = bindings({});
+    expect(list.filter(firesInInputs).map((b) => b.id)).toEqual(['session.palette', 'session.shortcuts']);
+    expect(firesInInputs(bindings({ 'view.ambient': 'mod+j' }).find((b) => b.id === 'view.ambient'))).toBe(false);
   });
 
   it('persist per viewer and survive storage that is off or broken', () => {
@@ -134,6 +168,15 @@ describe('dispatch', () => {
     expect(matchAction(ev('a'), clash, 'global').id).toBe('view.ambient');
     expect(conflictsFor('view.cinema', 'a', clash).map((b) => b.id)).toEqual(['view.ambient']);
     expect(conflictsFor('view.cinema', 'm', bindings({}))).toEqual([]);
+  });
+
+  it('answers Shift+letter with the bare letter unless shift+letter is bound (F9)', () => {
+    const list = bindings({});
+    expect(matchAction(ev('O', { shiftKey: true }), list, 'cinema').id).toBe('cinema.orb');
+    expect(matchAction(ev('W', { shiftKey: true }), list, 'global').id).toBe('view.world');
+    expect(matchAction(ev('A', { shiftKey: true }), list, 'global').id).toBe('view.ambient');
+    expect(matchAction(ev('K', { shiftKey: true, ctrlKey: true }), list, 'global')).toBeNull();
+    expect(matchAction(ev('A', { shiftKey: true }), bindings({ 'view.cinema': 'shift+a' }), 'global').id).toBe('view.cinema');
   });
 
   it('searches by label, category, id and chord', () => {
@@ -187,6 +230,32 @@ describe('the Keyboard Shortcuts panel', () => {
     expect(changes).toEqual([{ 'view.ambient': 'mod+j' }]);
   });
 
+  it('records Space and Ctrl+Space, and those keys then answer (F1)', () => {
+    const first = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Ambient mode' }));
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(first.changes).toEqual([{ 'view.ambient': 'space' }]);
+    expect(screen.getByRole('button', { name: 'Rebind Ambient mode' }).textContent).toBe('Space');
+    expect(matchAction(ev(' '), bindings(first.changes[0]), 'global').id).toBe('view.ambient');
+    cleanup();
+    const second = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Keyboard shortcuts' }));
+    fireEvent.keyDown(window, { key: ' ', ctrlKey: true });
+    expect(second.changes).toEqual([{ 'session.shortcuts': 'mod+space' }]);
+    expect(screen.getByRole('button', { name: 'Rebind Keyboard shortcuts' }).textContent).toBe('Ctrl+Space');
+    expect(matchAction(ev(' ', { ctrlKey: true }), bindings(second.changes[0]), 'global').id).toBe('session.shortcuts');
+  });
+
+  it('keeps listening when the palette is given a bare key (F3)', () => {
+    const { changes } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Command palette' }));
+    fireEvent.keyDown(window, { key: 'p' });
+    expect(changes).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Rebind Command palette' }).textContent).toMatch(/Ctrl.*Alt/);
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true });
+    expect(changes).toEqual([{ 'session.palette': 'mod+p' }]);
+  });
+
   it('names a clash, resets one binding and resets all', () => {
     const { changes } = setup({ 'view.cinema': 'a', 'mode.chat': 'q' });
     const row = document.querySelector('[data-action="view.cinema"]');
@@ -207,5 +276,21 @@ describe('the Keyboard Shortcuts panel', () => {
     expect(closed()).toBe(1);
     fireEvent.click(screen.getByRole('dialog').parentElement);
     expect(closed()).toBe(2);
+  });
+
+  it('keeps the Escape that closes it from the overlay beneath (F8)', () => {
+    const beneath = [];
+    const listen = (e) => beneath.push(e.key);
+    window.addEventListener('keydown', listen);
+    document.addEventListener('keydown', listen);
+    try {
+      const { closed } = setup();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(closed()).toBe(1);
+      expect(beneath).toEqual([]);
+    } finally {
+      window.removeEventListener('keydown', listen);
+      document.removeEventListener('keydown', listen);
+    }
   });
 });
