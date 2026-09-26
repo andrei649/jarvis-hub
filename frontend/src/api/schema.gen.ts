@@ -6266,6 +6266,9 @@ export interface paths {
          *     {key: value}}}``). Every key must be declared and passes the same validation a single
          *     write does; one refusal and nothing is written (422 with every reason). The write is
          *     one transaction with one audit row. ``"dry_run": true`` answers what would change.
+         *     H378 — a model choice in it passes the selection guards like a single write:
+         *     ``confirm_expensive`` / ``acknowledge_training`` (literal true) clear them, and a dry run
+         *     lists what they would ask.
          */
         post: operations["admin_import_settings_api_admin_settings_import_post"];
         delete?: never;
@@ -8779,6 +8782,10 @@ export interface paths {
         /**
          * Delete Session
          * @description H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+         *
+         *     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
+         *     finishes first (it would write the transcript back, or add a turn the backup never
+         *     saw), and one still running past the lease's wait answers 409 ``session_busy``.
          */
         delete: operations["delete_session_sessions__session_id__delete"];
         options?: never;
@@ -10130,6 +10137,16 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** AgentUpdateRequest */
         AgentUpdateRequest: {
@@ -10798,6 +10815,16 @@ export interface components {
             } | null;
             /** First Run */
             first_run?: boolean | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /**
          * JobEditBody
@@ -10816,6 +10843,16 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** JobNotepadBody */
         JobNotepadBody: {

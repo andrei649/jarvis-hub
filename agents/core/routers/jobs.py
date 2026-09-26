@@ -32,6 +32,9 @@ class JobCreateBody(BaseModel):
     # H687 — a creation-time choice, never stored: true fires once now whatever the
     # schedule, false never does; absent leaves it to first_run_decision.
     first_run: StrictBool | None = None
+    # H378 — the owner's clearance for a model pin a selection guard asks about; never stored.
+    confirm_expensive: StrictBool = False
+    acknowledge_training: StrictBool = False
 
 
 class JobEditBody(BaseModel):
@@ -43,6 +46,8 @@ class JobEditBody(BaseModel):
     schedule_text: str | None = Field(default=None, max_length=200)
     action: dict[str, Any] | None = None
     options: dict[str, Any] | None = None
+    confirm_expensive: StrictBool = False
+    acknowledge_training: StrictBool = False
 
 
 class JobPauseBody(BaseModel):
@@ -66,6 +71,29 @@ def _job_view(runner, job):
 def _refused(reason: str) -> JSONResponse:
     """422 in the routers' agreed shape (`error`), plus the list form the first callers read."""
     return JSONResponse({"error": reason, "errors": [reason]}, status_code=422)
+
+
+async def _guard_pin(options: Any, body, before: Any = None) -> JSONResponse | None:
+    """H378 — a job's model pin passes the model-selection guards, unless it is the pin the
+    job already has. The response to send instead (409 / 503), or None to go on."""
+    import asyncio
+
+    from agents.core.llm import selection_guards as sg
+
+    choices = sg.choices_from_job(options)
+    if not choices or choices == sg.choices_from_job(before):
+        return None
+    try:
+        findings = sg.enforce(choices, confirm_expensive=body.confirm_expensive,
+                              acknowledge_training=body.acknowledge_training)
+    except sg.SelectionRefused as refused:
+        return JSONResponse(refused.payload(), status_code=409)
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(sg.record, findings, "job", getattr(orch, "audit", None) if orch else None)
+    except sg.ConsentNotRecorded as exc:
+        return JSONResponse({"error": "consent_not_recorded", "detail": str(exc)}, status_code=503)
+    return None
 
 
 def _unavailable() -> JSONResponse:
@@ -106,6 +134,9 @@ async def jobs_create(body: JobCreateBody):
             if not body.name or not body.schedule_text or body.action is None:
                 return _refused("name, schedule_text and action are required (or a blueprint)")
             name, schedule_text, action = body.name, body.schedule_text, body.action
+        guarded = await _guard_pin(body.options, body)
+        if guarded is not None:
+            return guarded
         job, first_run, confirmation = runner.arm(name=name, schedule_text=schedule_text, action=action,
                                                   blueprint=body.blueprint, options=body.options,
                                                   first_run=body.first_run)
@@ -181,6 +212,11 @@ async def jobs_edit(job_id: str, body: JobEditBody):
     runner = _runner()
     if runner is None:
         return _unavailable()
+    if body.options is not None:
+        current = runner.store.get(job_id)
+        guarded = await _guard_pin(body.options, body, getattr(current, "options", None))
+        if guarded is not None:
+            return guarded
     try:
         job = runner.edit(
             job_id, name=body.name, schedule_text=body.schedule_text, action=body.action, options=body.options

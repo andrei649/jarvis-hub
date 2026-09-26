@@ -182,6 +182,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
     dict(category="llm",     key="hybrid_local_max", value=131072,                 label="Local routing threshold — prompts up to N input tokens stay local (0 = unlimited)", kind="number"),
     dict(category="llm",     key="daily_cost_cap_usd", value=0,                 label="Daily cloud spend cap (USD, 0 = no cap) — over it, routing degrades to local", kind="number"),
+    # H378 — choosing a model whose output costs at least this much asks for an explicit
+    # confirmation, on every surface that picks a model (agents/core/llm/selection_guards.py).
+    dict(category="llm",     key="cost_confirm_usd_per_mtok", value=40,          label="Ask before choosing a model whose output costs at least this many USD per million tokens (0 = never ask)", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
@@ -816,6 +819,8 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
+        if err is None and (cat, key) == ("llm", "cost_confirm_usd_per_mtok") and value < 0:
+            err = "cost_confirm_usd_per_mtok: a price in USD per million tokens, 0 or more"
         if err is None and (cat, key) == ("voice", "mic_surfaces"):
             odd = [v for v in value if v not in spec.get("opts", [])]
             if odd:

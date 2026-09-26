@@ -69,6 +69,46 @@ class Context:
         self.out.write(json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n")
 
 
+
+def _selection_flags(parser: argparse.ArgumentParser) -> None:
+    """H378 — the owner's clearance for a model choice a selection guard asks about."""
+    parser.add_argument("--confirm-expensive", action="store_true",
+                        help="choose a model whose output costs at least llm.cost_confirm_usd_per_mtok anyway")
+    parser.add_argument("--acknowledge-training", action="store_true",
+                        help="choose a model or route whose vendor may train on your prompts anyway "
+                             "(written to the audit log as your consent)")
+
+
+def _selection_body(ns: argparse.Namespace, body: dict) -> dict:
+    for flag in ("confirm_expensive", "acknowledge_training"):
+        if getattr(ns, flag, False):
+            body[flag] = True
+    return body
+
+
+def _audit_log():
+    """The hub's audit log, opened from this process: a consent row a choice made here needs."""
+    try:
+        from agents.core.security.audit import AuditLogger
+
+        return AuditLogger()
+    except Exception:  # noqa: BLE001 — no audit log, no consent, no choice
+        return None
+
+
+def _guarded_job_call(ctx: Context, call) -> dict | None:
+    """A job create/edit; a model pin the hub's selection guards refused (409) is named with
+    the flags that clear it, and answers None."""
+    try:
+        return call() or {}
+    except HubError as exc:
+        if exc.status != 409:
+            raise
+        ctx.err.write(f"{exc.reason}\nnot changed — rerun with --confirm-expensive / --acknowledge-training "
+                      f"to choose that model anyway\n")
+        return None
+
+
 # ── parser ────────────────────────────────────────────────────────────────────
 
 
@@ -124,6 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_set = config_verbs.add_parser("set", help="change one setting: category.key value")
     config_set.add_argument("name")
     config_set.add_argument("value")
+    _selection_flags(config_set)
     config_verbs.add_parser("check", help="validate every stored value against its declared schema")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
@@ -215,6 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
     jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
+    _selection_flags(jobs_create)
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
     jobs_edit.add_argument("--name")
@@ -225,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
     jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
+    _selection_flags(jobs_edit)
     for verb in ("doctor", "incidents", "tick"):
         sub = jobs_verbs.add_parser(verb)
         sub.add_argument("--json", action="store_true")
@@ -844,6 +887,25 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         if errors:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
+        # H378 — a model choice passes the selection guards here as on the hub's routes.
+        from agents.core.llm import selection_guards as guards
+
+        choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value("llm", k))
+        if choices:
+            try:
+                findings = guards.enforce(choices, confirm_expensive=ns.confirm_expensive,
+                                          acknowledge_training=ns.acknowledge_training)
+            except guards.SelectionRefused as refused:
+                for finding in refused.findings:
+                    ctx.err.write(f"{ns.name}: {finding.message}\n")
+                flags = " ".join("--" + need.replace("_", "-") for need in refused.missing)
+                ctx.err.write(f"{ns.name}: not changed — rerun with {flags} to choose it anyway\n")
+                return EXIT_FAILED
+            try:
+                guards.record(findings, "cli", _audit_log())
+            except guards.ConsentNotRecorded as exc:
+                ctx.err.write(f"{ns.name}: {exc}\n")
+                return EXIT_FAILED
         settings.put_category(category, {key: value})
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
@@ -1405,7 +1467,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         except ValueError as exc:
             ctx.err.write(f"{exc}\n")
             return EXIT_USAGE
-        reply = client.post("/api/jobs", body) or {}
+        reply = _guarded_job_call(ctx, lambda: client.post("/api/jobs", _selection_body(ns, body)))
+        if reply is None:
+            return EXIT_FAILED
         if ns.json:
             ctx.dump(reply)
             return EXIT_OK
@@ -1442,7 +1506,9 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         if not body:
             ctx.err.write("nothing to change — pass --name, --when or --action\n")
             return EXIT_USAGE
-        reply = client.request("PATCH", f"/api/jobs/{ns.job_id}", body) or {}
+        reply = _guarded_job_call(ctx, lambda: client.request("PATCH", f"/api/jobs/{ns.job_id}", _selection_body(ns, body)))
+        if reply is None:
+            return EXIT_FAILED
         if ns.json:
             ctx.dump(reply)
             return EXIT_OK

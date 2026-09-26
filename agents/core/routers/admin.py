@@ -40,7 +40,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 from agents.core.app_state import get_orch
 from agents.core.log_safe import log_safe
@@ -107,6 +107,10 @@ async def admin_get_category(category: str):
 
 class AdminPutBody(BaseModel):
     values: dict
+    # H378 — a model choice a selection guard asks about is stored only with the owner's
+    # explicit clearance (a literal true), never kept for the next choice.
+    confirm_expensive: StrictBool = False
+    acknowledge_training: StrictBool = False
 
 
 #: Setting kinds whose value is a choice, never a secret: a switch, a pick from a list,
@@ -163,6 +167,30 @@ async def _audit_settings_change(category: str, keys: list, values: dict | None 
     await _audit_row(preview, "settings_update", category)
 
 
+async def _guard_selection(category: str, values: dict, *, confirm_expensive: bool,
+                           acknowledge_training: bool, surface: str):
+    """H378 — run the model-selection guards over the choices a settings write makes.
+    Returns the cleared findings (their confirmation and consent rows already written), or
+    the response to send instead: 409 naming what is not cleared, 503 when a required
+    consent row could not be written."""
+    from agents.core import settings_db
+    from agents.core.llm import selection_guards as sg
+
+    choices = sg.choices_from_settings(category, values, lambda key: settings_db.get_value("llm", key))
+    if not choices:
+        return []
+    try:
+        findings = sg.enforce(choices, confirm_expensive=confirm_expensive, acknowledge_training=acknowledge_training)
+    except sg.SelectionRefused as refused:
+        return nocache_json(refused.payload(), status_code=409)
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(sg.record, findings, surface, getattr(orch, "audit", None) if orch else None)
+    except sg.ConsentNotRecorded as exc:
+        return nocache_json({"error": "consent_not_recorded", "detail": str(exc)}, status_code=503)
+    return findings
+
+
 @router.put("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
 async def admin_put_category(category: str, body: AdminPutBody):
     # AUD-8: reject a malformed write (wrong type / off the select allow-list) with
@@ -170,6 +198,10 @@ async def admin_put_category(category: str, body: AdminPutBody):
     errors = validate_category(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
+    guarded = await _guard_selection(category, body.values, confirm_expensive=body.confirm_expensive,
+                                     acknowledge_training=body.acknowledge_training, surface="settings")
+    if isinstance(guarded, JSONResponse):
+        return guarded
     updated, skipped = put_category(category, body.values)
     changed = [k for k in body.values if k not in skipped]
     if changed:
@@ -177,6 +209,8 @@ async def admin_put_category(category: str, body: AdminPutBody):
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
+    if guarded:
+        resp["guards"] = [f.as_dict() for f in guarded]
     return resp
 
 
@@ -215,8 +249,12 @@ async def admin_import_settings(request: Request):
     """H157 — import a settings document (an export, or any ``{"settings": {category:
     {key: value}}}``). Every key must be declared and passes the same validation a single
     write does; one refusal and nothing is written (422 with every reason). The write is
-    one transaction with one audit row. ``"dry_run": true`` answers what would change."""
+    one transaction with one audit row. ``"dry_run": true`` answers what would change.
+    H378 — a model choice in it passes the selection guards like a single write:
+    ``confirm_expensive`` / ``acknowledge_training`` (literal true) clear them, and a dry run
+    lists what they would ask."""
     from agents.core import settings_db
+    from agents.core.llm import selection_guards as sg
 
     refused = _refuse_cross_site_write(request)
     if refused is not None:
@@ -231,12 +269,20 @@ async def admin_import_settings(request: Request):
         return nocache_json({"error": "invalid settings", "details": ["the document is not JSON"]},
                             status_code=422)
     dry_run = doc.pop("dry_run", False) is True if isinstance(doc, dict) else False
+    confirm_expensive = doc.pop("confirm_expensive", False) is True if isinstance(doc, dict) else False
+    acknowledge_training = doc.pop("acknowledge_training", False) is True if isinstance(doc, dict) else False
     changes, errors = await asyncio.to_thread(settings_db.plan_import, doc)
     if errors:
         return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
     preview = await asyncio.to_thread(settings_db.describe_changes, changes)
     if dry_run:
-        return nocache_json({"dry_run": True, "count": len(preview), "changes": preview})
+        choices = sg.choices_from_settings("llm", changes.get("llm", {}), lambda key: settings_db.get_value("llm", key))
+        return nocache_json({"dry_run": True, "count": len(preview), "changes": preview,
+                             "guards": [f.as_dict() for f in sg.evaluate(choices)]})
+    guarded = await _guard_selection("llm", changes.get("llm", {}), confirm_expensive=confirm_expensive,
+                                     acknowledge_training=acknowledge_training, surface="settings import")
+    if isinstance(guarded, JSONResponse):
+        return guarded
     written = await asyncio.to_thread(settings_db.apply_import, changes) if changes else 0
     if written:
         names = [f"{cat}.{key}" for cat in sorted(changes) for key in sorted(changes[cat])]

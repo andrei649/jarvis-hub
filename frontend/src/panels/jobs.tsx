@@ -24,6 +24,7 @@ import { OptionsEditor, ScheduleBuilder, JobOptions } from './job-builder';
 import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
+import { useSelectionGuard, type GuardFlags } from '../selection-guard';
 
 /** H450 — a one-shot's time, in the viewer's clock: "once at 2026-10-01 09:00". */
 export function onceAt(job: any): string {
@@ -133,6 +134,9 @@ export function JobsPanel() {
     setRunNote(old => ({...old,...Object.fromEntries(Object.values(receipts).map(r => [r.job_id,receiptText(r)]))}));
   }, [receipts]);
   const [runs, setRuns] = useState<Record<string, any[] | null>>({});
+  // H378 — a model pin the hub's selection guards ask about opens a confirmation; confirming
+  // sends the same request again with the owner's flags.
+  const guard = useSelectionGuard();
   const [editing, setEditing] = useState<Record<string, { name: string; when: string; action: string; options: JobOptions } | null>>({});
 
   const chosen = blueprints.find((b) => b.id === blueprint) || null;
@@ -148,9 +152,17 @@ export function JobsPanel() {
     setNote(null);
     // Governed effect on the owner's behalf: MUST carry onErr so a 422 (a schedule that fires
     // too often, a blueprint missing its message) is printed, not swallowed.
-    actA(JOBS_PATH, { blueprint: chosen.id, params: p, ...(Object.keys(options).length ? {options} : {}) },
+    const body = { blueprint: chosen.id, params: p, ...(Object.keys(options).length ? {options} : {}) };
+    const send = (flags: GuardFlags = {}) => actA(JOBS_PATH, { ...body, ...flags },
       (r: any) => { setNote(armNote(r)); setMessage(''); setPrompt(''); reload(); },
-      (err: any) => setNote(`refused · ${refusalReason(err, 'could not arm the job')}`));
+      guard.catchGuard(send, (err: any) => setNote(`refused · ${refusalReason(err, 'could not arm the job')}`)));
+    send();
+  };
+  const createCustom = (body: Record<string, unknown>) => {
+    const send = (flags: GuardFlags = {}) => actA(JOBS_PATH, { ...body, ...flags },
+      (r: any) => { setNote(armNote(r)); setCustom(false); reload(); },
+      guard.catchGuard(send, (err: any) => setNote(`refused · ${refusalReason(err)}`)));
+    send();
   };
 
   const drive = (id: string, op: 'run' | 'pause' | 'resume') =>
@@ -187,13 +199,14 @@ export function JobsPanel() {
     if (draft.name.trim()) body.name = draft.name.trim();
     if (draft.when.trim()) body.schedule_text = draft.when.trim();
     if (!Object.keys(body).length) { setRunNote((m) => ({ ...m, [id]: 'nothing to change' })); return; }
-    apiPatch(`${JOBS_PATH}/${encodeURIComponent(id)}`, body, { admin: true })
+    const send = (flags: GuardFlags = {}) => apiPatch(`${JOBS_PATH}/${encodeURIComponent(id)}`, { ...body, ...flags }, { admin: true })
       .then((r: any) => {
         setEditing((m) => ({ ...m, [id]: null }));
         setRunNote((m) => ({ ...m, [id]: `edited · ${r?.job?.schedule_text || ''} (${r?.job?.one_shot ? onceAt(r.job) : r?.job?.cron || ''})` }));
         reload();
       })
-      .catch((err: any) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err, 'could not edit the job')}` })));
+      .catch(guard.catchGuard(send, (err: any) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err, 'could not edit the job')}` }))));
+    send();
   };
 
   const showRuns = (id: string) => {
@@ -306,7 +319,8 @@ export function JobsPanel() {
           </div>
         )}
         <button className="tool-btn" onClick={()=>{setNote(null);setCustom(true);}}>custom job</button>
-        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>setCustom(false)} error={note} onSave={body=>actA(JOBS_PATH,body,(r:any)=>{setNote(armNote(r));setCustom(false);reload();},(err:any)=>setNote(`refused · ${refusalReason(err)}`))}/>}
+        {custom && <JobCreateDialog toolsets={arr(toolCatalog.d, 'toolsets')} onClose={()=>{guard.cancel();setCustom(false);}} error={note} guard={guard.view} onSave={createCustom}/>}
+        {!custom && guard.view}
         {note && !custom && <Note c={note.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)'}>{note}</Note>}
       </div>
     </Card>

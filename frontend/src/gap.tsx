@@ -24,6 +24,7 @@ import { ConfirmAction, RISK_TIER } from './confirm';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, settingMatches, shown as shownSetting } from './panels/settings-tools';
+import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -2677,6 +2678,24 @@ export function SettingsPanel() {
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
+  // H378 — a model choice the hub's selection guards ask about (a very expensive model, a
+  // vendor that trains on prompts) keeps its edits and opens a confirmation; confirming sends
+  // the category again with the owner's flags.
+  const guard = useSelectionGuard();
+  const saveGuarded = (cat: string, values: Record<string, any>) => (flags: GuardFlags) =>
+    apiPut('/api/admin/settings/' + cat, { values, ...flags }, { admin: true })
+      .then((r: any) => {
+        setSaved((r && r.updated) || 0); setRefused([]);
+        setDirty((p) => {                            // drop what was saved; a later edit stays
+          const rest = { ...(p[cat] || {}) };
+          for (const k of Object.keys(values)) if (JSON.stringify(rest[k]) === JSON.stringify(values[k])) delete rest[k];
+          const next = { ...p };
+          if (Object.keys(rest).length) next[cat] = rest; else delete next[cat];
+          return next;
+        });
+        reload();
+      })
+      .catch((err: any) => setRefused([`${cat}: ${refusalReason(err, 'not saved')}`]));
   const save = async () => {
     // A refused category keeps its edits and shows the hub's own reason (review-H318b n-4:
     // "updated 0" over a 422 read as saved, and the typed text stayed in the box).
@@ -2685,7 +2704,10 @@ export function SettingsPanel() {
     const why: string[] = [];
     for (const cat of Object.keys(dirty)) {
       try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; }
-      catch (err) { kept[cat] = dirty[cat]; why.push(`${cat}: ${refusalReason(err, 'not saved')}`); }
+      catch (err) {
+        kept[cat] = dirty[cat];
+        guard.catchGuard(saveGuarded(cat, dirty[cat]), (e) => why.push(`${cat}: ${refusalReason(e, 'not saved')}`))(err);
+      }
     }
     setSaved(n); setRefused(why); setDirty(kept); reload();
   };
@@ -2725,6 +2747,7 @@ export function SettingsPanel() {
     {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
     {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    {guard.view}
     <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
     <ResetAll onDone={() => afterReset(Object.keys(cats))} />
     <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />

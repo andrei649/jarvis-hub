@@ -1390,13 +1390,24 @@ function AdminApp() {
     });
 
     // Make PUT requests for each category in parallel
-    const promises = Object.entries(byCategory).map(([cat, values]) => {
-      return afetch(`/api/admin/settings/${cat}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values }),
-      }).then(r => r.json());
-    });
+    const put = (cat, values, flags) => afetch(`/api/admin/settings/${cat}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values, ...flags }),
+    }).then(r => r.json().then(body => ({ status: r.status, body })));
+    const promises = Object.entries(byCategory).map(([cat, values]) => put(cat, values, {}).then(({ status, body }) => {
+      // H378 — the hub asks before a very expensive model or a vendor that may train on the
+      // prompts; the owner's yes is sent back as the flags the hub named.
+      if (status === 409 && body && body.error === 'selection_guard') {
+        const guards = Array.isArray(body.guards) ? body.guards : [];
+        const lines = guards.map(g => '• ' + g.message).join('\n');
+        if (!window.confirm(`Această alegere de model cere acordul tău:\n${lines}\n\nO alegi totuși?`)) return { updated: 0 };
+        const flags = {};
+        guards.forEach(g => { flags[g.needs] = true; });
+        return put(cat, values, flags).then(({ body: saved }) => saved);
+      }
+      return body;
+    }));
 
     Promise.all(promises)
       .then(results => {
