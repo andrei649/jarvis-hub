@@ -10,9 +10,10 @@ reads them as four gates split in two, and so does Nerva:
 
 - **hard** — ``platforms``: a skill for another operating system is *unsupported*
   here. It is left out of every offer, ``skill_view`` answers ``skill_unsupported``
-  with ``readiness_status: unsupported``, and a command naming it is refused. A skill
-  that declares no platforms is supported everywhere; on Termux the host counts as
-  ``linux`` and ``android``.
+  with ``readiness_status: unsupported``, its command words are not matched, and
+  ``skill:<name>`` is refused when it has code to run. A skill that declares no
+  platforms is supported everywhere; on Termux the host counts as ``linux`` and
+  ``android``.
 - **soft** — the other three only hide the skill from what the model is offered (the
   prompt catalog and ``skills_list``). Named explicitly (``skill_view``, a command),
   it still works: an explicit request is explicit consent, and a gate must never
@@ -64,6 +65,8 @@ TOOLSETS: dict[str, tuple[str, ...]] = {
     "basic": ("echo", "time"),
 }
 _SYS_PLATFORMS = (("darwin", "macos"), ("linux", "linux"), ("win", "windows"))
+#: The OS names a refusal may quote; any other declared name is manifest text, only counted.
+_KNOWN_PLATFORMS = frozenset({nerva for _prefix, nerva in _SYS_PLATFORMS} | {"android"})
 _CLI_ALIAS = "cli"
 #: The tools this turn is offered, bound around the prompt catalog (None: unknown).
 _OFFER: contextvars.ContextVar = contextvars.ContextVar("nerva_skill_offer", default=None)
@@ -88,7 +91,9 @@ def host_platforms(platform: str | None = None) -> frozenset[str]:
 
 def readiness(skill: Any, *, host: frozenset[str] | None = None) -> tuple[str, str]:
     """``("ready", "")``, or ``("unsupported", why)`` when the skill declares only
-    other operating systems."""
+    other operating systems. ``why`` becomes the turn's reply and ``skill_view``'s
+    detail, so it names only the OS names this module knows and counts the rest: a
+    declared name is a third-party manifest's text."""
     declared = [p for p in (getattr(skill, "platforms", None) or []) if isinstance(p, str)]
     if not declared:
         return "ready", ""
@@ -96,7 +101,11 @@ def readiness(skill: Any, *, host: frozenset[str] | None = None) -> tuple[str, s
     if here & set(declared):
         return "ready", ""
     on = "/".join(sorted(here)) or sys.platform
-    return "unsupported", f"unsupported on {on} (it declares {', '.join(declared)})"
+    named = list(dict.fromkeys(p for p in declared if p in _KNOWN_PLATFORMS))
+    others = len({p for p in declared if p not in _KNOWN_PLATFORMS})
+    if others:
+        named.append(f"{others} unknown platform{'s' if others > 1 else ''}")
+    return "unsupported", f"unsupported on {on} (it declares {', '.join(named)})"
 
 
 def host_environments() -> frozenset[str]:

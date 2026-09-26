@@ -555,8 +555,12 @@ class Skill:
             return switches.refusal(self, off)
         from .visibility import readiness
 
-        # H328: a skill for another operating system cannot run here, even when named.
-        ready, why = readiness(self)
+        # H328: a skill for another operating system cannot run here, even when named. Only
+        # code that would run is refused: a skill with none (quarantined, Markdown only)
+        # answers "" as before, and the turn goes on to the model.
+        cmd_fn = self.commands.get(command)
+        runnable = bool(cmd_fn) or bool(self.module and hasattr(self.module, "handle"))
+        ready, why = readiness(self) if runnable else ("ready", "")
         if ready != "ready":
             logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
             return f"[skill:{self.name}] is {why}"
@@ -565,7 +569,6 @@ class Skill:
                 self.usage_hook(self.name, "use")
             except Exception:
                 logger.debug("usage hook failed for %s", self.name, exc_info=True)
-        cmd_fn = self.commands.get(command)
         if cmd_fn:
             try:
                 if context:
@@ -989,14 +992,23 @@ class SkillLoader:
         return commands
 
     def parse_command(self, text: str) -> Optional[tuple[str, str, str]]:
-        """Parse text for skill commands like 'weather bucuresti' or 'skill:weather bucuresti'."""
+        """Parse text for skill commands like 'weather bucuresti' or 'skill:weather bucuresti'.
+
+        A bare command word is matched only against skills that run on this host (H328),
+        so one for another OS never takes a word a supported skill also declares; named
+        as ``skill:<name>``, it is still found, and ``Skill.execute`` says why it refuses."""
+        from .visibility import host_platforms, readiness
+
         text = text.strip().lower()
 
         skill_match = re.match(r"skill:(\w+)\s+(.+)$", text)
         if skill_match:
             return (skill_match.group(1), skill_match.group(1), skill_match.group(2))
 
-        for name, skill in self.skills.items():
+        host = host_platforms()
+        runnable = [(name, skill) for name, skill in self.skills.items()
+                    if readiness(skill, host=host)[0] == "ready"]
+        for name, skill in runnable:
             for cmd_meta in skill.commands_meta:
                 cmd_name = cmd_meta.get("command") if isinstance(cmd_meta, dict) else None
                 if not isinstance(cmd_name, str) or not cmd_name:
@@ -1006,7 +1018,7 @@ class SkillLoader:
                 if match:
                     return (name, cmd_name, match.group(1))
 
-        for name, skill in self.skills.items():
+        for name, skill in runnable:
             for cmd_meta in skill.commands_meta:
                 cmd_name = cmd_meta.get("command") if isinstance(cmd_meta, dict) else None
                 if not isinstance(cmd_name, str) or not cmd_name:
@@ -1342,11 +1354,13 @@ def register(skill):
                      visibility: Optional[dict] = None) -> str:
         """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``disabled``
         (switched off by the owner, everywhere or on this turn's channel — H329),
-        ``unsupported`` (another operating system — H328), ``sandboxed``, ``untrusted``
-        (a signature that does not verify here), ``agent`` (declared for other agents), or
+        ``sandboxed``, ``untrusted`` (a signature that does not verify here), ``agent``
+        (declared for other agents), ``unsupported`` (another operating system — H328), or
         one of the soft H328 gates, ``environment``, ``channel`` or ``tools``, which only
-        hide it from what is offered (``visibility.SOFT_GATES``). The catalog,
-        ``skills_list`` and ``skill_view`` share it (H318). ``switches`` is a
+        hide it from what is offered (``visibility.SOFT_GATES``). ``unsupported`` comes
+        after the gates that hide a skill outright, so ``skill_view`` never tells a skill
+        the caller may not see from one that does not exist. The catalog, ``skills_list``
+        and ``skill_view`` share it (H318). ``switches`` is a
         ``skills.switches.state()`` and ``visibility`` a ``skills.visibility.context()``
         already read."""
         from . import switches as skill_switches
@@ -1354,9 +1368,6 @@ def register(skill):
 
         if skill_switches.off_reason(skill, current=switches):
             return "disabled"
-        host = (visibility or {}).get("host")
-        if skill_visibility.readiness(skill, host=host)[0] != "ready":
-            return "unsupported"
         if skill.sandboxed:
             return "sandboxed"
         reason = str(getattr(skill, "signature_reason", "") or "")
@@ -1365,6 +1376,9 @@ def register(skill):
         declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
         if agent_id and declared and agent_id not in declared and "all" not in declared:
             return "agent"
+        host = (visibility or {}).get("host")
+        if skill_visibility.readiness(skill, host=host)[0] != "ready":
+            return "unsupported"
         return skill_visibility.offer_gate(skill, skill_visibility.context() if visibility is None else visibility)
 
     def prompt_catalog(
@@ -1441,6 +1455,7 @@ def register(skill):
             logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
             switched = {}
         seen = skill_visibility.context()       # H328: the host, channel and offer, once
+        full = False                            # every skill is still gated, and a hide logged
         for name in sorted(self.skills):
             skill = self.skills[name]
             gate = self.catalog_gate(skill, agent_id, switches=switched, visibility=seen)
@@ -1454,7 +1469,7 @@ def register(skill):
                     str(getattr(skill, "signature_reason", "") or "") or "unknown",
                 )
                 continue
-            if gate:
+            if gate or full:
                 continue
             for meta in skill.commands_meta:
                 if not isinstance(meta, dict):
@@ -1512,7 +1527,8 @@ def register(skill):
                     }
                 )
                 if len(rows) >= cap:
-                    return rows
+                    full = True
+                    break
         if not rows and dropped_untrusted:
             # Over-filtering is the named risk of this gate, and an empty block is how it
             # would show up. Do NOT re-advertise them as a "floor": that would hand any

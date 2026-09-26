@@ -283,7 +283,10 @@ def register_skill_tools(
         seen = visibility.context()     # H328: the host, channel and this turn's offer, once
         for name in sorted(getattr(target, "skills", {}) if target is not None else {}):
             skill = target.skills[name]
-            if target.catalog_gate(skill, agent, visibility=seen):
+            gate = target.catalog_gate(skill, agent, visibility=seen)
+            if gate in visibility.SOFT_GATES or gate in visibility.HARD_GATES:
+                visibility.note_hidden(skill, gate)
+            if gate:
                 continue
             description = _one_line(skill.description, MAX_DESCRIPTION)
             commands = [m["command"][:MAX_COMMAND] for m in skill.commands_meta

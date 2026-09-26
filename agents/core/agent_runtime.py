@@ -265,11 +265,14 @@ class AgentToolRuntime:
     def offered_names(self, agent_id: str | None) -> frozenset[str]:
         """The tool names this agent's turn would be offered, with no side effect (H328:
         a skill that needs a tool, or stands in for one, is shown by it). Empty when the
-        tool loop is off; a failure answers empty too."""
+        tool loop is off; a failure answers empty too. The profile runs in a copy of the
+        context: the live resolver notes its offer for the tool loop (H661), and this read
+        is not a loop."""
         try:
             if not self._enabled():
                 return frozenset()
-            offered, _decision = self._profiled(agent_id, self._server.tools())
+            offered, _decision = contextvars.copy_context().run(
+                self._profiled, agent_id, self._server.tools())
             return frozenset(str(tool.get("name") or "") for tool in offered)
         except Exception:
             logger.warning("tool offer for the skill catalog could not be read", exc_info=True)
