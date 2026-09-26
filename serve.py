@@ -46,6 +46,13 @@ if missing:
 if importlib.util.find_spec("numpy") is None:
     warnings.warn("numpy not installed — vector store will be slower")
 
+# H689: a refused JARVIS_PROFILE stops the start here, named, before the hub is imported
+# (its stores open under the data root at import, and data_root() refuses the name).
+from agents.core.paths import profile_error  # noqa: E402
+
+if profile_error():
+    sys.exit(profile_error())
+
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
 # posture via the app lifespan. Re-exported here — serve.py stays the
@@ -246,11 +253,8 @@ def main():
     probe_bind(config.host, config.port)
     # H689: one hub per data root (per profile); a second one is told who holds it.
     from agents.core import install_identity
-    from agents.core.paths import data_root, profile_error
+    from agents.core.paths import data_root
 
-    refused = profile_error()
-    if refused:
-        raise SystemExit(refused)
     try:
         install_identity.acquire_hub_lock()
     except install_identity.HubAlreadyRunning as exc:

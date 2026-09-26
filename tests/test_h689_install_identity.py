@@ -95,22 +95,36 @@ def test_the_directory_is_fsynced_after_the_write(tmp_path, monkeypatch):
     assert seen == [tmp_path]
 
 
-def _mint(root, queue):
+def _mint(root, barrier, queue):
+    import time
+
     from agents.core import install_identity
 
-    queue.put(install_identity.install_id(root))
+    minted = []
+    write = install_identity._write
+
+    def slow_write(path, value):          # a mint that takes long enough to race
+        minted.append(value)
+        time.sleep(0.5)
+        write(path, value)
+
+    install_identity._write = slow_write
+    barrier.wait(timeout=60)              # every child reads at the same moment
+    queue.put((install_identity.install_id(root), len(minted)))
 
 
 def test_racing_processes_agree_on_one_id(tmp_path):
     ctx = multiprocessing.get_context("spawn")
-    queue = ctx.Queue()
-    procs = [ctx.Process(target=_mint, args=(str(tmp_path), queue)) for _ in range(4)]
+    queue, barrier = ctx.Queue(), ctx.Barrier(4)
+    procs = [ctx.Process(target=_mint, args=(str(tmp_path), barrier, queue)) for _ in range(4)]
     for p in procs:
         p.start()
-    got = {queue.get(timeout=60) for _ in procs}
+    got = [queue.get(timeout=60) for _ in procs]
     for p in procs:
         p.join(timeout=60)
-    assert len(got) == 1 and ii.ID_RE.match(got.pop())
+    ids = {value for value, _ in got}
+    assert len(ids) == 1 and ii.ID_RE.match(ids.pop())
+    assert sum(mints for _, mints in got) == 1          # the lock let exactly one child mint
 
 
 def test_the_lock_guards_the_mint(tmp_path, monkeypatch):
@@ -125,19 +139,23 @@ def test_the_lock_guards_the_mint(tmp_path, monkeypatch):
 
 # ── one hub per root ─────────────────────────────────────────────────────────────
 
+def _second_hub(root) -> str:
+    """What another process gets when it asks for the hub lock on *root*."""
+    code = (f"import sys; sys.path.insert(0, {str(REPO)!r})\n"
+            "from agents.core import install_identity as ii\n"
+            f"try:\n    ii.acquire_hub_lock({str(root)!r})\nexcept ii.HubAlreadyRunning as e:\n"
+            "    print('REFUSED', e.pid)\nelse:\n    print('GOT')\n")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    return out.stdout.strip()
+
+
 def test_a_second_hub_on_the_same_root_is_refused(tmp_path):
     handle = ii.acquire_hub_lock(tmp_path)
     assert ii.acquire_hub_lock(tmp_path) is handle                        # idempotent in-process
     assert (tmp_path / "hub.lock").read_text(encoding="ascii") == str(os.getpid())
-    code = (f"import sys; sys.path.insert(0, {str(REPO)!r})\n"
-            "from agents.core import install_identity as ii\n"
-            f"try:\n    ii.acquire_hub_lock({str(tmp_path)!r})\nexcept ii.HubAlreadyRunning as e:\n"
-            "    print('REFUSED', e.pid)\nelse:\n    print('GOT')\n")
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
-    assert out.stdout.strip() == f"REFUSED {os.getpid()}"
+    assert _second_hub(tmp_path) == f"REFUSED {os.getpid()}"
     ii.release_hub_lock()
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
-    assert out.stdout.strip() == "GOT"
+    assert _second_hub(tmp_path) == "GOT"
 
 
 def test_the_refusal_names_the_holder():
@@ -151,8 +169,15 @@ def test_serve_takes_the_lock_before_starting():
     main = src[src.index("def main():"):]
     assert main.index("install_identity.acquire_hub_lock()") < main.index("uvicorn.Server(config).run()")
     assert "raise SystemExit(f\"Nerva is already running on this data root: {exc}\")" in main
-    assert main.index("profile_error()") < main.index("acquire_hub_lock()")
-    assert "refused = profile_error()\n    if refused:\n        raise SystemExit(refused)" in main
+
+
+def test_serve_stops_on_a_bad_profile_before_importing_the_hub(tmp_path):
+    env = {**os.environ, "JARVIS_HOME": str(tmp_path), "JARVIS_PROFILE": "Bad"}
+    out = subprocess.run([sys.executable, str(REPO / "serve.py")], capture_output=True, text=True,
+                         cwd=str(REPO), env=env, timeout=120)
+    assert out.returncode == 1 and "Traceback" not in out.stderr
+    assert "JARVIS_PROFILE='Bad' is not a profile name" in out.stderr
+    assert list(tmp_path.iterdir()) == []
 
 
 # ── profiles ─────────────────────────────────────────────────────────────────────
@@ -168,39 +193,41 @@ def test_the_profile_name(monkeypatch, value, name):
 
 
 def test_a_profile_is_its_own_data_root(tmp_path, monkeypatch):
-    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    home = tmp_path / "home"
+    monkeypatch.setenv("JARVIS_HOME", str(home))
     monkeypatch.delenv("JARVIS_PROFILE", raising=False)
-    assert paths.data_root() == tmp_path
+    assert paths.data_root() == home
     monkeypatch.setenv("JARVIS_PROFILE", "work")
-    assert paths.data_root() == tmp_path / "profiles" / "work"
-    assert paths.data_path("settings.db") == tmp_path / "profiles" / "work" / "settings.db"
+    assert paths.data_root() == tmp_path / "home-profiles" / "work"
+    assert paths.data_path("settings.db") == tmp_path / "home-profiles" / "work" / "settings.db"
     monkeypatch.setenv("JARVIS_PROFILE", "Bad Name")
-    assert paths.data_root() == tmp_path
+    with pytest.raises(RuntimeError, match="not a profile name"):
+        paths.data_root()
     assert "not a profile name" in paths.profile_error()
 
 
-def test_a_profile_without_a_home_sits_under_the_default_root(monkeypatch):
+def test_a_profile_without_a_home_sits_beside_the_default_root(monkeypatch):
     monkeypatch.delenv("JARVIS_HOME", raising=False)
     monkeypatch.delenv("JARVIS_MEMORY_DIR", raising=False)
     monkeypatch.delenv("JARVIS_USER_HOME", raising=False)
     monkeypatch.setenv("JARVIS_PROFILE", "work")
     monkeypatch.setattr(paths, "is_frozen", lambda: False)
-    assert paths.data_root() == paths._DEFAULT_ROOT / "profiles" / "work"
+    assert paths.data_root() == paths._REPO_ROOT / "memory_logs-profiles" / "work"
 
 
 def test_two_profiles_have_two_ids(tmp_path, monkeypatch):
-    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("JARVIS_PROFILE", "one")
     one = ii.install_id()
     monkeypatch.setenv("JARVIS_PROFILE", "two")
     assert ii.install_id() != one
 
 
-def test_credentials_resolve_under_the_profile_root(tmp_path):
-    env = {**os.environ, "JARVIS_HOME": str(tmp_path), "JARVIS_PROFILE": "work"}
+def test_the_secret_store_resolves_under_the_profile_root(tmp_path):
+    env = {**os.environ, "JARVIS_HOME": str(tmp_path / "home"), "JARVIS_PROFILE": "work"}
     code = "from agents.core import secrets; print(secrets.DEFAULT_STORE)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(REPO), env=env, timeout=120)
-    assert out.stdout.strip() == str(tmp_path / "profiles" / "work" / "security" / "secrets.enc")
+    assert out.stdout.strip() == str(tmp_path / "home-profiles" / "work" / "security" / "secrets.enc")
 
 
 def test_children_keep_the_profile():
@@ -315,3 +342,225 @@ def test_the_hub_reads_its_own_id_lazily(monkeypatch):
     assert SatelliteHub(hub_id=lambda: "z")._own_hub_id() == "z"
     monkeypatch.setattr(ii, "install_id", lambda root=None: None)
     assert SatelliteHub()._own_hub_id() == ""
+
+
+# ── review round ─────────────────────────────────────────────────────────────────
+
+def test_a_forget_keeps_the_id_and_the_held_hub_lock(tmp_path):
+    """F1: the forget sweep erases everything but its keep list; the id, its lock and the
+    hub's own lock are on it, so the id survives and a second hub is still refused."""
+    from agents.core import data_purge
+
+    before = ii.install_id(tmp_path)
+    ii.acquire_hub_lock(tmp_path)
+    (tmp_path / "notes.json").write_text('{"a": 1}', encoding="utf-8")
+    report = data_purge.purge_data(source_root=str(tmp_path), backup_first=False)
+    assert report["ok"] is True
+    assert json.loads((tmp_path / "notes.json").read_text(encoding="utf-8")) == {}
+    for name in (ii.ID_FILE, ii.LOCK_FILE, ii.HUB_LOCK_FILE):
+        assert (tmp_path / name).is_file(), name
+    assert _second_hub(tmp_path) == f"REFUSED {os.getpid()}"
+    ii.forget_cache()
+    assert ii.install_id(tmp_path) == before
+
+
+def test_a_profile_root_is_a_sibling_of_the_default_root(tmp_path, monkeypatch):
+    """F2: never inside it, so nothing that walks the default root reaches a profile."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    assert paths.data_root() == tmp_path / "home-profiles" / "work"
+
+
+def test_the_default_hubs_forget_and_backup_never_reach_a_profile(tmp_path, monkeypatch):
+    import tarfile
+
+    from agents.core import backup, data_purge
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    monkeypatch.setenv("JARVIS_PROFILE", "work")
+    work = paths.data_root()
+    (work / "security").mkdir(parents=True)
+    (work / "security" / "secrets.enc").write_bytes(b"WORK-SECRET")
+    (work / "security" / "secrets.enc.key").write_bytes(b"WORK-KEY")
+    (work / "notes.json").write_text('{"w": 1}', encoding="utf-8")
+    monkeypatch.delenv("JARVIS_PROFILE")
+    home.mkdir(exist_ok=True)
+    (home / "notes.json").write_text('{"a": 1}', encoding="utf-8")
+
+    snap = backup.create_backup(source_root=str(home), out_dir=str(tmp_path / "out"), encrypt=False)
+    with tarfile.open(snap["archive"]) as tar:
+        names = tar.getnames()
+    assert "notes.json" in names and not [n for n in names if "secrets.enc" in n]
+    data_purge.purge_data(source_root=str(home), backup_first=False)
+    assert json.loads((home / "notes.json").read_text(encoding="utf-8")) == {}
+    assert (work / "security" / "secrets.enc").read_bytes() == b"WORK-SECRET"
+    assert (work / "security" / "secrets.enc.key").read_bytes() == b"WORK-KEY"
+    assert json.loads((work / "notes.json").read_text(encoding="utf-8")) == {"w": 1}
+
+
+def test_a_bad_profile_name_never_falls_back_to_the_default_root(tmp_path, monkeypatch):
+    """F4: a typo is refused wherever the data root is asked for, not only in serve.py."""
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setenv("JARVIS_PROFILE", "Work")
+    with pytest.raises(RuntimeError, match="not a profile name"):
+        paths.data_root()
+    with pytest.raises(RuntimeError, match="not a profile name"):
+        ii.acquire_hub_lock()
+
+
+def test_a_forget_under_a_bad_profile_erases_nothing(tmp_path):
+    (tmp_path / "notes.json").write_text('{"a": 1}', encoding="utf-8")
+    env = {**os.environ, "JARVIS_HOME": str(tmp_path), "JARVIS_PROFILE": "Work"}
+    out = subprocess.run([sys.executable, "-m", "agents.core.data_purge", "--confirm", "--no-backup"],
+                         capture_output=True, text=True, cwd=str(REPO), env=env, timeout=120)
+    assert out.returncode != 0 and "not a profile name" in out.stderr
+    assert json.loads((tmp_path / "notes.json").read_text(encoding="utf-8")) == {"a": 1}
+
+
+def _hold_hub_lock(root) -> subprocess.Popen:
+    """Another process holding the hub lock on *root* until its stdin closes."""
+    code = (f"import sys; sys.path.insert(0, {str(REPO)!r})\n"
+            "from agents.core import install_identity as ii\n"
+            f"ii.acquire_hub_lock({str(root)!r}); print('HELD', flush=True); sys.stdin.read()\n")
+    holder = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, text=True)
+    assert holder.stdout.readline().strip() == "HELD"
+    return holder
+
+
+def test_the_app_lifespan_is_refused_on_a_held_root(tmp_path, monkeypatch):
+    """F5: ``uvicorn agents.web:app`` (docker-compose, CI) takes the same lock as serve.py."""
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    holder = _hold_hub_lock(tmp_path)
+    try:
+        monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+        with pytest.raises(ii.HubAlreadyRunning), TestClient(web.app):
+            pass
+    finally:
+        holder.stdin.close()
+        holder.wait(timeout=60)
+
+
+def test_the_app_lifespan_holds_the_lock_until_it_stops():
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    with TestClient(web.app):
+        assert _second_hub(paths.data_root()) == f"REFUSED {os.getpid()}"
+    assert _second_hub(paths.data_root()) == "GOT"
+
+
+class _LockedRead:
+    """A handle whose read fails as a mandatory (Windows) lock makes it fail."""
+
+    def __init__(self, handle) -> None:
+        self.handle = handle
+
+    def __getattr__(self, name):
+        return getattr(self.handle, name)
+
+    def read(self, *args):
+        raise PermissionError(13, "lock violation")
+
+
+def test_a_refused_hub_that_cannot_read_the_pid_is_still_refused(tmp_path, monkeypatch):
+    """F6: the refusal is HubAlreadyRunning even when the pid cannot be read, and the
+    handle is closed."""
+    opened = []
+
+    def locked_open(*args, **kwargs):
+        opened.append(open(*args, **kwargs))  # noqa: SIM115 - closed by the code under test
+        return _LockedRead(opened[-1])
+
+    monkeypatch.setattr(ii, "_file_lock", lambda handle, blocking: (_ for _ in ()).throw(OSError("held")))
+    monkeypatch.setattr(ii, "open", locked_open, raising=False)
+    with pytest.raises(ii.HubAlreadyRunning) as err:
+        ii.acquire_hub_lock(tmp_path)
+    assert err.value.pid == "" and opened[0].closed
+
+
+def test_the_windows_lock_sits_past_the_pid(tmp_path, monkeypatch):
+    """F6: msvcrt locks are mandatory, so the byte locked is not one the pid is read from."""
+    seen = []
+
+    class _NT:
+        name = "nt"
+
+        def __getattr__(self, attr):
+            return getattr(os, attr)
+
+    fake = SimpleNamespace(LK_LOCK=1, LK_NBLCK=2, LK_UNLCK=0,
+                           locking=lambda fd, mode, n: seen.append((mode, n, os.lseek(fd, 0, os.SEEK_CUR))))
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    with open(tmp_path / "hub.lock", "a+", encoding="ascii") as handle:
+        handle.write("4194304")
+        handle.flush()
+        monkeypatch.setattr(ii, "os", _NT())
+        ii._file_lock(handle, blocking=False)
+        ii._file_unlock(handle)
+        monkeypatch.undo()
+    assert seen == [(2, 1, ii._NT_LOCK_BYTE), (0, 1, ii._NT_LOCK_BYTE)] and ii._NT_LOCK_BYTE > 16
+
+
+def test_a_forgotten_clock_starts_again(tmp_path):
+    """F8: a forget resets activation.json to ``{}``; that is no record, not an unreadable one."""
+    from agents.core import data_purge, first_action
+
+    store = tmp_path / "activation.json"
+    first_action.mark_installed(store, now=1.0)
+    data_purge.purge_data(source_root=str(tmp_path), backup_first=False)
+    assert json.loads(store.read_text(encoding="utf-8")) == {}
+    task = SimpleNamespace(id=7, kind="k", decided_by="owner", decision="accept")
+    got = first_action.record_first_action(task, store, now=9.0)
+    assert got is not None and got["activated"]["task_id"] == 7
+    assert first_action.activation_state(store, now=9.0)["activated"] is True
+
+
+def test_the_hub_reads_its_own_id_again_after_a_failure(monkeypatch):
+    """F9: only an id is cached; a failed read is asked again."""
+    from agents.core.satellite_hub import SatelliteHub
+
+    answers = iter([None, "a" * 32])
+    monkeypatch.setattr(ii, "install_id", lambda root=None: next(answers))
+    hub = SatelliteHub()
+    assert hub._own_hub_id() == "" and hub._own_hub_id() == "a" * 32
+
+
+def test_a_readable_id_is_read_without_the_lock(tmp_path):
+    """F10: the id file is written atomically, so a lock file that cannot be opened does
+    not hide it."""
+    first = ii.install_id(tmp_path)
+    ii.forget_cache()
+    (tmp_path / "install_id.lock").unlink()
+    (tmp_path / "install_id.lock").mkdir()
+    assert ii.install_id(tmp_path) == first
+
+
+@pytest.mark.parametrize("old", ["0123456789abcdef", None])
+def test_an_older_clock_takes_on_the_durable_id(tmp_path, monkeypatch, old):
+    """F12: a clock from before H689 (16 hex) or from while the id was unavailable (null)
+    takes on the install id; nothing else in it changes."""
+    from agents.core import first_action
+
+    monkeypatch.setattr(ii, "install_id", lambda root=None: "a" * 32)
+    store = tmp_path / "activation.json"
+    clock = {"schema": first_action.SCHEMA, "install_id": old, "installed_at": 1.0,
+             "inferred_at_boot": False, "activated": None}
+    store.write_text(json.dumps(clock), encoding="utf-8")
+    assert first_action.mark_installed(store, now=5.0)["install_id"] == "a" * 32
+    assert json.loads(store.read_text(encoding="utf-8")) == {**clock, "install_id": "a" * 32}
+    activated = {**clock, "activated": {"at": 2.0, "seconds": 1.0, "band": "under_10_minutes"}}
+    store.write_text(json.dumps(activated), encoding="utf-8")
+    task = SimpleNamespace(id=1, kind="k", decided_by="owner", decision="accept")
+    assert first_action.record_first_action(task, store, now=9.0) is None
+    assert json.loads(store.read_text(encoding="utf-8")) == {**activated, "install_id": "a" * 32}
+    monkeypatch.setattr(ii, "install_id", lambda root=None: None)
+    store.write_text(json.dumps(clock), encoding="utf-8")
+    assert first_action.mark_installed(store, now=5.0)["install_id"] == old
+    assert json.loads(store.read_text(encoding="utf-8")) == clock

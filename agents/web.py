@@ -465,6 +465,10 @@ async def lifespan(application: FastAPI):
     # here, named with its repair — not as an unnamed FileNotFoundError on a model call.
     from agents.core.tls_trust import enforce_ca_environment
     enforce_ca_environment()
+    # H689: one hub per data root whatever the entry (serve.py has already taken it; a bare
+    # `uvicorn agents.web:app` from docker-compose or CI takes it here).
+    from agents.core import install_identity
+    install_identity.acquire_hub_lock()
     # Packaged installs / $JARVIS_USER_HOME: scaffold the owner's data folder
     # (Documents/Jarvis — README, .env, memory/, skills/, souls/) BEFORE any
     # store opens under the data root. Idempotent no-op in a plain dev checkout.
@@ -666,6 +670,7 @@ async def lifespan(application: FastAPI):
         await orch.aclose()
     orch = None
     gateway = None
+    install_identity.release_hub_lock()   # H689: the root is free once this hub has stopped
 
 
 from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version

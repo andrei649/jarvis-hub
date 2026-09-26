@@ -316,7 +316,9 @@ class SatelliteHub:
         if hub is None:
             from agents.core.install_identity import install_id
 
-            hub = self._hub_id = install_id() or ""
+            hub = install_id() or ""
+            if hub:
+                self._hub_id = hub   # only an id is kept: a failed read is asked again
         elif callable(hub):
             hub = hub() or ""
         return str(hub)

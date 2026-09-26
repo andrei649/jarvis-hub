@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from agents.core import backup as _backup
+from agents.core import install_identity as _install_identity
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS, legacy_import_status
 from agents.core.paths import data_root
@@ -76,6 +77,9 @@ logger = logging.getLogger("jarvis.purge")
 KEEP_FILES: frozenset[str] = frozenset({
     "settings.db",      # config + OAuth secrets; the export draws the same boundary
     "marketplace.db",   # installed-skill catalogue — software inventory, not user content
+    # H689: the install's identity, not its content; and the lock the running hub holds
+    # (unlinked, a second hub could lock a new file on the same root).
+    _install_identity.ID_FILE, _install_identity.LOCK_FILE, _install_identity.HUB_LOCK_FILE,
 })
 KEEP_DIRS: frozenset[str] = frozenset({
     "security",         # append-only audit chain + intent log: compliance evidence

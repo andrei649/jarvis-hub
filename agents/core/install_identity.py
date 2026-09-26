@@ -10,12 +10,14 @@ broken record re-minted. Here:
   a throw-away value — when the file cannot be read, holds anything but an id, or cannot
   be written: a changed identity would silently orphan everything scoped to the old one.
 - **One hub per root.** :func:`acquire_hub_lock` holds ``<data root>/hub.lock`` for the
-  life of the process (``serve.py``); a second hub on the same root is refused and told
-  the holder's pid. The lock is the kernel's, so a crashed hub leaves nothing to clean.
+  life of the hub (``serve.py``, and the app's lifespan for a bare ``uvicorn
+  agents.web:app``); a second hub on the same root is refused and told the holder's pid.
+  The lock is the kernel's, so a crashed hub leaves nothing to clean.
 - **Profiles.** ``JARVIS_PROFILE=<name>`` (see :func:`agents.core.paths.data_root`) gives
-  each profile its own data root, and with it its own id, lock, settings and credentials
-  (``agents/core/secrets.py`` resolves its store under the data root the process starts
-  with).
+  each profile its own data root, beside the default one, and with it its own id, lock,
+  settings and secret store (``agents/core/secrets.py`` resolves it under the data root the
+  process starts with). The ``.env`` files are not per profile: every profile reads the
+  repo's and the data home's.
 """
 from __future__ import annotations
 
@@ -33,6 +35,10 @@ ID_FILE = "install_id"
 LOCK_FILE = "install_id.lock"
 HUB_LOCK_FILE = "hub.lock"
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+#: Windows locks are mandatory: the byte locked sits past the pid a hub writes at the start
+#: of hub.lock, so a refused hub can still read who holds it.
+_NT_LOCK_BYTE = 64
 
 _lock = threading.Lock()
 _cache: dict[str, str] = {}
@@ -61,7 +67,7 @@ def _file_lock(handle, *, blocking: bool) -> None:
     if os.name == "nt":                                    # pragma: no cover - Windows
         import msvcrt
 
-        handle.seek(0)
+        handle.seek(_NT_LOCK_BYTE)
         msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
     else:
         import fcntl
@@ -73,7 +79,7 @@ def _file_unlock(handle) -> None:
     if os.name == "nt":                                    # pragma: no cover - Windows
         import msvcrt
 
-        handle.seek(0)
+        handle.seek(_NT_LOCK_BYTE)
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:
         import fcntl
@@ -130,16 +136,18 @@ def install_id(root: str | Path | None = None) -> str | None:
     path = base / ID_FILE
     with _lock:
         try:
-            base.mkdir(parents=True, exist_ok=True)
-            with open(base / LOCK_FILE, "a+", encoding="ascii") as guard:
-                _file_lock(guard, blocking=True)
-                try:
-                    value = _read(path)
-                    if value is None:
-                        _write(path, secrets.token_hex(16))
-                        value = _read(path)                # read back what landed
-                finally:
-                    _file_unlock(guard)
+            value = _read(path)        # written atomically: a kept id needs no lock to read
+            if value is None:
+                base.mkdir(parents=True, exist_ok=True)
+                with open(base / LOCK_FILE, "a+", encoding="ascii") as guard:
+                    _file_lock(guard, blocking=True)
+                    try:
+                        value = _read(path)
+                        if value is None:
+                            _write(path, secrets.token_hex(16))
+                            value = _read(path)            # read back what landed
+                    finally:
+                        _file_unlock(guard)
         except (OSError, ValueError) as exc:
             logger.warning("install id unavailable at %s (%s): not minting a new one", path, type(exc).__name__)
             return None
@@ -166,9 +174,13 @@ def acquire_hub_lock(root: str | Path | None = None):
     try:
         _file_lock(handle, blocking=False)
     except OSError:
-        handle.seek(0)
-        pid = handle.read().strip()[:16]
-        handle.close()
+        try:
+            handle.seek(0)
+            pid = handle.read().strip()[:16]
+        except (OSError, ValueError):                      # unreadable: still refused
+            pid = ""
+        finally:
+            handle.close()
         raise HubAlreadyRunning(base, pid) from None
     handle.seek(0)
     handle.truncate()
@@ -189,6 +201,6 @@ def release_hub_lock() -> None:
 
 
 __all__ = [
-    "HUB_LOCK_FILE", "HubAlreadyRunning", "ID_FILE", "acquire_hub_lock", "forget_cache",
+    "HUB_LOCK_FILE", "HubAlreadyRunning", "ID_FILE", "LOCK_FILE", "acquire_hub_lock", "forget_cache",
     "install_id", "release_hub_lock",
 ]
