@@ -269,6 +269,25 @@ def test_a_pointer_is_gone_ten_minutes_after_it_was_posted(store):
     assert f"export const POINTER_TTL_SECONDS = {cv.POINTER_TTL_SECONDS};" in src and cv.POINTER_TTL_SECONDS == 600
 
 
+def test_a_pinned_element_outlives_the_overflow_of_the_others(store):
+    """Past the 200, the oldest *unpinned* element goes; a pinned one is kept whatever its age."""
+    pinned = store.post("owner", "markdown", {"body": "keep me"}, pinned=True)
+    first = store.post("owner", "markdown", {"body": "reply 0"})
+    for i in range(1, cv._MAX_ELEMENTS):
+        store.post("owner", "markdown", {"body": f"reply {i}"})
+    ids = {e["id"] for e in store.list()}
+    assert pinned["id"] in ids and first["id"] not in ids and len(ids) == cv._MAX_ELEMENTS
+
+
+def test_a_pointer_whose_time_cannot_be_read_counts_as_expired(store):
+    """A damaged created_at never keeps a tip alive: it is dropped on the next write and never served."""
+    bad = store.post("jarvis", "tip", {"target": "console", "caption": "damaged"})
+    store._elements[-1]["created_at"] = "not a time"
+    assert bad["id"] not in {e["id"] for e in store.pointers()}
+    store.post("jarvis", "tip", {"target": "console", "caption": "next"})
+    assert bad["id"] not in {e["id"] for e in store.list()}
+
+
 def test_the_pointer_cap_holds_a_pinned_pointer_too(store):
     pinned = store.post("jarvis", "tip", {"target": "console", "caption": "pinned"}, pinned=True)
     for i in range(cv._MAX_POINTERS):

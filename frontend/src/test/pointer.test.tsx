@@ -155,6 +155,21 @@ describe('the pointer', () => {
     expect(screen.getByText('(not on this screen: decisions)')).toBeTruthy();
   });
 
+  it('does not re-render for a DOM change that leaves its target where it was', async () => {
+    anchor('console');
+    let commits = 0;
+    render(<React.Profiler id="pointer" onRender={() => { commits += 1; }}>
+      <PointerView pointer={readPointer(tip())} onClose={() => {}} />
+    </React.Profiler>);
+    expect(screen.getByTestId('pointer-ring')).toBeTruthy();
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    const settled = commits;
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => { document.body.appendChild(document.createElement('div')); await new Promise((r) => setTimeout(r, 0)); });
+    }
+    expect(commits).toBe(settled);
+  });
+
   it('treats a target under another layer as not on this screen', () => {
     const el = anchor('decisions');
     const ambient = document.createElement('div');
