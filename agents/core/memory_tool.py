@@ -22,13 +22,16 @@ a few facts per turn, with no audit record. ``memory`` is the direct write:
   untrusted content (an inbound message, web content, a tainted recall) is refused, so an
   injected instruction cannot make itself permanent;
 * every write appends an intent-log record (``memory.write``: the actor, what changed,
-  per target and action, and a hash of each fact — never the text, because the intent
-  log survives "forget me") carrying an undo ref. The ring's previous contents are kept
-  under that ref in a purgeable store beside the rings (:class:`UndoStore`), so a forget
-  deletes them too. :func:`undo` restores a write while nothing has changed since, and is
-  recorded the same way; ``POST /api/memory/core/undo`` is the owner's door;
-* a write leaves a ``memory_updated`` row in the tool trail (targets, actions and counts,
-  never text);
+  per target and action — never the text, nor a hash of it, because the intent log
+  survives "forget me" and a short fact is guessed back from its hash) carrying an undo
+  ref. A write whose record cannot be saved is put back, and the put-back is recorded
+  (``memory.write_reverted``): the intent log may keep the failed record and save it with
+  its next one. The ring's previous contents are kept under that ref in a purgeable store
+  beside the rings (:class:`UndoStore`), so a forget deletes them too. :func:`undo`
+  restores a write while nothing has changed since, and is recorded the same way;
+  ``POST /api/memory/core/undo`` is the owner's door;
+* a write leaves a ``memory_updated`` row in the tool trail (targets and actions, never
+  text); a call that changes nothing leaves none;
 * in safe mode (H490) memory reads as switched off: the tool refuses and says so.
 
 The prompt's core block is frozen per session (it keeps the prompt cache), so a write
@@ -107,13 +110,18 @@ class MemoryToolError(ValueError):
 # ── the facts ────────────────────────────────────────────────────────────────
 
 def _clean_text(raw: Any, index: int, field: str) -> str:
+    from .security.quarantine import strip_format_chars
+
     if not isinstance(raw, str):
         raise MemoryToolError("memory_bad_text", f"operation {index}: {field} must be text")
     if len(raw) > MAX_FACT_CHARS * 4:
         raise MemoryToolError("memory_text_too_long",
                               f"operation {index}: {field} is over {MAX_FACT_CHARS} characters")
     text = " ".join(raw.split())
-    if any(unicodedata.category(ch) in ("Cc", "Cf", "Co", "Cn") for ch in text):
+    # The invisible characters the scanner deletes before it reads (variation selectors,
+    # Hangul fillers, a blank braille cell) could carry a payload no one sees in the panel.
+    if (any(unicodedata.category(ch) in ("Cc", "Cf", "Co", "Cn", "Cs") for ch in text)
+            or strip_format_chars(text) != text):
         raise MemoryToolError("memory_bad_text",
                               f"operation {index}: {field} holds a control or invisible character")
     if not text:
@@ -134,7 +142,9 @@ def _scan(text: str, index: int) -> None:
 
 
 def _match(facts: list[str], old_text: str, index: int) -> int:
-    hits = [pos for pos, fact in enumerate(facts) if old_text in fact]
+    # old_text is whitespace-normalised, and so is each fact, as the prompt shows it: a fact
+    # another writer saved with a newline or a run of spaces can still be quoted.
+    hits = [pos for pos, fact in enumerate(facts) if old_text in " ".join(fact.split())]
     if not hits:
         raise MemoryToolError("memory_no_match", f"operation {index}: no saved fact contains old_text")
     if len(hits) > 1:
@@ -145,8 +155,9 @@ def _match(facts: list[str], old_text: str, index: int) -> int:
 
 def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]) -> tuple[dict, list[dict]]:
     """The rings after *operations*, checked in full before anything is written, and one
-    row per applied operation (``action``, ``target``, ``fact_sha256``). Raises
-    :class:`MemoryToolError`; an add that is already saved is recorded as ``unchanged``."""
+    row per applied operation (``action``, ``target``: no digest of the fact, which the
+    intent log would keep past a forget). Raises :class:`MemoryToolError`; an add that is
+    already saved is recorded as ``unchanged``."""
     if not isinstance(operations, list):
         raise MemoryToolError("memory_bad_operations", "operations must be a list")
     if len(operations) > MAX_OPERATIONS:
@@ -176,7 +187,7 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
             _scan(text, index)
         if action == "add":
             if text in facts:
-                rows.append({"action": "unchanged", "target": target, "fact_sha256": _sha(text)})
+                rows.append({"action": "unchanged", "target": target})
                 continue
             if len(facts) >= cap[target]:
                 raise MemoryToolError("memory_full",
@@ -186,12 +197,13 @@ def plan(operations: Any, rings: Mapping[str, list[str]], cap: Mapping[str, int]
         else:
             pos = _match(facts, old, index)
             if action == "remove":
-                rows.append({"action": "remove", "target": target, "fact_sha256": _sha(facts.pop(pos))})
+                facts.pop(pos)
+                rows.append({"action": "remove", "target": target})
                 continue
             if text != facts[pos] and text in facts:
                 raise MemoryToolError("memory_duplicate", f"operation {index}: that fact is already saved")
             facts[pos] = text
-        rows.append({"action": action, "target": target, "fact_sha256": _sha(text)})
+        rows.append({"action": action, "target": target})
     return after, rows
 
 
@@ -203,12 +215,20 @@ def _ring_sha(facts: list[str]) -> str:
     return _sha(json.dumps(facts, ensure_ascii=False))
 
 
+def _moved(entry: Mapping, rings: Mapping[str, list[str]]) -> str | None:
+    """The first ring that changed after *entry*'s write, or None while undo restores it."""
+    for target, digest in (entry.get("after_sha256") or {}).items():
+        if target in rings and _ring_sha(rings[target]) != digest:
+            return target
+    return None
+
+
 # ── undo ─────────────────────────────────────────────────────────────────────
 
 class UndoStore:
     """The rings as they were before each write, by ref, beside the rings themselves so a
     forget deletes them with the rings (the intent log, which survives it, holds only the
-    ref and hashes)."""
+    ref, targets and actions)."""
 
     def __init__(self, path: Path | None = None, keep: int = UNDO_KEEP) -> None:
         self._path = path
@@ -240,10 +260,14 @@ class UndoStore:
         with self._lock:
             return next((row for row in self._load() if row.get("ref") == ref), None)
 
-    def recent(self, limit: int = 20) -> list[dict]:
-        """The newest undoable writes: ref, time and targets (never the text)."""
+    def recent(self, limit: int = 20, rings: Mapping[str, list[str]] | None = None) -> list[dict]:
+        """The newest kept writes: ref, time and targets (never the text). Given the rings as
+        they are now, only the writes :func:`undo` would still restore."""
         with self._lock:
-            rows = self._load()[-max(0, int(limit)):]
+            rows = self._load()
+        if rings is not None:
+            rows = [row for row in rows if _moved(row, rings) is None]
+        rows = rows[-max(0, int(limit)):]
         return [{"ref": row.get("ref"), "ts": row.get("ts"), "targets": sorted(row.get("before") or {})}
                 for row in reversed(rows)]
 
@@ -255,6 +279,17 @@ class UndoStore:
             kept = [row for row in rows if row.get("ref") != ref]
             if len(kept) != len(rows):
                 atomic_write_json(self.path(), kept)
+
+    def clear(self) -> bool:
+        """Drop every kept write (a forget): an undo must not write back what it erased.
+        True when there was one to drop."""
+        from .persistence.json_store import atomic_write_json
+
+        with self._lock:
+            if not self._load():
+                return False
+            atomic_write_json(self.path(), [])
+            return True
 
 
 UNDO = UndoStore()
@@ -269,6 +304,19 @@ def _record(audit: Any, actor: str, action: str, why: str, ref: str, metadata: d
     audit.record(actor=actor, action=action, why=why, cause=ref, metadata=metadata)
 
 
+def _record_put_back(audit: Any, actor: str, action: str, ref: str, targets: list[str]) -> None:
+    """Record that a change whose record failed was put back. The intent log appends a
+    record before it saves it, so a failed save can still reach the disk with the next
+    record; this one then follows it. Best effort: the caller raises the failure anyway."""
+    if audit is None or not callable(getattr(audit, "record", None)):
+        return
+    try:
+        audit.record(actor=actor, action=action, why="its record could not be saved, so it was put back",
+                     cause=ref, metadata={"ref": ref, "targets": targets})
+    except Exception:
+        logger.warning("memory: the put-back of %s could not be recorded", ref, exc_info=True)
+
+
 def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]]) -> None:
     """Write the changed rings by compare-and-set; restore the ones written when a later
     one fails, so the call is all or nothing."""
@@ -277,31 +325,38 @@ def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, li
         if after[target] == before[target]:
             continue
         ring = getattr(living, TARGETS[target])
+        saved = True
         try:
             ok = ring.compare_and_set(before[target], after[target])
         except Exception:
             logger.warning("memory: the %s ring could not be written", target, exc_info=True)
-            ok = False
+            ok = saved = False
         if not ok:
-            for done in reversed(written):
-                try:
-                    getattr(living, TARGETS[done]).compare_and_set(after[done], before[done])
-                except Exception:
-                    logger.error("memory: the %s ring could not be restored after a failed write", done)
+            _revert(living, {done: after[done] for done in reversed(written)}, before)
+            if not saved:
+                raise MemoryToolError("memory_write_failed", "the memory could not be saved")
             raise MemoryToolError("memory_changed_meanwhile",
                                   "the memory changed while this call ran (a forget or another write); "
                                   "read it and try again")
         written.append(target)
 
 
-def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]]) -> None:
-    """Put back rings a committed write changed, when its record could not be made."""
+def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]]) -> bool:
+    """Put back rings a write changed, when the call cannot keep it. False, and logged, when
+    a ring could not be put back (another writer moved it in between, or it cannot be
+    saved): that write stays."""
+    restored = True
     for target in written:
-        if written[target] != original[target]:
-            try:
-                getattr(living, TARGETS[target]).compare_and_set(written[target], original[target])
-            except Exception:
-                logger.error("memory: the %s ring could not be restored after an unrecorded write", target)
+        if written[target] == original[target]:
+            continue
+        try:
+            ok = getattr(living, TARGETS[target]).compare_and_set(written[target], original[target])
+        except Exception:
+            ok = False
+        if not ok:
+            logger.error("memory: the %s ring could not be put back; the write it holds stays", target)
+            restored = False
+    return restored
 
 
 def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
@@ -315,16 +370,18 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
     with _WRITE_LOCK:
         now = {target: getattr(living, TARGETS[target]).list() for target in TARGETS}
         before = {t: list(entry["before"].get(t, now[t])) for t in TARGETS}
-        for target, digest in (entry.get("after_sha256") or {}).items():
-            if target in now and _ring_sha(now[target]) != digest:
-                raise MemoryToolError("memory_changed_meanwhile",
-                                      f"{target} changed after that write; it cannot be undone safely")
+        moved = _moved(entry, now)
+        if moved is not None:
+            raise MemoryToolError("memory_changed_meanwhile",
+                                  f"{moved} changed after that write; it cannot be undone safely")
         _commit(living, now, before)
+        targets = sorted(t for t in TARGETS if before[t] != now[t])
         try:
             _record(audit, actor, "memory.undo", "the owner undid a memory write", str(ref),
-                    {"ref": str(ref), "targets": sorted(t for t in TARGETS if before[t] != now[t])})
+                    {"ref": str(ref), "targets": targets})
         except BaseException:
-            _revert(living, before, now)
+            if _revert(living, before, now):
+                _record_put_back(audit, actor, "memory.undo_reverted", str(ref), targets)
             raise
         store.drop(str(ref))
     return {"ok": True, "ref": str(ref), "memory": before["memory"], "user": before["user"]}
@@ -332,7 +389,7 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
 
 # ── the tool ─────────────────────────────────────────────────────────────────
 
-def _record_event(rows: list[dict]) -> None:
+def _record_event(rows: list[dict], changed: list[str]) -> None:
     from .observability.tool_events import TOOL_EVENTS
     from .tool_rpc import current_tool_actor
 
@@ -340,7 +397,7 @@ def _record_event(rows: list[dict]) -> None:
         "event": "memory_updated",
         "tool": TOOL_NAME,
         "agent_id": current_tool_actor(),
-        "targets": sorted({row["target"] for row in rows if row["action"] != "unchanged"}),
+        "targets": changed,
         "actions": [row["action"] for row in rows],
     })
 
@@ -425,6 +482,7 @@ def register_memory_tool(
                 changed = sorted(t for t in TARGETS if after[t] != before[t])
                 ref = ""
                 if changed:
+                    sink, actor = audit(), current_tool_actor()
                     ref = uuid.uuid4().hex[:16]
                     undo_store.put({"ref": ref, "ts": time.time(), "before": {t: before[t] for t in changed},
                                     "after_sha256": {t: _ring_sha(after[t]) for t in changed}})
@@ -434,12 +492,12 @@ def register_memory_tool(
                         undo_store.drop(ref)
                         raise
                     try:
-                        _record(audit(), current_tool_actor(), "memory.write",
-                                "the model changed its long-term memory", ref,
+                        _record(sink, actor, "memory.write", "the model changed its long-term memory", ref,
                                 {"ref": ref, "targets": changed, "operations": rows})
                     except BaseException:
                         # A write is never kept unrecorded: put the rings back.
-                        _revert(mem, after, before)
+                        if _revert(mem, after, before):
+                            _record_put_back(sink, actor, "memory.write_reverted", ref, changed)
                         undo_store.drop(ref)
                         raise
         except MemoryToolError as exc:
@@ -447,7 +505,8 @@ def register_memory_tool(
         except Exception:
             logger.warning("memory: the write failed", exc_info=True)
             return {"ok": False, "reason": "memory_write_failed", "detail": "the memory could not be saved"}
-        _record_event(rows)
+        if changed:
+            _record_event(rows, changed)
         reply: dict[str, Any] = {"ok": True, "changed": changed, "memory": after["memory"], "user": after["user"]}
         if ref:
             reply["undo_ref"] = ref

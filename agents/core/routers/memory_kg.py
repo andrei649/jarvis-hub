@@ -878,8 +878,9 @@ async def memory_core():
     living = _living_memory()
     if living is None:
         return nocache_json({"enabled": False, "memory": [], "user": [], "undoable": []})
-    return nocache_json({"enabled": True, "memory": living.core.list(), "user": living.user_core.list(),
-                         "undoable": UNDO.recent()})
+    memory, user = living.core.list(), living.user_core.list()
+    return nocache_json({"enabled": True, "memory": memory, "user": user,
+                         "undoable": UNDO.recent(rings={"memory": memory, "user": user})})
 
 
 @router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])

@@ -10,7 +10,9 @@ has changed since.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,14 +36,36 @@ from agents.core.tool_rpc import ToolRPCServer  # noqa: E402
 
 
 class _Audit:
-    def __init__(self, fail=False):
+    def __init__(self):
         self.rows = []
-        self.fail = fail
 
     def record(self, actor, action, why, cause="", metadata=None):
-        if self.fail:
-            raise OSError("intent log unwritable")
         self.rows.append({"actor": actor, "action": action, "why": why, "cause": cause, "metadata": metadata})
+
+
+def _intent_log(tmp_path, failures=1):
+    """The real intent log, whose next *failures* saves fail: the record it appended stays
+    in memory and is written with the next record that saves."""
+    from agents.core.security.anchor import IntentLog
+
+    log = IntentLog(tmp_path / "intent_log.json", secret_key="k")
+    save, left = log._save, [failures]
+
+    def flaky_save():
+        if left[0] > 0:
+            left[0] -= 1
+            raise OSError("disk full")
+        save()
+
+    log._save = flaky_save
+    return log
+
+
+def _chain(tmp_path):
+    """The intent log's actions as they reached the disk, oldest first."""
+    from agents.core.security.anchor import IntentLog
+
+    return [entry["action"] for entry in reversed(IntentLog(tmp_path / "intent_log.json", secret_key="k").list())]
 
 
 def _living(tmp_path, cap=20, core=(), user=()):
@@ -90,7 +114,7 @@ def test_add_replace_and_remove_on_a_working_copy():
     assert rings == {"memory": ["uses uv", "prefers tabs"], "user": ["likes brevity"]}    # untouched
     assert [(r["action"], r["target"]) for r in rows] == [
         ("add", "memory"), ("replace", "memory"), ("remove", "user"), ("add", "user")]
-    assert all(len(r["fact_sha256"]) == 64 and "text" not in r for r in rows)
+    assert all(set(r) == {"action", "target"} for r in rows)       # no text, and no guessable digest of it
 
 
 def test_an_add_already_saved_changes_nothing():
@@ -111,6 +135,12 @@ def test_an_add_already_saved_changes_nothing():
     ([_op("add")], "memory_bad_text"),
     ([_op("add", text="a​b")], "memory_bad_text"),
     ([_op("add", text="a\x1b[31mb")], "memory_bad_text"),
+    ([_op("add", text="likes tea\ufe0f\ufe01")], "memory_bad_text"),
+    ([_op("add", text="likes tea\U000e0100")], "memory_bad_text"),
+    ([_op("add", text="likes\u034ftea")], "memory_bad_text"),
+    ([_op("add", text="likes\u3164tea")], "memory_bad_text"),
+    ([_op("add", text="likes\u2800tea")], "memory_bad_text"),
+    ([_op("add", text="a\ud800b")], "memory_bad_text"),
     ([_op("add", text="x" * (memory_tool.MAX_FACT_CHARS + 1))], "memory_text_too_long"),
     ([_op("add", text="x" * (memory_tool.MAX_FACT_CHARS * 5))], "memory_text_too_long"),
     ([_op("add", text=" " * (memory_tool.MAX_FACT_CHARS * 5) + "x")], "memory_text_too_long"),
@@ -135,6 +165,14 @@ def test_the_longest_fact_is_accepted_and_a_replace_may_keep_its_text():
     after, _ = plan([_op("add", text=text), _op("replace", old_text="uses", text="uses uv")],
                     {"memory": ["uses uv"], "user": []}, {"memory": 20, "user": 20})
     assert after["memory"] == ["uses uv", text]
+
+
+def test_old_text_matches_a_fact_another_writer_saved_with_extra_whitespace():
+    rings = {"memory": ["2026-09-25: run tests\nbefore pushing", "uses  uv"], "user": []}
+    after, _ = plan([_op("remove", old_text="run tests before pushing"),
+                     _op("replace", old_text="uses  uv", text="uses uv and ruff")],
+                    rings, {"memory": 20, "user": 20})
+    assert after["memory"] == ["uses uv and ruff"]
 
 
 # ── the ring's compare-and-set ───────────────────────────────────────────────────
@@ -175,6 +213,7 @@ async def test_an_owner_turn_writes_both_rings_records_it_and_can_undo_it(rig):
     assert row["action"] == "memory.write" and row["actor"] == "jarvis" and row["cause"] == reply["undo_ref"]
     assert row["metadata"]["targets"] == ["memory", "user"]
     assert "the repo uses uv" not in json.dumps(row)                 # the intent log never holds the text
+    assert hashlib.sha256(b"the repo uses uv").hexdigest() not in json.dumps(row)     # nor its hash
     assert rig.store.recent()[0] == {"ref": reply["undo_ref"], "ts": rig.store.recent()[0]["ts"],
                                      "targets": ["memory", "user"]}
     result = undo(reply["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
@@ -194,11 +233,21 @@ async def test_a_call_with_no_operations_reads_and_records_nothing(rig):
     assert rig.audit.rows == []
 
 
+@pytest.mark.parametrize("ops", [
+    [_op("add", text="uses uv")],
+    [_op("replace", old_text="uv", text="uses uv")],
+    [_op("add", "user", text="x"), _op("remove", "user", old_text="x")],
+])
 @pytest.mark.asyncio
-async def test_an_add_already_saved_records_nothing(rig):
-    rig.living.core.put("kept")
-    reply = await _call(rig, {"operations": [_op("add", text="kept")]})
-    assert reply["changed"] == [] and "undo_ref" not in reply and rig.audit.rows == []
+async def test_a_call_that_changes_nothing_records_nothing(rig, monkeypatch, ops):
+    from agents.core.observability.tool_events import TOOL_EVENTS
+
+    events = []
+    monkeypatch.setattr(TOOL_EVENTS, "record", events.append)
+    rig.living.core.put("uses uv")
+    reply = await _call(rig, {"operations": ops})
+    assert reply["changed"] == [] and "undo_ref" not in reply
+    assert rig.audit.rows == [] and events == [] and rig.store.recent() == []
 
 
 @pytest.mark.parametrize("posture,origin,reason", [
@@ -276,13 +325,38 @@ async def test_an_empty_operation_list_is_a_read(rig):
 
 
 @pytest.mark.asyncio
-async def test_a_record_that_fails_puts_the_rings_back(rig):
-    rig.state["audit"] = _Audit(fail=True)
+async def test_a_record_that_fails_puts_the_rings_back_and_the_log_says_so(rig, tmp_path):
+    rig.state["audit"] = log = _intent_log(tmp_path)
     rig.living.user_core.put("before")
     reply = await _call(rig, {"operations": [_op("add", text="x"), _op("remove", "user", old_text="before")]})
     assert reply["reason"] == "memory_write_failed"
     assert rig.living.core.list() == [] and rig.living.user_core.list() == ["before"]
     assert rig.store.recent() == []
+    log.record(actor="owner", action="other", why="the next record")
+    # The failed record reached the disk with the next save; the put-back follows it.
+    assert _chain(tmp_path) == ["memory.write", "memory.write_reverted", "other"]
+    write, put_back = (entry for entry in reversed(log.list()) if entry["action"].startswith("memory."))
+    assert put_back["cause"] == write["cause"] and put_back["metadata"]["targets"] == ["memory", "user"]
+
+
+@pytest.mark.asyncio
+async def test_a_put_back_that_fails_is_logged_and_not_recorded(rig, tmp_path, caplog):
+    log = _intent_log(tmp_path)
+    record = log.record
+
+    def record_after_a_concurrent_put(**kwargs):
+        rig.living.core.put("from the post-turn review")     # lands between the commit and the record
+        return record(**kwargs)
+
+    log.record = record_after_a_concurrent_put
+    rig.state["audit"] = log
+    with caplog.at_level(logging.ERROR, logger="jarvis.memory_tool"):
+        reply = await _call(rig, {"operations": [_op("add", text="x")]})
+    assert reply["reason"] == "memory_write_failed"
+    assert rig.living.core.list() == ["x", "from the post-turn review"]
+    assert "could not be put back" in caplog.text
+    record(actor="owner", action="other", why="the next record")
+    assert _chain(tmp_path) == ["memory.write", "other"]              # no put-back claimed
 
 
 @pytest.mark.asyncio
@@ -310,6 +384,17 @@ async def test_a_second_ring_that_fails_restores_the_first(rig, monkeypatch):
     reply = await _call(rig, {"operations": [_op("add", text="m"), _op("add", "user", text="v")]})
     assert reply["reason"] == "memory_changed_meanwhile"
     assert rig.living.core.list() == [] and rig.audit.rows == []
+
+
+@pytest.mark.asyncio
+async def test_a_ring_that_cannot_be_saved_is_a_failed_write_not_a_race(rig, monkeypatch):
+    def unsavable(expected, facts):
+        raise OSError("user_core.json is read-only")
+
+    monkeypatch.setattr(rig.living.user_core, "compare_and_set", unsavable)
+    reply = await _call(rig, {"operations": [_op("add", text="m"), _op("add", "user", text="v")]})
+    assert reply["reason"] == "memory_write_failed"
+    assert rig.living.core.list() == [] and rig.audit.rows == [] and rig.store.recent() == []
 
 
 @pytest.mark.asyncio
@@ -352,11 +437,47 @@ def test_undo_without_memory_or_record_refuses(rig):
 
 
 @pytest.mark.asyncio
-async def test_an_undo_that_cannot_be_recorded_is_put_back(rig):
+async def test_an_undo_that_cannot_be_recorded_is_put_back(rig, tmp_path):
     reply = await _call(rig, {"operations": [_op("add", text="x")]})
+    log = _intent_log(tmp_path)
     with pytest.raises(OSError):
-        undo(reply["undo_ref"], living=rig.living, audit=_Audit(fail=True), store=rig.store)
+        undo(reply["undo_ref"], living=rig.living, audit=log, store=rig.store)
     assert rig.living.core.list() == ["x"] and rig.store.recent()[0]["ref"] == reply["undo_ref"]
+    undo(reply["undo_ref"], living=rig.living, audit=log, store=rig.store)           # a retry
+    assert rig.living.core.list() == []
+    assert _chain(tmp_path) == ["memory.undo", "memory.undo_reverted", "memory.undo"]
+
+
+@pytest.mark.asyncio
+async def test_only_the_writes_undo_would_restore_are_listed(rig):
+    first = await _call(rig, {"operations": [_op("add", text="a")]})
+    second = await _call(rig, {"operations": [_op("add", text="b")]})
+
+    def rings():
+        return {"memory": rig.living.core.list(), "user": rig.living.user_core.list()}
+
+    assert [row["ref"] for row in rig.store.recent(rings=rings())] == [second["undo_ref"]]
+    rig.living.core.put("2026-09-25: a lesson")                      # the daily reflector
+    assert rig.store.recent(rings=rings()) == []
+    assert [row["ref"] for row in rig.store.recent()] == [second["undo_ref"], first["undo_ref"]]
+
+
+@pytest.mark.asyncio
+async def test_a_forget_drops_the_undo_refs_with_the_rings(rig, monkeypatch):
+    from agents.core import data_purge
+
+    rig.living.user_core.put("has type 1 diabetes")
+    reply = await _call(rig, {"operations": [_op("remove", "user", old_text="diabetes")]})
+    monkeypatch.setattr(memory_tool, "UNDO", rig.store)
+    living = SimpleNamespace(clear=lambda: (rig.living.core.clear(), rig.living.user_core.clear()))
+    cleared, _failed = await data_purge.clear_live_memory(SimpleNamespace(
+        cognition=SimpleNamespace(module=lambda name: living)))
+    assert "memory_undo" in cleared and rig.store.recent() == []
+    with pytest.raises(MemoryToolError) as caught:                   # a panel loaded before the forget
+        undo(reply["undo_ref"], living=rig.living, audit=rig.audit, store=rig.store)
+    assert caught.value.reason == "memory_undo_unknown" and rig.living.user_core.list() == []
+    cleared, _failed = await data_purge.clear_live_memory(SimpleNamespace())
+    assert "memory_undo" not in cleared                              # nothing to drop, nothing claimed
 
 
 def test_the_undo_store_keeps_the_newest(tmp_path):
@@ -419,3 +540,7 @@ async def test_the_owner_routes_read_and_undo(rig, monkeypatch):
     rig.living.core.put("y")
     again = client.post("/api/memory/core/undo", json={"ref": reply["undo_ref"]}, headers={"X-Admin-Token": "t"})
     assert again.status_code == 404
+    await _call(rig, {"operations": [_op("add", text="z")]})
+    assert len(client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()["undoable"]) == 1
+    rig.living.core.put("a lesson")                   # the ring moved: that write can no longer be undone
+    assert client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()["undoable"] == []

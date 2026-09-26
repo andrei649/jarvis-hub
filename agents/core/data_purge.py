@@ -542,6 +542,16 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             cleared.append("cognition_memory")
         except Exception as exc:
             _note_failure("cognition_memory", exc)
+    # H314: the rings as they were before each write of the model's memory tool. The
+    # final sweep empties the file too, but an undo in between would write the facts this
+    # forget just cleared back into the live rings.
+    try:
+        from agents.core.memory_tool import UNDO
+
+        if UNDO.clear():
+            cleared.append("memory_undo")
+    except Exception as exc:
+        _note_failure("memory_undo", exc)
     # H315: the agent's checklists are process-wide and carry conversation text
     # ("book the flight for Ana"), so a forget drops every one of them. Named in
     # `cleared` only when there was a plan to drop.
