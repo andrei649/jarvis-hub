@@ -11,9 +11,10 @@ six declared settings rows (category ``loadset``), each a comma list of names:
 - ``mcp_disabled`` / ``mcp_only``.
 
 A name in ``*_disabled`` does not load; a non-empty ``*_only`` loads only the names it
-lists. They are read at boot by the skill loader, the plugin gate and the MCP load,
-and the plugin toggle writes them, so a toggle survives a restart. The per-plugin
-``plugins.<id>`` switches of the settings page count too: off is off.
+lists. They are read at boot by the skill loader, the plugin gate, the plugin build and
+the MCP load. The per-plugin ``plugins.<id>`` switches of the settings page count too:
+off is off. The plugin toggle writes a plugin's switch, or ``plugins_disabled`` for one
+without a switch, so a toggle survives a restart.
 
 The lists only ever take away. A name that is not installed is reported as unknown
 and nothing else happens: nothing is installed, approved, registered or written to the
@@ -136,17 +137,33 @@ def status(kind: str) -> dict:
         return {**lists, "skipped": sorted(_skipped[kind]), "unknown": sorted(_unknown[kind])}
 
 
-def persist_plugin(plugin_id: str, enabled: bool) -> bool:
-    """The plugin toggle, kept across a restart: out of (or into) ``plugins_disabled``,
-    into ``plugins_only`` when one is declared, and its own settings switch if it has one."""
-    from .settings_db import get_category, put_category
+def persist_plugin(plugin_id: str, enabled: bool) -> list[str]:
+    """The plugin toggle, kept across a restart, in one place: a plugin with a settings
+    switch keeps its choice there, one without keeps it in ``plugins_disabled``. Switched
+    on, it also leaves ``plugins_disabled`` and joins a declared ``plugins_only``.
 
-    lists = {"disabled": parse_names(_setting("plugins_disabled")), "only": parse_names(_setting("plugins_only"))}
-    disabled = [n for n in lists["disabled"] if n != plugin_id] + ([] if enabled else [plugin_id])
-    write = {"plugins_disabled": ",".join(disabled)}
-    if enabled and lists["only"] and plugin_id not in lists["only"]:
-        write["plugins_only"] = ",".join([*lists["only"], plugin_id])
-    updated, skipped = put_category(CATEGORY, write)
-    if any(row.get("key") == plugin_id and row.get("kind") == "toggle" for row in get_category("plugins")):
-        put_category("plugins", {plugin_id: bool(enabled)})
-    return updated == len(write) and not skipped
+    The lists are read fail-closed: a read that fails raises ``SettingsUnreadable``
+    rather than writing back a list of nothing. Returns the ``category.key`` names
+    written, or ``[]`` when the store refused the write."""
+    from .settings_db import get_category, put_category, read_setting
+
+    disabled = parse_names(read_setting(CATEGORY, "plugins_disabled")[1])
+    only = parse_names(read_setting(CATEGORY, "plugins_only")[1])
+    switch = any(row.get("key") == plugin_id and row.get("kind") == "toggle" for row in get_category("plugins"))
+    kept = [n for n in disabled if n != plugin_id] + ([] if enabled or switch else [plugin_id])
+    writes: dict[str, dict] = {CATEGORY: {}}
+    if kept != disabled or not switch:
+        writes[CATEGORY]["plugins_disabled"] = ",".join(kept)
+    if enabled and only and plugin_id not in only:
+        writes[CATEGORY]["plugins_only"] = ",".join([*only, plugin_id])
+    if switch:
+        writes["plugins"] = {plugin_id: bool(enabled)}
+    changed: list[str] = []
+    for category, values in writes.items():
+        if not values:
+            continue
+        updated, skipped = put_category(category, values)
+        if updated != len(values) or skipped:
+            return []
+        changed += [f"{category}.{key}" for key in values]
+    return changed

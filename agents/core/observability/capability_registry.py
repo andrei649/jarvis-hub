@@ -128,9 +128,10 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
     """Derive plugin capabilities from the static manifest registry.
 
     ``orch`` is optional — the manifest-derived fields (state, policy) need no
-    orchestrator. When one is given, this also resolves each plugin's *live*
-    runtime honesty (Live-vs-Plumbing: is it actually live right now, or a mock/
-    degraded fallback awaiting config?) into ``detail``, mirroring the same
+    orchestrator. When one is given, the state follows its gate's switch (H285),
+    and this also resolves each plugin's *live* runtime honesty (Live-vs-Plumbing:
+    is it actually live right now, or a mock/degraded fallback awaiting config?)
+    into ``detail``, mirroring the same
     verdict the `/plugins` HUD listing renders — so the canonical capability
     board (`/api/capabilities`) doesn't imply a plugin is real when it's a mock.
     """
@@ -145,6 +146,9 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
         live_plugin_for,
         runtime_configuration,
     )
+    # H285: the live gate holds its own manifests, which a toggle and the load set switch.
+    live = getattr(getattr(orch, "permission_gate", None), "plugins", None)
+    live = live if isinstance(live, dict) else {}
     out = []
     for pid, m in sorted(BUILTIN_PLUGINS.items()):
         cap = plugin_capability_manifest(m)
@@ -169,7 +173,7 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
             CapabilityRecord(
                 id=f"plugin:{pid}",
                 kind="plugin",
-                state=WIRED if getattr(m, "enabled", True) else SEAM,
+                state=WIRED if getattr(live.get(pid, m), "enabled", True) else SEAM,
                 owner_agent=(m.agents_served[0] if getattr(m, "agents_served", None) else ""),
                 description=cap.description,
                 inputs=cap.inputs,

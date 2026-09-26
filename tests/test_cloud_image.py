@@ -473,6 +473,33 @@ async def test_execution_rechecks_heavy_profile_after_approval(cloud, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_a_plugin_switched_off_at_the_live_gate_cannot_submit(cloud, monkeypatch):
+    """H285 review F2: the gate holds its own manifests (the toggle and the load set
+    switch those), so the runtime asks the gate it was wired with."""
+    from types import SimpleNamespace
+
+    from agents.core import cloud_image_runtime
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
+    from agents.core.plugin_gate import BUILTIN_PLUGINS, PermissionGate
+
+    gate = PermissionGate()
+    wired = {}
+    monkeypatch.setattr(cloud_image_runtime, "CloudImageRuntime", lambda *a, **kw: wired.update(kw) or cloud.runtime)
+    AutonomyCoordinator(SimpleNamespace(autonomy=cloud.worker, permission_gate=gate,
+                                        secret_broker=SimpleNamespace(redact=lambda x: x)))._wire_cloud_image(
+        TaskExecutor())
+    assert wired["gate"] is gate
+    cloud.runtime.gate = gate
+    gate.disable("cloud-image")
+    assert BUILTIN_PLUGINS["cloud-image"].enabled is True
+    with pytest.raises(ValueError):
+        cloud.runtime.submit("test", {}, "user")
+    assert cloud.queue.list() == []
+    assert cloud.runtime.status()["configured"] is False
+
+
+@pytest.mark.asyncio
 async def test_disabled_manifest_cannot_submit(cloud, monkeypatch):
     from agents.core.plugin_gate import BUILTIN_PLUGINS
 

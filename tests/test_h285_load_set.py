@@ -143,19 +143,22 @@ def test_a_skill_can_be_named_by_its_folder(tmp_path, monkeypatch):
 
 def test_naming_an_uninstalled_skill_installs_or_approves_nothing(tmp_path, monkeypatch):
     """Narrowing only: the list is never a way around skill.install."""
-    from agents.core.skills.loader import SKILLS_DIR
+    from agents.core.skills.approval import SkillApprovalStore
+    from agents.core.skills.loader import SKILLS_DIR, SkillLoader
 
     before = sorted(p.name for p in SKILLS_DIR.iterdir())
     home = tmp_path / "Nerva"
     (home / "skills").mkdir(parents=True)
     monkeypatch.setenv("JARVIS_USER_HOME", str(home))
     _declare(skills_only="weather-pro,brief")
-    loader, skills = _discover()
+    store = SkillApprovalStore(tmp_path / "skill_approvals.json")
+    skills = SkillLoader(approval_store=store).discover()
     assert "weather-pro" not in skills
     assert sorted(p.name for p in SKILLS_DIR.iterdir()) == before
     assert list((home / "skills").iterdir()) == []
-    assert not any("weather-pro" in str(p) for p in loader._approval_store.list() or []) \
-        if hasattr(loader._approval_store, "list") else True
+    assert not store.tracks_path(SKILLS_DIR / "weather-pro")
+    assert not store.tracks_path(home / "skills" / "weather-pro")
+    assert not store.path.exists()                            # no approval row at all
     assert load_set.status("skills")["unknown"] == ["weather-pro"]
 
 
@@ -368,4 +371,199 @@ def test_only_an_explicit_off_switch_counts():
 
 def test_a_write_the_store_refuses_is_not_reported_as_kept(monkeypatch):
     monkeypatch.setattr(settings_db, "put_category", lambda cat, data: (0, list(data)))
-    assert load_set.persist_plugin("weather", False) is False
+    assert load_set.persist_plugin("weather", False) == []
+
+
+# ── review round ─────────────────────────────────────────────────────────────────
+
+def _manager(monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core import plugin_manager as pm
+    from agents.core.plugin_gate import PermissionGate
+
+    monkeypatch.setattr(pm, "load_hub_env", lambda: None)
+    monkeypatch.setattr(pm, "_oauth_init", lambda: None)
+    monkeypatch.setattr(pm, "_load_token", lambda provider: None)
+    orch = SimpleNamespace(get_setting=lambda key, default=None: default, permission_gate=PermissionGate())
+    manager = pm.PluginManager()
+    manager.build(orch)
+    return manager, orch
+
+
+def test_a_switched_off_plugin_is_not_built(monkeypatch):
+    """F1: the probes, the dashboard and WorldView reach orch.plugins without the gate."""
+    import asyncio
+
+    from agents.core.autonomy.watchers import EmailProbe
+
+    everything, _orch = _manager(monkeypatch)
+    assert {"gmail", "weather", "whatsapp", "oracle-bridge"} <= set(everything.plugins)
+    _declare(plugins_disabled="gmail,weather,whatsapp-bridge,oracle-bridge")
+    manager, orch = _manager(monkeypatch)
+    assert set(manager.plugins) == set(everything.plugins) - {"gmail", "weather", "whatsapp", "oracle-bridge"}
+    assert orch.oracle_bridge is None
+    assert asyncio.run(EmailProbe(gmail_plugin=manager.get("gmail"))()) == []
+
+
+def test_an_only_list_builds_just_what_it_names(monkeypatch):
+    _declare(plugins_only="news,whatsapp-bridge")
+    manager, _orch = _manager(monkeypatch)
+    assert set(manager.plugins) == {"news", "whatsapp"}
+
+
+def test_the_capability_board_reads_the_live_gate():
+    """F2: the gate holds its own manifests, so the board asks it, not the module table."""
+    from types import SimpleNamespace
+
+    from agents.core.observability.capability_registry import SEAM, WIRED, _plugin_records
+    from agents.core.plugin_gate import BUILTIN_PLUGINS, PermissionGate
+
+    gate = PermissionGate()
+    gate.disable("cloud-image")
+    assert BUILTIN_PLUGINS["cloud-image"].enabled is True
+    states = {r.id: r.state for r in _plugin_records(SimpleNamespace(permission_gate=gate, plugins={}))}
+    assert states["plugin:cloud-image"] == SEAM and states["plugin:news"] == WIRED
+
+
+def test_a_skill_switched_off_is_dropped_on_rediscovery():
+    """F3: a later pass that denies a skill takes out the earlier pass's registration."""
+    loader, normal = _discover()
+    victim = sorted(normal)[0]
+    _declare(skills_disabled=victim)
+    assert victim not in loader.discover()
+    assert load_set.status("skills")["skipped"] == [victim]
+
+
+def test_a_toggled_off_plugin_comes_back_with_its_settings_switch(monkeypatch):
+    """F4: the toggle keeps its choice in one place, so the settings page can undo it."""
+    from agents.core.plugin_gate import PermissionGate
+
+    client, _orch = _toggle_client(monkeypatch)
+    assert client.put("/plugins/weather/toggle", headers={"X-Admin-Token": _TOKEN}).json()["enabled"] is False
+    assert PermissionGate().plugins["weather"].enabled is False
+    settings_db.put_category("plugins", {"weather": True})          # Settings > Plugins > Weather
+    assert PermissionGate().plugins["weather"].enabled is True
+
+
+def test_a_list_that_cannot_be_read_is_not_overwritten(monkeypatch):
+    """F5: a failed read is not a list of nothing to write back."""
+    import sqlite3
+
+    _declare(plugins_disabled="spotify,gmail,telegram")
+    client, _orch = _toggle_client(monkeypatch)
+    real = settings_db.get_conn
+
+    class _ReadFails:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, sql, *args):
+            if sql.startswith("SELECT value FROM settings") and args and args[0][0] == load_set.CATEGORY:
+                raise sqlite3.OperationalError("database is locked")
+            return self._conn.execute(sql, *args)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    monkeypatch.setattr(settings_db, "get_conn", lambda: _ReadFails(real()))
+    resp = client.put("/plugins/digest/toggle", headers={"X-Admin-Token": _TOKEN}).json()
+    assert resp["enabled"] is False and resp["persisted"] is False
+    monkeypatch.setattr(settings_db, "get_conn", real)
+    assert settings_db.get_value(load_set.CATEGORY, "plugins_disabled") == "spotify,gmail,telegram"
+
+
+def test_a_toggle_writes_an_audit_row(monkeypatch):
+    """F6: the toggle writes durable settings, so it leaves a SETTINGS_CHANGE row."""
+    from agents.core.security.types import SecurityEventType
+
+    client, orch = _toggle_client(monkeypatch)
+    client.put("/plugins/weather/toggle", headers={"X-Admin-Token": _TOKEN})
+    event = orch.audit.log.call_args.args[0]
+    assert event.event_type == SecurityEventType.SETTINGS_CHANGE
+    assert "weather" in event.content_preview and "plugins.weather" in event.content_preview
+
+
+def test_a_re_enable_that_cannot_be_audited_is_not_kept(monkeypatch):
+    from agents.core.plugin_gate import PermissionGate
+
+    client, orch = _toggle_client(monkeypatch)
+    headers = {"X-Admin-Token": _TOKEN}
+    assert client.put("/plugins/weather/toggle", headers=headers).json()["enabled"] is False
+    orch.audit.log.side_effect = RuntimeError("audit disk full")
+    resp = client.put("/plugins/weather/toggle", headers=headers)
+    assert resp.status_code == 503 and resp.json()["reason"] == "audit_failed"
+    assert orch.permission_gate.plugins["weather"].enabled is False
+    assert PermissionGate().plugins["weather"].enabled is False          # the next boot
+
+
+def test_a_disable_is_kept_even_when_unaudited(monkeypatch):
+    client, orch = _toggle_client(monkeypatch)
+    orch.audit.log.side_effect = RuntimeError("audit disk full")
+    resp = client.put("/plugins/weather/toggle", headers={"X-Admin-Token": _TOKEN}).json()
+    assert resp["enabled"] is False and resp["persisted"] is True
+
+
+def _config_set(name, value):
+    import io
+
+    from agents.cli.nerva import EXIT_OK, Context, main
+
+    out = io.StringIO()
+    ctx = Context(environ={}, out=out, err=io.StringIO(), inp=io.StringIO(""), client_factory=lambda env: None)
+    assert main(["config", "set", name, value], context=ctx) == EXIT_OK
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("name,value", [
+    ("loadset.skills_disabled", "brief"),
+    ("loadset.mcp_only", "fs"),
+    ("plugins.spotify", "off"),
+])
+def test_nerva_config_set_says_the_load_set_needs_a_restart(name, value):
+    """F7: the load set is read at boot; a running hub does not pick it up."""
+    assert "restart the hub to apply it" in _config_set(name, value)
+
+
+def test_nerva_config_set_keeps_saying_30_s_for_a_live_setting():
+    assert "30 s" in _config_set("llm.tool_loop_enabled", "on")
+
+
+def test_in_safe_mode_an_owner_skill_named_in_the_list_is_not_unknown(tmp_path, monkeypatch):
+    """F9: safe mode leaves the owner's folder unread (H275), so a name matching no
+    shipped skill may still name one of the owner's: it is not called unknown."""
+    from agents.core import safe_mode
+
+    home = tmp_path / "Nerva"
+    (home / "skills" / "my-skill").mkdir(parents=True)
+    monkeypatch.setenv("JARVIS_USER_HOME", str(home))
+    _declare(skills_disabled="my-skill")
+    _discover()
+    assert load_set.status("skills")["unknown"] == []                # installed, in the owner folder
+    monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+    try:
+        _discover()
+    finally:
+        safe_mode.reset()
+    assert load_set.status("skills")["unknown"] == []
+
+
+def test_a_discovery_that_raises_leaves_no_stale_lists():
+    """F10: a later single-skill load reads the lists as they are now."""
+    from agents.core.skills import signing
+
+    loader, normal = _discover()
+    victim = sorted(normal)[0]
+    path = Path(loader.skills[victim].path)
+    loader.skills.clear()
+
+    def boom(*_args, **_kwargs):
+        raise signing.SkillSigningMisconfigured("no signing key")
+
+    loader._load_skill = boom
+    with pytest.raises(signing.SkillSigningMisconfigured):
+        loader.discover()
+    del loader._load_skill
+    _declare(skills_disabled=victim)
+    loader._load_skill(path)
+    assert victim not in loader.skills

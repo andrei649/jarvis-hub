@@ -654,6 +654,13 @@ def _named(value: Any) -> str | None:
 _RESTART_SETTINGS = frozenset({("security", "sandbox_temp_dir")})
 
 
+def _applies_at_restart(category: str, key: str, kind: str) -> bool:
+    """A setting a running hub does not pick up. The H285 load set, and the plugin
+    switches it counts, are read at boot only (review-H285 F7)."""
+    return ((category, key) in _RESTART_SETTINGS or category == "loadset"
+            or (category == "plugins" and kind == "toggle"))
+
+
 def _withheld_admin(client: Any) -> bool:
     """The admin token is set and this client keeps it back: plain http off this machine
     would carry it in clear text (review-H273f m2)."""
@@ -910,7 +917,7 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
         shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)
-        when = ("restart the hub to apply it" if (category, key) in _RESTART_SETTINGS
+        when = ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
                 else "a running hub picks it up within 30 s")
         ctx.say(f"{ns.name} = {json.dumps(shown, ensure_ascii=False)}  ({when})")
         return EXIT_OK

@@ -1189,7 +1189,8 @@ class AutonomyCoordinator:
         redact = getattr(getattr(self._orch, 'secret_broker', None), 'redact', None)
         if worker is None or not callable(redact):
             return
-        runtime = CloudImageRuntime(worker, kernel=getattr(worker, 'kernel_gate', None), redact=redact)
+        runtime = CloudImageRuntime(worker, kernel=getattr(worker, 'kernel_gate', None), redact=redact,
+                                    gate=getattr(self._orch, 'permission_gate', None))
         previous_guard, previous_execute = executor.execution_guard, executor.resolve('plugin.egress')
 
         def guard(task):

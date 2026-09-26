@@ -99,9 +99,13 @@ class _Client(PluginHTTPClient):
 
 class CloudImageRuntime:
     def __init__(
-        self, worker, *, kernel, redact, root=None, key=None, resolver=None, transport_factory=None
+        self, worker, *, kernel, redact, root=None, key=None, resolver=None, transport_factory=None,
+        gate=None,
     ):
         self.worker, self.kernel, self.redact = worker, kernel, redact
+        # H285: the live PermissionGate holds its own manifests (a toggle and the load set
+        # switch those); without one, the module table is asked.
+        self.gate = gate
         self.root = Path(root) if root is not None else data_root()
         self.key = key or (lambda: env_str("OPENAI_API_KEY"))
         self.resolver, self.transport_factory = resolver, transport_factory
@@ -152,7 +156,7 @@ class CloudImageRuntime:
         from .plugin_gate import BUILTIN_PLUGINS
         from .system_profiles import heavy_features_enabled
 
-        manifest = BUILTIN_PLUGINS.get(PLUGIN)
+        manifest = (self.gate.plugins if self.gate is not None else BUILTIN_PLUGINS).get(PLUGIN)
         if manifest is None or not manifest.enabled or not heavy_features_enabled():
             raise ValueError("cloud image feature unavailable")
         if (

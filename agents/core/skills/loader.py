@@ -630,6 +630,7 @@ class SkillLoader:
         except Exception:
             logger.warning("Skill approval prune failed", exc_info=True)
         roots = [SKILLS_DIR]
+        owner_unread = False
         # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
         # bundled tree so a same-named user skill wins the registry slot.
         user_dir = _user_skills_dir()
@@ -641,27 +642,34 @@ class SkillLoader:
             if safe_mode.enabled():
                 # H275: safe mode discovers the shipped skills only.
                 safe_mode.note("owner_skills")
+                owner_unread = True
             else:
                 roots.append(user_dir)
         # H285: the owner's load set, read once for this pass.
         load_set.begin("skills")
         self._load_lists = load_set.declared("skills")
         folders: set[str] = set()
-        for root in roots:
-            for skill_dir in sorted(root.iterdir()):
-                if skill_dir.is_dir():
-                    folders.add(skill_dir.name)
-                    try:
-                        self._load_skill(skill_dir, discovery_root=root)
-                    except signing.SkillSigningMisconfigured:
-                        raise  # SEC-B2: the operator has to see this one
-                    except Exception:
-                        # One hostile or unreadable SKILL.md must not take the rest of
-                        # discovery (and startup) down with it; it simply is not registered.
-                        logger.warning("Skill at %s could not be loaded; skipped", skill_dir, exc_info=True)
-        load_set.finish("skills", folders | set(self.skills) | set(load_set.status("skills")["skipped"]),
-                        lists=self._load_lists)
-        self._load_lists = None
+        try:
+            for root in roots:
+                for skill_dir in sorted(root.iterdir()):
+                    if skill_dir.is_dir():
+                        folders.add(skill_dir.name)
+                        try:
+                            self._load_skill(skill_dir, discovery_root=root)
+                        except signing.SkillSigningMisconfigured:
+                            raise  # SEC-B2: the operator has to see this one
+                        except Exception:
+                            # One hostile or unreadable SKILL.md must not take the rest of
+                            # discovery (and startup) down with it; it simply is not registered.
+                            logger.warning("Skill at %s could not be loaded; skipped", skill_dir, exc_info=True)
+            if not owner_unread:
+                # With the owner folder left unread (safe mode), a name that matches no
+                # shipped skill may name an installed one of the owner's: not "unknown".
+                load_set.finish("skills", folders | set(self.skills) | set(load_set.status("skills")["skipped"]),
+                                lists=self._load_lists)
+        finally:
+            # A later single-skill load (sign, approve) reads the lists as they are then.
+            self._load_lists = None
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
 
@@ -718,7 +726,11 @@ class SkillLoader:
         name = manifest.get("name", path.name)
         lists = getattr(self, "_load_lists", None)
         if not load_set.permits("skills", name, path.name, lists=lists):
-            # H285: switched off by the owner's load set; nothing about it is registered.
+            # H285: switched off by the owner's load set; nothing about it is registered,
+            # and a registration from an earlier pass over this folder is taken out.
+            previous = self.skills.get(name)
+            if previous is not None and Path(previous.path) == path:
+                del self.skills[name]
             load_set.note_skipped("skills", name)
             return
         skill = Skill(name, path, manifest)
