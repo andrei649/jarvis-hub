@@ -18,9 +18,14 @@ batches them, and so does Nerva:
   runs on the whole message, not on fragments an attacker could split a payload across.
 - **Per chat, in order.** Pieces are keyed by (chat, sender); a flush hands the merged turn over
   before anything later from that chat is processed.
+- **A command is never a piece.** The command plane answers a turn that is the command alone, so
+  a slash command (``/stop``, ``/status``) is a barrier: what the sender said before it goes
+  first, then the command on its own, at once.
 
 Telegram's poll loop drives a :class:`Coalescer` directly; Discord and Slack, whose messages
-arrive as events, use :class:`AsyncBatcher`, which flushes each batch from its own timer.
+arrive as events, use :class:`AsyncBatcher`, which flushes each batch from its own timer and
+holds its caller once :data:`MAX_PENDING` batches are on their way, so the channel's own bounded
+ingress fills as it did before batching.
 ``JARVIS_INBOUND_BATCH_MS`` / ``JARVIS_INBOUND_BATCH_MAX_MS`` set the window and the cap for
 every channel; a window of 0 turns batching off (each piece is its own turn at once).
 """
@@ -33,12 +38,20 @@ from collections.abc import Awaitable, Callable, Hashable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..commands import CommandRegistry
+
 logger = logging.getLogger("jarvis.channels.batching")
 
 WINDOW_SECONDS = 0.35
 HARD_CAP_SECONDS = 1.0
 MAX_PARTS = 32
+MAX_PENDING = 16
 SEPARATOR = "\n"
+
+
+def is_command(text: str) -> bool:
+    """A slash command, as the command plane parses it: never merged with other pieces."""
+    return CommandRegistry.parse(text) is not None
 
 
 @dataclass
@@ -121,18 +134,31 @@ def configured() -> tuple[float, float]:
     return window_ms / 1000.0, cap_ms / 1000.0
 
 
+@dataclass
+class _KeyLock:
+    """One key's delivery lock, and how many deliveries hold it or wait on it."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
+
+
 class AsyncBatcher:
     """Batching for channels whose messages arrive as events: each (conversation, sender)
-    batch is flushed by its own timer and delivered in order, one at a time per key."""
+    batch is flushed by its own timer and delivered in order, one at a time per key. At most
+    ``max_pending`` batches are on their way (held, waiting on their key or being delivered)."""
 
     def __init__(self, deliver: Callable[[Hashable, str, dict], Awaitable[Any]],
                  window: float = WINDOW_SECONDS, hard_cap: float = HARD_CAP_SECONDS, *,
+                 max_pending: int = MAX_PENDING,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self._deliver = deliver
         self._batch = Coalescer(window, hard_cap, clock=clock)
+        self._max_pending = max(1, int(max_pending))
         self._meta: dict[Hashable, dict] = {}
         self._timers: dict[Hashable, asyncio.Task] = {}
-        self._locks: dict[Hashable, asyncio.Lock] = {}
+        self._tasks: set[asyncio.Task] = set()        # each timer, until its batch is delivered
+        self._locks: dict[Hashable, _KeyLock] = {}
+        self._generation = 0                          # one more on every discard()
 
     @property
     def enabled(self) -> bool:
@@ -143,15 +169,28 @@ class AsyncBatcher:
 
     async def submit(self, key: Hashable, text: str, **meta: Any) -> Any:
         """Hold one piece; the batch is delivered when its window closes. With batching off
-        the piece is delivered at once and the delivery's answer returned."""
+        the piece is delivered at once and the delivery's answer returned; so is a slash
+        command, after what the sender said before it. A piece that would start a batch past
+        ``max_pending`` waits for room: the caller is held, as the turn itself held it
+        before batching."""
         if not self._batch.enabled:
             return await self._deliver(key, text, dict(meta))
+        generation = self._generation
+        if is_command(text):
+            await self.flush(key)
+            return await self._in_order(key, text, dict(meta), generation)
+        while key not in self._timers and len(self._tasks) >= self._max_pending:
+            await asyncio.wait(set(self._tasks), return_when=asyncio.FIRST_COMPLETED)
+        if generation != self._generation:
+            return                                    # discarded while it waited
         self._meta.setdefault(key, dict(meta))        # the first piece says where it goes
         if self._batch.add(key, text):
             await self.flush(key)
             return
         if key not in self._timers:                   # a flush always takes its timer away
-            self._timers[key] = asyncio.create_task(self._timer(key))
+            task = self._timers[key] = asyncio.create_task(self._timer(key))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     async def _timer(self, key: Hashable) -> None:
         while True:
@@ -169,6 +208,7 @@ class AsyncBatcher:
 
     async def flush(self, key: Hashable, *, from_timer: bool = False) -> None:
         """Deliver ``key``'s held pieces now, as one turn."""
+        generation = self._generation
         held = self._batch.pop(key)
         meta = self._meta.pop(key, {})
         timer = self._timers.pop(key, None)
@@ -176,9 +216,22 @@ class AsyncBatcher:
             timer.cancel()
         if held is None or not held.text:
             return
-        lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            await self._deliver(key, held.text, meta)
+        await self._in_order(key, held.text, meta, generation)
+
+    async def _in_order(self, key: Hashable, text: str, meta: dict, generation: int) -> Any:
+        """Deliver under ``key``'s lock, so its turns never overlap. The lock is let go once
+        nothing holds or waits on it; nothing is delivered after a discard()."""
+        entry = self._locks.setdefault(key, _KeyLock())
+        entry.users += 1
+        try:
+            async with entry.lock:
+                if generation != self._generation:
+                    return None
+                return await self._deliver(key, text, meta)
+        finally:
+            entry.users -= 1
+            if not entry.users:
+                del self._locks[key]
 
     async def drain(self) -> None:
         """Deliver everything held now."""
@@ -186,17 +239,20 @@ class AsyncBatcher:
             await self.flush(key)
 
     def discard(self) -> int:
-        """Drop everything held and stop its timers (a channel shutting down, whose own
-        queue of undelivered events is discarded the same way). The number of batches dropped."""
+        """Drop everything held and cancel every batch on its way: a timer, a batch waiting
+        behind its key's running turn, and that turn (a channel shutting down, whose own queue
+        of undelivered events is discarded the same way). A piece or command still waiting
+        for room or for its key is dropped when it wakes. The number of held batches dropped."""
+        self._generation += 1
         keys = self._batch.held_keys()
         for key in keys:
             self._batch.pop(key)
             self._meta.pop(key, None)
-        for timer in self._timers.values():
-            timer.cancel()
+        for task in list(self._tasks):
+            task.cancel()
         self._timers.clear()
         return len(keys)
 
 
-__all__ = ["AsyncBatcher", "Coalescer", "HARD_CAP_SECONDS", "MAX_PARTS", "Pending", "SEPARATOR",
-           "WINDOW_SECONDS", "configured"]
+__all__ = ["AsyncBatcher", "Coalescer", "HARD_CAP_SECONDS", "MAX_PARTS", "MAX_PENDING", "Pending",
+           "SEPARATOR", "WINDOW_SECONDS", "configured", "is_command"]

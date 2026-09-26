@@ -27,6 +27,7 @@ from .inbound_media import (
     turn_text,
 )
 from . import voice_mode
+from .batching import Coalescer, configured, is_command
 from .inbound_voice import InboundVoiceReader, Transcript, echo_line
 from .inbound_voice import REASON_DOWNLOAD as VOICE_REASON_DOWNLOAD
 from .inbound_voice import note as voice_note
@@ -184,7 +185,6 @@ class TelegramChannel(ChannelAdapter):
         super().__init__("telegram", handler)
         # H117: a burst from one sender (a split message, an album, a photo then its
         # question) is held for the batch window and handed over as one turn.
-        from .batching import Coalescer, configured
         self._batch = Coalescer(*configured())
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}"
@@ -232,7 +232,9 @@ class TelegramChannel(ChannelAdapter):
         # H677: chats whose NEXT delivered turn was a voice note. The mark is taken
         # when the note is read, but with chat lanes an earlier turn of the chat may
         # still be running then; the turn carries the mark into its lane and sets it
-        # only when it runs, so that earlier reply is not the one spoken.
+        # only when it runs, so that earlier reply is not the one spoken. Keyed by
+        # (chat, sender) like H117's batches: in a group another member's older batch
+        # flushes first and must not take it.
         self._voice_pending: set = set()
 
     async def start(self):
@@ -254,6 +256,10 @@ class TelegramChannel(ChannelAdapter):
         self._running = False
         if self._poll_task:
             self._poll_task.cancel()
+            # H117: the cancel lands at one of the loop's awaits, so the hand-over at its
+            # end never runs; once the loop has let go, what is held goes out here.
+            await asyncio.wait({self._poll_task})
+            await self._flush_all_turns()
         lanes, self._lanes = self._lanes, None
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
@@ -436,6 +442,9 @@ class TelegramChannel(ChannelAdapter):
                     await self._flush_turn(key)
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
+                # Nothing can join a held batch during the back-off, three times the hard
+                # cap: what is held goes out now rather than when a poll next succeeds.
+                await self._flush_all_turns()
                 await asyncio.sleep(3)
         # Stopping never drops what a sender already said: held pieces go out now, and
         # the turns already in their chats' lanes get a bounded time to finish.
@@ -508,7 +517,7 @@ class TelegramChannel(ChannelAdapter):
         if attachment is not None:
             logger.info("Telegram inbound media: %s", attachment.to_dict())
             read, why = await self._read_attachment(
-                attachment, decision.text, chat_id)
+                attachment, decision.text, chat_id, uid)
             if read:
                 turn = read
             else:
@@ -528,6 +537,12 @@ class TelegramChannel(ChannelAdapter):
             await self._deliver_turn(chat_id, uid, turn)
             return
         key = (chat_id, str(uid))
+        if is_command(turn):
+            # The command plane answers a turn that is the command alone: what was held
+            # goes first, then the command on its own (merged, /stop would be chat).
+            await self._flush_turn(key)
+            await self._deliver_turn(chat_id, uid, turn)
+            return
         if self._batch.add(key, turn):
             await self._flush_turn(key)
 
@@ -541,8 +556,9 @@ class TelegramChannel(ChannelAdapter):
             await self._flush_turn(key)
 
     async def _deliver_turn(self, chat_id, uid, turn: str) -> None:
-        spoken = chat_id in self._voice_pending
-        self._voice_pending.discard(chat_id)
+        mark = (chat_id, str(uid))
+        spoken = mark in self._voice_pending
+        self._voice_pending.discard(mark)
         await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken))
 
     async def _in_chat(self, chat_id, work) -> None:
@@ -683,7 +699,7 @@ class TelegramChannel(ChannelAdapter):
                     return b""
         return bytes(buf)
 
-    async def _read_attachment(self, attachment, spoken: str, chat_id) -> tuple[str, str]:
+    async def _read_attachment(self, attachment, spoken: str, chat_id, uid) -> tuple[str, str]:
         """Turn one readable attachment into a turn, or into the reason it is not.
 
         Returns ``(turn_text, note)``: exactly one is ever non-empty. The two
@@ -708,8 +724,8 @@ class TelegramChannel(ChannelAdapter):
             if not transcript.ok:
                 return "", voice_note(transcript)
             # The reply to this turn answers speech: `/voice voice` keys on the mark,
-            # which the turn takes with it when it is delivered (H677).
-            self._voice_pending.add(chat_id)
+            # which this sender's turn takes with it when it is delivered (H677).
+            self._voice_pending.add((chat_id, str(uid)))
             if self._echo_transcripts():
                 # Hermes `stt_echo_transcripts`: say what was heard before answering
                 # it, so a misheard note is caught by the person who sent it. A

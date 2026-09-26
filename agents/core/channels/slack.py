@@ -108,9 +108,11 @@ class SlackChannel(ChannelAdapter):
         super().__init__("slack", handler)
         self.token = token
         self.app_token = app_token
-        # H117: a burst from one member in one channel (and thread) is one turn.
+        # H117: a burst from one member in one channel (and thread) is one turn. One batch
+        # on its way at a time: the dispatcher is held while a turn runs, as it was before
+        # batching, so the bounded ingress queue stays the only buffer.
         from .batching import AsyncBatcher, configured
-        self._batch = AsyncBatcher(self._deliver_turn, *configured())
+        self._batch = AsyncBatcher(self._deliver_turn, *configured(), max_pending=1)
         self._client: Optional[WebClient] = None
         self._socket_client = None
         self._team_id = ""

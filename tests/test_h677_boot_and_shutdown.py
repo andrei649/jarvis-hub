@@ -644,7 +644,7 @@ async def test_a_voice_note_read_while_its_chat_is_busy_marks_its_own_reply(monk
     channel.receive = receive
     await channel._deliver_turn(1, 10, "a typed question")
     await asyncio.sleep(0.01)                               # the typed turn is running
-    turn, note = await channel._read_attachment(SimpleNamespace(readable=True, kind=KIND_VOICE), "", 1)
+    turn, note = await channel._read_attachment(SimpleNamespace(readable=True, kind=KIND_VOICE), "", 1, 10)
     assert turn and not note
     await channel._deliver_turn(1, 10, turn)
     first.set()
