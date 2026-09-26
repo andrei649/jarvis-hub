@@ -69,6 +69,21 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
     expect(screen.getByText(/pinned/i)).toBeTruthy();
   });
 
+  it('H309: lists a tip and a tour as text, saying when an untrusted turn wrote them', async () => {
+    mockCanvas([
+      { id: 'p1', agent: 'jarvis', type: 'tip', pinned: false, created_at: 1770000000,
+        payload: { target: 'console', caption: 'Tools live here', untrusted: true } },
+      { id: 'p2', agent: 'jarvis', type: 'tour', pinned: false, created_at: 1770000001,
+        payload: { title: 'Around', steps: [{ target: 'composer', caption: 'Type' }, { target: 'decisions', caption: 'Decide' }], untrusted: false } },
+    ]);
+    render(<ArtifactsPanel refreshKey={0} lang="en" />);
+    expect(await screen.findByText('→ console: Tools live here (from an untrusted turn)')).toBeTruthy();
+    expect(screen.getByText('Around')).toBeTruthy();
+    expect(screen.getByText('→ composer: Type')).toBeTruthy();
+    expect(screen.getByText('→ decisions: Decide')).toBeTruthy();
+    expect(screen.getAllByText(/from an untrusted turn/).length).toBe(1);
+  });
+
   it('keeps unsafe markup inert — rendered as text, never as elements', async () => {
     mockCanvas([{
       id: 'x1', agent: 'jarvis', type: 'markdown', pinned: false, created_at: 1770000000,

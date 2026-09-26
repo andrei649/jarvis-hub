@@ -967,6 +967,12 @@ class AutonomyCoordinator:
             posture=lambda: tool_profile.posture().key,
             settings=_get_setting,
         )
+        # H309 — the model points at the owner's HUD (a tip, or a short tour) through
+        # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
+        from .pointer_tool import register_pointer_tool
+
+        register_pointer_tool(server, canvas=lambda: getattr(self._orch, "canvas", None),
+                              posture=lambda: tool_profile.posture().key)
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the

@@ -1,5 +1,6 @@
 {
   "registry": [
+    "canvas_point",
     "desktop_plan",
     "desktop_run",
     "echo",
@@ -27,6 +28,7 @@
   ],
   "postures": {
     "operator/owner": [
+      "canvas_point",
       "desktop_plan",
       "desktop_run",
       "echo",
@@ -53,6 +55,7 @@
       "web_search"
     ],
     "operator/guest": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",
@@ -71,6 +74,7 @@
       "web_search"
     ],
     "inbound/owner": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",
@@ -94,6 +98,7 @@
       "todo"
     ],
     "internal/system": [
+      "canvas_point",
       "desktop_plan",
       "echo",
       "execute_code",

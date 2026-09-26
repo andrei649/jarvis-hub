@@ -105,7 +105,7 @@ function Rail({ mode, setMode, t }){
     <div className="rail">
       {MODES.map((m,i)=> m.sep
         ? <div className="rail-sep" key={i}></div>
-        : <button key={m.id} className={'rail-btn'+(mode===m.id?' active':'')+(m.locked?' locked':'')}
+        : <button key={m.id} data-anchor={'mode.'+m.id} className={'rail-btn'+(mode===m.id?' active':'')+(m.locked?' locked':'')}
             onClick={()=>!m.locked&&setMode(m.id)} title={t[m.tkey]+(m.locked?' (soon)':'')}>
             <Icon d={ICONS[m.icon]} size={19}/><span className="rl">{t[m.tkey]}</span>
           </button>
@@ -133,7 +133,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
   const empty = (msg) => <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)',letterSpacing:'.05em'}}>{msg}</div>;
   return (
     <div className="col scrollcol">
-      <div className="panel">
+      <div className="panel" data-anchor="decisions">
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.bolt} size={14}/><span className="ttl">{t.decisions}</span><span className="st">{decisions.length}</span></div>
         <div className="panel-body tight" tabIndex={0}>

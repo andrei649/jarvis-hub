@@ -1888,7 +1888,17 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     from agents.core.skills.tools import VIEW_SCHEMA as SKILL_VIEW_SCHEMA
     from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
     from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
+    from agents.core import pointer_tool
+
     assert orch.tool_rpc.tools() == [
+        {
+            # H309: the model points at the owner's HUD (ungated, named anchors only).
+            "name": "canvas_point",
+            "gated": False,
+            "description": pointer_tool.DESCRIPTION,
+            "input_schema": pointer_tool.INPUT_SCHEMA,
+            "capability_id": "tool:canvas_point",
+        },
         {
             "name": "desktop_plan",
             "gated": False,

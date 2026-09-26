@@ -269,7 +269,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         <span className="chan">{t.channel}</span>
         <div className="field" style={{position:'relative'}}>
           <ContextRefHints items={refs} onPick={ref=>setVal(acceptRef(val,ref))}/>
-          <input data-composer="1" value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
+          <input data-composer="1" data-anchor="composer" value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
             onKeyDown={e=>{ if(e.key==='Tab'&&refs.length){e.preventDefault();setVal(acceptRef(val,refs[0].ref));return;} if(e.key==='Enter') submit(); }}/>
           <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
             title={micMuted ? 'mic muted — unmute NERVA' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}

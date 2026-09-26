@@ -179,6 +179,14 @@ function ArtifactBody({ el, L }) {
         {p.title && <div className="art-title">{p.title}</div>}
         <ImageRefBody payload={p} L={L} />
       </>);
+    case 'tip':
+      return <div className="art-plain">→ {String(p.target)}: {String(p.caption)}{p.untrusted ? ' (from an untrusted turn)' : ''}</div>;
+    case 'tour':
+      return (<>
+        {p.title && <div className="art-title">{p.title}</div>}
+        <ol className="art-md">{(p.steps || []).map((st, i) => <li key={i}>→ {String(st && st.target)}: {String(st && st.caption)}</li>)}</ol>
+        {p.untrusted && <div className="art-plain">(from an untrusted turn)</div>}
+      </>);
     default:
       // future/unknown types stay inert: a JSON snapshot as plain text
       return <div className="art-plain">{JSON.stringify(p)}</div>;

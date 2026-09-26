@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "8e87fb9d5f5bb1c4987b799523976679a53b6bb3",
-  "assessed_at": "2026-09-26T04:59:31Z",
+  "base_sha": "bffd8055aa03ef0ea6d371b034b95632eeb0e3ab",
+  "assessed_at": "2026-09-26T05:15:58Z",
   "reviews": [
     {
       "id": "H001",
@@ -1107,7 +1107,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -1192,7 +1192,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -1273,11 +1273,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/api/client.ts",
@@ -1494,11 +1494,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/cockpit.tsx",
-          "sha256": "cb374e594b7cd3fc1143dfe02702641af343edad35a76ea51c131a2ced03e051"
+          "sha256": "ff5596268ff643d830df1c9ba99bc24e05db59221afee6efdbad7341bed0bdf9"
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
@@ -1636,11 +1636,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -2008,7 +2008,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2097,20 +2097,20 @@
       "id": "H168",
       "row_sha256": "a2ce34a44a342668aa72ff16dd543e217698db9ed9ff8b700b776270a80ddd06",
       "status": "partial",
-      "summary": "Destructive confirmation is implemented in several places with no shared primitive. Markdown now has one shared component, frontend/src/markdown.tsx (built for H165: React nodes only; headings with anchors, fences, pipe tables, bullet and ordered lists, quotes, rules, bold/italic/inline code, and links only for http(s) or same-origin paths with rel=noopener; pinned by frontend/src/test/markdown.test.tsx). Only the Documentation panel uses it so far. Chat bubbles in Conversation (frontend/src/cockpit.tsx:76, cockpit.tsx:92) and the shell drawer (frontend/src/shell.tsx:144) render agent text through renderRich (cockpit.tsx:121-125), which handles only **bold**. Lists, code fences, tables, headings and links show as raw characters. frontend/src/artifacts.tsx has a separate MarkdownBody that renders only React text nodes (artifacts.tsx:73-102: headings, bold, inline code, bullet lists; raw HTML stays literal, pinned by frontend/src/test/artifacts.test.tsx:79). It is private to canvas artifacts and has no code fences, ordered lists, tables or links. Destructive confirmation is hand-rolled per panel: forget-me requires a typed FORGET (frontend/src/gap.tsx:3188, gap.tsx:3223); acquisition purge a typed phrase (gap.tsx:3996); trust-ops rotation a typed scope (frontend/src/panels/trust-ops.tsx:215); marketplace removal an arm/confirm pair (frontend/src/panels/marketplace-admin.tsx:203); webhook delete another (frontend/src/panels/webhooks.tsx:424); the ESTOP pause a two-step button (frontend/src/modes3.tsx:166). KillSwitchPanel's HALT ALL/disengage toggle (gap.tsx:765) fires on one click through the plain Btn (frontend/src/panel-kit.tsx:117). No component maps a confirmation level to the kernel's RiskTier (agents/core/autonomy/policy.py:26-31).",
+      "summary": "Destructive confirmation is implemented in several places with no shared primitive. Markdown now has one shared component, frontend/src/markdown.tsx (built for H165: React nodes only; headings with anchors, fences, pipe tables, bullet and ordered lists, quotes, rules, bold/italic/inline code, and links only for http(s) or same-origin paths with rel=noopener; pinned by frontend/src/test/markdown.test.tsx). Only the Documentation panel uses it so far. Chat bubbles in Conversation (frontend/src/cockpit.tsx:76, cockpit.tsx:92) and the shell drawer (frontend/src/shell.tsx:144) render agent text through renderRich (cockpit.tsx:121-125), which handles only **bold**. Lists, code fences, tables, headings and links show as raw characters. frontend/src/artifacts.tsx has a separate MarkdownBody that renders only React text nodes (artifacts.tsx:73-102: headings, bold, inline code, bullet lists; raw HTML stays literal, pinned by frontend/src/test/artifacts.test.tsx:94). It is private to canvas artifacts and has no code fences, ordered lists, tables or links. Destructive confirmation is hand-rolled per panel: forget-me requires a typed FORGET (frontend/src/gap.tsx:3188, gap.tsx:3223); acquisition purge a typed phrase (gap.tsx:3996); trust-ops rotation a typed scope (frontend/src/panels/trust-ops.tsx:215); marketplace removal an arm/confirm pair (frontend/src/panels/marketplace-admin.tsx:203); webhook delete another (frontend/src/panels/webhooks.tsx:424); the ESTOP pause a two-step button (frontend/src/modes3.tsx:166). KillSwitchPanel's HALT ALL/disengage toggle (gap.tsx:765) fires on one click through the plain Btn (frontend/src/panel-kit.tsx:117). No component maps a confirmation level to the kernel's RiskTier (agents/core/autonomy/policy.py:26-31).",
       "remaining": "(1) Adopt the shared Markdown component (frontend/src/markdown.tsx, which already covers the required syntax safely) in the chat bubbles and the shell drawer in place of renderRich, and in artifacts.tsx in place of MarkdownBody, keeping the artifacts' 4,000-character bound. (2) A single confirm primitive whose severity tiers mirror RiskTier: reversible gets a one-click or two-step confirm, irreversible/money a typed confirmation. It must replace the hand-rolled confirmations in KillSwitchPanel (including disengage), forget-me, acquisition purge, marketplace removal, webhook delete, trust-ops rotation and the ESTOP pause, so the UI and the approval queue describe risk the same way.",
       "evidence": [
         {
           "path": "frontend/src/cockpit.tsx",
-          "sha256": "cb374e594b7cd3fc1143dfe02702641af343edad35a76ea51c131a2ced03e051"
+          "sha256": "ff5596268ff643d830df1c9ba99bc24e05db59221afee6efdbad7341bed0bdf9"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/artifacts.tsx",
-          "sha256": "09e307f3518ee0383e7161e990e4c2005c029dafc7f713a1941430791b4361cc"
+          "sha256": "4e6a4de92634feb326e6b3d2e4fc5d515aa0ef765cec1f21ec58b9f0c905d645"
         },
         {
           "path": "frontend/src/panel-kit.tsx",
@@ -2138,7 +2138,7 @@
         },
         {
           "path": "frontend/src/test/artifacts.test.tsx",
-          "sha256": "8eb2e58b17eaf115f29336d3bf68222e3cb73c3fcde96434766559762089b243"
+          "sha256": "5f1d10070a08304fddb643775e6ce871880291d747fd501bc8f56cc3b4230704"
         },
         {
           "path": "frontend/src/test/kill-switch-refusal.test.tsx",
@@ -2497,11 +2497,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/world_app.tsx",
@@ -2570,7 +2570,7 @@
       "id": "H220",
       "row_sha256": "765d4e507aa22a50b7bde5a3972b342c301ef50855453885062b79b414c92f93",
       "status": "partial",
-      "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:480). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:446, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
+      "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:480). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:309). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:447, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
       "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1866-1873), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply and pending_approvals, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1656).",
       "evidence": [
         {
@@ -2591,7 +2591,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/locality.ts",
@@ -2632,7 +2632,7 @@
       "evidence": [
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/wall.tsx",
@@ -3472,7 +3472,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -3512,8 +3512,8 @@
       "id": "H288",
       "row_sha256": "0aaffbe5489055c7ba30c8c5f330629e719605005f39d81207ec91d2acdc900b",
       "status": "partial",
-      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:370, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:316-321), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:661). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:281, validated at :722; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1206-1209). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
-      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1598-1631) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:44-59) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1206-1209). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:652-655). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
+      "summary": "Both ideas the row said were \"worth taking and cheap\" are shipped, proven and correct, and the audit's 2026-09-07 nerva_evidence did undersell Nerva. The row is still not equivalent, because the cron half of Hermes' contract has three clauses that are still unmet.\n\nShipped and verified at 55d625f. The claim lease with a TTL is `autonomy.running_ttl_seconds` (agents/core/settings_db.py:370, default 3600). The coordinator resyncs it on every tick (agents/core/autonomy_coordinator.py:316-321), and `TaskQueue.reap_stuck_running` enforces it (agents/core/autonomy/queue.py:1599-1629) through `AutonomyWorker._reap_stuck` (agents/core/autonomy/worker.py:489-503), which `tick` calls first (worker.py:889-891). The crash-grace window is the same mechanism, and it meets the row's governance note exactly: the reaper FAILS the stranded row with `result.error=\"stuck_running_ttl\"` + `stuck_since` and audits `autonomy.reaped`. It never re-queues, so an action that was already authorized is never re-executed. Proven by tests/test_q6_autonomy_killswitch_scope_reaper.py:91-135 and manual case GOV-224 (docs/test-manual/07-autonomy-governance.md:661). The jobs lane has the same property on its own path: when a manual request is found `running` and its cross-process gate is free, it is recorded as `unknown` / \"execution interrupted after claim; not replayed\" (agents/core/autonomy/jobs_dispatch.py:203-209), proven by tests/test_job_dispatch.py:130. Beyond the reaper, the scheduled lane has these guards: a 64-stripe cross-process file gate that every firing must hold (jobs_dispatch.py:44-59 via jobs.py:1325-1333); an identity fingerprint that voids a claim if the job was edited after acceptance (jobs_dispatch.py:15-18, 179-184; jobs.py:1343-1347); APScheduler `max_instances=1`; a workdir allowlist (agents/core/autonomy/jobs_workdir.py); estop/kill-switch seams (jobs.py:1353-1357, worker.py:893-904); and a validated media deadline, `jobs.media_send_timeout_seconds` (settings_db.py:281, validated at :722; jobs_media.py:18/257).\n\nCorrection to the triage on the claim CAS: `claim_mediated` (queue.py:1240-1311) returns None unless `mediation_mode == \"enforce\"` (queue.py:1243). `resolve_task_mediation_mode()` returns \"off\" when `JARVIS_TASK_MEDIATION` is unset (agents/core/autonomy/mediation_head_store.py:195-211, docstring: \"shipped-dark default\"). In that default posture the worker claims with a bare `transition(task.id, RUNNING)` (worker.py:925-927). `transition` (queue.py:1459-1497) checks only the status edge and does no compare-and-swap on `mediation_execution_id`. So the triage's \"a second claimant cannot win\" holds only when mediation is enforced.\n\nWhat is still owed, and why this is partial. Hermes' text names seven CRON_* clauses. (a) The plain cron path has no per-run wall clock. `_fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) contains no `asyncio.wait_for` at any level. The script path already uses that pattern, at jobs_scripts.py:405 (120 s) and :455 (30 s). (b) `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (executor.py:39-42, autonomy_coordinator.py:1212-1215). Out of the box, the only bound on a hung in-process task is the 3600 s reaper. (c) The jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (jobs.py:652-655), while the task queue sets both to 30 s (queue.py:212-214). The row's own rationale excludes the delivery-destination knobs, so they do not count against it (they are also covered by per-job `channel`/`deliver` plus `AUTONOMY_OWNER_CHAT_ID` / `autonomy.owner_chat_id`, jobs.py:1570-1625). The ~14-knob Kanban board is still a product decision, not a slice of this row.\n\nRe-run at 55d625f: the five cited test files (tests/test_q6_autonomy_killswitch_scope_reaper.py, test_job_dispatch.py, test_jobs_media.py, test_executor_budget.py, test_autonomy_worker.py; 95 cases) pass, with zero failures.",
+      "remaining": "Three cron-lane clauses of Hermes' contract are unmet. The Kanban claim-lease and crash-grace asks are done.\n\n1. HERMES_CRON_TIMEOUT: the plain cron path has no per-run wall clock. `JobRunner._fire_once` → `_execute` → `_ask`/`_brief`/`_deliver` (agents/core/autonomy/jobs.py:1335-1391, 1437-1458, 1460-1499, 1570-1596) has no `asyncio.wait_for` at any level. In particular, `_send_tracked`/`_send` (jobs.py:1598-1631) awaits the channel adapter bare. A hung Telegram/Discord send therefore holds the job's gate stripe (jobs_dispatch.py:44-59) and its APScheduler `max_instances=1` slot, and nothing breaks it. The script path already does this correctly: `asyncio.wait_for(self.runner._ask(...), 120)` at agents/core/autonomy/jobs_scripts.py:405 and `asyncio.wait_for(self.runner._send_tracked(...), 30)` at :455. The fix is to apply the same bound to the cron path, ideally as a `jobs.run_timeout_seconds` setting next to the existing `jobs.media_send_timeout_seconds`. The overrun should be recorded as a normal failed run through `_failed`, so the 3-strike pause and the incident path still apply.\n\n2. `JARVIS_TASK_MAX_SECONDS` defaults to 0, which means unbounded (agents/core/autonomy/executor.py:39-42, agents/core/autonomy_coordinator.py:1212-1215). Out of the box, a hung in-process queued task is bounded only by the 3600 s stuck-running reaper. Fix: give it a non-zero shipped default, or promote it to a validated `autonomy.*` setting like `running_ttl_seconds`, and add a test asserting the default is finite.\n\n3. HERMES_CRON_SESSION_DB_TIMEOUT: the jobs store opens sqlite with neither `timeout=` nor `PRAGMA busy_timeout` (agents/core/autonomy/jobs.py:652-655). The task queue sets `timeout=30.0` + `PRAGMA busy_timeout=30000` (agents/core/autonomy/queue.py:212-214). jobs.db writers therefore fall back to SQLite's 5 s default, on a WAL shared by the gateway drain loop and cron firings. One-line parity fix.\n\nOut of scope, not gaps: the row's own rationale excludes the delivery-destination knobs (_AUTO_DELIVER_PLATFORM / _CHAT_ID / _THREAD_ID, TELEGRAM_CRON_THREAD_ID). The residual ~14-knob multi-agent Kanban board (_BOARD / _WORKSPACES_ROOT / _ATTACHMENTS_ROOT / _GOAL_MODE / _DISPATCH_IN_GATEWAY) is a product decision about whether Nerva grows a shared task board, not a slice of this row.",
       "evidence": [
         {
           "path": "agents/core/autonomy/queue.py",
@@ -3553,7 +3553,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -3614,7 +3614,7 @@
       "id": "H296",
       "row_sha256": "b9a9ae73c74897142114c7d465f46bd3cd754d47d3df63dff928322c778777a9",
       "status": "equivalent",
-      "summary": "A tool now tells the model what this install can do, and the live shape reaches a running session. register_tool takes schema_overrides (agents/core/tool_rpc.py:299), a zero-argument hook (SchemaOverrides, agents/core/tool_rpc.py:97) refused at registration when it is not callable. ToolRPCServer.tools() (agents/core/tool_rpc.py:366) asks every hook each time the tool list is built and merges the answer over the static description and schema (advertised_schema, agents/core/tool_rpc.py:145). The merge (_apply_override, agents/core/tool_rpc.py:103) takes only a `description` (non-empty text of at most 2,048 characters), `properties` whose keys are merged over properties the static schema already declares (an override narrows an argument, it never invents one) and `required` (a list naming declared properties); None or {} changes nothing, and the result must be plain JSON. A hook that raises, or answers with an unknown key, an undeclared property, a non-mapping, a bad `required` or a value JSON cannot carry, is logged at WARNING once per tool, naming the tool and the exception type but not its message, and the static schema is advertised (_OVERRIDE_WARNED, agents/core/tool_rpc.py:50); a hook that recovers is cleared and warns again if it fails again. The static schema is never mutated and every row is a copy. The registry projection gets the same shape, because its records are built from tools() on every snapshot (_tool_records, agents/core/observability/capability_registry.py:310, inputs at agents/core/observability/capability_registry.py:334). At the H672 compaction boundary refresh_tools compares each still-offered tool's description and schema (_shape, agents/core/session_refresh.py:95) and reports the ones that moved as `reshaped` (agents/core/session_refresh.py:153), which is a change and a rebuild (agents/core/session_refresh.py:159); the runtime's tool_offer_refreshed event names them (agents/core/agent_runtime.py:585) and rebuilds the specs, and boundary_note says \"tool schemas moved: …\" (agents/core/session_refresh.py:180). Three tools use it. terminal_run (agents/core/autonomy_coordinator.py:642) advertises `target` as the registered target names, sorted and at most 64 (TargetRegistry.names, agents/core/environments/targets.py:245), or says in its description that terminal targets are switched off (JARVIS_TERMINAL_TARGETS) or that no target is registered, so every call is refused (_terminal_run_overrides, agents/core/autonomy_coordinator.py:1084). desktop_run (agents/core/autonomy_coordinator.py:559) advertises its step `action` as the actions its validator's own table accepts (_desktop_run_overrides, agents/core/autonomy_coordinator.py:100). speak (agents/core/voice/speak_tool.py:674) advertises `target` as the announce-capable device ids, the rooms whose one announce default resolves (an ambiguous room is left out) and presence:auto when the presence room resolves, at most 64 (MAX_ADVERTISED_TARGETS, agents/core/voice/speak_tool.py:144), or says that the Media Director is not available or that no speaker can announce yet (SpeakTool.schema_overrides, agents/core/voice/speak_tool.py:297). An override changes what the model is told; each handler still checks every call. tests/test_h296_schema_overrides.py (51 cases) covers the registration check, the merge, a row as a copy, nothing to change, the hook asked on every build, seventeen malformed or failing answers falling back to the static schema, the longest description, the one warning and its re-arm after recovery, the capability-registry projection, the boundary's reshape (a moved schema, a moved description, key order that is not a move, an added tool that is not also a reshape), a real tool loop in which a target registered mid-loop is offered after the fold with the event naming it, terminal_run switched off, with no target and with targets (sorted and bounded), desktop_run's enum without touching the static schema, and speak's devices, rooms and presence, an ambiguous room, a room named like a device, a stable room order, the bound, no announce speaker, no Media Director and the registered tool picking up a new speaker at once; tests/test_agent_runtime_v2.py pins the two changed rows of the wired tool list. 35 mutants over the merge, the fallback, the boundary, the event and the three overrides: 33 caught (five after their cases were added: an unknown key beside a known one, pairs instead of a mapping, a tuple for `required`, a row shared with the registered schema, the room order) and two equivalent (removing the mapping check or the declared-property check still raises on the next line). Test manual: GOV-261, GOV-262. Adapted from Hermes: dynamic_schema_overrides becomes a registration hook merged over a static schema that bounds what it may change, and a changed shape is picked up at Nerva's compaction boundary rather than on every call.",
+      "summary": "A tool now tells the model what this install can do, and the live shape reaches a running session. register_tool takes schema_overrides (agents/core/tool_rpc.py:299), a zero-argument hook (SchemaOverrides, agents/core/tool_rpc.py:97) refused at registration when it is not callable. ToolRPCServer.tools() (agents/core/tool_rpc.py:366) asks every hook each time the tool list is built and merges the answer over the static description and schema (advertised_schema, agents/core/tool_rpc.py:145). The merge (_apply_override, agents/core/tool_rpc.py:103) takes only a `description` (non-empty text of at most 2,048 characters), `properties` whose keys are merged over properties the static schema already declares (an override narrows an argument, it never invents one) and `required` (a list naming declared properties); None or {} changes nothing, and the result must be plain JSON. A hook that raises, or answers with an unknown key, an undeclared property, a non-mapping, a bad `required` or a value JSON cannot carry, is logged at WARNING once per tool, naming the tool and the exception type but not its message, and the static schema is advertised (_OVERRIDE_WARNED, agents/core/tool_rpc.py:50); a hook that recovers is cleared and warns again if it fails again. The static schema is never mutated and every row is a copy. The registry projection gets the same shape, because its records are built from tools() on every snapshot (_tool_records, agents/core/observability/capability_registry.py:310, inputs at agents/core/observability/capability_registry.py:334). At the H672 compaction boundary refresh_tools compares each still-offered tool's description and schema (_shape, agents/core/session_refresh.py:95) and reports the ones that moved as `reshaped` (agents/core/session_refresh.py:153), which is a change and a rebuild (agents/core/session_refresh.py:159); the runtime's tool_offer_refreshed event names them (agents/core/agent_runtime.py:585) and rebuilds the specs, and boundary_note says \"tool schemas moved: …\" (agents/core/session_refresh.py:180). Three tools use it. terminal_run (agents/core/autonomy_coordinator.py:642) advertises `target` as the registered target names, sorted and at most 64 (TargetRegistry.names, agents/core/environments/targets.py:245), or says in its description that terminal targets are switched off (JARVIS_TERMINAL_TARGETS) or that no target is registered, so every call is refused (_terminal_run_overrides, agents/core/autonomy_coordinator.py:1090). desktop_run (agents/core/autonomy_coordinator.py:559) advertises its step `action` as the actions its validator's own table accepts (_desktop_run_overrides, agents/core/autonomy_coordinator.py:100). speak (agents/core/voice/speak_tool.py:674) advertises `target` as the announce-capable device ids, the rooms whose one announce default resolves (an ambiguous room is left out) and presence:auto when the presence room resolves, at most 64 (MAX_ADVERTISED_TARGETS, agents/core/voice/speak_tool.py:144), or says that the Media Director is not available or that no speaker can announce yet (SpeakTool.schema_overrides, agents/core/voice/speak_tool.py:297). An override changes what the model is told; each handler still checks every call. tests/test_h296_schema_overrides.py (51 cases) covers the registration check, the merge, a row as a copy, nothing to change, the hook asked on every build, seventeen malformed or failing answers falling back to the static schema, the longest description, the one warning and its re-arm after recovery, the capability-registry projection, the boundary's reshape (a moved schema, a moved description, key order that is not a move, an added tool that is not also a reshape), a real tool loop in which a target registered mid-loop is offered after the fold with the event naming it, terminal_run switched off, with no target and with targets (sorted and bounded), desktop_run's enum without touching the static schema, and speak's devices, rooms and presence, an ambiguous room, a room named like a device, a stable room order, the bound, no announce speaker, no Media Director and the registered tool picking up a new speaker at once; tests/test_agent_runtime_v2.py pins the two changed rows of the wired tool list. 35 mutants over the merge, the fallback, the boundary, the event and the three overrides: 33 caught (five after their cases were added: an unknown key beside a known one, pairs instead of a mapping, a tuple for `required`, a row shared with the registered schema, the room order) and two equivalent (removing the mapping check or the declared-property check still raises on the next line). Test manual: GOV-261, GOV-262. Adapted from Hermes: dynamic_schema_overrides becomes a registration hook merged over a static schema that bounds what it may change, and a changed shape is picked up at Nerva's compaction boundary rather than on every call.",
       "remaining": "",
       "evidence": [
         {
@@ -3631,7 +3631,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/voice/speak_tool.py",
@@ -3651,7 +3651,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "b2717dac6b0056c7c4b51efc28fa9236c884208f897a039ab49d50e076f03383"
+          "sha256": "05565a22ce5b2ea3cc103cd0bfeaeedc3d8c24b3c15aa7fec9109df908e28115"
         }
       ]
     },
@@ -3704,7 +3704,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/sandbox.py",
@@ -3736,7 +3736,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "b2717dac6b0056c7c4b51efc28fa9236c884208f897a039ab49d50e076f03383"
+          "sha256": "05565a22ce5b2ea3cc103cd0bfeaeedc3d8c24b3c15aa7fec9109df908e28115"
         },
         {
           "path": "tests/test_spill_paging.py",
@@ -3836,7 +3836,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -3911,29 +3911,33 @@
     {
       "id": "H309",
       "row_sha256": "1ba083589fa00a5931fee9e30d41d4dc2b72f92da0279767b1d0321b25129c9b",
-      "status": "missing",
-      "summary": "The pointing feature itself is absent; only the Agent Canvas substrate it was meant to build on exists. CanvasStore.post validates and sanitises typed elements through _sanitize in agents/core/canvas.py. ALLOWED_TYPES (agents/core/canvas.py:113) is text, markdown, list, link, metric, table and image_ref, and any other type raises (agents/core/canvas.py:110). POST /api/canvas/post (agents/core/routers/canvas.py:42) is the only producer. The HUD reads GET /api/canvas in frontend/src/artifacts.tsx:223 and in frontend/src/panels/mission-canvas.tsx. There is no pointer, tip or tour element type. The HUD has no element-anchor registry and no overlay that draws an arrow bubble at a panel element. No model-callable tool posts such an element: no ToolRPC registration references the canvas at all. tests/test_h12_18_canvas.py passes and covers only the existing element types and their sanitisation.",
-      "remaining": "Three pieces are missing: (1) canvas element types for a tip (target anchor plus a one-line caption) and a tour (a bounded ordered step list paged with Next/Prev), sanitised by canvas.py; (2) an ungated tool the model is actually offered that posts them through CanvasStore; (3) a HUD overlay that resolves the target to an on-screen element, draws the pointer and caption, and pages tour steps.",
+      "status": "equivalent",
+      "summary": "The model points at the owner's HUD, as Hermes' pointing does. agents/core/canvas.py gains two element types. A tip is a target and a one-line caption; a tour is a title and at most MAX_TOUR_STEPS (8) such steps. Both are sanitised in _sanitize: whitespace is collapsed, captions are cut to MAX_CAPTION (160), and a target must be one of POINTER_ANCHORS. Those 19 anchors are the rail's 16 modes, the message box, the Decision Inbox panel and the Console button; no single approve or reject button is one. agents/core/pointer_tool.py registers canvas_point, an ungated ToolRPC tool whose schema offers exactly those anchors (register_pointer_tool, wired in agents/core/autonomy_coordinator.py on the live orch.canvas). It posts through CanvasStore.post as the calling agent and refuses a call that is both or neither by name. A tip written by an untrusted turn, by a turn that is not the owner's, or by a turn whose origin cannot be read is marked untrusted. It is not in DEFAULT_GUEST_TOOLS. frontend/src/pointer.tsx mirrors POINTER_ANCHORS (a parity test reads both) and mounts PointerOverlay in app.tsx (not in demo or the floating window). The overlay polls GET /api/canvas every 5 s and takes the newest tip or tour of the last 600 s that this page has not closed (currentPointer; closes kept in sessionStorage). It finds the element carrying that data-anchor (added to the rail buttons, the composer, the decisions panel and the Console button), rings it, and draws the caption with an arrow, flipping above near the window's bottom. A tour pages with Back/Next/Done and restarts at step 1 for a new tour. A target not on screen is named, and an untrusted tip says so. frontend/src/artifacts.tsx lists tips and tours as text. Tests: tests/test_h309_pointer.py (38), frontend/src/test/pointer.test.tsx (10), artifacts.test.tsx (+1); 37 mutants, all killed.",
+      "remaining": "",
       "evidence": [
         {
           "path": "agents/core/canvas.py",
-          "sha256": "4337eed4d960f8ea2c017789ca64489f19a018483bf6b6363338de209c66693d"
+          "sha256": "8729b76c997ef24ceb29da145bc49e22a350e5b19571f06d704c01ffb2dbfc97"
         },
         {
-          "path": "agents/core/routers/canvas.py",
-          "sha256": "3d06a699c3764c1a9f259d56d97a07255e7280f42fccc4d62c6ba396d1f3b42e"
+          "path": "agents/core/pointer_tool.py",
+          "sha256": "76d830240378e00a15f51cfe7aa479b01d15ab7dcbf3385f3c6af8a67c45234d"
         },
         {
-          "path": "frontend/src/artifacts.tsx",
-          "sha256": "09e307f3518ee0383e7161e990e4c2005c029dafc7f713a1941430791b4361cc"
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
-          "path": "frontend/src/panels/mission-canvas.tsx",
-          "sha256": "d9e253c47103ff4948127088a53e1ddce70523c944e0820f9a9c77e8c69ff1f7"
+          "path": "frontend/src/pointer.tsx",
+          "sha256": "d1e1683503fd4f9d46fbea350c52db2765abb25b4850ecf09c20160747563fc5"
         },
         {
-          "path": "tests/test_h12_18_canvas.py",
-          "sha256": "bd97d0fd37cd3b9d895ae624a497cbed5fb4e9a48f2df03adfd08d62a2b93156"
+          "path": "frontend/src/app.tsx",
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
+        },
+        {
+          "path": "tests/test_h309_pointer.py",
+          "sha256": "3f1c550e77a2d1e5ebde401d1ffdc35321c1373b2d5360474819617dc142b801"
         }
       ]
     },
@@ -4003,7 +4007,7 @@
       "id": "H313",
       "row_sha256": "1615c40dcdbda914e85b97cb661c9c33967bdf1d93f05b21ffe1ef8d248ba6f4",
       "status": "equivalent",
-      "summary": "The model can decide to say one short text aloud on one room's device, and can do it again. register_speak_tool (agents/core/voice/speak_tool.py:640) adds a ToolRPC `speak` tool with gated=True, trusted execution and its own gated intake (agents/core/voice/speak_tool.py:667, agents/core/voice/speak_tool.py:673). It is registered only while JARVIS_MEDIA_DIRECTOR is on (agents/core/voice/speak_tool.py:653), and AutonomyCoordinator wires it with the broker kernel and the governed enqueue (agents/core/autonomy_coordinator.py:500, agents/core/autonomy_coordinator.py:1385). It reaches the same Media Director instance the media routes use, so the owner's device registry and session board apply (agents/core/routers/media_director.py:272). SpeakTool.preflight (agents/core/voice/speak_tool.py:344) runs at proposal and again before the approved run. It refuses text over the spoken-reply cap and code-only text (agents/core/voice/speak_tool.py:350, agents/core/voice/speak_tool.py:352). It resolves a room to that room's one announce-capable default device, so the card title and the persisted args name the speaker (agents/core/voice/speak_tool.py:237, agents/core/voice/speak_tool.py:423). It raises no card the run could only refuse: unified API off, kernel off or unbound, no media root, no speech backend, no driver for the device, or no configured presence room each refuse by name (agents/core/voice/speak_tool.py:371, agents/core/voice/speak_tool.py:366). SpeakTool.intake (agents/core/voice/speak_tool.py:401) shows the kernel the exact toolrpc.speak row it enqueues. Under the production composition (worker.kernel_gate over MediationKernelBridge, agents/core/autonomy/worker.py:220, agents/core/kernel/binding.py:108) that decision binds as the row's intake evidence, and a DENY raises no card (agents/core/voice/speak_tool.py:427). Only the human-accepted durable toolrpc.speak row runs. The kind is trusted (agents/core/autonomy_coordinator.py:66) and the executor routes it to the trusted rail (agents/core/autonomy_coordinator.py:1406-1409). ToolRPC re-runs the preflight and requires the trusted execution context (agents/core/tool_rpc.py:545, agents/core/tool_rpc.py:573), and the handler refuses a row of any other kind (agents/core/voice/speak_tool.py:497). SpeakTool.execute (agents/core/voice/speak_tool.py:492) synthesizes the clip through SpokenReply on the host TTSEngine in the owner's configured voice (agents/core/voice/speak_tool.py:508, agents/core/channels/spoken_reply.py:242, agents/core/voice/tts.py:144). It writes the clip owner-only under the first media root (agents/core/voice/speak_tool.py:595, agents/core/voice/speak_tool.py:609) and presents it only through CapabilityActionAPI.perform('action:media.present') in announce mode (agents/core/voice/speak_tool.py:548, agents/core/voice/speak_tool.py:553). The facade asks the Action Kernel before the handler runs (agents/core/capability_actions.py:168) and refuses on a DENY (agents/core/capability_actions.py:175), so the kernel authorizes the effect and the tool never reaches a driver. A kernel QUEUE on that present is honoured as the accepted row and audited as speak.durably_approved (agents/core/voice/speak_tool.py:456, agents/core/voice/speak_tool.py:478). A DENY becomes kernel_denied with the kernel's reason (agents/core/voice/speak_tool.py:570). The Media Director treats an announce as a one-shot notice (agents/core/media_director.py:738): it never blocks the next present and costs no interrupt budget (agents/core/media_director.py:890), and whatever it cut into stays the restore point (agents/core/media_director.py:992). Because the tool is gated, tool_profiles offers it only to the owner on the operator surface (agents/core/tool_profiles.py:190, agents/core/tool_profiles.py:194), and the snapshot pins this (tests/_snapshots/tool_profiles.json:48, tests/test_tool_profiles.py:202). Tests cover: registration and postures (tests/test_speak_tool.py:170, tests/test_speak_tool.py:196); named preflight refusals that enqueue nothing (tests/test_speak_tool.py:271, tests/test_speak_tool.py:320); and the card naming the device (tests/test_speak_tool.py:286). With the real kernel.authorize, AutonomyPolicy and KillSwitch behind worker.kernel_gate, an approved speak is mediated and audited, and an engaged kill switch refuses both the run and the card (tests/test_speak_tool.py:520, tests/test_speak_tool.py:543, tests/test_speak_tool.py:576). Three back-to-back normal speaks on one device all play at no budget cost (tests/test_speak_tool.py:591). Speaking over music needs high urgency, pays once and keeps the music as the restore point (tests/test_speak_tool.py:608, tests/test_media_director.py:762). A kernel DENY, a missing TTS backend, a missing media root and a driverless device each refuse by name with no playback, and an engine that yields no audio refuses as tts_failed with nothing presented (tests/test_speak_tool.py:681, tests/test_speak_tool.py:469, tests/test_speak_tool.py:666, tests/test_speak_tool.py:703, tests/test_speak_tool.py:716). A row of another kind cannot speak (tests/test_speak_tool.py:753), and the clip spool stays bounded (tests/test_speak_tool.py:779). Known limits outside the accepted adaptation: an accepted speak runs at the next autonomy tick (default 60 s, floor 15 s, agents/core/autonomy_coordinator.py:291), like every gated tool. A presence:auto card names the sentinel, because only play time knows whether the owner is in the presence room. Audible output needs an owner-wired speaker driver (the in-repo NullMediaDriver refuses and LocalFileMediaDriver is a reference), the same host seam as every media.present. The speech-backend gate needs edge-tts or Kokoro installed, like the spoken-reply channel. An announce of any length, including one sent through POST /api/media/present, no longer holds its device, as docs/FLAGS.md states. Hermes's tts.provider, custom command providers and tts.speed are outside the accepted adaptation, because Nerva's TTS subsystem was already ahead.",
+      "summary": "The model can decide to say one short text aloud on one room's device, and can do it again. register_speak_tool (agents/core/voice/speak_tool.py:640) adds a ToolRPC `speak` tool with gated=True, trusted execution and its own gated intake (agents/core/voice/speak_tool.py:667, agents/core/voice/speak_tool.py:673). It is registered only while JARVIS_MEDIA_DIRECTOR is on (agents/core/voice/speak_tool.py:653), and AutonomyCoordinator wires it with the broker kernel and the governed enqueue (agents/core/autonomy_coordinator.py:500, agents/core/autonomy_coordinator.py:1391). It reaches the same Media Director instance the media routes use, so the owner's device registry and session board apply (agents/core/routers/media_director.py:272). SpeakTool.preflight (agents/core/voice/speak_tool.py:344) runs at proposal and again before the approved run. It refuses text over the spoken-reply cap and code-only text (agents/core/voice/speak_tool.py:350, agents/core/voice/speak_tool.py:352). It resolves a room to that room's one announce-capable default device, so the card title and the persisted args name the speaker (agents/core/voice/speak_tool.py:237, agents/core/voice/speak_tool.py:423). It raises no card the run could only refuse: unified API off, kernel off or unbound, no media root, no speech backend, no driver for the device, or no configured presence room each refuse by name (agents/core/voice/speak_tool.py:371, agents/core/voice/speak_tool.py:366). SpeakTool.intake (agents/core/voice/speak_tool.py:401) shows the kernel the exact toolrpc.speak row it enqueues. Under the production composition (worker.kernel_gate over MediationKernelBridge, agents/core/autonomy/worker.py:220, agents/core/kernel/binding.py:108) that decision binds as the row's intake evidence, and a DENY raises no card (agents/core/voice/speak_tool.py:427). Only the human-accepted durable toolrpc.speak row runs. The kind is trusted (agents/core/autonomy_coordinator.py:66) and the executor routes it to the trusted rail (agents/core/autonomy_coordinator.py:1412-1415). ToolRPC re-runs the preflight and requires the trusted execution context (agents/core/tool_rpc.py:545, agents/core/tool_rpc.py:573), and the handler refuses a row of any other kind (agents/core/voice/speak_tool.py:497). SpeakTool.execute (agents/core/voice/speak_tool.py:492) synthesizes the clip through SpokenReply on the host TTSEngine in the owner's configured voice (agents/core/voice/speak_tool.py:508, agents/core/channels/spoken_reply.py:242, agents/core/voice/tts.py:144). It writes the clip owner-only under the first media root (agents/core/voice/speak_tool.py:595, agents/core/voice/speak_tool.py:609) and presents it only through CapabilityActionAPI.perform('action:media.present') in announce mode (agents/core/voice/speak_tool.py:548, agents/core/voice/speak_tool.py:553). The facade asks the Action Kernel before the handler runs (agents/core/capability_actions.py:168) and refuses on a DENY (agents/core/capability_actions.py:175), so the kernel authorizes the effect and the tool never reaches a driver. A kernel QUEUE on that present is honoured as the accepted row and audited as speak.durably_approved (agents/core/voice/speak_tool.py:456, agents/core/voice/speak_tool.py:478). A DENY becomes kernel_denied with the kernel's reason (agents/core/voice/speak_tool.py:570). The Media Director treats an announce as a one-shot notice (agents/core/media_director.py:738): it never blocks the next present and costs no interrupt budget (agents/core/media_director.py:890), and whatever it cut into stays the restore point (agents/core/media_director.py:992). Because the tool is gated, tool_profiles offers it only to the owner on the operator surface (agents/core/tool_profiles.py:190, agents/core/tool_profiles.py:194), and the snapshot pins this (tests/_snapshots/tool_profiles.json:50, tests/test_tool_profiles.py:202). Tests cover: registration and postures (tests/test_speak_tool.py:170, tests/test_speak_tool.py:196); named preflight refusals that enqueue nothing (tests/test_speak_tool.py:271, tests/test_speak_tool.py:320); and the card naming the device (tests/test_speak_tool.py:286). With the real kernel.authorize, AutonomyPolicy and KillSwitch behind worker.kernel_gate, an approved speak is mediated and audited, and an engaged kill switch refuses both the run and the card (tests/test_speak_tool.py:520, tests/test_speak_tool.py:543, tests/test_speak_tool.py:576). Three back-to-back normal speaks on one device all play at no budget cost (tests/test_speak_tool.py:591). Speaking over music needs high urgency, pays once and keeps the music as the restore point (tests/test_speak_tool.py:608, tests/test_media_director.py:762). A kernel DENY, a missing TTS backend, a missing media root and a driverless device each refuse by name with no playback, and an engine that yields no audio refuses as tts_failed with nothing presented (tests/test_speak_tool.py:681, tests/test_speak_tool.py:469, tests/test_speak_tool.py:666, tests/test_speak_tool.py:703, tests/test_speak_tool.py:716). A row of another kind cannot speak (tests/test_speak_tool.py:753), and the clip spool stays bounded (tests/test_speak_tool.py:779). Known limits outside the accepted adaptation: an accepted speak runs at the next autonomy tick (default 60 s, floor 15 s, agents/core/autonomy_coordinator.py:291), like every gated tool. A presence:auto card names the sentinel, because only play time knows whether the owner is in the presence room. Audible output needs an owner-wired speaker driver (the in-repo NullMediaDriver refuses and LocalFileMediaDriver is a reference), the same host seam as every media.present. The speech-backend gate needs edge-tts or Kokoro installed, like the spoken-reply channel. An announce of any length, including one sent through POST /api/media/present, no longer holds its device, as docs/FLAGS.md states. Hermes's tts.provider, custom command providers and tts.speed are outside the accepted adaptation, because Nerva's TTS subsystem was already ahead.",
       "remaining": "",
       "evidence": [
         {
@@ -4012,7 +4016,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/media_director.py",
@@ -4064,7 +4068,7 @@
         },
         {
           "path": "tests/_snapshots/tool_profiles.json",
-          "sha256": "068cde87c8a04ddc0dbaa2a49d10f7863bbfed8f9e3c35960dd832e616a7e0e1"
+          "sha256": "8a7cd6a09bf14e099bcaddbda5da51fb9c2a7e7fa3614123f06826edf5c53b63"
         },
         {
           "path": "docs/FLAGS.md",
@@ -4093,7 +4097,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/routers/memory_kg.py",
@@ -4122,7 +4126,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -4146,7 +4150,7 @@
         },
         {
           "path": "tests/_snapshots/tool_profiles.json",
-          "sha256": "068cde87c8a04ddc0dbaa2a49d10f7863bbfed8f9e3c35960dd832e616a7e0e1"
+          "sha256": "8a7cd6a09bf14e099bcaddbda5da51fb9c2a7e7fa3614123f06826edf5c53b63"
         },
         {
           "path": "agents/core/routers/sessions.py",
@@ -4263,7 +4267,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -4300,7 +4304,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/settings_db.py",
@@ -4312,7 +4316,7 @@
         },
         {
           "path": "tests/_snapshots/tool_profiles.json",
-          "sha256": "068cde87c8a04ddc0dbaa2a49d10f7863bbfed8f9e3c35960dd832e616a7e0e1"
+          "sha256": "8a7cd6a09bf14e099bcaddbda5da51fb9c2a7e7fa3614123f06826edf5c53b63"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -4847,7 +4851,7 @@
         },
         {
           "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "b2717dac6b0056c7c4b51efc28fa9236c884208f897a039ab49d50e076f03383"
+          "sha256": "05565a22ce5b2ea3cc103cd0bfeaeedc3d8c24b3c15aa7fec9109df908e28115"
         },
         {
           "path": "tests/test_cloud_tool_turns.py",
@@ -5810,7 +5814,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -5835,7 +5839,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -5860,7 +5864,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -6073,11 +6077,11 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/shell.tsx",
-          "sha256": "e51eaab3eb80f902c4804eb1ea64dc9e5d5d77d32c714ce19de41b5247718d01"
+          "sha256": "9cf49ebe570f44cf0aa9b402b59fc701b7af0e61d0e26bddc54b2331a3b4fd4d"
         },
         {
           "path": "frontend/src/test/jobs-entry.test.tsx",
@@ -6321,7 +6325,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_job_scripts.py",
@@ -6468,7 +6472,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/llm/job_selection.py",
@@ -7624,11 +7628,11 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/orchestrator_bindings.py",
-          "sha256": "9f2d4603e85e848db0a20d7e83ff63612e91e3113df74e64e57ab1cfa66b8ae3"
+          "sha256": "5baf59663f5d79134542197623f533012d737f43562980609a39a6c51ff09bd6"
         },
         {
           "path": "agents/core/llm/model_manager.py",
@@ -7862,7 +7866,7 @@
       "id": "H526",
       "row_sha256": "c0ff1630bf0df6ff10e1d684eb77dbd04b6cbf400f94cc68abfdbf325e5aa4b2",
       "status": "partial",
-      "summary": "A pure, offline speech normaliser exists, but only chat-channel voice notes and the gated speak tool use it. agents/core/channels/spoken_reply.py:73 speakable() drops fenced code (_FENCE_RE, :56). It strips bold/italic/heading/inline-code markers through to_plain() in agents/core/channels/render.py and replaces URLs with the word \"link\" (:57). It then folds newlines and whitespace to single spaces and cuts at a sentence boundary within 1,500 chars. Its callers are SpokenReply.__call__ (:196), used by Telegram's per-chat voice mode (agents/core/channels/telegram.py _speak) and the /voice command, and, since HEQ lot 1 (H313), the gated speak ToolRPC tool (registered only while JARVIS_MEDIA_DIRECTOR is on): its preflight refuses text with nothing speakable (agents/core/voice/speak_tool.py:352) and its approved run synthesizes through SpokenReply (agents/core/voice/speak_tool.py:508), so a model-chosen room announcement gets speakable()'s cleaning and the speakable() gaps listed at the end. The main speech paths do not normalise:\n- POST /tts passes req.text straight to TTSEngine.speak (agents/core/routers/voice.py:57), and /tts/stream splits the raw text (:115).\n- TTSEngine.speak removes only the twelve Fish [emotion] tags (agents/core/voice/tts.py:47, :167).\n- The HUD voice loop sends the raw reply and each raw streamed sentence to /tts (frontend/src/voice.ts:238, :297), fed by raw token deltas (frontend/src/app.tsx:326).\n- Mobile ttsFetchBase64 posts raw text (mobile/src/api/client.ts:2387).\n- The wake-word VoicePipeline speaks the raw response (agents/core/voice/pipeline.py:60), and so does VoiceChannel.send (agents/core/channels/voice.py:41).\nspeakable() itself also has gaps. A probe on a mixed markdown sample kept emoji, \"- \" list bullets, table pipes and |---| separator rows, a <think> block, and the symbols & % ->. Its URL regex also swallows the closing parenthesis that to_plain() puts after a link, producing \"doc (link\". <think> blocks are removed upstream only, by strip_thinking() in agents/core/llm/base.py on model output, not by any speech normaliser.",
+      "summary": "A pure, offline speech normaliser exists, but only chat-channel voice notes and the gated speak tool use it. agents/core/channels/spoken_reply.py:73 speakable() drops fenced code (_FENCE_RE, :56). It strips bold/italic/heading/inline-code markers through to_plain() in agents/core/channels/render.py and replaces URLs with the word \"link\" (:57). It then folds newlines and whitespace to single spaces and cuts at a sentence boundary within 1,500 chars. Its callers are SpokenReply.__call__ (:196), used by Telegram's per-chat voice mode (agents/core/channels/telegram.py _speak) and the /voice command, and, since HEQ lot 1 (H313), the gated speak ToolRPC tool (registered only while JARVIS_MEDIA_DIRECTOR is on): its preflight refuses text with nothing speakable (agents/core/voice/speak_tool.py:352) and its approved run synthesizes through SpokenReply (agents/core/voice/speak_tool.py:508), so a model-chosen room announcement gets speakable()'s cleaning and the speakable() gaps listed at the end. The main speech paths do not normalise:\n- POST /tts passes req.text straight to TTSEngine.speak (agents/core/routers/voice.py:57), and /tts/stream splits the raw text (:115).\n- TTSEngine.speak removes only the twelve Fish [emotion] tags (agents/core/voice/tts.py:47, :167).\n- The HUD voice loop sends the raw reply and each raw streamed sentence to /tts (frontend/src/voice.ts:238, :297), fed by raw token deltas (frontend/src/app.tsx:327).\n- Mobile ttsFetchBase64 posts raw text (mobile/src/api/client.ts:2387).\n- The wake-word VoicePipeline speaks the raw response (agents/core/voice/pipeline.py:60), and so does VoiceChannel.send (agents/core/channels/voice.py:41).\nspeakable() itself also has gaps. A probe on a mixed markdown sample kept emoji, \"- \" list bullets, table pipes and |---| separator rows, a <think> block, and the symbols & % ->. Its URL regex also swallows the closing parenthesis that to_plain() puts after a link, producing \"doc (link\". <think> blocks are removed upstream only, by strip_thinking() in agents/core/llm/base.py on model output, not by any speech normaliser.",
       "remaining": "Apply one speech normaliser at every TTS entry point: POST /tts, /tts/stream, TTSEngine.speak (and with it VoicePipeline, VoiceChannel.send and SpokenReply), the HUD per-sentence streaming path and mobile. Today only Telegram voice notes, /voice and the gated speak tool (H313) go through speakable(), and the speak tool shares its gaps. The normaliser must also:\n- remove emoji\n- strip list markers and tables\n- drop <think> blocks, including unclosed ones\n- expand symbols (&, %, ->, °) for RO and EN\n- stop the URL regex from eating the link's closing parenthesis\n- keep Fish [emotion] tags intact.\nOn the streaming path, a fenced code block split across token deltas must not be spoken.",
       "evidence": [
         {
@@ -7907,7 +7911,7 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "mobile/src/api/client.ts",
@@ -8357,7 +8361,7 @@
         },
         {
           "path": "frontend/src/cockpit.tsx",
-          "sha256": "cb374e594b7cd3fc1143dfe02702641af343edad35a76ea51c131a2ced03e051"
+          "sha256": "ff5596268ff643d830df1c9ba99bc24e05db59221afee6efdbad7341bed0bdf9"
         },
         {
           "path": "frontend/src/context-refs.tsx",
@@ -8402,7 +8406,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "equivalent",
-      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:240). App.submit sends an image draft to runVision (frontend/src/app.tsx:387, frontend/src/app.tsx:362). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1474). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:316), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:290) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2119), dispatched before any /chat body is built (agents/cli/nerva.py:1771). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1862; _read_image, agents/cli/nerva.py:1872). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:1972): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:1947; _clipboard_image, agents/cli/nerva.py:2057). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2182). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
+      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:42-43) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:240). App.submit sends an image draft to runVision (frontend/src/app.tsx:388, frontend/src/app.tsx:363). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:216, registered at agents/web.py:1474). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:237). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:357). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:317), so no tool plan can be derived from image content. tests/test_composer_vision.py (27 passed) covers validation, auth, binding, the remote acknowledgement and error shapes. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 10 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:290) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2119), dispatched before any /chat body is built (agents/cli/nerva.py:1771). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:1862; _read_image, agents/cli/nerva.py:1872). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:1972): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:1947; _clipboard_image, agents/cli/nerva.py:2057). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2182). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable.",
       "remaining": "",
       "evidence": [
         {
@@ -8411,11 +8415,11 @@
         },
         {
           "path": "frontend/src/cockpit.tsx",
-          "sha256": "cb374e594b7cd3fc1143dfe02702641af343edad35a76ea51c131a2ced03e051"
+          "sha256": "ff5596268ff643d830df1c9ba99bc24e05db59221afee6efdbad7341bed0bdf9"
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "9b45457d0dfaf4c4acdb0947337e8c0e5cb611a0a7ea33ac3d43b7a6036ae232"
+          "sha256": "af1e03e4b80fca75f7214466f630fce4de7cab2888a27f53d4ee17470420935e"
         },
         {
           "path": "frontend/src/vision-turn.ts",
@@ -8500,7 +8504,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/safe_mode.py",
@@ -8529,7 +8533,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -8992,7 +8996,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -9060,7 +9064,7 @@
       "id": "H661",
       "row_sha256": "f561e9e036f1b296b050101ac1f5ead31c1e09146635fe8adae5e8d7424c2bab",
       "status": "equivalent",
-      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1404) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:123, agents/core/file_tools.py:1511). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1430, agents/core/file_tools.py:740). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:758). A page that stops early returns next_offset (agents/core/file_tools.py:1285) and never ends inside a UTF-8 character (agents/core/file_tools.py:1237). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1289). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:648, agents/core/file_tools.py:685, agents/core/file_tools.py:1202), wired at agents/core/autonomy_coordinator.py:819. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:823). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:971), and able to open this very path (agents/core/autonomy_coordinator.py:835, agents/core/file_tools.py:713). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:699), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:765, agents/core/file_tools.py:917), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
+      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1404) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:123, agents/core/file_tools.py:1511). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1430, agents/core/file_tools.py:740). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:758). A page that stops early returns next_offset (agents/core/file_tools.py:1285) and never ends inside a UTF-8 character (agents/core/file_tools.py:1237). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1289). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:648, agents/core/file_tools.py:685, agents/core/file_tools.py:1202), wired at agents/core/autonomy_coordinator.py:819. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:823). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:977), and able to open this very path (agents/core/autonomy_coordinator.py:835, agents/core/file_tools.py:713). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:699), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:765, agents/core/file_tools.py:917), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
       "remaining": "",
       "evidence": [
         {
@@ -9077,7 +9081,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -9296,7 +9300,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "7aca827f7c0f70746aca0cf6a9f89617c40d6fa0fa15636ca87a2df79cec697f"
+          "sha256": "6558808bc9931ad804a367e52ffabf266ee7c8b07828575e1f48ede4ecca7593"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -9936,7 +9940,7 @@
       "id": "H681",
       "row_sha256": "ceea59bea96a9445bcf5c755764b3327929687a08d127539bbfe782e1b981363",
       "status": "partial",
-      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1517-1520) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1472) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1745-1750). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
+      "summary": "SubAgentManager (agents/core/subagents.py) provides capped, isolated, steerable spawns, and a schema-invalid child is recorded as failed (agents/core/subagents.py:408-414). The production runner _subagent_runner (agents/core/autonomy_coordinator.py:1523-1526) calls orch.process(task, agent=picked, channel='subagent') with no model, provider or request override. SubAgentManager.spawn accepts only task, agent, parent and output_schema, and SubAgentSpawnBody (agents/core/routers/mesh.py:191-195) accepts no model fields. A reusable model/provider pin exists for owner jobs (selection_scope, agents/core/llm/job_selection.py:54, used at agents/core/autonomy/jobs.py:1472) but is not wired to delegation. Provider failure is not reported honestly. Orchestrator.process returns '' on any backend failure or error/timeout marker (agents/core/orchestrator.py:1745-1750). The runner wraps that as {'output': ''}, and the manager records the child as done with ok=True; a scratch probe returned status 'done'. There is no batch spawn surface, and nothing collapses a batch of identical failures into one 'configured subagent model rejected' notice.",
       "remaining": "(1) Per-child API settings: accept model/provider, plus bounded request overrides such as max_tokens/temperature/extra_body deep-merged one level, on SubAgentManager.spawn, on the /api/subagents/spawn body and through a default autonomy.subagent_model setting. Apply them in _subagent_runner through selection_scope with documented precedence: explicit, then setting, then parent. (2) Failure honesty: a child whose provider call failed (empty output, degraded reply or error marker) is recorded as failed with the error class, not done. (3) Batch report: a batch spawn surface whose result emits one notice when every child failed with a model-not-found phrase AND the configured subagent model name. The notice names the model, the setting that controls it and whether a fallback exists. A failure naming a model that is not the configured one must not trigger it. (4) Tests for all three.",
       "evidence": [
         {
@@ -9945,7 +9949,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "4d00d02262c742ff81c6b120482f5e7e7dad3e08d4df308f9d7535b9e8f9e06f"
+          "sha256": "db2dc23f7184176fc5d08ce55054afc11fedb88588c4f73549c94319d2d52631"
         },
         {
           "path": "agents/core/routers/mesh.py",

@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H309 the agent points at the HUD: a tip on one element, or a short tour (missing → equivalent, #1207; headline 170 → 171/697).
+
+  Only the Agent Canvas existed; nothing could point at the page. Now (`agents/core/pointer_tool.py`, `agents/core/canvas.py`, `frontend/src/pointer.tsx`), as Hermes' pointing:
+  - **Canvas types.** A `tip` is a target and a one-line caption. A `tour` is a title and at most 8 such steps. The canvas sanitises both (whitespace collapsed, 160-character captions).
+  - **Named places only.** A target is one of 19 anchors (the rail's modes, the message box, the Decision Inbox panel, the Console button), held in `canvas.POINTER_ANCHORS` and mirrored in the HUD with a parity test. A tip can never ring an approve or reject button.
+  - **The tool.** `canvas_point` is ungated and offered to the owner's turns; it is not a guest tool. A tip from an untrusted turn, or from a turn that is not the owner's, is marked `untrusted`, and the HUD says so.
+  - **The overlay.** It polls `GET /api/canvas` and takes the newest tip or tour of the last ten minutes that this page has not closed. It rings the element with that `data-anchor`, draws the caption with an arrow (flipped above near the bottom), and pages a tour with Back/Next/Done. A target that is not on screen is named instead. Console → Artifacts lists tips and tours as text.
+
+  37 mutants: all caught. Test manual: SHL-219, SHL-220.
+  Tests: backend 16,260 → 16,298 (`tests/test_h309_pointer.py` 38); vitest 1,532 → 1,543 (`pointer.test.tsx` 10, `artifacts.test.tsx` +1).
+
 - 2026-09-26 H209 every HUD shortcut in one registry, listed and rebindable (missing → equivalent, #1207; headline 169 → 170/697).
 
   The HUD's keys were literal maps in `app.tsx`, `world_app.tsx` and the cinema overlay. Now (`frontend/src/shortcuts.ts`, `shortcuts-panel.tsx`), as Hermes' keyboard shortcuts:

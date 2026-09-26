@@ -12,6 +12,7 @@ import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
 import { type Overrides, bindings as shortcutBindings, loadOverrides, matchAction, saveOverrides } from './shortcuts';
 import { ShortcutsPanel } from './shortcuts-panel';
+import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
@@ -574,7 +575,8 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} /></RouteBoundary>}
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
-      <button className="tool-btn" onClick={() => setConsoleOpen(true)} title="console (`)"
+      {!floating && <PointerOverlay enabled={!demo} />}
+      <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title="console (`)"
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
