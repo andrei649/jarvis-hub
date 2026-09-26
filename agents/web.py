@@ -467,6 +467,10 @@ async def lifespan(application: FastAPI):
     from core.paths import ensure_user_home
     scaffolded_home = ensure_user_home()
     setup_logging()
+    # H501: say once, in the log, when the host itself is set up dangerously (root,
+    # sshd passwords, a container's data root not on a volume). Read-only, never blocks.
+    from agents.core import host_posture
+    await asyncio.to_thread(host_posture.log_startup)
     from agents.core import safe_mode
     if safe_mode.enabled():
         logger.warning(

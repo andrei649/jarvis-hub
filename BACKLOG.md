@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H501 warn about a dangerous host posture before it becomes an incident (partial → equivalent, #1207; headline 175 → 176/697).
+
+  The bind guard already refused an unauthenticated network bind; nothing looked at the host. Now (`agents/core/host_posture.py`), as Hermes' posture warnings — three read-only checks that never block, each `ok`/`warn`/`unknown` with the fix:
+  - **Root.** The hub runs as root (euid 0) on any host, or elevated on Windows.
+  - **sshd passwords.** `/etc/ssh/sshd_config` read the way sshd reads it: `Include`s in place and in lexical order, the first value wins (so a drop-in included at the top overrides the main file), `Match` blocks conditional, an absent `PasswordAuthentication` the default `yes`.
+  - **Container storage.** In a container, the data root is not on a volume or bind mount (`/proc/self/mountinfo`): memory, vault and keys would go with it.
+  - **Where it shows.** One log line per warning at start; `GET /api/security/posture` gains `host`; the doctor ends with three advisory rows (`host_not_root`, `sshd_no_passwords`, `container_storage`), `skip` when a check cannot tell, never ok. The shipped Dockerfile has no `USER`, so a stock container now shows the root warning.
+
+  55 mutants: 53 caught after five cases were added; the other two were dead code, removed. Test manual: SEC-214.
+  Tests: backend 16,500 → 16,542 (`tests/test_h501_host_posture.py` 42).
+
 - 2026-09-26 H222 the tray says when Nerva is listening, outside its windows (missing → equivalent, #1207; headline 174 → 175/697).
 
   Mic state lived only inside the HUD page and was a static mute flag; the voice pipeline, the wake-word detector and the satellites published nothing. Now (`agents/core/voice/listening.py`, `frontend/src/listening.ts`, `desktop/src-tauri/src/indicator.rs`), as Hermes' listening indicator:

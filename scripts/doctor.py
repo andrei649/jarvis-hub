@@ -37,6 +37,12 @@ config_sources      advisory   informational: which layer supplied each configur
                                that may be value material (a mis-quoted multi-line value),
                                which it never prints
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
+host_not_root       advisory   the hub runs as root, or elevated on Windows (H501)
+sshd_no_passwords   advisory   sshd accepts passwords, by its own reading of sshd_config and
+                               its Include files (absent is the sshd default, yes) (H501)
+container_storage   advisory   in a container, the data root is not on a volume or bind
+                               mount (H501); each host row says the fix, and is ``skip``
+                               when it cannot tell, never ok
 ==================  =========  ==========================================================
 
 The hub's address is the one ``nerva status`` reads (``hub_url``: ``NERVA_HUB_URL``, else
@@ -102,7 +108,8 @@ WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared
 LOOPBACK_HOSTS = frozenset({"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 REQUIRED = ("python", "venv", "locks_in_sync", "bind_is_loopback", "data_root_writable")
-ADVISORY = ("runtimes", "readyz", "runtime_resolves", "config_sources", "smoke")
+ADVISORY = ("runtimes", "readyz", "runtime_resolves", "config_sources", "smoke",
+            "host_not_root", "sshd_no_passwords", "container_storage")
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
 
@@ -222,6 +229,38 @@ def check_data_root(root: Path, env=None) -> Check:
         return _result("data_root_writable", False, "data_root_not_writable",
                        f"{target}: {exc.strerror or exc}")
     return _result("data_root_writable", True, "writable", str(target))
+
+
+#: H501 — the host checks (agents/core/host_posture.py), under the doctor's own names.
+HOST_CHECK_NAMES = {"root": "host_not_root", "sshd_passwords": "sshd_no_passwords",
+                    "container_storage": "container_storage"}
+
+
+def check_host_posture(root: Path, env=None, *, run=None) -> list:
+    """The three read-only host checks: root, sshd passwords, container storage. A
+    warning is advisory (it never fails the doctor); a check that could not tell is
+    skipped with its reason, never shown as ok."""
+    try:
+        if run is None:
+            from agents.core.host_posture import run_checks as run
+        findings = run(resolve_data_root(root, env))
+    except Exception as exc:
+        return [Check(name, SKIP, "host_posture_unavailable", type(exc).__name__)
+                for name in HOST_CHECK_NAMES.values()]
+    out = []
+    for finding in findings:
+        name = HOST_CHECK_NAMES.get(finding.get("check"))
+        if name is None:
+            continue
+        detail = finding.get("detail", "")
+        if finding.get("status") == "ok":
+            out.append(Check(name, OK, finding.get("reason", ""), detail))
+        elif finding.get("status") == "warn":
+            out.append(Check(name, WARN, finding.get("reason", ""),
+                             f"{detail}; fix: {finding.get('fix', '')}" if detail else f"fix: {finding.get('fix', '')}"))
+        else:
+            out.append(Check(name, SKIP, finding.get("reason", "unknown"), detail))
+    return out
 
 
 def check_runtimes(opener=urllib.request.urlopen) -> Check:
@@ -749,6 +788,7 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=None,
         check_runtime_resolves(to_hub, readyz=readyz, env=env),
         check_config_sources(root, env, opener=to_hub, readyz=readyz),
         check_smoke(root, enabled=smoke, run=run),
+        *check_host_posture(root, env),   # H501: advisory, never a FAIL
     ]
     ok = all(c.status != FAIL for c in checks)
     return DoctorReport(ok=ok, root=str(root), checks=checks)
