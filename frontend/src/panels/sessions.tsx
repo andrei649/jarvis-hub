@@ -3,7 +3,9 @@
    call: the last exchanges, each turn on one line, and the tools a reply used
    collapsed to a count ("[3 tool calls: terminal_run, web_search]"). Before this the
    resume button posted and showed nothing; the owner had to open the chat and re-read
-   the raw turns. Text only: a turn is rendered as text, never as markup. */
+   the raw turns. Text only: a turn is rendered as text, never as markup.
+   H262 — pin a chat, on both tabs: a pinned chat is never auto-archived and never deleted
+   by retention; the row says so with a badge (hover: when it was pinned). */
 import React, { useState } from 'react';
 import { apiDelete, apiPost } from '../api/client';
 import { Card, Row, State, arr, asLive, mono, refusalReason, useApi } from '../panel-kit';
@@ -13,6 +15,9 @@ export const RESUME_PATH = '/sessions/resume';
 export const archivePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/archive`;
 export const unarchivePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/unarchive`;
 export const deletePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}?confirm=DELETE`;
+/** H262 — pin a conversation (kept out of archiving and retention), or take the pin off. */
+export const pinPath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/pin`;
+export const unpinPath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/unpin`;
 
 /** "[3 tool calls: a, b]" — the count of calls, then the distinct names. */
 export function toolLine(entry: any): string {
@@ -70,6 +75,9 @@ export function SessionsPanel() {
   const unarchive = (sid: string) => act(sid, () => apiPost(unarchivePath(sid)), () => `back in the list: ${sid}`, 'unarchived');
   const remove = (sid: string) => act(sid, () => apiDelete(deletePath(sid), { admin: true }),
     (r) => `deleted ${sid}${r?.backup ? ` · backup at ${r.backup}` : ''}`, 'deleted');
+  const pin = (sid: string) => act(sid, () => apiPost(pinPath(sid)),
+    () => `pinned ${sid} · never archived or deleted by retention`, 'pinned');
+  const unpin = (sid: string) => act(sid, () => apiPost(unpinPath(sid)), () => `unpinned ${sid}`, 'unpinned');
   const flip = (next: boolean) => { setArchived(next); setConfirming(''); setNote(''); setError(''); setResumed(null); };
   return <Card title={archived ? 'ARCHIVED CHATS' : 'SESSIONS'} live={asLive(d)} sub={list.length} onReload={reload}>
     <div role="tablist" aria-label="sessions view" style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
@@ -79,13 +87,19 @@ export function SessionsPanel() {
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 12).map((s: any, i: number) => {
       const sid = s?.session_id || s?.id || (typeof s === 'string' ? s : '');
+      const pinned = typeof s?.pinned_at === 'string' && s.pinned_at !== '';
       return <Row key={i}>
         {/* H413: the session's title (its first words, then the local model's name); the id stays visible. */}
         {s?.title
           ? <span style={{ fontSize: 12, color: 'var(--ink)' }} title={sid}>{s.title}
               <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
           : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
+        {pinned && <span data-testid="pinned-badge" title={`pinned ${s.pinned_at}`}
+          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s?.turns ?? s?.count ?? ''}</span>
+        {sid && (pinned
+          ? <button className="tool-btn" disabled={!!busy} aria-label={`unpin ${sid}`} onClick={() => unpin(sid)}>unpin</button>
+          : <button className="tool-btn" disabled={!!busy} aria-label={`pin ${sid}`} onClick={() => pin(sid)}>pin</button>)}
         {sid && !archived && <>
           <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>
             {busy === sid ? 'resuming…' : 'resume'}

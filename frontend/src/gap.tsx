@@ -27,6 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
+import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote } from './panels/retention';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2760,6 +2761,10 @@ export function SettingsPanel() {
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
   const [refused, setRefused] = useState<string[]>([]);
+  // H262 — the categories a save sent to Approvals instead (a retention write that deletes
+  // deeper than approved: 202, its retention keys queued, the rest written).
+  const [sent, setSent] = useState<string[]>([]);
+  const [retentionTick, setRetentionTick] = useState(0);
   // H157 — one search across every category (key or label), a reset per category, and a
   // configuration moved between boxes as JSON (SettingsTransfer).
   const [query, setQuery] = useState('');
@@ -2776,7 +2781,7 @@ export function SettingsPanel() {
   const dropDirty = (cats: string[]) => setDirty((p) => { const n = { ...p }; for (const c of cats) delete n[c]; return n; });
   // H259: a reset (one category or all) or an undo re-reads the list of resets.
   const [resetTick, setResetTick] = useState(0);
-  const afterReset = (cats: string[]) => { dropDirty(cats); setResetTick((n) => n + 1); reload(); };
+  const afterReset = (cats: string[]) => { dropDirty(cats); setResetTick((n) => n + 1); setRetentionTick((n) => n + 1); reload(); };
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
@@ -2788,6 +2793,7 @@ export function SettingsPanel() {
     apiPut('/api/admin/settings/' + cat, { values, ...flags }, { admin: true })
       .then((r: any) => {
         setSaved((r && r.updated) || 0); setRefused([]);
+        setSent(r && r.pending != null ? [`${cat}: ${approvalNote(r)}`] : []); setRetentionTick((n) => n + 1);
         setDirty((p) => {                            // drop what was saved; a later edit stays
           const rest = { ...(p[cat] || {}) };
           for (const k of Object.keys(values)) if (JSON.stringify(rest[k]) === JSON.stringify(values[k])) delete rest[k];
@@ -2804,14 +2810,19 @@ export function SettingsPanel() {
     let n = 0;
     const kept: Record<string, any> = {};
     const why: string[] = [];
+    const queued: string[] = [];
     for (const cat of Object.keys(dirty)) {
-      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; }
+      try {
+        const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true });
+        n += (r && r.updated) || 0;
+        if (r && r.pending != null) queued.push(`${cat}: ${approvalNote(r)}`);
+      }
       catch (err) {
         kept[cat] = dirty[cat];
         guard.catchGuard(saveGuarded(cat, dirty[cat]), (e) => why.push(`${cat}: ${refusalReason(e, 'not saved')}`))(err);
       }
     }
-    setSaved(n); setRefused(why); setDirty(kept); reload();
+    setSaved(n); setRefused(why); setSent(queued); setDirty(kept); setRetentionTick((t) => t + 1); reload();
   };
   return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
@@ -2826,6 +2837,7 @@ export function SettingsPanel() {
               <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
             )}
           </div>
+          {cat === 'retention' && <RetentionBanner refresh={retentionTick} />}
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
@@ -2856,6 +2868,9 @@ export function SettingsPanel() {
     {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
     {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    {sent.length > 0 && <div data-testid="sent-to-approvals" role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+      {sent.map((line) => <div key={line}>{line}</div>)}
+    </div>}
     {guard.view}
     <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
     <ResetAll onDone={() => afterReset(Object.keys(cats))} />
@@ -3223,6 +3238,7 @@ export function DecisionInboxPanel() {
             <p>Changes require a fresh proposal in Images. Reject this proposal before replacing it.</p>
             {Number.isSafeInteger(t.id) && t.id > 0 && <a href={internalLink("/v2/console/images?image_task=" + t.id)}>Watch image task</a>}
           </div>}
+          {t.kind === RETENTION_KIND && <RetentionCard task={t} />}
           {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
             <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
             {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}

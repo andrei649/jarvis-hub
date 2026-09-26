@@ -1412,8 +1412,14 @@ function AdminApp() {
     Promise.all(promises)
       .then(results => {
         const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
+        // H262 — a retention change that deletes deeper than approved is not saved: the hub
+        // sends it to Approvals (202, `gated`), or refuses it when the queue cannot take it.
+        const gated = results.filter(r => r && r.pending != null).flatMap(r => r.gated || []);
+        const refused = results.filter(r => r && r.error === 'retention_needs_approval').flatMap(r => r.gated || []);
         setDirty({});
-        showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`);
+        showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`
+          + (gated.length ? ` Trimise spre aprobare (Approvals): ${gated.join(', ')}.` : '')
+          + (refused.length ? ` Nesalvate (coada de aprobare indisponibilă): ${refused.join(', ')}.` : ''));
         afetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
       })
       .catch(() => showToast('Eroare la salvarea setărilor globale.'));

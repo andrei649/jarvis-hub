@@ -6390,9 +6390,33 @@ export interface paths {
          * @description H259 — put back what the latest reset replaced. A setting changed since that reset
          *     is left as it is, and so is a value its declaration no longer accepts; both are named
          *     in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
-         *     only; audited.
+         *     only; audited. H262 — an undo that would make retention delete deeper than approved
+         *     restores nothing (409 ``retention_needs_approval``).
          */
         post: operations["admin_undo_reset_api_admin_settings_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Retention State
+         * @description H262 — the data lifecycle, read-only: the retention settings as stored, the approved
+         *     snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
+         *     nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
+         *     forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report).
+         */
+        get: operations["admin_retention_state_api_admin_retention_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8769,6 +8793,7 @@ export interface paths {
         /**
          * Get Sessions
          * @description The newest sessions; H218: archived ones only with ``?archived=true``, never mixed in.
+         *     H262: each row carries its ``pinned_at``.
          */
         get: operations["get_sessions_sessions_get"];
         put?: never;
@@ -8810,9 +8835,49 @@ export interface paths {
         put?: never;
         /**
          * Unarchive Session
-         * @description H218 — bring an archived conversation back to the list.
+         * @description H218 — bring an archived conversation back to the list (a pinned one too).
          */
         post: operations["unarchive_session_sessions__session_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Session
+         * @description H262 — pin a conversation: never auto-archived, never deleted by retention.
+         */
+        post: operations["pin_session_sessions__session_id__pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/unpin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unpin Session
+         * @description H262 — take the pin off; the chat is archived and retained like any other again.
+         */
+        post: operations["unpin_session_sessions__session_id__unpin_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21166,6 +21231,26 @@ export interface operations {
             };
         };
     };
+    admin_retention_state_api_admin_retention_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     admin_rotate_tokens_api_admin_rotate_tokens_post: {
         parameters: {
             query?: never;
@@ -24563,6 +24648,68 @@ export interface operations {
         };
     };
     unarchive_session_sessions__session_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_session_sessions__session_id__pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpin_session_sessions__session_id__unpin_post: {
         parameters: {
             query?: never;
             header?: never;

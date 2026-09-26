@@ -15,7 +15,11 @@
    - Import takes a document (pasted, or a file), asks the hub what would change (a dry
      run: every key validated as a single write is, nothing written), shows each change,
      and applies it only on a second step. The hub writes all of it or none of it; a
-     refusal lists every reason. A secret's values are never shown. */
+     refusal lists every reason. A secret's values are never shown.
+   H262 — a retention setting whose default (or imported value) would make retention
+   delete deeper than a person approved is not changed by a reset: the preview and the
+   result name it as kept (it needs approval). An import that would do it is refused
+   whole by the hub; the preview names those settings and offers no apply step. */
 import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
@@ -50,6 +54,9 @@ export const shown = (v: any): string => {
 
 const PREVIEW_LINES = 8;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+/** H262 — " · a, b kept (needs approval)": the retention settings a reset left as stored. */
+const retentionKept = (r: any): string =>
+  Array.isArray(r?.retention_kept) && r.retention_kept.length ? ` · ${r.retention_kept.join(', ')} kept (needs approval)` : '';
 
 /** What a reset would change, from the hub's dry run: one line per setting (the first
     few), and the secrets it keeps and the settings the posture still forces. */
@@ -65,6 +72,8 @@ function ResetPreview({ plan }: { plan: any }) {
     {changes.slice(0, PREVIEW_LINES).map((c: any) => <div key={c.setting}>{`${c.setting}: ${shown(c.from)} → ${shown(c.to)}`}</div>)}
     {changes.length > PREVIEW_LINES && <div>…and {changes.length - PREVIEW_LINES} more</div>}
     {forced.length > 0 && <div>{forced.join(', ')} still set by the posture</div>}
+    {Array.isArray(plan.retention_kept) && plan.retention_kept.length > 0
+      && <div>{plan.retention_kept.join(', ')} kept: retention would delete deeper than approved</div>}
   </div>;
 }
 
@@ -87,7 +96,7 @@ export function ResetCategory({ cat, count, onDone }: { cat: string; count?: num
       const moved = Array.isArray(r?.reset) ? r.reset.length : 0;
       const kept = Array.isArray(r?.kept) && r.kept.length ? ` · kept ${r.kept.length} secret${r.kept.length === 1 ? '' : 's'}` : '';
       const forced = Array.isArray(r?.overridden) && r.overridden.length ? ` · ${r.overridden.join(', ')} still set by the posture` : '';
-      setNote((moved ? `reset ${moved}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults') + kept + forced);
+      setNote((moved ? `reset ${moved}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults') + kept + forced + retentionKept(r));
       if (onDone) onDone(cat);
       return true;
     })
@@ -108,7 +117,7 @@ export function ResetAll({ onDone }: { onDone?: () => void }) {
   const run = () => apiPost(RESEED_PATH, {}, { admin: true })
     .then((r: any) => {
       const moved = Array.isArray(r?.reset) ? r.reset.length : 0;
-      setNote(moved ? `reset ${plural(moved, 'setting')}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults');
+      setNote((moved ? `reset ${plural(moved, 'setting')}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults') + retentionKept(r));
       if (onDone) onDone();
       return true;
     })
@@ -197,7 +206,8 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
     }
     setBusy(true);
     apiPost(IMPORT_PATH, { ...doc, dry_run: true }, { admin: true })
-      .then((r: any) => setPlan({ doc, changes: Array.isArray(r?.changes) ? r.changes : [] }))
+      .then((r: any) => setPlan({ doc, changes: Array.isArray(r?.changes) ? r.changes : [],
+        gated: Array.isArray(r?.retention_needs_approval) ? r.retention_needs_approval.map(String) : [] }))
       .catch((err) => setErrors(refusalList(err)))
       .finally(() => setBusy(false));
   };
@@ -240,9 +250,12 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
       disabled={busy} onChange={(e) => { setText(e.target.value); setPlan(null); }} style={{ ...taS, marginTop: 6 }} />
     <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
       <button className="tool-btn" onClick={preview} disabled={!text.trim() || busy}>preview import</button>
-      {plan && plan.changes.length > 0 && <button className="tool-btn" onClick={apply} disabled={busy}>apply {plan.changes.length} change{plan.changes.length === 1 ? '' : 's'}</button>}
+      {plan && plan.changes.length > 0 && !plan.gated.length && <button className="tool-btn" onClick={apply} disabled={busy}>apply {plan.changes.length} change{plan.changes.length === 1 ? '' : 's'}</button>}
       {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
     </div>
+    {plan && plan.gated.length > 0 && <div data-testid="import-needs-approval" role="alert" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+      needs approval: {plan.gated.join(', ')} would make retention delete deeper than approved, so the hub refuses this
+      import. Take them out, or change them in Settings → Retention, which sends them to Approvals.</div>}
     {plan && plan.changes.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>nothing to change: every setting already has that value</div>}
     {plan && plan.changes.map((c: any) => (
       <div key={c.setting} data-testid="import-change" style={{ ...mono, fontSize: 10.5, padding: '2px 0' }}>
