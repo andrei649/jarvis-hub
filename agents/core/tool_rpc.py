@@ -40,6 +40,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from typing import Awaitable, Callable, Optional
 
+from . import project_context
 from .automation_contracts import ContractTemplate, predicate
 from .security.quarantine import strip_invisible_deep
 from .turn_approvals import record_pending_approval
@@ -507,6 +508,8 @@ class ToolRPCServer:
                 return {"ok": False, "reason": "enqueue_failed", "tool": name}
             self._record("toolrpc.gated", name, agent=effective_actor)
             record_pending_approval(task_id)
+            # H594: once approved it runs outside any turn; what it touches counts for this session.
+            project_context.note_task(task_id)
             return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
 
         try:

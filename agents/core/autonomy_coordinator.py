@@ -617,8 +617,8 @@ class AutonomyCoordinator:
             )
             from . import project_context   # H594: the terminal moved into a project directory
 
-            if project_context.current() is not None and args.get("cwd"):
-                result = await asyncio.to_thread(project_context.attach_terminal, result, args["cwd"])
+            if approved_task_id is not None and args.get("cwd"):
+                await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
             return result
 
         server.register_tool(

@@ -343,7 +343,12 @@ async def _begin_project_context(orch) -> None:
     """H594 — read the project's convention files for this turn (the file root's git root
     down to it, and every directory the tools touched this session), off the event loop.
     A turn given any is tainted like one that recalled untrusted memory: an action planned
-    from it asks."""
+    from it asks. A guest's turn is given none of the owner's files."""
+    from .tool_profiles import PRINCIPAL_GUEST, classify_turn
+
+    if classify_turn(current_principal(), current_action_origin()).principal == PRINCIPAL_GUEST:
+        project_context.set_turn(None)
+        return
     getter = getattr(orch, "get_setting", None)
     on = getter(project_context.SETTING, True) if callable(getter) else True
     try:

@@ -104,7 +104,7 @@ from agents.core.local_docs import DOC_EXTS, extract_text
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
-from agents.core.tool_rpc import ToolRPCValidationError
+from agents.core.tool_rpc import ToolRPCValidationError, current_tool_turn
 
 logger = logging.getLogger("jarvis.file_tools")
 
@@ -591,8 +591,10 @@ def _valid_offset(value: object) -> bool:
 
 async def _with_project_context(result: dict, target: Path) -> dict:
     """H594 — a read tool's result carries the convention files of *target*'s directory
-    chain the turn has not been given (tainted, so the loop fences it); off the loop."""
-    if project_context.current() is None:
+    chain the turn has not been given (tainted, so the loop fences it); off the loop. A
+    script's call (no tool turn) gets none: the model sees only what the script prints, so
+    the files stay due for the model's own reads."""
+    if project_context.current() is None or current_tool_turn() is None:
         return result
     return await asyncio.to_thread(project_context.attach, result, target)
 
