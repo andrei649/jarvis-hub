@@ -899,6 +899,15 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         if errors:
             ctx.err.write(f"{ns.name}: rejected — {'; '.join(errors)}\n")
             return EXIT_FAILED
+        # H262 — a value that makes retention delete deeper than a human approved waits for
+        # the approval queue, which is the hub's: refused here (the approval is read, read-only).
+        from agents.core import retention
+
+        if retention.needs_approval({category: {key: value}}, retention.stored_values(),
+                                    retention.approved_horizons_offline()):
+            ctx.err.write(f"{ns.name}: not changed — it would make retention delete deeper than approved; "
+                          "change it in the HUD, Settings → Retention, which asks for approval\n")
+            return EXIT_FAILED
         # H378 — a model choice passes the selection guards here as on the hub's routes.
         from agents.core.llm import selection_guards as guards
 

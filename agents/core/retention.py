@@ -25,6 +25,13 @@ days; infinity deletes nothing) is never deeper than the last horizon a human ap
 (the ``retention_approved`` state row in checkpoints.db): the sweep deletes at the wider
 of the two (:func:`effective_horizons`), and with no approval at all it deletes nothing.
 
+H262 — the write side. A write of the settings that would make retention delete deeper
+than the approved horizon (:func:`needs_approval`) is never applied on one click: the
+settings route sends it to the approval queue's irreversible tier as ``settings.retention``
+(``agents/core/autonomy/irreversible.py``), an import or an undo that would do it is
+refused, a reset keeps those keys, ``nerva config set`` refuses it. A human's accept runs
+:func:`apply_approved`: the values, then the approved snapshot, then an audit row.
+
 H262 — VACUUM. :func:`vacuum_audit` compacts audit.db after a deleting prune from
 outside the protected ``security/audit.py``: its own connection, holding the logger's
 ``_lock`` so this process's ``log()`` waits rather than meeting a locked database. The
@@ -38,17 +45,20 @@ AUD-2) → **retention**.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import json
 import logging
 import math
 import shutil
 import sqlite3
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from agents.core.ingestion.lifecycle import PRIVATE_INGESTION_ROOTS
-from agents.core.paths import data_root
+from agents.core.paths import data_path, data_root
 from agents.core.session_files import (
     NON_SESSION_STEMS,
     is_session_stem,
@@ -199,7 +209,8 @@ def run_retention(get_setting: Callable, audit_logger=None, root: Optional[Path]
 # ── H262 — the horizon a human approved ───────────────────────────────────────
 
 #: The settings that decide what retention deletes. A write that deepens a horizon they
-#: set is the approval queue's (phase B); the sweep never deletes deeper than approved.
+#: set waits for the approval queue (:func:`needs_approval`); the sweep never deletes
+#: deeper than approved.
 RETENTION_KEYS: tuple[str, ...] = (
     "retention.enabled", "retention.conversation_ttl_days", "retention.audit_ttl_days",
     "retention.ingestion_ttl_days", "retention.artifact_ttl_days", "memory.auto_archive_days",
@@ -298,3 +309,206 @@ def vacuum_audit(audit_logger: Any) -> Optional[str]:
         finally:
             conn.close()
     return None
+
+
+# ── H262 — the write side: a deeper horizon waits for a human ─────────────────
+
+#: The approval-queue kind a deepening retention write is sent as (irreversible tier).
+APPROVAL_KIND = "settings.retention"
+#: The data classes each retention key moves; ``retention.enabled`` moves them all.
+_KEY_CLASSES: dict[str, tuple[str, ...]] = {
+    "retention.enabled": DATA_CLASSES,
+    "retention.conversation_ttl_days": ("conversations",),
+    "memory.auto_archive_days": ("conversations",),
+    "retention.audit_ttl_days": ("audit",),
+    "retention.ingestion_ttl_days": ("ingestion",),
+    "retention.artifact_ttl_days": ("artifacts",),
+}
+#: How many archived chats a card counts at most (one sweep's batch).
+_PREVIEW_CHATS = 500
+
+
+def stored_values() -> dict:
+    """The RETENTION_KEYS as the settings store holds them (no row yet: the default)."""
+    from agents.core import settings_db
+
+    out = {}
+    for name in RETENTION_KEYS:
+        cat, key = name.split(".", 1)
+        out[name] = settings_db.get_value(cat, key, settings_db._SPEC[(cat, key)]["value"])
+    return out
+
+
+def retention_part(changes: dict) -> dict[str, Any]:
+    """The RETENTION_KEYS a ``{category: {key: value}}`` write carries, as ``{name: value}``."""
+    return {f"{cat}.{key}": value for cat, values in changes.items() if isinstance(values, dict)
+            for key, value in values.items() if f"{cat}.{key}" in RETENTION_KEYS}
+
+
+def needs_approval(changes: dict, stored: dict, approved: Optional[dict], *, confirm: bool = False) -> list[str]:
+    """The RETENTION_KEYS of ``changes`` (every one it carries, or none) a human must
+    approve before they are written: the write leaves retention deleting deeper than the
+    approved horizons ``approved`` (None: nothing approved yet) in some data class.
+
+    By default the class must be one the write itself deepens against ``stored`` — an
+    import, a reset, an undo, ``nerva config set``. ``confirm`` (the settings route) also
+    counts a class already deeper than approved that a key of the write moves, so
+    re-sending the stored values is how an owner confirms them."""
+    part = retention_part(changes)
+    if not part:
+        return []
+    after = horizons({**stored, **part})
+    wide = widening(after, approved)
+    if confirm:
+        wide = [name for name in wide if any(name in _KEY_CLASSES[key] for key in part)]
+    else:
+        before = horizons(stored)
+        wide = [name for name in wide if after[name] < before[name]]
+    return sorted(part) if wide else []
+
+
+def days_shown(found: dict[str, float]) -> dict[str, Optional[int]]:
+    """Horizons as a person reads them: whole days, None for kept forever."""
+    return {name: None if math.isinf(days) else int(days) for name, days in found.items()}
+
+
+def _audit_rows_before(audit_logger: Any, cutoff: float) -> Optional[int]:
+    """How many audit rows are older than ``cutoff``: a read-only connection of its own
+    (``security/audit.py`` is protected and counts only every row); None when unknown."""
+    path = getattr(audit_logger, "_db_path", None)
+    if not path or not Path(path).is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True, timeout=5)
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM security_events WHERE timestamp < ?", (cutoff,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return int(row[0]) if row else 0
+
+
+def approval_preview(values: dict, approved: Optional[dict], checkpoints: Any, audit_logger: Any,
+                     *, now: Optional[float] = None) -> dict:
+    """What the decision card shows: the horizons ``values`` sets and the approved ones (in
+    days, None: kept forever), the classes it deepens, and what it would delete now — the
+    archived, unpinned chats past the new horizon (at most one sweep's batch) and the audit
+    rows older than it (None when a store could not say)."""
+    now = time.time() if now is None else now
+    after = horizons(values)
+    out: dict[str, Any] = {"horizons": days_shown(after), "approved": days_shown(approved) if approved is not None else None,
+                           "widened": widening(after, approved), "would_delete": {}}
+    expired = getattr(checkpoints, "expired_sessions", None)
+    chats: Optional[int] = None
+    if math.isinf(after["conversations"]):
+        chats = 0
+    elif callable(expired):
+        before = datetime.fromtimestamp(now - after["conversations"] * _DAY, UTC).isoformat()
+        chats = len(expired(before, limit=_PREVIEW_CHATS))
+    out["would_delete"]["archived_chats"] = chats
+    out["would_delete"]["audit_rows"] = 0 if math.isinf(after["audit"]) else _audit_rows_before(
+        audit_logger, now - after["audit"] * _DAY)
+    return out
+
+
+def approval_request(changes: dict, stored: dict, approved: Optional[dict], checkpoints: Any,
+                     audit_logger: Any) -> dict:
+    """The ``title``, ``payload`` and ``preview`` of the task a gated write becomes. The
+    payload keeps every retention setting as it was (``before``), so an accept applies
+    only onto the state the card showed."""
+    part = retention_part(changes)
+    values: dict[str, dict[str, Any]] = {}
+    for name, value in part.items():
+        cat, key = name.split(".", 1)
+        values.setdefault(cat, {})[key] = value
+    shown = ", ".join(f"{name}={json.dumps(value)}" for name, value in sorted(part.items()))
+    return {"title": f"Retention: delete deeper ({shown})",
+            "payload": {"values": values, "before": dict(stored)},
+            "preview": approval_preview({**stored, **part}, approved, checkpoints, audit_logger)}
+
+
+def approved_horizons_offline() -> Optional[dict[str, float]]:
+    """The approved horizons read straight from checkpoints.db, read-only (it is never
+    created or migrated) — for ``nerva config set``, which runs without the hub. None when
+    there is no approval or the database cannot be read: nothing counts as approved."""
+    path = data_path("checkpoints", "checkpoints.db")
+    if not path.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)
+        try:
+            row = conn.execute("SELECT value FROM maintenance_state WHERE name=?", (APPROVED_STATE,)).fetchone()
+        finally:
+            conn.close()
+        value = json.loads(row[0] or "{}") if row else None
+    except (sqlite3.Error, ValueError):
+        return None
+    values = value.get("values") if isinstance(value, dict) else None
+    return horizons(values) if isinstance(values, dict) else None
+
+
+def _refused(reason: str, **extra: Any) -> dict:
+    return {"status": "refused", "reason": reason, **extra}
+
+
+async def apply_approved(task: Any, orch: Any) -> dict:
+    """Apply a ``settings.retention`` task a human accepted (``irreversible.execute`` has
+    checked who decided): the values are validated again, refused when any retention
+    setting changed since the request (``changed_since_request``), written, and then —
+    last, so a failure in between leaves the sweep clamped to the old approval — the new
+    state becomes the approved snapshot, and a SETTINGS_CHANGE audit row names it."""
+    from agents.core import settings_db
+
+    payload = task.payload
+    changes, before = payload.get("values"), payload.get("before")
+    if not isinstance(changes, dict) or not changes or not isinstance(before, dict):
+        return _refused("payload_invalid")
+    for cat, values in changes.items():
+        if not isinstance(values, dict) or not values:
+            return _refused("payload_invalid")
+        if any(f"{cat}.{key}" not in RETENTION_KEYS for key in values):
+            return _refused("not_a_retention_setting")
+        errors = settings_db.validate_category(cat, values)
+        if errors:
+            return _refused("invalid_settings", details=errors)
+    checkpoints = getattr(orch, "checkpoints", None) if orch is not None else None
+    put_state = getattr(checkpoints, "put_state", None)
+    if not callable(put_state):
+        return _refused("state_unavailable")
+    stored = await asyncio.to_thread(stored_values)
+    if any(not settings_db._same_value(stored[name], before.get(name)) for name in RETENTION_KEYS):
+        return _refused("changed_since_request")
+    for cat, values in changes.items():
+        await asyncio.to_thread(settings_db.put_category, cat, dict(values))
+    after = await asyncio.to_thread(stored_values)
+    task_id = getattr(task, "id", None)
+    decided_by = str(getattr(task, "decided_by", "") or "")
+    recorded = await asyncio.to_thread(put_state, APPROVED_STATE, {
+        "values": after, "task_id": task_id, "approved_by": decided_by, "approved_at": time.time()})
+    names = sorted(retention_part(changes))
+    await _audit_approval(orch, names, after, task_id, decided_by, recorded is True)
+    if recorded is not True:
+        return {"status": "failed", "reason": "approval_not_recorded", "written": names}
+    return {"status": "ok", "kind": APPROVAL_KIND, "written": names, "horizons": days_shown(horizons(after))}
+
+
+async def _audit_approval(orch: Any, names: list[str], after: dict, task_id: Any, decided_by: str,
+                          recorded: bool) -> None:
+    from agents.core.security.types import SecurityEvent, SecurityEventType
+
+    audit = getattr(orch, "audit", None)
+    if audit is None:
+        return
+    shown = " ".join(f"{name}={json.dumps(after.get(name))}" for name in names)
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.SETTINGS_CHANGE,
+            timestamp=time.time(),
+            content_preview=f"settings.retention approved (task {task_id} by {decided_by}): {names} · {shown}"
+                            + ("" if recorded else " · the approved snapshot was not recorded"),
+            action_taken="settings_retention_approved",
+        ))
+    except Exception:  # noqa: BLE001 — the write happened; a lost audit row is logged
+        logger.warning("failed to audit the approved retention change (task %s)", task_id)
+

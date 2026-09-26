@@ -1528,6 +1528,17 @@ class AutonomyCoordinator:
 
         executor.register("goal.approve", _open_approved_goal)
 
+        # H262 — the irreversible tier (settings.retention, …): applied only out of a
+        # human's accept on the task itself. Registered here because an unhandled kind
+        # would fall to the LLM fallback and run its title as a prompt.
+        from .autonomy import irreversible
+
+        async def _apply_irreversible(task):
+            return await irreversible.execute(task, orch=self._orch)
+
+        for kind in irreversible.kinds():
+            executor.register(kind, _apply_irreversible)
+
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
             from .acquisition.promotion import make_skill_install_kernel_gate

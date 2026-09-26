@@ -50,6 +50,7 @@
   "GET /api/admin/prompts/{agent_id}/diff",
   "GET /api/admin/prompts/{agent_id}/history",
   "GET /api/admin/prompts/{agent_id}/version/{version}",
+  "GET /api/admin/retention",
   "GET /api/admin/settings",
   "GET /api/admin/settings/export",
   "GET /api/admin/settings/resets",

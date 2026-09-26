@@ -203,16 +203,62 @@ async def admin_put_category(category: str, body: AdminPutBody):
                                      acknowledge_training=body.acknowledge_training, surface="settings")
     if isinstance(guarded, JSONResponse):
         return guarded
-    updated, skipped = put_category(category, body.values)
-    changed = [k for k in body.values if k not in skipped]
+    # H262 — a write that makes retention delete deeper than approved goes to the approval
+    # queue (202); the rest of it is written. A queue that cannot take it: 503, nothing written.
+    values, pending = body.values, None
+    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True)
+    if gated:
+        pending = await _request_retention_approval({category: body.values}, stored, approved)
+        if "refused" in pending:
+            return nocache_json({"error": "retention_needs_approval", "reason": pending["refused"],
+                                 "gated": gated}, status_code=503)
+        await _audit_row(f"settings.{category} retention change sent to approval (task {pending['pending']}): "
+                         f"{gated}", "settings_retention_requested", category)
+        values = {k: v for k, v in body.values.items() if f"{category}.{k}" not in gated}
+    updated, skipped = put_category(category, values) if values else (0, [])
+    changed = [k for k in values if k not in skipped]
     if changed:
-        await _audit_settings_change(category, changed, body.values)
+        await _audit_settings_change(category, changed, values)
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
     if guarded:
         resp["guards"] = [f.as_dict() for f in guarded]
+    if pending is not None:
+        return JSONResponse({**resp, "pending": pending["pending"], "gated": gated}, status_code=202)
     return resp
+
+
+async def _retention_gate(changes: dict, *, confirm: bool = False) -> tuple[list, dict, dict | None]:
+    """H262 — ``(the retention keys of *changes* a human must approve, the stored retention
+    settings, the approved horizons)``. Nothing approved, or no store to say: every
+    deletion counts as deeper (fail closed)."""
+    from agents.core import retention
+
+    orch = get_orch()
+    stored = await asyncio.to_thread(retention.stored_values)
+    approved = await asyncio.to_thread(retention.approved_horizons, getattr(orch, "checkpoints", None) if orch else None)
+    return retention.needs_approval(changes, stored, approved, confirm=confirm), stored, approved
+
+
+async def _request_retention_approval(changes: dict, stored: dict, approved: dict | None) -> dict:
+    """Queue the retention part of *changes* at the irreversible tier, with the card's
+    preview: ``{"pending": id}`` or ``{"refused": reason}``."""
+    from agents.core import retention
+    from agents.core.autonomy import irreversible
+
+    orch = get_orch()
+    request = await asyncio.to_thread(retention.approval_request, changes, stored, approved,
+                                      getattr(orch, "checkpoints", None) if orch else None,
+                                      getattr(orch, "audit", None) if orch else None)
+    return irreversible.enqueue(orch, retention.APPROVAL_KIND, **request)
+
+
+def _retention_refusal(settings: list) -> JSONResponse:
+    return nocache_json({"error": "retention_needs_approval", "settings": settings,
+                         "detail": "these settings would make retention delete deeper than approved: "
+                                   "change them in Settings → Retention, which asks for approval"},
+                        status_code=409)
 
 
 _IMPORT_MAX_BYTES = 1_000_000
@@ -276,10 +322,15 @@ async def admin_import_settings(request: Request):
     if errors:
         return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
     preview = await asyncio.to_thread(settings_db.describe_changes, changes)
+    # H262 — a document that makes retention delete deeper than approved is refused whole.
+    gated = (await _retention_gate(changes))[0]
     if dry_run:
         choices = sg.choices_from_changes(changes, settings_db.get_value)
         return nocache_json({"dry_run": True, "count": len(preview), "changes": preview,
-                             "guards": [f.as_dict() for f in sg.evaluate(choices)]})
+                             "guards": [f.as_dict() for f in sg.evaluate(choices)],
+                             "retention_needs_approval": gated})
+    if gated:
+        return _retention_refusal(gated)
     guarded = await _guard_selection(changes, confirm_expensive=confirm_expensive,
                                      acknowledge_training=acknowledge_training, surface="settings import")
     if isinstance(guarded, JSONResponse):
@@ -321,22 +372,25 @@ async def admin_reset_category(category: str, request: Request):
     dry_run = await _dry_run_asked(request)
     if isinstance(dry_run, JSONResponse):
         return dry_run
+    plan = await asyncio.to_thread(settings_db.plan_reset, category)
+    if plan is None:
+        return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+    # H262 — a retention setting whose default would delete deeper than approved stays as it is.
+    held = frozenset((await _retention_gate(plan))[0])
     if dry_run:
-        plan = await asyncio.to_thread(settings_db.plan_reset, category)
-        if plan is None:
-            return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+        plan = await asyncio.to_thread(settings_db.plan_reset, category, held)
         return nocache_json({"dry_run": True, "category": category,
                              "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
-                             "kept": settings_db.reset_kept(category),
+                             "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
                              "overridden": settings_db.posture_overridden(category)})
-    done = await asyncio.to_thread(settings_db.reset_settings, category)
+    done = await asyncio.to_thread(settings_db.reset_settings, category, held)
     if done is None:
         return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
     moved = sorted(done[0].get(category, {}))
     if moved:
         await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
     return nocache_json({"ok": True, "category": category, "reset": moved, "undo": done[1],
-                         "kept": settings_db.reset_kept(category),
+                         "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
                          "overridden": settings_db.posture_overridden(category)})
 
 
@@ -356,17 +410,18 @@ async def admin_reseed(request: Request):
     if isinstance(dry_run, JSONResponse):
         return dry_run
     kept, forced = settings_db.reset_kept_all(), settings_db.posture_overridden_all()
+    held = frozenset((await _retention_gate(await asyncio.to_thread(settings_db.plan_reset, None)))[0])
     if dry_run:
-        plan = await asyncio.to_thread(settings_db.plan_reset, None)
+        plan = await asyncio.to_thread(settings_db.plan_reset, None, held)
         return nocache_json({"dry_run": True, "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
-                             "kept": kept, "overridden": forced})
-    moved, snap = await asyncio.to_thread(settings_db.reset_settings, None)
+                             "kept": kept, "retention_kept": sorted(held), "overridden": forced})
+    moved, snap = await asyncio.to_thread(settings_db.reset_settings, None, held)
     names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
     if names:
         await _audit_row(f"settings reset to defaults in every category: {len(names)} setting(s): {names}",
                          "settings_reseed", "all")
     return nocache_json({"ok": True, "message": "Settings reseeded from defaults", "reset": names,
-                         "undo": snap, "kept": kept, "overridden": forced})
+                         "undo": snap, "kept": kept, "retention_kept": sorted(held), "overridden": forced})
 
 
 @router.post("/api/admin/settings/undo", dependencies=[Depends(admin_guard)])
@@ -374,19 +429,56 @@ async def admin_undo_reset(request: Request):
     """H259 — put back what the latest reset replaced. A setting changed since that reset
     is left as it is, and so is a value its declaration no longer accepts; both are named
     in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
-    only; audited."""
-    from agents.core import settings_db
+    only; audited. H262 — an undo that would make retention delete deeper than approved
+    restores nothing (409 ``retention_needs_approval``)."""
+    from agents.core import retention, settings_db
 
     refused = _refuse_cross_site_write(request)
     if refused is not None:
         return refused
-    undone = await asyncio.to_thread(settings_db.undo_last_reset)
+    _gated, stored, approved = await _retention_gate({})
+    undone = await asyncio.to_thread(settings_db.undo_last_reset,
+                                     lambda restore: retention.needs_approval(restore, stored, approved))
     if undone is None:
         return nocache_json({"error": "nothing to undo"}, status_code=404)
+    if undone.get("refused"):
+        return _retention_refusal(undone["refused"])
     skipped = [s["setting"] for s in undone["skipped"]]
     await _audit_row(f"settings reset undone ({undone['scope']}): restored {undone['restored']}"
                      + (f" · left {skipped}" if skipped else ""), "settings_reset_undo", undone["scope"])
     return nocache_json({"ok": True, **undone})
+
+
+@router.get("/api/admin/retention", dependencies=[Depends(admin_guard)])
+async def admin_retention_state():
+    """H262 — the data lifecycle, read-only: the retention settings as stored, the approved
+    snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
+    nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
+    forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report)."""
+    from agents.core import lifecycle_sweep, retention
+
+    orch = get_orch()
+    checkpoints = getattr(orch, "checkpoints", None) if orch else None
+    reader = getattr(checkpoints, "get_state", None)
+    current = await asyncio.to_thread(retention.stored_values)
+    approved_row = await asyncio.to_thread(reader, retention.APPROVED_STATE) if callable(reader) else None
+    sweep_row = await asyncio.to_thread(reader, lifecycle_sweep.SWEEP_STATE) if callable(reader) else None
+    approved = await asyncio.to_thread(retention.approved_horizons, checkpoints)
+    in_force = retention.horizons(current)
+    effective = retention.effective_horizons(in_force, approved)
+
+    def shown(found):
+        return None if found is None else retention.days_shown(found)
+
+    sweep = (sweep_row or {}).get("value") or {}
+    return nocache_json({
+        "current": current,
+        "approved": (approved_row or {}).get("value") if approved is not None else None,
+        "awaiting_approval": current.get("retention.enabled") is True and approved is None,
+        "horizons": {"current": shown(in_force), "approved": shown(approved), "effective": shown(effective)},
+        "sweep": {"last_run_at": (sweep_row or {}).get("last_run_at"), "last_vacuum_at": sweep.get("last_vacuum_at"),
+                  "vacuum_pending": sweep.get("vacuum_pending", []), "last_report": sweep.get("last_report")},
+    })
 
 
 class RotateTokensBody(BaseModel):

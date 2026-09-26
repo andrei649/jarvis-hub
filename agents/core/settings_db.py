@@ -10,6 +10,7 @@ import re
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from agents.core.llm import provider_routing as _routing
@@ -1169,23 +1170,25 @@ def posture_overridden(cat: str) -> list[str]:
     return sorted(k.split(".", 1)[1] for k in applies if k.startswith(cat + "."))
 
 
-def _reset_specs(cat: str | None) -> list[dict[str, Any]] | None:
+def _reset_specs(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> list[dict[str, Any]] | None:
     """The declared settings a reset of *cat* (every category when None) may move: all
-    but the secrets and the rows only their own route writes (review-H329 F1). None for a
-    category nothing declares."""
+    but the secrets, the rows only their own route writes (review-H329 F1) and the
+    ``category.key`` names in *extra_kept* (H262: a retention setting whose default would
+    delete deeper than approved). None for a category nothing declares."""
     if cat is not None and not any(spec["category"] == cat for spec in DEFAULTS):
         return None
     return [spec for spec in DEFAULTS
             if (cat is None or spec["category"] == cat)
             and not is_secret_setting(spec["category"], spec["key"])
-            and (spec["category"], spec["key"]) not in ROUTE_ONLY]
+            and (spec["category"], spec["key"]) not in ROUTE_ONLY
+            and f"{spec['category']}.{spec['key']}" not in extra_kept]
 
 
-def plan_reset(cat: str | None) -> dict[str, dict[str, Any]] | None:
+def plan_reset(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]] | None:
     """H259 — what a reset of *cat* (every category when None) would write: each declared
     setting but a secret whose stored value is not its default, as ``{category: {key:
     default}}``. None for a category nothing declares."""
-    specs = _reset_specs(cat)
+    specs = _reset_specs(cat, extra_kept)
     if specs is None:
         return None
     _ensure_init()
@@ -1220,12 +1223,13 @@ def _write_values(conn: sqlite3.Connection, changes: dict[str, dict[str, Any]]) 
     return written
 
 
-def reset_settings(cat: str | None) -> tuple[dict[str, dict[str, Any]], int | None] | None:
+def reset_settings(cat: str | None,
+                   extra_kept: frozenset[str] = frozenset()) -> tuple[dict[str, dict[str, Any]], int | None] | None:
     """H259 — reset *cat* (every category when None) to its declared values, secrets
-    kept. The values it replaces are recorded in the same transaction, so
-    :func:`undo_last_reset` can put them back. Returns ``(what moved, the record's id)``
+    (and *extra_kept*) kept. The values it replaces are recorded in the same transaction,
+    so :func:`undo_last_reset` can put them back. Returns ``(what moved, the record's id)``
     — ``({}, None)`` when nothing moved — or None for a category nothing declares."""
-    plan = plan_reset(cat)
+    plan = plan_reset(cat, extra_kept)
     if plan is None:
         return None
     if not plan:
@@ -1274,10 +1278,14 @@ def list_resets() -> list[dict[str, Any]]:
              "undone": r["undone_at"] is not None} for r in rows]
 
 
-def undo_last_reset() -> dict[str, Any] | None:
+def undo_last_reset(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | None = None) -> dict[str, Any] | None:
     """H259 — put back what the latest reset not yet undone replaced. A setting changed
     since that reset is left as it is, and so is a value its declaration no longer
-    accepts; both are named in ``skipped``. None when there is nothing to undo."""
+    accepts; both are named in ``skipped``. None when there is nothing to undo.
+
+    H262 — *gate* sees what would be restored; a non-empty answer (the retention settings
+    that would delete deeper than approved) restores nothing and returns ``{"refused":
+    those names}``, the reset still undoable."""
     _ensure_init()
     conn = get_conn()
     try:
@@ -1301,6 +1309,9 @@ def undo_last_reset() -> dict[str, Any] | None:
                         skipped.append({"setting": name, "reason": "no longer valid: " + "; ".join(errors)})
                     else:
                         restore.setdefault(cat, {})[key] = before[cat][key]
+            refused = gate(restore) if gate is not None and restore else []
+            if refused:
+                return {"refused": refused}
             _write_values(conn, restore)
             conn.execute("UPDATE settings_resets SET undone_at=? WHERE id=?", (time.time(), row["id"]))
     finally:

@@ -50,6 +50,7 @@
   "GET /api/admin/prompts/{agent_id}/diff": "admin_prompt_diff_api_admin_prompts__agent_id__diff_get",
   "GET /api/admin/prompts/{agent_id}/history": "admin_prompt_history_api_admin_prompts__agent_id__history_get",
   "GET /api/admin/prompts/{agent_id}/version/{version}": "admin_prompt_version_api_admin_prompts__agent_id__version__version__get",
+  "GET /api/admin/retention": "admin_retention_state_api_admin_retention_get",
   "GET /api/admin/settings": "admin_get_all_api_admin_settings_get",
   "GET /api/admin/settings/export": "admin_export_settings_api_admin_settings_export_get",
   "GET /api/admin/settings/resets": "admin_settings_resets_api_admin_settings_resets_get",
