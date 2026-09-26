@@ -12,6 +12,7 @@ route says it. Nerva runs no owner-configured shell hooks, so there are none to 
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import sys
@@ -98,8 +99,22 @@ def test_every_forced_and_unseeded_key_is_a_real_setting():
     ("autonomy.daily_ceiling", 12.5, 200, 12.5),
     ("autonomy.daily_ceiling", True, 200, 200),            # a bool is not a number here
     ("autonomy.daily_ceiling", "9", 200, 200),
-    # a list: only the shipped names the owner kept
+    ("channels.rate_limit", 10000, 10, 10),
+    ("learning.review_daily_budget", 1000, 20, 20),
+    ("learning.review_daily_budget", 0, 20, 0),            # 0 is no reviews at all
+    # more loosens, and under 1 is no cap at all: the shipped cap
+    ("security.sandbox_memory", 0, 256, 256),              # Docker reads --memory 0m as unlimited
+    ("security.sandbox_memory", 0.5, 256, 256),            # int(0.5) is 0
+    ("security.sandbox_memory", -5, 256, 256),
+    ("security.sandbox_memory", 1, 256, 1),
+    ("security.sandbox_memory", 128, 256, 128),
+    ("security.sandbox_memory", 1024, 256, 256),
+    ("autonomy.max_subagent_spawns_per_boot", 0, 50, 50),  # 0 is unbounded
+    ("autonomy.max_subagent_spawns_per_boot", 100000, 50, 50),
+    ("autonomy.max_subagent_spawns_per_boot", 10, 50, 10),
+    # a list: only the shipped names the owner kept, in the owner's order
     ("llm.guest_tools", ["echo", "shell", "time"], ["echo", "time", "todo"], ["echo", "time"]),
+    ("llm.guest_tools", ["time", "shell", "echo"], ["echo", "time", "todo"], ["time", "echo"]),
     ("llm.guest_tools", [], ["echo", "time"], []),
     ("llm.guest_tools", "shell", ["echo", "time"], ["echo", "time"]),
     # an order, strictest first
@@ -153,7 +168,114 @@ def test_nothing_moved_is_not_reported(monkeypatch):
     assert safe_mode.override_settings(dict(defaults)) == defaults
     assert safe_mode.override_settings({}) == defaults                    # filled, not moved
     assert safe_mode.override_settings({"autonomy.daily_ceiling": 3})["autonomy.daily_ceiling"] == 3
+    reordered = ["todo", "echo", "time"]                                  # the same names, reordered
+    assert safe_mode.override_settings({"llm.guest_tools": reordered})["llm.guest_tools"] == reordered
     assert safe_mode.status()["skipped"] == []
+
+
+#: Seeded numbers that are not forced, each reviewed: a size, a time of day, a timeout
+#: or a cadence of the owner's own work rather than an approval or a budget of actions,
+#: messages or spend; a knob read only by a layer safe mode switches off; or one whose
+#: shipped default is already the loosest value.
+_NUMBERS_NOT_FORCED = {
+    # the tool loop and the pre-turn recall are off in safe mode
+    "llm.tool_loop_max_iterations", "llm.tool_loop_context_tokens", "llm.tool_loop_per_tool_cap",
+    "memory.recall_top_k", "memory.recall_timeout_s",
+    # the shipped default is already the loosest value (0 = no cap)
+    "llm.daily_cost_cap_usd",
+    # sizes, routing thresholds and timeouts of a model call
+    "llm.max_tokens", "llm.deep_max_tokens", "llm.ollama_num_ctx", "llm.hybrid_local_max",
+    "llm.hybrid_flash_max", "agents.agent_timeout_seconds", "agents.reasoning_timeout_seconds",
+    # the conversation's own history, its compression and the owner's backups
+    "memory.max_turns", "memory.auto_archive_days", "memory.context_window",
+    "memory.compression_max_tokens", "memory.compression_keep_first",
+    "memory.compaction_protect_last", "memory.backup_keep", "memory.compression_summary_max_tokens",
+    "memory.compression_max_turn_hold_seconds", "memory.compression_summary_idle_seconds",
+    # the size and cadence of one review (how many a day is forced)
+    "learning.review_max_tokens", "learning.review_every_n", "learning.review_idle_gap_s",
+    "learning.review_max_facts",
+    # housekeeping, cadences and times of day
+    "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "skills.max_skills",
+    "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",
+    "system.startup_warmup_timeout_seconds", "system.autonomy_tick", "autonomy.running_ttl_seconds",
+    "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
+    "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
+    "ambient.quiet_hours_end",
+    # the owner's own alert thresholds
+    "autonomy.finance_min_ron", "autonomy.finance_min_eur", "autonomy.health_min_sleep",
+    "autonomy.health_min_hrv",
+    # retention windows: how long data is kept, not what may run
+    "retention.artifact_ttl_days", "retention.conversation_ttl_days", "retention.audit_ttl_days",
+    "retention.ingestion_ttl_days",
+}
+
+
+def test_every_seeded_number_is_forced_or_reviewed():
+    numbers = {f"{r['category']}.{r['key']}" for r in settings_db.DEFAULTS if r["kind"] == "number"}
+    assert numbers - set(safe_mode.FORCED_SETTINGS) - _NUMBERS_NOT_FORCED == set()
+    assert not _NUMBERS_NOT_FORCED & set(safe_mode.FORCED_SETTINGS)
+    assert numbers >= _NUMBERS_NOT_FORCED                                 # no stale name
+
+
+#: Raw reads of a forced key that are reviewed: what the selected product posture
+#: forces, listed beside a settings reset, reads the stored choice on purpose.
+_REVIEWED_RAW_READS = {("agents/core/settings_db.py", "product.posture")}
+
+
+_SCOPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _scope_of(parents, node):
+    node = parents.get(node)
+    while not isinstance(node, _SCOPES):
+        node = parents[node]
+    return node
+
+
+def _reader_module(tree, parents, call):
+    """The module a ``(category, key)`` reader comes from: ``x`` of ``x.get_value``, or
+    the module of the nearest earlier import of the name in the innermost enclosing
+    function, then outwards."""
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.value.id if isinstance(func.value, ast.Name) else None
+    if not isinstance(func, ast.Name):
+        return None
+    scope = call
+    while scope is not tree:
+        scope = _scope_of(parents, scope)
+        binds = [n for n in ast.walk(scope) if isinstance(n, ast.ImportFrom)
+                 and n.lineno < call.lineno and _scope_of(parents, n) is scope
+                 and any((a.asname or a.name) == func.id for a in n.names)]
+        if binds:
+            return max(binds, key=lambda n: n.lineno).module
+    return None
+
+
+def _raw_forced_reads():
+    """Every ``(category, key)`` read of a forced setting under agents/ whose reader is
+    not ``safe_mode.get_value``."""
+    found = set()
+    for path in sorted((REPO / "agents").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for call in ast.walk(tree):
+            if not (isinstance(call, ast.Call) and len(call.args) >= 2):
+                continue
+            first, second = call.args[:2]
+            if not all(isinstance(a, ast.Constant) and isinstance(a.value, str) for a in (first, second)):
+                continue
+            key = f"{first.value}.{second.value}"
+            module = _reader_module(tree, parents, call) or ""
+            if key in safe_mode.FORCED_SETTINGS and module.rpartition(".")[2] != "safe_mode":
+                found.add((path.relative_to(REPO).as_posix(), key, call.lineno))
+    return found
+
+
+def test_no_forced_setting_is_read_past_safe_mode():
+    raw = {(rel, key) for rel, key, _ in _raw_forced_reads()}
+    assert raw - _REVIEWED_RAW_READS == set(), sorted(_raw_forced_reads())
+    assert raw >= _REVIEWED_RAW_READS                                     # no stale entry
 
 
 @pytest.mark.parametrize("key", safe_mode.UNSEEDED_SETTINGS)
@@ -176,13 +298,60 @@ def test_a_boot_read_takes_the_stricter_value(monkeypatch):
     assert safe_mode.status()["skipped"] == []
 
 
-def test_the_orchestrator_reads_its_settings_through_safe_mode():
+def test_the_orchestrator_boots_with_the_stricter_caps(monkeypatch):
+    from agents.core.config import JarvisConfig
+    from agents.core.orchestrator import Orchestrator
+
+    settings_db.put_category("security", {"sandbox_timeout": 600, "sandbox_memory": 4096})
+    settings_db.put_category("autonomy", {"cap_per_action": 5000, "daily_ceiling": 99999,
+                                          "earned_autonomy_enabled": True})
+    _on(monkeypatch)
+    orch = Orchestrator(JarvisConfig())
+    assert (orch.sandbox.timeout, orch.sandbox.max_memory_mb) == (30, 256)
+    policy = orch.autonomy.policy
+    assert (policy.cap_per_action, policy.daily_ceiling) == (50.0, 200.0)
+    assert policy.earned_autonomy_enabled is False
+
+
+def test_the_runtime_settings_loader_overrides_around_the_posture():
     source = (REPO / "agents/core/orchestrator.py").read_text(encoding="utf-8")
-    boot = source.split("self.bench = LatencyBenchmark()", 1)[1].split("self.sandbox = Sandbox(", 1)[0]
-    assert "from .safe_mode import get_value as _gv" in boot
     loader = source.split("def load_runtime_settings(self):", 1)[1].split("self._runtime_settings = flat", 1)[0]
     assert ("flat = safe_mode.override_settings(apply_to_runtime_settings("
             "safe_mode.override_settings(flat)))") in loader
+
+
+def test_the_model_pull_cap_takes_the_stricter_value(monkeypatch):
+    from agents.core.llm.model_setup import ModelSetupService
+    from agents.core.routers import model_setup
+
+    settings_db.put_category("llm", {"model_pull_max_gb": 500})
+    assert model_setup._max_gb() == 500
+    _on(monkeypatch)
+    assert model_setup._max_gb() == 20
+    assert ModelSetupService(max_gb=model_setup._max_gb).max_bytes() == 20 * 1024 ** 3
+    assert safe_mode.status()["skipped"] == ["settings_overrides"]
+
+
+def test_a_router_re_detect_keeps_the_stricter_cloud_fallback(monkeypatch):
+    from agents.core.llm.hybrid_router import HybridRouter
+
+    for var in ("JARVIS_LM_STUDIO_URL", "JARVIS_OLLAMA_URL"):
+        monkeypatch.delenv(var, raising=False)
+    settings_db.put_category("llm", {"cloud_fallback": "always"})
+    router = HybridRouter(gemini_api_key="")
+
+    async def _down(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(router, "_check", _down)
+    monkeypatch.setattr(router, "_fetch_loaded_model", _down)
+    asyncio.run(router.detect())
+    assert router._cloud_fallback_mode == "always"
+    _on(monkeypatch)
+    router.set_cloud_fallback_mode("on-demand")                          # the settings watcher's push
+    asyncio.run(router.detect())                                         # a backend came or went
+    assert router._cloud_fallback_mode == "on-demand"
+    assert safe_mode.status()["skipped"] == ["settings_overrides"]
 
 
 def test_the_runtime_settings_are_overridden_in_safe_mode(monkeypatch):
@@ -368,6 +537,25 @@ def test_no_core_block_enters_a_prompt_in_safe_mode(monkeypatch):
     safe_mode.reset()
     assert Orchestrator._living_core_memory_block(fake) == ""
     assert safe_mode.status()["skipped"] == []
+
+
+def test_howard_recalls_no_archive_into_a_prompt_in_safe_mode(monkeypatch):
+    from agents.core.agent import Agent
+    from agents.core.ingestion import pipeline
+
+    searches = []
+
+    def _search(text, k, only_me):
+        searches.append(text)
+        return [SimpleNamespace(text="am ales varianta simpla", score=0.9)]
+
+    monkeypatch.setattr(pipeline, "get_shared_pipeline", lambda: SimpleNamespace(search_similar=_search))
+    howard = Agent("howard", {"name": "Howard", "model": "howard-lora", "plugins": []})
+    assert "am ales varianta simpla" in howard.build_prompt("ce ai ales?", {})
+    _on(monkeypatch)
+    assert "am ales varianta simpla" not in howard.build_prompt("ce ai ales?", {})
+    assert searches == ["ce ai ales?"]                     # the archive is not even searched
+    assert safe_mode.status()["skipped"] == ["memory_injection"]
 
 
 def test_the_memory_tool_reads_as_switched_off_in_safe_mode(monkeypatch, tmp_path):

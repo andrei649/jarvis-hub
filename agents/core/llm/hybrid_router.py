@@ -254,9 +254,10 @@ class HybridRouter(LLMRouter):
 
     @staticmethod
     def _admin_setting(key: str, default):
-        """Read an `llm` setting from /admin config (settings_db), safely."""
+        """Read an `llm` setting from /admin config (settings_db), safely. In safe mode a
+        forced one (llm.cloud_fallback) reads the stricter value, on every re-detect too."""
         try:
-            from ..settings_db import get_value
+            from ..safe_mode import get_value
 
             val = get_value("llm", key, default)
             return val if val else default

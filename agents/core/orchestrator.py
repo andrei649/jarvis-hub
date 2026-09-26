@@ -731,8 +731,7 @@ class Orchestrator:
         self.missions = MissionStore(ledger=self.budget_ledger)
         # /admin → autonomy.cap_per_action / daily_ceiling / interrupt_budget.
         # These were dataclass defaults (50/200/4); live-resynced each tick by the
-        # autonomy coordinator (like autonomy.mode).
-        from .settings_db import get_value as _gv
+        # autonomy coordinator (like autonomy.mode). Read with the safe-mode _gv above.
         from .ambient.policy import AttentionLedger, bounded_attention_allowance
         from .paths import data_path as _attention_path
 
@@ -947,7 +946,7 @@ class Orchestrator:
         # /admin → security.guardrails_mode / scan_input / scan_output. Keep an
         # unbound policy prototype even when no provider is available at boot;
         # each request binds it only after the router selects a backend.
-        from .settings_db import get_value as _gv
+        from .safe_mode import get_value as _gv   # H490: the stricter value in safe mode
         from .security import hardened as _hardened
         # CDX-12: the hardened profile tightens the *default* to REDACT; an
         # explicit security.guardrails_mode setting still wins.

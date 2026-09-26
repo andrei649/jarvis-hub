@@ -849,7 +849,12 @@ class Agent:
             skills_block = f"Available skills:\n{skill_descs}\n\n"
 
         rag_block = ""
-        if self.id == "howard":
+        from . import safe_mode
+
+        if self.id == "howard" and safe_mode.enabled():
+            # H490: the imported archive is memory too; safe mode recalls none into a turn.
+            safe_mode.note("memory_injection")
+        elif self.id == "howard":
             try:
                 from .ingestion.pipeline import get_shared_pipeline
                 pipeline = get_shared_pipeline()

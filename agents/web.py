@@ -507,7 +507,7 @@ async def lifespan(application: FastAPI):
         pairing=getattr(orch, "sender_pairing", None),
         inbox_store=orch.channel_inbox,
     )
-    gateway.set_rate_limit(int(get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit
+    gateway.set_rate_limit(int(safe_mode.get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit (H490)
     web_enabled = bool(get_value("channels", "web_enabled", True))        # /admin → channels.web_enabled
     if web_enabled:
         gateway.register_channel("web")

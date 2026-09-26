@@ -34,10 +34,11 @@ def _ollama_url() -> str:
 
 
 def _max_gb() -> float:
-    from agents.core import settings_db
+    from agents.core import safe_mode
     from agents.core.llm.model_setup import MODEL_PULL_MAX_GB_DEFAULT
 
-    return settings_db.get_value("llm", "model_pull_max_gb", MODEL_PULL_MAX_GB_DEFAULT)
+    # H490: in safe mode the stricter of the owner's cap and the shipped one.
+    return safe_mode.get_value("llm", "model_pull_max_gb", MODEL_PULL_MAX_GB_DEFAULT)
 
 
 def _get_service():

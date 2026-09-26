@@ -74,6 +74,8 @@ LAYERS = (
 #: Settings whose default is already the loosest value (autonomy.mode,
 #: security.guardrails_mode, autonomy.night_shift, the control switches) are not here.
 _ON_LOOSENS, _OFF_LOOSENS, _MORE_LOOSENS = "on-loosens", "off-loosens", "more-loosens"
+#: More loosens, and a value under 1 (which ``int()`` reads as 0) is no cap at all.
+_UNCAPPED_UNDER_1 = "more-loosens, under 1 uncapped"
 FORCED_SETTINGS: dict[str, object] = {
     "llm.inbound_actuation": _ON_LOOSENS,
     "llm.internal_actuation": _ON_LOOSENS,
@@ -88,8 +90,11 @@ FORCED_SETTINGS: dict[str, object] = {
     "autonomy.daily_ceiling": _MORE_LOOSENS,
     "autonomy.interrupt_budget": _MORE_LOOSENS,
     "security.sandbox_timeout": _MORE_LOOSENS,
-    "security.sandbox_memory": _MORE_LOOSENS,
-    # A list: only the shipped names the owner also kept.
+    "security.sandbox_memory": _UNCAPPED_UNDER_1,              # Docker reads --memory 0m as none
+    "autonomy.max_subagent_spawns_per_boot": _UNCAPPED_UNDER_1,
+    "channels.rate_limit": _MORE_LOOSENS,
+    "learning.review_daily_budget": _MORE_LOOSENS,
+    # A list: only the shipped names the owner also kept, in the owner's order.
     "llm.guest_tools": "subset",
     # An order, strictest first.
     "llm.cloud_fallback": ("never", "on-demand", "always"),
@@ -144,13 +149,15 @@ def stricter(key: str, owner, shipped):
         return bool(shipped) and bool(owner)
     if rule == _OFF_LOOSENS:
         return bool(shipped) or bool(owner)
-    if rule == _MORE_LOOSENS:
+    if rule in (_MORE_LOOSENS, _UNCAPPED_UNDER_1):
         if isinstance(owner, bool) or not isinstance(owner, (int, float)):
+            return shipped
+        if rule == _UNCAPPED_UNDER_1 and owner < 1:
             return shipped
         return min(owner, shipped)
     if rule == "subset":
         kept = owner if isinstance(owner, list) else shipped
-        return [name for name in shipped if name in kept]
+        return [name for name in kept if name in shipped]
     order = list(rule)
     owner_rank = order.index(owner) if owner in order else len(order)
     return order[min(owner_rank, order.index(shipped))]
