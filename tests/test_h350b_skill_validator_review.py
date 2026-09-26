@@ -310,3 +310,37 @@ def test_a_duplicated_key_points_at_the_last_occurrence():
     [problem] = validate_skill_md("---\nname: good\nname: ../bad\ndescription: does things\n---\nbody\n")
     assert problem.field == "name" and "'../bad'" in problem.message and problem.line == 3
 
+
+
+# ── the review round's mutation pass ─────────────────────────────────────────────
+
+def test_the_declared_name_is_read_without_its_padding():
+    from agents.core.skills.validate import declared_name
+
+    assert declared_name(f"#  Invoice Digest \n\n> {DESC}\n") == "Invoice Digest"
+    assert declared_name(f"---\nname: ' invoice-digest '\ndescription: {DESC}\n---\nSteps.\n") == "invoice-digest"
+
+
+def test_a_reinstall_is_known_by_its_name_in_any_case(market, tmp_path):
+    folder = tmp_path / "skills" / "invoice_digest"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_bytes(f"# INVOICE DIGEST\n\n> {DESC}\n".encode())
+    assert market.install_from_zip(_zip(GOOD_HEAD)) is True
+    assert (folder / "SKILL.md").read_bytes() == GOOD_HEAD.encode()
+
+
+def test_a_hermes_import_refused_by_its_name_clears_the_last_refusal(tmp_path):
+    from agents.core.skills.importer import SkillImporter
+
+    importer = SkillImporter(str(tmp_path / "skills"))
+    importer.last_refusal = ["an earlier import's problem"]
+    assert asyncio.run(importer.import_from_hermes("../notes")) is False
+    assert importer.last_refusal == []
+
+
+def test_the_import_report_names_only_the_rejected_skills():
+    ni = _import_script()
+    notes = ni._skill_notes([{"slug": "notes", "status": "imported"},
+                             {"slug": "bad", "status": "rejected", "reason": "invalid_skill_md"}],
+                            applied_update=False)
+    assert [line for line in notes if "not imported" in line] == ["  ! bad: not imported (invalid_skill_md)"]

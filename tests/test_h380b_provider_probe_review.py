@@ -372,3 +372,87 @@ def test_a_changed_base_url_is_probed_afresh():
     assert [r.url.host for r in hub.requests] == ["a.example", "b.example"]
     assert provider_probe.last("openrouter", key=KEY, clock=clock,
                                environ={"OPENROUTER_BASE_URL": "https://c.example/v1"}) is None
+
+
+# ── the review round's mutation pass: the shared request and the cache ─────────────
+
+def test_a_finished_request_is_not_joined_again():
+    hub, clock = _Hub(), _Clock()
+
+    async def twice():
+        await provider_probe.probe("anthropic", key=KEY, client_factory=hub.factory, clock=clock)
+        assert provider_probe._inflight == {}                         # the request took itself out
+        clock.t += provider_probe.TTL_SECONDS + 1
+        return await provider_probe.probe("anthropic", key=KEY, client_factory=hub.factory, clock=clock)
+
+    again = asyncio.run(twice())
+    assert len(hub.requests) == 2 and again["cached"] is False       # expired, so asked again
+
+
+def test_a_caller_that_stops_waiting_leaves_the_verdict_cached():
+    hub = _Hub(delay=0.2)
+
+    async def impatient():
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(provider_probe.probe("anthropic", key=KEY, client_factory=hub.factory), 0.05)
+        await asyncio.sleep(0.4)                                      # the request finishes behind it
+        return provider_probe.last("anthropic", key=KEY)
+
+    kept = asyncio.run(impatient())
+    assert kept is not None and kept["verdict"] == "ok" and len(hub.requests) == 1
+
+
+def test_a_request_in_flight_on_another_loop_is_not_awaited_here():
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    class _Held(_Hub):
+        async def handler(self, request):
+            self.requests.append(request)
+            started.set()
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            return httpx.Response(200, json={"data": [{}]})
+
+    held, fast = _Held(), _Hub()
+    other = threading.Thread(target=lambda: _probe("anthropic", held, key=KEY))
+    other.start()
+    try:
+        assert started.wait(5)
+        here = _probe("anthropic", fast, key=KEY)                     # the other loop's request is not ours
+    finally:
+        release.set()
+        other.join(5)
+    assert here["verdict"] == "ok" and here["cached"] is False and len(fast.requests) == 1
+
+
+def test_the_cache_only_read_forgets_a_transient_verdict_when_the_probe_would():
+    hub, clock = _Hub(lambda request: httpx.Response(500, json={})), _Clock()
+    assert _probe("anthropic", hub, key=KEY, clock=clock)["verdict"] == "error"
+    assert provider_probe.last("anthropic", key=KEY, clock=clock)["verdict"] == "error"
+    clock.t += provider_probe.TRANSIENT_TTL_SECONDS + 1
+    assert provider_probe.last("anthropic", key=KEY, clock=clock) is None
+
+
+def test_reset_forgets_a_request_still_in_flight():
+    hub = _Hub(delay=0.1)
+
+    async def around_a_reset():
+        first = asyncio.ensure_future(provider_probe.probe("anthropic", key=KEY, client_factory=hub.factory))
+        await asyncio.sleep(0.01)
+        provider_probe.reset()
+        second = await provider_probe.probe("anthropic", key=KEY, client_factory=hub.factory)
+        await first
+        return second
+
+    second = asyncio.run(around_a_reset())
+    assert len(hub.requests) == 2 and second["cached"] is False
+
+
+def test_the_hint_names_an_unknown_provider_plainly():
+    from agents.core.routers.onboarding import _model_hint
+
+    hint = _model_hint({"ready": False, "reason": "cloud_auth_failed",
+                        "cloud_probe": {"provider": "no-such-provider", "status_code": 401}})
+    assert hint == "The cloud provider rejected the API key (HTTP 401) — update it in Admin → settings."

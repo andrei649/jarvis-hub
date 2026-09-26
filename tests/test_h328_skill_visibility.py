@@ -482,3 +482,11 @@ def test_an_unbound_turn_has_no_channel():
         assert switches.current_channel() == "telegram"
     finally:
         _unbind(token)
+
+
+def test_a_refusal_names_every_known_name_and_counts_each_unknown_one_once():
+    linux = frozenset({"linux"})
+    assert visibility.readiness(SimpleNamespace(platforms=["android"]), host=linux) == \
+        ("unsupported", "unsupported on linux (it declares android)")
+    assert visibility.readiness(SimpleNamespace(platforms=["beos", "beos", "amiga"]), host=linux) == \
+        ("unsupported", "unsupported on linux (it declares 2 unknown platforms)")
