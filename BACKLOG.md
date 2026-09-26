@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H410 no credential or Romanian identifier reaches a log, from any process (partial → equivalent, #1207; headline 186 → 187/697).
+
+  The H495 filter masked credentials by their *shape*. What it let through: an opaque token carried by something that names it (`?access_token=…`, `client_secret=…`, `X-Api-Key: …`, `Authorization: Token …`), a CNP or an IBAN, and every record from the coordinator and the MCP stdio bridge, which logged through a bare `basicConfig`. Now (`agents/core/log_catalogue.py`, additive, outside `security/`):
+  - **Masked by name.** Query parameters (any length), body, form and JSON keys (quoted, or unquoted from six characters), the `Authorization` header after any scheme (without one from twelve characters with a digit, so `Authorization: denied` stays), the credential headers (`X-Api-Key`, `X-User-Token`, `X-Goog-Api-Key`, …) and the whole of `Cookie`/`Set-Cookie`. A bare `key` parameter and a bare `token:` key are left alone.
+  - **CNP and IBAN.** PIIScanner's own patterns with their checksum validators, and an IBAN in spaced groups of four; a 13-digit number that fails the check stays.
+  - **One machinery.** H495's `SecretRedactionFilter` runs this scanner unchanged: the access log keeps its five arguments, tracebacks are masked, a failing scanner blanks the record, and `JARVIS_LOG_REDACTION` switches both off. `setup_logging` puts both filters on every handler, H495's first; the coordinator and the MCP bridge (still stderr only) call `install_redaction()` after their `basicConfig`, without a second process rotating the hub's log file (critic note 32). The H145 log reader runs the catalogue on what it serves.
+
+  31 mutants: 30 killed (4 by cases added after a first pass), 1 equivalent that removed a redundant prefix. Test manual: SEC-216.
+  Tests: backend 17,603 → 17,655 (`tests/test_h410_log_catalogue.py` 52).
+
 - 2026-09-26 Review round, batch 5 (H309, H283, H275): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
 
   - **H309** (10 findings). A flood of `canvas_point` tips could push the owner's saved replies off the canvas: tips and tours now keep a ring of their own (20, ten minutes). The untrusted mark is the poster's word (the tool, or the route from a non-admin token), never the payload's. The overlay polls `GET /api/canvas/pointers` (live pointers, the hub's clock) instead of the whole canvas; every real posture key and the coordinator's own wiring are tested; the bubble re-measures on DOM changes, flips by its lower edge with the arrow on the target, keys a new tour to its first step, and treats a target under another layer as off screen.

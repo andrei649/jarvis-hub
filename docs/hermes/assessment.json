@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "d1b37ca8e3e1f1cd9aca6b04c018acf953534006",
-  "assessed_at": "2026-09-26T20:05:09Z",
+  "base_sha": "7f99fd55cf73f1fe1aa4a230727de100db4f8176",
+  "assessed_at": "2026-09-26T20:41:12Z",
   "reviews": [
     {
       "id": "H001",
@@ -1534,12 +1534,12 @@
       "id": "H145",
       "row_sha256": "000a519d6ba8013734b744608eaedde379cdf69ab9c439ac8a97f344c4be7884",
       "status": "equivalent",
-      "summary": "The hub's own log is readable from the UI. GET /api/admin/logs (agents/core/routers/admin.py:521) is admin-only and read-only; it reads off the event loop and answers a refused filter with 400, its reason and no-store. Behind it, agents/core/log_tail.py reads the file the hub's own setup_logging actually opened, or reports the error it met (FILE_LOG_STATE, agents/core/log.py:19; _writer_state, agents/core/log_tail.py:95), falling back to the configuration for a process that never set logging up ($JARVIS_LOG_FILE, else data_path('logs','jarvis.log') with system.log_to_file: configured_log, agents/core/log_tail.py:86). It lists only that file and its rotations named with ASCII digits, and only regular files by lstat, so a link, a pipe or a directory is never listed (list_files, agents/core/log_tail.py:114; _listed, agents/core/log_tail.py:105); a file is chosen by one of those names, and it is opened without following a link or blocking and checked to be a regular file (_read_window, agents/core/log_tail.py:193). The read is bounded: at most the last 4 MiB, read in one go and closed before parsing, at most 500 records, each at most 8,000 characters (read_path, agents/core/log_tail.py:275). Lines are grouped into records by the log format's header, so a traceback stays with its error: a record over the limit keeps its header and its newest lines behind a \"[… N lines not shown]\" marker, so the error line is always there; lines above the first header read (a record whose header rotated away, a file not in the log format) are records of their own, beyond the window too. Filters: File, a minimum Level (WARNING shows WARNING, ERROR and CRITICAL; a line with no level is not shown under a floor), a Component (a logger and its children) and Lines (1-500), decided on the record as written, so only returned records are redacted. Redaction runs on every returned field, each line whole before anything is cut, so a secret is never split into a visible half: the H495 secret scanner, an assignment rule for names ending like a credential (`SMTP_PASS=`, `?token=`, `password:`), and the known values of the process's secret-named environment variables and encrypted settings, so it masks at least what /api/admin/env masks (_Redactor, agents/core/log_tail.py:159; _known_secret_values, agents/core/log_tail.py:137); when the scanner cannot be loaded nothing is shown, with a note (_redactor, agents/core/log_tail.py:177; _record, agents/core/log_tail.py:247). Terminal escape sequences, C0 and C1 controls and bidirectional overrides are removed (_clean, agents/core/log_tail.py:186). The answer carries the components seen (redacted), the bytes scanned and whether only part of the file was read, and an honest note: file logging off and how to turn it on, a file the hub could not open at start, no file yet, or a file that may no longer be written (read_log, agents/core/log_tail.py:323). The HUD's Logs panel (frontend/src/panels/logs.tsx:54, registered in the Console's Observe group) has the File / Level / Component / Lines filters, colours records by level (ERROR/CRITICAL red, WARNING amber, DEBUG dim), shows them newest first as text, never markup, auto-refreshes every 5 s while switched on and the page is visible, skipping a tick while a read is in flight and stopping on a refused credential, shows LIVE only while the hub writes its file, shows no old records after a refused filter (and goes back to the current log when a rotation is gone), and names the admin token on a 401 or 403. `nerva logs -n N` (cmd_logs, agents/cli/nerva.py:1291) reads the same bounded, redacted tail (N counts records), says when only part was read, and refuses cleanly on an unreadable file or a missing redactor. tests/test_log_tail.py (33 cases) covers the resolution and the off state, rotations and refused names, records and tracebacks, the caps, the level floor and component children, the byte budget, a partial last line, bytes that are not UTF-8, control characters, redaction (current file, rotation, traceback line, filtered fields), the route and the CLI; tests/test_h145b_log_review.py (32) covers the first review: a secret across the cut (four offsets, and in a continuation line), a long traceback keeping its error line, links and a link swapped in after listing, a pipe, secret-named environment values and credential assignments (and ordinary numbers left alone), a redactor that cannot load (route and CLI), C1 and bidi controls, filtering before redaction, the writer's error and its path, setup_logging's record, no file yet, plain lines beyond the window, the 4 MiB budget, level-less lines under a floor, component redaction, the CLI's records, window note and -n 0, rotation names, a directory and the 400's no-store; frontend/src/test/logs-panel.test.tsx (14) covers the registration, the query, the admin read, order and colours, each filter, the 5 s auto-refresh, a tick skipped in flight, a hidden page, stale records after a refusal, LIVE only while writing, the off note, no match and a partial read, 401 and 403, a kept component and text-only rendering. The first review (two majors: a secret split by the cut came back in part, and a long traceback lost its error line; ten minors; nine nits) is answered; the feature's 29 mutants were caught but one equivalent, and this round's 26, all but one equivalent (the regular-file check after open, which lseek or read also enforces), two after their cases were added (a pipe, the partial first line). Test manual: PNB-169, PNB-170; the API sweep lists the route. Adapted from Hermes: one log file and its rotations instead of six named files, since the hub writes one log; the level is a floor rather than an exact match. Known limits: a record forged by a multi-line message that contains a header-shaped line is shown as its own record (a property of the log format).",
+      "summary": "The hub's own log is readable from the UI. GET /api/admin/logs (agents/core/routers/admin.py:521) is admin-only and read-only; it reads off the event loop and answers a refused filter with 400, its reason and no-store. Behind it, agents/core/log_tail.py reads the file the hub's own setup_logging actually opened, or reports the error it met (FILE_LOG_STATE, agents/core/log.py:19; _writer_state, agents/core/log_tail.py:95), falling back to the configuration for a process that never set logging up ($JARVIS_LOG_FILE, else data_path('logs','jarvis.log') with system.log_to_file: configured_log, agents/core/log_tail.py:86). It lists only that file and its rotations named with ASCII digits, and only regular files by lstat, so a link, a pipe or a directory is never listed (list_files, agents/core/log_tail.py:114; _listed, agents/core/log_tail.py:105); a file is chosen by one of those names, and it is opened without following a link or blocking and checked to be a regular file (_read_window, agents/core/log_tail.py:197). The read is bounded: at most the last 4 MiB, read in one go and closed before parsing, at most 500 records, each at most 8,000 characters (read_path, agents/core/log_tail.py:279). Lines are grouped into records by the log format's header, so a traceback stays with its error: a record over the limit keeps its header and its newest lines behind a \"[… N lines not shown]\" marker, so the error line is always there; lines above the first header read (a record whose header rotated away, a file not in the log format) are records of their own, beyond the window too. Filters: File, a minimum Level (WARNING shows WARNING, ERROR and CRITICAL; a line with no level is not shown under a floor), a Component (a logger and its children) and Lines (1-500), decided on the record as written, so only returned records are redacted. Redaction runs on every returned field, each line whole before anything is cut, so a secret is never split into a visible half: the H495 secret scanner, an assignment rule for names ending like a credential (`SMTP_PASS=`, `?token=`, `password:`), and the known values of the process's secret-named environment variables and encrypted settings, so it masks at least what /api/admin/env masks (_Redactor, agents/core/log_tail.py:159; _known_secret_values, agents/core/log_tail.py:137); when the scanner cannot be loaded nothing is shown, with a note (_redactor, agents/core/log_tail.py:181; _record, agents/core/log_tail.py:251). Terminal escape sequences, C0 and C1 controls and bidirectional overrides are removed (_clean, agents/core/log_tail.py:190). The answer carries the components seen (redacted), the bytes scanned and whether only part of the file was read, and an honest note: file logging off and how to turn it on, a file the hub could not open at start, no file yet, or a file that may no longer be written (read_log, agents/core/log_tail.py:327). The HUD's Logs panel (frontend/src/panels/logs.tsx:54, registered in the Console's Observe group) has the File / Level / Component / Lines filters, colours records by level (ERROR/CRITICAL red, WARNING amber, DEBUG dim), shows them newest first as text, never markup, auto-refreshes every 5 s while switched on and the page is visible, skipping a tick while a read is in flight and stopping on a refused credential, shows LIVE only while the hub writes its file, shows no old records after a refused filter (and goes back to the current log when a rotation is gone), and names the admin token on a 401 or 403. `nerva logs -n N` (cmd_logs, agents/cli/nerva.py:1291) reads the same bounded, redacted tail (N counts records), says when only part was read, and refuses cleanly on an unreadable file or a missing redactor. tests/test_log_tail.py (33 cases) covers the resolution and the off state, rotations and refused names, records and tracebacks, the caps, the level floor and component children, the byte budget, a partial last line, bytes that are not UTF-8, control characters, redaction (current file, rotation, traceback line, filtered fields), the route and the CLI; tests/test_h145b_log_review.py (32) covers the first review: a secret across the cut (four offsets, and in a continuation line), a long traceback keeping its error line, links and a link swapped in after listing, a pipe, secret-named environment values and credential assignments (and ordinary numbers left alone), a redactor that cannot load (route and CLI), C1 and bidi controls, filtering before redaction, the writer's error and its path, setup_logging's record, no file yet, plain lines beyond the window, the 4 MiB budget, level-less lines under a floor, component redaction, the CLI's records, window note and -n 0, rotation names, a directory and the 400's no-store; frontend/src/test/logs-panel.test.tsx (14) covers the registration, the query, the admin read, order and colours, each filter, the 5 s auto-refresh, a tick skipped in flight, a hidden page, stale records after a refusal, LIVE only while writing, the off note, no match and a partial read, 401 and 403, a kept component and text-only rendering. The first review (two majors: a secret split by the cut came back in part, and a long traceback lost its error line; ten minors; nine nits) is answered; the feature's 29 mutants were caught but one equivalent, and this round's 26, all but one equivalent (the regular-file check after open, which lseek or read also enforces), two after their cases were added (a pipe, the partial first line). Test manual: PNB-169, PNB-170; the API sweep lists the route. Adapted from Hermes: one log file and its rotations instead of six named files, since the hub writes one log; the level is a floor rather than an exact match. Known limits: a record forged by a multi-line message that contains a header-shaped line is shown as its own record (a property of the log format).",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/log_tail.py",
-          "sha256": "146ad59bb306a59f35fc32a33d3edc799d61b611e73def1e60e4b4f3d5158770"
+          "sha256": "8c1cc1dc5b57a0839dff6f9c801fcfdb301d6fcfd2254ea487e6065ef631b1ca"
         },
         {
           "path": "agents/core/routers/admin.py",
@@ -1575,7 +1575,7 @@
         },
         {
           "path": "agents/core/log.py",
-          "sha256": "781ae3c07eb579f5e460d8ee978868294ddef55a1f446a19742a43e3f35a6c14"
+          "sha256": "add7bc67ab83dd2120a3329b14bec5ee30a753003d59fcdddd07c06c97dcbf2f"
         },
         {
           "path": "desktop/src-tauri/hud-routes.json",
@@ -3154,7 +3154,7 @@
         },
         {
           "path": "scripts/coordinator.py",
-          "sha256": "6b2c0e02dd48e3f664ffc46efd15c79aac7a6ceb9dc67ccd2a7b3ff868bf53da"
+          "sha256": "34435ec68b12f523411a8c073bc6c851dab688acedd5ef024ca5e56181975a2d"
         },
         {
           "path": "agents/core/observability/reality_evidence.py",
@@ -3202,11 +3202,11 @@
         },
         {
           "path": "docs/test-manual/08-security-privacy.md",
-          "sha256": "5fffbdd8158615658b9eb09334024638fee795579fa81bdd0310b164eba48f15"
+          "sha256": "bcfebaa872e5237839d5ce5c481aa70de8db5c944e6445c2480285e1e000b6e8"
         },
         {
           "path": "tests/conftest.py",
-          "sha256": "4f8e7faaf16af1869a0a198665c9ca93efde89b84434b57af6b2672226d97536"
+          "sha256": "834b97d886af5266130f7193b14ec9b1419a0d26fcf7d94edfac255706652e9e"
         }
       ]
     },
@@ -3295,7 +3295,7 @@
         },
         {
           "path": "scripts/coordinator.py",
-          "sha256": "6b2c0e02dd48e3f664ffc46efd15c79aac7a6ceb9dc67ccd2a7b3ff868bf53da"
+          "sha256": "34435ec68b12f523411a8c073bc6c851dab688acedd5ef024ca5e56181975a2d"
         },
         {
           "path": "deploy/systemd/README.md",
@@ -5214,7 +5214,7 @@
         },
         {
           "path": "tests/conftest.py",
-          "sha256": "4f8e7faaf16af1869a0a198665c9ca93efde89b84434b57af6b2672226d97536"
+          "sha256": "834b97d886af5266130f7193b14ec9b1419a0d26fcf7d94edfac255706652e9e"
         },
         {
           "path": "tests/test_h373_provider_quota.py",
@@ -5604,13 +5604,21 @@
     {
       "id": "H410",
       "row_sha256": "88da13169907be70511eac4662c6b7d46c0ff756a2de64ed0618032ca1ba304f",
-      "status": "partial",
-      "summary": "Log redaction now covers every handler in the main process. setup_logging() (agents/core/log.py:92) calls _install_redaction() (agents/core/log.py:106), which runs install_log_redaction_everywhere() (agents/core/security/log_redaction.py:528). That attaches SecretRedactionFilter (agents/core/security/log_redaction.py:230) to the root handlers and to every handler owned by any logger in logging.Logger.manager, including uvicorn and uvicorn.access, which set propagate=False. The filter masks msg, args, exc_text and stack_info with SecretScanner and keeps record arity for uvicorn's AccessFormatter. It fails closed to [redaction-unavailable], and handlers that refused the filter are counted and reported. The enable flag is snapshotted at import (agents/core/security/log_redaction.py:140), so an agent-authored mid-session env write cannot switch it off. JARVIS_SCANNER_EXTRA_PATTERNS extends the pattern set. setup_logging() runs from agents/run.py at import and from the FastAPI lifespan in agents/web.py. tests/test_log_redaction.py and tests/test_log_redaction_collection_leak.py pass (66 tests). The module docstring itself acknowledges the uncovered processes and the missing PII pass (agents/core/security/log_redaction.py:24-27).",
-      "remaining": "(1) Two process entry points configure logging with a bare logging.basicConfig and never install the filter, so every record they write is unredacted: the headless coordinator (scripts/coordinator.py:147), which boots the full Orchestrator with channels, heartbeat, the autonomy loop and the scheduler, and the MCP stdio bridge (scripts/nerva_mcp_stdio.py:151). (2) There is no sensitive query-parameter, header or body-key catalogue for opaque tokens that match no vendor prefix. Probed through SecretRedactionFilter.redact_text, all of these pass unmasked: 'GET /cb?access_token=abcdef1234567890', an unquoted '?api_key=abcd1234efgh5678', 'client_secret=Zx81kdfLq0PaW3', 'X-Api-Key: 9f8e7d6c5b4a3f2e' and 'Authorization: Token abcd1234efgh5678ijkl'. The cause: generic_api_key requires a quoted value (agents/core/security/scanner.py:190) and only password keys match unquoted (agents/core/security/scanner.py:178). (3) The checksum-validated Romanian patterns the rationale relies on, ro_cnp and ro_iban (agents/core/security/scanner.py:287-288), belong to PIIScanner, which the log filter does not run, so a CNP or IBAN reaches the log verbatim.",
+      "status": "equivalent",
+      "summary": "Every log record, from every process, now goes through two filters: H495's shape scanner and a catalogue of credential-bearing names plus the Romanian identifiers. agents/core/log_catalogue.py (outside security/, additive) is a scanner over the names that make a value a credential whatever it looks like: query parameters (QUERY_PARAMS, agents/core/log_catalogue.py:54: access_token, refresh_token, id_token, token, auth, api_key, client_secret, secret, password, signature/sig, the AWS presign parameters, session, jwt), masked at any length up to the next separator; body, form and structured-log keys (SECRET_KEYS, agents/core/log_catalogue.py:62), quoted in JSON or a Python repr, assigned with a quoted value, or unquoted when the value is six characters or more; the Authorization header after any scheme (Bearer, Basic, Token, Digest, ApiKey, HMAC…), or without one when the value is twelve characters or more and carries a digit, so `Authorization: denied` stays; the credential headers X-Api-Key, X-Auth-Token, X-Access-Token, X-Goog-Api-Key, X-User-Token, X-Admin-Token, Api-Key and X-Webhook-Token (SECRET_HEADERS, agents/core/log_catalogue.py:68); and the whole value of Cookie and Set-Cookie. It also runs PIIScanner's own CNP and IBAN patterns (agents/core/security/scanner.py:287) with their checksum validators, and an IBAN written in spaced groups of four; the other PII patterns stay out (an e-mail or phone number in a log is often the point of the line; card and SSN shapes carry no checksum). A bare `key` parameter (settings routes use it for a setting's name) and a bare `token:` key (token counts) are not in the catalogue. The rules are in _rules (agents/core/log_catalogue.py:91); a value already masked is never re-masked, so a JWT the first filter named keeps its name. CatalogueScanner (agents/core/log_catalogue.py:126) offers redact, scan and the _compiled rows H495's prefilter is built from, and CatalogueRedactionFilter (agents/core/log_catalogue.py:161) runs it through an unchanged SecretRedactionFilter (agents/core/security/log_redaction.py:230): the arguments uvicorn's AccessFormatter unpacks are kept, a secret split between the format string and an argument masks the argument whole and is named after the finding that holds, tracebacks and stack info are masked, a failing scanner drops the record's content to [redaction-unavailable], and the one JARVIS_LOG_REDACTION switch, snapshotted at import, turns both filters off. It wraps rather than subclasses, so H495's installer, which skips a handler already carrying a SecretRedactionFilter, never mistakes it for its own. install_catalogue_redaction_everywhere (agents/core/log_catalogue.py:220) covers the root handlers and every logger's own (uvicorn's detached ones included), idempotently, and counts and names a handler that refuses the filter. core.log's _install_redaction (agents/core/log.py:69) installs it right after the H495 filter, so setup_logging (agents/core/log.py:108) gives every handler both, in that order; install_redaction (agents/core/log.py:102) is the same for a process that configures its own logging. The two entry points that called a bare basicConfig and wrote every record unredacted now call it: the headless coordinator (configure_logging, scripts/coordinator.py:145) and the MCP stdio bridge (configure_logging, scripts/nerva_mcp_stdio.py:149, still stderr only, since stdout is its protocol channel). Neither takes setup_logging's rotating file handler, which a second process would rotate under the hub (critic note 32). The H145 log reader runs the catalogue on every line it serves (agents/core/log_tail.py:167), for lines written before it or by a process it did not cover. The test isolation fixture strips the catalogue filter with the H495 one (tests/conftest.py:271). The H495 module's docstring (agents/core/security/, a protected path) still names the coordinator and the MCP bridge as uncovered and says no PII pass runs; it describes that module alone. tests/test_h410_log_catalogue.py (52 cases) covers the five probes the audit found unmasked and every other name in the catalogue, ordinary text that must stay (a failed authorization, a setting key, an exit code, a token count, a 13-digit order number, an IBAN-shaped string that fails its checksum, a short value), the exact line kept around a mask, CNP and IBAN compact and spaced, an access-log record keeping its five arguments, a traceback, a JWT keeping the first filter's name, a straddling IBAN, the switch, a failing scanner, both filters on every handler once and in order, a refusing handler counted and named, both entry points with a fresh root (the bridge writing nothing to stdout), and the log reader. 31 mutants: 30 killed (4 by cases added after a first pass) and 1 equivalent that removed a redundant `(?:proxy-)?` prefix (`\\b` holds after the hyphen). Test manual: SEC-216.",
+      "remaining": "",
       "evidence": [
         {
+          "path": "agents/core/log_catalogue.py",
+          "sha256": "9e7add128edf10bf973b38d0084b9361ed4da91408b01edccf2196efcdc5811d"
+        },
+        {
           "path": "agents/core/log.py",
-          "sha256": "781ae3c07eb579f5e460d8ee978868294ddef55a1f446a19742a43e3f35a6c14"
+          "sha256": "add7bc67ab83dd2120a3329b14bec5ee30a753003d59fcdddd07c06c97dcbf2f"
+        },
+        {
+          "path": "agents/core/log_tail.py",
+          "sha256": "8c1cc1dc5b57a0839dff6f9c801fcfdb301d6fcfd2254ea487e6065ef631b1ca"
         },
         {
           "path": "agents/core/security/log_redaction.py",
@@ -5621,28 +5629,24 @@
           "sha256": "ce3553da52a18c021d1b8e5df8a656a9c4db2eea99cdc0dba728688ef3875b5d"
         },
         {
-          "path": "agents/run.py",
-          "sha256": "f47ae51cf165b8b8cbcb298872e9404367082443986da21e4a5a95704cf59299"
-        },
-        {
-          "path": "agents/web.py",
-          "sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
-        },
-        {
           "path": "scripts/coordinator.py",
-          "sha256": "6b2c0e02dd48e3f664ffc46efd15c79aac7a6ceb9dc67ccd2a7b3ff868bf53da"
+          "sha256": "34435ec68b12f523411a8c073bc6c851dab688acedd5ef024ca5e56181975a2d"
         },
         {
           "path": "scripts/nerva_mcp_stdio.py",
-          "sha256": "de073cce6e4fc1cc092e7ef1296dbf9c92b1ec29bbe07e428841a8148017781a"
+          "sha256": "ed930ddc7b4ec178f485f874622800c70d57f5e7d27dd9e141ba16ee8715068b"
         },
         {
-          "path": "tests/test_log_redaction.py",
-          "sha256": "cb701d8e617df539bdee0f6923779ab88adf038b5ebc59e882e0c072476da815"
+          "path": "tests/test_h410_log_catalogue.py",
+          "sha256": "d46ed4ed705b06edf0c0810f6c6751d46ad3c4571f9cf76dd7350311f0baa62e"
         },
         {
-          "path": "tests/test_log_redaction_collection_leak.py",
-          "sha256": "aad426a71706a840f909feee2b02ce50a1301568b08f0f04327bdb88b1104884"
+          "path": "tests/conftest.py",
+          "sha256": "834b97d886af5266130f7193b14ec9b1419a0d26fcf7d94edfac255706652e9e"
+        },
+        {
+          "path": "docs/test-manual/08-security-privacy.md",
+          "sha256": "bcfebaa872e5237839d5ce5c481aa70de8db5c944e6445c2480285e1e000b6e8"
         }
       ]
     },
@@ -7213,7 +7217,7 @@
         },
         {
           "path": "agents/core/log.py",
-          "sha256": "781ae3c07eb579f5e460d8ee978868294ddef55a1f446a19742a43e3f35a6c14"
+          "sha256": "add7bc67ab83dd2120a3329b14bec5ee30a753003d59fcdddd07c06c97dcbf2f"
         },
         {
           "path": "tests/test_log_redaction.py",
@@ -9460,7 +9464,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "b576c69a7e37f6b4c572aea48dbf32e4c7a1e535ecca9434b963e700f9f30834"
+          "sha256": "086522e9ee6140e60be3e0ffab0449e5b2771798fb263135d3699de233cab3ff"
         },
         {
           "path": "agents/core/file_tools.py",

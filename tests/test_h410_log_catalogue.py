@@ -229,15 +229,21 @@ def test_a_handler_that_refuses_the_filter_is_counted_and_named(caplog):
         def emit(self, record):
             pass
 
+    # Measured against what the registry already holds: in a full run, handlers other
+    # tests left behind (a Mock has no iterable ``filters``) are refused too.
     lonely = logging.getLogger("jarvis.test.h410.refusing")
-    lonely.handlers, lonely.propagate = [Refusing()], False
+    lonely.handlers, lonely.propagate = [], False
+    cat.install_catalogue_redaction_everywhere()
+    before = cat.uncovered_handler_count()
+    lonely.handlers = [Refusing()]
     with caplog.at_level(logging.WARNING, logger=cat.logger.name):
         cat.install_catalogue_redaction_everywhere()
-    assert cat.uncovered_handler_count() >= 1
+    assert cat.uncovered_handler_count() == before + 1
+    assert f"attached to {before + 1} handler(s)" in caplog.text
     assert "NOT" in caplog.text and "catalogue" in caplog.text
     lonely.handlers = []
     cat.install_catalogue_redaction_everywhere()
-    assert cat.uncovered_handler_count() == 0
+    assert cat.uncovered_handler_count() == before
 
 
 @pytest.fixture
