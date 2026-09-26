@@ -474,7 +474,12 @@ class Skill:
         self.owner_vouched: bool = False
 
     def to_dict(self) -> dict:
+        from .visibility import readiness
+
+        ready, why = readiness(self)
         return {
+            "readiness": ready,
+            "readiness_reason": why,
             "name": self.name,
             "version": self.version,
             "author": self.author,
@@ -548,6 +553,13 @@ class Skill:
         if off:
             logger.info("Skill '%s' is switched off %s; command '%s' refused", self.name, off, command)
             return switches.refusal(self, off)
+        from .visibility import readiness
+
+        # H328: a skill for another operating system cannot run here, even when named.
+        ready, why = readiness(self)
+        if ready != "ready":
+            logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
+            return f"[skill:{self.name}] is {why}"
         if self.usage_hook is not None:
             try:
                 self.usage_hook(self.name, "use")
@@ -1300,16 +1312,25 @@ def register(skill):
         return [s for s in self.skills.values() if agent_id in s.agents or "all" in s.agents]
 
     @staticmethod
-    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None, *, switches: Optional[dict] = None) -> str:
+    def catalog_gate(skill: "Skill", agent_id: Optional[str] = None, *, switches: Optional[dict] = None,
+                     visibility: Optional[dict] = None) -> str:
         """Why ``skill`` is not advertised to ``agent_id`` ("" when it is): ``disabled``
         (switched off by the owner, everywhere or on this turn's channel — H329),
-        ``sandboxed``, ``untrusted`` (a signature that does not verify here) or ``agent``
-        (declared for other agents). The catalog, ``skills_list`` and ``skill_view`` share
-        it (H318). ``switches`` is a ``skills.switches.state()`` already read."""
+        ``unsupported`` (another operating system — H328), ``sandboxed``, ``untrusted``
+        (a signature that does not verify here), ``agent`` (declared for other agents), or
+        one of the soft H328 gates, ``environment``, ``channel`` or ``tools``, which only
+        hide it from what is offered (``visibility.SOFT_GATES``). The catalog,
+        ``skills_list`` and ``skill_view`` share it (H318). ``switches`` is a
+        ``skills.switches.state()`` and ``visibility`` a ``skills.visibility.context()``
+        already read."""
         from . import switches as skill_switches
+        from . import visibility as skill_visibility
 
         if skill_switches.off_reason(skill, current=switches):
             return "disabled"
+        host = (visibility or {}).get("host")
+        if skill_visibility.readiness(skill, host=host)[0] != "ready":
+            return "unsupported"
         if skill.sandboxed:
             return "sandboxed"
         reason = str(getattr(skill, "signature_reason", "") or "")
@@ -1318,7 +1339,7 @@ def register(skill):
         declared = [a for a in skill.agents if isinstance(a, str) and a.strip()]
         if agent_id and declared and agent_id not in declared and "all" not in declared:
             return "agent"
-        return ""
+        return skill_visibility.offer_gate(skill, skill_visibility.context() if visibility is None else visibility)
 
     def prompt_catalog(
         self,
@@ -1382,6 +1403,7 @@ def register(skill):
         """
         from ..security import quarantine
         from . import switches as skill_switches
+        from . import visibility as skill_visibility
 
         rows: list[dict] = []
         dropped_untrusted: list[str] = []
@@ -1392,9 +1414,12 @@ def register(skill):
         except Exception:
             logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
             switched = {}
+        seen = skill_visibility.context()       # H328: the host, channel and offer, once
         for name in sorted(self.skills):
             skill = self.skills[name]
-            gate = self.catalog_gate(skill, agent_id, switches=switched)
+            gate = self.catalog_gate(skill, agent_id, switches=switched, visibility=seen)
+            if gate in skill_visibility.SOFT_GATES or gate in skill_visibility.HARD_GATES:
+                skill_visibility.note_hidden(skill, gate)
             if gate == "untrusted":
                 dropped_untrusted.append(skill.name)
                 logger.warning(

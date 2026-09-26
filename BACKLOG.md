@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H328 a skill is shown where it makes sense: the host OS, the environment, the channel, and the tools this turn is offered (missing → equivalent, #1207; headline 159 → 160/697).
+
+  H327 kept `platforms`, `environments` and `metadata.hermes.*`, but nothing read them. Now (`agents/core/skills/visibility.py`), Hermes' four gates, split the same way:
+  - **Hard — `platforms`.** A skill for another OS is `unsupported` here: left out of every offer, `skill_view` answers `skill_unsupported` (`readiness_status: unsupported`), its command is refused; `GET /skills` and the Skill Switches panel say so. Termux counts as linux + android.
+  - **Soft — hidden from the catalog and `skills_list` only; named explicitly, it still works.** `environments` (docker/container, s6, `kanban` = a turn with no human, plus `JARVIS_SKILL_ENVIRONMENTS`); `session_platforms` per channel (`cli` = HUD/voice; an unbound turn is not gated); `requires_tools/toolsets` and `fallback_for_tools/toolsets` against the tools this turn is offered (`AgentToolRuntime.offered_names`, bound around the catalog; the tool loop's own offer inside it; not applied when unknown).
+  - Every hide is logged once per skill and gate. The unbound principal's `unknown` channel now counts as no channel (also for H329's switches).
+
+  42 mutants, all caught. Test manual: GOV-265, GOV-266.
+  Tests: backend 15,733 → 15,766 (`tests/test_h328_skill_visibility.py` 33); vitest 1,503 (panel case extended).
+
 - 2026-09-25 H329 a skill can be switched off without uninstalling it, everywhere or on one channel (missing → equivalent, #1207; headline 158 → 159/697).
 
   An owner who distrusted a skill could only uninstall it, losing its usage history, signature and approval. Now (`agents/core/skills/switches.py`):

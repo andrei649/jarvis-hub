@@ -22,6 +22,8 @@ beforeEach(() => {
     'Weather Intel': { name: 'Weather Intel', essential: false, disabled: false, disabled_channels: [], category: 'info' },
     'Spotify': { name: 'Spotify', essential: false, disabled: false, disabled_channels: ['telegram'], category: '' },
     'Security Monitor': { name: 'Security Monitor', essential: true, disabled: false, disabled_channels: [], category: '' },
+    'Notes': { name: 'Notes', essential: false, disabled: false, disabled_channels: [], category: '',
+               readiness: 'unsupported', readiness_reason: 'unsupported on linux (it declares macos)' },
   } };
   switchReply = () => reply(200, { ok: true, changed: ['Weather Intel'], unchanged: [], essential: [], audited: true });
   global.fetch = vi.fn(async (url, init = {}) => {
@@ -42,6 +44,7 @@ describe('SkillSwitchesPanel — H329', () => {
     expect(screen.getByText('off on telegram')).toBeTruthy();
     expect(screen.queryByLabelText('switch off Security Monitor')).toBeNull();   // essential
     expect(screen.getByText('always on')).toBeTruthy();
+    expect(screen.getByText('unsupported on linux (it declares macos)')).toBeTruthy();   // H328
     fireEvent.click(screen.getByLabelText('switch off Weather Intel'));
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('switched off everywhere · Weather Intel'));
     expect(posts()[0].body).toEqual({ skill: 'Weather Intel', enabled: false });

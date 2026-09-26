@@ -262,6 +262,19 @@ class AgentToolRuntime:
             logger.warning("agent tool runtime capability check failed closed")
             return False
 
+    def offered_names(self, agent_id: str | None) -> frozenset[str]:
+        """The tool names this agent's turn would be offered, with no side effect (H328:
+        a skill that needs a tool, or stands in for one, is shown by it). Empty when the
+        tool loop is off; a failure answers empty too."""
+        try:
+            if not self._enabled():
+                return frozenset()
+            offered, _decision = self._profiled(agent_id, self._server.tools())
+            return frozenset(str(tool.get("name") or "") for tool in offered)
+        except Exception:
+            logger.warning("tool offer for the skill catalog could not be read", exc_info=True)
+            return frozenset()
+
     def _profiled(
         self, agent_id: str | None, metadata: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], Any]:

@@ -4,7 +4,8 @@
    channel?}). A switched-off skill stays installed, signed and approved: the model is
    not told about it and a command naming it is refused. Essential skills have no off
    switch. Switching back on is refused when the hub cannot record it, and a refusal is
-   shown, never read as success; the list is re-read whatever the hub answered. */
+   shown, never read as success; the list is re-read whatever the hub answered. A skill
+   for another operating system is marked unsupported (H328). */
 import React, { useState } from 'react';
 import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
 
@@ -60,6 +61,7 @@ export function SkillSwitchesPanel() {
           <Row key={n}>
             <span style={{ ...mono, color: offHere ? 'var(--ink-3)' : 'var(--accent-light)' }}>{n}</span>
             {s.essential && <Tag>essential</Tag>}
+            {s.readiness === 'unsupported' && <Tag c="var(--red)">{s.readiness_reason || 'unsupported here'}</Tag>}
             {s.disabled && <Tag c="var(--amber)">off everywhere</Tag>}
             {!s.disabled && chans.map((c: string) => <Tag key={c} c="var(--amber)">off on {c}</Tag>)}
             {s.essential

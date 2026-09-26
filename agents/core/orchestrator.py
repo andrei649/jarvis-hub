@@ -3003,11 +3003,24 @@ class Orchestrator:
         catalog = getattr(getattr(self, "skills", None), "prompt_catalog", None)
         if not callable(catalog):
             return merged
+        from .skills import visibility as skill_visibility
+
+        agent_id = getattr(agent, "id", None)
+        # H328: the catalog shows a skill by the tools this turn is offered.
+        runtime = getattr(self, "agent_tool_runtime", None)
+        probe = getattr(runtime, "offered_names", None)
         try:
-            rows = catalog(getattr(agent, "id", None))
+            offer = frozenset(probe(agent_id)) if callable(probe) else None
+        except Exception:
+            offer = None                                   # unknown: the tool gates stand aside
+        token = skill_visibility.bind_offer(offer)
+        try:
+            rows = catalog(agent_id)
         except Exception:
             logger.warning("skills catalog for the prompt failed closed", exc_info=True)
             return merged
+        finally:
+            skill_visibility.reset_offer(token)
         if rows:
             merged["skills"] = rows
         return merged

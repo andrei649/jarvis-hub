@@ -41,6 +41,7 @@ async def list_skills():
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from agents.core import load_set
     from agents.core.skills import switches
+    from agents.core.skills.visibility import readiness
 
     try:
         switched = switches.state()
@@ -51,9 +52,13 @@ async def list_skills():
     for name, skill in orch.skills.skills.items():
         key = skill.name.casefold()
         essential = switches.is_essential(skill)
+        ready, why = readiness(skill)
         result[name] = {
             "name": skill.name,
             "version": skill.version,
+            # H328: a skill for another operating system is listed, and says so.
+            "readiness": ready,
+            "readiness_reason": why,
             "description": skill.description,
             "agents": skill.agents,
             "commands": skill.commands_meta,

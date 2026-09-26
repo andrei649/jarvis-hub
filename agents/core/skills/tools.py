@@ -171,6 +171,9 @@ def _one_line(value: Any, chars: int) -> str:
     return " ".join(quarantine.strip_invisible(str(value or "")).split())[:chars]
 
 
+_UNSUPPORTED = object()
+
+
 def _unknown(name: str) -> dict:
     # One answer for "no such skill" and "not yours to see": the second must not leak.
     return _refuse("skill_unknown", f"no skill named {name!r} is available to you: call skills_list")
@@ -224,11 +227,21 @@ def register_skill_tools(
         return str(current_tool_actor() or "")
 
     def _skill(name: Any):
+        """The skill ``skill_view`` may read, or None. A skill only the soft H328 gates
+        hide (environment, channel, tools) is read on explicit request: naming it is
+        consent. An unsupported one is refused by ``_view`` with its own answer."""
+        from .visibility import SOFT_GATES
+
         target = loader()
         if target is None or not isinstance(name, str):
             return None
         skill = getattr(target, "skills", {}).get(name)
-        if skill is None or target.catalog_gate(skill, _actor() or None):
+        if skill is None:
+            return None
+        gate = target.catalog_gate(skill, _actor() or None)
+        if gate == "unsupported":
+            return _UNSUPPORTED
+        if gate and gate not in SOFT_GATES:
             return None
         return skill
 
@@ -261,13 +274,16 @@ def register_skill_tools(
                     or (high is not None and value > high)):
                 return _refuse("skills_bad_page", f"{label} is a whole number from {low}"
                                                   + (f" to {high}" if high else ""))
+        from . import visibility
+
         target = loader()
         agent = _actor() or None
         needle = query.strip().lower()
         rows = []
+        seen = visibility.context()     # H328: the host, channel and this turn's offer, once
         for name in sorted(getattr(target, "skills", {}) if target is not None else {}):
             skill = target.skills[name]
-            if target.catalog_gate(skill, agent):
+            if target.catalog_gate(skill, agent, visibility=seen):
                 continue
             description = _one_line(skill.description, MAX_DESCRIPTION)
             commands = [m["command"][:MAX_COMMAND] for m in skill.commands_meta
@@ -293,6 +309,11 @@ def register_skill_tools(
         if file is not None and (not isinstance(file, str) or not file or len(file) > MAX_PATH):
             return _refuse("skill_bad_file", f"file is a path inside the skill, at most {MAX_PATH} characters")
         skill = _skill(name)
+        if skill is _UNSUPPORTED:
+            from .visibility import readiness
+
+            why = readiness(getattr(loader(), "skills", {}).get(name))[1]
+            return {**_refuse("skill_unsupported", f"{name!r} is {why}"), "readiness_status": "unsupported"}
         files = getattr(skill, "view_files", None) or {}
         if skill is None or _SKILL_FILE not in files:
             return _unknown(name)

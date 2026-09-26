@@ -147,9 +147,11 @@ def current_channel() -> str:
     try:
         from agents.core.orchestrator import current_principal
 
-        return clean_channel(getattr(current_principal(), "channel", ""))
+        channel = clean_channel(getattr(current_principal(), "channel", ""))
     except Exception:
         return ""
+    # A turn nobody bound says "unknown": that is no channel, not one named "unknown".
+    return "" if channel == "unknown" else channel
 
 
 def off_reason(skill: Any, channel: str | None = None, *, current: dict | None = None) -> str:
