@@ -349,7 +349,9 @@ async def _begin_project_context(orch) -> None:
         session = orch.session_id or "default"
     except AttributeError:
         session = "default"
-    state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on)
+    workdir = getter("llm.project_dir", "") if callable(getter) and on else ""   # H218
+    state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
+                                    workdir=workdir)
     project_context.set_turn(state)
     if state is not None and state.block:
         from .security.recall_taint import mark_turn_recall_tainted

@@ -451,6 +451,11 @@ class TodoStore:
             rows = list(self._plans.items())[-bound:]
             return [self._view(sid, plan) for sid, plan in reversed(rows)]
 
+    def forget(self, session_id: str) -> bool:
+        """H218 — drop one session's plan (a permanent session delete). Whether there was one."""
+        with self._lock:
+            return self._plans.pop(str(session_id or ""), None) is not None
+
     def clear(self) -> int:
         """Forget every plan (a memory purge). Returns how many there were."""
         with self._lock:

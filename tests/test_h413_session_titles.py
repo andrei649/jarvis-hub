@@ -569,7 +569,7 @@ def test_the_sessions_route_returns_each_title(monkeypatch):
         {"id": "g", "metadata": "[1]"},
         {"id": "h", "metadata": 5},
     ]
-    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: rows))
+    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20, **_: rows))
     monkeypatch.setattr(route, "get_orch", lambda: orch)
     got = TestClient(web.app).get("/sessions")
     assert got.status_code == 200

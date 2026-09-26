@@ -39,6 +39,7 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
+        self.schedule_auto_archive()
         self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
@@ -191,6 +192,34 @@ class SchedulerService:
             logger.info("Scheduled data-retention sweep: 03:30 daily (no-op unless retention.enabled)")
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
+
+    def schedule_auto_archive(self):
+        """H218 — archive idle chats daily at 03:40; a no-op unless
+        ``memory.auto_archive_days`` is set (0, the default, is off)."""
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_auto_archive, "cron", hour=3, minute=40,
+                          id="session-auto-archive", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the session auto-archive: {e}")
+
+    async def run_auto_archive(self):
+        from agents.core import session_archive
+
+        days = session_archive.auto_archive_days(
+            self._orch.get_setting(session_archive.SETTING_AUTO_DAYS, 0))
+        if not days:
+            return {"_scheduler_status": "skipped"}
+        try:
+            done = await asyncio.to_thread(
+                session_archive.run_auto_archive, self._orch.checkpoints, days,
+                active=getattr(self._orch, "session_id", None))
+            return {"archived": len(done)}
+        except Exception as e:
+            logger.warning(f"Session auto-archive failed: {e}")
+            return {"_scheduler_status": "failed"}
 
     def schedule_exec_cache_prune(self):
         """Hourly prune of the sandbox's managed run-directory cache (H667).

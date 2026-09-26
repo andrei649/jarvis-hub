@@ -5,8 +5,9 @@ A project the agent works in says how it is built in files the coding harnesses 
 Hermes reads them from the working directory up to the git root at the start of a
 session, and again as its tools move into subdirectories. Nerva does the same here:
 
-- **Where.** The working directory is the file roots' first root (``JARVIS_FILE_ROOTS``,
-  the workspace by default). The walk goes from the nearest git root at or above it —
+- **Where.** The working directory is the owner's default project directory
+  (``llm.project_dir``, H218) when it is a folder inside the file roots, else the file
+  roots' first root (``JARVIS_FILE_ROOTS``, the workspace by default). The walk goes from the nearest git root at or above it —
   never above the root the directory sits in — down to it, and each directory on the way
   is read for the files above, in that order. A directory the file tools or a local
   terminal command touch is noted for the session (:func:`note_tool_path`), so the next
@@ -257,9 +258,23 @@ def forget(session: str | None = None) -> None:
             _noted.pop(session, None)
 
 
-def build_turn(session: str, *, scope=None, setting=None) -> TurnState | None:
-    """This turn's state and block (the root's chain, then every noted directory's), or
-    ``None`` when the feature is off. Pure file work: safe to run off the event loop."""
+def start_dir(scope, workdir: object = None) -> Path:
+    """H218 — the working directory: the owner's default project directory
+    (``llm.project_dir``) when it is a folder inside the roots, else the first root."""
+    if isinstance(workdir, str):   # "" or blank is refused by the scope below
+        try:
+            folder = scope.resolve(workdir.strip())
+            if folder.is_dir():
+                return folder
+        except Exception:
+            logger.debug("project context: the default project directory is not usable", exc_info=True)
+    return scope.roots[0]
+
+
+def build_turn(session: str, *, scope=None, setting=None, workdir: object = None) -> TurnState | None:
+    """This turn's state and block (the working directory's chain, then every noted
+    directory's), or ``None`` when the feature is off. Pure file work: safe to run off
+    the event loop."""
     if not enabled(setting):
         return None
     try:
@@ -269,7 +284,7 @@ def build_turn(session: str, *, scope=None, setting=None) -> TurnState | None:
         return None
     state = TurnState(session=session or "default", scope=scope)
     items: list[Loaded] = []
-    for start in [scope.roots[0], *map(Path, noted_dirs(state.session))]:
+    for start in [start_dir(scope, workdir), *map(Path, noted_dirs(state.session))]:
         try:
             items.extend(collect(chain(start, scope), state))
         except (OSError, ValueError):
@@ -278,9 +293,9 @@ def build_turn(session: str, *, scope=None, setting=None) -> TurnState | None:
     return state
 
 
-def begin_turn(session: str, *, scope=None, setting=None) -> TurnState | None:
+def begin_turn(session: str, *, scope=None, setting=None, workdir: object = None) -> TurnState | None:
     """:func:`build_turn`, bound as the current turn so a tool can add what it discovers."""
-    state = build_turn(session, scope=scope, setting=setting)
+    state = build_turn(session, scope=scope, setting=setting, workdir=workdir)
     _TURN.set(state)
     return state
 

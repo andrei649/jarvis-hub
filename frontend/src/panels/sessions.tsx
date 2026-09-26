@@ -5,10 +5,14 @@
    resume button posted and showed nothing; the owner had to open the chat and re-read
    the raw turns. Text only: a turn is rendered as text, never as markup. */
 import React, { useState } from 'react';
-import { apiPost } from '../api/client';
+import { apiDelete, apiPost } from '../api/client';
 import { Card, Row, State, arr, asLive, mono, refusalReason, useApi } from '../panel-kit';
 
 export const RESUME_PATH = '/sessions/resume';
+/** H218 — archive, bring back, or delete a conversation for good (backup first, admin). */
+export const archivePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/archive`;
+export const unarchivePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/unarchive`;
+export const deletePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}?confirm=DELETE`;
 
 /** "[3 tool calls: a, b]" — the count of calls, then the distinct names. */
 export function toolLine(entry: any): string {
@@ -40,19 +44,38 @@ export function RecapView({ recap, session }: { recap: any; session: string }) {
 }
 
 export function SessionsPanel() {
-  const { d, e, loading, reload } = useApi('/sessions');
+  const [archived, setArchived] = useState(false);
+  const { d, e, loading, reload } = useApi(archived ? '/sessions?archived=true' : '/sessions');
   const list = arr(d, 'sessions');
   const [resumed, setResumed] = useState<any>(null);   // { session, recap }
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [confirming, setConfirming] = useState('');   // the session a delete waits to be confirmed for
   const resume = (sid: string) => {
-    setBusy(sid); setError('');
+    setBusy(sid); setError(''); setNote('');
     apiPost(RESUME_PATH, { session_id: sid })
       .then((r: any) => setResumed({ session: r?.session || sid, recap: r?.recap || null }))
       .catch((err) => { setResumed(null); setError(`not resumed · ${refusalReason(err, 'refused')}`); })
       .finally(() => setBusy(''));
   };
-  return <Card title="SESSIONS" live={asLive(d)} sub={list.length} onReload={reload}>
+  const act = (sid: string, run: () => Promise<any>, done: (r: any) => string, verb: string) => {
+    setBusy(sid); setError(''); setNote(''); setConfirming('');
+    run()
+      .then((r) => { setNote(done(r)); reload(); })
+      .catch((err) => setError(`not ${verb} · ${refusalReason(err, 'refused')}`))
+      .finally(() => setBusy(''));
+  };
+  const archive = (sid: string) => act(sid, () => apiPost(archivePath(sid)), () => `archived ${sid}`, 'archived');
+  const unarchive = (sid: string) => act(sid, () => apiPost(unarchivePath(sid)), () => `back in the list: ${sid}`, 'unarchived');
+  const remove = (sid: string) => act(sid, () => apiDelete(deletePath(sid), { admin: true }),
+    (r) => `deleted ${sid}${r?.backup ? ` · backup at ${r.backup}` : ''}`, 'deleted');
+  const flip = (next: boolean) => { setArchived(next); setConfirming(''); setNote(''); setError(''); setResumed(null); };
+  return <Card title={archived ? 'ARCHIVED CHATS' : 'SESSIONS'} live={asLive(d)} sub={list.length} onReload={reload}>
+    <div role="tablist" aria-label="sessions view" style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+      <button role="tab" aria-selected={!archived} className="tool-btn" onClick={() => flip(false)}>chats</button>
+      <button role="tab" aria-selected={archived} className="tool-btn" onClick={() => flip(true)}>archived</button>
+    </div>
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 12).map((s: any, i: number) => {
       const sid = s?.session_id || s?.id || (typeof s === 'string' ? s : '');
@@ -63,12 +86,26 @@ export function SessionsPanel() {
               <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
           : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s?.turns ?? s?.count ?? ''}</span>
-        {sid && <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>
-          {busy === sid ? 'resuming…' : 'resume'}
-        </button>}
+        {sid && !archived && <>
+          <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>
+            {busy === sid ? 'resuming…' : 'resume'}
+          </button>
+          <button className="tool-btn" disabled={!!busy} aria-label={`archive ${sid}`} onClick={() => archive(sid)}>archive</button>
+        </>}
+        {sid && archived && <>
+          <button className="tool-btn" disabled={!!busy} aria-label={`unarchive ${sid}`} onClick={() => unarchive(sid)}>unarchive</button>
+          {confirming === sid
+            ? <button className="tool-btn" disabled={!!busy} aria-label={`confirm delete ${sid}`} style={{ color: 'var(--red)' }}
+                onClick={() => remove(sid)}>confirm: delete for good</button>
+            : <button className="tool-btn" disabled={!!busy} aria-label={`delete ${sid} permanently`}
+                onClick={() => setConfirming(sid)}>delete permanently</button>}
+        </>}
       </Row>;
     })}
+    {archived && confirming && <div role="note" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+      A backup is written first; then the conversation, its checkpoints and its checklist are gone from the hub.</div>}
     {error && <div role="alert" style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>{error}</div>}
+    {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
     {resumed && (resumed.recap
       ? <RecapView recap={resumed.recap} session={resumed.session} />
       : <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>resumed {resumed.session}</div>)}

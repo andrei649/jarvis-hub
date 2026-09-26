@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697).
+
+  Sessions could only be listed and resumed, and the only deletion was the install-wide forget. Now (`agents/core/session_archive.py`, `agents/core/checkpoint.py`, `agents/core/routers/sessions.py`), as Hermes' Archived Chats:
+  - **Archive.** `POST /sessions/{id}/archive` and `/unarchive` stamp or clear `archived_at` in the session's metadata; nothing is deleted. `GET /sessions` leaves archived chats out and `?archived=true` lists only them. Resuming an archived chat brings it back.
+  - **Auto-archive.** `memory.auto_archive_days` (0 = off, at most 3,650) archives chats idle longer than that, daily at 03:40; the chat in use is never touched.
+  - **Delete for good.** `DELETE /sessions/{id}?confirm=DELETE` is admin-only and refuses the chat in use (409). It first writes every trace of the chat (row, checkpoints, clock, transcript snapshot and log, checklist, compaction archive) to `<data home>/backups/sessions/<id>-<stamp>.json`, created 0600, fsynced and read back. Only then does it delete them. If the backup does not land, nothing is deleted.
+  - **HUD.** The Sessions panel has chats and archived tabs, an archive button, and in the archived tab unarchive and a two-step “delete permanently” that names the backup.
+  - **Default project directory.** `llm.project_dir` is the folder, inside the file roots, that H594 reads a project's convention files from.
+
+  41 mutants: 38 caught, 3 equivalent (two now removed as redundant). Test manual: SHL-221, SHL-222.
+  Tests: backend 16,298 → 16,337 (`tests/test_h218_archived_chats.py` 39); vitest 1,543 → 1,550 (`sessions-archive.test.tsx` 7).
+
 - 2026-09-26 H309 the agent points at the HUD: a tip on one element, or a short tour (missing → equivalent, #1207; headline 170 → 171/697).
 
   Only the Agent Canvas existed; nothing could point at the page. Now (`agents/core/pointer_tool.py`, `agents/core/canvas.py`, `frontend/src/pointer.tsx`), as Hermes' pointing:
