@@ -581,3 +581,36 @@ def test_the_completion_route_says_when_the_roots_are_unusable(hub, monkeypatch)
     monkeypatch.setenv("JARVIS_FILE_ROOTS", "relative/dir")
     got = client.get("/api/context-refs", params={"prefix": ""})
     assert got.status_code == 503 and got.json()["reason"] == "file_roots_unusable" and got.json()["items"] == []
+
+
+# ── the review round's mutation pass ─────────────────────────────────────────────
+
+def test_a_warning_names_a_spaced_path_as_it_must_be_typed(root):
+    assert cr.expand('@file:"no such notes.md"').warnings == [
+        '@file:"no such notes.md" — not attached: no such file']
+
+
+def test_a_line_longer_than_a_skip_chunk_is_still_one_line(root):
+    (root / "wide.txt").write_text("x" * 70_000 + "\nsecond\nthird\n", encoding="utf-8")
+    got = cr.expand("@file:wide.txt#L2")
+    assert got.attached[0]["text"] == "second\n" and got.attached[0]["end"] == 2
+
+
+def test_the_last_line_counts_without_a_final_newline(root):
+    (root / "open.txt").write_text("a\nb\nc", encoding="utf-8")
+    got = cr.expand("@file:open.txt#L2-9")
+    assert got.attached[0]["text"] == "b\nc" and got.attached[0]["end"] == 3
+    assert "[file open.txt (lines 2-3); attached" in got.text
+
+
+def test_one_huge_line_is_named_as_that_one_line(root):
+    (root / "huge.txt").write_text("x" * 200_000, encoding="utf-8")
+    got = cr.expand("@file:huge.txt#L1-3")
+    assert got.attached[0]["truncated"] is True and got.attached[0]["end"] == 1
+    assert "[file huge.txt (line 1); attached" in got.text
+
+
+def test_completion_leaves_out_a_name_no_reference_could_name(root):
+    (root / 'say "hi" now.md').write_text("x\n", encoding="utf-8")
+    (root / "say it.md").write_text("x\n", encoding="utf-8")
+    assert [item["ref"] for item in cr.complete("say")] == ['@file:"say it.md"']
