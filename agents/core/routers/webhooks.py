@@ -496,10 +496,18 @@ def _skipped(store, hook_id: str, event: str, reason: str):
 
 @router.post("/api/webhooks/{hook_id}")
 async def trigger_webhook(hook_id: str, request: Request):
-    """Token-authenticated trigger → runs the configured agent/workflow."""
+    """Token-authenticated trigger → runs the configured agent/workflow.
+
+    H659: a delivery that carries an ``Idempotency-Key`` is run once per key and hook; a
+    retry gets the first delivery's outcome back (not its reply) and nothing runs again."""
+    from agents.core import idempotency
+
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
+    refusal = idempotency.check_header(request)
+    if refusal is not None:
+        return refusal
     # H153 — the receiver switch is read before the body (a refusal reads no body) and
     # again after authentication (a switch that lands mid-body).
     refusal = await _receiver_refusal()
@@ -538,6 +546,40 @@ async def trigger_webhook(hook_id: str, request: Request):
     if not store.is_enabled(live):
         return nocache_json({"error": "webhook disabled"}, status_code=403)
 
+    # H659 — reserved after authentication (a caller without the token or secret cannot
+    # burn a key) and before the delivery is counted, run or sent.
+    started = idempotency.begin(request, f"webhook:{hook_id}", raw)
+    if started.refusal is not None:
+        return started.refusal
+    if started.replay is not None:
+        return idempotency.replayed(started.replay.ref or {}, started.replay.status_code or 200)
+    try:
+        response = await _run_delivery(orch, store, hook, live, hook_id, raw, request)
+    except BaseException:
+        if started.claim is not None:
+            started.claim.release()     # the delivery did not finish: its retry runs
+        raise
+    if started.claim is not None:
+        if response.status_code >= 500:
+            started.claim.release()
+        else:
+            started.claim.done(_public_outcome(response), response.status_code)
+    return response
+
+
+def _public_outcome(response) -> dict:
+    """What a replayed delivery answers: whether it ran and where, never its reply or steps."""
+    try:
+        body = json.loads(response.body)
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    return {k: body[k] for k in ("ok", "target", "skipped", "error") if isinstance(body.get(k), (bool, str))}
+
+
+async def _run_delivery(orch, store, hook: dict, live: dict, hook_id: str, raw: bytes, request: Request):
+    """Run one authenticated delivery of an enabled hook, as the route did before H659."""
     try:
         payload = json.loads(raw) if raw else {}
     except Exception:

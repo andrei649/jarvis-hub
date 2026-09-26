@@ -57,17 +57,42 @@ async def a2a_receive_task(request: Request):
     from agents.core.a2a import a2a_enabled
     if not a2a_enabled():
         return nocache_json({"error": "a2a disabled"}, status_code=404)
+    from agents.core import idempotency
+
+    refusal = idempotency.check_header(request)
+    if refusal is not None:
+        return refusal
     peer_id = request.headers.get("x-a2a-peer", "")
     signature = request.headers.get("x-signature-256", "")
     raw = await request.body()
+    registry = _get_a2a_registry()
+    # H659: a peer's retry of a task it already sent returns the first receipt, and no
+    # second inbox row. The key is reserved only for an authenticated peer, in its scope.
+    started = idempotency.Begin()
+    if registry.verify_peer(peer_id, raw, signature):
+        started = idempotency.begin(request, f"a2a:{peer_id}", raw)
+        if started.refusal is not None:
+            return started.refusal
+        if started.replay is not None:
+            return idempotency.replayed(started.replay.ref or {})
     try:
-        receipt = _get_a2a_registry().receive_task(peer_id, raw, signature)
-        return nocache_json(receipt)
+        receipt = registry.receive_task(peer_id, raw, signature)
     except PermissionError:
+        if started.claim is not None:
+            started.claim.release()
         # Unknown peer or bad signature — fail closed without leaking which.
         return nocache_json({"error": "rejected"}, status_code=401)
     except ValueError:
+        if started.claim is not None:
+            started.claim.release()
         return nocache_json({"error": "invalid task body"}, status_code=400)
+    except BaseException:
+        if started.claim is not None:
+            started.claim.release()
+        raise
+    if started.claim is not None:
+        started.claim.done({k: receipt.get(k) for k in ("id", "status", "accepted")})
+    return nocache_json(receipt)
 
 
 @router.get("/api/a2a/peers", dependencies=[Depends(admin_guard)])

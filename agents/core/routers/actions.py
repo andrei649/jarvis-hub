@@ -1,6 +1,7 @@
 """Action-Level Approval endpoints (H10.18) — extracted from web.py (CLN-3)."""
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Request, Query
@@ -38,19 +39,42 @@ async def actions_pending():
 
 @router.post("/api/actions/request", dependencies=[Depends(user_guard)])
 async def actions_request(req: Request):
-    """Register a pending tool-call approval (sub-task granularity)."""
+    """Register a pending tool-call approval (sub-task granularity).
+
+    H659: with an ``Idempotency-Key``, a retry returns the action the first request queued
+    instead of queuing a second approval card."""
+    from agents.core import idempotency
+
+    refusal = idempotency.check_header(req)
+    if refusal is not None:
+        return refusal
     _, q, err = require_component("action_approvals", "action approvals not available")
     if err is not None:
         return err
+    raw = await req.body()
     try:
-        body = await req.json()
+        body = json.loads(raw) if raw else {}
     except Exception:
         body = {}
     if not isinstance(body, dict):  # valid JSON that isn't an object → treat as empty
         body = {}
     if not (body or {}).get("tool"):
         return JSONResponse({"error": "tool required"}, status_code=400)
-    return nocache_json({"ok": True, "action": q.request(body)})
+    started = idempotency.begin(req, "actions", raw)
+    if started.refusal is not None:
+        return started.refusal
+    if started.replay is not None:
+        action_id = str((started.replay.ref or {}).get("action_id") or "")
+        return idempotency.replayed({"ok": True, "action": q.get(action_id) or {"id": action_id}})
+    try:
+        action = q.request(body)
+    except BaseException:
+        if started.claim is not None:
+            started.claim.release()
+        raise
+    if started.claim is not None:
+        started.claim.done({"action_id": action.get("id")})
+    return nocache_json({"ok": True, "action": action})
 
 
 @router.post("/api/actions/{action_id}/decide", dependencies=[Depends(admin_guard)])

@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H659 a retried external request returns the original run instead of starting a second one (missing → equivalent, #1207; headline 163 → 164/697).
+
+  A sender that timed out and retried got a second approval card (`/api/actions/request`), a second turn or owner message (`/api/webhooks/{id}`), or a second A2A inbox row. Now (`agents/core/idempotency.py`), as in Hermes:
+  - **The key.** `Idempotency-Key`, 1–255 visible ASCII; anything else is 400 `invalid_idempotency_key`, checked before the body is read. No header: nothing changes.
+  - **The reservation.** A durable SQLite row `UNIQUE(scope, key)` under `BEGIN IMMEDIATE` (two workers cannot both win; it survives a restart), scoped to the authenticated caller (`actions`, `webhook:<id>`, `a2a:<peer>`) and taken after authentication and before anything is queued or run. It stores only a fingerprint and the public reference (action id, receipt, `ok`/`target`/`skipped`), never a body or reply.
+  - **The answers.** A retry → the original reference with `Idempotent-Replayed: true`; another body under the key → 409 `idempotency_key_reused`; still running → 409 `idempotency_in_progress` + `Retry-After`; a failed first attempt (exception or 5xx) releases the key; an abandoned one is taken over after 10 min; rows expire after 24 h; an unwritable store refuses a keyed request (503) rather than drop the guarantee. A forged A2A retry never reads the peer's receipt.
+
+  57 mutants: all caught. Test manual: GOV-271, GOV-272.
+  Tests: backend 15,965 → 16,035 (`tests/test_h659_idempotency.py` 70); vitest 1,507.
+
 - 2026-09-26 H413 a conversation is named from its first message, then by the local model (missing → equivalent, #1207; headline 162 → 163/697).
 
   Sessions were listed by id: the HUD card, `/sessions` and the mobile resume list showed `3f9c…` for every conversation, because nothing wrote a title. Now (`agents/core/session_titles.py`), in two stages as in Hermes:
