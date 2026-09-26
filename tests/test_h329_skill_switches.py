@@ -811,6 +811,8 @@ def test_a_skill_switched_back_on_is_not_archived_for_its_time_off(monkeypatch, 
     assert _post(client, {"skill": "weather", "enabled": True}).json()["changed"] == ["Weather Intel"]
     anchor = latest_activity_at(usage.get("Weather Intel"))
     assert anchor is not None and datetime.now(UTC) - anchor < timedelta(minutes=1)
+    rec = usage.get("Weather Intel")
+    assert rec.get("switch_on_count") == 1 and not rec.get("use_count")    # a switch-on is not a use
     curator = SkillCurator(SimpleNamespace(skills=orch.skills.skills), usage, archive_dir=tmp_path / "archive",
                            now=lambda: datetime.now(UTC) + timedelta(days=10))
     out = asyncio.run(curator.run())

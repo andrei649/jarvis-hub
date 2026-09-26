@@ -10,6 +10,7 @@ has changed since.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -569,3 +570,22 @@ async def test_the_owner_routes_read_and_undo(rig, monkeypatch):
     assert len(client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()["undoable"]) == 1
     rig.living.core.put("a lesson")                   # the ring moved: that write can no longer be undone
     assert client.get("/api/memory/core", headers={"X-Admin-Token": "t"}).json()["undoable"] == []
+
+
+def test_an_undo_whose_put_back_also_fails_claims_no_put_back(rig, tmp_path, caplog):
+    """Batch 6: an undo that cannot be recorded, and whose rings a concurrent writer moved
+    before they could be put back, leaves no memory.undo_reverted record."""
+    reply = asyncio.run(_call(rig, {"operations": [_op("add", text="x")]}))
+    log = _intent_log(tmp_path)
+    record = log.record
+
+    def record_after_a_concurrent_put(**kwargs):
+        rig.living.core.put("from the post-turn review")
+        return record(**kwargs)
+
+    log.record = record_after_a_concurrent_put
+    with caplog.at_level(logging.ERROR, logger="jarvis.memory_tool"), pytest.raises(OSError):
+        undo(reply["undo_ref"], living=rig.living, audit=log, store=rig.store)
+    assert "could not be put back" in caplog.text
+    record(actor="owner", action="other", why="the next record")
+    assert _chain(tmp_path) == ["memory.undo", "other"]
