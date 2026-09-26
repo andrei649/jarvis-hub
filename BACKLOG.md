@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 Review round, batch 4 (H413, H659, H117, H209, H373): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
+
+  - **H413** (9 findings). `/sessions` shows a title to the owner only (a widget visitor saw other people's opening words); a session deleted before the model names it stays deleted; internal turns and a non-owner's inbound turn on the shared session never title one; the title comes from the owner's own words, never the session notes; `nerva sessions` prints it; Romanian refusals and preambles are refused as titles; `/etc/hosts …` is a title and a run of dashes is not; nested labels and quotes are stripped.
+  - **H659** (5 findings). A webhook turn the model never answered released nothing, so its retry replayed `ok: true`: it now releases the key (every no-answer reply is named), as does a deliver-only push that failed; each attempt is fenced by its own id and a running delivery refreshes its row, so a slow attempt is never taken over; the expiry sweep is a bounded batch on an index; an outcome is retried before it is given up.
+  - **H117** (9 findings). A slash command is never merged (`text` then `/stop` became chat); stopping and a failed poll hand over what is held; the voice mark is per sender; a stopping batcher cancels everything on its way; at most 16 batches wait (Slack 1); key locks are pruned; the scan catches a zero-width split.
+  - **H209** (11 findings). Space has one spelling, so rebinding the panel to Space no longer locks it out for good; the palette always lists the panel; the palette and the panel answer in a field only on a Ctrl/⌘ or Alt chord; a matched key never also runs the browser's; World's key goes through the one handler and the live overrides; every hint reads the registry; Esc closes only the panel.
+  - **H373** (7 findings). A key the shared 429 guard holds now fails over to the next key (Claude and Gemini, streams too) and stays cool for its hold, where every turn failed before; holds are per model; `inf`/`nan`/negative headers are unreadable; the probe reports a held key as `rate_limited`; a zone-less reset is UTC; the route builds its answer inside its guard.
+
+  - **Seams.** H373 and H380 both taught the probe about the 429 guard: H380's version stays (one shared request, a held verdict cached no longer than the hold and at most 30 s), and H373's probe test moved to a 20 s hold where both agree. H413 binds the owner's own words beside H579's attachment on `/chat` and `/chat/stream`. The HUD bundle is rebuilt for H209 and H373.
+  - **Mutation.** 90 mutants across the five fixes: H413 15, all killed; H659 20, 19 killed and 1 equivalent (PURGE_BATCH 500 to 5: the sweep test is written against the constant); H117 18, 17 killed and 1 equivalent (collapsing whitespace before detect_injection_normalized, which already scans a collapsed copy); H209 19 and H373 18, all killed. H659 (3), H209 (4) and H373 (5) survivors of a first pass were killed by added tests: the guard's refusal carries the hold's time left, a whole-key hold shows on every model's row, a held key stays cool for its hold after the fail-over, a pool of one is not cooled, a bare key handed to bindings() never answers in a field, a key typed into a field is the field's, a rebinding in the panel reaches the World button, the heartbeat's interval and a failed-turn reply.
+
+  Tests: backend 17,439 → 17,554; vitest 1,702 → 1,723.
+
 - 2026-09-26 Review round, batch 3 (H328, H380, H507, H350, H579): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
 
   - **H328** (6 findings). A refusal quotes only the OS names Nerva knows and counts the rest, so no manifest text reaches a reply; the platform gate runs after the scope and trust gates, so `skill_view` never tells a hidden skill from a missing one; only code that would run is refused (a code-less skill goes to the model), and a bare command word matches only a skill that runs here; `skills_list` and the catalog past its cap log every hide; reading the turn's offer leaves nothing bound.
@@ -259,11 +272,11 @@
 
   The HUD's keys were literal maps in `app.tsx`, `world_app.tsx` and the cinema overlay. Now (`frontend/src/shortcuts.ts`, `shortcuts-panel.tsx`), as Hermes' keyboard shortcuts:
   - **One registry.** Every shortcut is an action (id, category, label, default chord, scope): the ten modes, World, the Console, Ambient, Cinema and its three stages, focus the message box (`/`, new), the palette and the panel. All three places dispatch through `matchAction`, so a key is spelled only in the registry.
-  - **The panel.** Ctrl/⌘+/ opens Keyboard Shortcuts: Navigation, View, Composer and Session, with search. Click a chord and press the new one (“Press a key…”, Esc cancels, a lone modifier waits). ↺ resets one binding and “Reset all” resets them all. A shared chord says “Also bound to …”. Rebindings are this viewer's, kept in `localStorage`.
+  - **The panel.** Ctrl/⌘+/ opens Keyboard Shortcuts: Navigation, View, Composer and Session, with search. Click a chord and press the new one (“Press a key…”, Esc cancels, a lone modifier waits). ↺ resets one binding and “Reset all” resets them all. A shared chord says “Also bound to …”. Rebindings are this viewer's, kept in `localStorage` and live in React state with storage off. The palette and the panel take only a Ctrl/⌘ or Alt chord, the palette always lists the panel, and every key hint reads the registry, so no rebinding can lock the panel out or leave a stale hint; typing in a field never fires another action.
   - **No key decides.** An action whose id, category or label names an approval or a decision is refused when the registry is built; approving, rejecting and deciding stay a click on the card.
 
   38 mutants: 36 caught; the other two were equivalent (a redundant array guard, now removed, and a hook dependency that closing the panel already refreshes). Test manual: SHL-217, SHL-218.
-  Tests: vitest 1,512 → 1,532 (`shortcuts.test.tsx` 16, `app-routing.test.tsx` +3, `cinema.test.tsx` +1).
+  Tests: vitest 1,512 → 1,532 (`shortcuts.test.tsx` 16, `app-routing.test.tsx` +3, `cinema.test.tsx` +1; after the review round `shortcuts.test.tsx` 25, `app-routing.test.tsx` +14).
 
 - 2026-09-26 H594 the project's convention files reach the agent (missing → equivalent, #1207; headline 168 → 169/697).
 
@@ -279,12 +292,12 @@
 - 2026-09-26 H373 see how much provider quota is left, and never hammer a provider that said stop (missing → equivalent, #1207; headline 167 → 168/697).
 
   A provider's limit was learned only from a failed request, in one process's memory. Now (`agents/core/llm/quota.py`), as Hermes' rate-limit tracker and shared 429 guard:
-  - **Captured.** A response hook on every cloud backend's client (`llm_async_client`) reads `x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` and keeps the latest numbers per backend and key (a key only as a hash fingerprint) in a SQLite file every process shares; local models are not tracked.
-  - **Shared 429.** A 429 holds that backend and key in every process until its retry-after (else 30 s, never over 900 s); the request hook refuses before sending, so a held key is never retried against the provider and the refused call is not egress. Another key in the pool still goes out.
+  - **Captured.** A response hook on every cloud backend's client (`llm_async_client`) reads `x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` and keeps the latest numbers per backend, key and model (a key only as a hash fingerprint) in a SQLite file every process shares; local models are not tracked.
+  - **Shared 429.** A 429 holds that backend, key and model (the whole key when the request named none) in every process until its retry-after (a finite, non-negative one; else 30 s, never over 900 s); the request hook refuses before sending, so a held key is never retried against the provider and the refused call is not egress. Another key in the pool still goes out: the Claude and Gemini backends fail over to it on a refusal and keep the held key cool for its hold.
   - **Shown.** `GET /api/llm/quota` (admin), the HUD Console → Admin → Provider Quota panel (bars, numbers, reset times, holds) and `/usage` (admin).
 
   50 mutants: all caught. Test manual: GOV-279, GOV-280.
-  Tests: backend 16,170 → 16,213 (`tests/test_h373_provider_quota.py` 43); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`).
+  Tests: backend 16,170 → 16,213 (`tests/test_h373_provider_quota.py` 43, 78 after the review round); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`, 3 after the review round).
 
 - 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
 
@@ -301,11 +314,11 @@
 
   A Telegram-split long message, an album (one update per photo) or a photo followed by “what is this?” ran one turn per piece. Now (`agents/core/channels/batching.py`), as Hermes' text/photo/album batching:
   - **The window.** Pieces from the same sender in the same conversation within 0.35 s of each other are merged in order into one turn, never waiting past 1.0 s from the first piece (32 pieces flush at once). `JARVIS_INBOUND_BATCH_MS` / `JARVIS_INBOUND_BATCH_MAX_MS` set it for every channel; 0 turns it off.
-  - **Where.** Telegram's poll loop (polling without the long wait while pieces are held; a button tap or observed message flushes first; stopping flushes); Discord and Slack via a timer-per-key batcher that delivers in order (Slack keyed by thread too; a stopping channel discards, as Slack already does with undelivered events).
-  - **Scanned whole.** The gateway's injection scan runs on the merged text, now with whitespace collapsed, so a payload split across pieces or lines is caught.
+  - **Where.** Telegram's poll loop (polling without the long wait while pieces are held; a button tap or observed message flushes first, a slash command is never merged, so `/stop` after a message still stops; stopping and a failed poll hand over what is held); Discord and Slack via a timer-per-key batcher that delivers in order, at most 16 batches on their way (Slack 1, so its bounded queue stays the only buffer; keyed by thread too; a stopping channel discards everything on its way, as Slack already does with undelivered events).
+  - **Scanned whole.** The gateway's injection scan runs on the merged text, normalised (whitespace collapsed, format characters stripped), so a payload split across pieces, lines or by a zero-width space is caught.
 
   61 mutants: 59 caught, 2 equivalent. Test manual: GOV-275, GOV-276.
-  Tests: backend 16,079 → 16,126 (`tests/test_h117_message_batching.py` 47); vitest 1,507.
+  Tests: backend 16,079 → 16,126 (`tests/test_h117_message_batching.py` 47, 60 after the review round); vitest 1,507.
 
 - 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697; equivalent → partial after its review, see the review-round bullet).
 
@@ -322,20 +335,20 @@
   A sender that timed out and retried got a second approval card (`/api/actions/request`), a second turn or owner message (`/api/webhooks/{id}`), or a second A2A inbox row. Now (`agents/core/idempotency.py`), as in Hermes:
   - **The key.** `Idempotency-Key`, 1–255 visible ASCII; anything else is 400 `invalid_idempotency_key`, checked before the body is read. No header: nothing changes.
   - **The reservation.** A durable SQLite row `UNIQUE(scope, key)` under `BEGIN IMMEDIATE` (two workers cannot both win; it survives a restart), scoped to the authenticated caller (`actions`, `webhook:<id>`, `a2a:<peer>`) and taken after authentication and before anything is queued or run. It stores only a fingerprint and the public reference (action id, receipt, `ok`/`target`/`skipped`), never a body or reply.
-  - **The answers.** A retry → the original reference with `Idempotent-Replayed: true`; another body under the key → 409 `idempotency_key_reused`; still running → 409 `idempotency_in_progress` + `Retry-After`; a failed first attempt (exception or 5xx) releases the key; an abandoned one is taken over after 10 min; rows expire after 24 h; an unwritable store refuses a keyed request (503) rather than drop the guarantee. A forged A2A retry never reads the peer's receipt.
+  - **The answers.** A retry → the original reference with `Idempotent-Replayed: true`; another body under the key → 409 `idempotency_key_reused`; still running → 409 `idempotency_in_progress` + `Retry-After`; a failed first attempt (exception, 5xx, a webhook turn the model never answered, a deliver-only push that did not go out) releases the key; each attempt is fenced by its own id and a running delivery refreshes its row, so only an abandoned one is taken over after 10 min; rows expire after 24 h; an unwritable store refuses a keyed request (503) rather than drop the guarantee. A forged A2A retry never reads the peer's receipt.
 
   57 mutants: all caught. Test manual: GOV-271, GOV-272.
-  Tests: backend 15,965 → 16,035 (`tests/test_h659_idempotency.py` 70); vitest 1,507.
+  Tests: backend 15,965 → 16,035 (`tests/test_h659_idempotency.py` 70, 90 after the review round); vitest 1,507.
 
 - 2026-09-26 H413 a conversation is named from its first message, then by the local model (missing → equivalent, #1207; headline 162 → 163/697).
 
   Sessions were listed by id: the HUD card, `/sessions` and the mobile resume list showed `3f9c…` for every conversation, because nothing wrote a title. Now (`agents/core/session_titles.py`), in two stages as in Hermes:
-  - **At once.** The first user message's first words, cleaned (no control or invisible characters, one line) and cut at a word boundary to 60 characters, are the title the moment the turn is stored. A slash command is not a title; the next real message is.
+  - **At once.** The first user message's first words, cleaned (no control or invisible characters, one line) and cut at a word boundary to 60 characters, are the title the moment the turn is stored. A slash command (as the command parser reads one: `/etc/hosts …` is a title) is not a title; the next real message is. Only the owner's own words title a session: never an internal turn, a non-owner's inbound turn on the shared session, or the session notes a route composes around them.
   - **Then once, after the reply.** The strict-local model (never a cloud backend; temperature 0, 24 tokens, `/no_think` for Qwen3, refused under a job pin) is asked to *name* the conversation, the message handed over as a JSON string it must not follow. A one-line answer of 1–10 words, with no URL and nothing instruction- or refusal-shaped, replaces the first-words title. It is started only when the turn's reply is final, so it never competes with the answer.
-  - **Where it lives.** `metadata.title` / `title_source` on the session row, written by compare-and-set (the model's name replaces only a first-words title, never a newer or unknown-source one). It shows on `GET /sessions`, `/sessions`, the HUD SESSIONS card (title + short id) and the mobile resume list. Switch: `memory.session_titles`.
+  - **Where it lives.** `metadata.title` / `title_source` on the session row, written by compare-and-set (the model's name replaces only a first-words title, never a newer or unknown-source one). A session deleted before the model's name arrives stays deleted. It shows on `GET /sessions`, `/sessions` (to the owner only), `nerva sessions`, the HUD SESSIONS card (title + short id) and the mobile resume list. Switch: `memory.session_titles`.
 
   67 mutants: 65 caught, 2 equivalent. Test manual: GOV-269, GOV-270.
-  Tests: backend 15,879 → 15,965 (`tests/test_h413_session_titles.py` 86); vitest 1,506 → 1,507 (`sessions-title.test.tsx`).
+  Tests: backend 15,879 → 15,965 (`tests/test_h413_session_titles.py` 86, 131 after the review round); vitest 1,506 → 1,507 (`sessions-title.test.tsx`).
 
 - 2026-09-26 H507 the agent is warned when code it writes contains a known-dangerous pattern (missing → equivalent, #1207; headline 161 → 162/697).
 
