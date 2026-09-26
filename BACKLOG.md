@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 Review round, batch 5 (H309, H283, H275): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
+
+  - **H309** (10 findings). A flood of `canvas_point` tips could push the owner's saved replies off the canvas: tips and tours now keep a ring of their own (20, ten minutes). The untrusted mark is the poster's word (the tool, or the route from a non-admin token), never the payload's. The overlay polls `GET /api/canvas/pointers` (live pointers, the hub's clock) instead of the whole canvas; every real posture key and the coordinator's own wiring are tested; the bubble re-measures on DOM changes, flips by its lower edge with the arrow on the target, keys a new tour to its first step, and treats a target under another layer as off screen.
+  - **H283** (12 findings). READY came from the lifespan, which uvicorn runs before it binds: `serve.py` now runs `NotifyingServer`, which sends READY after the bind (never after a failed one) and STOPPING before the drain, also on a forced exit. The hint keeps Windows paths (`D:\nerva`), drops undecodable bytes and setext headings, reads U+2028 as a line break, cleans in linear time and is counted by `nerva prompt-size`; the heartbeat stays under the deadline; a full notify queue is waited on; the shipped example is quoted.
+  - **H275** (8 findings). A job created, edited, resumed or run in safe mode no longer reached the scheduler; an unreadable souls folder no longer stops a safe boot; the runtime process takes `--safe-mode` too; acquired packages and MCP servers are reported only when there was something to leave out; a skill approved in safe mode says it loads on the next normal boot; the banner names `JARVIS_SAFE_MODE`.
+
+  - **Records.** `GET /api/canvas/pointers` is a new route: the API sweep is regenerated (539 routes). SHL-220 and ENV-167 gain the review round's steps. The HUD bundle is rebuilt for H309 and H275.
+  - **Mutation.** 70 mutants: H309 33, all killed (3 by tests added after a first pass: a pinned element outlives the overflow, a pointer whose time cannot be read counts as expired, no re-render for a DOM change that leaves the target in place); H283 17, 16 killed and 1 equivalent (READY only after `self.started`: uvicorn 0.53, the floor in `requirements.txt`, exits on every path where the server did not start); H275 20, all killed (2 by added tests: outside safe mode the data home's heartbeat overlay still wins, and the create confirmation says the first run is queued while the scheduler runs).
+
+  Tests: backend 17,554 → 17,603; vitest 1,723 → 1,730.
+
 - 2026-09-26 Review round, batch 4 (H413, H659, H117, H209, H373): the adversarial review's confirmed findings fixed red-first, each fix mutation-tested; every row stays equivalent (#1207; headline 186/697).
 
   - **H413** (9 findings). `/sessions` shows a title to the owner only (a widget visitor saw other people's opening words); a session deleted before the model names it stays deleted; internal turns and a non-owner's inbound turn on the shared session never title one; the title comes from the owner's own words, never the session notes; `nerva sessions` prints it; Romanian refusals and preambles are refused as titles; `/etc/hosts …` is a title and a run of dashes is not; nested labels and quotes are stripped.
@@ -262,11 +273,12 @@
   Only the Agent Canvas existed; nothing could point at the page. Now (`agents/core/pointer_tool.py`, `agents/core/canvas.py`, `frontend/src/pointer.tsx`), as Hermes' pointing:
   - **Canvas types.** A `tip` is a target and a one-line caption. A `tour` is a title and at most 8 such steps. The canvas sanitises both (whitespace collapsed, 160-character captions).
   - **Named places only.** A target is one of 19 anchors (the rail's modes, the message box, the Decision Inbox panel, the Console button), held in `canvas.POINTER_ANCHORS` and mirrored in the HUD with a parity test. A tip can never ring an approve or reject button.
-  - **The tool.** `canvas_point` is ungated and offered to the owner's turns; it is not a guest tool. A tip from an untrusted turn, or from a turn that is not the owner's, is marked `untrusted`, and the HUD says so.
-  - **The overlay.** It polls `GET /api/canvas` and takes the newest tip or tour of the last ten minutes that this page has not closed. It rings the element with that `data-anchor`, draws the caption with an arrow (flipped above near the bottom), and pages a tour with Back/Next/Done. A target that is not on screen is named instead. Console → Artifacts lists tips and tours as text.
+  - **The tool.** `canvas_point` is ungated and offered to the owner's turns; it is not a guest tool. A tip from an untrusted turn, or from any posture but the owner at the HUD, is marked `untrusted`, and the HUD says so. The mark is the poster's word, never the payload's: `POST /api/canvas/post` marks every tip that the owner's admin token did not send.
+  - **Its own ring.** Tips and tours keep at most 20 among themselves, gone ten minutes after posting, and never count against the canvas's other 200 elements, so a flood of them cannot evict a saved reply. The canvas is shared, so a tip shows on every viewer's HUD.
+  - **The overlay.** It polls `GET /api/canvas/pointers` (only live tips and tours, with the hub's clock) and takes the newest one of the last ten minutes, by the hub's clock, that this page has not closed. It rings the element with that `data-anchor`, draws the caption with an arrow (flipped above near the bottom, placed by its lower edge, the arrow over the target), re-measures when the page changes, and pages a tour with Back/Next/Done from its first step. A target that is not on screen, or is under another layer, is named instead. Console → Artifacts lists tips and tours as text.
 
   37 mutants: all caught. Test manual: SHL-219, SHL-220.
-  Tests: backend 16,260 → 16,298 (`tests/test_h309_pointer.py` 38); vitest 1,532 → 1,543 (`pointer.test.tsx` 10, `artifacts.test.tsx` +1).
+  Tests: backend 16,260 → 16,298 (`tests/test_h309_pointer.py` 38, 60 after the review round); vitest 1,532 → 1,543 (`pointer.test.tsx` 10, 16 after the review round; `artifacts.test.tsx` +1).
 
 - 2026-09-26 H209 every HUD shortcut in one registry, listed and rebindable (missing → equivalent, #1207; headline 169 → 170/697).
 
@@ -424,13 +436,13 @@
 
 - 2026-09-25 H275 safe mode: the hub boots without the owner's customizations, and relaxes nothing (missing → equivalent, #1207; headline 154 → 155/697).
 
-  There was no way to start a hub broken by something the owner added. Now `JARVIS_SAFE_MODE=1`, or `python serve.py --safe-mode`, leaves out seven layers (`agents/core/safe_mode.py`):
+  There was no way to start a hub broken by something the owner added. Now `JARVIS_SAFE_MODE=1`, or `python serve.py --safe-mode`, leaves out the owner's layers (`agents/core/safe_mode.py`; seven here, twelve since H490 and H594). The runtime (`scripts/runtime_supervisor.py --safe-mode`, passed on to the coordinator) takes the same switch, since it runs heartbeats, jobs and agents on the same data root:
   - **Skills.** Only the shipped skills load: the data-home folder is not opened, and a generated, imported, edited or pending-review skill in the bundled tree is not loaded.
   - **MCP.** The saved servers are not registered and their saved configuration is not touched: the save never runs from the empty manager, and add/remove answer 409 `safe_mode`.
   - **Acquisition and extensions.** The runtime reports itself disabled, so nothing promoted is re-registered and no extension can be activated.
   - **Plugin grants.** `JARVIS_PLUGIN_GRANTS` is ignored; it only ever widens access.
-  - **Overlays.** `SOUL.local.md`, `IDENTITY.local.md` and `HEARTBEAT.local.md` (data home or repository) give way to the shipped files, at construction and at the H672 boundary.
-  - **Owner jobs.** They stay saved and are not scheduled.
+  - **Overlays.** `SOUL.local.md`, `IDENTITY.local.md` and `HEARTBEAT.local.md` (data home or repository) give way to the shipped files, at construction and at the H672 boundary; an overlay folder that cannot even be read is left out, never fatal.
+  - **Owner jobs.** They stay saved and are not scheduled, at boot or by a later create, `/remind`, edit, resume or first run; Run now answers 409 `safe_mode`, and the confirmation says the job fires after a normal boot.
   - **Said everywhere.** The boot log, `/healthz`, `/readyz` (still ready), `/status`, `/api/status`, and a red SAFE MODE strip in the HUD naming what was left out. A test pins the exact modules that read the flag; no gate does.
 
   28 mutants, all caught. 74 rows re-stamped (the serve.py rows re-derived from HEAD after a double shift). The binding inventory's pinned `web.py`/`scheduler_service.py` lines moved with the files. Test manual: ENV-167, ENV-168.
@@ -448,12 +460,12 @@
 
 - 2026-09-25 H283 systemd knows when the hub is ready and when it hangs, and the operator can describe the machine (partial → equivalent, #1207; headline 152 → 153/697).
 
-  - **sd_notify** (`agents/core/sd_notify.py`). The lifespan sends `READY=1` once `/readyz` would answer 200, and `STOPPING=1` on teardown. Between the two, an event-loop task sends `WATCHDOG=1` every half `WATCHDOG_USEC` (only for this PID), so a hung loop stops the pings and systemd restarts the hub. It is a no-op without `NOTIFY_SOCKET` and never raises.
+  - **sd_notify** (`agents/core/sd_notify.py`). `serve.py` runs `NotifyingServer`, which sends `READY=1` once the port is bound and `/readyz` would answer 200 (never after a failed bind), and `STOPPING=1` as the shutdown opens, before the drain. Between the two, an event-loop task sends `WATCHDOG=1` every half `WATCHDOG_USEC` (never beyond 0.8 of it; for this PID, or any when systemd names none), so a hung loop stops the pings and systemd restarts the hub. It is a no-op without `NOTIFY_SOCKET` and never raises.
   - **The unit.** It is now `Type=notify`, `NotifyAccess=main`, `WatchdogSec=60`, `TimeoutStartSec=300`. The README describes the protocol instead of saying the hub does not emit it.
-  - **The environment hint** (`agents/core/environment_hint.py`). `JARVIS_ENVIRONMENT_HINT` is cleaned: a `\n` escape becomes a line break, control and bidi characters are removed, no line may be a heading, and it is capped at 2,000 characters. It goes into every agent's stable system prompt between the shared contract and the persona, under a heading that names it context, not instructions. It is byte-stable across turns, and with the variable unset the prompt is unchanged.
+  - **The environment hint** (`agents/core/environment_hint.py`). `JARVIS_ENVIRONMENT_HINT` is cleaned: a `\n` escape becomes a line break except inside a Windows path (quote the value in an EnvironmentFile), control and bidi characters and undecodable bytes are removed, no line may be a heading (ATX or setext), and it is capped at 2,000 characters. It goes into every agent's stable system prompt between the shared contract and the persona, under a heading that names it context, not instructions. It is byte-stable across turns, and with the variable unset the prompt is unchanged.
 
   21 mutants, all caught. 41 rows re-stamped; H456's `:1249` and H510's web.py ranges recomputed by hand. Test manual: ENV-165, ENV-166.
-  Tests: backend 15,442 → 15465 (`tests/test_h283_host_notify_and_hint.py` 23).
+  Tests: backend 15,442 → 15465 (`tests/test_h283_host_notify_and_hint.py` 23, 40 after the review round).
 
 - 2026-09-25 H441 a free recap when you come back to a conversation (partial → equivalent, #1207; headline 151 → 152/697).
 
