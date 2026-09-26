@@ -10,6 +10,8 @@ the recap on the resume route, /recap in every channel, and the HUD showing it.
 from __future__ import annotations
 
 import asyncio
+import functools
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -255,11 +257,11 @@ def test_resume_answers_with_a_recap_and_calls_no_model(monkeypatch):
 
 # ── /recap ───────────────────────────────────────────────────────────────────────
 
-def _cmd_orch(turns, session="s-1"):
+def _cmd_orch(turns, session="s-1", shared=False):
     from agents.core.commands import build_default_registry
 
     return SimpleNamespace(memory=_Memory(turns), session_id=session, llm_router=_NoModel(),
-                           commands=build_default_registry())
+                           commands=build_default_registry(), on_shared_session=lambda: shared)
 
 
 @pytest.mark.asyncio
@@ -327,3 +329,190 @@ def test_the_post_llm_seam_stores_the_turns_tools():
     asyncio.run(run([]))
     assert calls[0][1] == {"agent_id": "jarvis", "tools": ["web_search", "web_fetch"]}
     assert calls[1][1] == {"agent_id": "jarvis"}
+
+
+# ── review round ─────────────────────────────────────────────────────────────────
+#
+# /recap read whatever session the turn landed on, and a turn with no session of its
+# own (a widget visitor, a webhook, an MCP caller) lands on the owner's; a session
+# loaded through the continuation path dropped its tools and the next turn erased them
+# from disk; the /recap line stayed in when typed in capitals; a huge turn was cleaned
+# whole before it was cut; a non-ASCII digit crashed the command.
+
+@pytest.fixture
+def hub(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "h441-admin")
+    monkeypatch.setenv("JARVIS_ADMIN_TOKEN", "h441-admin")
+    with TestClient(web.app) as client:
+        yield client
+
+
+_ADMIN = {"X-Admin-Token": "h441-admin"}
+_SECRET = "OWNER-SECRET: the alarm code is 7731"
+
+
+def test_a_widget_visitor_a_webhook_and_mcp_cannot_recap_the_owners_conversation(hub):
+    from agents.core.app_state import get_orch
+
+    orch = get_orch()
+    hud = orch.session_id
+    hub.portal.call(orch.memory.add_turn, hud, "user", _SECRET)
+    hub.portal.call(functools.partial(orch.memory.add_turn, hud, "assistant", "Noted.", "jarvis",
+                                      tools=["notes_write"]))
+
+    widget = hub.post("/api/admin/widgets", json={}, headers=_ADMIN).json()
+    token = widget.get("token") or widget.get("widget", {}).get("token")
+    visitor = hub.post(f"/api/widget/{token}/message", json={"message": "/recap 50"}).json()["reply"]
+    assert "7731" not in visitor and "notes_write" not in visitor and "owner" in visitor
+
+    hook = hub.post("/api/webhooks", json={"target": "jarvis"}, headers=_ADMIN).json()
+    delivery = hub.post(f"/api/webhooks/{hook['id']}", headers={"X-Webhook-Token": hook["token"]},
+                        content=json.dumps({"text": "/recap 50"})).json()
+    assert "owner" in delivery["response"] and "7731" not in json.dumps(delivery)
+
+    mcp = hub.portal.call(orch.handle_input, "/recap 50", "mcp")
+    assert "7731" not in mcp and "owner" in mcp
+
+    owner = hub.post("/chat", json={"message": "/recap 50"}, headers=_ADMIN).json()["reply"]
+    assert f"● you: {_SECRET}" in owner and "◆ jarvis: Noted.  [1 tool call: notes_write]" in owner
+
+
+@pytest.mark.asyncio
+async def test_a_guest_on_the_shared_session_is_refused_before_anything_is_read():
+    from agents.core.commands import Principal, build_default_registry
+
+    class _Unread:
+        async def get_history(self, *_a, **_k):
+            raise AssertionError("the shared session was read for a guest")
+
+    registry = build_default_registry()
+    guest = Principal(channel="widget", admin=False)
+    shared = SimpleNamespace(memory=_Unread(), session_id="hud", on_shared_session=lambda: True)
+    refused = await registry.dispatch("/recap", orch=shared, principal=guest)
+    assert "owner" in refused.reply
+    no_probe = SimpleNamespace(memory=_Unread(), session_id="hud")          # counts as shared
+    assert "owner" in (await registry.dispatch("/recap", orch=no_probe, principal=guest)).reply
+    # A guest in a chat of its own reads that chat, and the owner reads the shared one.
+    own = await registry.dispatch("/recap", orch=_cmd_orch(_conversation(2)), principal=guest)
+    assert "● you: question 1" in own.reply
+    owner = Principal(channel="web", admin=True)
+    hud = await registry.dispatch("/recap", orch=_cmd_orch(_conversation(2), shared=True), principal=owner)
+    assert "● you: question 1" in hud.reply
+
+
+@pytest.mark.asyncio
+async def test_the_recap_line_is_left_out_whatever_its_case_and_an_odd_digit_is_the_default():
+    from agents.core.commands import Principal, build_default_registry
+
+    owner = Principal(channel="telegram", sender="1", admin=True)
+    registry = build_default_registry()
+    for line, shown in (("/Recap 2", 2), ("/RECAP 3", 3), ("/recap@nerva_bot 2", 2)):
+        outcome = await registry.dispatch(line, orch=_cmd_orch(_conversation(5) + [_t("user", line)]),
+                                          principal=owner)
+        assert outcome.reply.splitlines()[0] == f"Previous conversation (the last {shown} of 5 exchanges):"
+        assert line not in outcome.reply
+    # Another command's line is a turn like any other.
+    kept = await registry.dispatch("/recap", orch=_cmd_orch(_conversation(1) + [_t("user", "/recapitulate")]),
+                                   principal=owner)
+    assert "● you: /recapitulate" in kept.reply
+    odd = await registry.dispatch("/recap ²", orch=_cmd_orch(_conversation(20)), principal=owner)
+    assert odd.status == "answered" and "the last 10 of 20" in odd.reply
+
+
+def test_a_huge_turn_is_cut_before_it_is_cleaned(monkeypatch):
+    import unicodedata
+
+    import agents.core.memory.recap as recap_module
+    from agents.core.memory.recap import DEFAULT_TURN_CHARS
+
+    calls = [0]
+
+    def category(ch):
+        calls[0] += 1
+        return unicodedata.category(ch)
+
+    monkeypatch.setattr(recap_module, "unicodedata", SimpleNamespace(category=category))
+    recap = render_recap([_t("user", "x" * 5_000_000), _t("assistant", "short", "jarvis")])
+    assert calls[0] <= 4 * DEFAULT_TURN_CHARS + len("short") + len("jarvis")
+    assert recap["exchanges"][0][0]["text"] == "x" * (DEFAULT_TURN_CHARS - 1) + "…"
+    # Cut on the way in, so a head that folds short still says it was cut.
+    spaced = render_recap([_t("user", "a" + " " * 5_000 + "tail")])
+    assert spaced["exchanges"][0][0]["text"] == "a…"
+    assert render_recap([_t("user", "y" * 1000)])["exchanges"][0][0]["text"] == "y" * 279 + "…"
+
+
+def _checkpoints(tmp_path):
+    from agents.core.checkpoint import CheckpointManager
+
+    cp = CheckpointManager(str(tmp_path / "cp.db"))
+    cp.initialize()
+    return cp
+
+
+@pytest.mark.asyncio
+async def test_a_turns_tools_survive_an_explicit_session_load_and_the_next_turn(tmp_path, monkeypatch):
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.session_continuation import prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = _checkpoints(tmp_path)
+    memory = MemoryManager()
+    memory.set_checkpoint_manager(cp)
+    sid = await memory.new_session("session_tools")
+    await memory.add_turn(sid, "user", "weather?")
+    await memory.add_turn(sid, "assistant", "sunny", "jarvis", tools=["web_search"])
+
+    fresh = MemoryManager()                              # after a restart, another session newest
+    fresh.set_checkpoint_manager(cp)
+    fresh.conversation.sessions.pop(sid, None)
+    await prepare_session(SimpleNamespace(memory=fresh, checkpoints=cp), sid)   # /chat with session_id
+    assert (await fresh.get_history(sid))[1]["tools"] == ["web_search"]
+    await fresh.add_turn(sid, "user", "and tomorrow?")
+    assert json.loads((tmp_path / f"{sid}.json").read_text())["turns"][1]["tools"] == ["web_search"]
+    cp.close()
+
+
+@pytest.mark.asyncio
+async def test_a_continued_session_carries_the_tools_in_its_seed(tmp_path, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.session_continuation import ContinuationStore, create_continuation, seed_json
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = _checkpoints(tmp_path)
+    memory = MemoryManager()
+    memory.set_checkpoint_manager(cp)
+    sid = await memory.new_session("session_source")
+    await memory.add_turn(sid, "user", "weather?")
+    await memory.add_turn(sid, "assistant", "sunny", "jarvis", tools=["web_search", "web_fetch"])
+
+    @asynccontextmanager
+    async def lease(_sid):
+        yield True
+
+    orch = SimpleNamespace(memory=memory, checkpoints=cp, session_id="default", turn_lease=lease)
+    child = (await create_continuation(orch, sid, "00000000-0000-4000-8000-000000000441"))["session_id"]
+    assert ContinuationStore(cp).seed(child)[1]["tools"] == ["web_search", "web_fetch"]
+
+    again = MemoryManager()                              # after a restart: the child is seed-only
+    again.set_checkpoint_manager(cp)
+    again.conversation.sessions.pop(child, None)
+    assert await again.resume_session(child)             # POST /sessions/resume
+    assert (await again.get_history(child))[1]["tools"] == ["web_search", "web_fetch"]
+    await again.add_turn(child, "user", "and tomorrow?")
+    stored = json.loads((tmp_path / f"{child}.json").read_text())["turns"]
+    assert stored[1]["tools"] == ["web_search", "web_fetch"]
+    cp.close()
+
+    # The seed keeps names only, as a stored turn does; none is no key at all.
+    turn = {"role": "assistant", "content": "x", "agent_id": None,
+            "timestamp": "2026-09-01T10:00:00+00:00", "token_count": 0}
+    assert "tools" not in seed_json([turn]) and "tools" not in seed_json([{**turn, "tools": []}])
+    assert json.loads(seed_json([{**turn, "tools": [" web ", 3, ""]}]))[0]["tools"] == ["web"]

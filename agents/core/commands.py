@@ -374,6 +374,13 @@ async def _recap(ctx: CommandContext) -> str:
     stored turns with no model call; tools a reply used show as a count. ``/recap 20``
     shows more exchanges (at most 50)."""
     orch = ctx.orch
+    # A turn with no session of its own (a widget visitor, a webhook, an MCP caller)
+    # runs on the owner's shared one: only the owner reads it back. An orchestrator
+    # without the probe counts as shared (fail closed).
+    probe = getattr(orch, "on_shared_session", None)
+    shared = bool(probe()) if callable(probe) else True
+    if shared and not ctx.principal.admin:
+        return "This conversation is the owner's: /recap reads it back only for the owner."
     memory = getattr(orch, "memory", None)
     session = getattr(orch, "session_id", None)
     if memory is None or not session:
@@ -381,10 +388,11 @@ async def _recap(ctx: CommandContext) -> str:
     from agents.core.memory.recap import DEFAULT_EXCHANGES, render_recap
 
     arg = (ctx.args or "").strip()
-    exchanges = int(arg) if arg.isdigit() and int(arg) > 0 else DEFAULT_EXCHANGES
+    exchanges = int(arg) if arg.isascii() and arg.isdigit() and int(arg) > 0 else DEFAULT_EXCHANGES
     turns = await memory.get_history(session)
     # The /recap line itself is the conversation's newest turn: it is not recapped.
-    if turns and turns[-1].get("role") == "user" and str(turns[-1].get("content", "")).lstrip().startswith("/recap"):
+    parsed = CommandRegistry.parse(str(turns[-1].get("content", ""))) if turns else None
+    if parsed and parsed[0] == "recap" and turns[-1].get("role") == "user":
         turns = turns[:-1]
     return render_recap(turns, exchanges=exchanges)["text"]
 

@@ -36,9 +36,13 @@ def _clean(text: Any, limit: int) -> str:
     """One line of plain text: whitespace folded, control and bidi characters removed,
     cut to ``limit`` characters with an ellipsis."""
     raw = text if isinstance(text, str) else ("" if text is None else str(text))
+    # Only the head can show, and a stored turn has no size cap: cut before cleaning,
+    # so a huge turn costs no more than a short one on the event loop.
+    cut = len(raw) > limit * 4
+    raw = raw[: limit * 4]
     kept = "".join(ch for ch in raw if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf"))
     flat = _SPACE.sub(" ", kept).strip()
-    if len(flat) > limit:
+    if cut or len(flat) > limit:
         return flat[: max(1, limit - 1)].rstrip() + "…"
     return flat
 
