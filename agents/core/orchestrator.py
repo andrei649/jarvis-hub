@@ -919,9 +919,11 @@ class Orchestrator:
         self._ensure_context_cache()
 
         # Preload the detected local model so the first turn (often a voice
-        # command) skips the cold-load cost. Fire-and-forget — the model load
-        # can take seconds and must not delay startup. Gate with
-        # JARVIS_LLM_WARMUP=0 for environments where preloading is unwanted.
+        # command) skips the cold-load cost. A background task: load_agents does
+        # not wait for it, the web lifespan does — bounded by
+        # system.startup_warmup_timeout_seconds — before any channel opens (H677,
+        # lifecycle_budget.gate_warmup). Gate with JARVIS_LLM_WARMUP=0 for
+        # environments where preloading is unwanted.
         if env_flag("JARVIS_LLM_WARMUP", True):
             self._warmup_task = asyncio.create_task(self.llm_router.warm_up())
             self._warmup_task.add_done_callback(_log_task_result)
@@ -1385,14 +1387,13 @@ class Orchestrator:
         task = getattr(self, name, None)
         if task is None:
             return
-        task.cancel()
+        # H677: at most TASK_CANCEL_BUDGET — a task that swallows its cancellation is
+        # named and left behind instead of holding shutdown past the service manager's
+        # stop budget.
+        from agents.core.lifecycle_budget import TASK_CANCEL_BUDGET, wait_task
+
         try:
-            await task
-        except asyncio.CancelledError:
-            pass  # expected — we asked for it. Not an Exception subclass, so it
-            # needs its own clause; a bare `except Exception` would miss it.
-        except Exception as e:
-            logger.warning("Error stopping %s: %s", name, e)
+            await wait_task(task, TASK_CANCEL_BUDGET, name)
         finally:
             setattr(self, name, None)
 
@@ -1407,15 +1408,15 @@ class Orchestrator:
         for _task_attr in ("_settings_watcher_task", "_autonomy_task", "_learning_task"):
             await self._cancel_task(_task_attr)
         # The Oracle GitHub watcher polls every 30s when enabled; nothing stopped it.
+        from agents.core.lifecycle_budget import CLOSE_STEP_BUDGET, bounded
+
         bridge = getattr(self, "oracle_bridge", None)
         stop_watcher = getattr(bridge, "stop_watcher", None)
         if stop_watcher is not None:
-            try:
-                await stop_watcher()
-            except Exception as e:
-                logger.warning(f"Error stopping Oracle watcher: {e}")
-        # Close all active plugins gracefully (CLN-2: owned by PluginManager).
-        await self.plugin_manager.close_all()
+            await bounded(stop_watcher(), CLOSE_STEP_BUDGET, "Oracle watcher stop")
+        # Close all active plugins gracefully (CLN-2: owned by PluginManager), within a
+        # budget (H677).
+        await bounded(self.plugin_manager.close_all(), CLOSE_STEP_BUDGET, "plugin close")
         # H428 — turn embeddings are written in the background: give the queue a
         # bounded chance to land before the backends close, and say what it dropped.
         memory = getattr(self, "memory", None)
@@ -1591,6 +1592,10 @@ class Orchestrator:
         async with self.turn_lease() as acquired:
             if not acquired:
                 return TURN_BUSY_REPLY
+            from agents.core.lifecycle_budget import WARMUP
+
+            if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
+                logger.info("%s turn served while the local model is still warming up", channel)
             if draft is not None:
                 return await self.handle_input_stream(text, channel, on_token=draft.push)
             return await self.handle_input(text, channel)
@@ -4411,35 +4416,31 @@ class Orchestrator:
         Defensive throughout — every step is guarded so a failure in one does
         not abort the rest, and shutdown never raises.
         """
-        await self._flush_checkpoint()
+        # H677: every step within a short budget; an overrun is named and the next step
+        # runs, so one wedged close cannot use up the service manager's stop budget.
+        from agents.core.lifecycle_budget import CLOSE_STEP_BUDGET, TASK_CANCEL_BUDGET, bounded, wait_task
+
+        await bounded(self._flush_checkpoint(), CLOSE_STEP_BUDGET, "checkpoint flush")
         cache_tasks = getattr(self, "_cache_tasks", None)
         if cache_tasks:
-            pending_cache_tasks = tuple(cache_tasks)
-            for task in pending_cache_tasks:
-                task.cancel()
-            await asyncio.gather(*pending_cache_tasks, return_exceptions=True)
+            for task in tuple(cache_tasks):
+                await wait_task(task, TASK_CANCEL_BUDGET, "context cache task")
             cache_tasks.clear()
+        warmup = getattr(self, "_warmup_task", None)
+        if warmup is not None:
+            await wait_task(warmup, TASK_CANCEL_BUDGET, "model warm-up")
         router = getattr(self, "llm_router", None)
         if router is not None:
-            try:
-                await router.aclose()
-            except Exception as e:
-                logger.warning(f"Error closing LLM router: {e}")
+            await bounded(router.aclose(), CLOSE_STEP_BUDGET, "LLM router close")
         ollama_control = getattr(self, "ollama", None)
         ollama_close = getattr(ollama_control, "aclose", None)
         if ollama_close is not None:
-            try:
-                await ollama_close()
-            except Exception as e:
-                logger.warning(f"Error closing Ollama lifecycle client: {e}")
+            await bounded(ollama_close(), CLOSE_STEP_BUDGET, "Ollama lifecycle client close")
         # Close MCP sessions (httpx/stdio transports) if any are open.
         mcp = getattr(self, "mcp", None)
         close_all = getattr(mcp, "close_all", None)
         if close_all is not None:
-            try:
-                await close_all()
-            except Exception as e:
-                logger.warning(f"Error closing MCP sessions: {e}")
+            await bounded(close_all(), CLOSE_STEP_BUDGET, "MCP session close")
         # Close the autonomy sqlite queue connection.
         queue = getattr(self, "autonomy_queue", None)
         queue_close = getattr(queue, "close", None)
@@ -4453,16 +4454,11 @@ class Orchestrator:
         cache = getattr(self, "context_cache", None)
         cache_close = getattr(cache, "close", None)
         if cache_close is not None:
-            try:
-                await cache_close()
-            except Exception as e:
-                logger.warning(f"Error closing context cache: {e}")
+            await bounded(cache_close(), CLOSE_STEP_BUDGET, "context cache close")
         # AUD-18: drain the pooled per-plugin HTTP clients (PluginHTTPClient registry).
-        try:
-            from . import http_client as _http_client
-            await _http_client.close_all()
-        except Exception as e:
-            logger.warning(f"Error closing plugin HTTP clients: {e}")
+        from . import http_client as _http_client
+
+        await bounded(_http_client.close_all(), CLOSE_STEP_BUDGET, "plugin HTTP client close")
         # AUD-18: close channel transports that hold a long-lived client (e.g. the
         # Telegram httpx client). Only the async `aclose` convention is honored;
         # best-effort so one channel can't abort the rest of shutdown.
@@ -4470,10 +4466,7 @@ class Orchestrator:
             closer = getattr(ch, "aclose", None)
             if closer is None:
                 continue
-            try:
-                await closer()
-            except Exception as e:
-                logger.warning(f"Error closing channel '{cid}': {e}")
+            await bounded(closer(), CLOSE_STEP_BUDGET, f"channel '{cid}' close")
         # The two sqlite connections opened at boot. Both classes have had a close()
         # all along; shutdown simply never called either, so the handles lived until
         # process exit. That is not merely untidy here:

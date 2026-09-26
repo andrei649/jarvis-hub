@@ -135,7 +135,12 @@ def readiness_snapshot() -> dict:
     from agents.core import safe_mode
 
     # H275: said, never a reason to be not-ready — a safe-mode hub serves.
-    body = {"ready": ready, "checks": checks, "llm": _llm_snapshot(orch), "safe_mode": safe_mode.status()}
+    from agents.core.lifecycle_budget import WARMUP
+
+    # H677: the boot warm-up is reported, never a reason to be not-ready (the gate
+    # already held the channels; a turn served while it still runs is marked warming).
+    body = {"ready": ready, "checks": checks, "llm": _llm_snapshot(orch), "safe_mode": safe_mode.status(),
+            "warmup": WARMUP.snapshot()}
     if not ready:
         body["reason"] = "starting" if orch is None else "agents-not-loaded"
     return body

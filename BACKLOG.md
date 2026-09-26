@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H677 warm up before accepting work; every shutdown wait has a short budget; one slow chat never holds another (partial → equivalent, #1207; headline 179 → 180/697).
+
+  The local model's warm-up was fire-and-forget, so a message right after boot raced the cold load; each channel stop, cancelled task and close was awaited with no bound; and Telegram's poll loop awaited every turn, so one chat's slow answer (or a 180 s lease wait) held every other chat. Now, as Hermes' lifecycle:
+  - **Warm-up gate** (`agents/core/lifecycle_budget.py`). The web lifespan waits for the warm-up before any channel opens, at most `system.startup_warmup_timeout_seconds` (default 20 s, 0 = no wait). On expiry it says so, opens anyway, and the warm-up finishes in the background. `/api/status` and `/readyz` report `warmup` (`off | warming | ready | cold | failed`, never a reason to be not-ready). A turn served while it is still `warming` carries `warming: true` (`/chat`, the stream's `end` event) or a log line (channel turns).
+  - **Shutdown budgets.** `bounded` (3 s: each channel stop, the Oracle watcher, plugin close, the checkpoint flush, the LLM router, Ollama, MCP, the context cache, the plugin HTTP clients, each channel close) and `wait_task` (2 s: each cancelled background task and the warm-up) name an overrun and move on; a step that ignores cancellation is abandoned. The budgets are per step (no total deadline).
+  - **Chat lanes** (`agents/core/channels/chat_lanes.py`). Telegram hands each turn, button tap and observed group line to its chat's lane: a chat's turns in order, chats side by side (at most 8 at once), the poll loop straight back to reading, 2 s to finish at stop. A voice note's "answer speech with speech" mark travels with its own turn, so a busy chat's earlier typed reply is never the one spoken (a regression the lanes would have introduced, caught while building).
+
+  84 mutants, all caught after 21 survivors got cases (a cancelled warm-up, the frozen duration, a zero budget, an abandoned step's cancel, lane order after an earlier turn ends, the poll loop's own lanes, a tap in another chat, cache-task cleanup, the budgets nesting…); one equivalent (`asyncio.shield` around `asyncio.wait`, which never cancels) removed. Test manual: ENV-179, ENV-180, GOV-284.
+  Tests: backend 16,818 → 16,869 (`tests/test_h677_boot_and_shutdown.py` 51); OpenAPI types regenerated (`ChatResponse.warming`).
+
 - 2026-09-26 H450 say when in plain words: one-shots, compact intervals, repeat counts (partial → equivalent, #1207; headline 178 → 179/697).
 
   Every job was a cron, so `in 30m` and an ISO time were refused, and worse, `2026-10-01 09:00`, `tomorrow at 9` and `once at 9am` were silently armed as a DAILY `0 9 * * *`. Now (`agents/core/autonomy/nl_schedule.py`, `jobs.py`), as Hermes' schedule syntax:

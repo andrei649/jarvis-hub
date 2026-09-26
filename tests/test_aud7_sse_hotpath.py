@@ -53,9 +53,10 @@ async def test_sse_normal_completion_emits_start_tokens_end():
     assert events[0] == {"type": "start", "agent": "friday"}
     assert [e["text"] for e in events if e["type"] == "token"] == ["hel", "lo"]
     # `pending_approvals` rides on every end event (empty when the turn queued
-    # nothing), so a client never has to branch on whether the key is there.
+    # nothing), so a client never has to branch on whether the key is there; so
+    # does H677's `warming` (false once the boot warm-up is over).
     assert events[-1] == {"type": "end", "agent": "friday", "text": "hello",
-                          "pending_approvals": []}
+                          "pending_approvals": [], "warming": False}
 
 
 async def test_sse_runner_error_surfaces_as_end_event():

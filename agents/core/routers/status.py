@@ -111,7 +111,10 @@ async def status():
 async def api_status():
     """Return service version, agent count, and health status."""
     from agents import AGENT_COUNT, __version__
-    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok", "safe_mode": _safe_mode_status()}
+    from agents.core.lifecycle_budget import WARMUP
+
+    return {"version": __version__, "agents": AGENT_COUNT, "status": "ok", "safe_mode": _safe_mode_status(),
+            "warmup": WARMUP.snapshot()}   # H677: warming while the boot warm-up is still running
 
 
 def _safe_mode_status() -> dict:

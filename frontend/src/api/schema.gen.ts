@@ -10149,6 +10149,11 @@ export interface components {
              * @default []
              */
             pending_approvals: number[];
+            /**
+             * Warming
+             * @default false
+             */
+            warming: boolean;
         };
         /** ClimateControlBody */
         ClimateControlBody: {

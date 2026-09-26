@@ -621,6 +621,11 @@ async def lifespan(application: FastAPI):
             await orch.register_channel(ch)
             logger.info("Webhook channel wired: %s", ch.channel_id)
 
+    # H677: the first message must not race a cold model. Wait for the boot warm-up —
+    # bounded by system.startup_warmup_timeout_seconds — before any channel opens.
+    from agents.core.lifecycle_budget import WARMUP_SETTING, gate_warmup, warmup_timeout
+    await gate_warmup(getattr(orch, "_warmup_task", None),
+                      warmup_timeout(get_value(*WARMUP_SETTING.split(".", 1), 20)))
     await orch.start_channels()
     from agents.core.routers.cameras import start_camera_ingestion
     await start_camera_ingestion()
@@ -1076,6 +1081,9 @@ class ChatResponse(BaseModel):
     # turn pushed onto the approval queue — a report, not a grant: every one of
     # them is still `proposed` and still needs the owner's decision.
     pending_approvals: list[int] = []
+    # H677: True when the turn was served while the local model was still warming up
+    # (the boot gate expired first), so a slow first reply is named, not mysterious.
+    warming: bool = False
 
 
 # ── mount static files ────────────────────────────────────────────
@@ -1220,6 +1228,8 @@ async def chat(req: ChatRequest, request: Request):
         # returning, so this is the only place that still holds the list once the
         # reply is in hand. The turn appends to THIS list (see turn_approvals).
         sink, approvals_token = open_turn_approvals()
+        from agents.core.lifecycle_budget import WARMUP
+        warming = WARMUP.warming
         try:
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id) as acquired:
@@ -1234,7 +1244,7 @@ async def chat(req: ChatRequest, request: Request):
             reset_turn_approvals(approvals_token)
             reset_turn_principal(principal_token)
             context_refs.reset_attached(attached_token)
-        return ChatResponse(reply=reply, pending_approvals=queued_approvals)
+        return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming)
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
@@ -1307,6 +1317,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             if principal_token is not None:
                 reset_turn_principal(principal_token)
 
+    from agents.core.lifecycle_budget import WARMUP
+    warming = WARMUP.warming          # H677: served before the boot warm-up finished
     task = asyncio.create_task(runner())
     try:
         yield f"data: {json.dumps({'type': 'start', 'agent': agent})}\n\n"
@@ -1315,13 +1327,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals, 'warming': warming})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals, 'warming': warming})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting

@@ -49,6 +49,8 @@ TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 #: Seconds between two edits of a streaming draft — Telegram's per-message edit budget is
 #: about one a second; going faster earns a 429 and a frozen message.
 STREAM_EDIT_INTERVAL = 1.2
+#: H677: at stop, how long the turns already in their chats' lanes get to finish.
+LANE_DRAIN_BUDGET = 2.0
 _STREAM_CURSOR = " ▍"
 
 
@@ -197,6 +199,9 @@ class TelegramChannel(ChannelAdapter):
         self._bot_username: Optional[str] = None
         self._offset = 0
         self._poll_task = None
+        # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
+        # one slow answer never holds another chat's messages.
+        self._lanes = None
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
         # The process's ONE `SenderPairing` — the object the gateway gates on and
@@ -224,6 +229,11 @@ class TelegramChannel(ChannelAdapter):
         # it consumes the mark, which is how "voice for voice" tells a spoken
         # question from a typed one.
         self._voice_turns: set = set()
+        # H677: chats whose NEXT delivered turn was a voice note. The mark is taken
+        # when the note is read, but with chat lanes an earlier turn of the chat may
+        # still be running then; the turn carries the mark into its lane and sets it
+        # only when it runs, so that earlier reply is not the one spoken.
+        self._voice_pending: set = set()
 
     async def start(self):
         self._running = True
@@ -244,6 +254,9 @@ class TelegramChannel(ChannelAdapter):
         self._running = False
         if self._poll_task:
             self._poll_task.cancel()
+        lanes, self._lanes = self._lanes, None
+        if lanes is not None:
+            await lanes.drain(LANE_DRAIN_BUDGET)
         await self.client.aclose()
         logger.info("Telegram channel stopped")
 
@@ -402,6 +415,9 @@ class TelegramChannel(ChannelAdapter):
             logger.debug("Telegram sendChatAction failed (cosmetic): %s", e)
 
     async def _poll_loop(self):
+        from .chat_lanes import ChatLanes
+
+        self._lanes = ChatLanes(name="telegram")
         while self._running:
             try:
                 # H117: while pieces of a burst are held, poll without the long wait so
@@ -421,8 +437,12 @@ class TelegramChannel(ChannelAdapter):
             except Exception as e:
                 logger.warning(f"Telegram poll error: {e}")
                 await asyncio.sleep(3)
-        # Stopping never drops what a sender already said: held pieces go out now.
+        # Stopping never drops what a sender already said: held pieces go out now, and
+        # the turns already in their chats' lanes get a bounded time to finish.
         await self._flush_all_turns()
+        lanes, self._lanes = self._lanes, None
+        if lanes is not None:
+            await lanes.drain(LANE_DRAIN_BUDGET)
 
     async def _handle_update(self, up: dict) -> None:
         """One update: a button tap, an ignored message, or a turn piece to batch (H117)."""
@@ -430,7 +450,8 @@ class TelegramChannel(ChannelAdapter):
         cb = up.get("callback_query")
         if cb:
             await self._flush_all_turns()      # what was said before the tap goes first
-            await self._handle_callback(cb)
+            chat = ((cb.get("message") or {}).get("chat") or {}).get("id")
+            await self._in_chat(chat, lambda: self._handle_callback(cb))
             return
         msg = up.get("message") or up.get("edited_message")
         if not msg:
@@ -475,10 +496,10 @@ class TelegramChannel(ChannelAdapter):
         if decision.action == OBSERVE:
             if decision.text:
                 await self._flush_all_turns()
-                await self.receive(
-                    decision.text, chat_id=chat_id, sender=str(uid),
-                    observe_only=True,
-                )
+                observed = decision.text
+                await self._in_chat(chat_id, lambda: self.receive(
+                    observed, chat_id=chat_id, sender=str(uid), observe_only=True,
+                ))
             return
         if decision.action != ANSWER:
             logger.debug("Ignored group message (%s)", decision.reason)
@@ -520,6 +541,26 @@ class TelegramChannel(ChannelAdapter):
             await self._flush_turn(key)
 
     async def _deliver_turn(self, chat_id, uid, turn: str) -> None:
+        spoken = chat_id in self._voice_pending
+        self._voice_pending.discard(chat_id)
+        await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken))
+
+    async def _in_chat(self, chat_id, work) -> None:
+        """Run *work* after everything already queued for *chat_id* (H677): in that chat's
+        lane while the poll loop runs — the loop goes straight back to reading — and
+        inline otherwise. Work with no chat waits for every lane first."""
+        lanes = self._lanes
+        if lanes is None:
+            await work()
+        elif chat_id is None:
+            await lanes.settle()
+            await work()
+        else:
+            lanes.submit(chat_id, work)
+
+    async def _run_turn(self, chat_id, uid, turn: str, *, spoken: bool = False) -> None:
+        if spoken:
+            self._voice_turns.add(chat_id)
         try:
             await self.receive(turn, chat_id=chat_id, sender=str(uid))
         finally:
@@ -666,8 +707,9 @@ class TelegramChannel(ChannelAdapter):
             logger.info("Telegram voice read: %s", transcript.to_dict())
             if not transcript.ok:
                 return "", voice_note(transcript)
-            # The reply to this turn answers speech: `/voice voice` keys on the mark.
-            self._voice_turns.add(chat_id)
+            # The reply to this turn answers speech: `/voice voice` keys on the mark,
+            # which the turn takes with it when it is delivered (H677).
+            self._voice_pending.add(chat_id)
             if self._echo_transcripts():
                 # Hermes `stt_echo_transcripts`: say what was heard before answering
                 # it, so a misheard note is caught by the person who sent it. A
