@@ -26,6 +26,9 @@ from .orchestrator_bindings import bind_external_orchestrator_attribute
 
 logger = logging.getLogger("jarvis.orchestrator")
 
+#: H182 — what a heavy background job returns when it skipped a run on battery.
+DEFERRED_ON_BATTERY = {"skipped": True, "reason": "deferred_on_battery"}   # scheduler health: "skipped"
+
 
 class SchedulerService:
     def __init__(self, orchestrator):
@@ -44,6 +47,7 @@ class SchedulerService:
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
         self.schedule_llm_backend_refresh()
+        self.schedule_power_monitor()
         self.schedule_company_mode()
         self.schedule_backups()
         self.schedule_owner_jobs()
@@ -117,12 +121,12 @@ class SchedulerService:
         if hours <= 0:
             return
         try:
-            sched.add_job(self._orch._run_learning_loop, "interval", hours=hours,
+            sched.add_job(self.run_learning_loop, "interval", hours=hours,
                           id="learning-loop-promotions", replace_existing=True)
             # DRA-41 — the H20.4 self-evolution twin: same cadence, same inbox,
             # nothing self-applies. This is the unattended production caller the
             # trajectory/prompt-optimization mechanism never had.
-            sched.add_job(self._orch._run_prompt_evolution, "interval", hours=hours,
+            sched.add_job(self.run_prompt_evolution, "interval", hours=hours,
                           id="learning-loop-prompt-evolution", replace_existing=True)
             logger.info("Scheduled learning-loop promotions + prompt evolution every %sh", hours)
         except Exception as e:
@@ -171,7 +175,7 @@ class SchedulerService:
             return
         interval = max(60, int(self._orch.get_setting("worldview.kg_sync_interval", 900)))
         try:
-            sched.add_job(self._orch._run_worldview_kg_sync, "interval", seconds=interval,
+            sched.add_job(self.run_worldview_kg_sync, "interval", seconds=interval,
                           id="worldview-kg-sync", replace_existing=True)
             logger.info("Scheduled WorldView KG sync every %ss", interval)
         except Exception as e:
@@ -408,6 +412,27 @@ class SchedulerService:
             logger.warning("Failed to schedule the LLM backend re-probe", exc_info=True)
 
     # ── job bodies (no external callers) ──────────────────────────
+    def schedule_power_monitor(self):
+        """H182 — read the power state every minute, so a resume from sleep is noticed
+        (and streamed to the HUD) without anyone asking. Skipped under JARVIS_TESTING."""
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_power_tick, "interval", seconds=60,
+                          id="power-monitor", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the power monitor: {e}")
+
+    async def run_power_tick(self):
+        from agents.core import power
+
+        state = await asyncio.to_thread(power.MONITOR.tick)
+        return {"on_battery": bool(state.get("on_battery"))}
+
     async def run_llm_backend_refresh(self):
         """One availability pass. Never raises — a failed probe is not fatal."""
         router = getattr(self._orch, "llm_router", None)
@@ -420,11 +445,39 @@ class SchedulerService:
             logger.warning("Local LLM backend re-probe failed", exc_info=True)
             return {"skipped": True, "reason": "probe_failed"}
 
+    async def _deferred_on_battery(self) -> bool:
+        """H182 — on battery below ``system.battery_defer_percent``: skip this heavy run."""
+        from agents.core import power
+
+        try:
+            return await asyncio.to_thread(power.defer_background, getattr(self._orch, "get_setting", None))
+        except Exception:
+            logger.debug("power state unavailable; the job runs", exc_info=True)
+            return False
+
+    async def run_learning_loop(self):
+        """The learning-loop promotions (the body stays on the orchestrator), deferred on battery."""
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_learning_loop()
+
+    async def run_prompt_evolution(self):
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_prompt_evolution()
+
+    async def run_worldview_kg_sync(self):
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
+        return await self._orch._run_worldview_kg_sync()
+
     async def run_tech_scout(self):
         """Run one tech-scout pass, reading live settings each time (H27-self-improve)."""
         scout = getattr(self._orch, "tech_scout", None)
         if scout is None:
             return {"skipped": True, "reason": "unavailable"}
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
         enabled = bool(self._orch.get_setting("autonomy.tech_scout_enabled", False))
         try:
             interval_hours = float(self._orch.get_setting("autonomy.tech_scout_interval_hours", 168))
@@ -453,6 +506,8 @@ class SchedulerService:
         living = cog.module("memory")
         if living is None:
             return {"skipped": True, "reason": "living_memory_unavailable"}
+        if await self._deferred_on_battery():
+            return dict(DEFERRED_ON_BATTERY)
 
         try:
             nrem = await living.consolidate("nrem")

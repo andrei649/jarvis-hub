@@ -53,6 +53,7 @@ from .llm_control import detect_llm_control  # re-exported: NL LLM-control detec
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
 from . import project_context  # H594: the project's convention files
+from . import power  # H182: keep awake while a turn runs
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
@@ -1734,6 +1735,7 @@ class Orchestrator:
         if agent_id not in self.agents:
             logger.warning(f"process(): no agent available for completion (agent={agent})")
             return ""
+        awake = power.hold_for_turn(self)        # H182: a one-shot completion is a turn too
         try:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
@@ -1745,6 +1747,8 @@ class Orchestrator:
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
             return ""
+        finally:
+            power.release_for_turn(awake)
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
         # of raising; treat those as a soft failure and return "".
@@ -1850,6 +1854,7 @@ class Orchestrator:
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
+        awake = power.hold_for_turn(self)        # H182: off unless JARVIS_KEEP_AWAKE=1
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -1857,6 +1862,7 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
@@ -2037,6 +2043,7 @@ class Orchestrator:
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
+        awake = power.hold_for_turn(self)        # H182: see handle_input
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
@@ -2044,6 +2051,7 @@ class Orchestrator:
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)

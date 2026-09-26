@@ -628,6 +628,8 @@ async def lifespan(application: FastAPI):
     NOTIFIER.ready(readiness_snapshot())
     yield
     await NOTIFIER.stopping()
+    from agents.core import power
+    power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion
     await stop_camera_ingestion()
     from agents.core.ambient.runtime import close_ambient_runtimes
@@ -1498,6 +1500,7 @@ from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.company import router as _company_router  # noqa: E402
 from agents.core.routers.operator_bench import router as _operator_bench_router  # noqa: E402
 from agents.core.routers.host_probe import router as _host_probe_router  # noqa: E402
+from agents.core.routers.power import router as _power_router  # noqa: E402
 from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
@@ -1635,6 +1638,7 @@ app.include_router(_backup_router)
 app.include_router(_company_router)
 app.include_router(_operator_bench_router)
 app.include_router(_host_probe_router)
+app.include_router(_power_router)   # H182: GET /api/power + /api/power/stream
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)

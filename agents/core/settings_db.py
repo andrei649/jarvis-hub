@@ -353,6 +353,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="log_to_file",      value=False,                 label="Log to rotating file (may persist content)", kind="toggle"),
     dict(category="system",  key="log_max_mb",       value=10,                    label="Log file size cap (MB)", kind="number"),
     dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
+    # H182: on battery below this percent, the heavy background jobs skip their run (0 = never, 100 = always).
+    dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
     # mcp
     dict(category="mcp",     key="servers",          value=[],                    label="MCP servers",        kind="json"),
     # H285 — the owner's load set: comma lists of names read at boot (agents/core/load_set.py).

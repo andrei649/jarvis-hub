@@ -177,6 +177,8 @@
   "GET /api/payments/mandates",
   "GET /api/permissions",
   "GET /api/plugins/extensions",
+  "GET /api/power",
+  "GET /api/power/stream",
   "GET /api/preferences/appearance",
   "GET /api/presence/owner",
   "GET /api/quality",

@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H182 keep the machine awake while a turn runs, know when it is on battery (missing → equivalent, #1207; headline 173 → 174/697).
+
+  Nerva had no power assertion, no battery reading, no resume events and no battery-aware throttling, and the desktop webview was throttled in the background. Now (`agents/core/power.py`, `agents/core/routers/power.py`, `frontend/src/power-chip.tsx`, `desktop/src-tauri/src/throttling.rs`), as Hermes' keep-awake and power awareness:
+  - **Keep awake (off by default).** `JARVIS_KEEP_AWAKE=1` makes every turn (`handle_input`, `handle_input_stream`, `process`) hold one shared power assertion: `caffeinate -i -w <pid>`, `systemd-inhibit … tail --pid=<pid>` (both end with the hub, even a killed one) or `SetThreadExecutionState`. It is released on the reply, an error, a cancel, at shutdown and at exit. It is gated as `host.control` once per process (system-control permission, the host-control contract's `power.keep_awake`, an Action Kernel GRANT, a durable audit row); a refusal is kept until the next start and named on `GET /api/power`.
+  - **Power state.** Battery (`psutil`), and a resume from sleep (the wall clock running ahead of the monotonic one), read every minute; `GET /api/power` answers it and `GET /api/power/stream` pushes each change.
+  - **Battery-aware throttling.** Below `system.battery_defer_percent` (50 by default) on battery, memory maintenance, the tech scout, the learning loop, prompt evolution and the WorldView KG sync skip their run (`deferred_on_battery`).
+  - **HUD and desktop.** A `PowerChip` in the shell says on battery, woke from sleep, and what keep-awake is doing. The desktop shell turns webview background throttling off, so a background HUD keeps reading a streaming reply (`NERVA_DESKTOP_BACKGROUND_THROTTLING` asks for it back).
+
+  100 mutants: 98 caught after five cases were added; the other two were redundant checks, removed. Test manual: ENV-177, ENV-178, PGE-249.
+  Tests: backend 16,380 → 16,456 (`tests/test_h182_power.py` 76), frontend 1,550 → 1,556 (`src/test/power-chip.test.tsx` 6).
+
 - 2026-09-26 H689 one durable install identity, one hub per data root, isolated profiles (missing → equivalent, #1207; headline 172 → 173/697).
 
   The only install-level id was an analytics value that a broken record re-minted; nothing named the install, a second hub could run on the same root, and `JARVIS_PROFILE` was forwarded but never read. Now (`agents/core/install_identity.py`, `agents/core/paths.py`, `serve.py`), as Hermes' install identity and profiles:

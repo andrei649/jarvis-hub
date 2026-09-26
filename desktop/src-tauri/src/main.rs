@@ -2,8 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod geometry;
 mod policy;
+mod throttling;
 use geometry::{recover_scaled, Rect};
 use policy::Action;
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::{
     Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
@@ -182,6 +184,12 @@ fn main() {
             desktop_capabilities
         ])
         .setup(|app| {
+            // H182: a HUD in the background keeps reading a streaming reply.
+            let throttle = match throttling::from_env() {
+                throttling::Throttling::Disabled => BackgroundThrottlingPolicy::Disabled,
+                throttling::Throttling::Throttle => BackgroundThrottlingPolicy::Throttle,
+                throttling::Throttling::Suspend => BackgroundThrottlingPolicy::Suspend,
+            };
             WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -189,6 +197,7 @@ fn main() {
             )
             .title("Nerva")
             .inner_size(1280., 820.)
+            .background_throttling(throttle.clone())
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_navigation(|url| policy::allowed("main", url))
             .build()?;
@@ -203,6 +212,7 @@ fn main() {
             .decorations(false)
             .resizable(true)
             .always_on_top(app.state::<Capabilities>().always_on_top)
+            .background_throttling(throttle)
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_navigation(|url| policy::allowed("floating", url))
             .build()?;

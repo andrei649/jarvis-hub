@@ -93,7 +93,7 @@ def _host_target_safe(view, now) -> bool:
 def _host_control_contract_template() -> ContractTemplate:
     return ContractTemplate(
         kind="host.control",
-        description="Host subprocess control gate for remediation and local model control.",
+        description="Host subprocess control gate for remediation, local model control and keep-awake.",
         constraints=(
             field_present("action", "agent"),
             one_of("action", {
@@ -104,6 +104,7 @@ def _host_control_contract_template() -> ContractTemplate:
                 "ollama.start",
                 "ollama.load",
                 "ollama.unload",
+                "power.keep_awake",
             }),
             predicate("host_target_safe", _host_target_safe, reason="invalid_host_target"),
         ),

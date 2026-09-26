@@ -76,6 +76,7 @@ RULES = [
     ("/ticker", "cockpit"),
     ("/tasks", "cockpit"),
     ("/api/cognition", "cockpit"),
+    ("/api/power", "cockpit"),          # H182: the shell's PowerChip (poll + stream)
     ("/tts", "cockpit"),
     ("/sessions", "cockpit"),
     ("/memory/clear", "cockpit"),

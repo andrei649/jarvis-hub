@@ -177,6 +177,8 @@
   "GET /api/payments/mandates": "list_payment_mandates_api_payments_mandates_get",
   "GET /api/permissions": "permissions_snapshot_api_permissions_get",
   "GET /api/plugins/extensions": "inspect_extensions_api_plugins_extensions_get",
+  "GET /api/power": "power_state_api_power_get",
+  "GET /api/power/stream": "power_stream_api_power_stream_get",
   "GET /api/preferences/appearance": "appearance_get_api_preferences_appearance_get",
   "GET /api/presence/owner": "get_owner_presence_api_presence_owner_get",
   "GET /api/quality": "quality_status_api_quality_get",

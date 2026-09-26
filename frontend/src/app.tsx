@@ -1,4 +1,5 @@
 import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
+import { PowerChip, usePower } from './power-chip';
 import {describeImages} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
@@ -135,6 +136,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
   const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
   const [safeMode, setSafeMode] = useState(SAFE_MODE_OFF);
+  const power = usePower(demo);   // H182: battery, resume, keep-awake
   const [firstRunDismissed, setFirstRunDismissed] = useState(() => {
     try { return localStorage.getItem('hud.seen') === '1'; } catch { return false; }
   });
@@ -500,6 +502,7 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         {appearanceNotice}
         {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
         <SafeModeBanner state={safeMode} />
+        <PowerChip state={power} />
         {demo && <DemoBanner onExit={exitDemo} />}
         {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
           <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
