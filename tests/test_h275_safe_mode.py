@@ -461,5 +461,7 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/routers/webhooks.py",
         "agents/core/scheduler_service.py",
         "agents/core/skills/loader.py",
+        # H156: an edit is refused in safe mode, where overlays are not read.
+        "agents/core/soul_edit.py",
         "agents/web.py",
     ])

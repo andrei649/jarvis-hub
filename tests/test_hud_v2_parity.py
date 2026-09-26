@@ -625,7 +625,6 @@ COMPUTED_URL_CALLERS: dict[str, str] = {
     "/api/admin/prompts/{agent_id}/ab": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/commit": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/diff": "frontend/src/gap.tsx",
-    "/api/admin/prompts/{agent_id}/preview": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/rollback": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/version/{version}": "frontend/src/gap.tsx",
     # MissionsPanel: act('/api/missions/' + m.id + '/' + a), a from actionsFor(status)

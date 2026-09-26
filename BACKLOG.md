@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H156 edit an agent's persona in the UI, live on its next turn; draft its description with the local model (partial → equivalent, #1207; headline 183 → 184/697).
+
+  The Prompts panel versioned persona text in a side history, and nothing wrote it where the model reads it: a commit or a rollback changed a JSON file while the agent kept its old persona, and nothing seeded the history, audited it, or let the owner edit or describe an agent from its Dossier. Now one apply path (`agents/core/soul_edit.py`):
+  - **Refused when the guard would drop it.** The H387 scan runs first: a persona it would block is refused (422) and changes nothing; a line it only quarantines is applied and named. 409 in safe mode, 413 over 256 KiB, 404 for an agent the hub has not loaded.
+  - **Nothing live is lost.** The first edit keeps the file on disk as v1, and a hand edit made since the last version is kept as its own version before it is replaced.
+  - **Written where the model reads it, then live.** The owner's overlay (`souls/<id>/SOUL.local.md` in the data home, else the repo-local `SOUL.local.md`; never the shipped template), atomically; then versioned, and the agent re-reads it, so its next turn uses it — no restart, no compaction.
+  - **Rollback goes the same way**, for a loaded agent; `_identity` and other keys keep the history-only rollback. Every apply, rollback and commit is audited with the version and its hash, never the text.
+  - **Description.** `description:` in the front-matter is listed on `GET /agents` and the SOUL read, never prompted; `POST /api/admin/agents/{id}/description/draft` asks the strict-local model for one paragraph and saves nothing.
+  - **HUD.** The Dossier's **Edit persona** opens the live SOUL with Preview, Apply, Draft description → Use it, and the hub's refusal in words; the Prompts panel gets **apply** beside **commit**.
+
+  61 mutants: 58 caught, eight after survivors got cases; two survivors of the first-edit-only seed led to keeping hand edits as versions (its five mutants caught); the fsync is a crash-only property. Test manual: CHT-119, CHT-120.
+  Tests: backend 17,004 → 17,033 (`tests/test_soul_edit_route.py` 29; the H10.22 rollback test now asserts the rollback is live, in a throwaway data home); frontend 1,650 → 1,656 (`soul-edit.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; HUD v2 bundle rebuilt.
+
 - 2026-09-26 H227 “what can it do right now”: one inspector for an agent as a chosen principal sees it (partial → equivalent, #1207; headline 182 → 183/697).
 
   The pieces lived apart (the raw ToolRPC registry, the MCP admin list, `nerva prompt-size` over files on disk) and nothing answered for *this* agent, *this* surface, *this* principal, nor showed the resolved prompt. Now (`agents/core/inspector.py`), one read-only payload built from the code a turn runs:

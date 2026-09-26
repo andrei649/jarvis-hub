@@ -3,6 +3,7 @@ import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
 import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
 import { MemoryNeighborhood } from './panels/memory-neighborhood';
+import { SoulEditor } from './soul-edit';
 /* HUD v2 · MODES — Agents, Trust, Memory */
 
 /* ============ AGENTS ============ */
@@ -63,11 +64,14 @@ function Dossier({ id, onClose, onOpen }) {
   const d = V2.DOSSIER[id] || {};
   const a = V2.AGENTS.find(x=>x.id===id);
   const [soul,setSoul]=useState(null);   // real SOUL.md text (null = not loaded → seed)
+  const [description,setDescription]=useState('');   // H156: the front-matter description
+  const [editing,setEditing]=useState(false);        // H156: the persona editor is open
   const [runs,setRuns]=useState(null);   // real run history ([] = none, null = unloaded)
   useEffect(() => {
     if(!id) return;
     let alive = true;
-    getAgentSoul(id).then((r) => { if(alive && r && r.soul) setSoul(r.soul); }).catch(() => {});
+    setEditing(false);
+    getAgentSoul(id).then((r) => { if(alive && r && r.soul) { setSoul(r.soul); setDescription(r.description || ''); } }).catch(() => {});
     getAgentHistory(id).then((r) => { if(alive && r && Array.isArray(r.runs)) setRuns(r.runs); }).catch(() => {});
     return () => { alive = false; };
   }, [id]);
@@ -85,7 +89,13 @@ function Dossier({ id, onClose, onOpen }) {
           <button className="close" onClick={onClose} aria-label="Close dossier">✕</button>
         </div>
         <div className="dossier-body">
-          <div className="dsec"><div className="dl">Soul{soul!=null?' · SOUL.md':''}</div><div className="dtx soul">{soulText}</div></div>
+          {description && <div className="dsec"><div className="dl">Description</div><div className="dtx">{description}</div></div>}
+          <div className="dsec"><div className="dl">Soul{soul!=null?' · SOUL.md':''}
+            {soul!=null && !editing && <button className="tool-btn" style={{marginLeft:8}} onClick={()=>setEditing(true)}>Edit persona</button>}</div>
+            {editing
+              ? <SoulEditor id={id} live={soul || ''} onApplied={(t)=>{ setSoul(t); getAgentSoul(id).then((r)=>{ if(r && r.soul){ setSoul(r.soul); setDescription(r.description || ''); } }).catch(()=>{}); }} onCancel={()=>setEditing(false)}/>
+              : <div className="dtx soul">{soulText}</div>}
+          </div>
           {d.personality && <div className="dsec"><div className="dl">Personality</div><div className="dtx">{d.personality}</div></div>}
           <div className="dsec"><div className="dl">Runtime</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 16px'}}>

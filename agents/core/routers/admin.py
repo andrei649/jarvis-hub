@@ -555,6 +555,10 @@ async def admin_prompt_commit(agent_id: str, req: Request):
     if content is None:
         return JSONResponse({"error": "content required"}, status_code=400)
     entry = svs.commit(agent_id, content, message=body.get("message", ""), author=body.get("author", ""))
+    from agents.core import soul_edit
+
+    # H156: a saved version is a persona edit for the audit log, live or not.
+    await asyncio.to_thread(soul_edit.record_version, get_orch(), agent_id, entry, "commit")
     return nocache_json({"ok": True, "version": entry})
 
 
@@ -581,9 +585,35 @@ async def admin_prompt_rollback(agent_id: str, req: Request):
     version = (body or {}).get("version")
     if version is None:
         return JSONResponse({"error": "version required"}, status_code=400)
-    entry = svs.rollback(agent_id, int(version), author=body.get("author", ""))
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "version must be an integer"}, status_code=400)
+    author = str((body or {}).get("author", "") or "")[:64]
+    # H156: an agent's persona rolls back through the one apply path, so the rollback is
+    # what the model reads next turn, not only a new line in this history. The shared
+    # contract (`_identity`, served from IDENTITY.local.md) and keys that are no loaded
+    # agent keep the history-only rollback.
+    from agents.core import soul_edit
+    from agents.core.agent import IDENTITY_KEY
+
+    orch = get_orch()
+    folder = soul_edit.agent_folder(agent_id)
+    if agent_id != IDENTITY_KEY and folder is not None and folder in (getattr(orch, "agents", None) or {}):
+        target = svs.get(folder, version)
+        if target is None:
+            return JSONResponse({"error": "version not found"}, status_code=404)
+        try:
+            result = await asyncio.to_thread(soul_edit.apply_soul, orch, folder, target["content"],
+                                             message=f"rollback to v{version}", author=author,
+                                             action="rollback")
+        except soul_edit.SoulEditError as exc:
+            return JSONResponse(exc.body(), status_code=exc.status)
+        return nocache_json({"ok": True, **result})
+    entry = svs.rollback(agent_id, version, author=author)
     if entry is None:
         return JSONResponse({"error": "version not found"}, status_code=404)
+    await asyncio.to_thread(soul_edit.record_version, orch, agent_id, entry, "rollback_history")
     return nocache_json({"ok": True, "version": entry})
 
 

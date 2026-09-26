@@ -4,6 +4,8 @@ Covers the agent-facing reads:
 - `GET /api/agents` — enriched agent list (HUD).
 - `GET /agents` — agent list with per-agent stats + skills.
 - `GET /api/agents/{agent_id}/soul` — live SOUL.md (personalized overlay wins).
+- `PUT /api/admin/agents/{agent_id}/soul` + `POST /api/admin/agents/{agent_id}/description/draft`
+  — H156: make an edited persona live (admin), and have the local model draft a description.
 - `GET /api/agents/history` + `GET /api/agents/{agent_id}/history` — H10.17 run-history rollups.
 - `GET /api/agent-templates` + `POST /api/agent-templates/instantiate` — H10.29 template catalog/preview.
 
@@ -14,6 +16,7 @@ orchestrator (via `get_orch()`) or leaf imports. The agent-id regex moved with t
 (only the soul + history routes use it).
 """
 
+import asyncio
 import logging
 import re
 import sys
@@ -21,10 +24,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 import agents as _agents_pkg
+from agents.core import soul_edit
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.agents_api")
@@ -61,23 +66,8 @@ def _soul_guard_verdict(content: str, filename: str) -> dict:
     endpoint, never a reason to fail the read.
     """
     try:
-        from agents.core.agent import (
-            _body_line_offset,
-            _cap_soul_body,
-            _scan_soul_body,
-            _soul_max_chars,
-        )
-        try:
-            from agents.core.cognition.frontmatter import parse_frontmatter
-            _meta, body = parse_frontmatter(content)
-        except Exception:
-            body = content
-        body, flags, blocked = _scan_soul_body(
-            body, filename, _body_line_offset(content, body))
-        truncated = False
-        if not blocked:
-            _capped, truncated = _cap_soul_body(body, filename, _soul_max_chars())
-        return {"flags": flags, "blocked": blocked, "truncated": truncated}
+        # H156: the same verdict the Apply path refuses a blocked persona on.
+        return soul_edit.guard_verdict(content, filename)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("SOUL guard verdict skipped for %s", filename, exc_info=True)
         return {"flags": [], "blocked": False, "truncated": False, "error": str(exc)}
@@ -130,7 +120,44 @@ async def get_agent_soul(agent_id: str):
     # guard's verdict beside the raw text, so the HUD cannot show a persona the
     # model is not receiving without saying so. Previously the only trace of a
     # quarantined persona was a logger.error nobody watches.
-    return {"agent_id": agent_id, "soul": content, "guard": _soul_guard_verdict(content, soul_path.name)}
+    return {"agent_id": agent_id, "soul": content, "guard": _soul_guard_verdict(content, soul_path.name),
+            "description": soul_edit.description_in(content)}
+
+
+class SoulEditBody(BaseModel):
+    content: str
+    message: str = Field("", max_length=200)
+
+
+@router.put("/api/admin/agents/{agent_id}/soul", dependencies=[Depends(admin_guard)])
+async def put_agent_soul(agent_id: str, body: SoulEditBody):
+    """H156 — make *content* the agent's live persona: refused when the SOUL guard would
+    drop it (422), the text on disk kept as v1 on the first edit, written atomically to
+    the owner's overlay, versioned, reloaded for the next turn and audited (never the
+    text). 409 in safe mode, 413 over 256 KiB, 404 for an agent the hub has not loaded."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        result = await asyncio.to_thread(soul_edit.apply_soul, orch, agent_id, body.content,
+                                         message=body.message)
+    except soul_edit.SoulEditError as exc:
+        return JSONResponse(exc.body(), status_code=exc.status)
+    return nocache_json(result)
+
+
+@router.post("/api/admin/agents/{agent_id}/description/draft", dependencies=[Depends(admin_guard)])
+async def draft_agent_description(agent_id: str):
+    """H156 — the local model proposes a one-paragraph description from the live persona.
+    Nothing is saved: the owner puts it in the front-matter and applies the SOUL."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        draft = await soul_edit.draft_description(orch, agent_id)
+    except soul_edit.SoulEditError as exc:
+        return JSONResponse(exc.body(), status_code=exc.status)
+    return nocache_json({"agent_id": agent_id.strip().lower(), "draft": draft})
 
 
 @router.get("/agents")
@@ -149,6 +176,7 @@ async def get_agents():
             "heartbeat": agent.has_heartbeat,
             "stats": stats,
             "skills": skills,
+            "description": soul_edit.description_of(agent),   # H156
         }
     return {"agents": result}
 

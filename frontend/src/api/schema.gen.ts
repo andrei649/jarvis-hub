@@ -7396,6 +7396,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/agents/{agent_id}/soul": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Agent Soul
+         * @description H156 — make *content* the agent's live persona: refused when the SOUL guard would
+         *     drop it (422), the text on disk kept as v1 on the first edit, written atomically to
+         *     the owner's overlay, versioned, reloaded for the next turn and audited (never the
+         *     text). 409 in safe mode, 413 over 256 KiB, 404 for an agent the hub has not loaded.
+         */
+        put: operations["put_agent_soul_api_admin_agents__agent_id__soul_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/description/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Agent Description
+         * @description H156 — the local model proposes a one-paragraph description from the live persona.
+         *     Nothing is saved: the owner puts it in the front-matter and applies the SOUL.
+         */
+        post: operations["draft_agent_description_api_admin_agents__agent_id__description_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents": {
         parameters: {
             query?: never;
@@ -11208,6 +11252,16 @@ export interface components {
              * @default
              */
             source: string;
+        };
+        /** SoulEditBody */
+        SoulEditBody: {
+            /** Content */
+            content: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
         };
         /** SubAgentSpawnBody */
         SubAgentSpawnBody: {
@@ -22277,6 +22331,72 @@ export interface operations {
         };
     };
     get_agent_soul_api_agents__agent_id__soul_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_agent_soul_api_admin_agents__agent_id__soul_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_agent_description_api_admin_agents__agent_id__description_draft_post: {
         parameters: {
             query?: never;
             header?: never;

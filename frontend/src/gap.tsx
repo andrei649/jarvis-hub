@@ -19,6 +19,7 @@ import { SkillSwitchesPanel } from './panels/skill-switches';
 import { ProviderCheckPanel } from './panels/provider-check';
 import { ProviderQuotaPanel } from './panels/provider-quota';
 import { InspectorPanel } from './panels/inspector';
+import { refusalText } from './soul-edit';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
@@ -2728,10 +2729,12 @@ function PromptsPanel() {
   const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r: any) => setAb(r.ab || null)).catch(() => setAb(null));
   const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r: any) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
   const doAB = () => { if (a == null || b == null) return; apiPost(`${base}/ab`, { a, b, split: 0.5 }, { admin: true }).then(loadAB).catch(() => {}); };
-  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then(() => { setNote('rolled back to v' + vn); reload(); }).catch(() => {});
+  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then((r: any) => { setNote('rolled back to v' + vn + (r?.live ? ' · live' : '')); reload(); }).catch((err: any) => setNote(refusalText(err)));
   const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v: any) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
   const doPreview = () => { if (!edit) return; apiPost(`${base}/preview`, { proposed: edit.content }, { admin: true }).then(setPreview).catch(() => {}); };
   const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
+  // H156: apply = a new version AND the live persona (the agent's next turn uses it).
+  const doApply = () => { if (!edit) return; apiPut('/api/admin/agents/' + encodeURIComponent(agent) + '/soul', { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('applied v' + (r.version?.version ?? '?') + ' · live'); setEdit(null); setPreview(null); setPick([]); reload(); }).catch((err: any) => setNote(refusalText(err))); };
 
   useEffect(() => { loadAB(); }, [agent]); // eslint-disable-line
 
@@ -2768,7 +2771,8 @@ function PromptsPanel() {
       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
         <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
         <button className="tool-btn" onClick={doPreview}>preview</button>
-        <button className="tool-btn" onClick={doCommit}>commit</button>
+        <button className="tool-btn" onClick={doCommit} title="save a version only; the persona in use does not change">commit</button>
+        <button className="tool-btn" onClick={doApply} title="save a version and make it the live persona">apply</button>
         <button className="tool-btn" onClick={() => { setEdit(null); setPreview(null); }}>✕</button>
       </div>
       {preview && <div style={{ marginTop: 6 }}>
@@ -2776,7 +2780,7 @@ function PromptsPanel() {
         <DiffView text={preview.diff} />
       </div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback · A/B + diff + rollback (H10.22)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
   </Card>;
 }
 export function RoomsPanel() {
