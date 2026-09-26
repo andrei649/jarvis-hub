@@ -563,7 +563,8 @@ def test_a_package_padded_with_assets_is_still_scanned(tmp_path):
     assert [(w["path"], w["rule"]) for w in market.last_install_warnings] == [("main.py", "py-os-system")]
 
 
-def test_a_file_past_the_limit_says_so():
+def test_a_file_past_the_limit_says_so(monkeypatch):
+    monkeypatch.setattr(code_guidance, "SCAN_SECONDS", 60.0)      # the size cut, not a slow runner's clock
     assert scan("a.py", "x = 1\n" * 200_000 + "os.system(c)\n") == [_incomplete(166_667)]
 
 
@@ -572,6 +573,8 @@ def test_a_tree_cut_short_names_what_it_did_not_read(tmp_path, monkeypatch):
     root.mkdir()
     (root / "big.py").write_bytes(b"x = 1\n" * 200_000 + b"os.system(c)\n")     # 1.2 MB
     (root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    monkeypatch.setattr(code_guidance, "SCAN_SECONDS", 60.0)      # the size cut, not a slow runner's clock
+    monkeypatch.setattr(code_guidance, "TREE_SECONDS", 60.0)
     found = code_guidance.scan_tree(root)
     assert found == [{"path": "big.py", **_incomplete(166_667)}]              # where the first 1 MB ends
     (root / "late.py").write_text("eval(x)\n", encoding="utf-8")
@@ -629,3 +632,58 @@ def test_safe_mode_forces_the_switch_on(monkeypatch):
         assert code_guidance.enabled() is True
     finally:
         safe_mode.reset()
+
+
+# ── the review round's mutation pass: what the bounded guards promise ─────────────
+
+def test_a_nested_call_on_a_later_line_is_read_to_its_own_closing_parenthesis():
+    text = "import yaml\n\ncfg = yaml.load(open(a)); other(Loader=yaml.SafeLoader)\n"
+    assert [(f["rule"], f["line"]) for f in scan("a.py", text)] == [("py-yaml-load", 3)]
+
+
+def test_a_guard_reads_at_most_its_bound_of_arguments():
+    far = "yaml.load(" + "a" * (code_guidance.MAX_CALL_CHARS + 50) + ", Loader=yaml.SafeLoader)"
+    assert _rules("a.py", far) == ["py-yaml-load"]                     # past the bound: not read, so warned
+    assert _rules("a.py", "yaml.load(" + "a" * 50 + ", Loader=yaml.SafeLoader)") == []
+
+
+def test_a_line_of_many_safe_calls_stays_quiet():
+    line = "; ".join(["yaml.load(a, Loader=yaml.SafeLoader)"] * (code_guidance.MAX_CALLS_PER_LINE + 1))
+    assert _rules("a.py", line) == []                                  # the guard stops reading; no finding
+
+
+def test_the_card_names_each_finding_once_in_line_order():
+    assert code_guidance.labels("a.py", "eval(x)\n", "a.pyw")["code_warnings"] == "py-eval@1"
+    both = code_guidance.labels("setup.sh", "eval(x)\nNODE_TLS_REJECT_UNAUTHORIZED=0\n", "setup.py")
+    assert both["code_warnings"] == "py-eval@1, js-tls-off@2" and both["code_warning_count"] == 2
+
+
+def test_the_card_says_when_the_code_was_not_fully_scanned(monkeypatch):
+    monkeypatch.setattr(code_guidance, "MAX_SCAN_BYTES", 20)
+    cut = code_guidance.labels("a.py", "x = 1\n" * 5)
+    assert cut["notice"] == "code not fully scanned" and cut["code_warnings"] == "scan-incomplete@4"
+    risky = code_guidance.labels("a.py", "eval(x)\n" + "x = 1\n" * 5)
+    assert risky["notice"] == "code warnings: 1 risky pattern(s), not fully scanned"
+
+
+def test_a_file_scan_keeps_to_the_folders_deadline(tmp_path, monkeypatch):
+    import types
+
+    clock = iter(range(10_000))
+    monkeypatch.setattr(code_guidance, "time", types.SimpleNamespace(monotonic=lambda: next(clock) * 0.01))
+    monkeypatch.setattr(code_guidance, "TREE_SECONDS", 0.05)             # passes a few lines into the file
+    monkeypatch.setattr(code_guidance, "SCAN_SECONDS", 100.0)
+    root = tmp_path / "skill"
+    root.mkdir()
+    (root / "main.py").write_text("x = 1\n" * 50 + "eval(x)\n", encoding="utf-8")
+    found = code_guidance.scan_tree(root)
+    assert [w["rule"] for w in found] == ["scan-incomplete"] and found[0]["line"] < 50
+
+
+def test_the_pause_reply_names_only_the_queued_writes_warnings():
+    from agents.core.agent_runtime import _APPROVAL_REPLY, _approval_reply
+
+    ran = {"ok": True, "tool": "file_write", "code_warnings": "py-eval@1"}          # written, not queued
+    queued = {"ok": False, "reason": "approval_required", "tool": "file_write", "code_warnings": "py-os-system@2"}
+    assert _approval_reply([ran, {"ok": False, "reason": "approval_required", "tool": "file_write"}]) == _APPROVAL_REPLY
+    assert _approval_reply([ran, queued]).endswith("(warnings, not refusals): py-os-system@2.")

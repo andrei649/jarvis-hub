@@ -448,6 +448,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
         "agents/core/channels/outbound.py",
+        # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
+        "agents/core/code_guidance.py",
         "agents/core/heartbeat.py",
         # H490: the router's cloud fallback and the model pull cap read the stricter value.
         "agents/core/llm/hybrid_router.py",
