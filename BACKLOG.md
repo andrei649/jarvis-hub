@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H594 the project's convention files reach the agent (missing → equivalent, #1207; headline 168 → 169/697).
+
+  Nothing read a project's `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or `.cursor/rules/*.mdc`; they only counted as instruction files for writes. Now (`agents/core/project_context.py`), as Hermes' context files and subdirectory hints:
+  - **Walked.** From the git root (never above the file root) down to the working directory (the first `JARVIS_FILE_ROOTS` root), each directory's files in that order; a directory `file_read`, `file_list`, `file_search` or a local `terminal_run` touches is noted for the session, its chain is read on every later turn, and the tool result carries the files the turn had not seen. A project `SOUL.md`, `HEARTBEAT.md` or `IDENTITY.md` is never read, not even through a link.
+  - **Guarded.** Resolved through FileScope (outside the roots, symlink escape, secret paths refused); regular files only (a FIFO is never opened); 20 KB a file, 40 KB and 12 files a turn, each cut named; binaries skipped.
+  - **Scanned and tainted.** `detect_injection_normalized` per file; a flagged file is a `[BLOCKED …]` line with none of its text. The block is caveated (not the owner's instructions, no permission) and sits after the core-memory block; a turn given any file is tainted, so an action planned from it escalates GRANT → QUEUE.
+  - **Off switch.** `llm.project_context_files` (on by default) and safe mode (new layer `project_context`, named on the HUD banner). File work runs off the event loop.
+
+  51 mutants: all caught (the redundant checks the first pass found were removed). Test manual: GOV-281, GOV-282.
+  Tests: backend 16,213 → 16,260 (`tests/test_h594_project_context.py` 47).
+
 - 2026-09-26 H373 see how much provider quota is left, and never hammer a provider that said stop (missing → equivalent, #1207; headline 167 → 168/697).
 
   A provider's limit was learned only from a failed request, in one process's memory. Now (`agents/core/llm/quota.py`), as Hermes' rate-limit tracker and shared 429 guard:

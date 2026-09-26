@@ -52,6 +52,7 @@ from .llm_control import detect_llm_control  # re-exported: NL LLM-control detec
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
 from . import plugin_gatherer  # live-plugin data gathering (CLN-2)
+from . import project_context  # H594: the project's convention files
 from .plugin_manager import PluginManager  # CLN-2: owns the live-plugin registry + I/O
 from .learning.loop import LearningLoop
 from .skills.loader import SkillLoader
@@ -333,6 +334,24 @@ def _taint_attached_context() -> None:
     from .context_refs import attached
 
     if attached():
+        from .security.recall_taint import mark_turn_recall_tainted
+        mark_turn_recall_tainted()
+
+
+async def _begin_project_context(orch) -> None:
+    """H594 — read the project's convention files for this turn (the file root's git root
+    down to it, and every directory the tools touched this session), off the event loop.
+    A turn given any is tainted like one that recalled untrusted memory: an action planned
+    from it asks."""
+    getter = getattr(orch, "get_setting", None)
+    on = getter(project_context.SETTING, True) if callable(getter) else True
+    try:
+        session = orch.session_id or "default"
+    except AttributeError:
+        session = "default"
+    state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on)
+    project_context.set_turn(state)
+    if state is not None and state.block:
         from .security.recall_taint import mark_turn_recall_tainted
         mark_turn_recall_tainted()
 
@@ -1828,6 +1847,7 @@ class Orchestrator:
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
+        project_token = project_context.bind()   # H594: begun once the session is known
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -1838,6 +1858,7 @@ class Orchestrator:
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            project_context.reset(project_token)
             titles = _TURN_TITLE.get()
             _TURN_TITLE.reset(title_token)
             if titles:
@@ -1862,6 +1883,7 @@ class Orchestrator:
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
         self._title_session(text)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
+        await _begin_project_context(self)   # H594: the project's convention files
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -2012,6 +2034,7 @@ class Orchestrator:
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
+        project_token = project_context.bind()   # H594: begun once the session is known
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:
@@ -2022,6 +2045,7 @@ class Orchestrator:
             reset_turn_approvals(approvals_token)
             reset_action_origin(origin_token)
             _TURN_METER_MAPS.reset(meter_token)
+            project_context.reset(project_token)
             titles = _TURN_TITLE.get()
             _TURN_TITLE.reset(title_token)
             if titles:
@@ -2045,6 +2069,7 @@ class Orchestrator:
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
         self._title_session(text)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
+        await _begin_project_context(self)   # H594: the project's convention files
 
         outcome = await self._dispatch_command(text)
         if outcome is not None:
@@ -3100,6 +3125,9 @@ class Orchestrator:
         core_memory_block = self._living_core_memory_block()
         if core_memory_block:
             parts.append(core_memory_block)
+        turn_project = project_context.current()   # H594: begun (and tainted) at turn start
+        if turn_project is not None and turn_project.block:
+            parts.append(turn_project.block)
 
         for block in (plugin_block, recall_block, runtime_block):
             block = (block or "").strip()

@@ -607,7 +607,7 @@ class AutonomyCoordinator:
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
             )
-            return await runner.run(
+            result = await runner.run(
                 target=args["target"],
                 agent="jarvis",
                 command=args["command"],
@@ -615,6 +615,11 @@ class AutonomyCoordinator:
                 cwd=args.get("cwd"),
                 timeout=args.get("timeout"),
             )
+            from . import project_context   # H594: the terminal moved into a project directory
+
+            if project_context.current() is not None and args.get("cwd"):
+                result = await asyncio.to_thread(project_context.attach_terminal, result, args["cwd"])
+            return result
 
         server.register_tool(
             "terminal_run",

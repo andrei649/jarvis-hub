@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   outbound_webhooks: 'outbound webhooks',
   memory_injection: 'memory in prompts',
   settings_overrides: 'loosened settings',
+  project_context: 'project convention files',
 };
 
 /** The hub's `safe_mode` field as the HUD holds it; anything malformed is "off". */

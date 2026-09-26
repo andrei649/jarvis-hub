@@ -30,7 +30,9 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
 - (H490) the settings that loosen an approval or widen a budget
   (:data:`FORCED_SETTINGS`): each reads the stricter of the owner's value and its
   shipped default, so an owner who tightened one keeps it. A setting whose default is
-  already the loosest value keeps the owner's choice.
+  already the loosest value keeps the owner's choice;
+- (H594) the project's convention files (``AGENTS.md``, ``CLAUDE.md``, ``.cursorrules``,
+  ``.cursor/rules``): none is read into a turn or a tool result.
 
 There are no shell hooks to leave out: Nerva runs no owner-configured hook commands.
 
@@ -62,6 +64,8 @@ LAYERS = (
     "outbound_webhooks",
     "memory_injection",
     "settings_overrides",
+    # H594 — a project's convention files (AGENTS.md, CLAUDE.md, .cursorrules).
+    "project_context",
 )
 #: H490 — settings an owner can set looser than the shipped default (an approval that
 #: stops being asked, a wider tool offer, a bigger budget), each with how to take the

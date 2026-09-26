@@ -449,6 +449,7 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/memory_tool.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
+        "agents/core/project_context.py",
         "agents/core/routers/mcp.py",
         "agents/core/routers/ops.py",
         "agents/core/routers/plugins.py",

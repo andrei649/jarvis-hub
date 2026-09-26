@@ -96,6 +96,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agents.core import project_context
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
@@ -588,6 +589,14 @@ def _valid_offset(value: object) -> bool:
             and 0 <= value <= MAX_OFFSET)
 
 
+async def _with_project_context(result: dict, target: Path) -> dict:
+    """H594 — a read tool's result carries the convention files of *target*'s directory
+    chain the turn has not been given (tainted, so the loop fences it); off the loop."""
+    if project_context.current() is None:
+        return result
+    return await asyncio.to_thread(project_context.attach, result, target)
+
+
 class FileTools:
     """Scope-bound file handlers. ``authorizer`` is the injected kernel hook."""
 
@@ -761,7 +770,7 @@ class FileTools:
         except (OSError, ValueError, OverflowError) as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
         self._record("file.read", str(target), ok=result.get("ok") is True)
-        return result
+        return await _with_project_context(result, target)   # H594
 
     async def list_dir(self, args: Mapping[str, Any]) -> dict:
         raw_path = args.get("path")
@@ -817,7 +826,7 @@ class FileTools:
         except OSError as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
         self._record("file.list", str(target), ok=result.get("ok") is True)
-        return result
+        return await _with_project_context(result, target)   # H594
 
     async def search_files(self, args: Mapping[str, Any]) -> dict:
         """Find lines containing *pattern* under *path* (a directory, or one file).
@@ -940,7 +949,7 @@ class FileTools:
             "file.search", f"{target}: {pattern[:120]}", ok=result.get("ok") is True,
             matches=len(result.get("matches") or ()),
         )
-        return result
+        return await _with_project_context(result, target)   # H594
 
     # ── gated (reversible by construction) ───────────────────────────────────
 
