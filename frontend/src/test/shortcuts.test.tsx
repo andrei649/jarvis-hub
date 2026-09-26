@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import {
-  ACTIONS, CATEGORIES, FORBIDDEN_TARGET, STORAGE_KEY, bindings, chordFromEvent, conflictsFor, defineActions,
+  ACTIONS, CATEGORIES, FORBIDDEN_TARGET, STORAGE_KEY, bindings, chordFromEvent, chordOf, conflictsFor, defineActions,
   displayChord, firesInInputs, loadOverrides, matchAction, normalizeChord, readOverrides, rebind, resetBinding,
   saveOverrides, searchBindings,
 } from '../shortcuts';
@@ -123,6 +123,15 @@ describe('overrides', () => {
     const list = bindings({});
     expect(list.filter(firesInInputs).map((b) => b.id)).toEqual(['session.palette', 'session.shortcuts']);
     expect(firesInInputs(bindings({ 'view.ambient': 'mod+j' }).find((b) => b.id === 'view.ambient'))).toBe(false);
+    // A bare key handed straight to bindings() (never through readOverrides or rebind) still
+    // does not answer inside a field.
+    expect(firesInInputs(bindings({ 'session.palette': 'p' }).find((b) => b.id === 'session.palette'))).toBe(false);
+  });
+
+  it('name the chord an action answers now, for its hint', () => {
+    expect(chordOf({}, 'view.world')).toBe('w');
+    expect(chordOf({ 'view.world': 'y' }, 'view.world')).toBe('y');
+    expect(chordOf({}, 'no.such.action')).toBe('');
   });
 
   it('persist per viewer and survive storage that is off or broken', () => {

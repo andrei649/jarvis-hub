@@ -196,6 +196,13 @@ def test_the_numbers_are_kept_per_model(store):
         "gemini gemini-2.5-pro (key k1): requests 1/10 — BLOCKED for 28s after a 429"]
 
 
+def test_a_hold_on_the_whole_key_shows_on_every_models_row(store):
+    store.record("gemini", "k1", {"requests": {"limit": 10, "remaining": 9}}, now=0, model="gemini-2.5-flash")
+    store.block("gemini", "k1", 30, now=0)                               # no model: the whole key
+    flash = [r for r in store.snapshot(now=2) if r["model"] == "gemini-2.5-flash"]
+    assert [(r["blocked"], r["blocked_for"]) for r in flash] == [(True, 28.0)]
+
+
 def test_a_store_from_before_models_is_started_afresh(tmp_path):
     path = tmp_path / "old.db"
     with sqlite3.connect(path) as conn:
@@ -313,6 +320,7 @@ async def test_a_429_holds_that_key_in_every_process_before_the_next_request_lea
             await client.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": "sk-1"})
         after = EGRESS_MONITOR.snapshot("llm:anthropic")["plugins"].get("llm:anthropic", {}).get("total", 0)
         assert "rate-limited" in str(err.value) and "shared 429 guard" in str(err.value)
+        assert 35 <= err.value.retry_in <= 40                         # how long the hold has left
         assert calls == ["sk-1"] and after == before                  # never dialled, never an egress row
         other = await client.post("https://api.anthropic.com/v1/messages", headers={"x-api-key": "sk-2"})
         assert other.status_code == 200 and calls == ["sk-1", "sk-2"]  # another key is not held
@@ -489,6 +497,39 @@ def test_the_pool_keeps_a_held_key_cool_for_the_whole_hold():
     pool.report_failure("k1", cooldown=1)                               # the backoff is still the floor
     clock[0] = 600 + 30 * 2 - 1
     assert pool.healthy_count() == 1
+
+
+@pytest.mark.parametrize("kind", ["claude", "gemini"])
+async def test_the_held_key_stays_cool_for_its_whole_hold_after_the_fail_over(store, cloud, kind, monkeypatch):
+    """The pool's own backoff (30 s) is shorter than the hold: the key stays out for the hold."""
+    from agents.core.llm.auth_rotation import AuthProfilePool
+
+    store.block("anthropic" if kind == "claude" else "gemini", _fp("k-A"), 600)
+    sent = []
+    b, _ = _pool_backend(kind, _answering(sent, _CLAUDE_OK if kind == "claude" else _GEMINI_OK))
+    clock = [1000.0]
+    pool = b.auth_pool = AuthProfilePool(["k-A", "k-B"], "x", clock=lambda: clock[0])
+    assert await b.generate("" if kind == "claude" else "gemini-2.5-flash", "hello") == "hi"
+    assert sent == ["k-B"]
+    clock[0] += 60                                                      # past the 30 s backoff
+    assert pool.healthy_count() == 1                                    # k-A still held
+    clock[0] += 600
+    assert pool.healthy_count() == 2
+
+
+async def test_a_single_held_key_in_a_pool_of_one_is_not_cooled_and_says_why(store, cloud):
+    """Nothing to fail over to: the refusal is the answer and the key keeps no failure."""
+    from agents.core.llm.anthropic import ClaudeBackend
+    from agents.core.llm.auth_rotation import AuthProfilePool
+
+    store.block("anthropic", _fp("k-A"), 600)
+    pool = AuthProfilePool(["k-A"], "anthropic")
+    b = ClaudeBackend(api_key="", auth_pool=pool)
+    b.client = _client(lambda r: httpx.Response(200, json=_CLAUDE_OK))
+    reply = await b.generate("", "hello")
+    assert reply.startswith("[Claude API error: ") and "shared 429 guard" in reply
+    assert "exhausted" not in reply
+    assert pool.status()["profiles"][0]["failures"] == 0 and pool.healthy_count() == 1
 
 
 async def test_a_single_held_key_still_says_why(store, cloud):

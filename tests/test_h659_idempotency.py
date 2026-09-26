@@ -935,3 +935,27 @@ def test_a_peer_task_never_waits_on_the_store_on_the_event_loop(a2a, store, monk
     _send(client, peer, {"task": {}}, key="k")
     assert _send(client, peer, {"task": {}}, key="k").headers[idem.REPLAYED_HEADER] == "true"
     assert on_loop == []
+
+
+async def test_the_heartbeat_beats_on_its_interval_and_stops_with_the_request(store, monkeypatch):
+    import asyncio
+
+    beats = []
+    monkeypatch.setattr(idem, "HEARTBEAT_SECONDS", 0.02)
+    monkeypatch.setattr(store, "touch", lambda *a, **k: beats.append(k.get("attempt")) or True)
+    got = store.reserve("s", "k", "fp")
+    async with idem.Claim(store, "s", "k", "fp", got.attempt).kept_alive():
+        await asyncio.sleep(0.25)
+    assert len(beats) >= 4 and set(beats) == {got.attempt}               # every interval, as this attempt
+    ended = len(beats)
+    await asyncio.sleep(0.1)
+    assert len(beats) == ended                                           # nothing refreshes a finished request
+
+
+def test_every_reply_that_says_the_turn_did_not_run_is_a_failed_turn():
+    from agents.core import orchestrator as orch
+    from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
+
+    for reply in (orch.NO_MODEL_REPLY, orch.TURN_BUSY_REPLY, orch.CONTEXT_REFUSED_REPLY, CONTINUATION_REFUSED_REPLY):
+        assert orch.is_failed_turn_reply("jarvis", reply) is True, reply[:40]
+    assert orch.is_failed_turn_reply("jarvis", "Here is the summary you asked for.") is False

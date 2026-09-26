@@ -173,8 +173,35 @@ it('H209: a rebound World key opens World and the old one no longer does', async
   await screen.findByText('Chat route loaded');
   fireEvent.keyDown(window, { key: 'w' });
   expect(location.pathname).toBe('/v2/chat');
+  expect(screen.getByTitle('World Intelligence (Y)')).toBeTruthy();   // the hint names the new key
   fireEvent.keyDown(window, { key: 'y' });
   await screen.findByText('World route loaded');
+});
+
+it('H209: a key typed into a field is the field\'s, not a mode switch', async () => {
+  history.replaceState(null, '', '/v2/memory?demo=1');
+  render(<WorldAwareApp />);
+  const box = await screen.findByLabelText('Memory draft');
+  box.focus();
+  fireEvent.keyDown(box, { key: '2' });
+  fireEvent.keyDown(box, { key: 'w' });
+  await act(async () => {});
+  expect(location.pathname).toBe('/v2/memory');
+  expect(screen.queryByText('Agents route loaded')).toBeNull();
+  expect(screen.queryByText('World route loaded')).toBeNull();
+});
+
+it('H209: a rebinding made in the panel reaches the World button beside the app', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  expect(screen.getByTitle('World Intelligence (W)')).toBeTruthy();
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.click(screen.getByRole('button', { name: 'Rebind Open World Intelligence' }));
+  fireEvent.keyDown(window, { key: 'y' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByTitle('World Intelligence (Y)')).toBeTruthy();
 });
 
 it('H209: / focuses the message box', async () => {
