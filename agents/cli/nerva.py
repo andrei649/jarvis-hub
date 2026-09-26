@@ -1258,11 +1258,15 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
         try:
             with open(path, "rb") as handle:
                 data = handle.read(MAX_SKILL_MD_BYTES + 1)     # past the cap is an error anyway
+                size = os.fstat(handle.fileno()).st_size
         except OSError as exc:
             problems, findings = [Problem("document", f"cannot be read ({exc.strerror or exc})")], []
         else:
             problems = validate_skill_md(data)
             findings = lint_skill_md(data, folder=path.parent.name)
+            if len(data) > MAX_SKILL_MD_BYTES:
+                # Only the cap's worth was read: the size is the file's (review-H350 F10).
+                problems = [Problem("document", f"{max(size, len(data)):,} bytes; at most {MAX_SKILL_MD_BYTES:,}")]
         errors += len(problems)
         advice += len(findings)
         report.append({"path": str(path), "errors": [p.as_dict() for p in problems],

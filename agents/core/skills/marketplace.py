@@ -32,7 +32,7 @@ from agents.core.persistence.migrations import apply_migrations
 from . import signing
 from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
 from .skill_history import SkillHistory
-from .validate import require_valid
+from .validate import Problem, SkillDocumentInvalid, declared_name, require_valid
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -645,7 +645,7 @@ class SkillMarketplace:
     def _safe_skill_dir(self, raw_name: str, *, action: str = "install") -> Path:
         """Resolve a skill name to a directory strictly inside ``skills_dir``.
 
-        Used for both install (name derived from an untrusted SKILL.md heading)
+        Used for both install (the name an untrusted SKILL.md declares)
         and uninstall so a name with a separator, ``.``/``..``, or a NUL can never
         escape the skills tree. Returns the resolved, in-tree target directory.
         """
@@ -819,22 +819,18 @@ class SkillMarketplace:
             skill_md_bytes = package.joinpath(*manifest_parts).read_bytes()
             # H350 — checked before its name picks a folder or anything is placed.
             require_valid(skill_md_bytes)
-            skill_md_content = skill_md_bytes.decode("utf-8")
+            # The folder is the name that check validated (the frontmatter ``name``, or the
+            # heading dialect's one '# ' line), never a heading in the body (review-H350 F6).
+            skill_name = declared_name(skill_md_bytes) or ""
 
-            skill_name = None
-            for line in skill_md_content.split("\n"):
-                stripped = line.strip()
-                if stripped.startswith("# "):
-                    skill_name = stripped[2:].strip()
-                    break
-
-            if not skill_name:
-                skill_name = manifest_parts[-2] if len(manifest_parts) > 1 else "imported_skill"
-
-            # skill_name is the untrusted '# ' heading of SKILL.md inside the zip.
-            # Validate the derived folder BEFORE anything is placed, or a heading like
-            # '# ..' / '# /etc/cron.d' relocates target_dir outside skills_dir.
+            # skill_name is still the package's own. Validate the derived folder BEFORE
+            # anything is placed, or a name like '..' relocates target_dir outside skills_dir.
             target_dir = self._safe_skill_dir(skill_name)
+            if target_dir.exists() and not self._holds_skill(target_dir.joinpath(*manifest_parts), skill_name):
+                # A reinstall replaces its own folder; another skill's is never swapped out.
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
+                            "another skill: uninstall that one first, or rename this one")])
 
             # Signature gate: SKILL.sig lives at the package root (manifest dir). The
             # digest is over relative paths, so verifying the staged tree verifies
@@ -875,6 +871,15 @@ class SkillMarketplace:
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    @staticmethod
+    def _holds_skill(skill_md: Path, name: str) -> bool:
+        """Whether the installed *skill_md* declares *name* (so an install is a reinstall)."""
+        try:
+            installed = declared_name(skill_md.read_bytes())
+        except OSError:
+            return False
+        return installed is not None and installed.casefold() == name.casefold()
 
     @staticmethod
     def _place(package: Path, target_dir: Path, staging: Path) -> None:

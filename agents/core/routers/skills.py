@@ -446,6 +446,13 @@ async def skills_import(req: Request):
     if ok:
         orch.skills.discover()
         return {"ok": True, "source": source, "skill": skill_name}
+    refusal = getattr(orch.skill_importer, "last_refusal", None)
+    if isinstance(refusal, list) and refusal:
+        # H350 — found, but its SKILL.md is not valid: say why, never "not found".
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' in {source} has a SKILL.md that is "
+                                                    "not valid, and was not imported",
+                             "reason": "invalid_skill_md", "problems": [p.as_dict() for p in refusal]},
+                            status_code=422)
     return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
 
 
@@ -559,6 +566,9 @@ async def marketplace_install(body: InstallSkillBody):
             orch.skills.discover()
             return {"ok": True, "installed": body.name, **_install_warnings(orch)}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
+    except SkillDocumentInvalid as e:
+        # Before the ValueError below: the package was found, its SKILL.md is the problem.
+        return _invalid_skill_md(e, f"skill '{body.name}' has a SKILL.md that is not valid, and was not installed")
     except BrokerOnlyInstall:
         # Not a moderation verdict: an acquired package's code never lands in
         # skills/, so this endpoint is simply the wrong path for it. Reported

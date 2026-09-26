@@ -1041,7 +1041,10 @@ class SkillLoader:
         Writes SKILL.md + main.py template to skills/<name>/.
         Returns the skill name if created, None if skipped.
         """
-        # H507 — reset first: a skip below must not leave the last skill's warnings.
+        # This call's own outcome only: a refusal or skip before the checks below must not
+        # report an earlier generation's problems or warnings, perhaps another
+        # conversation's (review-H350 F4, review-H507 F3).
+        self.last_generation_problems = []
         self.last_generation_warnings = []
         skill_name = self._name_from_task(task_description)
         # Generated skills are personal content — they land in the user data
@@ -1118,7 +1121,8 @@ Agent-generated skill from successful task completion.
                            "; ".join(str(p) for p in self.last_generation_problems))
             return None
         skill_dir.mkdir(parents=True, exist_ok=True)
-        (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+        # The bytes checked, never text mode: Windows would write every '\n' as '\r\n'.
+        (skill_dir / "SKILL.md").write_bytes(skill_md.encode("utf-8"))
 
         # The shape below is the loader's contract, not decoration:
         #   * a command function takes (args, context=None) — Skill.execute() dispatches

@@ -204,6 +204,7 @@ class SkillImporter:
         self.last_refusal: list = []
 
     async def import_from_hermes(self, skill_name: str) -> bool:
+        self.last_refusal = []
         skill_slug = _safe_slug(skill_name)
         if skill_slug is None:
             logger.warning("Rejected Hermes skill import: unsafe name %r", skill_name)
@@ -292,6 +293,7 @@ class SkillImporter:
     async def _import_from_github(
         self, repo: str, base_path: str, skill_name: str, source: str
     ) -> bool:
+        self.last_refusal = []
         try:
             import httpx
         except ImportError:
@@ -411,6 +413,7 @@ class SkillImporter:
         skill_md_bytes: Optional[bytes] = None,
         provenance: Optional[dict[str, str]] = None,
     ) -> bool:
+        self.last_refusal = []
         slug = _safe_slug(skill_name)
         if slug is None:
             logger.warning("Rejected skill import: unsafe name %r", skill_name)
@@ -450,10 +453,10 @@ class SkillImporter:
             return False
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        # Preserve verified upstream bytes exactly. Generic imports retain their
-        # existing text-write behavior.
+        # Preserve verified upstream bytes exactly. Generic imports write the text
+        # checked above as UTF-8 bytes: text mode would turn '\n' into '\r\n' on Windows.
         if skill_md_bytes is None:
-            (target_dir / "SKILL.md").write_text(skill_md_text, encoding="utf-8")
+            (target_dir / "SKILL.md").write_bytes(skill_md_text.encode("utf-8"))
         else:
             (target_dir / "SKILL.md").write_bytes(skill_md_bytes)
 

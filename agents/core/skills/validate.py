@@ -115,11 +115,17 @@ def _decode(document: str | bytes) -> tuple[str | None, list[Problem]]:
         text = document
     else:
         return None, [Problem("document", "not text")]
-    text = text.removeprefix(_BOM).replace("\r\n", "\n").replace("\r", "\n")
+    text = text.removeprefix(_BOM).replace("\r\n", "\n")
     if not text.strip():
         return None, [Problem("document", "empty")]
     if "\x00" in text:
         return None, [Problem("document", "holds a NUL character", text[: text.index("\x00")].count("\n") + 1)]
+    if "\r" in text:
+        # The loader splits an installed SKILL.md on '\n' alone: the lines a lone carriage
+        # return ends read as one, and the skill loads under its folder's name, without its
+        # description (review-H350 F1).
+        return None, [Problem("document", "a carriage return without a line feed: save the file with LF "
+                                          "or CRLF line ends", text[: text.index("\r")].count("\n") + 1)]
     return text, []
 
 
@@ -171,12 +177,18 @@ def _frontmatter_problems(lines: list[str]) -> list[Problem]:
     for i in range(1, close):
         match = re.match(r"^([A-Za-z_][\w-]*)\s*:", lines[i])
         if match:
-            key_line.setdefault(match.group(1), i + 1)
+            key_line[match.group(1)] = i + 1           # YAML keeps a repeated key's last value
     problems += _check_name(data.get("name"), key_line.get("name"))
     problems += _check_description(data.get("description"), key_line.get("description"))
     if not "\n".join(lines[close + 1:]).strip():
         problems.append(Problem("body", "empty: the instructions go below the frontmatter", close + 1))
     return problems
+
+
+def _more(found: list) -> str:
+    # All the repeats of a line are one problem, with a count: a 64 KiB file of '# ' lines
+    # would otherwise make a refusal of megabytes (review-H350 F9).
+    return f" ({len(found) - 2:,} more after it)" if len(found) > 2 else ""
 
 
 def _heading_problems(lines: list[str]) -> list[Problem]:
@@ -187,26 +199,49 @@ def _heading_problems(lines: list[str]) -> list[Problem]:
         problems.append(Problem("name", "missing: start with a '---' frontmatter block, or a '# Name' heading"))
     else:
         problems += _check_name(headings[0][1], headings[0][0])
-        for line, text in headings[1:]:
+        if len(headings) > 1:
+            line, text = headings[1]
             problems.append(Problem("name", f"a second '# ' line ({text[:40]!r}): the loader would name the "
-                                            "skill after it; use '## ' for sections", line))
+                                            f"skill after it; use '## ' for sections{_more(headings)}", line))
     if not quotes:
         problems.append(Problem("description", "missing: a '> ' line under the heading says what the skill "
                                                "does and when to use it"))
     else:
         problems += _check_description(quotes[0][1], quotes[0][0])
-        for line, _text in quotes[1:]:
+        if len(quotes) > 1:
             problems.append(Problem("description", "a second '> ' line: the loader would use it as the "
-                                                   "description", line))
+                                                   f"description{_more(quotes)}", quotes[1][0]))
     # No body rule here: the heading dialect is Nerva's code-skill format, whose commands
     # may live in main.py alone. The linter still advises instructions (a '## ' section).
     return problems
 
 
 def dialect(document: str) -> str:
-    """``frontmatter`` or ``headings``: which reading the loader gives *document*."""
-    first = document.removeprefix(_BOM).split("\n", 1)[0]
-    return "frontmatter" if first.strip() == "---" else "headings"
+    """``frontmatter`` or ``headings``: which reading the loader gives *document*.
+
+    A block that yields no mapping is read as the heading dialect, as ``split_frontmatter``
+    falls back (a heading file framed by fences, review-H350 F5); with no ``# `` line to
+    read either, the broken block is what is reported.
+    """
+    text = document.removeprefix(_BOM)
+    if text.split("\n", 1)[0].strip() != "---":
+        return "headings"
+    if _fm.split_frontmatter(text)[0] is None and any(ln.strip().startswith("# ") for ln in text.split("\n")):
+        return "headings"
+    return "frontmatter"
+
+
+def declared_name(document: str | bytes) -> str | None:
+    """The name *document* declares, read as :func:`validate_skill_md` checks it."""
+    text, _ = _decode(document)
+    if text is None:
+        return None
+    if dialect(text) == "frontmatter":
+        data, _body = _fm.split_frontmatter(text, lenient=False)
+        name = data.get("name") if isinstance(data, dict) else None
+    else:
+        name = next((ln.strip()[2:] for ln in text.split("\n") if ln.strip().startswith("# ")), None)
+    return name.strip() if isinstance(name, str) and name.strip() else None
 
 
 def validate_skill_md(document: str | bytes) -> list[Problem]:
@@ -237,7 +272,8 @@ def lint_skill_md(document: str | bytes, *, folder: str | None = None) -> list[P
         return []
     lines = text.split("\n")
     findings: list[Problem] = []
-    if dialect(text) == "frontmatter":
+    kind = dialect(text)
+    if kind == "frontmatter":
         data, body = _fm.split_frontmatter(text, lenient=False)
         if not isinstance(data, dict):
             return []
@@ -259,7 +295,7 @@ def lint_skill_md(document: str | bytes, *, folder: str | None = None) -> list[P
         lowered = desc.lower()
         if not any(cue in lowered for cue in ("use when", "use this", "when ", "for ")):
             findings.append(Problem("description", "does not say when to use the skill ('Use when …')"))
-    if isinstance(name, str) and folder and dialect(text) == "frontmatter" \
+    if isinstance(name, str) and folder and kind == "frontmatter" \
             and name.strip().lower().replace(" ", "-") != folder.lower():
         findings.append(Problem("name", f"{name.strip()!r} differs from its folder {folder!r}"))
     body_lines = body.split("\n") if isinstance(body, str) else []
