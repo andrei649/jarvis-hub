@@ -48,6 +48,7 @@ class SchedulerService:
         self.schedule_tech_scout()
         self.schedule_llm_backend_refresh()
         self.schedule_power_monitor()
+        self.schedule_pressure_monitor()
         self.schedule_company_mode()
         self.schedule_backups()
         self.schedule_owner_jobs()
@@ -426,6 +427,28 @@ class SchedulerService:
                           id="power-monitor", replace_existing=True)
         except Exception as e:
             logger.warning(f"Failed to schedule the power monitor: {e}")
+
+    def schedule_pressure_monitor(self):
+        """H161 — sample memory and disk every minute for the pressure banner, on the
+        hub's scheduler rather than the autonomy tick, so autonomy off or ESTOP engaged
+        does not blind it. Skipped under JARVIS_TESTING (the route samples on demand)."""
+        from agents.core.env_config import env_flag
+        if env_flag("JARVIS_TESTING"):
+            return
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        try:
+            sched.add_job(self.run_pressure_tick, "interval", seconds=60,
+                          id="pressure-monitor", replace_existing=True)
+        except Exception as e:
+            logger.warning(f"Failed to schedule the pressure monitor: {e}")
+
+    async def run_pressure_tick(self):
+        from agents.core import resource_pressure
+
+        state = await asyncio.to_thread(resource_pressure.monitor().tick)
+        return {"worst": (state.get("worst") or {}).get("condition")}
 
     async def run_power_tick(self):
         from agents.core import power

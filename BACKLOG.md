@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H161 the HUD warns when memory or disk runs out, and only about the worst of it (partial → equivalent, #1207; headline 181 → 182/697).
+
+  The thresholds existed (the autonomy observer's 85/95 %), but they surfaced only as ticker lines and alert tasks, cleared on the first good sample, watched only `/`, stopped with autonomy off or the e-stop engaged, never suspected an out-of-memory restart and could not be dismissed. Now, as Hermes' pressure banner (`agents/core/resource_pressure.py`):
+  - **Ranked, worst only.** `disk_critical` > `memory_critical` > `oom_restart_suspected` > `disk_elevated` > `memory_elevated`, over memory and every watched volume (`/` and the data home). The HUD shows only the worst one not dismissed, in one sentence under the power chip.
+  - **Confirmed recovery.** A condition rises at once and clears (or steps down) only after 3 samples 5 points under its line, so a flapping reading neither clears nor re-raises it.
+  - **A suspected OOM restart.** A small state file (boot id, memory level, clean-shutdown mark) makes a start on the same boot, after an unclean stop under memory pressure, a named suspicion. The lifespan writes the mark as its very first teardown step.
+  - **Dismissal per boot.** It survives a restart on the same boot; a new boot re-arms it, and so does the condition's recovery.
+  - **Apart from autonomy.** Sampled every minute on the hub's scheduler (and on demand by the route when stale). `GET /api/system/pressure` and `POST /api/system/pressure/dismiss` are user-guarded.
+
+  50 mutants: 47 caught after ten survivors got cases, one equivalent, one simplified away, one (the atomic replace) a crash-consistency property. Test manual: ENV-181, ENV-182.
+  Tests: backend 16,921 → 16,961 (`tests/test_h161_resource_pressure.py` 40); frontend 1,640 → 1,646 (`pressure-banner.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; the binding-writer inventory's two pinned scheduler lines move with the file; HUD v2 bundle rebuilt.
+
 - 2026-09-26 H674 a conversation summary never holds the turn past a short bound, and a silent summarizer is cut (partial → equivalent, #1207; headline 180 → 181/697).
 
   Compaction awaited the strict-local summarizer inline, bounded only by the backend's read timeout (120 s for Ollama, a total-duration wait on a non-streaming call), and nothing said why a turn was slow. Now, with Hermes' two clocks (`agents/core/compaction_hold.py`):

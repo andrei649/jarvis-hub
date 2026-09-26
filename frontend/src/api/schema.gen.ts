@@ -9648,6 +9648,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pressure State
+         * @description The ranked memory/disk conditions and the worst one not dismissed.
+         */
+        get: operations["pressure_state_api_system_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/pressure/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pressure Dismiss
+         * @description Dismiss one raised condition for this boot (a new boot, or its recovery, re-arms it).
+         */
+        post: operations["pressure_dismiss_api_system_pressure_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding/model-plan": {
         parameters: {
             query?: never;
@@ -10377,6 +10417,13 @@ export interface components {
             weights?: {
                 [key: string]: number;
             } | null;
+        };
+        /** DismissBody */
+        DismissBody: {
+            /** Condition */
+            condition: string;
+            /** Boot Id */
+            boot_id: string;
         };
         /** EvidenceItem */
         EvidenceItem: {
@@ -25333,6 +25380,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    pressure_state_api_system_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pressure_dismiss_api_system_pressure_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

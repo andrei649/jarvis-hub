@@ -636,10 +636,17 @@ async def lifespan(application: FastAPI):
     )
     # H283 — tell systemd (Type=notify) the hub is ready once /readyz would say so,
     # and keep its watchdog fed from the event loop; a no-op without NOTIFY_SOCKET.
+    # H161 — the memory/disk watch: read what the last run left (a suspected OOM
+    # restart) and mark this run as not yet cleanly stopped.
+    from agents.core import resource_pressure
+    resource_pressure.monitor().start()
     from agents.core.routers.ops import readiness_snapshot
     from agents.core.sd_notify import NOTIFIER
     NOTIFIER.ready(readiness_snapshot())
     yield
+    # H161: the clean-shutdown mark first — a later step that hangs must not make this
+    # stop look like an out-of-memory kill to the next start.
+    resource_pressure.monitor().stop()
     await NOTIFIER.stopping()
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
@@ -1540,6 +1547,7 @@ from agents.core.routers.company import router as _company_router  # noqa: E402
 from agents.core.routers.operator_bench import router as _operator_bench_router  # noqa: E402
 from agents.core.routers.host_probe import router as _host_probe_router  # noqa: E402
 from agents.core.routers.power import router as _power_router  # noqa: E402
+from agents.core.routers.pressure import router as _pressure_router  # noqa: E402
 from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
@@ -1678,6 +1686,7 @@ app.include_router(_company_router)
 app.include_router(_operator_bench_router)
 app.include_router(_host_probe_router)
 app.include_router(_power_router)   # H182: GET /api/power + /api/power/stream
+app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismiss
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
