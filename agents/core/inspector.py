@@ -251,9 +251,8 @@ def _cap(text: str, budget: int) -> str:
 
 
 async def _prompt(orch, agent_id: str, agent) -> dict:
-    from agents.core.orchestrator import _system_prompt_of
-
     from agents.core.llm.tokenizer import estimate_tokens
+    from agents.core.orchestrator import _system_prompt_of
 
     redactor = _redactor()
     if redactor is None:
