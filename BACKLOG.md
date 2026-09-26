@@ -14,6 +14,14 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 Review round, batch 1 of 23 (H427, H218, H594): the adversarial review's confirmed findings fixed red-first; two rows go back to partial (#1207; headline 187 → 185/697).
+
+  - **H427** (9 findings). The compaction archive is pruned with its session by retention, runs only while `memory.persist` is on, survives a torn or multi-byte-cut line, is owner-only (0600 / 0700), and a checkpoint that landed nothing new writes no audit row; an aborted checkpoint still drops old images (with its lineage row) rather than keeping them. **Equivalent → partial:** the only checkpoint is a raw transcript copy — nothing extracts the evicted turns into memory or checks that extraction landed (an owner decision: `docs/OWNER_TASKS.md` P30.2).
+  - **H218** (14 findings). Delete for good holds the chat's turn lease and memory locks, refuses a continued chat and a non-session id, backs up (encrypted, outside the data root, newest 10) and deletes the continuation seed, history binding, note and turn embeddings too, under `secure_delete` and a WAL truncate; the file work runs off the loop. `llm.project_dir` is relabelled to what it does. **Equivalent → partial:** the delete is not routed through the irreversible approval bucket — that needs a kernel action kind, a protected path (P30.1).
+  - **H594** (12 findings). An approved local `terminal_run`'s cwd is noted for the session that queued it; TAG-plane smuggling, fence markers and flagged file names block a file; names are escaped; the files sit in the untrusted-data fence; a guest's turn gets none; parallel tool calls share the budget under a lock; a script's file call brings none. Stays equivalent.
+
+  Tests: backend 17,086 → 17,149 (`tests/test_h427_precompress_checkpoint.py` 54, `tests/test_h218_archived_chats.py` 73, `tests/test_h594_project_context.py` 66). Owner lane: P30 in `docs/OWNER_TASKS.md`.
+
 - 2026-09-26 H247 one microphone per device, opened only by a surface the owner allowed; every lease named and audited (partial → equivalent, #1207; headline 186 → 187/697).
 
   Nothing recorded which surface held the microphone: the hub's wake-word pipeline and a HUD hands-free loop on the same machine could both open it, no call said who held it, arming checked no consent and wrote no audit row, and the host pipeline started at boot with neither check. Now (`agents/core/voice/mic.py`, the lease table):
@@ -179,17 +187,17 @@
   32 mutants: 30 caught; the other two were a redundant check (removed) and an unpinned refusal (now pinned). Test manual: ENV-175, ENV-176.
   Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43; `test_first_run_first_action.py` now pins the no-re-mint rule).
 
-- 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697).
+- 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697; equivalent → partial after its review, see the review-round bullet).
 
   Sessions could only be listed and resumed, and the only deletion was the install-wide forget. Now (`agents/core/session_archive.py`, `agents/core/checkpoint.py`, `agents/core/routers/sessions.py`), as Hermes' Archived Chats:
   - **Archive.** `POST /sessions/{id}/archive` and `/unarchive` stamp or clear `archived_at` in the session's metadata; nothing is deleted. `GET /sessions` leaves archived chats out and `?archived=true` lists only them. Resuming an archived chat brings it back.
   - **Auto-archive.** `memory.auto_archive_days` (0 = off, at most 3,650) archives chats idle longer than that, daily at 03:40; the chat in use is never touched.
-  - **Delete for good.** `DELETE /sessions/{id}?confirm=DELETE` is admin-only and refuses the chat in use (409). It first writes every trace of the chat (row, checkpoints, clock, transcript snapshot and log, checklist, compaction archive) to `<data home>/backups/sessions/<id>-<stamp>.json`, created 0600, fsynced and read back. Only then does it delete them. If the backup does not land, nothing is deleted.
+  - **Delete for good.** `DELETE /sessions/{id}?confirm=DELETE` is admin-only, holds the chat's turn lease (409 `session_busy`) and refuses the chat in use (409), a chat another chat continues (409 `has_continuations`) and an id that is not a session (404). It first writes an encrypted, fsynced, read-back backup of every trace of the chat (row, checkpoints, clock, continuation seed, history binding, transcript snapshot and log, checklist, note, compaction archive) to `<data root>-forget-archives/sessions/<id>-<stamp>.json.enc`, outside the data root, keeping the newest 10. Only then does it delete them, with the chat's turn embeddings, under `secure_delete` and a WAL truncate. If the backup does not land, nothing is deleted. Still open: the delete is not routed through the irreversible approval bucket (needs a new kernel action kind — a protected path, owner lane).
   - **HUD.** The Sessions panel has chats and archived tabs, an archive button, and in the archived tab unarchive and a two-step “delete permanently” that names the backup.
-  - **Default project directory.** `llm.project_dir` is the folder, inside the file roots, that H594 reads a project's convention files from.
+  - **Project folder for convention files.** `llm.project_dir` only moves where H594 reads a project's convention files from; file tools and the terminal still start at the first file root.
 
-  41 mutants: 38 caught, 3 equivalent (two now removed as redundant). Test manual: SHL-221, SHL-222.
-  Tests: backend 16,298 → 16,337 (`tests/test_h218_archived_chats.py` 39); vitest 1,543 → 1,550 (`sessions-archive.test.tsx` 7).
+  41 mutants: 38 caught, 3 equivalent (two now removed as redundant); the review found a surviving `todo_none` mutant, now pinned. Test manual: SHL-221, SHL-222.
+  Tests: backend 16,298 → 16,337 (`tests/test_h218_archived_chats.py` 39, 73 after the review round); vitest 1,543 → 1,550 (`sessions-archive.test.tsx` 7).
 
 - 2026-09-26 H309 the agent points at the HUD: a tip on one element, or a short tour (missing → equivalent, #1207; headline 170 → 171/697).
 
@@ -215,13 +223,13 @@
 - 2026-09-26 H594 the project's convention files reach the agent (missing → equivalent, #1207; headline 168 → 169/697).
 
   Nothing read a project's `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or `.cursor/rules/*.mdc`; they only counted as instruction files for writes. Now (`agents/core/project_context.py`), as Hermes' context files and subdirectory hints:
-  - **Walked.** From the git root (never above the file root) down to the working directory (the first `JARVIS_FILE_ROOTS` root), each directory's files in that order; a directory `file_read`, `file_list`, `file_search` or a local `terminal_run` touches is noted for the session, its chain is read on every later turn, and the tool result carries the files the turn had not seen. A project `SOUL.md`, `HEARTBEAT.md` or `IDENTITY.md` is never read, not even through a link.
+  - **Walked.** From the git root (never above the file root) down to the working directory (`llm.project_dir` when set, else the first `JARVIS_FILE_ROOTS` root), each directory's files in that order; a directory the model's `file_read`, `file_list` or `file_search` touches is noted for the session, its chain is read on every later turn, and the tool result carries the files the turn had not seen. An approved local `terminal_run`'s cwd is noted for the session that queued it and read on that session's next turn. A project `SOUL.md`, `HEARTBEAT.md` or `IDENTITY.md` is never read, not even through a link.
   - **Guarded.** Resolved through FileScope (outside the roots, symlink escape, secret paths refused); regular files only (a FIFO is never opened); 20 KB a file, 40 KB and 12 files a turn, each cut named; binaries skipped.
   - **Scanned and tainted.** `detect_injection_normalized` per file; a flagged file is a `[BLOCKED …]` line with none of its text. The block is caveated (not the owner's instructions, no permission) and sits after the core-memory block; a turn given any file is tainted, so an action planned from it escalates GRANT → QUEUE.
   - **Off switch.** `llm.project_context_files` (on by default) and safe mode (new layer `project_context`, named on the HUD banner). File work runs off the event loop.
 
   51 mutants: all caught (the redundant checks the first pass found were removed). Test manual: GOV-281, GOV-282.
-  Tests: backend 16,213 → 16,260 (`tests/test_h594_project_context.py` 47).
+  Tests: backend 16,213 → 16,260 (`tests/test_h594_project_context.py` 47, 66 after the review round).
 
 - 2026-09-26 H373 see how much provider quota is left, and never hammer a provider that said stop (missing → equivalent, #1207; headline 167 → 168/697).
 
@@ -254,15 +262,15 @@
   61 mutants: 59 caught, 2 equivalent. Test manual: GOV-275, GOV-276.
   Tests: backend 16,079 → 16,126 (`tests/test_h117_message_batching.py` 47); vitest 1,507.
 
-- 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697).
+- 2026-09-26 H427 compaction never discards a transcript unless its checkpoint landed (missing → equivalent, #1207; headline 164 → 165/697; equivalent → partial after its review, see the review-round bullet).
 
   The compressor summarised the middle of a conversation and the evicted turns left the prompt with nothing checking they had landed anywhere (the store keeps only the last `memory.max_turns`). Now (`agents/core/memory/precompress.py`), as Hermes' `on_pre_compress`:
   - **The hook.** `ContextCompressor.compress` awaits the checkpoint with exactly the turns the summary replaces and the whole transcript, before building the summary. Versioned contract (API v2; new keyword arguments passed only when a provider's signature takes them; synchronous providers run off the loop).
-  - **The shipped provider.** `TranscriptArchive` appends each evicted turn once (hash of speaker, time, content) to a per-session JSONL under the data folder, fsynced before it returns; images as `[image]`.
-  - **Fail closed.** With `memory.compression_checkpoint_required` (off by default), a failing checkpoint or none landing keeps the transcript exactly as it was (no summary, no lineage row), and a turn that cannot fit uncompressed is refused. Every checkpoint and abort is in the signed intent log (`memory.precompress_checkpoint` / `memory.precompress_abort`), without turn text.
+  - **The shipped provider.** `TranscriptArchive` appends each evicted turn once (hash of speaker, time, content) to a per-session JSONL under the data folder, fsynced before it returns; images as `[image]`. It is a raw copy, not an extraction into memory: nothing mines those turns into episodes or LivingMemory, and recall never reads the archive.
+  - **Fail closed.** With `memory.compression_checkpoint_required` (off by default), a failing checkpoint or none landing summarises nothing (old images are still dropped, with an images-tier lineage row), and a turn that still cannot fit is refused. Every checkpoint that landed new turns, and every abort, is in the signed intent log (`memory.precompress_checkpoint` / `memory.precompress_abort`), without turn text.
 
   51 mutants: 49 caught, 2 equivalent. Test manual: GOV-273, GOV-274.
-  Tests: backend 16,035 → 16,079 (`tests/test_h427_precompress_checkpoint.py` 44); vitest 1,507.
+  Tests: backend 16,035 → 16,079 (`tests/test_h427_precompress_checkpoint.py` 44, 54 after the review round); vitest 1,507.
 
 - 2026-09-26 H659 a retried external request returns the original run instead of starting a second one (missing → equivalent, #1207; headline 163 → 164/697).
 

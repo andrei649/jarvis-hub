@@ -1354,3 +1354,39 @@ organisation Copilot setting on GitHub, not a file in the tree — and if it wer
 
 Until one of those lands, PRs that are otherwise green wait on a manual merge by you;
 the seven required checks are unaffected and keep telling the truth.
+
+## P30 — two Hermes rows the review sent back to `partial`, each waiting on you (#1207)
+
+The adversarial review of the PR #1207 rows found two claims of equivalence that the code
+does not meet. The code findings are fixed; what is left is yours.
+
+### P30.1 — H218: route "delete a chat for good" through the approval queue
+
+The row's governance asks for the permanent delete to go through data_purge's backup-first
+path **and the irreversible approval bucket** — an approval card the owner accepts before
+anything is deleted. What exists is `DELETE /sessions/{id}?confirm=DELETE` (admin only),
+holding the chat's lease, with an encrypted, verified backup outside the data root first.
+There is no Action Kernel mediation and no approval card. An approval-queue action needs a
+kernel action kind (e.g. `session.purge`) in `agents/core/kernel/registry.py`, a protected
+path, so it was not added here. Either add the kind (then the route can enqueue an
+irreversible-tier action and execute it on approval), or decide that admin + typed
+confirmation + backup is enough and say so on the row.
+
+The same gap holds four more rows (build-queue critic note 28): a settings reset (H259 made
+it reversible instead), a retention TTL write (H262), `memory.forget` (H425) and
+`system.uninstall` (H174). One shared irreversible-action kind family in the registry, with
+an executor registry on the worker side, would let all of them enqueue instead of writing at
+once. That registry entry is the only part that has to be yours.
+
+### P30.2 — H427: what should a pre-compression checkpoint extract into memory?
+
+Compaction now fails closed when a required checkpoint does not land, but the only shipped
+checkpoint is a raw per-session copy of the evicted turns (`TranscriptArchive`). The row asks
+for a provider that extracts those turns into memory (episodes, consolidation or
+LivingMemory), or an interlock that checks per-turn extraction landed — the way Hermes lets
+the model save what matters before compressing. Episodes E3.0 never copies source payloads
+automatically, and LivingMemory turn records are content-free digests, so writing turn
+content into either is a design change. Options: (a) a model-driven "save what matters"
+pass over the evicted turns through the H314 memory tool (audited, undoable, refused on a
+tainted turn); (b) an interlock over the LivingMemory digests only; (c) keep the raw archive
+and add a read path from recall / `session_search`.
