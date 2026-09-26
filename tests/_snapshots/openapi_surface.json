@@ -42,6 +42,7 @@
   "GET /api/admin/backup": "backup_list_api_admin_backup_get",
   "GET /api/admin/env": "admin_get_env_api_admin_env_get",
   "GET /api/admin/env/sources": "admin_env_sources_api_admin_env_sources_get",
+  "GET /api/admin/inspector": "admin_inspector_api_admin_inspector_get",
   "GET /api/admin/logs": "admin_logs_api_admin_logs_get",
   "GET /api/admin/mcp": "admin_mcp_list_api_admin_mcp_get",
   "GET /api/admin/network/calls": "admin_network_calls_api_admin_network_calls_get",

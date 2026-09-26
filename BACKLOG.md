@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H227 “what can it do right now”: one inspector for an agent as a chosen principal sees it (partial → equivalent, #1207; headline 182 → 183/697).
+
+  The pieces lived apart (the raw ToolRPC registry, the MCP admin list, `nerva prompt-size` over files on disk) and nothing answered for *this* agent, *this* surface, *this* principal, nor showed the resolved prompt. Now (`agents/core/inspector.py`), one read-only payload built from the code a turn runs:
+  - **Five views, the five postures.** The owner or a guest on the HUD, the owner or a stranger on an external channel (under the inbound origin a channel turn has), or no human. Each look runs in its own task, so what it binds ends with it.
+  - **Status line.** Version, backend and model, the local model's state, the context budget (0 = 75 % of the model window), the tool loop, safe mode.
+  - **Tools as offered, not as registered.** The runtime's own resolved offer (job toolset, posture, the agent's `tools:` list, the shared-session rule), each marked gated / untrusted output, the withheld ones listed; fails closed; says when the loop is off.
+  - **Skills, MCP, prompt.** The prompt's skill rows under that principal and offer; each MCP server's transport, trust and transport-aware liveness (no URL or command); the system prompt plus the empty-message user part (core memory, runtime/language/grounding rails, skills), about how many tokens that costs every turn, masked by the log redactor and capped at 64 KiB. The core block is read without freezing it, so a look never fixes the day's snapshot.
+  - **Three surfaces.** `GET /api/admin/inspector?agent=&view=&section=` (admin), `nerva inspect [agent] [--as …] [--section …] [--json]`, and Console → Admin → Inspector (status line, As switch, folding sections).
+
+  82 mutants: 79 caught, ten after survivors got cases, one redundant reset simplified away, the origin passed to the posture equivalent (the principal alone decides the surface). Test manual: GOV-287, GOV-288.
+  Tests: backend 16,961 → 17,004 (`tests/test_inspector.py` 43); frontend 1,646 → 1,650 (`panels/inspector.test.tsx`); route, auth and OpenAPI snapshots, OpenAPI types, desktop HUD routes and the API sweep updated; HUD v2 bundle rebuilt.
+
 - 2026-09-26 H161 the HUD warns when memory or disk runs out, and only about the worst of it (partial → equivalent, #1207; headline 181 → 182/697).
 
   The thresholds existed (the autonomy observer's 85/95 %), but they surfaced only as ticker lines and alert tasks, cleared on the first good sample, watched only `/`, stopped with autonomy off or the e-stop engaged, never suspected an out-of-memory restart and could not be dismissed. Now, as Hermes' pressure banner (`agents/core/resource_pressure.py`):

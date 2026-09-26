@@ -278,6 +278,8 @@
     "/v2/console/provider-check/",
     "/v2/console/provider-quota",
     "/v2/console/provider-quota/",
+    "/v2/console/inspector",
+    "/v2/console/inspector/",
     "/v2/console/system-profile",
     "/v2/console/system-profile/"
   ],

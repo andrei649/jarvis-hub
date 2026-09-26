@@ -119,5 +119,6 @@ export const CONSOLE_PANELS = [
   {"id": "auth-profiles", "label": "Auth Profiles", "group": "Admin", "component": "AuthProfilesPanel"},
   {"id": "provider-check", "label": "Provider Check", "group": "Admin", "component": "ProviderCheckPanel"},
   {"id": "provider-quota", "label": "Provider Quota", "group": "Admin", "component": "ProviderQuotaPanel"},
+  {"id": "inspector", "label": "Inspector", "group": "Admin", "component": "InspectorPanel"},
   {"id": "system-profile", "label": "System Profile", "group": "Admin", "component": "SystemProfilePanel"},
 ] as const;

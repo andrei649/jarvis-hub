@@ -222,10 +222,10 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 528,
+  "routes": 529,
   "tests": {
-    "backend": 16961,
-    "frontend": 1646,
+    "backend": 17004,
+    "frontend": 1650,
     "mobile": 142
   },
   "version": "1.0.0"

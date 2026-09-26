@@ -42,6 +42,7 @@
   "GET /api/admin/backup",
   "GET /api/admin/env",
   "GET /api/admin/env/sources",
+  "GET /api/admin/inspector",
   "GET /api/admin/logs",
   "GET /api/admin/mcp",
   "GET /api/admin/network/calls",

@@ -3361,6 +3361,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/inspector": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Inspector
+         * @description H227 — what *agent* can do right now as *view* sees it: status, the tools its
+         *     profile offers, the skills its prompt names, the MCP servers and the resolved prompt
+         *     (secrets masked, 64 KB at most). Read-only; ``section`` narrows it (repeatable).
+         */
+        get: operations["admin_inspector_api_admin_inspector_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/profile": {
         parameters: {
             query?: never;
@@ -16606,6 +16628,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_inspector_api_admin_inspector_get: {
+        parameters: {
+            query?: {
+                agent?: string;
+                view?: string;
+                section?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

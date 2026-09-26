@@ -155,6 +155,16 @@ def build_parser() -> argparse.ArgumentParser:
                        help="only the results that were fenced as untrusted data")
     tools.add_argument("--json", action="store_true")
 
+    # H227 — what an agent can do right now, as a principal sees it (admin, read-only).
+    inspect = verbs.add_parser("inspect", help="what an agent can do right now: status, tools, "
+                               "skills, MCP servers and its resolved prompt (admin)")
+    inspect.add_argument("agent", nargs="?", default="jarvis")
+    inspect.add_argument("--as", dest="view", choices=INSPECT_VIEWS, default="owner",
+                         help="whose turn: the owner or a guest on the HUD, the owner or a "
+                              "stranger on an external channel, or no human (internal)")
+    inspect.add_argument("--section", choices=tuple(INSPECT_SECTIONS), help="only this section")
+    inspect.add_argument("--json", action="store_true")
+
     logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
                             "and redacted (offline; -n counts records, a traceback is one)")
     logs.add_argument("-n", "--lines", type=int, default=50)
@@ -905,6 +915,100 @@ def cmd_tools(ns: argparse.Namespace, ctx: Context) -> int:
     ctx.say(f"{len(events)} shown — since boot: {sum(counts.values())} events, "
             f"{fenced} fenced as untrusted")
     return EXIT_OK
+
+
+#: `nerva inspect --as` — the inspector's views (agents/core/inspector.py VIEWS, same order).
+INSPECT_VIEWS = ("owner", "guest", "inbound-owner", "inbound", "internal")
+#: `nerva inspect --section` → the payload's section.
+INSPECT_SECTIONS = {"status": "status", "tools": "tools", "skills": "skills", "mcp": "mcp",
+                    "prompt": "system_prompt"}
+
+
+def cmd_inspect(ns: argparse.Namespace, ctx: Context) -> int:
+    """H227 — what an agent can do right now, as the chosen principal sees it.
+
+    One read of GET /api/admin/inspector — the payload the HUD's Inspector panel reads —
+    rendered section by section; ``--json`` prints it as it came.
+    """
+    from urllib.parse import urlencode
+
+    query = [("agent", ns.agent), ("view", ns.view)]
+    if ns.section:
+        query.append(("section", INSPECT_SECTIONS[ns.section]))
+    reply = ctx.client().get(f"/api/admin/inspector?{urlencode(query)}") or {}
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    only = INSPECT_SECTIONS[ns.section] if ns.section else None
+    for line in render_inspector(reply, only=only):
+        ctx.say(line)
+    return EXIT_OK
+
+
+def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> list[str]:
+    """The inspector payload as text, in the payload's section order (*only*: one section)."""
+    if only is not None:
+        payload = {k: v for k, v in payload.items() if k in ("agent", "view", "posture", only)}
+    lines = [f"{payload.get('agent', '?')} as {payload.get('view', '?')} — posture {payload.get('posture', '?')}"]
+    status = payload.get("status")
+    if isinstance(status, Mapping):
+        loaded = status.get("loaded_model")
+        lines.append(
+            f"status   nerva {status.get('version', '?')} · backend {status.get('backend', 'none')} · "
+            f"model {status.get('model') or '?'} · {status.get('model_state', 'unknown')}"
+            + (f" ({loaded})" if loaded else "")
+            + f" · context budget {status.get('context_tokens') or '75% of the model window'}"
+            + f" · tool loop {'on' if status.get('tool_loop') else 'off'}"
+            + (" · SAFE MODE" if status.get("safe_mode") else ""))
+    tools = payload.get("tools")
+    if isinstance(tools, Mapping):
+        offered = list(tools.get("offered") or [])
+        withheld = list(tools.get("withheld") or [])
+        head = f"tools    {len(offered)} offered of {tools.get('registry', 0)}"
+        if not tools.get("wired", True):
+            head += " — the tool runtime is not wired"
+        elif tools.get("error"):
+            head += " — the offer could not be resolved, so nothing is offered"
+        elif not tools.get("loop_enabled"):
+            head += " — the tool loop is off: none of these reach the model until llm.tool_loop_enabled is on"
+        lines.append(head)
+        for row in offered:
+            marks = [m for m, on in (("gated", row.get("gated")),
+                                     ("untrusted output", row.get("untrusted_output"))) if on]
+            description = str(row.get("description") or "")
+            if len(description) > 60:
+                description = description[:59] + "…"
+            lines.append(f"  {row.get('name', '?'):22s} {', '.join(marks):24s} {description}".rstrip())
+        if withheld:
+            lines.append(f"  withheld ({len(withheld)}): {', '.join(withheld)}")
+    skills = payload.get("skills")
+    if isinstance(skills, Mapping):
+        if not skills.get("in_prompt", True):
+            lines.append("skills   none in the prompt (llm.skills_in_prompt is off)")
+        else:
+            lines.append(f"skills   {skills.get('count', 0)} in the prompt")
+        for row in skills.get("rows") or []:
+            lines.append(f"  {row.get('command', '?'):24s} {row.get('description', '')}".rstrip())
+    mcp = payload.get("mcp")
+    if isinstance(mcp, Mapping):
+        servers = list(mcp.get("servers") or [])
+        lines.append(f"mcp      {len(servers)} servers, {mcp.get('connected', 0)} connected")
+        for row in servers:
+            names = ", ".join(row.get("tool_names") or [])
+            lines.append(f"  {row.get('name', '?'):16s} {row.get('transport', ''):16s} {row.get('trust', ''):10s} "
+                         f"{'connected' if row.get('connected') else 'down':10s} {row.get('tools', 0)} tools"
+                         + (f": {names}" if names else ""))
+    prompt = payload.get("system_prompt")
+    if isinstance(prompt, Mapping):
+        if prompt.get("withheld"):
+            lines.append("prompt   withheld: the secret redactor could not be loaded")
+        else:
+            size = f"prompt   {prompt.get('bytes', 0)} bytes, about {prompt.get('tokens', 0)} tokens before any history"
+            if prompt.get("truncated"):
+                size += f", shown to {prompt.get('cap')}"
+            lines += [size, "--- system ---", str(prompt.get("system") or ""),
+                      "--- turn (an empty user message) ---", str(prompt.get("turn") or "")]
+    return lines
 
 
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
@@ -2673,6 +2777,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "approvals": cmd_approvals,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
+    "inspect": cmd_inspect,
     "logs": cmd_logs,
     "skills": cmd_skills,
     "estop": cmd_estop,

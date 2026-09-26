@@ -3053,7 +3053,7 @@ class Orchestrator:
         from .memory.living_recall import rerank_with_living_memory
         return rerank_with_living_memory(hits, living, decay_memory=getattr(self, "decay", None))
 
-    def _living_core_memory_block(self) -> str:
+    def _living_core_memory_block(self, *, freeze: bool = True) -> str:
         """Render bounded LivingMemory core facts for prompt context.
 
         Frozen-snapshot discipline (hermes-agent pattern): the block is rendered
@@ -3062,6 +3062,10 @@ class Orchestrator:
         llama.cpp/LM Studio (and cloud) prompt caches warm. A new session (or
         /reset) re-renders. Entries are injection-scanned by the renderer; see
         agents/core/learning/core_block.py.
+
+        ``freeze=False`` (H227, the inspector) answers what the next turn would send
+        without being what freezes it: the frozen block when a turn already froze
+        one, else a fresh render that is not kept.
         """
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
@@ -3091,7 +3095,8 @@ class Orchestrator:
         except Exception:
             logger.debug("LivingMemory core render skipped", exc_info=True)
             return ""
-        self._core_block_cache = (cache_key, block)
+        if freeze:
+            self._core_block_cache = (cache_key, block)
         return block
 
     def _persona_prompt_block(self, agent_id: str) -> str:
@@ -3117,12 +3122,14 @@ class Orchestrator:
         plugin_block: str = "",
         recall_block: str = "",
         runtime_block: str = "",
+        freeze_core: bool = True,
     ) -> str:
         """Shared per-turn prompt ingredients before the agent prompt wrapper.
 
         Both non-stream and stream turns feed this text into ``Agent.build_prompt``.
         That keeps persona, memory context, plugin data, long-term recall and
-        runtime truth aligned across the two surfaces.
+        runtime truth aligned across the two surfaces. ``freeze_core=False`` is the
+        inspector's look (H227): the core block is shown, not frozen.
         """
         base = text
         if history:
@@ -3137,7 +3144,8 @@ class Orchestrator:
         if agent_context:
             parts.append(f"Agent context: {agent_context}")
 
-        core_memory_block = self._living_core_memory_block()
+        core_memory_block = (self._living_core_memory_block() if freeze_core
+                             else self._living_core_memory_block(freeze=False))
         if core_memory_block:
             parts.append(core_memory_block)
         turn_project = project_context.current()   # H594: begun (and tainted) at turn start

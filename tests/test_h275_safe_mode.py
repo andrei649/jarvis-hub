@@ -442,6 +442,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
     readers = sorted(str(p.relative_to(REPO)) for p in (REPO / "agents").rglob("*.py")
                      if "safe_mode" in p.read_text(encoding="utf-8") and p.name != "safe_mode.py")
     assert readers == sorted([
+        # H227: the inspector's status line and `nerva inspect` only report the flag.
+        "agents/cli/nerva.py",
+        "agents/core/inspector.py",
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
         "agents/core/channels/outbound.py",

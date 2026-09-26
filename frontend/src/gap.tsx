@@ -18,6 +18,7 @@ import { LongTermMemoryPanel } from './panels/long-term-memory';
 import { SkillSwitchesPanel } from './panels/skill-switches';
 import { ProviderCheckPanel } from './panels/provider-check';
 import { ProviderQuotaPanel } from './panels/provider-quota';
+import { InspectorPanel } from './panels/inspector';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
@@ -4820,6 +4821,7 @@ const PANEL_COMPONENTS = {
   SkillSwitchesPanel,
   ProviderCheckPanel,
   ProviderQuotaPanel,
+  InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
   MemoryEvalPanel,
