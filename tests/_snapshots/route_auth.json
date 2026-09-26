@@ -98,6 +98,7 @@
   "GET /api/company/runs": "user",
   "GET /api/company/runs/{run_id}": "user",
   "GET /api/company/waiting": "user",
+  "GET /api/context-refs": "user",
   "GET /api/cost": "user",
   "GET /api/dashboard/today": "user",
   "GET /api/design-manifest": "open",

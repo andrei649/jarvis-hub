@@ -327,6 +327,16 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     return billable_input, usage.output_tokens, usage.cache_read
 
 
+def _taint_attached_context() -> None:
+    """H579 — a turn whose owner message attached ``@file:`` content is tainted, like one
+    that recalled untrusted memory: an action planned from it escalates GRANT to QUEUE."""
+    from .context_refs import attached
+
+    if attached():
+        from .security.recall_taint import mark_turn_recall_tainted
+        mark_turn_recall_tainted()
+
+
 def _precompress_checkpoint(orch, sid: str):
     """H427 — the checkpoint the compressor awaits before it evicts turns: every
     registered provider (the transcript archive by default) sees them first, and with
@@ -1817,6 +1827,7 @@ class Orchestrator:
         approvals_token = bind_turn_approvals()
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
+        _taint_attached_context()   # H579: attached file content taints the turn
         try:
             return await self._handle_input(text, channel, agent_override, session_id)
         except CompactionClockRefused:
@@ -2000,6 +2011,7 @@ class Orchestrator:
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
         title_token = _TURN_TITLE.set([])
+        _taint_attached_context()   # H579: attached file content taints the turn
         try:
             return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
         except CompactionClockRefused:

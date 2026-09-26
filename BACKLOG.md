@@ -14,6 +14,17 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
+
+  The owner pasted file contents by hand; nothing expanded @-references. Now (`agents/core/context_refs.py`), as Hermes' context references:
+  - **Expanded.** `@file:path` and `@file:path#L10-40` (also `#L7`, `#L2-L3`, a quoted path) in what the owner sends on `/chat` and `/chat/stream` (the HUD and `nerva chat`; never a channel message) are attached under `--- Attached Context ---`, fenced as file content, not instructions.
+  - **Guarded.** Resolved through the file tools' FileScope (outside the roots, traversal, symlink escape and secret paths refused); 8 references, 64 KB each, 128 KB in all, counted in bytes; binary files skipped; every problem is a ⚠ line, never a failed message.
+  - **Tainted.** A turn that attached anything raises its origin to untrusted recall, so an action planned from attached text escalates GRANT → QUEUE.
+  - **Completion.** `GET /api/context-refs?prefix=` lists in-scope files and folders (no secrets); the HUD composer shows them while an `@file:` is typed, Tab takes one.
+
+  53 mutants: 49 caught, 4 equivalent. Test manual: GOV-277, GOV-278.
+  Tests: backend 16,126 → 16,171 (`tests/test_h579_context_refs.py` 45); vitest 1,507 → 1,510 (`context-refs.test.tsx`).
+
 - 2026-09-26 H117 a burst of messages is one turn (missing → equivalent, #1207; headline 165 → 166/697).
 
   A Telegram-split long message, an album (one update per photo) or a photo followed by “what is this?” ran one turn per piece. Now (`agents/core/channels/batching.py`), as Hermes' text/photo/album batching:

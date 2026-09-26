@@ -1,4 +1,5 @@
 import {ComposerImages,useComposerImages} from './composer-images';
+import { ContextRefHints, acceptRef, useContextRefs } from './context-refs';
 /* HUD v2 · COCKPIT — conversation + cognition trace + input */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icon, ICONS, Glyph } from './primitives';
@@ -218,6 +219,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   const [cfgOpen,setCfgOpen]=useState(false);
   const draft=useComposerImages();
   const fileInput=useRef<HTMLInputElement>(null);
+  const refs=useContextRefs(val);   // H579: @file: completion
   const submit=()=>{
     if(draft.images.length){const vision=draft.submission();if(!vision)return;
       if(onSubmit(val.trim()||'Describe these images.',vision)===false)return;
@@ -265,9 +267,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         <button className="mic" aria-label="Choose images" title="Attach images" onClick={()=>fileInput.current?.click()}>▧</button>
         <span className="pre">▸</span>
         <span className="chan">{t.channel}</span>
-        <div className="field">
+        <div className="field" style={{position:'relative'}}>
+          <ContextRefHints items={refs} onPick={ref=>setVal(acceptRef(val,ref))}/>
           <input value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
-            onKeyDown={e=>{ if(e.key==='Enter') submit(); }}/>
+            onKeyDown={e=>{ if(e.key==='Tab'&&refs.length){e.preventDefault();setVal(acceptRef(val,refs[0].ref));return;} if(e.key==='Enter') submit(); }}/>
           <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
             title={micMuted ? 'mic muted — unmute NERVA' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>

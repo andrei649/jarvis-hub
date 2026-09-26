@@ -861,6 +861,9 @@ export interface paths {
         /**
          * Trigger Webhook
          * @description Token-authenticated trigger → runs the configured agent/workflow.
+         *
+         *     H659: a delivery that carries an ``Idempotency-Key`` is run once per key and hook; a
+         *     retry gets the first delivery's outcome back (not its reply) and nothing runs again.
          */
         post: operations["trigger_webhook_api_webhooks__hook_id__post"];
         /** Delete Webhook */
@@ -1198,6 +1201,27 @@ export interface paths {
          *     absence, rather than advertising commands it cannot currently dispatch.
          */
         get: operations["command_catalog_api_commands_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/context-refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Context Ref Completions
+         * @description H579 — what can follow ``@file:`` in the composer: in-scope paths for ``prefix``
+         *     (directories end in ``/``), resolved through the file tools' own scope; read-only.
+         */
+        get: operations["context_ref_completions_api_context_refs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2305,6 +2329,9 @@ export interface paths {
         /**
          * Actions Request
          * @description Register a pending tool-call approval (sub-task granularity).
+         *
+         *     H659: with an ``Idempotency-Key``, a retry returns the action the first request queued
+         *     instead of queuing a second approval card.
          */
         post: operations["actions_request_api_actions_request_post"];
         delete?: never;
@@ -10031,6 +10058,25 @@ export interface components {
              */
             keep_recent: number;
         };
+        /** ContextRef */
+        ContextRef: {
+            /** Ref */
+            ref: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "file" | "dir";
+        };
+        /** ContextRefCompletions */
+        ContextRefCompletions: {
+            /** Ok */
+            ok: boolean;
+            /** Types */
+            types: string[];
+            /** Items */
+            items: components["schemas"]["ContextRef"][];
+        };
         /** ContinueSessionRequest */
         ContinueSessionRequest: {
             /** Source Session Id */
@@ -13131,6 +13177,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandCatalog"];
+                };
+            };
+        };
+    };
+    context_ref_completions_api_context_refs_get: {
+        parameters: {
+            query?: {
+                prefix?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextRefCompletions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
