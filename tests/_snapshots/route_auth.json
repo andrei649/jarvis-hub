@@ -127,6 +127,7 @@
   "GET /api/kg/facts/as-of": "user",
   "GET /api/kg/facts/history": "user",
   "GET /api/llm/auth-profiles": "admin",
+  "GET /api/llm/quota": "admin",
   "GET /api/llm/status": "admin",
   "GET /api/local-docs": "open",
   "GET /api/market/watchlist/saved": "user",

@@ -220,6 +220,13 @@ def _sessions(ctx: CommandContext) -> str:
     return "Recent sessions:\n" + "\n".join(lines)
 
 
+def _usage(ctx: CommandContext) -> str:
+    """H373 — what each cloud provider says is left, and any shared 429 hold."""
+    from agents.core.llm import quota
+
+    return quota.render(quota.usage())
+
+
 def _pause(ctx: CommandContext) -> str:
     from agents.core import estop
 
@@ -387,6 +394,7 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
     registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
+    registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))

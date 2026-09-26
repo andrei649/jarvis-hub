@@ -184,6 +184,23 @@ def _fresh_hub_env_load():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_provider_quota(tmp_path_factory):
+    """Keep one test's provider 429 out of the next one (H373).
+
+    The shared quota guard lives in a file every process reads, on purpose: a 429 seen by
+    one process holds the others. A test that mocks a 429 would otherwise hold that backend
+    and key for every later test in the run, so each test gets a store of its own."""
+    try:
+        from agents.core.llm import quota
+    except Exception:
+        yield
+        return
+    quota.set_store(quota.QuotaStore(tmp_path_factory.mktemp("quota") / "provider_quota.db"))
+    yield
+    quota.set_store(None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_action_origin():
     """Keep one test's action-origin binding out of the next one.
 

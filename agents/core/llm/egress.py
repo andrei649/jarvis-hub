@@ -80,6 +80,11 @@ def llm_async_client(backend: str, **kwargs) -> httpx.AsyncClient:
     keep the timeouts they already tuned. The ledger hook is appended last, so it sees
     the request exactly as it is about to be dispatched.
     """
+    from .quota import request_hook, response_hook
+
     event_hooks = dict(kwargs.pop("event_hooks", None) or {})
-    event_hooks["request"] = [*event_hooks.get("request", []), _recorder(backend)]
+    # H373: the shared 429 guard refuses first (a refused request never left, so it is not
+    # an egress row); every cloud response's quota headers are then recorded.
+    event_hooks["request"] = [*event_hooks.get("request", []), request_hook(backend), _recorder(backend)]
+    event_hooks["response"] = [*event_hooks.get("response", []), response_hook(backend)]
     return httpx.AsyncClient(event_hooks=event_hooks, **kwargs)

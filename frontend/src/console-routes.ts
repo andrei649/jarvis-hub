@@ -118,5 +118,6 @@ export const CONSOLE_PANELS = [
   {"id": "vlm-describe", "label": "Vlm Describe", "group": "Admin", "component": "VlmDescribePanel"},
   {"id": "auth-profiles", "label": "Auth Profiles", "group": "Admin", "component": "AuthProfilesPanel"},
   {"id": "provider-check", "label": "Provider Check", "group": "Admin", "component": "ProviderCheckPanel"},
+  {"id": "provider-quota", "label": "Provider Quota", "group": "Admin", "component": "ProviderQuotaPanel"},
   {"id": "system-profile", "label": "System Profile", "group": "Admin", "component": "SystemProfilePanel"},
 ] as const;

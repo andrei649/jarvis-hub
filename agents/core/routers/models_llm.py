@@ -424,6 +424,21 @@ def _restore_lifecycle_router_pair(
     )
 
 
+@router.get("/api/llm/quota", dependencies=[Depends(admin_guard)])
+async def llm_quota():
+    """H373 — each cloud backend's quota as its own responses report it (requests and tokens
+    left, when they reset) and any shared 429 block, from every process on this hub."""
+    import asyncio
+
+    from agents.core.llm import quota
+
+    try:
+        rows = await asyncio.to_thread(quota.usage)
+    except Exception:
+        return nocache_json({"ok": False, "reason": "quota_unavailable", "providers": []}, status_code=503)
+    return nocache_json({"ok": True, "providers": rows})
+
+
 @router.get("/api/llm/auth-profiles", dependencies=[Depends(admin_guard)])
 async def llm_auth_profiles():
     """H12.20 — masked status of the cloud auth-profile pools (rotation/failover)."""

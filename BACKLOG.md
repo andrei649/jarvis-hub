@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H373 see how much provider quota is left, and never hammer a provider that said stop (missing → equivalent, #1207; headline 167 → 168/697).
+
+  A provider's limit was learned only from a failed request, in one process's memory. Now (`agents/core/llm/quota.py`), as Hermes' rate-limit tracker and shared 429 guard:
+  - **Captured.** A response hook on every cloud backend's client (`llm_async_client`) reads `x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` and keeps the latest numbers per backend and key (a key only as a hash fingerprint) in a SQLite file every process shares; local models are not tracked.
+  - **Shared 429.** A 429 holds that backend and key in every process until its retry-after (else 30 s, never over 900 s); the request hook refuses before sending, so a held key is never retried against the provider and the refused call is not egress. Another key in the pool still goes out.
+  - **Shown.** `GET /api/llm/quota` (admin), the HUD Console → Admin → Provider Quota panel (bars, numbers, reset times, holds) and `/usage` (admin).
+
+  50 mutants: all caught. Test manual: GOV-279, GOV-280.
+  Tests: backend 16,171 → 16,214 (`tests/test_h373_provider_quota.py` 43); vitest 1,510 → 1,512 (`provider-quota-panel.test.tsx`).
+
 - 2026-09-26 H579 `@file:path` pulls a file, or a slice of one, into a message (missing → equivalent, #1207; headline 166 → 167/697).
 
   The owner pasted file contents by hand; nothing expanded @-references. Now (`agents/core/context_refs.py`), as Hermes' context references:

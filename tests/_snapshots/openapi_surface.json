@@ -127,6 +127,7 @@
   "GET /api/kg/facts/as-of": "kg_facts_as_of_api_kg_facts_as_of_get",
   "GET /api/kg/facts/history": "kg_facts_history_api_kg_facts_history_get",
   "GET /api/llm/auth-profiles": "llm_auth_profiles_api_llm_auth_profiles_get",
+  "GET /api/llm/quota": "llm_quota_api_llm_quota_get",
   "GET /api/llm/status": "llm_status_api_llm_status_get",
   "GET /api/local-docs": "local_docs_status_api_local_docs_get",
   "GET /api/market/watchlist/saved": "market_watchlist_saved_api_market_watchlist_saved_get",

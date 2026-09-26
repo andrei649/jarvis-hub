@@ -17,6 +17,7 @@ import { WebhooksPanel } from './panels/webhooks';
 import { LongTermMemoryPanel } from './panels/long-term-memory';
 import { SkillSwitchesPanel } from './panels/skill-switches';
 import { ProviderCheckPanel } from './panels/provider-check';
+import { ProviderQuotaPanel } from './panels/provider-quota';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
 import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
@@ -4818,6 +4819,7 @@ const PANEL_COMPONENTS = {
   LongTermMemoryPanel,
   SkillSwitchesPanel,
   ProviderCheckPanel,
+  ProviderQuotaPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
   MemoryEvalPanel,
