@@ -114,6 +114,14 @@ CREATE TABLE IF NOT EXISTS settings_migrations (
     name       TEXT PRIMARY KEY,
     applied_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings_resets (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    at        REAL NOT NULL,
+    scope     TEXT NOT NULL,
+    before    TEXT NOT NULL,
+    after     TEXT NOT NULL,
+    undone_at REAL
+);
 """
 
 #: Shipped defaults a later build changed: (name, category, key, the old shipped value,
@@ -567,7 +575,12 @@ def _posture_overlay(stored) -> tuple[str, dict]:
 
 def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
     """H273 review — the stored row says ``default``, but a selected posture may put
-    another value in effect: name it, so ``source`` is never the whole story."""
+    another value in effect: name it, so ``source`` is never the whole story.
+    H259 — a declared setting that is not a secret also carries its ``default``, so
+    the HUD can mark a changed one and put it back."""
+    spec = _SPEC.get((category, row["key"]))
+    if spec is not None and not is_secret_setting(category, row["key"]):
+        row["default"] = spec["value"]
     name, applies = posture
     forced = applies.get(f"{category}.{row['key']}", _NO_OVERLAY)
     if forced is not _NO_OVERLAY:
@@ -1056,22 +1069,9 @@ def apply_import(changes: dict[str, dict[str, Any]]) -> int:
     Returns how many settings were written."""
     _ensure_init()
     conn = get_conn()
-    written = 0
     try:
         with conn:
-            for cat, values in changes.items():
-                for key, value in values.items():
-                    spec = _SPEC[(cat, key)]
-                    stored = json.dumps(_encrypt_if_secret(key, value))
-                    cur = conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?",
-                                       (stored, cat, key))
-                    if cur.rowcount == 0:
-                        conn.execute(
-                            "INSERT INTO settings (category, key, value, label, kind, opts) "
-                            "VALUES (?,?,?,?,?,?)",
-                            (cat, key, stored, spec["label"], spec["kind"],
-                             json.dumps(spec.get("opts", []))))
-                    written += 1
+            written = _write_values(conn, changes)
     finally:
         conn.close()
     for cat, values in changes.items():
@@ -1100,14 +1100,22 @@ def posture_overridden(cat: str) -> list[str]:
     return sorted(k.split(".", 1)[1] for k in applies if k.startswith(cat + "."))
 
 
-def reset_category(cat: str) -> list[str] | None:
-    """Put every declared setting of *cat* but its secrets back to its declared value;
-    the keys that moved (``[]`` when none did), or None for a category nothing declares."""
-    specs = [spec for spec in DEFAULTS
-             if spec["category"] == cat and not is_secret_setting(cat, spec["key"])]
-    if not specs and any(spec["category"] == cat for spec in DEFAULTS):
-        return []
-    if not specs:
+def _reset_specs(cat: str | None) -> list[dict[str, Any]] | None:
+    """The declared settings a reset of *cat* (every category when None) may move: all
+    but the secrets. None for a category nothing declares."""
+    if cat is not None and not any(spec["category"] == cat for spec in DEFAULTS):
+        return None
+    return [spec for spec in DEFAULTS
+            if (cat is None or spec["category"] == cat)
+            and not is_secret_setting(spec["category"], spec["key"])]
+
+
+def plan_reset(cat: str | None) -> dict[str, dict[str, Any]] | None:
+    """H259 — what a reset of *cat* (every category when None) would write: each declared
+    setting but a secret whose stored value is not its default, as ``{category: {key:
+    default}}``. None for a category nothing declares."""
+    specs = _reset_specs(cat)
+    if specs is None:
         return None
     _ensure_init()
     conn = get_conn()
@@ -1115,8 +1123,134 @@ def reset_category(cat: str) -> list[str] | None:
         stored = _stored_values(conn)
     finally:
         conn.close()
-    moved = {spec["key"]: spec["value"] for spec in specs
-             if (cat, spec["key"]) not in stored or stored[(cat, spec["key"])] != spec["value"]}
-    if moved:
-        apply_import({cat: moved})
-    return sorted(moved)
+    plan: dict[str, dict[str, Any]] = {}
+    for spec in specs:
+        where = (spec["category"], spec["key"])
+        if where not in stored or not _same_value(stored[where], spec["value"]):
+            plan.setdefault(spec["category"], {})[spec["key"]] = spec["value"]
+    return plan
+
+
+#: How many resets are kept to undo; the oldest goes first.
+RESETS_KEPT = 20
+
+
+def _write_values(conn: sqlite3.Connection, changes: dict[str, dict[str, Any]]) -> int:
+    written = 0
+    for cat, values in changes.items():
+        for key, value in values.items():
+            spec = _SPEC[(cat, key)]
+            stored = json.dumps(_encrypt_if_secret(key, value))
+            cur = conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (stored, cat, key))
+            if cur.rowcount == 0:
+                conn.execute("INSERT INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
+                             (cat, key, stored, spec["label"], spec["kind"], json.dumps(spec.get("opts", []))))
+            written += 1
+    return written
+
+
+def reset_settings(cat: str | None) -> tuple[dict[str, dict[str, Any]], int | None] | None:
+    """H259 — reset *cat* (every category when None) to its declared values, secrets
+    kept. The values it replaces are recorded in the same transaction, so
+    :func:`undo_last_reset` can put them back. Returns ``(what moved, the record's id)``
+    — ``({}, None)`` when nothing moved — or None for a category nothing declares."""
+    plan = plan_reset(cat)
+    if plan is None:
+        return None
+    if not plan:
+        return {}, None
+    conn = get_conn()
+    try:
+        with conn:
+            stored = _stored_values(conn)
+            before = {c: {k: stored.get((c, k), _SPEC[(c, k)]["value"]) for k in keys} for c, keys in plan.items()}
+            _write_values(conn, plan)
+            cur = conn.execute("INSERT INTO settings_resets (at, scope, before, after) VALUES (?,?,?,?)",
+                               (time.time(), cat or "all", json.dumps(before), json.dumps(plan)))
+            snap = cur.lastrowid
+            conn.execute("DELETE FROM settings_resets WHERE id NOT IN "
+                         "(SELECT id FROM settings_resets ORDER BY id DESC LIMIT ?)", (RESETS_KEPT,))
+    finally:
+        conn.close()
+    for c, values in plan.items():
+        _changed(c, dict(values))
+    return plan, snap
+
+
+def reset_category(cat: str) -> list[str] | None:
+    """Put every declared setting of *cat* but its secrets back to its declared value;
+    the keys that moved (``[]`` when none did), or None for a category nothing declares."""
+    done = reset_settings(cat)
+    if done is None:
+        return None
+    return sorted(done[0].get(cat, {}))
+
+
+def _names(changes: dict[str, dict[str, Any]]) -> list[str]:
+    return [f"{c}.{k}" for c in sorted(changes) for k in sorted(changes[c])]
+
+
+def list_resets() -> list[dict[str, Any]]:
+    """The recorded resets, newest first: when, what scope, which settings (never their
+    values), and whether it was undone."""
+    _ensure_init()
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT id, at, scope, after, undone_at FROM settings_resets ORDER BY id DESC").fetchall()
+    finally:
+        conn.close()
+    return [{"id": r["id"], "at": r["at"], "scope": r["scope"], "settings": _names(json.loads(r["after"])),
+             "undone": r["undone_at"] is not None} for r in rows]
+
+
+def undo_last_reset() -> dict[str, Any] | None:
+    """H259 — put back what the latest reset not yet undone replaced. A setting changed
+    since that reset is left as it is, and so is a value its declaration no longer
+    accepts; both are named in ``skipped``. None when there is nothing to undo."""
+    _ensure_init()
+    conn = get_conn()
+    try:
+        with conn:
+            row = conn.execute("SELECT id, scope, before, after FROM settings_resets "
+                               "WHERE undone_at IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+            if row is None:
+                return None
+            before, after = json.loads(row["before"]), json.loads(row["after"])
+            stored = _stored_values(conn)
+            restore: dict[str, dict[str, Any]] = {}
+            skipped: list[dict[str, str]] = []
+            for cat in sorted(before):
+                for key in sorted(before[cat]):
+                    name = f"{cat}.{key}"
+                    if (cat, key) not in _SPEC:
+                        skipped.append({"setting": name, "reason": "no longer declared"})
+                    elif not _same_value(stored.get((cat, key)), after.get(cat, {}).get(key)):
+                        skipped.append({"setting": name, "reason": "changed since the reset"})
+                    elif errors := validate_category(cat, {key: before[cat][key]}):
+                        skipped.append({"setting": name, "reason": "no longer valid: " + "; ".join(errors)})
+                    else:
+                        restore.setdefault(cat, {})[key] = before[cat][key]
+            _write_values(conn, restore)
+            conn.execute("UPDATE settings_resets SET undone_at=? WHERE id=?", (time.time(), row["id"]))
+    finally:
+        conn.close()
+    for cat, values in restore.items():
+        _changed(cat, dict(values))
+    return {"id": row["id"], "scope": row["scope"], "restored": _names(restore), "skipped": skipped}
+
+
+def reset_kept_all() -> list[str]:
+    """Every secret setting, as ``category.key``: what a reset of every category leaves."""
+    return sorted(f"{spec['category']}.{spec['key']}" for spec in DEFAULTS
+                  if is_secret_setting(spec["category"], spec["key"]))
+
+
+def posture_overridden_all() -> list[str]:
+    """Every setting the selected product posture forces while it is selected."""
+    try:
+        from agents.core import product_posture
+
+        name = product_posture.normalize(get_value("product", "posture", product_posture.OFF))
+        return sorted(product_posture.POSTURES[name].get("applies", {}))
+    except Exception:  # noqa: BLE001
+        return []

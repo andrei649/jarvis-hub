@@ -129,7 +129,7 @@ export function ConfirmAction({ tier, label, onConfirm, onArm, phrase = 'CONFIRM
   const buttons = { display: 'inline-flex', gap: 5 };
   if (mode === 'two-step') {
     return (
-      <Group role="group" aria-label={`confirm ${name}`} onKeyDown={onKey} style={layout}>
+      <Group role="group" aria-label={`confirming ${name}`} onKeyDown={onKey} style={layout}>
         {prompt && (block ? <div>{prompt}</div> : <span>{prompt}</span>)}
         {extra}
         <span style={buttons}>
@@ -142,7 +142,7 @@ export function ConfirmAction({ tier, label, onConfirm, onArm, phrase = 'CONFIRM
   }
   const matches = typed === phrase;
   return (
-    <Group role="group" aria-label={`confirm ${name}`} onKeyDown={onKey} style={layout}>
+    <Group role="group" aria-label={`confirming ${name}`} onKeyDown={onKey} style={layout}>
       {extra}
       <span style={{ fontSize: 10, ...DANGER }}>{prompt || <>type {phrase} to confirm</>}</span>
       <input ref={refs.input} value={typed} placeholder={placeholder ?? phrase} aria-label={inputLabel || `type ${phrase} to confirm ${name}`}

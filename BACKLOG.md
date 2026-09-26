@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H259 a settings reset shows what it will change, keeps the secrets and can be undone; the HUD marks what differs from the default (partial → equivalent, #1207; headline 185 → 186/697).
+
+  The reseed ran `DELETE FROM settings`: every setting, secrets included, gone at once with no preview and no way back; and the HUD could not tell a changed setting from its default. Now (on top of H157's search, export, dry-run import and per-category reset):
+  - **Defaults.** Every declared row but a secret carries its `default`; the Settings panel marks a row that differs ("changed", the default in its tooltip) and ↺ stages the default for the next validated save.
+  - **Preview first.** `POST /api/admin/settings/{category}/reset` and `POST /api/admin/settings/reseed` take `{"dry_run": true}` (only a JSON `true`, 4 KB bound) and answer what would change, a credential-shaped value hidden; arming a reset in the HUD shows it.
+  - **The reseed no longer deletes.** It is the per-category reset over every category: secrets kept and named, undeclared rows left, a JSON request from this origin only, audited with what moved. The v1 admin page sends JSON; the HUD gets "reset every category…".
+  - **Undo.** A reset records what it replaced in the same transaction (the last 20); `POST /api/admin/settings/undo` puts the latest back, leaving a setting changed since, no longer valid or no longer declared as it is and naming it; audited; listeners hear every write, so the webhook receiver follows. `GET /api/admin/settings/resets` lists them (names, never values); the HUD shows "last reset … · undo…". Every reset and undo is a two-step `ConfirmAction` at the REVERSIBLE tier.
+  - **Adapted:** the reseed does not go through the approval queue's irreversible tier because it is no longer irreversible; a new kernel action kind would be an owner change (`agents/core/kernel`).
+
+  54 mutants, all caught (ten after survivors got cases: the listeners, a no-longer-declared undo, the list's undone flag, only-JSON-true dry runs, the 4 KB bound, only secrets kept, the newest reset first). Test manual: PNB-173 (PNB-171 and ENV-085 updated).
+  Tests: backend 17,035 → 17,059 (`tests/test_settings_defaults_undo.py` 24; the reseed, H153b and row-shape tests follow); frontend 1,677 → 1,684 (`settings-reset-undo.test.tsx` 7); route, auth and OpenAPI snapshots, OpenAPI types and the API sweep updated; HUD v2 bundle rebuilt.
+
 - 2026-09-26 H168 one confirmation graded like the approval queue, and agent text rendered as Markdown everywhere it is shown (partial → equivalent, #1207; headline 184 → 185/697).
 
   Destructive confirmation was hand-rolled in seven panels, each its own shape, and none said how risky the action was in the approval queue's terms; chat bubbles and decision cards rendered only `**bold**` (lists, fences, tables and links showed as raw characters), and canvas artifacts had a private renderer of their own. Now:

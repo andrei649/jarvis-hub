@@ -6212,6 +6212,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings/resets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Settings Resets
+         * @description H259 — the recorded resets, newest first: when, which scope, which settings (never
+         *     their values) and whether each was undone. Registered before ``/{category}``.
+         */
+        get: operations["admin_settings_resets_api_admin_settings_resets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/settings/{category}": {
         parameters: {
             query?: never;
@@ -6267,7 +6288,9 @@ export interface paths {
          * @description H157 — put one category back to its declared values (the global reseed was the only
          *     reset). Its secrets are kept (``kept``); a setting the selected product posture forces
          *     stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
-         *     from this origin only (review-H157 M1).
+         *     from this origin only (review-H157 M1). H259 — ``{"dry_run": true}`` answers what it
+         *     would change and writes nothing; a reset that moved something is recorded, and
+         *     ``undo`` names the record ``POST /api/admin/settings/undo`` puts back.
          */
         post: operations["admin_reset_category_api_admin_settings__category__reset_post"];
         delete?: never;
@@ -6285,8 +6308,38 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Admin Reseed */
+        /**
+         * Admin Reseed
+         * @description Every category back to its declared values. H259 — this used to delete the whole
+         *     store (secrets included) with no preview and no way back; it is now the per-category
+         *     reset over every category: the secrets are kept (``kept``), ``{"dry_run": true}``
+         *     answers what it would change, and what it replaced is recorded for ``undo``. A JSON
+         *     request from this origin only; audited (H153 review), naming how many moved.
+         */
         post: operations["admin_reseed_api_admin_settings_reseed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Undo Reset
+         * @description H259 — put back what the latest reset replaced. A setting changed since that reset
+         *     is left as it is, and so is a value its declaration no longer accepts; both are named
+         *     in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
+         *     only; audited.
+         */
+        post: operations["admin_undo_reset_api_admin_settings_undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -20616,6 +20669,26 @@ export interface operations {
             };
         };
     };
+    admin_settings_resets_api_admin_settings_resets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     admin_get_category_api_admin_settings__category__get: {
         parameters: {
             query?: never;
@@ -20734,6 +20807,26 @@ export interface operations {
         };
     };
     admin_reseed_api_admin_settings_reseed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_undo_reset_api_admin_settings_undo_post: {
         parameters: {
             query?: never;
             header?: never;

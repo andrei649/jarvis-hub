@@ -75,7 +75,8 @@ describe('SettingsPanel — H157 tools', () => {
     render(<SettingsPanel />);
     await waitFor(() => expect(screen.getByText('Log level')).toBeTruthy());
     fireEvent.click(screen.getByLabelText('reset system'));
-    expect(calls.some((c) => c.url.endsWith('/reset'))).toBe(false);
+    // H259: arming asks the hub for a dry run; nothing is reset before the second click
+    expect(calls.filter((c) => c.url.endsWith('/reset')).map((c) => c.body)).toEqual([{ dry_run: true }]);
     fireEvent.click(screen.getByLabelText('confirm reset system'));
     await waitFor(() => expect(screen.getByText('reset 1')).toBeTruthy());
     const call = calls.find((c) => c.url.endsWith('/api/admin/settings/system/reset'));

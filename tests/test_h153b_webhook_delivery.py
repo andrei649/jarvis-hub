@@ -426,7 +426,7 @@ def test_a_reseed_is_audited_and_turns_the_receiver_back_on_visibly(hub, receive
     hook = _hook(client)
     client.put("/api/admin/settings/webhooks", json={"values": {"receiver_enabled": False}}, headers=_ADMIN)
     assert _post(client, hook, {"text": "off"}).status_code == 503
-    assert client.post("/api/admin/settings/reseed", headers=_ADMIN).status_code == 200
+    assert client.post("/api/admin/settings/reseed", json={}, headers=_ADMIN).status_code == 200   # H259: JSON
     assert any(e.action_taken == "settings_reseed" for e in events)
     assert _post(client, hook, {"text": "on again"}).status_code == 200 and turns == ["on again"]
 

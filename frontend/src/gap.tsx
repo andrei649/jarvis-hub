@@ -23,7 +23,7 @@ import { refusalText } from './soul-edit';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { LogsPanel } from './panels/logs';
 import { SessionsPanel } from './panels/sessions';
-import { ResetCategory, SettingsSearch, SettingsTransfer, settingMatches } from './panels/settings-tools';
+import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, settingMatches, shown as shownSetting } from './panels/settings-tools';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -2671,6 +2671,9 @@ export function SettingsPanel() {
   // A reset or an import changes the stored values: unsaved edits of those categories are
   // dropped, or "save" would write the old values back over them (review-H157 m3).
   const dropDirty = (cats: string[]) => setDirty((p) => { const n = { ...p }; for (const c of cats) delete n[c]; return n; });
+  // H259: a reset (one category or all) or an undo re-reads the list of resets.
+  const [resetTick, setResetTick] = useState(0);
+  const afterReset = (cats: string[]) => { dropDirty(cats); setResetTick((n) => n + 1); reload(); };
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
@@ -2696,7 +2699,7 @@ export function SettingsPanel() {
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{String(cat).toUpperCase()}</span>
             {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
-              <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => { dropDirty([c]); reload(); }} /></span>
+              <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
             )}
           </div>
           {(items || []).map((it) => (
@@ -2706,6 +2709,13 @@ export function SettingsPanel() {
                 <a href={docHref('flags', costs[`${cat}.${it.key}`])} target="_blank" rel="noopener noreferrer"
                   style={{ ...mono, fontSize: 9.5 }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
               )}
+              {/* H259: a setting that differs from its declared default says so, and ↺ stages the
+                  default for the next save (a secret carries no default, so never). */}
+              {'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
+                <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
+                <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
+                  aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
+              </>}
               <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>
             </Row>
           ))}
@@ -2716,6 +2726,8 @@ export function SettingsPanel() {
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
     {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
     <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
+    <ResetAll onDone={() => afterReset(Object.keys(cats))} />
+    <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />
   </Card>;
 }
 function PromptsPanel() {

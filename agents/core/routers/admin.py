@@ -51,7 +51,7 @@ from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
 logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
-from agents.core.settings_db import get_all, get_category, init_db, put_category, validate_category
+from agents.core.settings_db import get_all, get_category, put_category, validate_category
 from agents.core.security.types import SecurityEvent, SecurityEventType
 from agents.core.security.token_store import SCOPES, get_token_store
 
@@ -86,6 +86,15 @@ async def admin_export_settings():
     resp = nocache_json(doc)
     resp.headers["Content-Disposition"] = 'attachment; filename="nerva-settings.json"'
     return resp
+
+
+@router.get("/api/admin/settings/resets", dependencies=[Depends(admin_guard)])
+async def admin_settings_resets():
+    """H259 — the recorded resets, newest first: when, which scope, which settings (never
+    their values) and whether each was undone. Registered before ``/{category}``."""
+    from agents.core import settings_db
+
+    return nocache_json({"resets": await asyncio.to_thread(settings_db.list_resets)})
 
 
 @router.get("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
@@ -237,35 +246,100 @@ async def admin_import_settings(request: Request):
     return nocache_json({"ok": True, "updated": written, "changes": preview})
 
 
+async def _dry_run_asked(request: Request) -> bool | JSONResponse:
+    """H259 — whether a reset's JSON body is ``{"dry_run": true}`` (only a JSON ``true``)."""
+    raw = await _bounded_body(request, 4096)
+    if raw is None:
+        return nocache_json({"error": "the request is over 4 KB"}, status_code=413)
+    try:
+        doc = json.loads(raw or b"{}")
+    except (ValueError, RecursionError):
+        return nocache_json({"error": "the request is not JSON"}, status_code=422)
+    return isinstance(doc, dict) and doc.get("dry_run") is True
+
+
 @router.post("/api/admin/settings/{category}/reset", dependencies=[Depends(admin_guard)])
 async def admin_reset_category(category: str, request: Request):
     """H157 — put one category back to its declared values (the global reseed was the only
     reset). Its secrets are kept (``kept``); a setting the selected product posture forces
     stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
-    from this origin only (review-H157 M1)."""
+    from this origin only (review-H157 M1). H259 — ``{"dry_run": true}`` answers what it
+    would change and writes nothing; a reset that moved something is recorded, and
+    ``undo`` names the record ``POST /api/admin/settings/undo`` puts back."""
     from agents.core import settings_db
 
     refused = _refuse_cross_site_write(request)
     if refused is not None:
         return refused
-    moved = await asyncio.to_thread(settings_db.reset_category, category)
-    if moved is None:
+    dry_run = await _dry_run_asked(request)
+    if isinstance(dry_run, JSONResponse):
+        return dry_run
+    if dry_run:
+        plan = await asyncio.to_thread(settings_db.plan_reset, category)
+        if plan is None:
+            return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+        return nocache_json({"dry_run": True, "category": category,
+                             "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
+                             "kept": settings_db.reset_kept(category),
+                             "overridden": settings_db.posture_overridden(category)})
+    done = await asyncio.to_thread(settings_db.reset_settings, category)
+    if done is None:
         return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+    moved = sorted(done[0].get(category, {}))
     if moved:
         await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
-    return nocache_json({"ok": True, "category": category, "reset": moved,
+    return nocache_json({"ok": True, "category": category, "reset": moved, "undo": done[1],
                          "kept": settings_db.reset_kept(category),
                          "overridden": settings_db.posture_overridden(category)})
 
 
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])
-async def admin_reseed():
-    init_db(force=True)
-    # H153 review: a reseed puts every setting back to its declared value — a webhook
-    # receiver switched off comes back on — so it leaves a row like any other write.
-    await _audit_row("settings reseeded from defaults: every setting is back to its declared value",
-                     "settings_reseed", "all")
-    return {"ok": True, "message": "Settings reseeded from defaults"}
+async def admin_reseed(request: Request):
+    """Every category back to its declared values. H259 — this used to delete the whole
+    store (secrets included) with no preview and no way back; it is now the per-category
+    reset over every category: the secrets are kept (``kept``), ``{"dry_run": true}``
+    answers what it would change, and what it replaced is recorded for ``undo``. A JSON
+    request from this origin only; audited (H153 review), naming how many moved."""
+    from agents.core import settings_db
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    dry_run = await _dry_run_asked(request)
+    if isinstance(dry_run, JSONResponse):
+        return dry_run
+    kept, forced = settings_db.reset_kept_all(), settings_db.posture_overridden_all()
+    if dry_run:
+        plan = await asyncio.to_thread(settings_db.plan_reset, None)
+        return nocache_json({"dry_run": True, "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
+                             "kept": kept, "overridden": forced})
+    moved, snap = await asyncio.to_thread(settings_db.reset_settings, None)
+    names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
+    if names:
+        await _audit_row(f"settings reset to defaults in every category: {len(names)} setting(s): {names}",
+                         "settings_reseed", "all")
+    return nocache_json({"ok": True, "message": "Settings reseeded from defaults", "reset": names,
+                         "undo": snap, "kept": kept, "overridden": forced})
+
+
+@router.post("/api/admin/settings/undo", dependencies=[Depends(admin_guard)])
+async def admin_undo_reset(request: Request):
+    """H259 — put back what the latest reset replaced. A setting changed since that reset
+    is left as it is, and so is a value its declaration no longer accepts; both are named
+    in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
+    only; audited."""
+    from agents.core import settings_db
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    undone = await asyncio.to_thread(settings_db.undo_last_reset)
+    if undone is None:
+        return nocache_json({"error": "nothing to undo"}, status_code=404)
+    skipped = [s["setting"] for s in undone["skipped"]]
+    await _audit_row(f"settings reset undone ({undone['scope']}): restored {undone['restored']}"
+                     + (f" · left {skipped}" if skipped else ""), "settings_reset_undo", undone["scope"])
+    return nocache_json({"ok": True, **undone})
 
 
 class RotateTokensBody(BaseModel):

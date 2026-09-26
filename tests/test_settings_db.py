@@ -54,6 +54,7 @@ def test_agent_tool_loop_defaults_are_seeded_default_off(temp_db):
         "kind": "toggle",
         "opts": [],
         "source": "default",
+        "default": False,                                  # H259: the declared default
     }
     assert llm["tool_loop_max_iterations"] == {
         "key": "tool_loop_max_iterations",
@@ -62,6 +63,7 @@ def test_agent_tool_loop_defaults_are_seeded_default_off(temp_db):
         "kind": "number",
         "opts": [],
         "source": "default",
+        "default": 8,
     }
 
 

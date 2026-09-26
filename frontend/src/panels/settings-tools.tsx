@@ -5,6 +5,10 @@
    - Search matches a setting's category.key and its label, across all categories.
    - Reset puts one category back to its declared values. It asks first (a second
      click), since the owner's values in that category are gone once it runs.
+   H259 — the reset shows what it would change before its second step (the hub's dry
+   run), "reset every category…" does the same for all of them (secrets kept), and the
+   latest reset can be undone: the hub puts back what it replaced, leaving a setting
+   changed since then as it is and naming it. A reset is REVERSIBLE (tier 1, H168).
    - Export downloads the hub's settings document. The hub leaves out secrets, values
      that look like credentials and settings that hold credentials by design, and this
      panel names what was left out so nobody expects it on the other box.
@@ -14,11 +18,15 @@
      refusal lists every reason. A secret's values are never shown. */
 import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
+import { ConfirmAction, RISK_TIER } from '../confirm';
 import { inpS, mono, refusalReason, taS } from '../panel-kit';
 
 export const EXPORT_PATH = '/api/admin/settings/export';
 export const IMPORT_PATH = '/api/admin/settings/import';
 export const resetPath = (cat: string) => `/api/admin/settings/${encodeURIComponent(cat)}/reset`;
+export const RESEED_PATH = '/api/admin/settings/reseed';
+export const RESETS_PATH = '/api/admin/settings/resets';
+export const UNDO_PATH = '/api/admin/settings/undo';
 
 /** Whether a setting matches the search text: its category.key or its label. */
 export function settingMatches(cat: string, it: any, query: string): boolean {
@@ -35,41 +43,118 @@ export function refusalList(err: any): string[] {
   return [refusalReason(err, 'refused')];
 }
 
-const shown = (v: any): string => {
+export const shown = (v: any): string => {
   if (typeof v === 'string') return v === '' ? '""' : v;
   try { return JSON.stringify(v); } catch { return String(v); }
 };
 
+const PREVIEW_LINES = 8;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** What a reset would change, from the hub's dry run: one line per setting (the first
+    few), and the secrets it keeps and the settings the posture still forces. */
+function ResetPreview({ plan }: { plan: any }) {
+  if (!plan) return <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)' }}>asking the hub what would change…</span>;
+  if (plan.error) return <span role="alert" style={{ ...mono, fontSize: 9.5, color: 'var(--red)' }}>no preview · {plan.error}</span>;
+  const changes = Array.isArray(plan.changes) ? plan.changes : [];
+  const kept = Array.isArray(plan.kept) ? plan.kept.length : 0;
+  const forced = Array.isArray(plan.overridden) ? plan.overridden : [];
+  return <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', margin: '4px 0' }}>
+    <div>{changes.length ? `${plural(changes.length, 'setting')} would change` : 'nothing to change: already the defaults'}
+      {kept ? ` · ${plural(kept, 'secret')} kept` : ''}</div>
+    {changes.slice(0, PREVIEW_LINES).map((c: any) => <div key={c.setting}>{`${c.setting}: ${shown(c.from)} → ${shown(c.to)}`}</div>)}
+    {changes.length > PREVIEW_LINES && <div>…and {changes.length - PREVIEW_LINES} more</div>}
+    {forced.length > 0 && <div>{forced.join(', ')} still set by the posture</div>}
+  </div>;
+}
+
+function usePreview(path: string) {
+  const [plan, setPlan] = useState<any>(null);
+  const ask = () => {
+    setPlan(null);
+    apiPost(path, { dry_run: true }, { admin: true })
+      .then((r: any) => setPlan(r || { changes: [] }))
+      .catch((err) => setPlan({ error: refusalReason(err, 'refused') }));
+  };
+  return { plan, ask };
+}
+
 export function ResetCategory({ cat, count, onDone }: { cat: string; count?: number; onDone?: (cat: string) => void }) {
-  const [armed, setArmed] = useState(false);
   const [note, setNote] = useState('');
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  // Arming replaces the focused button: focus moves to the confirmation, never lost.
-  useEffect(() => { if (armed && confirmRef.current) confirmRef.current.focus(); }, [armed]);
+  const { plan, ask } = usePreview(resetPath(cat));
   const run = () => apiPost(resetPath(cat), {}, { admin: true })
     .then((r: any) => {
       const moved = Array.isArray(r?.reset) ? r.reset.length : 0;
       const kept = Array.isArray(r?.kept) && r.kept.length ? ` · kept ${r.kept.length} secret${r.kept.length === 1 ? '' : 's'}` : '';
       const forced = Array.isArray(r?.overridden) && r.overridden.length ? ` · ${r.overridden.join(', ')} still set by the posture` : '';
-      setNote((moved ? `reset ${moved}` : 'already the defaults') + kept + forced);
-      setArmed(false);
+      setNote((moved ? `reset ${moved}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults') + kept + forced);
       if (onDone) onDone(cat);
+      return true;
     })
-    .catch((err) => { setNote(`not reset · ${refusalReason(err, 'refused')}`); setArmed(false); });
-  if (armed) {
-    const all = count ? `all ${count} ` : '';
-    return <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-      <button ref={confirmRef} className="tool-btn" onClick={run} aria-label={`confirm reset ${cat}`}>
-        reset {all}{cat} settings to defaults? (secrets kept)
-      </button>
-      <button className="tool-btn" onClick={() => setArmed(false)}>cancel</button>
-    </span>;
-  }
-  return <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-    <button className="tool-btn" onClick={() => { setNote(''); setArmed(true); }} aria-label={`reset ${cat}`}
-      style={{ padding: '0 5px', fontSize: 9.5 }}>reset</button>
+    .catch((err) => { setNote(`not reset · ${refusalReason(err, 'refused')}`); return true; });
+  const all = count ? `all ${count} ` : '';
+  return <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+    <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="reset" ariaLabel={`reset ${cat}`} style={{ padding: '0 5px', fontSize: 9.5 }}
+      onArm={() => { setNote(''); ask(); }} extra={<ResetPreview plan={plan} />} onConfirm={run}
+      armedLabel={<>reset {all}{cat} settings to defaults? (secrets kept)</>} confirmAriaLabel={`confirm reset ${cat}`} />
     {note && <span style={{ ...mono, fontSize: 9.5, color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</span>}
   </span>;
+}
+
+/** Every category back to its declared values (the hub's reseed): previewed, secrets kept. */
+export function ResetAll({ onDone }: { onDone?: () => void }) {
+  const [note, setNote] = useState('');
+  const { plan, ask } = usePreview(RESEED_PATH);
+  const run = () => apiPost(RESEED_PATH, {}, { admin: true })
+    .then((r: any) => {
+      const moved = Array.isArray(r?.reset) ? r.reset.length : 0;
+      setNote(moved ? `reset ${plural(moved, 'setting')}${r?.undo != null ? ' · can be undone' : ''}` : 'already the defaults');
+      if (onDone) onDone();
+      return true;
+    })
+    .catch((err) => { setNote(`not reset · ${refusalReason(err, 'refused')}`); return true; });
+  return <div style={{ marginTop: 6 }}>
+    <ConfirmAction tier={RISK_TIER.REVERSIBLE} block label="reset every category…" onArm={() => { setNote(''); ask(); }}
+      extra={<ResetPreview plan={plan} />} armedLabel="reset them to defaults" onConfirm={run} />
+    {note && <div role="status" style={{ ...mono, fontSize: 9.5, color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+  </div>;
+}
+
+/** The latest reset, and a way back: the hub restores what it replaced and names what it
+    left as it was (changed since, or no longer valid). */
+export function UndoReset({ refresh = 0, onDone }: { refresh?: number; onDone?: (categories: string[]) => void }) {
+  const [last, setLast] = useState<any>(null);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const load = () => apiGet(RESETS_PATH, { admin: true })
+    .then((r: any) => setLast((Array.isArray(r?.resets) ? r.resets : [])[0] || null))
+    .catch(() => setLast(null));
+  useEffect(() => { load(); }, [refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  const run = () => apiPost(UNDO_PATH, {}, { admin: true })
+    .then((r: any) => {
+      const skipped = Array.isArray(r?.skipped) ? r.skipped : [];
+      const restored = Array.isArray(r?.restored) ? r.restored : [];
+      setError('');
+      setNote(`restored ${restored.length}` + (skipped.length ? ` · left ${skipped.map((x: any) => `${x.setting} (${x.reason})`).join(', ')}` : ''));
+      load();
+      if (onDone) onDone([...new Set([...restored, ...skipped.map((x: any) => x.setting)].map((n: string) => n.split('.')[0]))]);
+      return true;
+    })
+    .catch((err) => { setError(`not undone · ${refusalReason(err, 'refused')}`); load(); return true; });
+  const open = last && !last.undone;
+  if (!open && !note && !error) return null;
+  const count = Array.isArray(last?.settings) ? last.settings.length : 0;
+  const scope = last?.scope === 'all' ? 'every category' : last?.scope;
+  return <div style={{ ...mono, fontSize: 9.5, marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+    {open && <>
+      <span style={{ color: 'var(--ink-2)' }}>last reset: {scope} · {plural(count, 'setting')}
+        {last.at ? ` · ${new Date(last.at * 1000).toLocaleString()}` : ''}</span>
+      <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="undo…" armedLabel="undo the reset" onConfirm={run}
+        style={{ padding: '0 5px', fontSize: 9.5 }} />
+    </>}
+    {note && <span role="status" style={{ color: 'var(--green)' }}>{note}</span>}
+    {error && <span role="alert" style={{ color: 'var(--red)' }}>{error}</span>}
+  </div>;
 }
 
 function download(doc: any) {
