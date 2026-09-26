@@ -167,16 +167,16 @@ async def _audit_settings_change(category: str, keys: list, values: dict | None 
     await _audit_row(preview, "settings_update", category)
 
 
-async def _guard_selection(category: str, values: dict, *, confirm_expensive: bool,
+async def _guard_selection(changes: dict, *, confirm_expensive: bool,
                            acknowledge_training: bool, surface: str):
-    """H378 — run the model-selection guards over the choices a settings write makes.
-    Returns the cleared findings (their confirmation and consent rows already written), or
-    the response to send instead: 409 naming what is not cleared, 503 when a required
-    consent row could not be written."""
+    """H378 — run the model-selection guards over the choices a settings write makes
+    (*changes*: ``{category: values}``). Returns the cleared findings (their confirmation
+    and consent rows already written), or the response to send instead: 409 naming what
+    is not cleared, 503 when a required consent row could not be written."""
     from agents.core import settings_db
     from agents.core.llm import selection_guards as sg
 
-    choices = sg.choices_from_settings(category, values, lambda key: settings_db.get_value("llm", key))
+    choices = sg.choices_from_changes(changes, settings_db.get_value)
     if not choices:
         return []
     try:
@@ -198,7 +198,7 @@ async def admin_put_category(category: str, body: AdminPutBody):
     errors = validate_category(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
-    guarded = await _guard_selection(category, body.values, confirm_expensive=body.confirm_expensive,
+    guarded = await _guard_selection({category: body.values}, confirm_expensive=body.confirm_expensive,
                                      acknowledge_training=body.acknowledge_training, surface="settings")
     if isinstance(guarded, JSONResponse):
         return guarded
@@ -276,10 +276,10 @@ async def admin_import_settings(request: Request):
         return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
     preview = await asyncio.to_thread(settings_db.describe_changes, changes)
     if dry_run:
-        choices = sg.choices_from_settings("llm", changes.get("llm", {}), lambda key: settings_db.get_value("llm", key))
+        choices = sg.choices_from_changes(changes, settings_db.get_value)
         return nocache_json({"dry_run": True, "count": len(preview), "changes": preview,
                              "guards": [f.as_dict() for f in sg.evaluate(choices)]})
-    guarded = await _guard_selection("llm", changes.get("llm", {}), confirm_expensive=confirm_expensive,
+    guarded = await _guard_selection(changes, confirm_expensive=confirm_expensive,
                                      acknowledge_training=acknowledge_training, surface="settings import")
     if isinstance(guarded, JSONResponse):
         return guarded

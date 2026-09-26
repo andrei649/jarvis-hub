@@ -484,6 +484,7 @@
   "POST /api/skills/marketplace/{name}/rollback",
   "POST /api/skills/switch",
   "POST /api/skills/{name}/approve",
+  "POST /api/subagents/batch",
   "POST /api/subagents/spawn",
   "POST /api/subagents/{spawn_id}/steer",
   "POST /api/subagents/{spawn_id}/stop",

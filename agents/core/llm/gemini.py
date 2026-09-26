@@ -280,6 +280,7 @@ class GeminiBackend(LLMBackend):
                 provider="Gemini",
                 operation="generate",
                 exc=exc,
+                model=actual_model,
             )
             return GEMINI_DEGRADED_REPLY
 
@@ -307,6 +308,7 @@ class GeminiBackend(LLMBackend):
                     provider="Gemini",
                     operation="generate",
                     exc=exc,
+                    model=actual_model,
                 )
                 next_binding = self._rotate_after_failure(
                     binding,
@@ -323,6 +325,7 @@ class GeminiBackend(LLMBackend):
                     provider="Gemini",
                     operation="generate",
                     exc=exc,
+                    model=actual_model,
                 )
                 return GEMINI_DEGRADED_REPLY
         return GEMINI_DEGRADED_REPLY
@@ -390,7 +393,7 @@ class GeminiBackend(LLMBackend):
         try:
             binding = self._capture_binding().without_cache()
         except Exception as exc:
-            log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+            log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc, model=actual_model)
             return ToolTurn(content=GEMINI_DEGRADED_REPLY)
         payload = self._build_tool_payload(messages, tools, max_tokens, temperature, model=actual_model)
 
@@ -411,7 +414,7 @@ class GeminiBackend(LLMBackend):
             except ReasoningEffortRefused:
                 raise
             except (httpx.HTTPStatusError, ProviderRateLimited) as exc:
-                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc, model=actual_model)
                 next_binding = self._rotate_after_failure(
                     binding,
                     exc,
@@ -422,7 +425,7 @@ class GeminiBackend(LLMBackend):
                     return ToolTurn(content=GEMINI_DEGRADED_REPLY)
                 binding = next_binding
             except Exception as exc:
-                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc)
+                log_provider_failure(logger, provider="Gemini", operation="tool turn", exc=exc, model=actual_model)
                 return ToolTurn(content=GEMINI_DEGRADED_REPLY)
         return ToolTurn(content=GEMINI_DEGRADED_REPLY)
 
@@ -520,6 +523,7 @@ class GeminiBackend(LLMBackend):
                 provider="Gemini",
                 operation="stream",
                 exc=exc,
+                model=actual_model,
             )
             return GEMINI_DEGRADED_REPLY
 
@@ -548,6 +552,7 @@ class GeminiBackend(LLMBackend):
                     provider="Gemini",
                     operation="stream",
                     exc=exc,
+                    model=actual_model,
                 )
                 next_binding = self._rotate_after_failure(
                     binding,
@@ -564,6 +569,7 @@ class GeminiBackend(LLMBackend):
                     provider="Gemini",
                     operation="stream",
                     exc=exc,
+                    model=actual_model,
                 )
                 return GEMINI_DEGRADED_REPLY
         return GEMINI_DEGRADED_REPLY

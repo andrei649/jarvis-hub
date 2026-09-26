@@ -228,7 +228,12 @@ def test_a_subagent_and_a_direct_tool_call_keep_no_plan_on_the_shared_session(hu
         seen.append({"channel": channel, "reply": reply["result"]})
         return "ok"
 
+    async def process_detailed(prompt, agent="jarvis", channel="internal"):
+        # H681: the sub-agent runner reads (text, error) so a failed turn is not a success.
+        return await process(prompt, agent=agent, channel=channel), None
+
     monkeypatch.setattr(orch, "process", process)
+    monkeypatch.setattr(orch, "process_detailed", process_detailed)
     client.post("/api/subagents/spawn", json={"task": _plan(("child step", "pending"))})
     assert seen[-1]["channel"] == "subagent" and seen[-1]["reply"]["reason"] == "todo_shared_session"
 

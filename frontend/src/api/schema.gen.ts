@@ -452,8 +452,10 @@ export interface paths {
          *     bounded consumer outcomes with setup/privacy/effect truth — a
          *     chat action is never presented ready without a model, and the local-docs
          *     action stays not-ready (with the reason) until the owner configures a
-         *     folder. Read-only; the actions point at existing governed endpoints and the
-         *     outcome projection never reads or returns credential values.
+         *     folder. The actions point at existing governed endpoints and the outcome
+         *     projection never reads or returns credential values; the model block, though,
+         *     proves a selected cloud route with one credentialed provider request when no
+         *     verdict is cached (see ``_model_snapshot``).
          */
         get: operations["command_center_api_onboarding_command_center_get"];
         put?: never;
@@ -4169,6 +4171,30 @@ export interface paths {
          * @description H20.6 — spawn an isolated sub-agent (capped; rejected past the cap).
          */
         post: operations["subagents_spawn_api_subagents_spawn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Batch
+         * @description H681 — run up to 16 isolated sub-agents, within the free slots, each with its own
+         *     optional model / provider / overrides. The answer reports every child and, when all
+         *     of them failed because the provider does not know the model autonomy.subagent_model
+         *     chose, one ``subagent_model_rejected`` notice naming the model, the setting and
+         *     whether a fallback exists.
+         */
+        post: operations["subagents_batch_api_subagents_batch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11502,6 +11528,43 @@ export interface components {
              */
             message: string;
         };
+        /** SubAgentBatchBody */
+        SubAgentBatchBody: {
+            /** Tasks */
+            tasks: components["schemas"]["SubAgentBatchTask"][];
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+        };
+        /** SubAgentBatchTask */
+        SubAgentBatchTask: {
+            /** Task */
+            task: string;
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Output Schema */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** SubAgentSpawnBody */
         SubAgentSpawnBody: {
             /** Task */
@@ -11515,6 +11578,24 @@ export interface components {
             output_schema?: {
                 [key: string]: unknown;
             } | null;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** SubAgentSteerBody */
         SubAgentSteerBody: {
@@ -18145,6 +18226,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SubAgentSpawnBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_batch_api_subagents_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubAgentBatchBody"];
             };
         };
         responses: {

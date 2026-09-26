@@ -69,13 +69,22 @@ _LOCAL_UNREACHABLE = (
 )
 
 
-def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Exception) -> str:
+#: The provider ids a local backend's failure is noted under (job_selection.PROVIDERS).
+_LOCAL_PROVIDER_IDS = {"LM Studio": "lm-studio", "Ollama": "ollama"}
+
+
+def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Exception,
+                                 model: str | None = None) -> str:
     """Map a local-backend failure to a clean, user-facing degraded reply (H23.12).
 
     Never raises and never leaks the raw exception — which used to land verbatim in
     the chat bubble (``[LM Studio error: ...]``) and get persisted into conversation
-    memory. The detail is logged for operators instead.
+    memory. The detail is logged for operators instead, and noted for the request
+    (H681: provider, the model asked for, status and kind — never the server's text).
     """
+    from .provider_errors import note_provider_failure
+
+    note_provider_failure(_LOCAL_PROVIDER_IDS.get(backend_name, backend_name.lower()), model, exc)
     if isinstance(exc, _LOCAL_UNREACHABLE):
         logger.warning("%s unreachable — serving a degraded reply: %s", backend_name, exc)
         return (
@@ -539,7 +548,7 @@ class LMStudioBackend(LLMBackend):
             report_text_usage(lmstudio_usage(data))
             return answer
         except Exception as e:
-            return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
+            return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
         self,
@@ -580,7 +589,7 @@ class LMStudioBackend(LLMBackend):
         except Exception as e:
             return ToolTurn(
                 content=local_backend_degraded_reply(
-                    "LM Studio", f"LM Studio ({self.base_url})", e
+                    "LM Studio", f"LM Studio ({self.base_url})", e, model=model
                 )
             )
 
@@ -665,7 +674,7 @@ class LMStudioBackend(LLMBackend):
                     )
                     continue
                 err = local_backend_degraded_reply(
-                    "LM Studio", f"LM Studio ({self.base_url})", e
+                    "LM Studio", f"LM Studio ({self.base_url})", e, model=model
                 )
                 if on_token:
                     await _emit(on_token, err)
@@ -792,7 +801,7 @@ class OllamaBackend(LLMBackend):
             report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
-            return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+            return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
         self,
@@ -837,7 +846,7 @@ class OllamaBackend(LLMBackend):
                             usage=ollama_usage(data))
         except Exception as e:
             return ToolTurn(
-                content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+                content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             )
 
     async def generate_stream(
@@ -898,7 +907,7 @@ class OllamaBackend(LLMBackend):
                             usage_failed = True
                             continue
         except Exception as e:
-            err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+            err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             if on_token:
                 await _emit(on_token, err)
             return err

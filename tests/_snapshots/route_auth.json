@@ -488,6 +488,7 @@
   "POST /api/skills/marketplace/{name}/rollback": "admin",
   "POST /api/skills/switch": "admin",
   "POST /api/skills/{name}/approve": "admin",
+  "POST /api/subagents/batch": "user",
   "POST /api/subagents/spawn": "user",
   "POST /api/subagents/{spawn_id}/steer": "user",
   "POST /api/subagents/{spawn_id}/stop": "user",

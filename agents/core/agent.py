@@ -828,7 +828,10 @@ class Agent:
             temperature = float(get_value("llm", "temperature", 0.7))
         except Exception:
             max_tokens, deep_max, temperature = 2048, 8192, 0.7
-        return (deep_max if route_name == "local-deep" else max_tokens), temperature
+        from .llm.request_context import apply_generation_overrides
+
+        # H681: inside a delegated child's scope, its own budget and temperature win.
+        return apply_generation_overrides(deep_max if route_name == "local-deep" else max_tokens, temperature)
 
     def default_model(self) -> str:
         model = self.config.get("model", "google/gemma-4-31b-a4b")

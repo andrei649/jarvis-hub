@@ -25,6 +25,23 @@ Company-mode additions (co-subagent-steer):
   appended to ``data_path("subagents", "spawns.jsonl")`` when the
   ``JARVIS_SUBAGENT_SPAWN_LOG`` flag is on (default off). Nothing is replayed
   from it: sub-agents remain NOT the company unit — child queue rows are.
+
+Per-child API settings and honest failure (H681):
+
+* **model / provider / overrides** — ``spawn(..., model=, provider=, overrides=)``
+  runs the child inside ``selection_scope`` (the job pin's validation and router
+  enforcement) and ``request_overrides_scope`` (``max_tokens``, ``temperature``,
+  ``extra_body``, bounded). Precedence: an explicit pin, then the injected
+  ``selection_defaults`` (``autonomy.subagent_model`` / ``autonomy.subagent_provider``
+  in prod), then the parent's own route; the record's ``selection.source`` says which.
+  An invalid selection is refused before anything is spent. Runners that accept a
+  ``selection`` kwarg receive the resolved selection (additive, like ``steer``).
+* **failure honesty** — a runner raising :class:`SubAgentProviderError`, or answering
+  a blank ``output``, is recorded ``failed`` with ``error: provider_failed``, never
+  ``done``.
+* **batch** — :meth:`SubAgentManager.spawn_batch` runs up to ``BATCH_MAX`` children
+  within the free slots and returns one ``subagent_model_rejected`` notice when every
+  child failed because the provider does not know the model the setting chose.
 """
 
 from __future__ import annotations
@@ -33,6 +50,7 @@ import asyncio
 import inspect
 import json
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -85,6 +103,52 @@ _TYPE_CHECKS: dict[str, Callable[[Any], bool]] = {
     "boolean": lambda v: isinstance(v, bool),
     "null": lambda v: v is None,
 }
+
+
+# H681 — the settings a child's model comes from when its spawn names none.
+SUBAGENT_MODEL_SETTING = "autonomy.subagent_model"
+SUBAGENT_PROVIDER_SETTING = "autonomy.subagent_provider"
+BATCH_MAX = 16
+DETAIL_MAX = 500
+_BATCH_ITEM_KEYS = frozenset({"task", "agent", "output_schema", "model", "provider", "overrides"})
+# The row's rule for a provider's own words: a model phrase, then the failure.
+_MODEL_MISSING_PHRASE = re.compile(r"model.*(not found|does not exist|unknown)", re.IGNORECASE)
+
+
+class SubAgentProviderError(RuntimeError):
+    """The child's model call failed: *detail* is what the turn answered (or why it never
+    ran); *failures* are what the backends noted (``ProviderFailure`` or dicts)."""
+
+    def __init__(self, detail: str, failures: Any = ()) -> None:
+        super().__init__(str(detail))
+        self.detail = str(detail)
+        self.failures = list(failures or ())
+
+
+def _failure_dict(item: Any) -> Optional[dict]:
+    if hasattr(item, "as_dict"):
+        try:
+            return item.as_dict()
+        except Exception:
+            return None
+    return dict(item) if isinstance(item, dict) else None
+
+
+def _names_model(text: str, model: str) -> bool:
+    """*model* appears in *text* as a whole name (``foo`` is not in ``foo-large``)."""
+    edge = r"[\w.:/@+-]"
+    return re.search(rf"(?<!{edge}){re.escape(model)}(?!{edge})", text) is not None
+
+
+def _rejected_for(result: Any, model: str) -> bool:
+    """Whether a failed child's result says the provider does not know *model*."""
+    if not isinstance(result, dict) or result.get("error") != "provider_failed":
+        return False
+    failures = [f for f in (result.get("failures") or []) if isinstance(f, dict)]
+    if failures:
+        return all(f.get("kind") == "model_not_found" and f.get("model") == model for f in failures)
+    detail = str(result.get("detail") or "")
+    return bool(_MODEL_MISSING_PHRASE.search(detail)) and _names_model(detail, model)
 
 
 class NullRunner:
@@ -296,8 +360,15 @@ class SubAgentManager:
                  cost_probe: Optional[Callable[[], dict]] = None,
                  spawn_log: Optional[Path] = None,
                  persist: Optional[bool] = None,
-                 decision_hook: Optional[Callable[..., Awaitable[Any]]] = None) -> None:
+                 decision_hook: Optional[Callable[..., Awaitable[Any]]] = None,
+                 selection_defaults: Optional[Callable[[], dict]] = None,
+                 fallback_probe: Optional[Callable[[str], Optional[str]]] = None) -> None:
         self._runner = runner or NullRunner()
+        # H681: where a child's model comes from when its spawn names none (the
+        # autonomy.subagent_* settings in prod), and what it would run on without it.
+        self._selection_defaults = selection_defaults
+        self._fallback_probe = fallback_probe
+        self._runner_takes_selection = _runner_accepts(self._runner, "selection")
         self.max_concurrent = max(1, int(max_concurrent))
         self.parent_agent = parent_agent
         # H20.6 hardening: total-spawn budget (refundable IterationBudget) on top
@@ -351,12 +422,54 @@ class SubAgentManager:
         rec["status"] = new
 
     # ── spawn ────────────────────────────────────────────────────
+    def _read_defaults(self) -> dict:
+        """The setting-chosen model and provider (empty when unset or unreadable)."""
+        if self._selection_defaults is None:
+            return {}
+        try:
+            got = self._selection_defaults()
+        except Exception:
+            logger.warning("could not read %s / %s; the child runs on the parent's model",
+                           SUBAGENT_MODEL_SETTING, SUBAGENT_PROVIDER_SETTING, exc_info=True)
+            return {}
+        return got if isinstance(got, dict) else {}
+
+    def _resolve_selection(self, model: Any, provider: Any, overrides: Any):
+        """``(selection, overrides)`` for one child, or ValueError naming what is wrong.
+        An explicit model or provider is taken as a pair; otherwise the setting's pair;
+        otherwise none (the parent's route)."""
+        from .llm.job_selection import validate_pins
+        from .llm.request_context import validate_overrides
+
+        ov = validate_overrides(overrides)
+        pins = {k: v for k, v in (("model", model), ("provider", provider)) if v is not None and v != ""}
+        if pins:
+            validate_pins(pins)
+            source = "explicit"
+        else:
+            defaults = self._read_defaults()
+            pins = {k: defaults[k] for k in ("model", "provider") if defaults.get(k)}
+            if pins:
+                try:
+                    validate_pins(pins)
+                except ValueError as exc:
+                    raise ValueError(f"{SUBAGENT_MODEL_SETTING} / {SUBAGENT_PROVIDER_SETTING}: {exc}") from exc
+                source = "setting"
+            else:
+                source = "parent"
+        selection = {"model": pins.get("model"), "provider": pins.get("provider"),
+                     "overrides": ov.as_dict() if ov is not None else None, "source": source}
+        return selection, ov
+
     async def spawn(self, task: str, agent: str = "", parent: str = "",
-                    output_schema: Optional[dict] = None) -> dict:
+                    output_schema: Optional[dict] = None, *, model: Optional[str] = None,
+                    provider: Optional[str] = None, overrides: Optional[dict] = None) -> dict:
         """Spawn an isolated sub-agent for `task`. Rejected if the concurrency cap is
         reached, the total-spawn budget is spent, or the parent-chain is already
         `max_depth` deep (recursion guard). With `output_schema`, the runner's result
-        must validate or the spawn is recorded as failed."""
+        must validate or the spawn is recorded as failed. With `model` / `provider` /
+        `overrides` (H681), the child runs pinned; an invalid one is refused
+        (``invalid_selection``) before any budget is spent."""
         parent = parent or self.parent_agent
         depth = self._depth_of(parent)
         if self.max_depth is not None and depth >= self.max_depth:
@@ -367,6 +480,10 @@ class SubAgentManager:
                     "active": self._active, "cap": self.max_concurrent}
         if output_schema is not None and not isinstance(output_schema, dict):
             return {"ok": False, "reason": "invalid_output_schema"}
+        try:
+            selection, ov = self._resolve_selection(model, provider, overrides)
+        except ValueError as exc:
+            return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
         if self.budget is not None and not self.budget.consume():
             return {"ok": False, "reason": "spawn_budget_exhausted",
                     "used": self.budget.used, "max_total": self.budget.max_total}
@@ -378,13 +495,13 @@ class SubAgentManager:
                "created_at": time.time(), "finished_at": None, "result": None,
                "blocked": sorted(self.blocked), "output_schema": output_schema,
                "steers": [], "steerable": self._runner_takes_steer,
-               "stop_reason": None, "cost": None}
+               "stop_reason": None, "cost": None, "selection": selection}
         self._spawns[spawn_id] = rec
         chan = SteerChannel(spawn_id)
         self._channels[spawn_id] = chan
         self._active += 1
         before = _cost_totals(self._safe_probe())
-        child = asyncio.ensure_future(self._run(task, session_id, agent or "sub", chan))
+        child = asyncio.ensure_future(self._run(task, session_id, agent or "sub", chan, selection, ov))
         self._tasks[spawn_id] = child
         result: Any = None
         try:
@@ -401,6 +518,13 @@ class SubAgentManager:
                 rec["result"] = {"error": "stopped", "reason": rec["stop_reason"]}
                 self._finish(rec, before, result)
                 raise
+        except SubAgentProviderError as exc:
+            logger.warning("sub-agent %s: its model call failed: %s", spawn_id, exc.detail[:200])
+            self._set_status(rec, "failed")
+            rec["result"] = {"error": "provider_failed", "detail": exc.detail[:DETAIL_MAX]}
+            failures = [d for d in (_failure_dict(f) for f in exc.failures) if d is not None]
+            if failures:
+                rec["result"]["failures"] = failures
         except Exception:
             logger.warning("sub-agent run failed", exc_info=True)
             self._set_status(rec, "failed")
@@ -408,26 +532,120 @@ class SubAgentManager:
         else:
             violations = (validate_output(result, output_schema)
                           if output_schema is not None else [])
-            if violations:
+            blank = (isinstance(result, dict) and isinstance(result.get("output"), str)
+                     and not result["output"].strip())
+            if blank:
+                # A turn that answered nothing is not a child that finished its task.
+                self._set_status(rec, "failed")
+                rec["result"] = {"error": "provider_failed", "detail": "empty output"}
+            elif violations:
                 self._set_status(rec, "failed")
                 rec["result"] = {"error": "output_schema_violation",
                                  "violations": violations, "output": result}
             else:
                 self._set_status(rec, "done")
                 rec["result"] = result
+        if ov is not None:
+            rec["overrides_applied"] = sorted(ov.applied)
+            rec["overrides_ignored"] = sorted(ov.requested() - ov.applied)
         self._finish(rec, before, result)
         await self._persist(rec)
-        return {"ok": rec["status"] == "done", "id": spawn_id,
-                "session_id": session_id, "status": rec["status"],
-                "result": rec["result"], "cost": rec["cost"]}
+        out = {"ok": rec["status"] == "done", "id": spawn_id,
+               "session_id": session_id, "status": rec["status"],
+               "result": rec["result"], "cost": rec["cost"], "selection": selection}
+        if ov is not None:
+            out["overrides_applied"] = rec["overrides_applied"]
+            out["overrides_ignored"] = rec["overrides_ignored"]
+        return out
 
-    async def _run(self, task: str, session_id: str, agent: str, chan: SteerChannel):
+    async def _run(self, task: str, session_id: str, agent: str, chan: SteerChannel,
+                   selection: Optional[dict] = None, ov: Any = None):
+        from .llm.job_selection import selection_scope
+        from .llm.request_context import request_overrides_scope
+
         kwargs: dict[str, Any] = {}
         if self._runner_takes_blocked:
             kwargs["blocked"] = self.blocked
         if self._runner_takes_steer:
             kwargs["steer"] = chan
-        return await self._runner(task, session_id, agent, **kwargs)
+        if self._runner_takes_selection:
+            kwargs["selection"] = selection
+        pins = {k: selection[k] for k in ("model", "provider") if selection and selection.get(k)}
+        with selection_scope(pins), request_overrides_scope(ov):
+            return await self._runner(task, session_id, agent, **kwargs)
+
+    # ── batch (H681) ─────────────────────────────────────────────
+    async def spawn_batch(self, tasks: Any, parent: str = "") -> dict:
+        """Run up to ``BATCH_MAX`` children, at most as many at once as there are free
+        slots, and report each. Every item is validated before any runs. The result's
+        ``notice`` is one ``subagent_model_rejected`` when every child failed because the
+        provider does not know the model ``autonomy.subagent_model`` chose."""
+        if not isinstance(tasks, list):
+            return {"ok": False, "reason": "invalid_batch", "detail": "tasks must be a list"}
+        if not tasks:
+            return {"ok": False, "reason": "empty_batch"}
+        if len(tasks) > BATCH_MAX:
+            return {"ok": False, "reason": "batch_too_large", "max": BATCH_MAX}
+        for i, item in enumerate(tasks):
+            if (not isinstance(item, dict) or not isinstance(item.get("task"), str)
+                    or not item["task"].strip() or set(item) - _BATCH_ITEM_KEYS):
+                return {"ok": False, "reason": "invalid_batch", "index": i,
+                        "detail": f"each task is an object with a non-empty 'task' and only {sorted(_BATCH_ITEM_KEYS)}"}
+            if item.get("output_schema") is not None and not isinstance(item["output_schema"], dict):
+                return {"ok": False, "reason": "invalid_output_schema", "index": i}
+            try:
+                self._resolve_selection(item.get("model"), item.get("provider"), item.get("overrides"))
+            except ValueError as exc:
+                return {"ok": False, "reason": "invalid_selection", "index": i, "detail": str(exc)[:DETAIL_MAX]}
+        gate = asyncio.Semaphore(max(1, self.max_concurrent - self._active))
+
+        async def one(item: dict) -> dict:
+            async with gate:
+                return await self.spawn(item["task"], agent=str(item.get("agent") or ""), parent=parent,
+                                        output_schema=item.get("output_schema"), model=item.get("model"),
+                                        provider=item.get("provider"), overrides=item.get("overrides"))
+
+        children = list(await asyncio.gather(*(one(item) for item in tasks)))
+        summary = {"total": len(children),
+                   "done": sum(1 for c in children if c.get("status") == "done"),
+                   "failed": sum(1 for c in children if c.get("status") in ("failed", "stopped")),
+                   "refused": sum(1 for c in children if "status" not in c)}
+        return {"ok": summary["done"] == summary["total"], "children": children, "summary": summary,
+                "notice": self._batch_notice(children)}
+
+    def _batch_notice(self, children: list) -> Optional[dict]:
+        if not children or any(c.get("status") != "failed" for c in children):
+            return None
+        defaults = self._read_defaults()
+        model = defaults.get("model") if isinstance(defaults.get("model"), str) else ""
+        if not model:
+            return None
+        for child in children:
+            selection = child.get("selection") or {}
+            if selection.get("source") != "setting" or selection.get("model") != model:
+                return None
+            if not _rejected_for(child.get("result"), model):
+                return None
+        provider = defaults.get("provider") or next(
+            (f.get("provider") for c in children for f in (c["result"].get("failures") or [])
+             if isinstance(f, dict) and f.get("provider")), None)
+        fallback_model = None
+        if self._fallback_probe is not None:
+            try:
+                candidate = self._fallback_probe(model)
+            except Exception:
+                logger.debug("no fallback model could be named", exc_info=True)
+                candidate = None
+            if isinstance(candidate, str) and candidate and candidate != model:
+                fallback_model = candidate
+        who = provider or "the provider"
+        message = (f"Every sub-agent in this batch failed: {who} does not know the model '{model}' "
+                   f"that {SUBAGENT_MODEL_SETTING} chooses. ")
+        message += (f"Clear the setting to run them on '{fallback_model}', or choose another model."
+                    if fallback_model else "There is no other model to fall back to: choose another model.")
+        return {"kind": "subagent_model_rejected", "model": model, "provider": provider,
+                "setting": SUBAGENT_MODEL_SETTING, "fallback": fallback_model is not None,
+                "fallback_model": fallback_model, "children": len(children), "message": message}
 
     def _safe_probe(self) -> dict:
         try:
@@ -548,7 +766,16 @@ class SubAgentManager:
 
     # ── read model ───────────────────────────────────────────────
     def list(self) -> "list[dict]":
-        return [{k: v for k, v in r.items() if k != "result"} for r in self._spawns.values()]
+        """Every spawn without its result, plus a failed child's reason (H681)."""
+        out = []
+        for r in self._spawns.values():
+            row = {k: v for k, v in r.items() if k != "result"}
+            result = r.get("result")
+            if r.get("status") == "failed" and isinstance(result, dict):
+                row["failure"] = {"error": str(result.get("error") or "failed"),
+                                  "detail": str(result.get("detail") or "")[:200]}
+            out.append(row)
+        return out
 
     def get(self, spawn_id: str) -> Optional[dict]:
         r = self._spawns.get(spawn_id)
@@ -572,7 +799,7 @@ class SubAgentManager:
 
 
 __all__ = [
-    "DELEGATE_BLOCKED_CAPABILITIES", "NullRunner", "STEER_ORIGINS", "SPAWN_LOG_ENV",
-    "SPAWN_TRANSITIONS", "SteerChannel", "SteerMessage", "SubAgentManager",
-    "validate_output",
+    "BATCH_MAX", "DELEGATE_BLOCKED_CAPABILITIES", "NullRunner", "STEER_ORIGINS", "SPAWN_LOG_ENV",
+    "SPAWN_TRANSITIONS", "SUBAGENT_MODEL_SETTING", "SUBAGENT_PROVIDER_SETTING", "SteerChannel",
+    "SteerMessage", "SubAgentManager", "SubAgentProviderError", "validate_output",
 ]

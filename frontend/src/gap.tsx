@@ -1387,13 +1387,21 @@ export function SwarmPanel() {
    runner never opted into the steer kwarg) is rendered as "recorded, not delivered"
    rather than as a success, because the message did reach the spawn record but not the
    running turn. Stop reports the status the backend read back after yielding, so a child
-   that unwinds immediately shows `stopped` and one that does not shows `stopping`. */
+   that unwinds immediately shows `stopped` and one that does not shows `stopping`.
+
+   H681 — a child may name its own model; a row shows the model a child ran on (and what
+   chose it: the spawn or autonomy.subagent_model), and a child whose model call failed is
+   `failed` with the reason, never `done` with an empty answer. A model the selection
+   guards ask about is refused (409) with the price or data policy named. */
 export function SubAgentsPanel() {
   const { d, e, loading, reload } = useApi('/api/subagents');  // user-guarded
   const spawns = arr(d, 'spawns');
   const stats = (d && d.stats) || {};
   const [task, setTask] = useState('');
   const [agent, setAgent] = useState('');
+  const [model, setModel] = useState('');
+  const [batch, setBatch] = useState('');
+  const [batchOut, setBatchOut] = useState(null);
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(null);
   const [steerFor, setSteerFor] = useState(null);
@@ -1405,7 +1413,8 @@ export function SubAgentsPanel() {
     if (!t || pending) return;
     setPending(true);
     setNote(null);
-    act('/api/subagents/spawn', { task: t, agent: agent.trim() },
+    const pin = model.trim();
+    act('/api/subagents/spawn', { task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) },
       (r) => {
         setPending(false);
         setNote(r && r.ok === false
@@ -1414,7 +1423,33 @@ export function SubAgentsPanel() {
         setTask('');
         reload();
       },
-      (err) => { setPending(false); setNote(`refused · ${refusalReason(err, 'spawn failed')}`); reload(); });
+      (err) => { setPending(false); setNote(spawnRefusal(err)); reload(); });
+  };
+  // H681 — up to 16 children at once, one task per line, sharing the agent and model fields.
+  // The answer names every child's outcome and, when all of them failed because the provider
+  // does not know autonomy.subagent_model, one notice that says so and what to do.
+  const batchTasks = batch.split('\n').map((l) => l.trim()).filter(Boolean);
+  const runBatch = () => {
+    if (!batchTasks.length || batchTasks.length > 16 || pending) return;
+    const pin = model.trim();
+    setPending(true);
+    setNote(null);
+    setBatchOut(null);
+    act('/api/subagents/batch', { tasks: batchTasks.map((t) => ({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) })) },
+      (r) => { setPending(false); setBatchOut(r || {}); setBatch(''); reload(); },
+      (err) => { setPending(false); setNote(spawnRefusal(err)); reload(); });
+  };
+  // A child that ran and whose model call failed answers 422 with its result; a model the
+  // selection guards ask about answers 409 naming the price or the data policy.
+  const spawnRefusal = (err) => {
+    const b = err && err.body;
+    if (b && b.result && b.result.error === 'provider_failed') {
+      return `failed · ${b.result.detail || 'the model call failed'}`;
+    }
+    if (b && b.error === 'selection_guard') {
+      return `refused · ${b.detail || 'the model needs a confirmation'} (needs ${(b.needs || []).join(', ')})`;
+    }
+    return `refused · ${refusalReason(err, 'spawn failed')}`;
   };
   const sendSteer = (id) => {
     const msg = steerText.trim();
@@ -1462,6 +1497,11 @@ export function SubAgentsPanel() {
                 <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                   <Tag>{s.agent || 'sub'}</Tag>
+                  {s.selection && s.selection.model && (
+                    <span title={`model chosen by ${s.selection.source === 'setting' ? 'autonomy.subagent_model' : 'the spawn'}`}>
+                      <Tag>{s.selection.model}</Tag>
+                    </span>
+                  )}
                   <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
                   {s.status === 'running' && (
                     <>
@@ -1477,6 +1517,11 @@ export function SubAgentsPanel() {
                   )}
                 </span>
               </Row>
+              {s.status === 'failed' && s.failure && (
+                <div style={{ ...mono, fontSize: 10, color: 'var(--red)', margin: '0 0 4px 8px' }}>
+                  {s.failure.error}{s.failure.detail ? ` · ${s.failure.detail}` : ''}
+                </div>
+              )}
               {steerFor === s.id && (
                 <Row>
                   <input
@@ -1502,19 +1547,44 @@ export function SubAgentsPanel() {
               style={{ ...inpS, width: 120 }} placeholder="agent (optional)" value={agent}
               disabled={pending} onChange={(ev) => setAgent(ev.target.value)}
             />
+            <input
+              style={{ ...inpS, width: 140 }} placeholder="model (optional)" value={model}
+              disabled={pending} onChange={(ev) => setModel(ev.target.value)}
+            />
             <button
               className="tool-btn" title="spawn a sub-agent (long-running)"
               disabled={pending || !task.trim()} onClick={spawn}
             >spawn</button>
           </Row>
+          <Row>
+            <textarea
+              style={{ ...inpS, flex: 1, minHeight: 40 }} placeholder="batch: one task per line (up to 16)"
+              value={batch} disabled={pending} onChange={(ev) => setBatch(ev.target.value)}
+            />
+            <button
+              className="tool-btn" title="run these tasks as a batch of sub-agents"
+              disabled={pending || !batchTasks.length || batchTasks.length > 16} onClick={runBatch}
+            >run batch</button>
+          </Row>
+          {batchTasks.length > 16 && <div style={{ ...mono, fontSize: 10, color: 'var(--red)' }}>a batch holds at most 16 tasks</div>}
+          {batchOut && batchOut.summary && (
+            <div role="status" style={{ ...mono, marginTop: 6, fontSize: 11 }}>
+              batch · {batchOut.summary.done} done · {batchOut.summary.failed} failed · {batchOut.summary.refused} refused
+            </div>
+          )}
+          {batchOut && batchOut.notice && (
+            <div role="alert" style={{ ...mono, marginTop: 6, fontSize: 11, color: 'var(--red)' }}>{batchOut.notice.message}</div>
+          )}
           {pending && <div role="status" style={{ ...mono, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
-          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: /^(refused|failed)/.test(note) ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
           <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
             Steer is guidance to a running child, never an approval: a queue decision only ever
             comes from the decision inbox. Steer and stop appear only while a spawn is running.
+            With no model named, a child runs on autonomy.subagent_model, or on its agent&apos;s
+            own model when that is empty; a child whose model call failed shows why.
           </div>
         </>
       )}

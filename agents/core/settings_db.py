@@ -397,6 +397,11 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
     dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
+    # H681: the model a delegated sub-agent runs on when its spawn names none (empty =
+    # the agent's own route), and the provider that serves it (empty = the routed one).
+    dict(category="autonomy", key="subagent_model", value="", label="Sub-agent model (empty = the agent's own)", kind="text"),
+    dict(category="autonomy", key="subagent_provider", value="", label="Sub-agent provider (empty = the routed one)", kind="select",
+         opts=["", "lm-studio", "ollama", "gemini", "anthropic", "openrouter", "openai-compatible"]),
     dict(category="autonomy", key="priority_senders", value=["andrei"], label="Priority email senders", kind="tags"),
     dict(category="autonomy", key="finance_min_ron",  value=2000.0,   label="Minimum balance threshold (RON)", kind="number"),
     dict(category="autonomy", key="finance_min_eur",  value=400.0,    label="Minimum balance threshold (EUR)", kind="number"),
@@ -761,6 +766,13 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             isinstance(value, bool) or not isinstance(value, (int, float))
             or not (isinstance(value, int) or math.isfinite(value)) or not 1 <= value <= 8760):
         return f"{key}: expected a number of hours between 1 and 8760"
+    if key == "subagent_model" and isinstance(value, str) and value:
+        from .llm.job_selection import validate_pins
+
+        try:
+            validate_pins({"model": value})
+        except ValueError as exc:
+            return f"{key}: {exc}"
     if key == "artifact_ttl_days" and (type(value) is not int or not 0 <= value <= 36500):
         return f"{key}: expected an integer between 0 and 36500 days"
     if key in _LEARNING_INT_BOUNDS:

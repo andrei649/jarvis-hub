@@ -70,3 +70,140 @@ def reasoning_scope(effort: str | None):
         if frame is not None:
             frame.lifetime.active = False
         _reasoning.reset(token)
+
+
+# H681 — per-request generation overrides for a delegated sub-agent. A child can ask
+# for its own completion budget, temperature and extra OpenAI-compatible body keys;
+# they hold for every generation the child makes, and for nothing else. The frame
+# records which of them a provider actually applied, so a child whose route could
+# not take one is told so rather than left to assume it.
+
+OVERRIDE_KEYS = ('max_tokens', 'temperature', 'extra_body')
+MAX_TOKENS_LIMIT = 65536
+TEMPERATURE_LIMIT = 2.0
+EXTRA_BODY_MAX_BYTES = 4096
+#: Keys the hub owns in a request body: what is asked (model, messages), how it is
+#: delivered (stream), what the model may call (tools), the owner's provider routing
+#: and data policy (provider), the governed budget and reasoning (max_tokens,
+#: reasoning), and the count of answers paid for (n).
+RESERVED_BODY_KEYS = frozenset({
+    'model', 'messages', 'input', 'prompt', 'system', 'stream', 'stream_options',
+    'tools', 'tool_choice', 'functions', 'function_call', 'parallel_tool_calls',
+    'provider', 'models', 'route', 'max_tokens', 'max_completion_tokens', 'max_output_tokens',
+    'temperature', 'reasoning', 'reasoning_effort', 'thinking', 'n', 'prompt_cache_key',
+})
+
+
+@dataclass
+class RequestOverrides:
+    max_tokens: int | None = None
+    temperature: float | None = None
+    extra_body: dict | None = None
+    applied: set = None
+
+    def __post_init__(self):
+        if self.applied is None:
+            self.applied = set()
+
+    def as_dict(self) -> dict:
+        return {k: getattr(self, k) for k in OVERRIDE_KEYS if getattr(self, k) is not None}
+
+    def requested(self) -> set:
+        return {k for k in OVERRIDE_KEYS if getattr(self, k) is not None}
+
+
+def validate_overrides(value) -> RequestOverrides | None:
+    """A bounded, private copy of *value*, or None when it asks for nothing. Raises
+    ValueError naming what is wrong."""
+    import copy
+    import json
+    import math
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError('overrides must be an object')
+    unknown = sorted(str(k) for k in value if k not in OVERRIDE_KEYS)
+    if unknown:
+        raise ValueError(f'unknown override(s) {unknown}; allowed: {list(OVERRIDE_KEYS)}')
+    out = RequestOverrides()
+    if value.get('max_tokens') is not None:
+        mt = value['max_tokens']
+        if type(mt) is not int or not 1 <= mt <= MAX_TOKENS_LIMIT:
+            raise ValueError(f'max_tokens must be an integer from 1 to {MAX_TOKENS_LIMIT}')
+        out.max_tokens = mt
+    if value.get('temperature') is not None:
+        t = value['temperature']
+        if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t) \
+                or not 0 <= t <= TEMPERATURE_LIMIT:
+            raise ValueError(f'temperature must be a number from 0 to {TEMPERATURE_LIMIT:g}')
+        out.temperature = float(t)
+    if value.get('extra_body') is not None:
+        body = value['extra_body']
+        if not isinstance(body, dict):
+            raise ValueError('extra_body must be an object')
+        for key in body:
+            if not isinstance(key, str) or not key or len(key) > 64:
+                raise ValueError('extra_body keys must be names of 1 to 64 characters')
+            if key.lower() in RESERVED_BODY_KEYS:
+                raise ValueError(f'extra_body may not set {key!r}: the hub owns it')
+        try:
+            encoded = json.dumps(body, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('extra_body must be plain JSON') from exc
+        if len(encoded.encode()) > EXTRA_BODY_MAX_BYTES:
+            raise ValueError(f'extra_body is larger than {EXTRA_BODY_MAX_BYTES} bytes')
+        out.extra_body = copy.deepcopy(body) or None
+    return out if out.requested() else None
+
+
+_overrides: ContextVar[RequestOverrides | None] = ContextVar('request_overrides', default=None)
+
+
+def current_overrides() -> RequestOverrides | None:
+    return _overrides.get()
+
+
+@contextmanager
+def request_overrides_scope(overrides: RequestOverrides | None):
+    token = _overrides.set(overrides)
+    try:
+        yield overrides
+    finally:
+        _overrides.reset(token)
+
+
+def apply_generation_overrides(max_tokens, temperature):
+    """``(max_tokens, temperature)`` with the request's overrides in place of each one
+    it sets; unchanged outside a scope."""
+    frame = _overrides.get()
+    if frame is None:
+        return max_tokens, temperature
+    if frame.max_tokens is not None:
+        max_tokens = frame.max_tokens
+        frame.applied.add('max_tokens')
+    if frame.temperature is not None:
+        temperature = frame.temperature
+        frame.applied.add('temperature')
+    return max_tokens, temperature
+
+
+def merge_extra_body(payload: dict) -> dict:
+    """Merge the request's ``extra_body`` into an OpenAI-compatible *payload*, one level
+    deep (a dict value updates the payload's dict of that name), never over a key the
+    hub owns. Unchanged outside a scope."""
+    import copy
+
+    frame = _overrides.get()
+    if frame is None or not frame.extra_body:
+        return payload
+    for key, value in frame.extra_body.items():
+        if key.lower() in RESERVED_BODY_KEYS:          # validated already; kept as a floor
+            continue
+        value = copy.deepcopy(value)
+        if isinstance(value, dict) and isinstance(payload.get(key), dict):
+            payload[key] = {**payload[key], **value}
+        else:
+            payload[key] = value
+    frame.applied.add('extra_body')
+    return payload

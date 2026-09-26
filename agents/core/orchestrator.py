@@ -1767,32 +1767,51 @@ class Orchestrator:
         unexpected error) so swallow-and-continue callers degrade to a no-op
         instead of silently throwing an AttributeError.
         """
+        # Through the class, so a caller that binds process() to a stand-in orchestrator
+        # (tests, adapters) gets the same answer.
+        text, _error = await Orchestrator.process_detailed(self, prompt, agent=agent, channel=channel)
+        return text
+
+    async def process_detailed(self, prompt: str, agent: str = "jarvis",
+                               channel: str = "internal") -> tuple[str, str | None]:
+        """``process``, and why the turn produced no answer (H681).
+
+        Returns ``(text, error)``: *text* is exactly what :meth:`process` answers, and
+        *error* is None for a real answer, else the reason — the failure marker, the
+        degraded or refused reply (``is_failed_turn_reply``), or what went wrong before
+        the turn ran. A caller that must not mistake a failed call for an empty answer
+        (a delegated sub-agent) reads *error*. Never raises.
+        """
         if not prompt:
-            return ""
+            return "", "empty prompt"
         agent_id = agent if agent in self.agents else "jarvis"
         if agent_id not in self.agents:
             logger.warning(f"process(): no agent available for completion (agent={agent})")
-            return ""
+            return "", "no agent available"
         awake = power.hold_for_turn(self)        # H182: a one-shot completion is a turn too
         try:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
-            return CONTEXT_REFUSED_REPLY
-        except RuntimeError:
+            return CONTEXT_REFUSED_REPLY, CONTEXT_REFUSED_REPLY
+        except RuntimeError as e:
             # No LLM backend up — degrade quietly (callers swallow errors anyway).
             log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
-            return ""
+            return "", f"no model backend: {e}"
         except Exception as e:
             log_error(logger, E_INTERNAL_UNEXPECTED, component=f"process:{channel}", detail=str(e))
-            return ""
+            return "", f"{type(e).__name__}: {e}"
         finally:
             power.release_for_turn(awake)
         resp = responses.get(agent_id, "") if responses else ""
         # _call_agents_parallel returns structured error/timeout markers instead
         # of raising; treat those as a soft failure and return "".
         if resp and re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", resp):
-            return ""
-        return resp or ""
+            return "", resp
+        if not resp:
+            return "", "empty reply"
+        if is_failed_turn_reply(agent_id, resp):
+            return resp, resp
+        return resp, None
 
     # BUG-5, again, and this time it costs money. `_last_models`, `_last_routes`,
     # `_last_latencies`, `_last_cached_tokens` and `_last_reported_usage` are per-TURN
@@ -3265,10 +3284,13 @@ class Orchestrator:
         gen_params = getattr(agent, "_gen_params", None)
         if callable(gen_params):
             return gen_params(route_name)
+        from .llm.request_context import apply_generation_overrides
+
         max_tokens = self.get_setting("llm.max_tokens", 0)
         if route_name == "local-deep":
             max_tokens = self.get_setting("llm.deep_max_tokens", max_tokens)
-        return int(max_tokens or 0), float(self.get_setting("llm.temperature", 0.7))
+        # H681: a delegated child's own budget and temperature, inside its scope.
+        return apply_generation_overrides(int(max_tokens or 0), float(self.get_setting("llm.temperature", 0.7)))
 
     def _nudge_persona_after_turn(self, agent_id: Optional[str], response: str) -> None:
         """Small affect nudge after a completed LLM turn, gated by cognition."""

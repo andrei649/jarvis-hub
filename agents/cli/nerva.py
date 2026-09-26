@@ -897,7 +897,7 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         # H378 — a model choice passes the selection guards here as on the hub's routes.
         from agents.core.llm import selection_guards as guards
 
-        choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value("llm", k))
+        choices = guards.choices_from_settings(category, {key: value}, lambda k: settings.get_value(category, k))
         if choices:
             try:
                 findings = guards.enforce(choices, confirm_expensive=ns.confirm_expensive,

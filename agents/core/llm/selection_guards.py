@@ -30,7 +30,8 @@ from .providers import DATA_POLICIES, get_profile, list_profiles
 logger = logging.getLogger("jarvis.llm.selection_guards")
 
 __all__ = ["DATA_POLICIES", "Choice", "Finding", "SelectionRefused", "GUARDS", "register", "evaluate",
-           "enforce", "price_of", "choices_from_settings", "choices_from_job", "consent_rows"]
+           "enforce", "price_of", "choices_from_settings", "choices_from_changes", "choices_from_subagent",
+           "choices_from_job", "consent_rows"]
 
 COST_SETTING = ("llm", "cost_confirm_usd_per_mtok")
 DEFAULT_COST_LINE = 40.0
@@ -253,8 +254,17 @@ def record(findings: Iterable[Finding], surface: str, audit_log: Any = _HUB) -> 
 # ── what a surface is choosing ───────────────────────────────────────────────────
 
 def choices_from_settings(category: str, values: dict, current: Callable[[str], Any]) -> list[Choice]:
-    """The model choices an ``llm`` settings write makes. *current* reads a stored ``llm``
-    key, for the half of a provider/model pair the write leaves as it is."""
+    """The model choices a settings write to *category* makes (``llm``, and ``autonomy``'s
+    sub-agent model, H681). *current* reads a stored key of that category, for the half
+    of a provider/model pair the write leaves as it is."""
+    if category == "autonomy" and isinstance(values, dict):
+        if "subagent_model" not in values and "subagent_provider" not in values:
+            return []
+        model = values["subagent_model"] if "subagent_model" in values else current("subagent_model")
+        provider = values["subagent_provider"] if "subagent_provider" in values else current("subagent_provider")
+        if not isinstance(model, str) or not model.strip():
+            return []
+        return [Choice("autonomy.subagent_model", provider if isinstance(provider, str) else "", model.strip())]
     if category != "llm" or not isinstance(values, dict):
         return []
     choices = []
@@ -271,6 +281,26 @@ def choices_from_settings(category: str, values: dict, current: Callable[[str], 
     if values.get("openrouter_data_collection") == "allow":
         choices.append(Choice("llm.openrouter_data_collection", "openrouter", "", route="data_collection=allow"))
     return choices
+
+
+def choices_from_changes(changes: Any, current: Callable[[str, str], Any]) -> list[Choice]:
+    """The model choices a write over several categories makes (a settings import).
+    *current* reads a stored ``(category, key)``."""
+    if not isinstance(changes, dict):
+        return []
+    choices: list[Choice] = []
+    for category in ("llm", "autonomy"):
+        values = changes.get(category)
+        if isinstance(values, dict):
+            choices += choices_from_settings(category, values, lambda key, _cat=category: current(_cat, key))
+    return choices
+
+
+def choices_from_subagent(model: Any, provider: Any = "") -> list[Choice]:
+    """The choice a sub-agent spawn's model pin makes (none without a model, H681)."""
+    if not isinstance(model, str) or not model.strip():
+        return []
+    return [Choice("subagent.model", provider if isinstance(provider, str) else "", model.strip())]
 
 
 def choices_from_job(options: Any) -> list[Choice]:

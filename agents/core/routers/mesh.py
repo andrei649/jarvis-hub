@@ -193,6 +193,74 @@ class SubAgentSpawnBody(BaseModel):
     agent: str = Field("", max_length=40)
     # Typed hand-off: type/required/enum schema the child's result must satisfy.
     output_schema: dict | None = None
+    # H681 — the child's own model, provider and request overrides (max_tokens,
+    # temperature, extra_body); none given → autonomy.subagent_model, then the parent's.
+    model: str | None = Field(None, max_length=256)
+    provider: str | None = Field(None, max_length=40)
+    overrides: dict | None = None
+    # H378 — a model chosen here passes the selection guards like any other choice.
+    confirm_expensive: bool = False
+    acknowledge_training: bool = False
+
+
+class SubAgentBatchTask(BaseModel):
+    task: str = Field(..., min_length=1, max_length=4000)
+    agent: str = Field("", max_length=40)
+    output_schema: dict | None = None
+    model: str | None = Field(None, max_length=256)
+    provider: str | None = Field(None, max_length=40)
+    overrides: dict | None = None
+
+
+class SubAgentBatchBody(BaseModel):
+    tasks: list[SubAgentBatchTask] = Field(..., min_length=1, max_length=16)
+    confirm_expensive: bool = False
+    acknowledge_training: bool = False
+
+
+def _invalid_selection(manager, items) -> dict | None:
+    """The 422 body for the first item whose selection cannot run, checked before any
+    guard asks or records anything (None when every item is valid)."""
+    resolve = getattr(manager, "_resolve_selection", None)
+    if not callable(resolve):
+        return None
+    for index, item in enumerate(items):
+        try:
+            resolve(item.model, item.provider, item.overrides)
+        except ValueError as exc:
+            out = {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:500]}
+            if len(items) > 1:
+                out["index"] = index
+            return out
+    return None
+
+
+async def _guard_subagent_models(items, body):
+    """H378 — every model a spawn names passes the selection guards before a child runs:
+    409 naming what is not cleared, 503 when a required consent row could not be written,
+    None to go on. A spawn that names no model is never asked (the setting it falls back
+    to was guarded when it was stored)."""
+    from agents.core.llm import selection_guards as sg
+
+    choices, seen = [], set()
+    for item in items:
+        for choice in sg.choices_from_subagent(item.model, item.provider or ""):
+            if (choice.provider, choice.model) not in seen:
+                seen.add((choice.provider, choice.model))
+                choices.append(choice)
+    if not choices:
+        return None
+    try:
+        findings = sg.enforce(choices, confirm_expensive=body.confirm_expensive,
+                              acknowledge_training=body.acknowledge_training)
+    except sg.SelectionRefused as refused:
+        return nocache_json(refused.payload(), status_code=409)
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(sg.record, findings, "sub-agent", getattr(orch, "audit", None) if orch else None)
+    except sg.ConsentNotRecorded as exc:
+        return nocache_json({"error": "consent_not_recorded", "detail": str(exc)}, status_code=503)
+    return None
 
 
 # Reasons a spawn was refused at the gate (429), as opposed to a child that ran
@@ -218,7 +286,14 @@ async def subagents_spawn(body: SubAgentSpawnBody):
     _, m, err = require_component("subagents", "sub-agents unavailable")
     if err is not None:
         return err
-    result = await m.spawn(body.task, agent=body.agent, output_schema=body.output_schema)
+    invalid = _invalid_selection(m, [body])
+    if invalid is not None:
+        return nocache_json(invalid, status_code=422)
+    guarded = await _guard_subagent_models([body], body)
+    if guarded is not None:
+        return guarded
+    result = await m.spawn(body.task, agent=body.agent, output_schema=body.output_schema,
+                           model=body.model, provider=body.provider, overrides=body.overrides)
     if result.get("ok"):
         status = 200
     elif result.get("reason") in _SPAWN_GATE_REASONS:
@@ -226,6 +301,26 @@ async def subagents_spawn(body: SubAgentSpawnBody):
     else:
         status = 422        # ran and failed / schema violation / invalid schema
     return nocache_json(result, status_code=status)
+
+
+@router.post("/api/subagents/batch", dependencies=[Depends(user_guard)])
+async def subagents_batch(body: SubAgentBatchBody):
+    """H681 — run up to 16 isolated sub-agents, within the free slots, each with its own
+    optional model / provider / overrides. The answer reports every child and, when all
+    of them failed because the provider does not know the model autonomy.subagent_model
+    chose, one ``subagent_model_rejected`` notice naming the model, the setting and
+    whether a fallback exists."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    invalid = _invalid_selection(m, body.tasks)
+    if invalid is not None:
+        return nocache_json(invalid, status_code=422)
+    guarded = await _guard_subagent_models(body.tasks, body)
+    if guarded is not None:
+        return guarded
+    result = await m.spawn_batch([t.model_dump(exclude_none=True) for t in body.tasks])
+    return nocache_json(result, status_code=200 if "children" in result else 422)
 
 
 class SubAgentSteerBody(BaseModel):

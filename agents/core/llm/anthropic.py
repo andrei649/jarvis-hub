@@ -12,6 +12,7 @@ from .auth_rotation import is_rotatable_status
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
 from .model_config import DEFAULT_CLAUDE_MODEL
+from .provider_errors import note_provider_failure
 from .quota import ProviderRateLimited
 from .reasoning_effort import apply_anthropic, parse_overrides
 from .tool_dialects import (
@@ -105,6 +106,8 @@ class ClaudeBackend(LLMBackend):
         """
         attempts = self.auth_pool.size if self.auth_pool else 1
         last_err = ""
+        last_exc: BaseException | None = None
+        model = payload.get("model")
         for _ in range(max(1, attempts)):
             from .request_context import ensure_reasoning_active
             ensure_reasoning_active()
@@ -120,23 +123,27 @@ class ClaudeBackend(LLMBackend):
                 if not isinstance(data, dict):
                     raise ValueError("response body is not an object")
             except httpx.HTTPStatusError as e:
-                last_err = str(e)
+                last_err, last_exc = str(e), e
                 status = e.response.status_code
                 if self.auth_pool is not None and is_rotatable_status(status) and self.auth_pool.size > 1:
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
+                note_provider_failure("anthropic", model, e)
                 return None, f"[Claude API error: {e}]"
             except ProviderRateLimited as e:
                 # H373 — held by the shared 429 guard, refused before sending: the next key.
-                last_err = str(e)
+                last_err, last_exc = str(e), e
                 if self._fail_over_held(key, e):
                     continue
+                note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
                 return None, f"[Claude API error: {e}]"
             except Exception as e:
+                note_provider_failure("anthropic", model, e)
                 return None, f"[Claude API error: {e}]"
             if self.auth_pool is not None:
                 self.auth_pool.report_success(key)
             return data, ""
+        note_provider_failure("anthropic", model, last_exc)
         return None, f"[Claude API error: all auth profiles exhausted: {last_err}]"
 
     async def generate(
@@ -282,15 +289,18 @@ class ClaudeBackend(LLMBackend):
                 full = f"[Claude API stream error: {e}]"
                 if self._fail_over_held(stream_key, e) and attempt + 1 < attempts:
                     continue
+                note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
             except httpx.HTTPStatusError as e:
                 usage_failed = True
                 # Rotatable error → cool this key down so the next call fails over (H12.20).
                 if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
                     self.auth_pool.report_failure(stream_key)
                 full = f"[Claude API stream error: {e}]"
+                note_provider_failure("anthropic", model, e)
             except Exception as e:
                 usage_failed = True
                 full = f"[Claude API stream error: {e}]"
+                note_provider_failure("anthropic", model, e)
             break
         answer = self._finalize_cloud(full)
         if started and completed and final_output and not usage_failed:

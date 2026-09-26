@@ -1561,16 +1561,14 @@ class AutonomyCoordinator:
         # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
         from .subagents import SubAgentManager
 
-        async def _subagent_runner(task, session_id, agent):
-            picked = agent if agent in self._orch.agents else "jarvis"
-            out = await self._orch.process(task, agent=picked, channel="subagent")
-            return {"output": out, "session_id": session_id}
-
         bind_external_orchestrator_attribute(
             self._orch,
             "subagents",
             SubAgentManager(
-                runner=_subagent_runner,
+                runner=make_subagent_runner(self._orch),
+                # H681: a child names no model → autonomy.subagent_model / _provider.
+                selection_defaults=self._subagent_selection_defaults,
+                fallback_probe=self._subagent_fallback_model,
                 max_concurrent=self._subagent_concurrency(),
                 max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
                 # Concurrency caps how many run at once; this caps how many may be
@@ -1585,6 +1583,25 @@ class AutonomyCoordinator:
         # the concrete executor; the worker still receives only ``execute``.
         bind_external_orchestrator_attribute(self._orch, "task_executor", executor)
         return executor
+
+    def _subagent_selection_defaults(self) -> dict:
+        """``autonomy.subagent_model`` / ``autonomy.subagent_provider``, read at each
+        spawn (empty = the child runs on its agent's own route)."""
+        def read(key):
+            value = self._orch.get_setting(key, "")
+            return value.strip() if isinstance(value, str) else ""
+
+        return {"model": read("autonomy.subagent_model"), "provider": read("autonomy.subagent_provider")}
+
+    def _subagent_fallback_model(self, rejected: str):
+        """The model children would run on with the setting cleared (the default
+        agent's own), or None when that is the rejected model or there is none."""
+        agent = (getattr(self._orch, "agents", None) or {}).get("jarvis")
+        default_model = getattr(agent, "default_model", None)
+        if not callable(default_model):
+            return None
+        model = default_model()
+        return model if isinstance(model, str) and model and model != rejected else None
 
     def _subagent_spawn_budget(self):
         """Total-spawn budget for one boot, or ``None`` when the setting is 0.
@@ -1617,3 +1634,38 @@ class AutonomyCoordinator:
         if isinstance(hint, int) and not isinstance(hint, bool) and hint > 0:
             return min(base, hint)
         return base
+
+
+def make_subagent_runner(orch):
+    """The production sub-agent runner (H681): one turn through the orchestrator, with
+    the child's pin checked against the governed router before it runs, and a failed
+    turn raised as :class:`SubAgentProviderError` (with what the backends noted), never
+    answered as an empty success. The manager has already opened the child's selection
+    and override scopes around this call."""
+    from .llm.job_selection import current_selection
+    from .llm.provider_errors import provider_failure_scope
+    from .subagents import SubAgentProviderError
+
+    async def _subagent_runner(task, session_id, agent):
+        picked = agent if agent in orch.agents else "jarvis"
+        with provider_failure_scope() as failures:
+            if current_selection() is not None:
+                router = getattr(orch, "llm_router", None)
+                if not callable(getattr(router, "select_backend", None)):
+                    raise SubAgentProviderError(
+                        "selection refused: a model or provider pin requires the governed model router")
+                try:
+                    router.select_backend(picked, task)
+                except Exception as exc:
+                    raise SubAgentProviderError(f"selection refused: {exc}") from exc
+            detailed = getattr(orch, "process_detailed", None)
+            if callable(detailed):
+                text, error = await detailed(task, agent=picked, channel="subagent")
+            else:
+                text = await orch.process(task, agent=picked, channel="subagent")
+                error = None if (text or "").strip() else "empty reply"
+        if error is not None:
+            raise SubAgentProviderError(error, failures=list(failures))
+        return {"output": text, "session_id": session_id}
+
+    return _subagent_runner
