@@ -1041,6 +1041,8 @@ class SkillLoader:
         Writes SKILL.md + main.py template to skills/<name>/.
         Returns the skill name if created, None if skipped.
         """
+        # H507 — reset first: a skip below must not leave the last skill's warnings.
+        self.last_generation_warnings = []
         skill_name = self._name_from_task(task_description)
         # Generated skills are personal content — they land in the user data
         # home when one is active (falling back to the bundled tree in dev).
@@ -1111,7 +1113,6 @@ Agent-generated skill from successful task completion.
         from .validate import validate_skill_md
 
         self.last_generation_problems = validate_skill_md(skill_md)
-        self.last_generation_warnings = []
         if self.last_generation_problems:
             logger.warning("Skill generation refused: %s",
                            "; ".join(str(p) for p in self.last_generation_problems))

@@ -33,7 +33,7 @@ import logging
 import math
 import re
 import secrets
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import suppress
 from functools import partial
 from typing import Any
@@ -710,7 +710,7 @@ class AgentToolRuntime:
                     for name in _ALWAYS_RESTATED:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
-                return _APPROVAL_REPLY
+                return _approval_reply(result for result, _ in observations)
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
             if failing is not None:
                 call, result = failing
@@ -1553,6 +1553,21 @@ def _declares_taint(result: Any) -> bool:
     """A handler's own dict, wrapped under ``result``, says its content is tainted."""
     inner = result.get("result") if isinstance(result, Mapping) else None
     return isinstance(inner, Mapping) and inner.get("tainted") is True
+
+
+def _approval_reply(results: Iterable[Mapping[str, Any]]) -> str:
+    """The approval stop, naming the H507 code warnings a queued write carries: the loop
+    ends here, so this reply is where the model (on its next turn) and the owner read
+    them."""
+    warned = [
+        result["code_warnings"] for result in results
+        if result.get("reason") == "approval_required"
+        and isinstance(result.get("code_warnings"), str) and result["code_warnings"]
+    ]
+    if not warned:
+        return _APPROVAL_REPLY
+    return (f"{_APPROVAL_REPLY} The code it writes has pattern warnings (warnings, not refusals): "
+            f"{'; '.join(warned)}.")
 
 
 def _failure_reason(result: Mapping[str, Any]) -> str:

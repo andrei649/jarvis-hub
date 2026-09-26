@@ -1170,19 +1170,23 @@ class FileTools:
         """
         raw_path = (args or {}).get("path")
         names: list[object] = [_requested_name(raw_path)]
+        resolved: list[str] = []
         # An unresolvable path is the preflight's refusal to make, not ours — but the
         # spelled name has already been checked, so nothing in the class slips past.
         with contextlib.suppress(FileScopeError, OSError, ValueError):
-            names.append(self.scope.resolve(raw_path).name)
+            target = self.scope.resolve(raw_path)
+            names.append(target.name)
+            resolved.append(str(target))
         classed = instruction_labels(*names)
         # H507: code-pattern warnings ride on the same card. They never set a class, so
-        # the approval stays bound to what H506 classes the write as.
+        # the approval stays bound to what H506 classes the write as. The file the write
+        # lands on is scanned too, as the write result scans it (review-H507 F4).
         content = (args or {}).get("content")
         if not isinstance(raw_path, str) or not isinstance(content, str):
             return classed
         from .code_guidance import labels as code_labels
 
-        warned = code_labels(raw_path, content)
+        warned = code_labels(raw_path, content, *resolved)
         if warned is None:
             return classed
         if classed is None:

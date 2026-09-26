@@ -454,8 +454,13 @@ def register_skill_tools(
                 return _refuse("skill_propose_refused", "no new skill was written: one of that name exists, "
                                                         "or the skill-generation contract refused it")
             _spend(today)
-            return {"ok": True, "kind": "new", "skill": created, "pending": True,
-                    "detail": "written to quarantine; the owner reviews it before it can run"}
+            reply = {"ok": True, "kind": "new", "skill": created, "pending": True,
+                     "detail": "written to quarantine; the owner reviews it before it can run"}
+            # H507 — what its code looks like, warn-only: the model reads it here.
+            warned = getattr(target, "last_generation_warnings", None)
+            if isinstance(warned, list) and warned:
+                reply["code_warnings"] = warned
+            return reply
         skill = _skill(name)
         files = getattr(skill, "view_files", None) or {}
         current = files.get(_SKILL_FILE) if skill is not None else None

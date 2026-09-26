@@ -87,6 +87,7 @@ FORCED_SETTINGS: dict[str, object] = {
     "acquisition.enabled": _ON_LOOSENS,
     "security.scan_input": _OFF_LOOSENS,
     "security.scan_output": _OFF_LOOSENS,
+    "security.code_guidance": _OFF_LOOSENS,
     "llm.model_pull_max_gb": _MORE_LOOSENS,
     "autonomy.cap_per_action": _MORE_LOOSENS,
     "autonomy.daily_ceiling": _MORE_LOOSENS,

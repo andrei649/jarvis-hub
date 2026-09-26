@@ -13,7 +13,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import json
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -37,6 +39,10 @@ def _settings(tmp_path, monkeypatch):
 
 def _rules(path, text):
     return [f["rule"] for f in scan(path, text)]
+
+
+def _incomplete(line):
+    return {"rule": "scan-incomplete", "line": line, "message": code_guidance.INCOMPLETE_MESSAGE}
 
 
 # ── the rules ────────────────────────────────────────────────────────────────────
@@ -82,6 +88,16 @@ def _rules(path, text):
     ("a.html", '<script src="https://cdn.example/lib.js"></script>', "html-script-no-sri"),
     ("a.html", "<script src='//cdn.example/lib.js'></script>", "html-script-no-sri"),
     ("a.html", "<script>document.write('x')</script>", "js-document-write"),
+    # review-H507 F7/F8: a call over several lines, and the other spellings of a call
+    ("a.py", "cur.execute(\n    f\"SELECT * FROM t WHERE id = {x}\"\n)", "py-sql-fstring"),
+    ("a.py", "cfg = yaml.load(open(p))", "py-yaml-load"),
+    ("a.py", "cfg = yaml.load(a); other(Loader=yaml.SafeLoader)", "py-yaml-load"),
+    ("a.py", "w = torch.load(os.path.join(d, 'm.pt'))", "py-torch-load"),
+    ("a.js", "require('child_process').exec(cmd)", "js-child-exec"),
+    ("a.js", "const { exec } = require('child_process');\nexec(cmd)", "js-exec-imported"),
+    ("a.mjs", "import { exec } from 'node:child_process';\nexec(`ls ${dir}`)", "js-exec-imported"),
+    ("a.js", "const c = require('crypto').createCipher('aes192', pw)", "js-create-cipher"),
+    ("a.js", "const c = nodeCrypto.createCipher('aes192', pw)", "js-create-cipher"),
 ])
 def test_each_rule_fires(path, line, rule):
     assert rule in _rules(path, line)
@@ -114,6 +130,18 @@ def test_each_rule_fires(path, line, rule):
     ("a.txt", "eval(x); pickle.load(f); os.system(c)"),     # not a code file
     ("a.md", "yaml.load(text)"),
     ("a.py", "a.js = 'eval(x)'" if False else "print('hello')"),
+    # review-H507 F7/F8: the guard reads the whole call, nested and wrapped
+    ("a.py", "cfg = yaml.load(open(p).read(), Loader=yaml.SafeLoader)"),
+    ("a.py", "w = torch.load(os.path.join(d, 'm.pt'), weights_only=True)"),
+    ("a.py", "w = torch.load(p, map_location=torch.device('cpu'), weights_only=True)"),
+    ("a.py", "w = torch.load(\n    path,\n    weights_only=True,\n)"),
+    ("a.py", "cfg = yaml.load(\n    fh,\n    Loader=yaml.SafeLoader,\n)"),
+    ("a.py", "cur.execute(\"SELECT * FROM t WHERE id = ?\", (f\"{a}\",))"),
+    ("a.py", "    def eval(self, x):"),
+    ("a.py", "    async def exec(self, q):"),
+    ("a.js", "exec(cmd)"),                                       # no child_process here
+    ("a.js", "const cp = require('child_process');\nconst m = regex.exec(s)"),
+    ("a.js", "const c = nodeCrypto.createCipheriv('aes-256-gcm', k, iv)"),
 ])
 def test_the_guards_hold(path, line):
     assert _rules(path, line) == []
@@ -183,7 +211,9 @@ def test_findings_and_the_scanned_bytes_are_bounded(monkeypatch):
     runs = "\n".join(f"- run: echo ${{{{ github.event.a{i} }}}}" for i in range(40))
     assert len(scan(".github/workflows/w.yml", runs)) == code_guidance.MAX_FINDINGS
     monkeypatch.setattr(code_guidance, "MAX_SCAN_BYTES", 20)
-    assert scan("a.py", "x = 1\n" * 5 + "eval(x)\n") == []
+    # Cut short, and said so (review-H507 F5): it does not read as a clean file.
+    assert scan("a.py", "x = 1\n" * 5 + "eval(x)\n") == [_incomplete(4)]
+    assert scan("a.txt", "x = 1\n" * 5 + "eval(x)\n") == []                # never scanned at all
 
 
 # ── the approval card and the write result ───────────────────────────────────────
@@ -307,7 +337,10 @@ def test_scan_tree_walks_a_skill_folder(tmp_path):
     assert [(w["path"], w["rule"], w["line"]) for w in found] == [
         ("lib/ui.js", "js-inner-html", 1), ("main.py", "py-os-system", 2)]
     assert code_guidance.scan_tree(tmp_path / "missing") == []
-    assert code_guidance.scan_tree(root, max_files=1) == []                   # SKILL.md is first
+    # Only code files count toward the bound, and the one it stops at is named
+    # (review-H507 F5): SKILL.md and blob.bin come first and are never read.
+    assert [(w["path"], w["rule"]) for w in code_guidance.scan_tree(root, max_files=1)] == [
+        ("lib/ui.js", "js-inner-html"), ("main.py", "scan-incomplete")]
     settings_db.put_category("security", {"code_guidance": False})
     assert code_guidance.scan_tree(root) == []
 
@@ -386,3 +419,213 @@ def test_the_setting_row_is_declared():
     rows = {(r["category"], r["key"]): r for r in settings_db.DEFAULTS}
     row = rows[code_guidance.SETTING]
     assert row["kind"] == "toggle" and row["value"] is True
+
+
+# ── review round (review-H507) ───────────────────────────────────────────────────
+
+# F1 — the scan runs on the hub's event loop (the card is labelled before it exists),
+# so no line may cost more than linear time and no file more than a bounded wall time.
+@pytest.mark.parametrize("path,text", [
+    ("x.html", "<script " * 125_000),
+    ("x.py", "yaml.load(" * 100_000 + "Loader=SafeLoader"),
+    ("x.py", "torch.load(" * 90_000 + "weights_only=True"),
+    ("x.py", "hashlib.md5(" * 80_000),
+    ("x.py", "cur.execute(" * 80_000),
+    ("x.js", "require('child_process')\n" + "exec(" * 190_000),
+    ("x.py", ("yaml.load(" * 50 + "Loader=SafeLoader\n") * 1900),
+])
+def test_a_crafted_megabyte_scans_in_under_a_second(path, text):
+    started = time.monotonic()
+    scan(path, text)
+    assert time.monotonic() - started < 1.0
+
+
+def test_a_scan_out_of_time_stops_and_says_where(monkeypatch):
+    monkeypatch.setattr(code_guidance, "SCAN_SECONDS", -1.0)
+    assert scan("a.py", "x = 1\neval(x)\n") == [_incomplete(1)]
+    assert scan(".github/workflows/w.yml", "- run: echo ${{ github.event.a }}\n") == [_incomplete(1)]
+
+
+def test_the_card_for_a_crafted_megabyte_is_labelled_promptly(tmp_path):
+    from agents.core.file_tools import FileScope, FileTools, SnapshotStore, register_file_tools
+    from agents.core.tool_rpc import ToolRPCServer
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+    tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snaps"), max_bytes=2_000_000)
+    server = ToolRPCServer(enqueue=lambda *a, **k: 1, execution_context_check=lambda context, task: True)
+    register_file_tools(server, tools, enabled=True)
+    started = time.monotonic()
+    out = asyncio.run(server.handle({"tool": "file_write", "args": {"path": "x.html", "content": "<script " * 125_000}}))
+    assert out["reason"] == "approval_required" and time.monotonic() - started < 3.0
+
+
+# F2 — a gated write ends the turn, so the answer and the loop's reply carry them.
+def test_the_approval_answer_tells_the_model_the_warnings(wiring):
+    server, tools, root, cards = wiring
+    out = asyncio.run(server.handle({"tool": "file_write", "args": {"path": "job.py", "content": CODE}}))
+    assert out["reason"] == "approval_required"
+    assert out["code_warnings"] == "py-pickle-load@2, py-shell-true@3" and out["code_warning_count"] == 2
+    clean = asyncio.run(server.handle({"tool": "file_write", "args": {"path": "ok.py", "content": "print(1)\n"}}))
+    assert clean["reason"] == "approval_required" and "code_warnings" not in clean
+
+
+def test_the_agent_loop_says_the_warnings_when_it_pauses_for_approval(wiring):
+    from agents.core.agent_runtime import _APPROVAL_REPLY, AgentToolRuntime
+    from agents.core.llm.tool_protocol import ToolCall, ToolTurn
+
+    server, tools, root, cards = wiring
+
+    class _Backend:
+        supports_tools = True
+        calls = 0
+
+        async def generate_tool_turn(self, **kwargs):
+            self.calls += 1
+            args = {"path": "job.py", "content": CODE}
+            return ToolTurn(tool_calls=(ToolCall(id="w1", name="file_write", raw_arguments=json.dumps(args),
+                                                 arguments=args),), finish_reason="tool_calls")
+
+    backend = _Backend()
+    answer = asyncio.run(AgentToolRuntime(server, enabled=lambda: True).run(
+        agent_id="jarvis", backend=backend, model="local-model", prompt="write job.py", max_tokens=256))
+    assert answer.startswith(_APPROVAL_REPLY) and backend.calls == 1
+    assert "py-pickle-load@2, py-shell-true@3" in answer and "not refusals" in answer
+    assert not (root / "job.py").exists() and cards[-1]["payload"]["code_warning_count"] == 2
+
+
+# F3 — a generated skill's warnings reach the caller that answers the model.
+def test_a_stale_generation_warning_does_not_survive_an_early_return(tmp_path, monkeypatch):
+    from agents.core.skills import loader as skill_loader
+    from agents.core.skills.loader import SkillLoader
+
+    monkeypatch.setattr(skill_loader, "SKILLS_DIR", tmp_path / "skills")
+    monkeypatch.setattr(skill_loader, "_user_skills_dir", lambda: tmp_path / "user-skills")
+    loader = SkillLoader()
+    assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"])
+    loader.last_generation_warnings = [{"path": "main.py", "rule": "py-eval", "line": 1, "message": "m"}]
+    assert loader.generate_skill("jarvis", "summarise the weather report", ["read it", "sum it"]) is None
+    assert loader.last_generation_warnings == []
+
+
+def test_skill_propose_answers_the_generated_skills_warnings():
+    from agents.core.skills.tools import TOOL_PROPOSE, register_skill_tools
+    from agents.core.tool_rpc import ToolRPCServer
+
+    warned = [{"path": "main.py", "rule": "py-eval", "line": 3, "message": "m"}]
+
+    class _Loader:
+        last_generation_problems: list = []
+        last_generation_warnings: list = []
+
+        def generate_skill(self, actor, description, steps):
+            self.last_generation_warnings = list(warned)
+            return "made"
+
+    server = ToolRPCServer()
+    register_skill_tools(server, loader=lambda: _Loader(), posture=lambda: "operator/owner", origin=lambda: "hud")
+    reply = asyncio.run(server.handle({"tool": TOOL_PROPOSE, "args": {"description": "sum the invoices",
+                                                                      "steps": ["open", "sum"]}}))
+    assert reply["ok"] is True and reply["result"]["kind"] == "new"
+    assert reply["result"]["code_warnings"] == warned
+    warned.clear()
+    reply = asyncio.run(server.handle({"tool": TOOL_PROPOSE, "args": {"description": "sum the bills",
+                                                                      "steps": ["open", "sum"]}}))
+    assert reply["ok"] is True and "code_warnings" not in reply["result"]
+
+
+# F4 — the card scans the file the write lands on, not only the name as spelled.
+def test_the_card_scans_the_file_the_write_lands_on(wiring):
+    server, tools, root, cards = wiring
+    (root / "deploy.py").write_text("", encoding="utf-8")
+    try:
+        (root / "notes.txt").symlink_to(root / "deploy.py")
+    except OSError:
+        pytest.skip("no symlinks here")
+    labels = tools.classify_mutation({"path": "notes.txt", "content": "import os\nos.system(cmd)\n"})
+    assert labels["code_warnings"] == "py-os-system@2"
+    flow = "on: issues\njobs:\n  t:\n    steps:\n      - run: echo ${{ github.event.issue.title }}\n"
+    for spelled in (".github/./workflows/ci.yml", ".github//workflows/ci.yml"):
+        assert tools.classify_mutation({"path": spelled, "content": flow})["code_warnings"] == \
+            "gha-expression-injection@5", spelled
+    assert tools.classify_mutation({"path": "notes.md", "content": "eval(x)\n"}) is None
+
+
+# F5 — a package padded with assets is still scanned; a cut scan says it was cut.
+def test_a_package_padded_with_assets_is_still_scanned(tmp_path):
+    from agents.core.skills.marketplace import SkillMarketplace
+
+    market = SkillMarketplace(skills_dir=str(tmp_path / "skills"), db_path=str(tmp_path / "m.db"))
+    skill_md = "---\nname: padded\ndescription: does risky things\n---\n# Padded\n\nUse it.\n"
+    files = {"SKILL.md": skill_md, "main.py": "import os\nos.system(cmd)\n"}
+    files.update({f"assets/a{i:03}.png": "x" for i in range(210)})
+    assert market.install_from_zip(_package(files)) is True
+    assert [(w["path"], w["rule"]) for w in market.last_install_warnings] == [("main.py", "py-os-system")]
+
+
+def test_a_file_past_the_limit_says_so():
+    assert scan("a.py", "x = 1\n" * 200_000 + "os.system(c)\n") == [_incomplete(166_667)]
+
+
+def test_a_tree_cut_short_names_what_it_did_not_read(tmp_path, monkeypatch):
+    root = tmp_path / "skill"
+    root.mkdir()
+    (root / "big.py").write_bytes(b"x = 1\n" * 200_000 + b"os.system(c)\n")     # 1.2 MB
+    (root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    found = code_guidance.scan_tree(root)
+    assert found == [{"path": "big.py", **_incomplete(166_667)}]              # where the first 1 MB ends
+    (root / "late.py").write_text("eval(x)\n", encoding="utf-8")
+    monkeypatch.setattr(code_guidance, "TREE_SECONDS", -1.0)
+    assert [(w["path"], w["rule"]) for w in code_guidance.scan_tree(root)] == [("big.py", "scan-incomplete")]
+
+
+# F6 — a `- run: |` block ends at its own step's other keys.
+def test_a_dash_run_block_ends_at_its_steps_other_keys():
+    flow = """\
+on: issues
+jobs:
+  t:
+    steps:
+      - run: |
+          echo "$TITLE"
+        env:
+          TITLE: ${{ github.event.issue.title }}
+      - run: |
+          echo "${{ github.event.issue.body }}"
+        with:
+          x: ${{ github.event.issue.body }}
+        if: ${{ github.event.issue.title != '' }}
+"""
+    assert [f["line"] for f in scan(".github/workflows/w.yml", flow)] == [10]
+
+
+# F9 — lines are counted as Python and a shell count them: at a newline only.
+def test_line_numbers_follow_newlines_only():
+    assert [(f["rule"], f["line"]) for f in scan("a.py", "x = 1\x0cy = 2\neval(z)")] == [("py-eval", 2)]
+    assert [(f["rule"], f["line"]) for f in scan("a.py", "s = 'a\u2028b'\neval(z)")] == [("py-eval", 2)]
+    assert scan("a.py", "# note\x0ceval(z)\nx = 1\n") == []                # all one comment
+    assert [(f["rule"], f["line"]) for f in scan("a.py", 'import os\nos.system\x0c("ls")\n')] == [
+        ("py-os-system", 2)]
+    assert [f["line"] for f in scan("a.py", "x = 1\r\neval(z)\r\n")] == [2]
+    assert [f["line"] for f in scan("a.py", "x = 1\reval(z)\r")] == [2]
+    flow = "on: issues\n# a\x0cb\njobs:\n  t:\n    steps:\n      - run: echo ${{ github.event.a }}\n"
+    assert [f["line"] for f in scan(".github/workflows/w.yml", flow)] == [6]
+
+
+# F10 — dotfiles are shell files.
+@pytest.mark.parametrize("path", [".env", "app/.env", ".env.local", ".bashrc", ".zshrc", ".profile"])
+def test_dotfiles_are_scanned_as_shell(path):
+    assert _rules(path, "export NODE_TLS_REJECT_UNAUTHORIZED=0") == ["js-tls-off"]
+
+
+# F11 — safe mode puts the switch back on.
+def test_safe_mode_forces_the_switch_on(monkeypatch):
+    from agents.core import safe_mode
+
+    settings_db.put_category("security", {"code_guidance": False})
+    assert code_guidance.enabled() is False
+    monkeypatch.setenv(safe_mode.ENV_NAME, "1")
+    try:
+        assert code_guidance.enabled() is True
+    finally:
+        safe_mode.reset()
