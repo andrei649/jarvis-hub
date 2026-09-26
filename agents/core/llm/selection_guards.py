@@ -98,9 +98,10 @@ def price_of(model: str) -> dict | None:
 
 def _cost_line() -> float:
     try:
-        from agents.core import settings_db
+        from agents.core import safe_mode
 
-        value = settings_db.get_value(*COST_SETTING, DEFAULT_COST_LINE)
+        # H490: in safe mode, the stricter of the owner's line and the shipped $40.
+        value = safe_mode.get_value(*COST_SETTING, DEFAULT_COST_LINE)
     except Exception:  # noqa: BLE001 — an unreadable store keeps the shipped line
         value = DEFAULT_COST_LINE
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:

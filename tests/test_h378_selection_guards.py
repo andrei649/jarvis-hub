@@ -451,3 +451,15 @@ def test_the_line_is_a_declared_non_negative_number(store):
     assert spec["value"] == 40 and spec["kind"] == "number"
     assert settings_db.validate_category("llm", {"cost_confirm_usd_per_mtok": -1})
     assert settings_db.validate_category("llm", {"cost_confirm_usd_per_mtok": 12.5}) == []
+
+
+# ── safe mode (H490) ────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("owner,line", [(0, 40.0), (100, 40.0), (20, 20.0), (0.5, 0.5), (-3, 40.0)])
+def test_safe_mode_asks_at_the_stricter_line(store, monkeypatch, owner, line):
+    """Raising the line, or 0 (never ask), loosens a confirmation, so safe mode reads the
+    stricter of it and the shipped $40; a line under $1 is a strict one and is kept."""
+    monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+    monkeypatch.setattr(settings_db, "get_value",
+                        lambda c, k, d=None: owner if (c, k) == sg.COST_SETTING else d)
+    assert sg._cost_line() == line

@@ -76,6 +76,8 @@ LAYERS = (
 _ON_LOOSENS, _OFF_LOOSENS, _MORE_LOOSENS = "on-loosens", "off-loosens", "more-loosens"
 #: More loosens, and a value under 1 (which ``int()`` reads as 0) is no cap at all.
 _UNCAPPED_UNDER_1 = "more-loosens, under 1 uncapped"
+#: More loosens, and 0 (or less) is no line at all; a small positive value is a strict one.
+_UNCAPPED_AT_0 = "more-loosens, 0 uncapped"
 FORCED_SETTINGS: dict[str, object] = {
     "llm.inbound_actuation": _ON_LOOSENS,
     "llm.internal_actuation": _ON_LOOSENS,
@@ -94,6 +96,8 @@ FORCED_SETTINGS: dict[str, object] = {
     "autonomy.max_subagent_spawns_per_boot": _UNCAPPED_UNDER_1,
     "channels.rate_limit": _MORE_LOOSENS,
     "learning.review_daily_budget": _MORE_LOOSENS,
+    # H378: a higher line, or 0 (never ask), asks before fewer expensive models.
+    "llm.cost_confirm_usd_per_mtok": _UNCAPPED_AT_0,
     # A list: only the shipped names the owner also kept, in the owner's order.
     "llm.guest_tools": "subset",
     # An order, strictest first.
@@ -149,10 +153,10 @@ def stricter(key: str, owner, shipped):
         return bool(shipped) and bool(owner)
     if rule == _OFF_LOOSENS:
         return bool(shipped) or bool(owner)
-    if rule in (_MORE_LOOSENS, _UNCAPPED_UNDER_1):
+    if rule in (_MORE_LOOSENS, _UNCAPPED_UNDER_1, _UNCAPPED_AT_0):
         if isinstance(owner, bool) or not isinstance(owner, (int, float)):
             return shipped
-        if rule == _UNCAPPED_UNDER_1 and owner < 1:
+        if (rule == _UNCAPPED_UNDER_1 and owner < 1) or (rule == _UNCAPPED_AT_0 and owner <= 0):
             return shipped
         return min(owner, shipped)
     if rule == "subset":
