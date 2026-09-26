@@ -1910,7 +1910,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
-        self._title_session(text)   # H413: a first message names the session
+        self._title_session(text, channel)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
@@ -2098,7 +2098,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
-        self._title_session(text)   # H413: a first message names the session
+        self._title_session(text, channel)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
@@ -2741,14 +2741,27 @@ class Orchestrator:
             return await self.memory.recall(query, top_k=k, keyword=text)
         return await self.memory.recall(text, top_k=k)
 
-    def _title_session(self, text: str) -> None:
+    def _title_session(self, text: str, channel: str = "") -> None:
         """H413 — name a session from its first message: at once from its first words,
         then once in the background by the strict-local model, started after the turn's
         reply (never alongside it). Never raises; an already-titled session (or
-        ``memory.session_titles`` off) is left alone."""
+        ``memory.session_titles`` off) is left alone.
+
+        Only a conversation's own opening words name it: an internal turn (a notes
+        rewrite, a workflow step, an eval) never does, nor does an inbound turn from
+        anyone but the owner on the shared session (a widget visitor, a webhook). The
+        words are the owner's own (``session_titles.own_words``), never the session notes
+        or attached files a chat route composed around them."""
         from . import session_titles
+        from .action_origin import INBOUND_ACTION_ORIGIN, INTERNAL_TURN_CHANNELS
 
         try:
+            if str(channel or "").strip().lower() in INTERNAL_TURN_CHANNELS:
+                return
+            if (current_action_origin() == INBOUND_ACTION_ORIGIN and self.on_shared_session()
+                    and not current_principal().admin):
+                return
+            text = session_titles.own_words(text)
             manager = getattr(self, "checkpoints", None)
             session = str(getattr(self, "session_id", "") or "")
             if manager is None or not session or self.get_setting(session_titles.SETTING, True) is False:

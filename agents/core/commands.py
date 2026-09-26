@@ -215,7 +215,9 @@ def _sessions(ctx: CommandContext) -> str:
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
-        title = title_fields(row.get("metadata"))["title"]   # H413
+        # H413: a title is the opening words of the owner's conversation, so only the
+        # owner sees it; a widget visitor or a paired guest gets the id and time.
+        title = title_fields(row.get("metadata"))["title"] if ctx.principal.admin else ""
         lines.append(f"{sid}  {started}  {title}".rstrip())
     return "Recent sessions:\n" + "\n".join(lines)
 

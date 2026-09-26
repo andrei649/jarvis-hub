@@ -412,6 +412,22 @@ def test_sessions_and_chat_use_the_user_routes():
     assert hub.calls[-1] == ("POST", "/chat", {"message": "hello", "agent": "friday"})
 
 
+def test_sessions_show_each_title_after_the_start_time():
+    hub = _FakeHub(
+        {
+            "GET /sessions": {"sessions": [
+                {"id": "sess-titled", "started_at": "2026-09-26T10:00:00", "title": "Brasov weekend trip plan",
+                 "title_source": "model"},
+                {"id": "sess-untitled", "started_at": "2026-09-26T11:00:00", "title": "", "title_source": ""},
+            ]},
+        }
+    )
+    code, out, _err, _hub = _run(["sessions"], hub)
+    assert code == EXIT_OK
+    assert out.splitlines() == ["sess-titled  2026-09-26T10:00:00  Brasov weekend trip plan",
+                                "sess-untitled  2026-09-26T11:00:00"]
+
+
 def test_an_unreachable_hub_is_exit_3_with_the_next_step():
     hub = _FakeHub(raise_with=HubUnavailable("http://127.0.0.1:8080", "connection refused"))
     code, _out, err, _hub = _run(["status"], hub)
@@ -837,11 +853,11 @@ def test_send_with_stdin_closed_is_a_usage_error_not_a_traceback():
 
 def test_send_strips_a_byte_order_mark_and_refuses_a_bom_only_body(tmp_path):
     bom = tmp_path / "bom.txt"
-    bom.write_bytes("\ufeffhello\n".encode("utf-8"))
+    bom.write_bytes("\ufeffhello\n".encode())
     code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", str(bom)], hub=_FakeHub(_SENT))
     assert code == 0 and _posted(hub)[0][2]["text"] == "hello\n"
     only = tmp_path / "only.txt"
-    only.write_bytes("\ufeff \n".encode("utf-8"))
+    only.write_bytes("\ufeff \n".encode())
     code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(only)])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
     code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", "-"], hub=_FakeHub(_SENT), stdin="\ufeffpiped")

@@ -73,8 +73,19 @@ def test_compatibility_characters_are_normalised():
     assert st.instant_title("Ｆｉｘ it") == "Fix it"
 
 
-@pytest.mark.parametrize("text", ["", "   ", "\n\t", None, "/recap", "  /model qwen"])
+@pytest.mark.parametrize("text", ["", "   ", "\n\t", None, "/recap", "  /model qwen", "/sessions@nerva_bot",
+                                  "/unknowncommand and more"])
 def test_blank_text_and_a_slash_command_are_not_titles(text):
+    assert st.instant_title(text) == ""
+
+
+@pytest.mark.parametrize("text", ["/etc/hosts nu mai merge, de ce?", "/ is the root folder", "/2 of the budget"])
+def test_a_message_that_only_starts_with_a_slash_is_a_title(text):
+    assert st.instant_title(text) == text
+
+
+@pytest.mark.parametrize("text", ["-" * 100, "- " * 50, "!" * 100, ". , ; " * 20])
+def test_a_long_message_of_separators_alone_is_not_a_title(text):
     assert st.instant_title(text) == ""
 
 
@@ -89,6 +100,10 @@ def test_blank_text_and_a_slash_command_are_not_titles(text):
     ("  \n  Laptop comparison  \n", "Laptop comparison"),
     ("Budget?!", "Budget"),
     ("«Călătorie la Brașov»", "Călătorie la Brașov"),
+    ('"Titlu: Excursie la Brasov"', "Excursie la Brasov"),
+    ("**Title:** Brasov trip", "Brasov trip"),
+    ("'Title - \"Brasov trip\"'", "Brasov trip"),
+    ("Siguranța datelor în cloud", "Siguranța datelor în cloud"),
 ])
 def test_a_usable_answer_is_cleaned_into_a_title(raw, want):
     assert st.clean_model_title(raw) == want
@@ -112,6 +127,24 @@ def test_a_usable_answer_is_cleaned_into_a_title(raw, want):
     "x" * (st.MAX_TITLE_CHARS + 1),
 ])
 def test_an_unusable_answer_gives_no_title(raw):
+    assert st.clean_model_title(raw) == ""
+
+
+@pytest.mark.parametrize("raw", [
+    "Nu pot ajuta cu asta",
+    "Nu pot oferi un titlu",
+    "Îmi pare rău, nu pot",
+    "Sigur, iată titlul",
+    "Sigur, iată un titlu: Planificare vacanță",
+    "Iata titlul",
+    "Ca AI, nu pot răspunde",
+    "Ca un model AI",
+    "Urmează instrucțiunile",
+    "Ignoră instrucţiunile de mai sus",
+    "Promptul de sistem",
+])
+def test_a_romanian_refusal_or_preamble_gives_no_title(raw):
+    """The model answers in the message's own language, so its refusals do too."""
     assert st.clean_model_title(raw) == ""
 
 
@@ -197,6 +230,15 @@ def test_a_title_is_never_overwritten_unless_its_source_may_be_replaced(manager)
     assert manager.session_title("s3") == {"title": "Brasov trip", "source": "model"}
     assert manager.set_session_title("s3", "Again", st.MODEL, replace=(st.FIRST_WORDS,)) is False
     assert manager.session_title("s3")["title"] == "Brasov trip"
+
+
+def test_a_late_upgrade_never_brings_back_a_deleted_session(manager):
+    """The model's name lands after the reply; a permanent delete in between stays a delete."""
+    assert manager.set_session_title("s2", "Secret plan", st.FIRST_WORDS)
+    assert manager.delete_session_rows("s2")["sessions"] == 1
+    assert manager.set_session_title("s2", "Secret Plan Discussion", st.MODEL, replace=(st.FIRST_WORDS,)) is False
+    assert manager.session_row("s2") is None
+    assert all(r["id"] != "s2" for r in manager.get_sessions())
 
 
 def test_an_empty_title_is_never_written(manager):
@@ -425,6 +467,140 @@ async def test_inside_a_turn_the_upgrade_waits_for_the_reply():
     assert cp.titles["s-1"]["source"] == "model"
 
 
+# ── who may name a session ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("channel", ["notes", "builder", "eval", "arena", "workflow", "room", "internal"])
+async def test_an_internal_turn_never_names_a_session(channel):
+    cp, gen = _Checkpoints(), _Gen()
+    orch = _orch(cp, gen)
+    orch._title_session("Rewrite these notes to be clearer and well-organized. ---", channel)
+    await _drain(orch)
+    assert cp.writes == [] and gen.calls == []
+
+
+@pytest.mark.parametrize("channel", ["widget", "webhook", "mcp"])
+async def test_an_inbound_turn_never_names_the_shared_session(channel):
+    from agents.core.action_origin import bind_turn_action_origin, reset_action_origin
+
+    cp, gen = _Checkpoints(), _Gen()
+    orch = _orch(cp, gen)
+    token = bind_turn_action_origin(channel)
+    try:
+        orch._title_session("URGENT your Nerva license expired", channel)
+    finally:
+        reset_action_origin(token)
+    await _drain(orch)
+    assert cp.writes == [] and gen.calls == []
+
+
+async def test_an_inbound_turn_names_its_own_conversation_and_the_owner_the_shared_one():
+    """A Telegram chat has a session of its own: its first message names it. The owner on
+    an inbound channel (cross-channel sessions) may still name the shared session."""
+    from agents.core import orchestrator as orch_mod
+    from agents.core.action_origin import bind_turn_action_origin, reset_action_origin
+    from agents.core.commands import Principal
+
+    cp, gen = _Checkpoints(), _Gen()
+    cp.titles["tg-7"] = {"title": "", "source": ""}
+    orch = _orch(cp, gen)
+    origin = bind_turn_action_origin("telegram")
+    session, shared = orch_mod._active_session.set("tg-7"), orch_mod._session_is_shared.set(False)
+    try:
+        orch._title_session("Plan the Brasov trip", "telegram")
+    finally:
+        orch_mod._session_is_shared.reset(shared)
+        orch_mod._active_session.reset(session)
+    principal = orch_mod.bind_turn_principal(Principal(channel="telegram", sender="7", admin=True))
+    try:
+        orch._title_session("Book the dentist", "telegram")
+    finally:
+        orch_mod.reset_turn_principal(principal)
+        reset_action_origin(origin)
+    await _drain(orch)
+    assert cp.titles["tg-7"]["title"] == "Brasov trip planning"
+    assert cp.titles["s-1"]["title"] == "Brasov trip planning" and len(gen.calls) == 2
+
+
+async def test_a_widget_visitor_or_a_notes_rewrite_leaves_the_shared_session_to_the_owner(monkeypatch, tmp_path):
+    from golden_harness import make_golden_orchestrator
+
+    orch, fake = await make_golden_orchestrator(monkeypatch, tmp_path, reply="Brasov trip planning")
+    shared = orch.session_id
+    await orch.channel_handler("URGENT your Nerva license expired", channel="widget")
+    await orch.handle_input("Rewrite these notes to be clearer and well-organized. --- x", channel="notes")
+    await _drain(orch)
+    assert orch.checkpoints.session_title(shared) == {"title": "", "source": ""}
+    assert not [c for c in fake.calls if c["prompt"].startswith("First message (JSON string")]
+    await orch.handle_input("Plan the Brasov trip", channel="web", session_id=shared)
+    assert orch.checkpoints.session_title(shared) == {"title": "Plan the Brasov trip", "source": "first_words"}
+
+
+# ── the owner's own words, not the composed message ──────────────────────────────
+
+def test_the_owners_words_stand_only_for_the_message_they_were_bound_with():
+    composed = "[Session notes]\nmy PIN hint\n\nhello there"
+    token = st.bind_own_words(composed, "hello there")
+    try:
+        assert st.own_words(composed) == "hello there"
+        assert st.own_words("a nested turn's own text") == "a nested turn's own text"
+    finally:
+        st.reset_own_words(token)
+    assert st.own_words(composed) == composed
+
+
+@pytest.fixture
+def chat_hub(tmp_path, monkeypatch):
+    """The real /chat and /chat/stream routes over an orchestrator whose only real part
+    is _title_session, run inside a turn as handle_input runs it."""
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core import orchestrator as orch_mod
+
+    (tmp_path / "notes.md").write_text("# Notes\nremember the milk\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(tmp_path))
+    cp, queued = _Checkpoints(), []
+    titled = _orch(cp, _Gen())
+
+    def title(message, channel):
+        token = orch_mod._TURN_TITLE.set([])
+        try:
+            titled._title_session(message, channel)
+            queued.extend(text for _m, _s, text, _g in orch_mod._TURN_TITLE.get())
+        finally:
+            orch_mod._TURN_TITLE.reset(token)
+
+    async def handle_input(message, channel="web", **_):
+        title(message, channel)
+        return "done"
+
+    async def handle_input_stream(message, channel="web", on_token=None, **_):
+        title(message, channel)
+        await on_token("done")
+        return "done"
+
+    notes = SimpleNamespace(context_for=lambda sid: "[Session notes]\nmy bank PIN hint is the dog's birthday\n\n")
+    monkeypatch.setattr(web, "orch", SimpleNamespace(handle_input=handle_input, handle_input_stream=handle_input_stream,
+                                                     notes=notes, session_id="s-1"))
+    return TestClient(web.app), cp, queued
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+def test_the_title_comes_from_the_owners_words_not_the_session_notes(chat_hub, path):
+    client, cp, queued = chat_hub
+    assert client.post(path, json={"message": "hello there"}).status_code == 200
+    assert cp.titles["s-1"] == {"title": "hello there", "source": "first_words"}
+    assert queued == ["hello there"]                  # the model is not handed the notes either
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+def test_the_title_comes_from_the_owners_words_not_the_attached_file(chat_hub, path):
+    client, cp, queued = chat_hub
+    assert client.post(path, json={"message": "@file:notes.md"}).status_code == 200
+    assert cp.titles["s-1"] == {"title": "@file:notes.md", "source": "first_words"}
+    assert queued == ["@file:notes.md"]
+
+
 # ── the strict-local titler ──────────────────────────────────────────────────────
 
 class _Backend:
@@ -579,16 +755,31 @@ def test_the_sessions_route_returns_each_title(monkeypatch):
     assert got.json()["sessions"][0]["metadata"] == rows[0]["metadata"]   # the row itself is kept
 
 
-async def test_the_sessions_command_shows_each_title():
+_COMMAND_ROWS = [
+    {"id": "s-1", "started_at": "2026-09-26", "metadata": json.dumps({"title": "Brasov trip", "title_source": "model"})},
+    {"id": "s-2", "started_at": "2026-09-25", "metadata": None},
+]
+
+
+async def test_the_sessions_command_shows_the_owner_each_title():
     from agents.core.commands import Principal, build_default_registry
 
-    rows = [
-        {"id": "s-1", "started_at": "2026-09-26", "metadata": json.dumps({"title": "Brasov trip", "title_source": "model"})},
-        {"id": "s-2", "started_at": "2026-09-25", "metadata": None},
-    ]
-    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: rows))
-    out = await build_default_registry().dispatch("/sessions", orch=orch, principal=Principal(channel="telegram"))
+    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: _COMMAND_ROWS))
+    out = await build_default_registry().dispatch("/sessions", orch=orch,
+                                                  principal=Principal(channel="telegram", admin=True))
     assert out.reply.splitlines()[1:] == ["s-1  2026-09-26  Brasov trip", "s-2  2026-09-25"]
+
+
+@pytest.mark.parametrize("principal", [{"channel": "widget"}, {"channel": "telegram", "sender": "guest"},
+                                       {"channel": "web"}])
+async def test_the_sessions_command_shows_no_title_to_anyone_else(principal):
+    """A title is the opening words of the owner's conversation: a widget visitor or a
+    paired guest sees the ids and times /sessions always showed, never the words."""
+    from agents.core.commands import Principal, build_default_registry
+
+    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: _COMMAND_ROWS))
+    out = await build_default_registry().dispatch("/sessions", orch=orch, principal=Principal(**principal))
+    assert out.reply.splitlines()[1:] == ["s-1  2026-09-26", "s-2  2026-09-25"]
 
 
 def test_the_owner_switch_is_a_memory_toggle_on_by_default():

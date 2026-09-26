@@ -267,13 +267,17 @@ class CheckpointManager:
                           replace: tuple[str, ...] = ()) -> bool:
         """H413 — write the title when the session has none, or its current title came
         from one of ``replace`` (compare-and-set: a newer title is never overwritten).
-        Whether it was written. The row is created when it is missing."""
+        Whether it was written. A first title creates a missing row; a replacing write
+        (the model's upgrade, after the reply) never does, so a session deleted in
+        between stays deleted."""
         if not self._conn or not isinstance(title, str) or not title:
             return False
         try:
             with self._lock:
                 row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
                 if row is None:
+                    if replace:
+                        return False
                     self._conn.execute(
                         "INSERT OR IGNORE INTO sessions (id, started_at, turn_count, metadata) VALUES (?, ?, 0, '{}')",
                         (session_id, datetime.now(timezone.utc).isoformat()))

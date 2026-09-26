@@ -23,6 +23,7 @@ overwrites a newer title, and is returned by ``GET /sessions``. The owner's swit
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -48,10 +49,15 @@ no quotes, no label, no punctuation at the end."""
 _LABEL_RE = re.compile(r"^(?:title|titlu|name|nume)\s*[:\-–]\s*", re.IGNORECASE)
 _LEAK_RE = re.compile(
     r"\b(?:ignor\w*|disregard\w*|obey\w*|instructions?|system\s+prompt|as\s+an\s+ai|"
-    r"i\s+(?:cannot|can't|am\s+unable)|sure|here\s+is|here's)\b",
+    r"i\s+(?:cannot|can't|am\s+unable)|sure|here\s+is|here's|"
+    # the same in Romanian: the model answers in the message's own language
+    r"instruc[țţt]iun\w*|prompt\w*\s+de\s+sistem|ca\s+(?:un\s+)?(?:model\s+)?(?:ai|ia)|nu\s+pot|sigur|iat[ăa])\b",
     re.IGNORECASE,
 )
 _URL_RE = re.compile(r"(?:https?://|www\.)", re.IGNORECASE)
+#: The owner's own words inside the turn's composed message (``/chat`` puts the session
+#: notes before them and attached files after them): a session is titled from these.
+_OWN_WORDS: contextvars.ContextVar = contextvars.ContextVar("jarvis_session_title_words", default=None)
 
 
 def _clean_line(text: str) -> str:
@@ -69,13 +75,16 @@ def _cut(text: str, limit: int = MAX_TITLE_CHARS) -> str:
     space = head.rfind(" ")
     if space >= limit // 2:
         head = head[:space]
-    return head.rstrip(" ,;:-–") + "…"
+    head = head.rstrip(" ,;:-–")
+    return head + "…" if any(ch.isalnum() for ch in head) else ""   # separators alone are no title
 
 
 def instant_title(text: str) -> str:
     """The first-words title of a first message, or ``""`` for a command or blank text."""
+    from .commands import CommandRegistry
+
     line = _clean_line(text)
-    if not line or line.startswith("/"):
+    if not line or CommandRegistry.parse(line) is not None:   # "/etc/hosts …" is not a command
         return ""
     return _cut(line)
 
@@ -87,8 +96,10 @@ def clean_model_title(raw: object) -> str:
     lines = [ln for ln in (raw.strip().splitlines()) if ln.strip()]
     if len(lines) != 1:
         return ""
-    title = _clean_line(lines[0])
-    title = _LABEL_RE.sub("", title).strip().strip("\"'`“”‘’«»*_#").strip()
+    title, previous = _clean_line(lines[0]), None
+    while title != previous:   # a label inside the quotes, or quotes after the label
+        previous = title
+        title = _LABEL_RE.sub("", title).strip().strip("\"'`“”‘’«»*_#").strip()
     title = title.rstrip(".!?:;,…").strip()
     if not title or _URL_RE.search(title) or _LEAK_RE.search(title):
         return ""
@@ -96,6 +107,22 @@ def clean_model_title(raw: object) -> str:
     if not 1 <= len(words) <= MAX_WORDS or len(title) > MAX_TITLE_CHARS:
         return ""
     return title
+
+
+def bind_own_words(message: str, words: str):
+    """Name the owner's own ``words`` inside the composed turn ``message``; the reset token."""
+    return _OWN_WORDS.set((message, words))
+
+
+def reset_own_words(token) -> None:
+    _OWN_WORDS.reset(token)
+
+
+def own_words(message: str) -> str:
+    """What a session is titled from: the owner's own words when ``message`` is the composed
+    message they were bound with, else ``message`` itself (a nested turn's own text)."""
+    bound = _OWN_WORDS.get()
+    return bound[1] if bound is not None and bound[0] == message else message
 
 
 def title_fields(metadata: object) -> dict:
@@ -126,6 +153,6 @@ async def model_title(text: str, generate: Callable[..., Awaitable[str]]) -> str
 
 
 __all__ = [
-    "FIRST_WORDS", "MAX_TITLE_CHARS", "MODEL", "SETTING", "SYSTEM_PROMPT", "clean_model_title",
-    "instant_title", "model_title", "title_fields",
+    "FIRST_WORDS", "MAX_TITLE_CHARS", "MODEL", "SETTING", "SYSTEM_PROMPT", "bind_own_words",
+    "clean_model_title", "instant_title", "model_title", "own_words", "reset_own_words", "title_fields",
 ]

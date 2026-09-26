@@ -1243,9 +1243,11 @@ async def chat(req: ChatRequest, request: Request):
             prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
+        from agents.core import session_titles
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(_web_principal(request))
         attached_token = context_refs.bind_attached(expansion)
+        words_token = session_titles.bind_own_words(message, req.message)   # H413: titled from these
         # Opened here, not inside the turn: the turn resets its own binds before
         # returning, so this is the only place that still holds the list once the
         # reply is in hand. The turn appends to THIS list (see turn_approvals).
@@ -1270,6 +1272,7 @@ async def chat(req: ChatRequest, request: Request):
             reset_turn_notices(notices_token)
             reset_turn_principal(principal_token)
             context_refs.reset_attached(attached_token)
+            session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming, notices=turn_notices)
     except Exception:
         # Constant reply — exception text in the client body is an
@@ -1279,7 +1282,7 @@ async def chat(req: ChatRequest, request: Request):
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=None):
+                             attached=None, own_words=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1304,13 +1307,14 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later. The approval collector
         # is bound here for the same reason.
-        from agents.core import context_refs
+        from agents.core import context_refs, session_titles
         from agents.core.llm.request_context import reasoning_scope
         principal_token = bind_turn_principal(principal) if principal is not None else None
         sink, approvals_token = open_turn_approvals()
         from agents.core.turn_notices import open_turn_notices, reset_turn_notices
         notices, notices_token = open_turn_notices()             # H674
         attached_token = context_refs.bind_attached(attached)   # H579: bound in the task, as above
+        words_token = session_titles.bind_own_words(message, message if own_words is None else own_words)  # H413
 
         async def end(text: str) -> None:
             queued_approvals[:] = sink
@@ -1346,6 +1350,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             reset_turn_approvals(approvals_token)
             reset_turn_notices(notices_token)
             context_refs.reset_attached(attached_token)
+            session_titles.reset_own_words(words_token)
             if principal_token is not None:
                 reset_turn_principal(principal_token)
 
@@ -1407,7 +1412,7 @@ async def chat_stream(req: ChatRequest, request: Request):
             message = prefix + message
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
-                           attached=expansion),
+                           attached=expansion, own_words=req.message),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

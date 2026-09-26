@@ -1583,7 +1583,8 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
     for row in sessions:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
-        ctx.say(f"{sid}  {started}")
+        title = row.get("title") or ""   # H413
+        ctx.say(f"{sid}  {started}  {title}".rstrip())
     return EXIT_OK
 
 
