@@ -10,6 +10,8 @@ import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
+import { type Overrides, bindings as shortcutBindings, loadOverrides, matchAction, saveOverrides } from './shortcuts';
+import { ShortcutsPanel } from './shortcuts-panel';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
@@ -197,11 +199,19 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       .catch(() => {});
   }, [demo]);
 
-  // hotkeys: number keys jump modes, ⌘K palette, A ambient
+  // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
+  // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
+  const [shortcutOverrides, setShortcutOverrides] = useState<Overrides>(() => loadOverrides());
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const changeShortcuts = useCallback((next: Overrides) => { setShortcutOverrides(next); saveOverrides(next); }, []);
   useEffect(() => {
+    const list = shortcutBindings(shortcutOverrides);
     function onKey(e) {
-      if (floating) return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); return; }
+      if (floating || shortcutsOpen) return;   // the panel owns the keyboard while it is open
+      const action = matchAction(e, list, 'global');
+      if (!action) return;
+      if (action.id === 'session.palette') { e.preventDefault(); setPalette((p) => !p); return; }
+      if (action.id === 'session.shortcuts') { e.preventDefault(); setPalette(false); setShortcutsOpen(true); return; }
       if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
@@ -211,15 +221,18 @@ function App({ floating = false }: { floating?: boolean } = {}) {
       // Same reasoning as the input/textarea bail: a surface you are reading or typing
       // into owns its keys.
       if (e.target && e.target.closest && e.target.closest('[role="log"]')) return;
-      const m = { '1': 'cockpit', '2': 'agents', '3': 'trust', '4': 'memory', '5': 'autonomy', '6': 'build', '7': 'observe', '8': 'interop', '9': 'chat', '0': 'comms' };
-      if (m[e.key]) setMode(m[e.key]);
-      else if (e.key.toLowerCase() === 'a') setAmbient(true);
-      else if (e.key.toLowerCase() === 'm') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
-      else if (e.key === '`') { e.preventDefault(); setConsoleOpen((c) => !c); }
+      if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
+      else if (action.id === 'view.ambient') setAmbient(true);
+      else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
+      else if (action.id === 'view.console') { e.preventDefault(); setConsoleOpen((c) => !c); }
+      else if (action.id === 'composer.focus') {
+        const box = document.querySelector('[data-composer]') as HTMLInputElement | null;
+        if (box) { e.preventDefault(); box.focus(); }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ambient, cinema]);
+  }, [ambient, cinema, shortcutOverrides, shortcutsOpen]);
 
   // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
   // can't send the user token, so this only attaches where the guard is
@@ -567,7 +580,8 @@ function App({ floating = false }: { floating?: boolean } = {}) {
         setAccent={setAccent} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
         ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
       {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
-      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} onExit={() => setCinema(false)} t={t} />}
+      {shortcutsOpen && <ShortcutsPanel overrides={shortcutOverrides} onChange={changeShortcuts} onClose={() => setShortcutsOpen(false)} />}
+      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} shortcutOverrides={shortcutOverrides} onExit={() => setCinema(false)} t={t} />}
     </div>
   );
 }

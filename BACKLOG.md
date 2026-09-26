@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H209 every HUD shortcut in one registry, listed and rebindable (missing → equivalent, #1207; headline 169 → 170/697).
+
+  The HUD's keys were literal maps in `app.tsx`, `world_app.tsx` and the cinema overlay. Now (`frontend/src/shortcuts.ts`, `shortcuts-panel.tsx`), as Hermes' keyboard shortcuts:
+  - **One registry.** Every shortcut is an action (id, category, label, default chord, scope): the ten modes, World, the Console, Ambient, Cinema and its three stages, focus the message box (`/`, new), the palette and the panel. All three places dispatch through `matchAction`, so a key is spelled only in the registry.
+  - **The panel.** Ctrl/⌘+/ opens Keyboard Shortcuts: Navigation, View, Composer and Session, with search. Click a chord and press the new one (“Press a key…”, Esc cancels, a lone modifier waits). ↺ resets one binding and “Reset all” resets them all. A shared chord says “Also bound to …”. Rebindings are this viewer's, kept in `localStorage`.
+  - **No key decides.** An action whose id, category or label names an approval or a decision is refused when the registry is built; approving, rejecting and deciding stay a click on the card.
+
+  38 mutants: 36 caught; the other two were equivalent (a redundant array guard, now removed, and a hook dependency that closing the panel already refreshes). Test manual: SHL-217, SHL-218.
+  Tests: vitest 1,512 → 1,532 (`shortcuts.test.tsx` 16, `app-routing.test.tsx` +3, `cinema.test.tsx` +1).
+
 - 2026-09-26 H594 the project's convention files reach the agent (missing → equivalent, #1207; headline 168 → 169/697).
 
   Nothing read a project's `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or `.cursor/rules/*.mdc`; they only counted as instruction files for writes. Now (`agents/core/project_context.py`), as Hermes' context files and subdirectory hints:
