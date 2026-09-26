@@ -1273,7 +1273,11 @@ def register(skill):
         legacy_marker.unlink(missing_ok=True)
         pending_marker.unlink(missing_ok=True)
         self._load_skill(skill_dir)
-        logger.info("Generated skill '%s' approved + activated", name)
+        if safe_mode.enabled():
+            # H275: _load_skill left it out, since it did not ship; it loads on a normal boot.
+            logger.info("Generated skill '%s' approved; it loads on the next normal boot (safe mode)", name)
+        else:
+            logger.info("Generated skill '%s' approved + activated", name)
         return True
 
     def sign_skill(self, name: str) -> Optional[str]:

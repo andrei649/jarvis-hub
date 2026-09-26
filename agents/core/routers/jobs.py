@@ -269,6 +269,15 @@ async def jobs_run(job_id: str):
         return _unavailable()
     if runner.store.get(job_id) is None:
         return JSONResponse({"error": "no such job"}, status_code=404)
+    from agents.core import safe_mode
+
+    if safe_mode.enabled():
+        # H275: no owner job runs in safe mode, and a request queued now would run
+        # unasked on the next normal boot.
+        safe_mode.note("owner_jobs")
+        return JSONResponse({"error": safe_mode.REASON,
+                             "message": "jobs do not run in safe mode; restart normally first"},
+                            status_code=409)
     try:
         receipt = runner.request_run(job_id)
     except KeyError:

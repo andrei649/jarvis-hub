@@ -84,6 +84,22 @@ Unquoted, systemd drops the backslash and the hub receives a plain `n`. It is gi
 every agent as a description of the machine, not as instructions, at most 2,000
 characters; `nerva prompt-size`, run with the same variable, counts it.
 
+## Safe mode
+
+To start without the owner's customizations (H275: skills that did not ship, saved MCP
+servers, persona and heartbeat overlays, scheduled jobs, plugins and the rest), set
+`JARVIS_SAFE_MODE=1` in `/etc/jarvis-hub/jarvis.env` and restart **both** units:
+
+```bash
+sudo systemctl restart jarvis-hub jarvis-runtime
+```
+
+Both units read that env file, and both need it: `jarvis-runtime` runs the heartbeats,
+the owner jobs and the agents on the same data root as the hub, so a hub in safe mode
+beside a normal runtime still fires them. `--safe-mode` on `serve.py`,
+`scripts/runtime_supervisor.py` or `scripts/coordinator.py` sets the same variable for
+that one process only. To leave safe mode, remove the line and restart both again.
+
 ## Notes
 
 - The unit is **hardened** (`ProtectSystem=strict`, `NoNewPrivileges`, restricted

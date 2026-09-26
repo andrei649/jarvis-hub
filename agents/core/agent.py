@@ -380,7 +380,7 @@ def _pick_overlay(candidates: list):
     from . import safe_mode
 
     if safe_mode.enabled():
-        if any(c.exists() for c in candidates[:-1]):
+        if any(safe_mode.present(c) for c in candidates[:-1]):
             safe_mode.note("persona_overlays")
         return candidates[-1]
     return next((c for c in candidates if c.exists()), candidates[-1])

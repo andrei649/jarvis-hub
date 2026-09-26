@@ -89,6 +89,38 @@ def test_the_flag_does_not_outlive_the_serve_switch_test():
     assert safe_mode.enabled() is False
 
 
+def test_the_runtime_processes_take_the_switch_too(monkeypatch):
+    """Review-H275 F3: jarvis-runtime (the supervisor and the coordinator it spawns) runs
+    the heartbeats, the owner jobs and the agents on the hub's data root, so the switch
+    has to reach it as well."""
+    from scripts import coordinator, runtime_supervisor
+
+    class _Spawned(Exception):
+        pass
+
+    def spawn():
+        raise _Spawned(runtime_supervisor._child_env().get(safe_mode.ENV_NAME))
+
+    monkeypatch.setattr(runtime_supervisor, "_spawn", spawn)
+    monkeypatch.setattr(sys, "argv", ["runtime_supervisor.py", "--safe-mode"])
+    with pytest.raises(_Spawned) as spawned:
+        runtime_supervisor.main()
+    assert spawned.value.args == ("1",)                  # the coordinator inherits it
+    monkeypatch.delenv(safe_mode.ENV_NAME)
+    ran = []
+
+    async def run():
+        ran.append(safe_mode.enabled())
+
+    monkeypatch.setattr(coordinator, "run", run)
+    monkeypatch.setattr(logging, "basicConfig", lambda **_kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["coordinator.py"])
+    coordinator.main()
+    monkeypatch.setattr(sys, "argv", ["coordinator.py", "--safe-mode"])
+    coordinator.main()
+    assert ran == [False, True]
+
+
 # ── skills: the shipped tree only ────────────────────────────────────────────────
 
 def _user_skill(home: Path, name: str) -> None:
@@ -157,6 +189,30 @@ def test_an_owner_skill_in_the_bundled_tree_is_left_out(monkeypatch, tmp_path):
     assert all(not s.external for s in safe.values())
 
 
+def test_a_skill_approved_in_safe_mode_is_said_to_load_on_the_next_normal_boot(tmp_path, monkeypatch, caplog):
+    """Review-H275 F6: approving signs the skill, but safe mode loads no skill that did
+    not ship, so neither the log nor the answer may call it active."""
+    from agents.core.routers import skills as skills_routes
+    from agents.core.skills import loader as loader_mod
+
+    (tmp_path / "tidy").mkdir()
+    (tmp_path / "tidy" / "PENDING_REVIEW").touch()
+    monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
+    monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: None)
+    monkeypatch.setattr(loader_mod, "_skill_generation_allowed", lambda _contract: True)
+    monkeypatch.setattr(loader_mod.signing, "sign_skill", lambda _path: "signed")
+    loader = loader_mod.SkillLoader.__new__(loader_mod.SkillLoader)
+    loader.skills = {}
+    loader._approval_store = MagicMock()
+    loader._load_skill = lambda _path: None
+    monkeypatch.setattr(skills_routes, "get_orch", lambda: SimpleNamespace(skills=loader))
+    _on(monkeypatch)
+    with caplog.at_level(logging.INFO, logger=loader_mod.logger.name):
+        body = asyncio.run(skills_routes.approve_generated_skill("tidy"))
+    assert body["approved"] is True and body["loaded"] is False and "normal boot" in body["message"]
+    assert "activated" not in caplog.text and "normal boot" in caplog.text
+
+
 def test_every_shipped_skill_still_loads_in_safe_mode(monkeypatch):
     from agents.core.skills.loader import SkillLoader
 
@@ -193,6 +249,18 @@ def test_the_saved_mcp_servers_are_not_loaded_in_safe_mode(monkeypatch):
     web._load_mcp_config()
     orch.mcp.load_from_config.assert_not_called()
     assert safe_mode.status()["skipped"] == ["mcp_servers"]
+
+
+def test_no_saved_mcp_server_is_not_reported_left_out(monkeypatch):
+    """Review-H275 F4: a fresh settings DB seeds an empty list; nothing was left out."""
+    from agents.core import settings_db
+
+    web, orch, _ = _web(monkeypatch)
+    monkeypatch.setattr(settings_db, "get_category", lambda cat: [{"key": "servers", "value": []}] if cat == "mcp" else [])
+    _on(monkeypatch)
+    web._load_mcp_config()
+    orch.mcp.load_from_config.assert_not_called()
+    assert safe_mode.status()["skipped"] == []
 
 
 def test_the_saved_list_is_never_rewritten_from_an_empty_manager(monkeypatch):
@@ -243,6 +311,15 @@ def test_the_acquisition_runtime_reports_itself_disabled(monkeypatch):
     assert runtime.is_enabled() is False
     assert runtime.extensions() is None                 # no extension can be activated
     assert safe_mode.status()["skipped"] == ["acquired_packages"]
+
+
+def test_acquisition_that_was_never_on_is_not_reported_left_out(monkeypatch):
+    """Review-H275 F4: acquisition is off by default; safe mode left nothing of it out."""
+    from agents.core.acquisition.runtime import AcquisitionRuntime
+
+    _on(monkeypatch)
+    assert AcquisitionRuntime().is_enabled() is False
+    assert safe_mode.status()["skipped"] == []
 
 
 # ── plugin grants: only ever a widening, so none is kept ─────────────────────────
@@ -374,6 +451,35 @@ def test_the_heartbeat_overlay_gives_way_to_the_shipped_schedule(tmp_path, monke
     assert safe_mode.status()["skipped"] == []
 
 
+def test_an_unreadable_souls_folder_does_not_stop_a_safe_boot(tmp_path, monkeypatch):
+    """Review-H275 F2: an overlay safe mode passes over is not probed in a way that can
+    raise, so a souls folder that cannot be read (EACCES) is left out, not fatal."""
+    from agents.core.agent import identity_path, soul_path_for
+    from agents.core.heartbeat import HeartbeatScheduler
+
+    root, home = _app(tmp_path, monkeypatch)
+    (root / "agents" / "foo" / "HEARTBEAT.md").write_text(_HB.format(agent="foo", item="shipped step"),
+                                                         encoding="utf-8")
+    locked = home / "souls"
+    real_exists = Path.exists
+
+    def exists(self, *args, **kwargs):
+        if locked in self.parents:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    with pytest.raises(PermissionError):
+        soul_path_for("foo")
+    _on(monkeypatch)
+    assert soul_path_for("foo") == root / "agents" / "foo" / "SOUL.md"
+    assert identity_path() == root / "agents" / "_identity" / "IDENTITY.md"
+    beats = HeartbeatScheduler(agents_dir=str(root / "agents"))
+    beats.load_all()
+    assert "shipped step" in str(beats._heartbeat_configs["foo"])
+    assert safe_mode.status()["skipped"] == ["persona_overlays", "heartbeat_overlays"]
+
+
 # ── the owner's scheduled jobs ───────────────────────────────────────────────────
 
 def test_the_owner_jobs_stay_saved_and_are_not_scheduled(monkeypatch):
@@ -388,6 +494,75 @@ def test_the_owner_jobs_stay_saved_and_are_not_scheduled(monkeypatch):
     service.schedule_owner_jobs()
     assert runner.register_all.call_count == 1
     assert safe_mode.status()["skipped"] == ["owner_jobs"]
+
+
+class _Scheduler:
+    """Enough APScheduler to see what the runner puts on it."""
+
+    def __init__(self, running=True):
+        self.running = running
+        self.jobs: dict[str, dict] = {}
+
+    def add_job(self, _fn, _trigger, *, id, **kwargs):
+        self.jobs[id] = kwargs
+
+    def remove_job(self, job_id):
+        self.jobs.pop(job_id, None)
+
+    def get_jobs(self):
+        return [SimpleNamespace(id=key) for key in self.jobs]
+
+
+@pytest.fixture()
+def jobs(tmp_path):
+    from agents.core.autonomy.jobs import JobRunner, JobStore
+
+    sched = _Scheduler()
+    store = JobStore(tmp_path / "jobs.db")
+    yield JobRunner(store, orch=None, scheduler=lambda: sched, quiet=lambda: False), sched
+    store.close()
+
+
+_REMIND = {"name": "stretch", "schedule_text": "every 2 hours", "action": {"type": "remind", "message": "stretch"}}
+
+
+def test_a_job_created_edited_or_resumed_in_safe_mode_stays_off_the_scheduler(jobs, monkeypatch):
+    """Review-H275 F1: the boot is not the only way onto the scheduler. Creating, editing,
+    resuming or running a job now saves it; none of them arms it until a normal boot."""
+    runner, sched = jobs
+    _on(monkeypatch)
+    job, first_run, confirmation = runner.arm(**_REMIND, first_run=True)
+    assert first_run is not None and "safe mode" in confirmation
+    runner.edit(job.id, name="renamed")
+    runner.pause(job.id, "by the owner")
+    runner.resume(job.id)
+    runner.request_run(job.id)
+    assert sched.jobs == {}
+    assert runner.store.get(job.id).name == "renamed"
+    assert safe_mode.status()["skipped"] == ["owner_jobs"]
+    monkeypatch.delenv(safe_mode.ENV_NAME)
+    assert runner.register_all() == 1 and f"job-{job.id}" in sched.jobs
+
+
+def test_a_manual_tick_fires_no_owner_job_in_safe_mode(jobs, monkeypatch):
+    runner, sched = jobs
+    sched.running = False
+    runner.store.create(**_REMIND)
+    _on(monkeypatch)
+    with pytest.raises(ValueError, match="safe mode"):
+        asyncio.run(runner.tick())
+
+
+def test_run_now_is_refused_in_safe_mode(jobs, monkeypatch):
+    from agents.core.routers import jobs as jobs_routes
+
+    runner, sched = jobs
+    job = runner.store.create(**_REMIND)
+    monkeypatch.setattr(jobs_routes, "get_orch", lambda: SimpleNamespace(jobs=runner))
+    _on(monkeypatch)
+    resp = asyncio.run(jobs_routes.jobs_run(job.id))
+    assert resp.status_code == 409 and _body(resp)["error"] == "safe_mode"
+    assert runner.store.dispatch.outstanding() == [] and sched.jobs == {}
 
 
 # ── said everywhere ──────────────────────────────────────────────────────────────
@@ -412,14 +587,24 @@ def test_healthz_and_readyz_say_it_and_a_safe_hub_is_still_ready(monkeypatch):
 
 
 def test_the_status_routes_say_it(monkeypatch):
+    """Both routes are called (review-H275 F5): /status is the one the HUD's banner reads."""
     from agents.core.routers import status as status_routes
 
-    assert asyncio.run(status_routes.api_status())["safe_mode"] == {"enabled": False, "skipped": []}
+    async def models():
+        return {"providers": [], "backend": "none"}
+
+    hub = SimpleNamespace(_enrich_agents=lambda: [], _sys_info=lambda: {}, _list_local_models=models)
+    monkeypatch.setattr(status_routes, "get_orch", lambda: SimpleNamespace(channels={}))
+    monkeypatch.setattr(status_routes, "_web", lambda: hub)
+    monkeypatch.setattr(status_routes, "get_gateway", lambda: None)
+    off = {"enabled": False, "skipped": []}
+    assert asyncio.run(status_routes.api_status())["safe_mode"] == off
+    assert _body(asyncio.run(status_routes.status()))["safe_mode"] == off
     _on(monkeypatch)
     safe_mode.note("mcp_servers")
-    assert asyncio.run(status_routes.api_status())["safe_mode"] == {"enabled": True, "skipped": ["mcp_servers"]}
-    source = (REPO / "agents/core/routers/status.py").read_text(encoding="utf-8")
-    assert '"safe_mode": _safe_mode_status()' in source.split("async def status()")[1].split("async def api_status")[0]
+    on = {"enabled": True, "skipped": ["mcp_servers"]}
+    assert asyncio.run(status_routes.api_status())["safe_mode"] == on
+    assert _body(asyncio.run(status_routes.status()))["safe_mode"] == on
 
 
 # ── it only takes things away ────────────────────────────────────────────────────
@@ -447,6 +632,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/inspector.py",
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
+        # Review-H275 F1: a job armed after the boot stays off the scheduler too.
+        "agents/core/autonomy/jobs.py",
+        "agents/core/routers/jobs.py",
         "agents/core/channels/outbound.py",
         # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
         "agents/core/code_guidance.py",
@@ -464,6 +652,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/routers/ops.py",
         "agents/core/routers/plugins.py",
         "agents/core/routers/security.py",
+        # Review-H275 F6: an approval says the skill loads on the next normal boot.
+        "agents/core/routers/skills.py",
         "agents/core/routers/status.py",
         "agents/core/routers/webhooks.py",
         "agents/core/scheduler_service.py",

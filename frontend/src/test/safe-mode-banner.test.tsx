@@ -42,4 +42,11 @@ describe('safe mode — H275', () => {
     expect(banner.textContent).toContain('left out: saved MCP servers');
     expect(banner.querySelector('button')).toBeNull();
   });
+
+  it('names both ways in, since a restart without the switch keeps a set variable (review-H275 F8)', () => {
+    render(<SafeModeBanner state={{ enabled: true, skipped: [] }} />);
+    const text = screen.getByTestId('safe-mode-banner').textContent;
+    expect(text).toContain('--safe-mode');
+    expect(text).toContain('JARVIS_SAFE_MODE');
+  });
 });

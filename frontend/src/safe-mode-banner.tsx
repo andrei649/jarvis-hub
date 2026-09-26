@@ -52,7 +52,9 @@ export function SafeModeBanner({ state }: { state: SafeModeState }) {
         borderBottom: '1px solid rgba(239,68,68,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.14em',
         color: 'var(--red, #ef4444)' }}>
       <span>⚠ SAFE MODE</span>
-      <span style={{ letterSpacing: '.04em' }}>{safeModeLabel(state)} · restart without --safe-mode to load them again</span>
+      <span style={{ letterSpacing: '.04em' }}>
+        {safeModeLabel(state)} · restart without --safe-mode or JARVIS_SAFE_MODE to load them again
+      </span>
     </div>
   );
 }

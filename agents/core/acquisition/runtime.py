@@ -36,15 +36,17 @@ class AcquisitionRuntime:
     def is_enabled(self) -> bool:
         from agents.core import safe_mode
 
-        if safe_mode.enabled():
-            # H275: nothing acquired is re-registered and no extension is activated.
-            safe_mode.note("acquired_packages")
-            return False
         try:
-            return self._enabled() is True
+            enabled = self._enabled() is True
         except Exception:
             logger.warning("acquisition enablement check failed closed")
             return False
+        if enabled and safe_mode.enabled():
+            # H275: nothing acquired is re-registered and no extension is activated. An
+            # acquisition that was never switched on had nothing to leave out.
+            safe_mode.note("acquired_packages")
+            return False
+        return enabled
 
     def capture_gap(self, payload: dict) -> CapabilityRequest | None:
         """Persist only the Agent Runtime's explicit governed-capability refusal."""

@@ -601,24 +601,27 @@ _FIRST_RUN_NOTES = {
 }
 
 
-def arm_confirmation(job, first_run: dict | None, *, why: str = "", scheduler_alive: bool = True) -> str:
-    """The one wording every creation surface uses for what happens next."""
+def arm_confirmation(job, first_run: dict | None, *, why: str = "", scheduler_alive: bool = True,
+                     safe_mode: bool = False) -> str:
+    """The one wording every creation surface uses for what happens next. In safe mode
+    (H275) the job is saved and not armed until a normal boot."""
+    if safe_mode:
+        idle = " — safe mode: it is saved, and nothing fires until a normal boot"
+    elif not scheduler_alive:
+        idle = " — the scheduler is not running, so nothing fires until it is"
+    else:
+        idle = ""
     if is_one_shot(job.cron):
-        text = f"{job.schedule_text}: runs once at {run_at(job.cron):%Y-%m-%d %H:%M} UTC"
-        if not scheduler_alive:
-            text += " — the scheduler is not running, so nothing fires until it is"
-        return text
+        return f"{job.schedule_text}: runs once at {run_at(job.cron):%Y-%m-%d %H:%M} UTC{idle}"
     cadence = f"{job.schedule_text} ({job.cron})"
     if first_run:
         # Without a scheduler nothing drains the queue: the run is queued, not "now".
-        text = f"first run {'now' if scheduler_alive else 'queued'}, then {cadence}"
+        text = f"first run {'queued' if idle else 'now'}, then {cadence}"
     elif why.startswith("not queued"):
         text = f"first run {why}; {cadence}, on its cadence"
     else:
         text = f"{cadence}, on its cadence{_FIRST_RUN_NOTES.get(why, '')}"
-    if not scheduler_alive:
-        text += " — the scheduler is not running, so nothing fires until it is"
-    return text
+    return text + idle
 
 
 # ── blueprints ───────────────────────────────────────────────────────────────
@@ -1163,9 +1166,20 @@ class JobRunner:
         sched = self._scheduler()
         return sched is not None and bool(getattr(sched, "running", False))
 
+    def _held(self) -> bool:
+        """H275: in safe mode the owner's jobs stay saved and none is put on the
+        scheduler, whichever surface arms one (create, edit, resume, run now), not only
+        the boot (review-H275 F1)."""
+        from agents.core import safe_mode
+
+        if not safe_mode.enabled():
+            return False
+        safe_mode.note("owner_jobs")
+        return True
+
     def register(self, job: Job) -> bool:
         sched = self._scheduler()
-        if sched is None:
+        if sched is None or self._held():
             return False
         if is_one_shot(job.cron):
             sched.add_job(self.fire, "date", args=[job.id], id=f"job-{job.id}", replace_existing=True,
@@ -1199,7 +1213,8 @@ class JobRunner:
 
     def register_manual(self):
         sched = self._scheduler()
-        if sched is not None:
+        # A request queued in safe mode (or before it) waits for a normal boot's drain.
+        if sched is not None and not self._held():
             if any(getattr(job, 'id', None) == 'jobs-manual-dispatch' for job in sched.get_jobs()):
                 return
             sched.add_job(self.drain_manual, 'interval', seconds=5,
@@ -1265,6 +1280,8 @@ class JobRunner:
         """Fallback ticker; never competes with the running APScheduler. No catch-up burst."""
         if self.scheduler_alive():
             raise ValueError("scheduler is running; manual tick would compete with it")
+        if self._held():
+            raise ValueError("safe mode: the owner's jobs do not run until a normal boot")
         await self.reconcile_scripts()
         await self.drain_manual()
         timezone = self.scheduler_timezone()
@@ -1324,7 +1341,8 @@ class JobRunner:
                 # refused job (a retry would arm a duplicate).
                 logger.warning("job %s: first run not queued: %s", job.id, exc)
                 receipt, why = None, f"not queued ({exc})"
-        return job, receipt, arm_confirmation(job, receipt, why=why, scheduler_alive=self.scheduler_alive())
+        return job, receipt, arm_confirmation(job, receipt, why=why, scheduler_alive=self.scheduler_alive(),
+                                              safe_mode=self._held())
 
     def slot_timing(self, job: Job, now: datetime | None = None) -> tuple[float, float | None] | None:
         """Seconds until the job's next cron slot and from it to the one after, in the

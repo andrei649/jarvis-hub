@@ -1812,9 +1812,11 @@ def _load_mcp_config():
     for item in items:
         if item["key"] == "servers":
             if safe_mode.enabled():
-                # H275: none is registered; the saved configuration stays as it is.
-                safe_mode.note("mcp_servers")
-                logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"] or []))
+                # H275: none is registered; the saved configuration stays as it is. The
+                # empty list a fresh settings DB seeds leaves nothing out.
+                if item["value"]:
+                    safe_mode.note("mcp_servers")
+                    logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"]))
                 return
             from agents.core import load_set
             rows = [row for row in (item["value"] or []) if isinstance(row, dict)]

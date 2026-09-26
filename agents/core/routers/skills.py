@@ -729,6 +729,12 @@ async def approve_generated_skill(name: str):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     if orch.skills.approve_generated_skill(name):
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            # H275: approved and signed, but safe mode loads no skill that did not ship.
+            return {"approved": True, "skill": name, "loaded": False,
+                    "message": "approved; it loads on the next normal boot (safe mode)"}
         return {"approved": True, "skill": name}
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 

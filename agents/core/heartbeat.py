@@ -209,19 +209,17 @@ class HeartbeatScheduler:
             from . import safe_mode
             from .paths import user_souls_dir
             souls_home = user_souls_dir()
-            hb_path = None
+            overlays = [agent_dir / "HEARTBEAT.local.md"]
             if souls_home is not None:
-                candidate = souls_home / agent_dir.name / "HEARTBEAT.local.md"
-                if candidate.exists():
-                    hb_path = candidate
-            if hb_path is None:
-                hb_path = agent_dir / "HEARTBEAT.local.md"
-            if safe_mode.enabled() and hb_path.exists():
-                # H275: the shipped schedule only; an overlay's runs are not scheduled.
-                safe_mode.note("heartbeat_overlays")
+                overlays.insert(0, souls_home / agent_dir.name / "HEARTBEAT.local.md")
+            if safe_mode.enabled():
+                # H275: the shipped schedule only; an overlay's runs are not scheduled,
+                # and one that cannot be read is passed over the same way.
+                if any(safe_mode.present(p) for p in overlays):
+                    safe_mode.note("heartbeat_overlays")
                 hb_path = agent_dir / "HEARTBEAT.md"
-            if not hb_path.exists():
-                hb_path = agent_dir / "HEARTBEAT.md"
+            else:
+                hb_path = next((p for p in overlays if p.exists()), agent_dir / "HEARTBEAT.md")
             if hb_path.exists():
                 config = self._parse_heartbeat(hb_path)
                 if config:

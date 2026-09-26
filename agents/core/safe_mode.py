@@ -134,6 +134,16 @@ def note(layer: str) -> None:
         logger.warning("Safe mode: %s left out", layer.replace("_", " "))
 
 
+def present(path) -> bool:
+    """Whether an overlay safe mode passes over is there, for the status rows. One that
+    cannot even be probed (an unreadable souls folder) counts as there: it is left out,
+    never a reason for the safe boot to fail (review-H275 F2)."""
+    try:
+        return path.exists()
+    except OSError:
+        return True
+
+
 def shipped_default(key: str):
     """The shipped default of a settings key (``category.key``), or KeyError."""
     from .settings_db import DEFAULTS

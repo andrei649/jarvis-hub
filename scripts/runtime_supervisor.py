@@ -18,8 +18,9 @@ defense in depth: if the supervisor itself dies, the OS-level restart is the
 backstop.
 
 Usage:
-    python scripts/runtime_supervisor.py
-    (SIGTERM/SIGINT stop it — and the current child — cleanly)
+    python scripts/runtime_supervisor.py [--safe-mode]
+    (SIGTERM/SIGINT stop it — and the current child — cleanly; ``--safe-mode`` sets
+    JARVIS_SAFE_MODE=1, which the coordinator inherits — H275)
 
 Env (forwarded to the child; also read directly):
   JARVIS_RUNTIME_LOG            run-log path (default logs/runtime.jsonl)
@@ -51,6 +52,21 @@ MAX_BACKOFF_SECONDS = 60.0
 # loop (delay keeps growing) from an operator's one-off `kill -9` during an
 # otherwise long, healthy run.
 BACKOFF_RESET_SECONDS = 30.0
+
+
+SAFE_MODE_SWITCH = "--safe-mode"
+
+
+def apply_safe_mode_switch(argv=None) -> bool:
+    """H275: ``--safe-mode``, as on ``serve.py``, sets ``JARVIS_SAFE_MODE=1`` here; the
+    coordinator inherits it with the rest of this environment, so the heartbeats, owner
+    jobs and agents it runs on the hub's data root leave the owner's customizations out
+    too (review-H275 F3). Inlined like the run-log default: this process starts even
+    when the app package cannot be imported."""
+    if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
+        os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        return True
+    return False
 
 
 def _log_path() -> Path:
@@ -112,6 +128,7 @@ def _spawn() -> subprocess.Popen:
 
 
 def main() -> int:
+    apply_safe_mode_switch()
     starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
     backoff = starting_delay
     stopping = False
