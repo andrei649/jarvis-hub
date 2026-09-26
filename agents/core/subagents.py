@@ -146,7 +146,10 @@ def _rejected_for(result: Any, model: str) -> bool:
         return False
     failures = [f for f in (result.get("failures") or []) if isinstance(f, dict)]
     if failures:
-        return all(f.get("kind") == "model_not_found" and f.get("model") == model for f in failures)
+        # A backend may name the model without its vendor prefix (Gemini is asked for
+        # "gemini-2.5-pro" when the setting says "google/gemini-2.5-pro").
+        names = {model, model.rsplit("/", 1)[-1]}
+        return all(f.get("kind") == "model_not_found" and f.get("model") in names for f in failures)
     detail = str(result.get("detail") or "")
     return bool(_MODEL_MISSING_PHRASE.search(detail)) and _names_model(detail, model)
 
@@ -546,8 +549,8 @@ class SubAgentManager:
                 self._set_status(rec, "done")
                 rec["result"] = result
         if ov is not None:
-            rec["overrides_applied"] = sorted(ov.applied)
-            rec["overrides_ignored"] = sorted(ov.requested() - ov.applied)
+            rec["overrides_applied"] = sorted(ov.taken())
+            rec["overrides_ignored"] = sorted(ov.requested() - ov.taken())
         self._finish(rec, before, result)
         await self._persist(rec)
         out = {"ok": rec["status"] == "done", "id": spawn_id,

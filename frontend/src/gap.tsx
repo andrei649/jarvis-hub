@@ -1402,6 +1402,7 @@ export function SubAgentsPanel() {
   const [model, setModel] = useState('');
   const [batch, setBatch] = useState('');
   const [batchOut, setBatchOut] = useState(null);
+  const [guard, setGuard] = useState(null);   // a 409 selection_guard: {url, body, needs}
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(null);
   const [steerFor, setSteerFor] = useState(null);
@@ -1414,7 +1415,13 @@ export function SubAgentsPanel() {
     setPending(true);
     setNote(null);
     const pin = model.trim();
-    act('/api/subagents/spawn', { task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) },
+    sendSpawn({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) });
+  };
+  const sendSpawn = (body) => {
+    setPending(true);
+    setNote(null);
+    setGuard(null);
+    act('/api/subagents/spawn', body,
       (r) => {
         setPending(false);
         setNote(r && r.ok === false
@@ -1423,7 +1430,24 @@ export function SubAgentsPanel() {
         setTask('');
         reload();
       },
-      (err) => { setPending(false); setNote(spawnRefusal(err)); reload(); });
+      (err) => { setPending(false); refused('/api/subagents/spawn', body, err); });
+  };
+  // A guarded model is asked once: the confirmation resends the same request with
+  // exactly the flags the hub named, and the hub audits it.
+  const refused = (url, body, err) => {
+    const b = err && err.body;
+    setGuard(b && b.error === 'selection_guard' ? { url, body, needs: b.needs || [] } : null);
+    setNote(spawnRefusal(err));
+    reload();
+  };
+  const confirmGuard = () => {
+    if (!guard || pending) return;
+    const body = { ...guard.body, ...Object.fromEntries(guard.needs.map((n) => [n, true])) };
+    if (guard.url === '/api/subagents/spawn') { sendSpawn(body); return; }
+    setPending(true); setNote(null); setGuard(null);
+    act(guard.url, body,
+      (r) => { setPending(false); setBatchOut(r || {}); setBatch(''); reload(); },
+      (err) => { setPending(false); refused(guard.url, body, err); });
   };
   // H681 — up to 16 children at once, one task per line, sharing the agent and model fields.
   // The answer names every child's outcome and, when all of them failed because the provider
@@ -1435,9 +1459,11 @@ export function SubAgentsPanel() {
     setPending(true);
     setNote(null);
     setBatchOut(null);
-    act('/api/subagents/batch', { tasks: batchTasks.map((t) => ({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) })) },
+    setGuard(null);
+    const body = { tasks: batchTasks.map((t) => ({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) })) };
+    act('/api/subagents/batch', body,
       (r) => { setPending(false); setBatchOut(r || {}); setBatch(''); reload(); },
-      (err) => { setPending(false); setNote(spawnRefusal(err)); reload(); });
+      (err) => { setPending(false); refused('/api/subagents/batch', body, err); });
   };
   // A child that ran and whose model call failed answers 422 with its result; a model the
   // selection guards ask about answers 409 naming the price or the data policy.
@@ -1449,6 +1475,7 @@ export function SubAgentsPanel() {
     if (b && b.error === 'selection_guard') {
       return `refused · ${b.detail || 'the model needs a confirmation'} (needs ${(b.needs || []).join(', ')})`;
     }
+    if (b && b.reason === 'invalid_selection') return `refused · ${b.detail || 'invalid selection'}`;
     return `refused · ${refusalReason(err, 'spawn failed')}`;
   };
   const sendSteer = (id) => {
@@ -1577,6 +1604,11 @@ export function SubAgentsPanel() {
           )}
           {pending && <div role="status" style={{ ...mono, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
           {note && <div role="alert" style={{ ...mono, marginTop: 6, color: /^(refused|failed)/.test(note) ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          {guard && (
+            <button className="tool-btn" style={{ marginTop: 6 }} disabled={pending}
+              title="confirm this model and send the same request again" onClick={confirmGuard}
+            >confirm ({guard.needs.join(', ')}) and send</button>
+          )}
           <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and

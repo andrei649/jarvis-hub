@@ -184,19 +184,19 @@ def test_the_bounds_accept_their_edges():
 
 
 def test_extra_body_is_bounded_by_its_json_size():
-    fits = {"k": "x" * (rc.EXTRA_BODY_MAX_BYTES - 20)}
+    fits = {"user": "x" * (rc.EXTRA_BODY_MAX_BYTES - 20)}
     assert len(json.dumps(fits)) <= rc.EXTRA_BODY_MAX_BYTES
     assert rc.validate_overrides({"extra_body": fits}).extra_body == fits
     with pytest.raises(ValueError):
-        rc.validate_overrides({"extra_body": {"k": "x" * rc.EXTRA_BODY_MAX_BYTES}})
+        rc.validate_overrides({"extra_body": {"user": "x" * rc.EXTRA_BODY_MAX_BYTES}})
 
 
 def test_a_validated_extra_body_is_a_private_copy():
-    body = {"metadata": {"a": 1}}
+    body = {"logit_bias": {"50256": 1}}
     ov = rc.validate_overrides({"extra_body": body})
-    body["metadata"]["a"] = 2
+    body["logit_bias"]["50256"] = 2
     body["model"] = "sneaked"
-    assert ov.extra_body == {"metadata": {"a": 1}}
+    assert ov.extra_body == {"logit_bias": {"50256": 1}}
 
 
 # ── the overrides apply to the child's generations ─────────────────────────────────
@@ -262,12 +262,12 @@ async def test_the_record_says_which_overrides_a_provider_applied():
 
 def test_extra_body_merges_one_level_deep_and_never_over_what_the_hub_owns():
     payload = {"model": "m", "messages": [], "provider": {"data_collection": "deny"},
-               "metadata": {"a": 1, "b": 2}, "top_p": 0.9}
-    ov = rc.validate_overrides({"extra_body": {"metadata": {"b": 3, "c": 4}, "top_p": 0.5, "seed": 7}})
+               "logit_bias": {"1": 1, "2": 2}, "top_p": 0.9}
+    ov = rc.validate_overrides({"extra_body": {"logit_bias": {"2": 3, "3": 4}, "top_p": 0.5, "seed": 7}})
     with rc.request_overrides_scope(ov) as frame:
         rc.merge_extra_body(payload)
     assert payload == {"model": "m", "messages": [], "provider": {"data_collection": "deny"},
-                       "metadata": {"a": 1, "b": 3, "c": 4}, "top_p": 0.5, "seed": 7}
+                       "logit_bias": {"1": 1, "2": 3, "3": 4}, "top_p": 0.5, "seed": 7}
     assert frame.applied == {"extra_body"}
     untouched = {"model": "m"}
     rc.merge_extra_body(untouched)                    # outside a scope: nothing
@@ -275,13 +275,13 @@ def test_extra_body_merges_one_level_deep_and_never_over_what_the_hub_owns():
 
 
 def test_a_nested_value_is_copied_into_the_request_not_shared():
-    ov = rc.validate_overrides({"extra_body": {"metadata": {"tags": ["a"]}}})
+    ov = rc.validate_overrides({"extra_body": {"stop": ["a"]}})
     first, second = {}, {}
     with rc.request_overrides_scope(ov):
         rc.merge_extra_body(first)
-        first["metadata"]["tags"].append("b")
+        first["stop"].append("b")
         rc.merge_extra_body(second)
-    assert second == {"metadata": {"tags": ["a"]}}
+    assert second == {"stop": ["a"]}
 
 
 async def test_an_openai_compatible_request_carries_the_extra_body():
@@ -296,10 +296,10 @@ async def test_an_openai_compatible_request_carries_the_extra_body():
     backend = OpenRouterBackend(api_key="sk-or-test",
                                 client=httpx.AsyncClient(base_url="https://openrouter.test/api/v1",
                                                          transport=httpx.MockTransport(handler)))
-    ov = rc.validate_overrides({"max_tokens": 50, "extra_body": {"top_k": 20, "metadata": {"x": 1}}})
+    ov = rc.validate_overrides({"max_tokens": 50, "extra_body": {"top_k": 20, "response_format": {"type": "json_object"}}})
     with rc.request_overrides_scope(ov) as frame:
         assert await backend.generate("vendor/m", "p", max_tokens=50) == "hi"
-    assert sent[0]["top_k"] == 20 and sent[0]["metadata"] == {"x": 1}
+    assert sent[0]["top_k"] == 20 and sent[0]["response_format"] == {"type": "json_object"}
     assert sent[0]["model"] == "vendor/m"
     assert "extra_body" in frame.applied
     await backend.generate("vendor/m", "p")
@@ -534,7 +534,7 @@ def test_the_coordinator_reads_the_settings_for_a_childs_default():
 def test_overrides_are_bounded_on_the_wire_too():
     assert asyncio.iscoroutinefunction(SubAgentManager.spawn)
     assert rc.OVERRIDE_KEYS == ("max_tokens", "temperature", "extra_body")
-    assert {"model", "messages", "provider", "stream", "tools"} <= rc.RESERVED_BODY_KEYS
+    assert not {"model", "messages", "provider", "stream", "tools", "max_tokens", "temperature"} & rc.ALLOWED_BODY_KEYS
 
 
 # ── edges (added by the mutation pass) ─────────────────────────────────────────────
@@ -551,11 +551,11 @@ def test_a_zero_temperature_is_applied_not_ignored(monkeypatch):
 
 
 def test_extra_body_at_exactly_the_limit_is_accepted():
-    overhead = len(json.dumps({"k": ""}))
-    exact = {"k": "x" * (rc.EXTRA_BODY_MAX_BYTES - overhead)}
+    overhead = len(json.dumps({"user": ""}))
+    exact = {"user": "x" * (rc.EXTRA_BODY_MAX_BYTES - overhead)}
     assert len(json.dumps(exact).encode()) == rc.EXTRA_BODY_MAX_BYTES
     assert rc.validate_overrides({"extra_body": exact}).extra_body == exact
-    over = {"k": "x" * (rc.EXTRA_BODY_MAX_BYTES - overhead + 1)}
+    over = {"user": "x" * (rc.EXTRA_BODY_MAX_BYTES - overhead + 1)}
     with pytest.raises(ValueError):
         rc.validate_overrides({"extra_body": over})
 
@@ -602,10 +602,28 @@ def test_the_provider_options_match_the_pinnable_providers(store):
     assert set(row["opts"]) == {""} | set(PROVIDERS)
 
 
-def test_an_extra_body_key_longer_than_64_characters_is_refused():
-    assert rc.validate_overrides({"extra_body": {"k" * 64: 1}}).extra_body == {"k" * 64: 1}
-    with pytest.raises(ValueError):
-        rc.validate_overrides({"extra_body": {"k" * 65: 1}})
+@pytest.mark.parametrize("key,value", [
+    ("include_reasoning", True),                        # turns reasoning on
+    ("chat_template_kwargs", {"enable_thinking": True}),
+    ("plugins", [{"id": "web"}]),                       # paid search, prompt sent elsewhere
+    ("web_search_options", {}),
+    ("service_tier", "priority"),                       # a higher price
+    ("store", True),                                    # the vendor keeps the prompt
+    ("transforms", ["middle-out"]),
+    ("metadata", {"a": 1}),
+    ("best_of", 3),
+])
+def test_extra_body_takes_only_sampling_keys(key, value):
+    with pytest.raises(ValueError, match="takes only"):
+        rc.validate_overrides({"extra_body": {key: value}})
+
+
+def test_every_allowed_key_is_accepted():
+    body = {"top_p": 0.9, "top_k": 40, "min_p": 0.05, "seed": 1, "stop": ["x"], "frequency_penalty": 0.1,
+            "presence_penalty": 0.1, "repetition_penalty": 1.1, "logit_bias": {"1": 1},
+            "response_format": {"type": "json_object"}, "user": "child"}
+    assert set(body) == rc.ALLOWED_BODY_KEYS
+    assert rc.validate_overrides({"extra_body": body}).extra_body == body
 
 
 async def test_a_provider_pin_narrows_the_data_policy_question(monkeypatch):
@@ -630,3 +648,65 @@ def test_the_cli_reads_the_stored_subagent_provider_not_llms(store, monkeypatch)
     # Served by the stored provider (ollama), the slug is not a training tier: no question.
     assert code == 0, err.getvalue()
     assert store.get_value("autonomy", "subagent_model") == "meta-llama/llama-4-maverick:free"
+
+
+# ── review round (H681) ──────────────────────────────────────────────────────────
+
+async def test_a_temperature_the_model_family_refuses_is_recorded_as_ignored():
+    from agents.core.llm import reasoning_effort
+    from agents.core.llm.anthropic import ClaudeBackend
+
+    async def runner(task, session_id, agent):
+        rc.apply_generation_overrides(1024, 0.7)                 # what _gen_params does
+        backend = ClaudeBackend.__new__(ClaudeBackend)
+        backend.model, backend.reasoning_effort, backend.effort_overrides = "claude-x", "", {}
+        payload = {"model": "claude-x", "max_tokens": 64, "temperature": 0.1}
+        # A family that takes no sampling: the wire fit drops temperature.
+        orig = reasoning_effort.apply_anthropic
+
+        def drop(p, *a, **k):
+            p.pop("temperature", None)
+            return None
+        reasoning_effort.apply_anthropic = drop
+        import agents.core.llm.anthropic as an
+        an.apply_anthropic, saved = drop, an.apply_anthropic
+        try:
+            backend._fit_to_wire(payload, "claude-x")
+        finally:
+            an.apply_anthropic = saved
+            reasoning_effort.apply_anthropic = orig
+        return {"output": "ok"}
+
+    out = await _mgr(runner).spawn("t", overrides={"max_tokens": 64, "temperature": 0.1})
+    assert out["overrides_applied"] == ["max_tokens"] and out["overrides_ignored"] == ["temperature"]
+
+
+def test_a_budget_clamp_marks_max_tokens_as_not_taken():
+    with rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 5000})) as frame:
+        rc.apply_generation_overrides(10, 0.7)
+        rc.note_sent("max_tokens", 1024)                           # a pinned window's quarter
+    assert frame.taken() == set() and frame.dropped == {"max_tokens"}
+
+
+def test_a_value_sent_as_asked_stays_taken():
+    with rc.request_overrides_scope(rc.validate_overrides({"max_tokens": 50, "temperature": 0.2})) as frame:
+        rc.apply_generation_overrides(10, 0.7)
+        rc.reconcile_payload({"max_tokens": 50, "temperature": 0.2})
+    assert frame.taken() == {"max_tokens", "temperature"}
+    rc.note_sent("max_tokens", 1)                                  # outside a scope: nothing
+
+
+def test_a_google_prefixed_pin_on_gemini_asks_gemini_for_that_model():
+    from agents.core.llm.job_selection import SelectionError, apply_selection, selection_scope
+
+    class GeminiBackend:                                           # the class name is what matters
+        def context_window(self, model):
+            return 1_000_000
+
+    router = type("R", (), {"_backend_name": "gemini", "_local_available": False, "_ollama_available": False})()
+    backend = GeminiBackend()
+    with selection_scope({"model": "google/gemini-2.5-pro"}):
+        _b, model, _r = apply_selection(router, "jarvis", backend, "gemini-2.5-flash", "cloud")
+    assert model == "gemini-2.5-pro"
+    with selection_scope({"model": "openai/gpt-4.1"}), pytest.raises(SelectionError):
+        apply_selection(router, "jarvis", backend, "gemini-2.5-flash", "cloud")

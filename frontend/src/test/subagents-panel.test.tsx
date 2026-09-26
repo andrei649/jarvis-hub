@@ -286,3 +286,57 @@ describe('SubAgentsPanel — batch (H681)', () => {
     expect(fn.mock.calls.some((c) => c[1] && c[1].method === 'POST')).toBe(false);
   });
 });
+
+describe('SubAgentsPanel — a guarded model is confirmed, not lost (H681 review)', () => {
+  it('resends the same spawn with exactly the flags the hub named', async () => {
+    let n = 0;
+    const fn = mockApi(() => (++n === 1
+      ? Promise.resolve({ ok: false, status: 409, json: async () => ({
+          error: 'selection_guard', detail: 'claude-fable-5 costs $50/M output', needs: ['confirm_expensive'] }) })
+      : ok({ ok: true, id: 'sub-jarvis-9', status: 'done' })));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('task for the sub-agent'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByPlaceholderText('model (optional)'), { target: { value: 'claude-fable-5' } });
+    fireEvent.click(screen.getByTitle(/spawn a sub-agent/));
+    await waitFor(() => expect(screen.getByText('confirm (confirm_expensive) and send')).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/confirm this model/));
+    await waitFor(() => expect(screen.getByText(/spawned sub-jarvis-9/)).toBeTruthy());
+    const posts = fn.mock.calls.filter((c) => c[1] && c[1].method === 'POST').map((c) => JSON.parse(c[1].body));
+    expect(posts).toEqual([
+      { task: 'x', agent: '', model: 'claude-fable-5' },
+      { task: 'x', agent: '', model: 'claude-fable-5', confirm_expensive: true },
+    ]);
+    expect(screen.queryByText(/confirm \(confirm_expensive\)/)).toBeNull();
+  });
+
+  it('confirms a guarded batch against the batch route', async () => {
+    let n = 0;
+    const fn = mockApi(() => (++n === 1
+      ? Promise.resolve({ ok: false, status: 409, json: async () => ({
+          error: 'selection_guard', detail: 'trains on prompts', needs: ['acknowledge_training'] }) })
+      : ok({ ok: true, children: [], summary: { total: 1, done: 1, failed: 0, refused: 0 }, notice: null })));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText(/batch: one task per line/), { target: { value: 'a' } });
+    fireEvent.click(screen.getByTitle(/run these tasks as a batch/));
+    await waitFor(() => expect(screen.getByTitle(/confirm this model/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/confirm this model/));
+    await waitFor(() => expect(screen.getByText('batch · 1 done · 0 failed · 0 refused')).toBeTruthy());
+    const posts = fn.mock.calls.filter((c) => c[1] && c[1].method === 'POST');
+    expect(String(posts[1][0])).toBe('/api/subagents/batch');
+    expect(JSON.parse(posts[1][1].body).acknowledge_training).toBe(true);
+  });
+
+  it('names why a selection is invalid', async () => {
+    mockApi(() => Promise.resolve({ ok: false, status: 422, json: async () => ({
+      ok: false, reason: 'invalid_selection', detail: 'model must be a bounded model identifier' }) }));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText('task for the sub-agent'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByPlaceholderText('model (optional)'), { target: { value: 'bad model' } });
+    fireEvent.click(screen.getByTitle(/spawn a sub-agent/));
+    await waitFor(() => expect(screen.getByText('refused · model must be a bounded model identifier')).toBeTruthy());
+    expect(screen.queryByTitle(/confirm this model/)).toBeNull();
+  });
+});

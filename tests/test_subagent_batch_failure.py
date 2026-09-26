@@ -240,8 +240,8 @@ async def test_process_detailed_names_why_a_turn_produced_nothing(monkeypatch):
     assert await _orch_with({}).process_detailed("p") == ("", "empty reply")
     text, err = await _orch_with({"jarvis": o.NO_MODEL_REPLY}).process_detailed("p")
     assert text == o.NO_MODEL_REPLY and err == o.NO_MODEL_REPLY
-    text, err = await _orch_with({"jarvis": "⚠️ degraded"}).process_detailed("p")
-    assert (text, err) == ("⚠️ degraded", "⚠️ degraded")
+    degraded = "⚠️ The local Ollama model hit an error and couldn't answer. Check the Ollama server."
+    assert await _orch_with({"jarvis": degraded}).process_detailed("p") == (degraded, degraded)
     assert await _orch_with(raises=RuntimeError("No LLM backend available")).process_detailed("p") == (
         "", "no model backend: No LLM backend available")
     text, err = await _orch_with(raises=ValueError("bad")).process_detailed("p")
@@ -259,7 +259,7 @@ async def test_process_still_answers_exactly_as_before(monkeypatch):
     monkeypatch.setattr(o.power, "release_for_turn", lambda held: None)
     assert await _orch_with({"jarvis": "fine"}).process("p") == "fine"
     assert await _orch_with({"jarvis": "[jarvis error: boom]"}).process("p") == ""
-    assert await _orch_with({"jarvis": "⚠️ degraded"}).process("p") == "⚠️ degraded"
+    assert await _orch_with({"jarvis": "[OpenRouter error]"}).process("p") == "[OpenRouter error]"
     assert await _orch_with({"jarvis": o.NO_MODEL_REPLY}).process("p") == o.NO_MODEL_REPLY
     assert await _orch_with(raises=RuntimeError("x")).process("p") == ""
 
@@ -670,14 +670,27 @@ async def test_the_spawn_route_reports_a_provider_failure_as_422(monkeypatch):
 
 # ── the production wiring ───────────────────────────────────────────────────────────
 
-def test_the_coordinator_names_the_fallback_the_children_would_run_on():
+def test_the_coordinator_names_the_model_the_router_would_pick():
     from agents.core.autonomy_coordinator import AutonomyCoordinator
+    from agents.core.llm.job_selection import current_selection
 
-    agent = SimpleNamespace(default_model=lambda: "gemma-3-12b")
-    coord = SimpleNamespace(_orch=SimpleNamespace(agents={"jarvis": agent}))
-    assert AutonomyCoordinator._subagent_fallback_model(coord, "foo") == "gemma-3-12b"
-    assert AutonomyCoordinator._subagent_fallback_model(coord, "gemma-3-12b") is None
-    coord._orch.agents = {}
+    asked = []
+
+    def select_backend(agent, prompt):
+        asked.append((agent, current_selection()))
+        return object(), "claude-sonnet-x", "cloud"
+
+    coord = SimpleNamespace(_orch=SimpleNamespace(llm_router=SimpleNamespace(select_backend=select_backend)))
+    assert AutonomyCoordinator._subagent_fallback_model(coord, "foo") == "claude-sonnet-x"
+    assert asked == [("jarvis", None)]                       # asked outside any pin
+    assert AutonomyCoordinator._subagent_fallback_model(coord, "claude-sonnet-x") is None
+
+    def broken(agent, prompt):
+        raise RuntimeError("No LLM backend available")
+
+    coord._orch.llm_router = SimpleNamespace(select_backend=broken)
+    assert AutonomyCoordinator._subagent_fallback_model(coord, "foo") is None
+    coord._orch.llm_router = None
     assert AutonomyCoordinator._subagent_fallback_model(coord, "foo") is None
 
 
@@ -805,3 +818,68 @@ async def test_an_invalid_batch_records_no_consent_even_when_confirmed(monkeypat
         r = await client.post("/api/subagents/batch", json=body)
     assert r.status_code == 422 and r.json()["reason"] == "invalid_selection"
     assert audit.rows == []
+
+
+# ── review round (H681) ──────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("answer", ['["a.py", "b.py"]', "[1] first\n[2] second", "[docs](https://x.test) say so",
+                                    "⚠️ careful: that deletes files"])
+async def test_an_answer_that_opens_with_a_bracket_is_an_answer(monkeypatch, answer):
+    from agents.core import orchestrator as o
+
+    monkeypatch.setattr(o.power, "hold_for_turn", lambda orch: None)
+    monkeypatch.setattr(o.power, "release_for_turn", lambda held: None)
+    assert await _orch_with({"jarvis": answer}).process_detailed("p") == (answer, None)
+
+
+@pytest.mark.parametrize("reply", [
+    "[OpenRouter error]", "[Gemini error: provider request failed]", "[Claude API error: 404]",
+    "[Claude API stream error: x]", "[OpenAI Responses error: request could not be completed]",
+    "[xAI Responses error: request could not be completed]", "[VLM error]", "[Jarvis no LLM backend]",
+    "⚠️ I can't reach the local Ollama model right now. Start it.",
+    "⚠️ The local LM Studio model hit an error and couldn't answer. Check it.",
+    "⚠️ No local language model is available. Start LM Studio or Ollama and try again.",
+])
+async def test_every_fixed_failure_reply_is_a_failure(monkeypatch, reply):
+    from agents.core import orchestrator as o
+
+    monkeypatch.setattr(o.power, "hold_for_turn", lambda orch: None)
+    monkeypatch.setattr(o.power, "release_for_turn", lambda held: None)
+    assert await _orch_with({"jarvis": reply}).process_detailed("p") == (reply, reply)
+
+
+async def test_the_thinking_exhausted_reply_is_a_failure(monkeypatch):
+    from agents.core import orchestrator as o
+    from agents.core.llm.base import THINKING_EXHAUSTED_REPLY
+
+    monkeypatch.setattr(o.power, "hold_for_turn", lambda orch: None)
+    monkeypatch.setattr(o.power, "release_for_turn", lambda held: None)
+    assert (await _orch_with({"jarvis": THINKING_EXHAUSTED_REPLY}).process_detailed("p"))[1] == THINKING_EXHAUSTED_REPLY
+
+
+async def test_a_child_that_answers_with_a_json_array_is_done():
+    orch = _Orch(reply='["a.py", "b.py"]', error=None)
+    out = await _mgr(_runner(orch)).spawn("list them as JSON")
+    assert out["status"] == "done" and out["result"]["output"] == '["a.py", "b.py"]'
+
+
+async def test_a_vendor_prefixed_setting_matches_the_backends_bare_name():
+    m = _mgr(_failing(pe.ProviderFailure("gemini", "gemini-9-pro", 404, "model_not_found")),
+             selection_defaults=_setting("google/gemini-9-pro", "gemini"))
+    notice = (await m.spawn_batch([{"task": "a"}]))["notice"]
+    assert notice and notice["model"] == "google/gemini-9-pro"
+
+
+async def test_a_whitespace_task_is_refused_before_any_consent(monkeypatch):
+    class _Audit:
+        def __init__(self):
+            self.rows = []
+
+        def log(self, event):
+            self.rows.append(event)
+
+    audit = _Audit()
+    body = {"tasks": [{"task": "   ", "model": "claude-fable-5"}], "confirm_expensive": True}
+    async with _client(_mgr(), monkeypatch, audit) as client:
+        r = await client.post("/api/subagents/batch", json=body)
+    assert r.status_code == 422 and audit.rows == []

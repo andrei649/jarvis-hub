@@ -204,7 +204,7 @@ class SubAgentSpawnBody(BaseModel):
 
 
 class SubAgentBatchTask(BaseModel):
-    task: str = Field(..., min_length=1, max_length=4000)
+    task: str = Field(..., min_length=1, max_length=4000, pattern=r"\S")
     agent: str = Field("", max_length=40)
     output_schema: dict | None = None
     model: str | None = Field(None, max_length=256)

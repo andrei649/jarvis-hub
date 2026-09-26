@@ -1594,13 +1594,18 @@ class AutonomyCoordinator:
         return {"model": read("autonomy.subagent_model"), "provider": read("autonomy.subagent_provider")}
 
     def _subagent_fallback_model(self, rejected: str):
-        """The model children would run on with the setting cleared (the default
-        agent's own), or None when that is the rejected model or there is none."""
-        agent = (getattr(self._orch, "agents", None) or {}).get("jarvis")
-        default_model = getattr(agent, "default_model", None)
-        if not callable(default_model):
+        """The model children would run on with the setting cleared: what the governed
+        router picks for the default agent, asked outside any pin. None when it cannot
+        say, or picks the rejected model."""
+        router = getattr(self._orch, "llm_router", None)
+        select = getattr(router, "select_backend", None)
+        if not callable(select):
             return None
-        model = default_model()
+        try:
+            _backend, model, _route = select("jarvis", "")
+        except Exception:
+            logger.debug("no fallback model for the sub-agent notice", exc_info=True)
+            return None
         return model if isinstance(model, str) and model and model != rejected else None
 
     def _subagent_spawn_budget(self):

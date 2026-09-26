@@ -121,9 +121,10 @@ class OpenRouterBackend(LLMBackend):
         """Add the per-request extras: reasoning / cache parameters, a delegated child's
         ``extra_body`` (H681, never over a key the hub owns), then routing."""
         from .provider_request import compatible_parameters
-        from .request_context import merge_extra_body
+        from .request_context import merge_extra_body, reconcile_payload
         payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
         merge_extra_body(payload)
+        reconcile_payload(payload)
         if block:
             payload["provider"] = block
         return payload

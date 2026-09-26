@@ -82,15 +82,15 @@ OVERRIDE_KEYS = ('max_tokens', 'temperature', 'extra_body')
 MAX_TOKENS_LIMIT = 65536
 TEMPERATURE_LIMIT = 2.0
 EXTRA_BODY_MAX_BYTES = 4096
-#: Keys the hub owns in a request body: what is asked (model, messages), how it is
-#: delivered (stream), what the model may call (tools), the owner's provider routing
-#: and data policy (provider), the governed budget and reasoning (max_tokens,
-#: reasoning), and the count of answers paid for (n).
-RESERVED_BODY_KEYS = frozenset({
-    'model', 'messages', 'input', 'prompt', 'system', 'stream', 'stream_options',
-    'tools', 'tool_choice', 'functions', 'function_call', 'parallel_tool_calls',
-    'provider', 'models', 'route', 'max_tokens', 'max_completion_tokens', 'max_output_tokens',
-    'temperature', 'reasoning', 'reasoning_effort', 'thinking', 'n', 'prompt_cache_key',
+#: The only keys ``extra_body`` may set: sampling and output-shape knobs. An allow-list,
+#: not a deny-list, because a provider body has many keys that reach what the hub owns
+#: — reasoning (``include_reasoning``, ``chat_template_kwargs``), paid tools that send
+#: the prompt elsewhere (``plugins``, ``web_search_options``), price (``service_tier``),
+#: retention (``store``), routing and data policy (``provider``, ``transforms``) — and a
+#: new one appears with every provider release.
+ALLOWED_BODY_KEYS = frozenset({
+    'top_p', 'top_k', 'min_p', 'seed', 'stop', 'frequency_penalty', 'presence_penalty',
+    'repetition_penalty', 'logit_bias', 'response_format', 'user',
 })
 
 
@@ -100,10 +100,17 @@ class RequestOverrides:
     temperature: float | None = None
     extra_body: dict | None = None
     applied: set = None
+    dropped: set = None             # asked for, but a backend or a budget sent something else
 
     def __post_init__(self):
         if self.applied is None:
             self.applied = set()
+        if self.dropped is None:
+            self.dropped = set()
+
+    def taken(self) -> set:
+        """What every request of the child actually carried."""
+        return self.applied - self.dropped
 
     def as_dict(self) -> dict:
         return {k: getattr(self, k) for k in OVERRIDE_KEYS if getattr(self, k) is not None}
@@ -143,10 +150,8 @@ def validate_overrides(value) -> RequestOverrides | None:
         if not isinstance(body, dict):
             raise ValueError('extra_body must be an object')
         for key in body:
-            if not isinstance(key, str) or not key or len(key) > 64:
-                raise ValueError('extra_body keys must be names of 1 to 64 characters')
-            if key.lower() in RESERVED_BODY_KEYS:
-                raise ValueError(f'extra_body may not set {key!r}: the hub owns it')
+            if key not in ALLOWED_BODY_KEYS:
+                raise ValueError(f'extra_body may not set {key!r}; it takes only {sorted(ALLOWED_BODY_KEYS)}')
         try:
             encoded = json.dumps(body, allow_nan=False)
         except (TypeError, ValueError) as exc:
@@ -198,7 +203,7 @@ def merge_extra_body(payload: dict) -> dict:
     if frame is None or not frame.extra_body:
         return payload
     for key, value in frame.extra_body.items():
-        if key.lower() in RESERVED_BODY_KEYS:          # validated already; kept as a floor
+        if key not in ALLOWED_BODY_KEYS:               # validated already; kept as a floor
             continue
         value = copy.deepcopy(value)
         if isinstance(value, dict) and isinstance(payload.get(key), dict):
@@ -207,3 +212,22 @@ def merge_extra_body(payload: dict) -> dict:
             payload[key] = value
     frame.applied.add('extra_body')
     return payload
+
+
+def note_sent(name: str, value) -> None:
+    """A backend or a budget reports the value it actually sends for override *name*
+    (None: not sent). One that differs from the override marks it dropped, so the
+    child's record never claims a value the provider did not get."""
+    frame = _overrides.get()
+    if frame is None or name not in ('max_tokens', 'temperature'):
+        return
+    wanted = getattr(frame, name)
+    if wanted is not None and value != wanted:
+        frame.dropped.add(name)
+
+
+def reconcile_payload(payload: dict, max_tokens_key: str = 'max_tokens',
+                      temperature_key: str = 'temperature') -> None:
+    """``note_sent`` for both generation overrides, read from a finished request body."""
+    note_sent('max_tokens', payload.get(max_tokens_key))
+    note_sent('temperature', payload.get(temperature_key))

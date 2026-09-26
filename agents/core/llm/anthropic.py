@@ -80,13 +80,17 @@ class ClaudeBackend(LLMBackend):
         or not an effort was requested, so `temperature` has to come off there
         even on a default install that never touches the ladder.
         """
-        from .request_context import selected_reasoning
-        return apply_anthropic(
+        from .request_context import reconcile_payload, selected_reasoning
+        plan = apply_anthropic(
             payload,
             model or self.model,
             selected_reasoning(self.reasoning_effort),
             overrides=self.effort_overrides,
         )
+        # H681: a sampling value the model family refuses is taken off here; a delegated
+        # child's record then says so instead of claiming the override was applied.
+        reconcile_payload(payload)
+        return plan
 
     def _build_messages(self, prompt: str, system: str = "") -> list[dict]:
         return [{"role": "user", "content": prompt}]

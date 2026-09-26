@@ -961,6 +961,8 @@ class Agent:
         if pinned_window is not None:
             cap = pinned_window // 4
             max_tokens = min(max_tokens, cap) if max_tokens > 0 else cap
+            from .llm.request_context import note_sent
+            note_sent("max_tokens", max_tokens)
         runtime = self.tool_runtime
         if runtime is not None and runtime.can_run(backend, agent_id=self.id):
             # Forwarded only when a ceiling was given, so a caller without one keeps

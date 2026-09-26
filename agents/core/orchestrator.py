@@ -1809,7 +1809,13 @@ class Orchestrator:
             return "", resp
         if not resp:
             return "", "empty reply"
-        if is_failed_turn_reply(agent_id, resp):
+        # Only the fixed failure replies: an answer that opens with "[" (a JSON array,
+        # a "[1]" list) is an answer, whatever is_degraded_reply scores it as.
+        from .llm.base import is_backend_failure_reply
+        from .session_continuation import CONTINUATION_REFUSED_REPLY
+
+        if resp in (NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
+                    CONTINUATION_REFUSED_REPLY) or is_backend_failure_reply(resp):
             return resp, resp
         return resp, None
 

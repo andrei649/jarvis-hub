@@ -129,6 +129,13 @@ def apply_selection(router, agent_id, backend, model, route):
             raise SelectionError('requested provider is unavailable or not selected by agent policy')
     if selection.model:
         model = selection.model
+        # Gemini swaps any model with a "/" for its own default. A pin must not be
+        # swapped silently: "google/x" is Gemini's "x", any other vendor is refused.
+        if '/' in model and type(backend).__name__ == 'GeminiBackend':
+            vendor, _, name = model.partition('/')
+            if vendor != 'google' or not name or '/' in name:
+                raise SelectionError('pinned model is not one Gemini serves')
+            model = name
     from ..context_compressor import MODEL_WINDOWS, window_for
     probe = getattr(backend, 'context_window', None)
     window = probe(model) if callable(probe) else None

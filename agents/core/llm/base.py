@@ -161,6 +161,27 @@ THINKING_EXHAUSTED_REPLY = (
 )
 
 
+#: H681 — the exact replies a backend answers a failed call with. ``is_degraded_reply``
+#: reads any text opening with "[" or "⚠️" as degraded, which is right for scoring a
+#: generation but wrong for a caller that must tell a failed call from an answer that
+#: happens to be a JSON array or a "[1]" list: that caller asks here.
+BACKEND_FAILURE_PREFIXES = (
+    "⚠️ No local language model is available.",
+    "⚠️ I can't reach the local ",
+    "⚠️ The local ",
+    "⚠️ The model spent its whole answer budget thinking",
+    "[Claude API error", "[Claude API stream error", "[OpenRouter error]", "[Gemini error",
+    "[OpenAI Responses error", "[xAI Responses error", "[VLM error]",
+)
+_NO_BACKEND_MARKER = re.compile(r"\[[^\]\n]{1,80} no LLM backend\]")
+
+
+def is_backend_failure_reply(text: object) -> bool:
+    """True only for the fixed replies a backend gives for a failed call (H681)."""
+    return isinstance(text, str) and (text.startswith(BACKEND_FAILURE_PREFIXES)
+                                      or _NO_BACKEND_MARKER.fullmatch(text.strip()) is not None)
+
+
 def is_degraded_reply(text: object) -> bool:
     """True if *text* is a backend failure/degraded reply, not a real answer.
 
