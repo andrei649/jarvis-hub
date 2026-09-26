@@ -6,7 +6,7 @@ a vendor prefix (``sk-ant-``, ``ghp_``, ``AIza``), a quoted ``api_key="…"``, a
 high-entropy run. An opaque token matches none of those, so it went into the log
 whenever it was carried by something that *names* it as a credential:
 
-- a query parameter — ``GET /cb?access_token=abcdef1234567890``;
+- a query parameter — ``GET /cb?access_token=<opaque>``;
 - a body or form key, unquoted or quoted — ``client_secret=Zx81…``,
   ``{"refresh_token": "…"}``;
 - a header — ``X-Api-Key: 9f8e…``, ``Authorization: Token …``, ``Cookie: …``.
