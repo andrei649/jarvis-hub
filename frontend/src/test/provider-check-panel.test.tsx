@@ -16,9 +16,10 @@ function reply(status, data) {
 
 const ROWS = [
   { provider: 'anthropic', display_name: 'Anthropic Claude', verdict: 'ok', working: true, models: 7, status_code: 200 },
-  { provider: 'gemini', display_name: 'Google Gemini', verdict: 'auth_failed', working: false, models: null, status_code: 401 },
+  { provider: 'gemini', display_name: 'Google Gemini', verdict: 'auth_failed', working: false, models: null, status_code: 400 },
   { provider: 'xai', display_name: 'xAI Grok', verdict: 'not_configured', working: false, models: null },
   { provider: 'openrouter', display_name: 'OpenRouter', verdict: 'error', working: false, status_code: 500 },
+  { provider: 'openai-compatible', display_name: 'Custom', verdict: 'no_listing', working: false, models: 0, status_code: 404 },
 ];
 
 beforeEach(() => {
@@ -41,11 +42,15 @@ describe('ProviderCheckPanel — H380', () => {
     expect(calls[0].url.endsWith(PROBE_PATH)).toBe(true);
     expect(calls[0].body).toEqual({ force: false });
     expect(screen.getByText('7 model(s)')).toBeTruthy();
-    expect(screen.getByText('key rejected (401)')).toBeTruthy();
+    expect(screen.getByText('key rejected')).toBeTruthy();                // Gemini refuses a bad key with a 400
+    expect(screen.getByText('HTTP 400')).toBeTruthy();
     expect(screen.getByText('no key set')).toBeTruthy();
     expect(screen.getByText('HTTP 500')).toBeTruthy();
+    expect(screen.getByText('key not verified (nothing at this URL)')).toBeTruthy();
+    expect(screen.getByText('HTTP 404')).toBeTruthy();
+    expect(screen.queryByText('0 model(s)')).toBeNull();
     expect(screen.queryByLabelText('re-check xai')).toBeNull();          // nothing to re-check
-    expect(screen.getByText('2 failing')).toBeTruthy();
+    expect(screen.getByText('3 failing')).toBeTruthy();
   });
 
   it('re-checks one provider with force and says when it was throttled', async () => {
@@ -58,7 +63,7 @@ describe('ProviderCheckPanel — H380', () => {
     expect(calls[1].body).toEqual({ force: true, provider: 'gemini' });
     expect(screen.getByText('3 model(s)')).toBeTruthy();
     expect(screen.getAllByText('key works')).toHaveLength(2);
-    expect(screen.getByText('1 failing')).toBeTruthy();
+    expect(screen.getByText('2 failing')).toBeTruthy();
   });
 
   it('shows a refused request and is an admin console panel', async () => {

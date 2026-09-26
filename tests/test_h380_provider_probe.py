@@ -82,12 +82,15 @@ def test_the_request_per_provider_carries_the_key_only_in_a_header():
     assert headers == {"x-api-key": KEY, "anthropic-version": provider_probe.ANTHROPIC_VERSION}
     url, headers = provider_probe.request_for(get_profile("gemini"), KEY)
     assert url == "https://generativelanguage.googleapis.com/v1beta/models" and headers == {"x-goog-api-key": KEY}
-    url, headers = provider_probe.request_for(get_profile("openrouter"), KEY)
-    assert url == "https://openrouter.ai/api/v1/models" and headers == {"Authorization": f"Bearer {KEY}"}
+    url, headers = provider_probe.request_for(get_profile("openrouter"), KEY)      # its list is public
+    assert url == "https://openrouter.ai/api/v1/key" and headers == {"Authorization": f"Bearer {KEY}"}
     url, _ = provider_probe.request_for(get_profile("openrouter"), KEY,
                                         environ={"OPENROUTER_BASE_URL": "https://proxy.example/v1/"})
-    assert url == "https://proxy.example/v1/models"
+    assert url == "https://proxy.example/v1/key"
     assert provider_probe.request_for(get_profile("xai"), KEY)[0] == "https://api.x.ai/v1/models"
+    url, _ = provider_probe.request_for(get_profile("openai-compatible"), KEY,
+                                        environ={"OPENAI_BASE_URL": "https://gw.example/v1"})
+    assert url == "https://gw.example/v1/models"
 
 
 def test_the_key_the_hub_would_use(monkeypatch):
@@ -121,7 +124,7 @@ def test_the_model_count_reads_every_list_shape(body, models):
 
 @pytest.mark.parametrize("status,verdict,working", [
     (200, "ok", True), (204, "ok", True), (401, "auth_failed", False), (403, "forbidden", False),
-    (404, "no_listing", True), (405, "no_listing", True), (429, "rate_limited", False),
+    (404, "no_listing", False), (405, "no_listing", False), (429, "rate_limited", False),
     (500, "error", False), (302, "error", False),
 ])
 def test_a_status_is_a_verdict(status, verdict, working):

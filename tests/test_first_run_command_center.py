@@ -441,28 +441,31 @@ def test_model_block_names_why_the_route_is_or_is_not_runnable(client, monkeypat
     assert mismatch["selected_provider"] is None
     assert mismatch["selected_model"] == "test-pretender-model"
 
-    # H380: a cloud route whose provider does not accept the key is not runnable.
+    # H380: a cloud route whose provider does not accept the key is not runnable; one whose
+    # provider said nothing about the key is unknown; a 429 leaves the key standing.
     monkeypatch.setattr(web, "orch", _FakeOrch(router=cloud_router), raising=False)
     refused = []
-    for verdict in ("auth_failed", "forbidden", "rate_limited", "error", "unreachable", "refused",
-                    "not_configured"):
+    for verdict, ready in (("auth_failed", False), ("forbidden", False), ("refused", False),
+                           ("not_configured", False), ("error", None), ("unreachable", None),
+                           ("no_listing", None), ("rate_limited", True)):
         async def said(llm_router, provider, verdict=verdict):
             return {"provider": "gemini", "verdict": verdict, "status_code": None,
                     "checked_at": 1.0, "cached": True, "models": 3}
 
         monkeypatch.setattr(onboarding, "_cloud_probe", said)
         block = _get(client)["model"]
-        assert (block["ready"], block["reason"]) == (False, f"cloud_{verdict}")
-        assert block["active_provider"] is None and block["selected_provider"] == "gemini"
+        assert (block["ready"], block["reason"]) == (ready, f"cloud_{verdict}")
+        assert block["selected_provider"] == "gemini"
+        assert block["active_provider"] == ("gemini" if ready else None)
         assert block["cloud_probe"] == {"provider": "gemini", "verdict": verdict, "status_code": None,
                                         "checked_at": 1.0, "cached": True}
         refused.append(block)
-    for verdict in ("ok", "no_listing"):
-        async def fine(llm_router, provider, verdict=verdict):
-            return {"provider": "gemini", "verdict": verdict}
 
-        monkeypatch.setattr(onboarding, "_cloud_probe", fine)
-        assert (_get(client)["model"]["ready"], _get(client)["model"]["reason"]) == (True, "cloud_selected")
+    async def fine(llm_router, provider):
+        return {"provider": "gemini", "verdict": "ok"}
+
+    monkeypatch.setattr(onboarding, "_cloud_probe", fine)
+    assert (_get(client)["model"]["ready"], _get(client)["model"]["reason"]) == (True, "cloud_selected")
 
     async def no_profile(llm_router, provider):
         return None

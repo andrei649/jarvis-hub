@@ -12,8 +12,10 @@ export const PROBE_PATH = '/api/admin/llm/providers/probe';
 
 const LABELS: Record<string, [string, string]> = {
   ok: ['key works', 'var(--green)'],
-  no_listing: ['key not refused (no model list)', 'var(--green)'],
-  auth_failed: ['key rejected (401)', 'var(--red)'],
+  // a 404/405: a wrong base URL or no model list, so the key was never looked at
+  no_listing: ['key not verified (nothing at this URL)', 'var(--amber)'],
+  // a 401, or a 400 that names a bad key (Gemini, xAI)
+  auth_failed: ['key rejected', 'var(--red)'],
   forbidden: ['key forbidden (403)', 'var(--red)'],
   rate_limited: ['rate limited (429)', 'var(--amber)'],
   error: ['provider error', 'var(--red)'],
@@ -59,7 +61,7 @@ export function ProviderCheckPanel() {
           <Row key={row.provider}>
             <span style={{ ...mono }}>{row.display_name || row.provider}</span>
             <Tag c={color}>{label}</Tag>
-            {row.verdict === 'error' && row.status_code ? <Tag>HTTP {row.status_code}</Tag> : null}
+            {['error', 'auth_failed', 'no_listing'].includes(row.verdict) && row.status_code ? <Tag>HTTP {row.status_code}</Tag> : null}
             {row.models != null && row.working ? <Tag>{row.models} model(s)</Tag> : null}
             {row.cached ? <Tag>cached</Tag> : null}
             {row.verdict !== 'not_configured' && row.verdict !== 'not_cloud' && (
