@@ -1877,6 +1877,7 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._secrets is secret_broker
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
+    from agents.core import pointer_tool
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
     from agents.core.memory_tool import INPUT_SCHEMA as MEMORY_SCHEMA
     from agents.core.memory_tool import OFF_DESCRIPTION as MEMORY_OFF_DESCRIPTION
@@ -1888,7 +1889,6 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     from agents.core.skills.tools import VIEW_SCHEMA as SKILL_VIEW_SCHEMA
     from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
     from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
-    from agents.core import pointer_tool
 
     assert orch.tool_rpc.tools() == [
         {
