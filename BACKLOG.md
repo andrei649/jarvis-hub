@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 Review round, batch 2 (H441, H296, H285, H689, H490): the adversarial review's confirmed findings fixed red-first; H689 goes back to partial (#1207; headline 186 → 185/697).
+
+  - **H441** (5 findings). `/recap` on the owner's shared session (a widget visitor, a webhook, MCP, cross-channel sessions) answers only the owner and refuses anyone else before reading a turn; a turn's tools survive an explicit session load and a continuation's seed; the `/recap` line is left out in any case; a non-ASCII digit is the default count; a huge turn is cut before it is cleaned. Stays equivalent.
+  - **H296** (9 findings). `terminal_run` advertises only targets its runner would run on; `desktop_run` says when the operator is off or has no driver and names only the actions this host's driver performs; `speak` advertises only speakers with a media driver, and no enum past 64; an override can no longer widen a declared type, bound or enum; the two unauthenticated routes carry the static schemas only. Stays equivalent.
+  - **H285** (10 findings). A switched-off plugin is no longer built at all, so the probes, the dashboard and WorldView never reach it; cloud-image and the capability board read the live gate; the toggle keeps the choice in one place, reads fail-closed and is audited; a later pass drops a skill an earlier one registered; `nerva config set` says a load-set change applies at the next start. Stays equivalent.
+  - **H689** (12 findings). The forget keeps the install id, its lock and `hub.lock`; a profile's data root sits beside the default one and a refused name fails every entry closed; the app lifespan holds `hub.lock` too; the Windows lock leaves the pid readable; an emptied clock starts again and a pre-H689 clock adopts the id. **Equivalent → partial:** a profile's `.env` credentials are still the shared ones (the per-profile `.env` layer follows).
+  - **H490** (7 findings). Every boot read of a forced key, the model-pull cap, the gateway rate limit and the router's own read go through safe mode's stricter value (an AST test finds any that do not); the review and spawn budgets are forced; a cap under 1 (no cap) takes the shipped cap; Howard's archive few-shots are off. Stays equivalent.
+
+  - **Seams.** H490's new test found H378's model-cost line unforced: safe mode now reads the stricter of it and the shipped $40 (0, never asking, takes the $40; a line under $1 is kept). H689 moved a binding call the inventory pins.
+
+  Tests: backend 17,183 → 17,264 (`test_h441_session_recap.py` 22, `test_h296_schema_overrides.py` 71, `test_h285_load_set.py` 49, `test_h689_install_identity.py` 58, `test_h490_safe_mode_posture.py` 75, `test_h378_selection_guards.py` 39).
+
 - 2026-09-26 H378 be warned before choosing a model that is very expensive or trains on your data (partial → equivalent, #1207; headline 185 → 186/697).
 
   Choosing a model was an ordinary settings write: a $50-per-million-tokens model, or an OpenRouter `:free` variant served by providers that may train on the prompts, was stored at once from the HUD, a settings import, `nerva config set` or a job's model pin, with no price shown and nothing asked. Now (`agents/core/llm/selection_guards.py`), as Hermes' selection-guard registry:
@@ -187,16 +199,16 @@
   100 mutants: 98 caught after five cases were added; the other two were redundant checks, removed. Test manual: ENV-177, ENV-178, PGE-249.
   Tests: backend 16,380 → 16,456 (`tests/test_h182_power.py` 76), frontend 1,550 → 1,556 (`src/test/power-chip.test.tsx` 6).
 
-- 2026-09-26 H689 one durable install identity, one hub per data root, isolated profiles (missing → equivalent, #1207; headline 172 → 173/697).
+- 2026-09-26 H689 one durable install identity, one hub per data root, isolated profiles (missing → equivalent, #1207; headline 172 → 173/697; equivalent → partial after its review, see the review-round bullet).
 
   The only install-level id was an analytics value that a broken record re-minted; nothing named the install, a second hub could run on the same root, and `JARVIS_PROFILE` was forwarded but never read. Now (`agents/core/install_identity.py`, `agents/core/paths.py`, `serve.py`), as Hermes' install identity and profiles:
   - **The id.** One 32-hex id in `<data root>/install_id`. It is minted once under an in-process lock and a cross-process file lock, written atomically (fsync of the file and the folder) and read back. When it cannot be read or kept, the answer is `None`, never a new id, and a file holding anything else is left as it is.
   - **Consumers.** The activation clock carries the id and no longer re-mints over an unreadable record. Node grants are issued as `node:<id>@<install>`. Channel deeplinks and satellite pairings carry the install id, and another install's is refused (`other_install`).
-  - **One hub per root.** `serve.py` holds `<data root>/hub.lock` for the life of the process; a second hub on the same root stops with the holder's pid.
-  - **Profiles.** `JARVIS_PROFILE=<name>` puts everything under `<data root>/profiles/<name>`: settings, memory, credentials (the secrets store resolves under the root the process starts with), install id and lock. A bad name stops the start. It is read from the process environment only (`env_provenance`).
+  - **One hub per root.** `serve.py` and the app lifespan (so a bare `uvicorn agents.web:app`, as in docker-compose and CI) hold `<data root>/hub.lock`; a second hub on the same root is refused with the holder's pid. The id, its lock and `hub.lock` are on the forget keep list.
+  - **Profiles.** `JARVIS_PROFILE=<name>` gives the profile its own data root beside the default one, `<data root>-profiles/<name>`: settings, memory, the SecretStore and `tokens/`, install id and lock. The `.env` files (repo and data home), which hold the provider keys, bot tokens and the admin token, are shared by every profile (still open). A bad name stops every entry: `data_root()` raises, and `serve.py` stops before it imports the hub. It is read from the process environment only (`env_provenance`).
 
   32 mutants: 30 caught; the other two were a redundant check (removed) and an unpinned refusal (now pinned). Test manual: ENV-175, ENV-176.
-  Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43; `test_first_run_first_action.py` now pins the no-re-mint rule).
+  Tests: backend 16,337 → 16,380 (`tests/test_h689_install_identity.py` 43, 58 after the review round; `test_first_run_first_action.py` now pins the no-re-mint rule).
 
 - 2026-09-26 H218 archived chats: put a conversation away, bring it back, delete it for good (missing → equivalent, #1207; headline 171 → 172/697; equivalent → partial after its review, see the review-round bullet).
 
@@ -347,12 +359,12 @@
   H275's safe mode left out the owner's customizations but still built every plugin, started the outbound channels, injected memory and served every loosened setting. Now, with `JARVIS_SAFE_MODE=1` (`agents/core/safe_mode.py`, four new layers):
   - **Plugins.** None is built (`Orchestrator._build_plugins`; the `.env` still loads), so no integration is reached and no WorldView / Signal Layer data reaches a prompt; the gate switches every plugin off and the toggle answers 409 `safe_mode` without rewriting the saved choice.
   - **Outbound webhooks.** ntfy and `JARVIS_WEBHOOK_CHANNELS` are not started, `send_to_target` refuses, and the inbound receiver answers 503 before reading its switch.
-  - **Memory.** No pre-turn recall, no core block, and the H314 `memory` tool reads as switched off. The conversation's own history stays.
-  - **Settings.** Each setting that loosens an approval or widens a budget (`FORCED_SETTINGS`: actuation and tool-loop switches, earned autonomy, ambient, acquisition, the scans, the autonomy caps, sandbox limits, model-pull cap, guest tools, cloud fallback, product posture) reads the **stricter** of the owner's value and the shipped default, so an owner who tightened one keeps it; the three unseeded loosening keys are dropped. Applied to the runtime settings (around the product posture) and to the orchestrator's boot reads.
+  - **Memory.** No pre-turn recall, no core block, no Howard archive few-shots, and the H314 `memory` tool reads as switched off. The conversation's own history stays.
+  - **Settings.** Each setting that loosens an approval or widens a budget (`FORCED_SETTINGS`: actuation and tool-loop switches, earned autonomy, ambient, acquisition, the scans, the autonomy caps, sandbox limits, model-pull cap, the gateway rate limit, the review and spawn budgets, guest tools, cloud fallback, product posture) reads the **stricter** of the owner's value and the shipped default, so an owner who tightened one keeps it; the three unseeded loosening keys are dropped. Applied to the runtime settings (around the product posture), to every boot read of a forced key, to the model-pull route and to the router's own read (a re-detect keeps it); an AST test finds a forced key read past safe mode.
   - **Said.** `/api/security/posture` gains `safe_mode`; the boot log and the HUD banner name the new layers. Nerva has no owner shell hooks, so there are none to skip. No gate reads the flag (the H275 reader pin now lists 16 modules).
 
   52 mutants, all caught. Test manual: ENV-171, ENV-172.
-  Tests: backend 15,638 → 15,694 (`tests/test_h490_safe_mode_posture.py` 56); vitest 1,498 → 1,499 (`safe-mode-banner.test.tsx` +1).
+  Tests: backend 15,638 → 15,694 (`tests/test_h490_safe_mode_posture.py` 56, 75 after the review round); vitest 1,498 → 1,499 (`safe-mode-banner.test.tsx` +1).
 
 - 2026-09-25 H314 the model writes its own long-term memory, visibly and undoably (partial → equivalent, #1207; headline 156 → 157/697).
 
@@ -368,12 +380,12 @@
 
   A plugin toggle flipped an in-memory flag a restart forgot, an MCP server could only be disconnected or deleted, and a skill could not be switched off. Now (`agents/core/load_set.py`):
   - **The lists.** Six declared settings rows, `loadset.{skills,plugins,mcp}_{disabled,only}`, comma lists editable from Settings and `nerva config set`. The settings page's `plugins.<id>` switches, which nothing read, now count.
-  - **Read at boot.** `SkillLoader.discover` does not register a switched-off skill (by name or folder); `PermissionGate` switches off the named plugins, and each gate now holds its own manifest copies; the MCP load registers only permitted saved servers.
-  - **Kept.** The plugin toggle writes the lists (`persisted` in its answer). A switched-off MCP server stays in the saved configuration: every save writes it back, and adding or removing it answers 409 `switched_off`.
+  - **Read at boot.** `SkillLoader.discover` does not register a switched-off skill (by name or folder); `PermissionGate` switches off the named plugins and `PluginManager.build` drops them from the plugins the hub binds; each gate holds its own manifest copies, and cloud-image and the capability board read the live gate; the MCP load registers only permitted saved servers.
+  - **Kept.** The plugin toggle keeps the choice in one place (its `plugins.<id>` switch, else `plugins_disabled`), reads the lists fail-closed and is audited (`persisted` in its answer). A switched-off MCP server stays in the saved configuration: every save writes it back, and adding or removing it answers 409 `switched_off`.
   - **Narrowing only.** Nothing is installed, approved or registered; a name that matches nothing is reported as unknown. `/skills`, `/plugins` and `/api/admin/mcp` return `load_set` (lists, switched off, unknown).
 
   33 mutants, all caught. Test manual: ENV-169, ENV-170.
-  Tests: backend 15,545 → 15,579 (`tests/test_h285_load_set.py` 34).
+  Tests: backend 15,545 → 15,579 (`tests/test_h285_load_set.py` 34, 49 after the review round).
 
 - 2026-09-25 H275 safe mode: the hub boots without the owner's customizations, and relaxes nothing (missing → equivalent, #1207; headline 154 → 155/697).
 
@@ -394,10 +406,10 @@
   Every ToolRPC tool advertised one static schema: `terminal_run` took any `target` string, `desktop_run` any step `action`, `speak` any device or room, and the model learned the real names from a refusal. Now:
   - **The hook** (`agents/core/tool_rpc.py`). `register_tool(schema_overrides=...)` takes a zero-argument hook, asked every time the tool list is built and merged over the static schema by `advertised_schema`. It may change the `description`, per-property keys of properties the schema already declares (it narrows an argument, never invents one) and `required`. A hook that raises or answers something malformed is logged once per tool and the static schema is advertised. The capability-registry projection gets the same shape, since its records are built from `tools()`.
   - **The session boundary** (`agents/core/session_refresh.py`). At the H672 fold, a still-offered tool whose description or schema moved is `reshaped`: the specs are rebuilt, `tool_offer_refreshed` names it and the boundary note says "tool schemas moved".
-  - **Three tools use it.** `terminal_run` names the registered targets, or says that terminal targets are switched off or that none is registered. `desktop_run` names the step actions its validator accepts. `speak` names the announce-capable speakers, their rooms and `presence:auto`, or says that no speaker can announce or the Media Director is unavailable. The handlers still check every call.
+  - **Three tools use it.** `terminal_run` names the targets its runner would run on (enabled, open to the agent, granting `terminal.exec`), or says that terminal targets are switched off or that none it can run on is enabled. `desktop_run` names the step actions this host's driver performs, or says the desktop operator is off or has no driver. `speak` names the announce-capable speakers that have a media driver, their rooms and `presence:auto` (no enum past 64), or says that no speaker can announce or the Media Director is unavailable. The handlers still check every call, and the two unauthenticated routes carry only the static schemas.
 
   35 mutants: 33 caught, 2 equivalent. 45 rows re-stamped (H515 for the binding inventory, whose pinned coordinator lines moved); H456's bare `:455-471` and `:778-867` recomputed by hand. Test manual: GOV-261, GOV-262.
-  Tests: backend 15,465 → 15,516 (`tests/test_h296_schema_overrides.py` 51).
+  Tests: backend 15,465 → 15,516 (`tests/test_h296_schema_overrides.py` 51, 71 after the review round).
 
 - 2026-09-25 H283 systemd knows when the hub is ready and when it hangs, and the operator can describe the machine (partial → equivalent, #1207; headline 152 → 153/697).
 
@@ -412,12 +424,12 @@
 
   Resuming a session used to return its last 20 raw turns and nothing else. There was no `/recap`, and the HUD showed nothing after a resume. Now:
   - **The recap.** `agents/core/memory/recap.py` renders the last exchanges (10 by default, at most 50), each turn one bounded line of plain text, with a reply's tools collapsed to `[3 tool calls: web_search, web_fetch]`. It never calls a model: Hermes' rule, since a generated recap costs a cache miss for no accuracy gain.
-  - **Tools on turns.** The orchestrator opens a per-turn collection (`memory/turn_tools.py`, a context variable, so concurrent sessions never mix). The agent's tool-event sink notes each finished call's tool, and the reply that closes the turn stores the names on `Turn.tools`. They are persisted and survive a reload or a resume.
-  - **Everywhere.** `POST /sessions/resume` returns `recap` beside the raw turns. `/recap [n]` answers in every channel from that chat's own session and leaves out its own line. The HUD Sessions panel (`frontend/src/panels/sessions.tsx`) shows the recap after a resume and names a refused one.
+  - **Tools on turns.** The orchestrator opens a per-turn collection (`memory/turn_tools.py`, a context variable, so concurrent sessions never mix). The agent's tool-event sink notes each finished call's tool, and the reply that closes the turn stores the names on `Turn.tools`. They are persisted and survive a reload, a resume, an explicit session load and a continuation's seed.
+  - **Everywhere.** `POST /sessions/resume` returns `recap` beside the raw turns. `/recap [n]` answers in every channel from that chat's own session and leaves out its own line (in any case). On the owner's shared session (widget, webhook, MCP) it answers only the owner. The HUD Sessions panel (`frontend/src/panels/sessions.tsx`) shows the recap after a resume and names a refused one.
   - **Tests:** three tests that pinned the tool-event sink's identity now check that it forwards every event to the trail.
 
   28 mutants (24 Python, 4 HUD), all caught, three after their cases were added. 82 rows re-stamped; H427's publish() range and its `:327`, and the SessionsPanel citations of H218, H413 and H440 (moved to `panels/sessions.tsx`), fixed by hand. Test manual: CHT-118 (CHT-011 names the recap).
-  Tests: backend 15,426 → 15,442 (`tests/test_h441_session_recap.py` 16); vitest 1,488 → 1,491 (`sessions-recap.test.tsx` 3).
+  Tests: backend 15,426 → 15,442 (`tests/test_h441_session_recap.py` 16, 22 after the review round); vitest 1,488 → 1,491 (`sessions-recap.test.tsx` 3).
 
 - 2026-09-25 H350 a SKILL.md is checked at every write, and `nerva skills lint` advises the rest (missing → equivalent, #1207; headline 150 → 151/697).
 
