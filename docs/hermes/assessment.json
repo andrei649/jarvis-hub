@@ -2,8 +2,8 @@
   "schema_version": 1,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "0cac8d8389464a7cd3b1b100a3be0807db55bff1",
-  "assessed_at": "2026-09-26T10:50:19Z",
+  "base_sha": "38f8e28b4a11d07e8e309c8fe6d353007501440a",
+  "assessed_at": "2026-09-26T11:28:02Z",
   "reviews": [
     {
       "id": "H001",
@@ -635,7 +635,7 @@
         },
         {
           "path": "agents/core/channels/spoken_reply.py",
-          "sha256": "ef7b5dfc6f0d1f644685f28abb4c55e9af323c158f96b97b474d8110c65456c7"
+          "sha256": "44cc34cddaac8a5c0427b8b8065a396c92a141448ea1e9a8392e03fc25f5b2ff"
         },
         {
           "path": "agents/core/commands.py",
@@ -2648,7 +2648,7 @@
         },
         {
           "path": "agents/core/routers/voice.py",
-          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
+          "sha256": "cf3cea7bbba53ea6f68da512092ffc52fb469d8e85546dd3d8653ea50cb874c0"
         },
         {
           "path": "frontend/src/listening.ts",
@@ -2847,7 +2847,7 @@
       "id": "H247",
       "row_sha256": "94ecae68de964160b1410e6c7447d58441b6ba51b64f157d1d85737879946f4f",
       "status": "partial",
-      "summary": "The voice primitives exist; per-surface mic arbitration does not. Host side: `WakeWordDetector` (agents/core/voice/wake_word.py:28) runs inside `VoicePipeline`, which `VoiceChannel.start` (agents/core/channels/voice.py:24) starts. That channel is registered at boot with wake words from `general.wake_words` (agents/web.py:536). Browser side: frontend/src/voice.ts captures through getUserMedia, VAD-segments one utterance, and has 'hands-free' and 'ptt' modes (frontend/src/voice.ts:73). TTS and STT are user-guarded routes: `POST /tts`, `POST /api/voice/stt` and `GET /api/voice/capabilities` (agents/core/routers/voice.py:44, agents/core/routers/voice.py:189, agents/core/routers/voice.py:288). Per-chat spoken replies (the `/voice` toggle) are covered by tests/test_voice_mode.py. `config.set` maps to the admin settings PUT, and `ping` maps to `GET /healthz` (agents/core/routers/ops.py:42).",
+      "summary": "The voice primitives exist; per-surface mic arbitration does not. Host side: `WakeWordDetector` (agents/core/voice/wake_word.py:28) runs inside `VoicePipeline`, which `VoiceChannel.start` (agents/core/channels/voice.py:24) starts. That channel is registered at boot with wake words from `general.wake_words` (agents/web.py:536). Browser side: frontend/src/voice.ts captures through getUserMedia, VAD-segments one utterance, and has 'hands-free' and 'ptt' modes (frontend/src/voice.ts:74). TTS and STT are user-guarded routes: `POST /tts`, `POST /api/voice/stt` and `GET /api/voice/capabilities` (agents/core/routers/voice.py:48, agents/core/routers/voice.py:198, agents/core/routers/voice.py:297). Per-chat spoken replies (the `/voice` toggle) are covered by tests/test_voice_mode.py. `config.set` maps to the admin settings PUT, and `ping` maps to `GET /healthz` (agents/core/routers/ops.py:42).",
       "remaining": "The adaptation's one required concept is missing. No arm/pause/resume/stop/status call carries a surface identity. Nothing records which surface (HUD browser loop, mobile, satellite, host pipeline) holds the microphone, so the host pipeline and a browser hands-free loop on the same machine can both open the device. No status call answers who holds the mic. Arming does not pass the capture-consent policy the governance requires; the policy that exists (mobile/src/screens/capturePolicy.ts) covers passive capture only. Arming also writes no audit event, and the host pipeline starts at boot with neither check. The separate open item that no install path installs a voice engine is outside this row.",
       "evidence": [
         {
@@ -2868,7 +2868,7 @@
         },
         {
           "path": "agents/core/routers/voice.py",
-          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
+          "sha256": "cf3cea7bbba53ea6f68da512092ffc52fb469d8e85546dd3d8653ea50cb874c0"
         },
         {
           "path": "agents/core/routers/ops.py",
@@ -2876,7 +2876,7 @@
         },
         {
           "path": "frontend/src/voice.ts",
-          "sha256": "e1da9b196d135e483991433368a8ddc4f7cbf072a46f310d723a069176ab6ff9"
+          "sha256": "3baa9fc7b4977b907d64ee718022aa7e3bd067c0e002a32873c63bca705be03c"
         },
         {
           "path": "mobile/src/screens/capturePolicy.ts",
@@ -4019,7 +4019,7 @@
       "id": "H313",
       "row_sha256": "1615c40dcdbda914e85b97cb661c9c33967bdf1d93f05b21ffe1ef8d248ba6f4",
       "status": "equivalent",
-      "summary": "The model can decide to say one short text aloud on one room's device, and can do it again. register_speak_tool (agents/core/voice/speak_tool.py:640) adds a ToolRPC `speak` tool with gated=True, trusted execution and its own gated intake (agents/core/voice/speak_tool.py:667, agents/core/voice/speak_tool.py:673). It is registered only while JARVIS_MEDIA_DIRECTOR is on (agents/core/voice/speak_tool.py:653), and AutonomyCoordinator wires it with the broker kernel and the governed enqueue (agents/core/autonomy_coordinator.py:500, agents/core/autonomy_coordinator.py:1391). It reaches the same Media Director instance the media routes use, so the owner's device registry and session board apply (agents/core/routers/media_director.py:272). SpeakTool.preflight (agents/core/voice/speak_tool.py:344) runs at proposal and again before the approved run. It refuses text over the spoken-reply cap and code-only text (agents/core/voice/speak_tool.py:350, agents/core/voice/speak_tool.py:352). It resolves a room to that room's one announce-capable default device, so the card title and the persisted args name the speaker (agents/core/voice/speak_tool.py:237, agents/core/voice/speak_tool.py:423). It raises no card the run could only refuse: unified API off, kernel off or unbound, no media root, no speech backend, no driver for the device, or no configured presence room each refuse by name (agents/core/voice/speak_tool.py:371, agents/core/voice/speak_tool.py:366). SpeakTool.intake (agents/core/voice/speak_tool.py:401) shows the kernel the exact toolrpc.speak row it enqueues. Under the production composition (worker.kernel_gate over MediationKernelBridge, agents/core/autonomy/worker.py:220, agents/core/kernel/binding.py:108) that decision binds as the row's intake evidence, and a DENY raises no card (agents/core/voice/speak_tool.py:427). Only the human-accepted durable toolrpc.speak row runs. The kind is trusted (agents/core/autonomy_coordinator.py:66) and the executor routes it to the trusted rail (agents/core/autonomy_coordinator.py:1412-1415). ToolRPC re-runs the preflight and requires the trusted execution context (agents/core/tool_rpc.py:545, agents/core/tool_rpc.py:573), and the handler refuses a row of any other kind (agents/core/voice/speak_tool.py:497). SpeakTool.execute (agents/core/voice/speak_tool.py:492) synthesizes the clip through SpokenReply on the host TTSEngine in the owner's configured voice (agents/core/voice/speak_tool.py:508, agents/core/channels/spoken_reply.py:242, agents/core/voice/tts.py:144). It writes the clip owner-only under the first media root (agents/core/voice/speak_tool.py:595, agents/core/voice/speak_tool.py:609) and presents it only through CapabilityActionAPI.perform('action:media.present') in announce mode (agents/core/voice/speak_tool.py:548, agents/core/voice/speak_tool.py:553). The facade asks the Action Kernel before the handler runs (agents/core/capability_actions.py:168) and refuses on a DENY (agents/core/capability_actions.py:175), so the kernel authorizes the effect and the tool never reaches a driver. A kernel QUEUE on that present is honoured as the accepted row and audited as speak.durably_approved (agents/core/voice/speak_tool.py:456, agents/core/voice/speak_tool.py:478). A DENY becomes kernel_denied with the kernel's reason (agents/core/voice/speak_tool.py:570). The Media Director treats an announce as a one-shot notice (agents/core/media_director.py:738): it never blocks the next present and costs no interrupt budget (agents/core/media_director.py:890), and whatever it cut into stays the restore point (agents/core/media_director.py:992). Because the tool is gated, tool_profiles offers it only to the owner on the operator surface (agents/core/tool_profiles.py:190, agents/core/tool_profiles.py:194), and the snapshot pins this (tests/_snapshots/tool_profiles.json:50, tests/test_tool_profiles.py:202). Tests cover: registration and postures (tests/test_speak_tool.py:170, tests/test_speak_tool.py:196); named preflight refusals that enqueue nothing (tests/test_speak_tool.py:271, tests/test_speak_tool.py:320); and the card naming the device (tests/test_speak_tool.py:286). With the real kernel.authorize, AutonomyPolicy and KillSwitch behind worker.kernel_gate, an approved speak is mediated and audited, and an engaged kill switch refuses both the run and the card (tests/test_speak_tool.py:520, tests/test_speak_tool.py:543, tests/test_speak_tool.py:576). Three back-to-back normal speaks on one device all play at no budget cost (tests/test_speak_tool.py:591). Speaking over music needs high urgency, pays once and keeps the music as the restore point (tests/test_speak_tool.py:608, tests/test_media_director.py:762). A kernel DENY, a missing TTS backend, a missing media root and a driverless device each refuse by name with no playback, and an engine that yields no audio refuses as tts_failed with nothing presented (tests/test_speak_tool.py:681, tests/test_speak_tool.py:469, tests/test_speak_tool.py:666, tests/test_speak_tool.py:703, tests/test_speak_tool.py:716). A row of another kind cannot speak (tests/test_speak_tool.py:753), and the clip spool stays bounded (tests/test_speak_tool.py:779). Known limits outside the accepted adaptation: an accepted speak runs at the next autonomy tick (default 60 s, floor 15 s, agents/core/autonomy_coordinator.py:291), like every gated tool. A presence:auto card names the sentinel, because only play time knows whether the owner is in the presence room. Audible output needs an owner-wired speaker driver (the in-repo NullMediaDriver refuses and LocalFileMediaDriver is a reference), the same host seam as every media.present. The speech-backend gate needs edge-tts or Kokoro installed, like the spoken-reply channel. An announce of any length, including one sent through POST /api/media/present, no longer holds its device, as docs/FLAGS.md states. Hermes's tts.provider, custom command providers and tts.speed are outside the accepted adaptation, because Nerva's TTS subsystem was already ahead.",
+      "summary": "The model can decide to say one short text aloud on one room's device, and can do it again. register_speak_tool (agents/core/voice/speak_tool.py:640) adds a ToolRPC `speak` tool with gated=True, trusted execution and its own gated intake (agents/core/voice/speak_tool.py:667, agents/core/voice/speak_tool.py:673). It is registered only while JARVIS_MEDIA_DIRECTOR is on (agents/core/voice/speak_tool.py:653), and AutonomyCoordinator wires it with the broker kernel and the governed enqueue (agents/core/autonomy_coordinator.py:500, agents/core/autonomy_coordinator.py:1391). It reaches the same Media Director instance the media routes use, so the owner's device registry and session board apply (agents/core/routers/media_director.py:272). SpeakTool.preflight (agents/core/voice/speak_tool.py:344) runs at proposal and again before the approved run. It refuses text over the spoken-reply cap and code-only text (agents/core/voice/speak_tool.py:350, agents/core/voice/speak_tool.py:352). It resolves a room to that room's one announce-capable default device, so the card title and the persisted args name the speaker (agents/core/voice/speak_tool.py:237, agents/core/voice/speak_tool.py:423). It raises no card the run could only refuse: unified API off, kernel off or unbound, no media root, no speech backend, no driver for the device, or no configured presence room each refuse by name (agents/core/voice/speak_tool.py:371, agents/core/voice/speak_tool.py:366). SpeakTool.intake (agents/core/voice/speak_tool.py:401) shows the kernel the exact toolrpc.speak row it enqueues. Under the production composition (worker.kernel_gate over MediationKernelBridge, agents/core/autonomy/worker.py:220, agents/core/kernel/binding.py:108) that decision binds as the row's intake evidence, and a DENY raises no card (agents/core/voice/speak_tool.py:427). Only the human-accepted durable toolrpc.speak row runs. The kind is trusted (agents/core/autonomy_coordinator.py:66) and the executor routes it to the trusted rail (agents/core/autonomy_coordinator.py:1412-1415). ToolRPC re-runs the preflight and requires the trusted execution context (agents/core/tool_rpc.py:545, agents/core/tool_rpc.py:573), and the handler refuses a row of any other kind (agents/core/voice/speak_tool.py:497). SpeakTool.execute (agents/core/voice/speak_tool.py:492) synthesizes the clip through SpokenReply on the host TTSEngine in the owner's configured voice (agents/core/voice/speak_tool.py:508, agents/core/channels/spoken_reply.py:233, agents/core/voice/tts.py:150). It writes the clip owner-only under the first media root (agents/core/voice/speak_tool.py:595, agents/core/voice/speak_tool.py:609) and presents it only through CapabilityActionAPI.perform('action:media.present') in announce mode (agents/core/voice/speak_tool.py:548, agents/core/voice/speak_tool.py:553). The facade asks the Action Kernel before the handler runs (agents/core/capability_actions.py:168) and refuses on a DENY (agents/core/capability_actions.py:175), so the kernel authorizes the effect and the tool never reaches a driver. A kernel QUEUE on that present is honoured as the accepted row and audited as speak.durably_approved (agents/core/voice/speak_tool.py:456, agents/core/voice/speak_tool.py:478). A DENY becomes kernel_denied with the kernel's reason (agents/core/voice/speak_tool.py:570). The Media Director treats an announce as a one-shot notice (agents/core/media_director.py:738): it never blocks the next present and costs no interrupt budget (agents/core/media_director.py:890), and whatever it cut into stays the restore point (agents/core/media_director.py:992). Because the tool is gated, tool_profiles offers it only to the owner on the operator surface (agents/core/tool_profiles.py:190, agents/core/tool_profiles.py:194), and the snapshot pins this (tests/_snapshots/tool_profiles.json:50, tests/test_tool_profiles.py:202). Tests cover: registration and postures (tests/test_speak_tool.py:170, tests/test_speak_tool.py:196); named preflight refusals that enqueue nothing (tests/test_speak_tool.py:271, tests/test_speak_tool.py:320); and the card naming the device (tests/test_speak_tool.py:286). With the real kernel.authorize, AutonomyPolicy and KillSwitch behind worker.kernel_gate, an approved speak is mediated and audited, and an engaged kill switch refuses both the run and the card (tests/test_speak_tool.py:520, tests/test_speak_tool.py:543, tests/test_speak_tool.py:576). Three back-to-back normal speaks on one device all play at no budget cost (tests/test_speak_tool.py:591). Speaking over music needs high urgency, pays once and keeps the music as the restore point (tests/test_speak_tool.py:608, tests/test_media_director.py:762). A kernel DENY, a missing TTS backend, a missing media root and a driverless device each refuse by name with no playback, and an engine that yields no audio refuses as tts_failed with nothing presented (tests/test_speak_tool.py:681, tests/test_speak_tool.py:469, tests/test_speak_tool.py:666, tests/test_speak_tool.py:703, tests/test_speak_tool.py:716). A row of another kind cannot speak (tests/test_speak_tool.py:753), and the clip spool stays bounded (tests/test_speak_tool.py:779). Known limits outside the accepted adaptation: an accepted speak runs at the next autonomy tick (default 60 s, floor 15 s, agents/core/autonomy_coordinator.py:291), like every gated tool. A presence:auto card names the sentinel, because only play time knows whether the owner is in the presence room. Audible output needs an owner-wired speaker driver (the in-repo NullMediaDriver refuses and LocalFileMediaDriver is a reference), the same host seam as every media.present. The speech-backend gate needs edge-tts or Kokoro installed, like the spoken-reply channel. An announce of any length, including one sent through POST /api/media/present, no longer holds its device, as docs/FLAGS.md states. Hermes's tts.provider, custom command providers and tts.speed are outside the accepted adaptation, because Nerva's TTS subsystem was already ahead.",
       "remaining": "",
       "evidence": [
         {
@@ -4048,11 +4048,11 @@
         },
         {
           "path": "agents/core/channels/spoken_reply.py",
-          "sha256": "ef7b5dfc6f0d1f644685f28abb4c55e9af323c158f96b97b474d8110c65456c7"
+          "sha256": "44cc34cddaac8a5c0427b8b8065a396c92a141448ea1e9a8392e03fc25f5b2ff"
         },
         {
           "path": "agents/core/voice/tts.py",
-          "sha256": "a02b8717e049a12280b8fcc1cf2b174ecfddf0b4cab6d209c274e2c2b8a7fbd5"
+          "sha256": "3c7c8897be8151ae32b0dc20b3f347767adfc493000178a4ab8ab889b6815210"
         },
         {
           "path": "agents/core/capability_actions.py",
@@ -7881,29 +7881,25 @@
     {
       "id": "H526",
       "row_sha256": "c0ff1630bf0df6ff10e1d684eb77dbd04b6cbf400f94cc68abfdbf325e5aa4b2",
-      "status": "partial",
-      "summary": "A pure, offline speech normaliser exists, but only chat-channel voice notes and the gated speak tool use it. agents/core/channels/spoken_reply.py:73 speakable() drops fenced code (_FENCE_RE, :56). It strips bold/italic/heading/inline-code markers through to_plain() in agents/core/channels/render.py and replaces URLs with the word \"link\" (:57). It then folds newlines and whitespace to single spaces and cuts at a sentence boundary within 1,500 chars. Its callers are SpokenReply.__call__ (:196), used by Telegram's per-chat voice mode (agents/core/channels/telegram.py _speak) and the /voice command, and, since HEQ lot 1 (H313), the gated speak ToolRPC tool (registered only while JARVIS_MEDIA_DIRECTOR is on): its preflight refuses text with nothing speakable (agents/core/voice/speak_tool.py:352) and its approved run synthesizes through SpokenReply (agents/core/voice/speak_tool.py:508), so a model-chosen room announcement gets speakable()'s cleaning and the speakable() gaps listed at the end. The main speech paths do not normalise:\n- POST /tts passes req.text straight to TTSEngine.speak (agents/core/routers/voice.py:59), and /tts/stream splits the raw text (:117).\n- TTSEngine.speak removes only the twelve Fish [emotion] tags (agents/core/voice/tts.py:47, :167).\n- The HUD voice loop sends the raw reply and each raw streamed sentence to /tts (frontend/src/voice.ts:238, :297), fed by raw token deltas (frontend/src/app.tsx:330).\n- Mobile ttsFetchBase64 posts raw text (mobile/src/api/client.ts:2387).\n- The wake-word VoicePipeline speaks the raw response (agents/core/voice/pipeline.py:66), and so does VoiceChannel.send (agents/core/channels/voice.py:41).\nspeakable() itself also has gaps. A probe on a mixed markdown sample kept emoji, \"- \" list bullets, table pipes and |---| separator rows, a <think> block, and the symbols & % ->. Its URL regex also swallows the closing parenthesis that to_plain() puts after a link, producing \"doc (link\". <think> blocks are removed upstream only, by strip_thinking() in agents/core/llm/base.py on model output, not by any speech normaliser.",
-      "remaining": "Apply one speech normaliser at every TTS entry point: POST /tts, /tts/stream, TTSEngine.speak (and with it VoicePipeline, VoiceChannel.send and SpokenReply), the HUD per-sentence streaming path and mobile. Today only Telegram voice notes, /voice and the gated speak tool (H313) go through speakable(), and the speak tool shares its gaps. The normaliser must also:\n- remove emoji\n- strip list markers and tables\n- drop <think> blocks, including unclosed ones\n- expand symbols (&, %, ->, °) for RO and EN\n- stop the URL regex from eating the link's closing parenthesis\n- keep Fish [emotion] tags intact.\nOn the streaming path, a fenced code block split across token deltas must not be spoken.",
+      "status": "equivalent",
+      "summary": "A spoken reply now sounds like speech rather than read-out markdown, as Hermes requires, at every text-to-speech entry point. agents/core/voice/speech_text.py is the one normaliser (for_speech, agents/core/voice/speech_text.py:143). It drops <think>/<thinking>/<reasoning> blocks, an unclosed one to the end, and everything before a closing tag that never opened. It drops fenced code (``` or ~~~, an unclosed fence to the end) and HTML tags. [text](url) reads as its text, ![alt](url) as its alt, and a bare or <autolinked> URL as \"link\"; the URL no longer eats a closing parenthesis or the sentence's full stop, so \"doc (https://…).\" is \"doc (link).\". Headings, list items (-, *, +, •, 1., 1), task boxes), block quotes and table rows lose their markers and end with a full stop (_line, :115). Table cells read with commas; separator rows and horizontal rules are dropped. Bold, italic, strikethrough and inline-code markers go and their words stay (_inline, :104), with word guards so 2*3*4 and my_var_name survive. Symbols are said in the reply's language (_symbols, :95, WORDS, :79): & as and/și, % as percent/la sută, -> → => as to/spre, and °, °C, °F as degrees/grade (Celsius, Fahrenheit). The language comes from the request, else a ro-RO-… voice, else the engine default (speech_lang, :85). Emoji go: pictographs, flags, keycaps, skin tones, ZWJ sequences, variation selectors and tag flags (_EMOJI, :61). Fish [emotion] tags are kept intact. Text with no letter or digit left is \"\" (_SAYABLE, :76), and the result is a fixed point. Wiring: TTSEngine.speak normalises before any backend, Fish included, and synthesises nothing when nothing is left (agents/core/voice/tts.py:150-158). An emotion-tags-only reply is also nothing for the other backends (:182). speak_stream normalises the whole reply before splitting sentences (:222), so a code or reasoning block spanning sentences is dropped whole. Through TTSEngine.speak this covers the wake-word VoicePipeline, VoiceChannel.send and chat voice notes: speakable() is for_speech plus its cap, and SpokenReply passes the chat's language (agents/core/channels/spoken_reply.py:68). POST /tts answers 204 with X-Nerva-Speech: nothing_to_say instead of synthesising (agents/core/routers/voice.py:65), and /tts/stream frames carry the spoken sentences. The HUD twin is frontend/src/speech-text.ts (speechText, frontend/src/speech-text.ts:105). Both implementations are pinned by the same cases (frontend/src/test/speech-text-cases.json, 47 cases, read by both suites). SpeechStreamFilter (:129) drops a fenced block or reasoning block whose markers arrive split across token deltas, holding back a tail that could still become a marker (including a <reasoning …> tag split inside its attributes). An unclosed block at the end is never spoken. frontend/src/voice.ts uses it on the live sentence stream (:281, :332, :343). It normalises the whole reply for /tts/stream, /tts and the browser's own speechSynthesis voice (:204), and every streamed sentence (:302). A 204 is silence, never an empty clip or the fallback voice (:244, :314). Mobile sends the reply to /tts, so the hub normalises it; ttsFetchBase64 reads 204 as '' and speak() finishes at once (mobile/src/api/client.ts:2402, mobile/src/audio/tts.ts:23). Tests: tests/test_h526_speech_text.py (Python, every shared case plus the fixed-point property), frontend/src/test/speech-text.test.ts and voice-speech-text.test.tsx (a live push-to-talk turn with a fence split across deltas), and mobile/src/api/__tests__/tts.test.ts. 126 mutants: 124 caught after nine cases were added; the other two were redundant code, removed.",
+      "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/channels/spoken_reply.py",
-          "sha256": "ef7b5dfc6f0d1f644685f28abb4c55e9af323c158f96b97b474d8110c65456c7"
-        },
-        {
-          "path": "agents/core/channels/render.py",
-          "sha256": "117bfa6c29aebedaa66b91ab675f1b5326f6bee0ed60c34ef240470c44f5ba8f"
-        },
-        {
-          "path": "agents/core/channels/telegram.py",
-          "sha256": "e3d619c0dfbaa1c682b9174c871356508876da4a2dffb240bb3cc61c15b72b2e"
-        },
-        {
-          "path": "agents/core/routers/voice.py",
-          "sha256": "5b933b65d99b3d130800fd9ed0ee8958ca001f4458a660d55029c4a1911e2778"
+          "path": "agents/core/voice/speech_text.py",
+          "sha256": "ccc5d3c3057e952533bc015ba80d254a304e0038a1c6997190f1e3c221cab603"
         },
         {
           "path": "agents/core/voice/tts.py",
-          "sha256": "a02b8717e049a12280b8fcc1cf2b174ecfddf0b4cab6d209c274e2c2b8a7fbd5"
+          "sha256": "3c7c8897be8151ae32b0dc20b3f347767adfc493000178a4ab8ab889b6815210"
+        },
+        {
+          "path": "agents/core/channels/spoken_reply.py",
+          "sha256": "44cc34cddaac8a5c0427b8b8065a396c92a141448ea1e9a8392e03fc25f5b2ff"
+        },
+        {
+          "path": "agents/core/routers/voice.py",
+          "sha256": "cf3cea7bbba53ea6f68da512092ffc52fb469d8e85546dd3d8653ea50cb874c0"
         },
         {
           "path": "agents/core/voice/pipeline.py",
@@ -7914,40 +7910,40 @@
           "sha256": "9bbd620818d728c3a0541ebea3a077ccb08ace9303cf90ff2f6615aab2c07304"
         },
         {
-          "path": "agents/core/llm/base.py",
-          "sha256": "4de288166fa278ca97e3e8547c40d30648bf7491ab649a16ef269ead2f80d440"
-        },
-        {
-          "path": "agents/core/voice/speak_tool.py",
-          "sha256": "bebede1333cb4c61e03c0776a2d0812611ee4e2ec62fedf5f3b355425643c645"
+          "path": "frontend/src/speech-text.ts",
+          "sha256": "79f3bcd6b5e1c81c9aa617c7c49ff5d674f7cc2775d97800cf18586ef7d14b85"
         },
         {
           "path": "frontend/src/voice.ts",
-          "sha256": "e1da9b196d135e483991433368a8ddc4f7cbf072a46f310d723a069176ab6ff9"
-        },
-        {
-          "path": "frontend/src/app.tsx",
-          "sha256": "d66833cb2ac0935a0c3b66beff8d6833f725c4584f82abdbd03c5da2b9673de9"
+          "sha256": "3baa9fc7b4977b907d64ee718022aa7e3bd067c0e002a32873c63bca705be03c"
         },
         {
           "path": "mobile/src/api/client.ts",
-          "sha256": "1278179f1f7fc54188b191a20fb2898d869dc4d2d806c4043c2fdba05982b1ff"
+          "sha256": "f97759e72a6bc32987b92627ecf1472228a254890c0e57f8e0baab89c434b145"
         },
         {
-          "path": "tests/test_spoken_reply.py",
-          "sha256": "bffbe8aba102fb9fc01ceb5a079bc7282c588b50ec59723c99650b36c1578897"
+          "path": "mobile/src/audio/tts.ts",
+          "sha256": "66b4a5d78ae667c2af7a1c0cb720971c75088896ef2c71d176c545fac23a26cf"
         },
         {
-          "path": "tests/test_tts.py",
-          "sha256": "f0552f1499e70ec909c1d6c473904ad919df2783e678c0afb645a7979109c9b9"
+          "path": "tests/test_h526_speech_text.py",
+          "sha256": "2b58056d95b1ada95d45a5665dc298cb7c8b3382692f27dc7d4ada986675cdc0"
         },
         {
-          "path": "tests/test_tts_fish_emotion.py",
-          "sha256": "04754aeacd3bdb805f56128f5132aa7e0fdc1589f610d9921f49e2dffc8a5210"
+          "path": "frontend/src/test/speech-text.test.ts",
+          "sha256": "422b3518b670d7431d704a5b0dabab72e8f5b1c3c58256ca5e637e28f0c1108c"
         },
         {
-          "path": "tests/test_speak_tool.py",
-          "sha256": "199970991a785ecf1c8132d26fd919579bcb4ed531e8ef730c596bb0e3ae8e58"
+          "path": "frontend/src/test/voice-speech-text.test.tsx",
+          "sha256": "b027c4cf328e4118abbb9856918e9fa6b9a653baf843808e8afb15470178ddb0"
+        },
+        {
+          "path": "frontend/src/test/speech-text-cases.json",
+          "sha256": "7d89b41414f39fb0aa5515f17bd4ba6138f4355a8cbde4e456612546a5dd6811"
+        },
+        {
+          "path": "mobile/src/api/__tests__/tts.test.ts",
+          "sha256": "5f386bb5dbbac13889b56c6dc3420846db495d662430be95b06911e3a0055765"
         }
       ]
     },
@@ -7997,7 +7993,7 @@
         },
         {
           "path": "frontend/src/voice.ts",
-          "sha256": "e1da9b196d135e483991433368a8ddc4f7cbf072a46f310d723a069176ab6ff9"
+          "sha256": "3baa9fc7b4977b907d64ee718022aa7e3bd067c0e002a32873c63bca705be03c"
         },
         {
           "path": "tests/test_voice_hallucination.py",
@@ -8769,12 +8765,12 @@
       "id": "H613",
       "row_sha256": "891c86363efbc9021c49ee8830a02366db224483f312965e715673bfa996739e",
       "status": "partial",
-      "summary": "Five TTS backends exist: Edge (the default), ElevenLabs, Fish Audio, local XTTS and Kokoro. TTSEngine.speak (agents/core/voice/tts.py:144) sends Fish, XTTS and ElevenLabs voices to _speak_fish, _speak_xtts and _speak_elevenlabs (agents/core/voice/tts.py:275, agents/core/voice/tts.py:213, agents/core/voice/tts.py:236) by voice-name marker. Otherwise it falls back to edge-tts, then Kokoro (agents/core/voice/tts.py:182, agents/core/voice/tts.py:320, agents/core/voice/tts.py:331). strip_emotion_tags is applied for every backend except Fish. The consent gate for cloned and persona voices is intact. is_persona_or_cloned_voice (agents/core/voice/tts.py:54) checks PERSONA_VOICE_MARKERS (agents/core/voice/tts.py:35), and voice_persona_consent_granted (agents/core/voice/tts.py:62) reads the voice.persona_voice_consent setting (agents/core/settings_db.py:201). STT is faster-whisper only (STTEngine, agents/core/voice/stt.py:53; transcribe at agents/core/voice/stt.py:85). tests/test_tts.py (10), tests/test_tts_fish_emotion.py (12), tests/test_q4_voice_consent.py (7) and tests/test_voice_stt.py (6) pass.",
+      "summary": "Five TTS backends exist: Edge (the default), ElevenLabs, Fish Audio, local XTTS and Kokoro. TTSEngine.speak (agents/core/voice/tts.py:150) sends Fish, XTTS and ElevenLabs voices to _speak_fish, _speak_xtts and _speak_elevenlabs (agents/core/voice/tts.py:293, agents/core/voice/tts.py:231, agents/core/voice/tts.py:254) by voice-name marker. Otherwise it falls back to edge-tts, then Kokoro (agents/core/voice/tts.py:198, agents/core/voice/tts.py:338, agents/core/voice/tts.py:349). strip_emotion_tags is applied for every backend except Fish. The consent gate for cloned and persona voices is intact. is_persona_or_cloned_voice (agents/core/voice/tts.py:55) checks PERSONA_VOICE_MARKERS (agents/core/voice/tts.py:36), and voice_persona_consent_granted (agents/core/voice/tts.py:63) reads the voice.persona_voice_consent setting (agents/core/settings_db.py:201). STT is faster-whisper only (STTEngine, agents/core/voice/stt.py:53; transcribe at agents/core/voice/stt.py:85). tests/test_tts.py (10), tests/test_tts_fish_emotion.py (12), tests/test_q4_voice_consent.py (7) and tests/test_voice_stt.py (6) pass.",
       "remaining": "Both accepted additions are missing. There is no Piper provider: agents/ and tests/ never reference piper, and the only mention is a demo ADMIN fixture in the HUD. A fully local Romanian voice therefore still depends on Kokoro or XTTS being installed. There is also no command-provider escape hatch for TTS or STT. The voice.tts_voice setting (agents/core/settings_db.py:200) only chooses among the hard-coded backends in speak, and STTEngine has no alternative to faster-whisper.",
       "evidence": [
         {
           "path": "agents/core/voice/tts.py",
-          "sha256": "a02b8717e049a12280b8fcc1cf2b174ecfddf0b4cab6d209c274e2c2b8a7fbd5"
+          "sha256": "3c7c8897be8151ae32b0dc20b3f347767adfc493000178a4ab8ab889b6815210"
         },
         {
           "path": "agents/core/voice/stt.py",

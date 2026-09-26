@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-26 H526 a spoken reply sounds like speech, not read-out markdown (partial → equivalent, #1207; headline 177 → 178/697).
+
+  Only Telegram voice notes and the gated speak tool cleaned their text; `/tts`, `/tts/stream`, the wake-word pipeline, the voice channel, the HUD's live voice and mobile read emoji, list bullets, table pipes, `<think>` blocks and `&`/`%`/`->` aloud. Now one normaliser (`agents/core/voice/speech_text.py`, twin `frontend/src/speech-text.ts`, both pinned by the same 47 cases) sits in front of every entry point, as Hermes' speech cleaning:
+  - **What goes.** Reasoning blocks (closed, unclosed, or a stray closing tag), fenced code (unclosed too), HTML, emoji (flags, keycaps, skin tones, ZWJ sequences), and the markers of bold, italic, strikethrough, inline code, headings, lists, quotes and tables. A table is read as cells; a link as its words, a bare URL as "link", without eating its parenthesis or full stop. Fish `[emotion]` tags stay.
+  - **What is said.** `&`, `%`, `->`/`→`/`=>` and `°`/`°C`/`°F` in the reply's language (Romanian or English). Block lines end as sentences.
+  - **Where.** `TTSEngine.speak` (so the wake-word pipeline, the voice channel and voice notes) and `speak_stream`, normalised before sentences are split. `/tts` answers 204 `nothing_to_say` rather than synthesising nothing. The HUD normalises for its own browser voice and every streamed sentence, and a `SpeechStreamFilter` keeps a code or reasoning block whose markers are split across token deltas from being spoken. Mobile treats the 204 as silence.
+
+  126 mutants: 124 caught after nine cases were added; the other two were redundant code, removed. Test manual: CHN-186.
+  Tests: backend 16,587 → 16,701 (`tests/test_h526_speech_text.py` 114); frontend 1,567 → 1,634 (`speech-text.test.ts`, `voice-speech-text.test.tsx`); mobile 140 → 142 (`api/__tests__/tts.test.ts`).
+
 - 2026-09-26 H504 fail loudly when TLS trust is misconfigured, never quietly off (partial → equivalent, #1207; headline 176 → 177/697).
 
   Plugin egress had a trust anchor; model egress bypassed it, nothing was checked at start, and a bad `SSL_CERT_FILE` surfaced as an unnamed `FileNotFoundError` on the first model call. Now (`agents/core/tls_trust.py`), as Hermes' TLS trust:

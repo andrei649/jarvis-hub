@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard
@@ -41,6 +41,10 @@ class TTSRequest(BaseModel):
     voice: Optional[str] = None   # "xtts" (cloned), "elevenlabs", or an edge voice; None = default chain
 
 
+#: The ``X-Nerva-Speech`` value of a 204 from ``/tts``: the text normalised to nothing.
+NOTHING_TO_SAY = "nothing_to_say"
+
+
 @router.post("/tts", dependencies=[Depends(user_guard)])
 async def tts_endpoint(req: TTSRequest):
     """Synthesize text to speech and return MP3 audio."""
@@ -56,6 +60,11 @@ async def tts_endpoint(req: TTSRequest):
             )
         from core.settings_db import get_value
         engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
+        # H526: a reply with nothing worth saying (all code, emoji or reasoning) is an
+        # answer — 204 with the reason — not a synthesis failure for the client to retry.
+        if not engine.speech_for(req.text, voice=req.voice, lang=req.lang):
+            return Response(status_code=204, headers={"X-Nerva-Speech": NOTHING_TO_SAY,
+                                                      "Cache-Control": "no-cache"})
         audio_path = await engine.speak(req.text, voice=req.voice, lang=req.lang)
         if not audio_path:
             return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)

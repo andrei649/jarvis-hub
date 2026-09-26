@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
 from .sentence_stream import split_sentences
+from .speech_text import for_speech, speech_lang
 
 logger = logging.getLogger("jarvis.voice.tts")
 
@@ -141,9 +142,22 @@ class TTSEngine:
             )
         return granted
 
-    async def speak(self, text: str, voice: str = None, lang: str = None) -> Optional[str]:
-        """Synthesize speech, return path to audio file, or None."""
+    def speech_for(self, text: str, voice: str = None, lang: str = None) -> str:
+        """*text* as it should be heard with this voice and language (H526)."""
         v = voice or self.VOICE_MAP.get(lang, self.default_voice)
+        return for_speech(text, lang=speech_lang(lang, v, default=self.default_lang))
+
+    async def speak(self, text: str, voice: str = None, lang: str = None) -> Optional[str]:
+        """Synthesize speech, return path to audio file, or None.
+
+        Every caller's text is normalised first (H526, :func:`speech_text.for_speech`:
+        no reasoning, code, markup, emoji or unread symbols); nothing left to say is no
+        synthesis at all."""
+        v = voice or self.VOICE_MAP.get(lang, self.default_voice)
+        text = for_speech(text, lang=speech_lang(lang, v, default=self.default_lang))
+        if not text:
+            logger.info("TTS: nothing to say after normalising the reply")
+            return None
         self.last_consent_status = {
             "required": False,
             "granted": True,
@@ -165,6 +179,8 @@ class TTSEngine:
             v = self._safe_default_voice(lang)
 
         text = strip_emotion_tags(text)
+        if not text:                    # the reply was only emotion tags: nothing to say
+            return None
 
         # H5.1 Local XTTS / ElevenLabs voice cloning integrations
         if v == "xtts" or (isinstance(v, str) and v.startswith("xtts:")) or (isinstance(v, str) and "xtts" in v.lower()):
@@ -201,7 +217,9 @@ class TTSEngine:
         The segmentation is the pure `split_sentences`; only the per-chunk synthesis
         here touches a backend. Falls back to a single chunk if there's no boundary.
         """
-        sentences = split_sentences(text)
+        # Normalised whole first (H526), so a code block or a reasoning block that spans
+        # sentences is dropped whole instead of being read a line at a time.
+        sentences = split_sentences(self.speech_for(text, voice=voice, lang=lang))
         for idx, sentence in enumerate(sentences):
             try:
                 path = await self.speak(sentence, voice=voice, lang=lang)
