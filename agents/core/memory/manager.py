@@ -50,6 +50,8 @@ class MemoryManager:
         self._embed_pending: set[asyncio.Task] = set()
         # Bumped by a purge: a queued turn embedding from before it is never stored.
         self._embed_generation = 0
+        # The same, per session: bumped by a permanent session delete (H218).
+        self._session_epochs: dict[str, int] = {}
         # Real-embeddings recall (lazy: no network/import until first use).
         self._embedder = None
         from agents.core.env_config import env_flag
@@ -162,15 +164,17 @@ class MemoryManager:
         if previous is not None and (previous.done() or previous.get_loop() is not loop):
             previous = None
         generation = self._embed_generation
+        epoch = self._session_epochs.get(metadata.get("session"), 0)
 
         async def _write() -> None:
             if previous is not None:
                 await asyncio.wait({previous})
             try:
-                if generation != self._embed_generation:
+                if self._embedding_stale(generation, metadata, epoch):
                     return
                 vector = await self.embed(content)
-                await self._store_remembered(content, vector, metadata=metadata, generation=generation)
+                await self._store_remembered(content, vector, metadata=metadata, generation=generation,
+                                             epoch=epoch)
             except Exception:
                 logger.warning("turn embedding failed", exc_info=True)
 
@@ -188,6 +192,20 @@ class MemoryManager:
     def discard_pending_embeddings(self) -> None:
         """A purge: every turn embedding queued before now is dropped, not stored."""
         self._embed_generation += 1
+
+    def _embedding_stale(self, generation: int | None, metadata: dict | None, epoch: int | None) -> bool:
+        """A purge, or a delete of the turn's session, ran since the embedding was queued."""
+        if generation is not None and generation != self._embed_generation:
+            return True
+        return epoch is not None and self._session_epochs.get((metadata or {}).get("session"), 0) != epoch
+
+    async def forget_session_embeddings(self, session_id: str) -> int:
+        """H218 — a permanent session delete: every stored turn embedding of the session
+        leaves the vector store, and one still queued for it is never stored. How many were
+        removed; raises when the store could not remove them."""
+        self._session_epochs[session_id] = self._session_epochs.get(session_id, 0) + 1
+        async with self._store_lock:
+            return await asyncio.to_thread(self.vectors.remove_where, "session", session_id)
 
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         async with self._lock:
@@ -242,7 +260,8 @@ class MemoryManager:
                                             generation=generation)
 
     async def _store_remembered(self, text: str, vec: Optional[list[float]], *, record_id: str = None,
-                                metadata: dict = None, generation: int | None = None) -> Optional[str]:
+                                metadata: dict = None, generation: int | None = None,
+                                epoch: int | None = None) -> Optional[str]:
         if vec is None:
             return None
         expected = getattr(self.vectors, "dimension", len(vec))
@@ -253,7 +272,7 @@ class MemoryManager:
         meta = dict(metadata or {})
         meta.setdefault("text", text)
         meta.setdefault("created_at", time.time())  # CDX-7: real age provenance on later recall
-        stored = await self.store_embedding(rid, vec, meta, generation=generation)
+        stored = await self.store_embedding(rid, vec, meta, generation=generation, epoch=epoch)
         return rid if stored else None
 
     async def recall(self, query_text: str, top_k: int = 10, keyword: str = None) -> list:
@@ -267,17 +286,18 @@ class MemoryManager:
         )
 
     async def store_embedding(self, record_id: str, vector: list[float], metadata: dict = None, *,
-                              generation: int | None = None) -> bool:
+                              generation: int | None = None, epoch: int | None = None) -> bool:
         # Offload to a thread: with a networked backend (Qdrant) vectors.add is a
         # blocking httpx call that would otherwise stall the whole event loop for
         # every embedded turn. The store lock serialises vector-store access.
         async with self._store_lock:
             # A queued turn embedding re-checks its generation under the lock, right
-            # before the write: a purge that ran while it was being embedded wins.
-            if generation is not None and generation != self._embed_generation:
+            # before the write: a purge (or a delete of its session) that ran while it
+            # was being embedded wins.
+            if self._embedding_stale(generation, metadata, epoch):
                 return False
             await asyncio.to_thread(self.vectors.add, record_id, vector, metadata)
-            if generation is not None and generation != self._embed_generation:
+            if self._embedding_stale(generation, metadata, epoch):
                 # A purge gave up waiting for this lock (a backend slower than its
                 # bounded wait) and wiped while the write was still inside the store:
                 # take the record back out. The lock is still held, so no search saw it.

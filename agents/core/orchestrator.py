@@ -1629,6 +1629,14 @@ class Orchestrator:
             logger.debug("channel draft unavailable; replying whole", exc_info=True)
             return None
 
+    def forget_channel_session(self, session_id: str) -> None:
+        """H218 — a permanently deleted conversation is no channel chat's session any more:
+        the chat's next message resumes or starts its session afresh (with its row)
+        instead of writing into the deleted id."""
+        channel_sessions = self.__dict__.get("_channel_sessions", {})
+        for key in [key for key, sid in channel_sessions.items() if sid == session_id]:
+            del channel_sessions[key]
+
     def _lease_key(self, session_key: Optional[str]) -> str:
         """Mirror `_resolve_session`'s order so the lease names the session the turn will use."""
         if session_key is not None:

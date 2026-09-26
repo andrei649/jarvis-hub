@@ -307,11 +307,12 @@ class CheckpointManager:
             row = cursor.fetchone()
         return dict(zip(columns, row)) if row else None
 
-    def set_archived(self, session_id: str, archived: bool, *, at: str | None = None) -> bool:
+    def set_archived(self, session_id: str, archived: bool, *, at: str | None = None) -> bool | None:
         """H218 — stamp (or clear) ``archived_at`` in a session's metadata. Whether the
-        session exists; a session is never created by archiving it."""
+        session exists; a session is never created by archiving it. None when the store
+        could not answer (no connection, a database error): that is not a missing session."""
         if not self._conn:
-            return False
+            return None
         try:
             with self._lock:
                 row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
@@ -333,7 +334,7 @@ class CheckpointManager:
             return True
         except Exception as e:
             logger.warning(f"Failed to archive session: {e}")
-            return False
+            return None
 
     def stale_sessions(self, before: str, *, limit: int = 500) -> list[str]:
         """H218 — unarchived sessions whose last activity (``ended_at``, else
@@ -347,30 +348,53 @@ class CheckpointManager:
                 " ORDER BY COALESCE(ended_at, started_at) LIMIT ?", (before, limit)).fetchall()
         return [r[0] for r in rows]
 
+    # H218 — every table that keeps a row under a session's id: its name in a backup,
+    # the key column, and whether there can be several. The continuation seed holds the
+    # carried turns; the history binding would refuse a later session with the same id.
+    _SESSION_TABLES = (("checkpoints", "checkpoints", "session_id", True),
+                       ("session_clock", "clock", "session_id", False),
+                       ("session_continuations", "continuation", "session_id", False),
+                       ("session_history_instances", "history_instance", "session_id", False),
+                       ("sessions", "session", "id", False))
+
     def session_rows_for_backup(self, session_id: str) -> dict:
         """H218 — everything this store keeps about one session, for the backup a
-        permanent delete takes first."""
-        out: dict = {"session": None, "checkpoints": [], "clock": None}
+        permanent delete takes first, and the chats continued from it (``continued_by``)."""
+        out: dict = {name: [] if many else None for _table, name, _key, many in self._SESSION_TABLES}
+        out["continued_by"] = []
         if not self._conn:
             return out
         with self._lock:
-            for table, key, many in (("sessions", "id", False), ("checkpoints", "session_id", True),
-                                     ("session_clock", "session_id", False)):
+            for table, name, key, many in self._SESSION_TABLES:
                 cursor = self._conn.execute(f"SELECT * FROM {table} WHERE {key}=?", (session_id,))  # nosec B608 - fixed table names
                 columns = [d[0] for d in cursor.description]
                 rows = [dict(zip(columns, r)) for r in cursor.fetchall()]
-                out[{"sessions": "session", "session_clock": "clock"}.get(table, table)] = rows if many else (rows[0] if rows else None)
+                out[name] = rows if many else (rows[0] if rows else None)
+            out["continued_by"] = [r[0] for r in self._conn.execute(
+                "SELECT session_id FROM session_continuations WHERE parent_id=?", (session_id,)).fetchall()]
         return out
 
     def delete_session_rows(self, session_id: str) -> dict:
-        """H218 — remove one session's rows (checkpoints, clock, the session itself)."""
-        counts = {"checkpoints": 0, "session_clock": 0, "sessions": 0}
+        """H218 — remove one session's rows (see ``_SESSION_TABLES``). The freed pages are
+        zeroed and the write-ahead log emptied, so the rows are not left readable in the
+        database files — the same erasure ``data_purge._purge_db`` does for a forget."""
+        counts = {table: 0 for table, _name, _key, _many in self._SESSION_TABLES}
         if not self._conn:
             return counts
         with self._lock:
-            for table, key in (("checkpoints", "session_id"), ("session_clock", "session_id"), ("sessions", "id")):
-                counts[table] = self._conn.execute(f"DELETE FROM {table} WHERE {key}=?", (session_id,)).rowcount  # nosec B608 - fixed table names
-            self._conn.commit()
+            secure = self._conn.execute("PRAGMA secure_delete").fetchone()[0]
+            self._conn.execute("PRAGMA secure_delete = ON")
+            try:
+                for table, _name, key, _many in self._SESSION_TABLES:
+                    counts[table] = self._conn.execute(f"DELETE FROM {table} WHERE {key}=?", (session_id,)).rowcount  # nosec B608 - fixed table names
+                self._conn.commit()
+                try:
+                    self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except sqlite3.Error:
+                    logger.warning("session rows deleted, but the write-ahead log could not be emptied", exc_info=True)
+            finally:
+                if not secure:
+                    self._conn.execute("PRAGMA secure_delete = OFF")
         return counts
 
     def session_started_at(self, session_id: str) -> str | None:

@@ -189,8 +189,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
-    # H218: the project the agent works in by default (a folder inside the file roots; empty = the first root).
-    dict(category="llm",     key="project_dir",      value="",                      label="Default project directory (inside the file roots)", kind="text"),
+    # H218: the project folder whose convention files H594 reads (inside the file roots; empty = the first root).
+    # Only that: file tools and the terminal still resolve relative paths from the first root.
+    dict(category="llm",     key="project_dir",      value="",                      label="Project folder whose convention files are read (inside the file roots; file tools still start at the first root)", kind="text"),
     dict(category="llm",     key="project_context_files", value=True,               label="Read the project's convention files (AGENTS.md, CLAUDE.md, .cursorrules)", kind="toggle"),
     dict(category="llm",     key="guest_tools", value=["echo", "time", "todo"],      label="Tools offered to a guest on an inbound channel (never a gated one)", kind="tags"),
     dict(category="llm",     key="inbound_actuation", value=False,                  label="Offer gated (approval-bound) tools to the owner on inbound channels", kind="toggle"),

@@ -2,16 +2,20 @@
 
 An archive stamp in the session's metadata takes it out of ``GET /sessions`` and into
 ``GET /sessions?archived=true``; resuming it brings it back. ``memory.auto_archive_days``
-archives idle chats daily. A permanent delete (admin, ``?confirm=DELETE``) writes a
-backup of every trace of the session first — fsynced and read back — and deletes nothing
-when that backup did not land; the session in use cannot be deleted.
-``llm.project_dir`` sets the directory H594 reads a project's convention files from.
+archives idle chats daily. A permanent delete (admin, ``?confirm=DELETE``) holds the
+session's turn lease and the memory locks, writes an encrypted backup of what the hub keeps
+under the session's id outside the data root first — fsynced and read back — and deletes
+nothing when that backup did not land; the session in use, a busy one and one another chat
+continues cannot be deleted. ``llm.project_dir`` sets the directory H594 reads a project's
+convention files from.
 """
 from __future__ import annotations
 
 import asyncio
-import inspect
+import base64
 import json
+import threading
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +24,7 @@ import pytest
 
 from agents.core import session_archive as sa
 from agents.core.checkpoint import CheckpointManager
+from agents.core.session_files import NON_SESSION_STEMS
 from agents.core.todo_tool import TodoStore
 
 T0 = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
@@ -90,10 +95,19 @@ def test_the_limit_counts_only_the_view_asked_for(cp):
 
 def test_no_connection_answers_empty(tmp_path):
     cold = CheckpointManager(str(tmp_path / "x.db"))
-    assert cold.get_sessions(archived=True) == [] and cold.set_archived("s", True) is False
+    assert cold.get_sessions(archived=True) == [] and cold.set_archived("s", True) is None
     assert cold.stale_sessions("2030") == [] and cold.session_row("s") is None
-    assert cold.session_rows_for_backup("s") == {"session": None, "checkpoints": [], "clock": None}
-    assert cold.delete_session_rows("s") == {"checkpoints": 0, "session_clock": 0, "sessions": 0}
+    assert cold.session_rows_for_backup("s") == {"session": None, "checkpoints": [], "clock": None,
+                                                 "continuation": None, "history_instance": None,
+                                                 "continued_by": []}
+    assert cold.delete_session_rows("s") == {"checkpoints": 0, "session_clock": 0, "session_continuations": 0,
+                                             "session_history_instances": 0, "sessions": 0}
+
+
+def test_a_store_error_while_archiving_is_not_a_missing_session(cp):
+    _session(cp, "s", started="2026-09-01T00:00:00+00:00")
+    cp._conn.close()
+    assert cp.set_archived("s", True) is None
 
 
 # ── auto-archive ─────────────────────────────────────────────────────────────────
@@ -143,24 +157,29 @@ async def test_the_scheduler_runs_it_only_when_set(cp, monkeypatch):
 
 
 def test_the_job_is_scheduled_daily():
-    from agents.core import scheduler_service
+    from agents.core.scheduler_service import SchedulerService
 
-    src = inspect.getsource(scheduler_service.SchedulerService)
-    assert 'sched.add_job(self.run_auto_archive, "cron", hour=3, minute=40,' in src
-    assert 'id="session-auto-archive"' in src
-    assert "self.schedule_auto_archive()" in inspect.getsource(scheduler_service.SchedulerService.__init__) or \
-        "self.schedule_auto_archive()" in src
+    jobs = []
+    sched = SimpleNamespace(add_job=lambda func, trigger, **kw: jobs.append((func, trigger, kw)))
+    svc = SchedulerService(SimpleNamespace(heartbeat_scheduler=SimpleNamespace(scheduler=sched)))
+    for name in dir(SchedulerService):                   # every other job stays off the fake scheduler
+        if name.startswith("schedule_") and name not in {"schedule_all", "schedule_auto_archive"}:
+            setattr(svc, name, lambda: None)
+    svc.schedule_all()
+    assert jobs == [(svc.run_auto_archive, "cron",
+                     {"hour": 3, "minute": 40, "id": "session-auto-archive", "replace_existing": True})]
 
 
 # ── delete for good ──────────────────────────────────────────────────────────────
 
 @pytest.fixture
 def stores(cp, tmp_path, monkeypatch):
-    from agents.core.memory import persistence
+    from agents.core.memory import conversation, persistence
 
     mem = tmp_path / "mem"
     mem.mkdir()
     monkeypatch.setattr(persistence, "MEMORY_DIR", mem)
+    monkeypatch.setattr(conversation, "MEMORY_DIR", mem)             # where a live turn appends its log
     _session(cp, "gone", started="2026-09-01T00:00:00+00:00", meta={"title": "Old chat"})
     with cp._lock:
         cp._conn.execute("INSERT INTO checkpoints (agent_id, session_id, state, data, created_at)"
@@ -176,85 +195,355 @@ def stores(cp, tmp_path, monkeypatch):
     arch.parent.mkdir(parents=True, exist_ok=True)
     arch.write_text('{"role": "assistant", "text": "old"}\n', encoding="utf-8")
     todos = TodoStore()
-    todos.write("gone", [{"id": "1", "content": "x", "status": "pending"}]) if hasattr(todos, "write") else None
+    todos.write("gone", [{"id": "1", "content": "x", "status": "pending"}])
     return SimpleNamespace(mem=mem, arch=arch, archive_root=archive_root, todos=todos, backup=tmp_path / "bk")
 
 
-class _Conv:
-    def __init__(self):
-        self.cleared = []
+def _conversation(*sids):
+    from agents.core.memory.conversation import ConversationMemory
 
-    async def clear(self, sid=None):
-        self.cleared.append(sid)
+    conv = ConversationMemory(persist=False)
+    for sid in sids:
+        conv.sessions[sid], conv.instances[sid] = [], f"i-{sid}"
+    return conv
 
 
-async def test_a_delete_backs_up_every_trace_first_then_removes_them(cp, stores):
-    conv = _Conv()
-    got = await sa.delete_session("gone", checkpoints=cp, memory=conv, todos=stores.todos, active="other",
-                                  backup_root=stores.backup, archive_root=stores.archive_root)
+async def _delete(cp, stores, sid="gone", **kw):
+    return await sa.delete_session(sid, checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root, **kw)
+
+
+async def test_a_delete_backs_up_every_trace_first_then_removes_them(cp, stores, tmp_path):
+    from agents.core.notes import NotesStore
+
+    conv = _conversation("gone", "kept")
+    notes = NotesStore(tmp_path / "notes.json")
+    notes.set("gone", "call the bank")
+    got = await _delete(cp, stores, memory=conv, todos=stores.todos, notes=notes, active="other")
     backup = Path(got["backup"])
     assert got["ok"] is True and got["session"] == "gone" and backup.parent == stores.backup
-    assert backup.name.startswith("gone-") and backup.suffix == ".json"
-    record = json.loads(backup.read_text(encoding="utf-8"))
+    assert backup.name.startswith("gone-") and backup.name.endswith(".json.enc")
+    assert b"Old chat" not in backup.read_bytes() and b"call the bank" not in backup.read_bytes()
+    record = sa.read_backup(backup)
     assert record["session"]["id"] == "gone" and json.loads(record["session"]["metadata"])["title"] == "Old chat"
-    assert len(record["checkpoints"]) == 1
+    assert len(record["checkpoints"]) == 1 and record["history_instance"]["session_id"] == "gone"
     assert record["snapshot"]["turns"] == [{"role": "user", "content": "hi"}]
     assert record["log"] == [{"role": "user", "content": "hi"}, "not json"]
     assert record["compaction_archive"] == [{"role": "assistant", "text": "old"}]
+    assert [item["content"] for item in record["todo"]["todos"]] == ["x"] and record["note"] == "call the bank"
     assert (backup.stat().st_mode & 0o777) == 0o600
-    assert got["removed"]["rows"] == {"checkpoints": 1, "session_clock": 0, "sessions": 1}
+    assert got["removed"]["rows"] == {"checkpoints": 1, "session_clock": 0, "session_continuations": 0,
+                                      "session_history_instances": 1, "sessions": 1}
     assert got["removed"]["snapshot"] is True and got["removed"]["log"] is True and got["removed"]["compaction_archive"] is True
+    assert got["removed"]["todo"] is True and stores.todos.read("gone")["todos"] == []
+    assert got["removed"]["note"] is True and notes.get("gone") == ""
     assert cp.session_row("gone") is None
     assert not (stores.mem / "gone.json").exists() and not (stores.mem / "gone.jsonl").exists()
-    assert not stores.arch.exists() and conv.cleared == ["gone"]
+    assert not stores.arch.exists()
+    assert "gone" not in conv.sessions and "gone" not in conv.instances and "kept" in conv.sessions
     assert list(stores.backup.glob(".session-*")) == []
 
 
 async def test_the_session_in_use_cannot_be_deleted(cp, stores):
     with pytest.raises(sa.SessionDeleteError) as err:
-        await sa.delete_session("gone", checkpoints=cp, active="gone", backup_root=stores.backup,
-                                archive_root=stores.archive_root)
+        await _delete(cp, stores, active="gone")
     assert err.value.reason == "active_session" and cp.session_row("gone") is not None
     assert not stores.backup.exists()
 
 
 async def test_an_unknown_session_is_not_found(cp, stores):
     with pytest.raises(sa.SessionDeleteError) as err:
-        await sa.delete_session("nobody", checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root)
+        await _delete(cp, stores, "nobody")
     assert err.value.reason == "not_found"
 
 
 async def test_a_session_known_only_from_its_transcript_is_found(cp, stores):
     (stores.mem / "orphan.jsonl").write_text('{"role": "user", "content": "x"}\n', encoding="utf-8")
-    got = await sa.delete_session("orphan", checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root)
+    got = await _delete(cp, stores, "orphan")
     assert got["removed"]["log"] is True and got["removed"]["snapshot"] is False
+
+
+@pytest.mark.parametrize("name,body", [
+    ("notes.json", '{"s1": {"content": "my notes"}}'),
+    ("kill_switch.json", '{"engaged": true, "reason": "owner"}'),
+    ("autonomy_journal.jsonl", '{"event": "x"}\n'),
+    ("stray.json", '{"session_id": "other", "turns": []}'),
+    *[(f"{stem}.json", '{"k": 1}') for stem in sorted(NON_SESSION_STEMS)],
+])
+async def test_another_store_in_the_data_root_is_never_deleted(cp, stores, name, body):
+    (stores.mem / name).write_text(body, encoding="utf-8")
+    with pytest.raises(sa.SessionDeleteError) as err:
+        await _delete(cp, stores, name.split(".")[0])
+    assert err.value.reason == "not_found" and (stores.mem / name).read_text(encoding="utf-8") == body
+    assert not stores.backup.exists()
+
+
+@pytest.mark.parametrize("name,part,raw", [
+    ("gone.json", "snapshot", b'{"session_id": "gone", "tur'),
+    ("gone.jsonl", "log", b'{"role": "user", "content": "hi"}\n{"content": "\xc3'),
+])
+async def test_a_torn_transcript_is_backed_up_byte_for_byte_and_deleted(cp, stores, name, part, raw):
+    (stores.mem / name).write_bytes(raw)
+    got = await _delete(cp, stores)
+    record = sa.read_backup(Path(got["backup"]))
+    assert base64.b64decode(record[part]) == raw and record["unreadable"] == [part]
+    assert not (stores.mem / name).exists() and cp.session_row("gone") is None
+
+
+async def test_a_transcript_that_cannot_be_read_refuses_with_a_reason(cp, stores, monkeypatch):
+    real = Path.read_bytes
+
+    def denied(self):
+        if self.name == "gone.jsonl":
+            raise PermissionError("denied")
+        return real(self)
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    with pytest.raises(sa.SessionDeleteError) as err:
+        await _delete(cp, stores)
+    assert err.value.reason == "backup_failed" and cp.session_row("gone") is not None
+    assert (stores.mem / "gone.jsonl").exists()
 
 
 async def test_a_backup_that_does_not_land_deletes_nothing(cp, stores, monkeypatch):
     monkeypatch.setattr(sa.os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("disk full")))
     with pytest.raises(sa.SessionDeleteError) as err:
-        await sa.delete_session("gone", checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root)
+        await _delete(cp, stores)
     assert err.value.reason == "backup_failed"
     assert cp.session_row("gone") is not None and (stores.mem / "gone.json").exists() and stores.arch.exists()
     assert list(stores.backup.glob("*")) == []                       # the half-written temp is gone
 
 
 async def test_a_backup_that_does_not_read_back_deletes_nothing(cp, stores, monkeypatch):
-    real = Path.read_text
+    real = Path.read_bytes
 
-    def lying(self, *a, **kw):
-        text = real(self, *a, **kw)
-        return text.replace('"session_id": "gone"', '"session_id": "other"') if self.parent == stores.backup else text
-    monkeypatch.setattr(Path, "read_text", lying)
+    def flipped(self):
+        data = real(self)
+        return data[:-1] + bytes([data[-1] ^ 1]) if self.parent == stores.backup else data
+    monkeypatch.setattr(Path, "read_bytes", flipped)
     with pytest.raises(sa.SessionDeleteError) as err:
-        await sa.delete_session("gone", checkpoints=cp, backup_root=stores.backup, archive_root=stores.archive_root)
+        await _delete(cp, stores)
     assert err.value.reason == "backup_failed" and cp.session_row("gone") is not None
 
 
-def test_the_backup_lands_in_the_data_home_by_default():
-    assert sa.BACKUP_DIR == ("backups", "sessions") and sa.CONFIRM == "DELETE"
-    src = inspect.getsource(sa.delete_session)
-    assert "data_path(*BACKUP_DIR)" in src
+async def test_the_backup_lives_outside_the_data_root_by_default(cp, stores, tmp_path, monkeypatch):
+    from agents.core.paths import data_root
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("JARVIS_FORGET_ARCHIVE_DIR", raising=False)
+    got = await sa.delete_session("gone", checkpoints=cp, archive_root=stores.archive_root)
+    root, backup = data_root().resolve(), Path(got["backup"]).resolve()
+    assert backup.parent == sa.default_backup_dir().resolve() and backup.is_file()
+    assert root not in backup.parents and backup.parent.name == "sessions"
+
+
+async def test_old_backups_are_pruned_to_the_newest_few(cp, stores, monkeypatch):
+    monkeypatch.setenv("JARVIS_SESSION_BACKUP_KEEP", "2")
+    first = None
+    for sid in ("a1", "a2", "a3"):
+        _session(cp, sid, started="2026-09-01T00:00:00+00:00")
+        got = await _delete(cp, stores, sid)
+        first = first or Path(got["backup"]).name
+    assert sorted(p.name.split("-")[0] for p in stores.backup.glob("*.json.enc")) == ["a2", "a3"]
+    assert got["pruned"] == [first]
+
+
+async def test_the_backup_and_the_deletes_run_off_the_event_loop(cp, stores, monkeypatch):
+    loop_thread, seen = threading.current_thread(), []
+
+    def spy(name, real):
+        def call(*args, **kwargs):
+            seen.append((name, threading.current_thread() is loop_thread))
+            return real(*args, **kwargs)
+        return call
+    monkeypatch.setattr(sa, "collect", spy("collect", sa.collect))
+    monkeypatch.setattr(sa, "_write_backup", spy("backup", sa._write_backup))
+    monkeypatch.setattr(cp, "delete_session_rows", spy("rows", cp.delete_session_rows))
+    await _delete(cp, stores)
+    assert seen == [("collect", False), ("backup", False), ("rows", False)]
+
+
+async def test_the_deleted_rows_are_not_left_in_the_database_files(cp, stores):
+    marker = "ZZTITLEMARKERZZ"
+    for i in range(60):
+        _session(cp, f"s{i}", started="2026-09-01T00:00:00+00:00", meta={"title": f"chat {i}"})
+    _session(cp, "victim", started="2026-09-01T00:00:00+00:00", meta={"title": marker * 4})
+    await _delete(cp, stores, "victim")
+    db = Path(cp.db_path)
+    for path in (db, db.with_name(db.name + "-wal")):
+        assert marker.encode() not in (path.read_bytes() if path.exists() else b""), path.name
+
+
+# ── what a continued chat leaves behind ──────────────────────────────────────────
+
+_SEED = [{"role": "user", "content": "my bank PIN is 4242", "agent_id": None,
+          "timestamp": "2026-09-01T10:00:00+00:00", "token_count": 6}]
+
+
+def _continue(cp, source="gone", request="00000000-0000-4000-8000-000000000001"):
+    from agents.core.session_continuation import ContinuationStore
+
+    return ContinuationStore(cp).create(source, request, _SEED, cp.clock_snapshot(source))["session_id"]
+
+
+async def test_a_continued_chat_takes_its_seed_and_history_binding_with_it(cp, stores):
+    child = _continue(cp)
+    got = await _delete(cp, stores, child)
+    record = sa.read_backup(Path(got["backup"]))
+    assert "my bank PIN is 4242" in record["continuation"]["seed_json"]
+    assert record["history_instance"]["session_id"] == child
+    assert got["removed"]["rows"]["session_continuations"] == 1
+    assert got["removed"]["rows"]["session_history_instances"] == 1
+    for table in ("session_continuations", "session_history_instances", "session_clock"):
+        count = cp._conn.execute(f"SELECT count(*) FROM {table} WHERE session_id=?", (child,)).fetchone()[0]  # nosec B608
+        assert count == 0, table
+
+
+async def test_a_chat_another_one_continues_is_kept_until_that_one_is_deleted(cp, stores):
+    child = _continue(cp)
+    with pytest.raises(sa.SessionDeleteError) as err:
+        await _delete(cp, stores)
+    assert err.value.reason == "has_continuations" and cp.session_row("gone") is not None
+    assert not stores.backup.exists()
+    await _delete(cp, stores, child)
+    assert (await _delete(cp, stores))["ok"] is True
+
+
+async def test_a_deleted_id_can_be_used_again(cp, stores):
+    from agents.core.session_continuation import history_identity
+
+    await _delete(cp, stores)
+    cp.create_session_record("gone")
+    with cp._lock:
+        instance, _legacy = history_identity(cp._conn, "gone")
+    assert instance == cp.session_row("gone")["instance_id"]
+
+
+# ── what long-term recall keeps ──────────────────────────────────────────────────
+
+def _recall_memory(embed):
+    from agents.core.memory.manager import MemoryManager
+
+    memory = MemoryManager()
+    memory.embed_turns = True
+    memory._embedder = SimpleNamespace(embed=embed)
+    return memory
+
+
+async def test_a_delete_takes_the_chats_turn_embeddings_out_of_recall(cp, stores):
+    memory = _recall_memory(lambda text: [0.1] * 768)
+    await memory.add_turn("gone", "user", "my bank PIN is 4242")
+    await memory.add_turn("kept", "user", "the weather in Brasov")
+    await memory.flush_embeddings()
+    got = await _delete(cp, stores, memory=memory)
+    assert got["removed"]["embeddings"] == 1
+    assert [r.metadata["session"] for r in memory.vectors.records] == ["kept"]
+    assert "gone" not in memory.conversation.sessions
+
+
+async def test_a_turn_embedding_still_queued_for_a_deleted_chat_is_never_stored(cp, stores):
+    gate = threading.Event()
+    memory = _recall_memory(lambda text: gate.wait(5) and [0.1] * 768)
+    await memory.add_turn("gone", "user", "my bank PIN is 4242")     # queued: the embedder is still working
+    await _delete(cp, stores, memory=memory)
+    gate.set()
+    await memory.flush_embeddings()
+    assert len(memory.vectors) == 0
+
+
+async def test_embeddings_that_cannot_be_removed_stop_the_delete(cp, stores):
+    memory = _recall_memory(lambda text: [0.1] * 768)
+    memory.vectors.remove_where = lambda key, value: (_ for _ in ()).throw(RuntimeError("qdrant down"))
+    with pytest.raises(sa.SessionDeleteError) as err:
+        await _delete(cp, stores, memory=memory)
+    assert err.value.reason == "recall_unavailable" and cp.session_row("gone") is not None
+    assert (stores.mem / "gone.json").exists()
+
+
+def test_the_vector_stores_remove_one_sessions_records():
+    from unittest.mock import MagicMock
+
+    from agents.core.memory.qdrant_store import QdrantVectorStore
+    from agents.core.memory.store import InMemoryVectorStore
+
+    local = InMemoryVectorStore(dimension=2)
+    for rid, sid in (("a", "gone"), ("b", "kept"), ("c", "gone")):
+        local.add(rid, [1.0, 0.0], {"session": sid})
+    assert local.remove_where("session", "gone") == 2 and local.get("b").id == "b" and local.get("a") is None
+    remote = QdrantVectorStore(url="http://q:6333")
+    remote._client = MagicMock()
+    remote._client.post.side_effect = [SimpleNamespace(status_code=200, json=lambda: {"result": {"count": 3}}),
+                                       SimpleNamespace(status_code=200, json=lambda: {"result": {}})]
+    assert remote.remove_where("session", "gone") == 3
+    count, delete = remote._client.post.call_args_list
+    only = {"must": [{"key": "session", "match": {"value": "gone"}}]}
+    assert count.args[0] == "http://q:6333/collections/jarvis_memory/points/count" and count.kwargs["json"]["filter"] == only
+    assert delete.args[0].startswith("http://q:6333/collections/jarvis_memory/points/delete")
+    assert delete.kwargs["json"] == {"filter": only}
+    remote._client.post.side_effect = [SimpleNamespace(status_code=500, text="boom", json=lambda: {})]
+    with pytest.raises(RuntimeError):
+        remote.remove_where("session", "gone")
+    remote._client.post.side_effect = ConnectionError("down")
+    with pytest.raises(RuntimeError):
+        remote.remove_where("session", "gone")
+
+
+# ── a turn in flight ─────────────────────────────────────────────────────────────
+
+async def test_a_turn_written_while_the_delete_waits_is_in_the_backup_and_never_comes_back(cp, stores, monkeypatch):
+    from agents.core.memory.conversation import ConversationMemory
+    from agents.core.memory.manager import MemoryManager
+
+    memory = MemoryManager()
+    assert await memory.resume_session("gone")                       # the chat is live in memory
+    writing, release = threading.Event(), threading.Event()
+    real = ConversationMemory._persist_turn
+
+    def slow_persist(self, *args, **kwargs):
+        writing.set()
+        release.wait(5)
+        return real(self, *args, **kwargs)
+    monkeypatch.setattr(ConversationMemory, "_persist_turn", slow_persist)
+    turn = asyncio.create_task(memory.add_turn("gone", "user", "late news"))
+    await asyncio.to_thread(writing.wait, 5)
+    delete = asyncio.create_task(_delete(cp, stores, memory=memory))
+    await asyncio.sleep(0.05)
+    release.set()
+    await turn
+    record = sa.read_backup(Path((await delete)["backup"]))
+    assert [t["content"] for t in record["snapshot"]["turns"]] == ["hi", "late news"]
+    assert not (stores.mem / "gone.json").exists() and not (stores.mem / "gone.jsonl").exists()
+    assert "gone" not in memory.conversation.sessions
+
+
+@asynccontextmanager
+async def _free_lease(session_key=None):
+    yield True
+
+
+async def test_a_turn_running_on_the_chat_is_waited_for_and_a_long_one_answers_busy(cp, stores, monkeypatch):
+    from agents.core.orchestrator import Orchestrator
+    from agents.core.routers import sessions as route
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.session_id, orch.checkpoints, orch.memory = "live", cp, _conversation("gone")
+    orch._channel_sessions = {"telegram:1": "gone", "telegram:2": "kept"}
+    orch._turn_lease_max_wait = 0.05
+    monkeypatch.setattr(route, "get_orch", lambda: orch)
+    monkeypatch.setenv("JARVIS_FORGET_ARCHIVE_DIR", str(stores.backup))
+    held, done = asyncio.Event(), asyncio.Event()
+
+    async def turn():
+        async with orch.turn_lease("gone"):
+            held.set()
+            await done.wait()
+    running = asyncio.create_task(turn())
+    await held.wait()
+    busy = await route.delete_session("gone", confirm="DELETE")
+    assert busy.status_code == 409 and json.loads(busy.body)["reason"] == "session_busy"
+    assert cp.session_row("gone") is not None and (stores.mem / "gone.json").exists()
+    done.set()
+    await running
+    deleted = await route.delete_session("gone", confirm="DELETE")
+    assert deleted.status_code == 200 and orch._channel_sessions == {"telegram:2": "kept"}
 
 
 def test_todo_forget_drops_one_plan():
@@ -305,9 +594,9 @@ async def test_the_delete_route(cp, stores, monkeypatch):
     from agents.core import todo_tool
     from agents.core.routers import sessions as route
 
-    orch = SimpleNamespace(checkpoints=cp, memory=SimpleNamespace(conversation=_Conv()), session_id="live")
+    orch = SimpleNamespace(checkpoints=cp, memory=_conversation("gone"), session_id="live", turn_lease=_free_lease)
     monkeypatch.setattr(route, "get_orch", lambda: orch)
-    monkeypatch.setattr(sa, "BACKUP_DIR", (str(stores.backup),))
+    monkeypatch.setenv("JARVIS_FORGET_ARCHIVE_DIR", str(stores.backup))
     unconfirmed = await route.delete_session("gone", confirm="")
     assert unconfirmed.status_code == 400 and json.loads(unconfirmed.body)["reason"] == "confirm_required"
     assert (await route.delete_session("bad id", confirm="DELETE")).status_code == 400
@@ -318,7 +607,8 @@ async def test_the_delete_route(cp, stores, monkeypatch):
     done = await route.delete_session("gone", confirm="DELETE")
     body = json.loads(done.body)
     assert done.status_code == 200 and body["ok"] is True and body["removed"]["todo"] is True
-    assert cp.session_row("gone") is None and orch.memory.conversation.cleared == ["gone"]
+    assert Path(body["backup"]).parent == stores.backup / "sessions"
+    assert cp.session_row("gone") is None and "gone" not in orch.memory.sessions
     monkeypatch.setattr(route, "get_orch", lambda: None)
     assert (await route.delete_session("gone", confirm="DELETE")).status_code == 503
 
@@ -326,12 +616,35 @@ async def test_the_delete_route(cp, stores, monkeypatch):
 async def test_a_failed_backup_answers_500(cp, stores, monkeypatch):
     from agents.core.routers import sessions as route
 
-    orch = SimpleNamespace(checkpoints=cp, memory=SimpleNamespace(conversation=_Conv()), session_id="live")
+    orch = SimpleNamespace(checkpoints=cp, memory=_conversation("gone"), session_id="live", turn_lease=_free_lease)
     monkeypatch.setattr(route, "get_orch", lambda: orch)
-    monkeypatch.setattr(sa, "BACKUP_DIR", (str(stores.backup),))
+    monkeypatch.setenv("JARVIS_FORGET_ARCHIVE_DIR", str(stores.backup))
     monkeypatch.setattr(sa.os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("disk full")))
     got = await route.delete_session("gone", confirm="DELETE")
     assert got.status_code == 500 and json.loads(got.body)["reason"] == "backup_failed"
+
+
+@pytest.mark.parametrize("reason,status", [
+    ("session_busy", 409), ("has_continuations", 409), ("not_found", 404), ("recall_unavailable", 503),
+    ("backup_failed", 500),
+])
+async def test_each_refusal_answers_its_own_status(monkeypatch, reason, status):
+    from agents.core.routers import sessions as route
+
+    async def refuse(*args, **kwargs):
+        raise sa.SessionDeleteError(reason)
+    monkeypatch.setattr(sa, "delete_session", refuse)
+    orch = SimpleNamespace(checkpoints=None, memory=None, session_id="live", turn_lease=_free_lease)
+    monkeypatch.setattr(route, "get_orch", lambda: orch)
+    got = await route.delete_session("gone", confirm="DELETE")
+    assert got.status_code == status and json.loads(got.body)["reason"] == reason
+
+
+def test_archiving_while_the_store_fails_is_not_a_missing_session(cp, monkeypatch):
+    _session(cp, "s", started="2026-09-01T00:00:00+00:00")
+    cp._conn.close()
+    got = _client(monkeypatch, SimpleNamespace(checkpoints=cp)).post("/sessions/s/archive")
+    assert got.status_code == 503 and got.json()["reason"] == "store_unavailable"
 
 
 def test_the_delete_route_is_admin_only_and_archive_is_the_owners():
@@ -361,6 +674,16 @@ async def test_resuming_an_archived_chat_brings_it_back(cp, monkeypatch):
     assert "archived_at" not in _meta(cp, "s")
 
 
+def test_resuming_a_chat_whose_history_cannot_be_restored_is_refused_not_a_crash(cp, monkeypatch):
+    from agents.core.session_continuation import ContinuationRefused
+
+    async def resume(sid):
+        raise ContinuationRefused("continuation_identity_changed")
+    got = _client(monkeypatch, SimpleNamespace(checkpoints=cp, memory=SimpleNamespace(resume_session=resume))).post(
+        "/sessions/resume", json={"session_id": "s"})
+    assert got.status_code == 409 and got.json()["error"] == "continuation_identity_changed"
+
+
 # ── settings and the default project directory ──────────────────────────────────
 
 def test_the_settings_are_declared():
@@ -369,6 +692,7 @@ def test_the_settings_are_declared():
     rows = {(r["category"], r["key"]): r for r in DEFAULTS}
     assert rows[("memory", "auto_archive_days")]["value"] == 0 and rows[("memory", "auto_archive_days")]["kind"] == "number"
     assert rows[("llm", "project_dir")]["value"] == "" and rows[("llm", "project_dir")]["kind"] == "text"
+    assert "convention files" in rows[("llm", "project_dir")]["label"]          # what it moves, and only that
     assert sa.SETTING_AUTO_DAYS == "memory.auto_archive_days"
 
 

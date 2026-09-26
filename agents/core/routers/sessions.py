@@ -52,7 +52,11 @@ def _set_archived(session_id: str, archived: bool):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not orch.checkpoints.set_archived(session_id, archived):
+    done = orch.checkpoints.set_archived(session_id, archived)
+    if done is None:
+        return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
+                            status_code=503)
+    if not done:
         return JSONResponse({"error": f"session '{session_id}' not found"}, status_code=404)
     return JSONResponse({"ok": True, "session": session_id, "archived": archived}, headers=_NO_STORE)
 
@@ -69,9 +73,17 @@ async def unarchive_session(session_id: str):
     return _set_archived(session_id, False)
 
 
+_DELETE_STATUS = {"active_session": 409, "session_busy": 409, "has_continuations": 409, "not_found": 404,
+                  "recall_unavailable": 503}
+
+
 @router.delete("/sessions/{session_id}", dependencies=[Depends(admin_guard)])
 async def delete_session(session_id: str, confirm: str = ""):
-    """H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``."""
+    """H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+
+    Holds the session's turn lease, as ``create_continuation`` does: a turn on it
+    finishes first (it would write the transcript back, or add a turn the backup never
+    saw), and one still running past the lease's wait answers 409 ``session_busy``."""
     from agents.core import session_archive, todo_tool
 
     if not is_valid_session_id(session_id):
@@ -82,13 +94,22 @@ async def delete_session(session_id: str, confirm: str = ""):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    active = getattr(orch, "session_id", None)
     try:
-        result = await session_archive.delete_session(
-            session_id, checkpoints=orch.checkpoints, memory=getattr(orch.memory, "conversation", None),
-            todos=todo_tool.TODOS, active=getattr(orch, "session_id", None))
+        if session_id == active:
+            raise session_archive.SessionDeleteError("active_session")
+        async with orch.turn_lease(session_id) as acquired:
+            if not acquired:
+                raise session_archive.SessionDeleteError("session_busy")
+            result = await session_archive.delete_session(
+                session_id, checkpoints=orch.checkpoints, memory=orch.memory, todos=todo_tool.TODOS,
+                notes=getattr(orch, "notes", None), active=active)
+            forget = getattr(orch, "forget_channel_session", None)
+            if callable(forget):
+                forget(session_id)
     except session_archive.SessionDeleteError as exc:
-        status = {"active_session": 409, "not_found": 404}.get(exc.reason, 500)
-        return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason}, status_code=status)
+        return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason},
+                            status_code=_DELETE_STATUS.get(exc.reason, 500))
     return JSONResponse(result, headers=_NO_STORE)
 
 
@@ -133,7 +154,12 @@ async def resume_session(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    ok = await orch.memory.resume_session(sid)
+    from agents.core.session_continuation import ContinuationRefused
+
+    try:
+        ok = await orch.memory.resume_session(sid)
+    except ContinuationRefused as exc:     # a continued chat whose history cannot be restored
+        return JSONResponse({"error": exc.reason}, status_code=exc.status)
     if not ok:
         return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)
     orch.session_id = sid

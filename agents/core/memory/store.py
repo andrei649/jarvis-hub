@@ -93,6 +93,16 @@ class VectorStore(ABC):
         ...
 
     @abstractmethod
+    def remove_where(self, key: str, value: Any) -> int:
+        """Remove every record whose metadata ``key`` equals ``value``; how many there were.
+
+        Backs a permanent session delete (H218: ``key="session"``). Abstract for the same
+        reason as :meth:`clear`, and it raises like :meth:`clear` when the records could
+        not be removed: a delete that left them in recall must not report success.
+        """
+        ...
+
+    @abstractmethod
     def __len__(self):
         ...
 
@@ -246,6 +256,14 @@ class InMemoryVectorStore(VectorStore):
                 for rid, i in list(self._id_index.items()):
                     if i > idx:
                         self._id_index[rid] = i - 1
+
+    def remove_where(self, key: str, value: Any) -> int:
+        with self._lock:
+            kept = [rec for rec in self.records if rec.metadata.get(key) != value]
+            removed = len(self.records) - len(kept)
+            self.records = kept
+            self._id_index = {rec.id: i for i, rec in enumerate(kept)}
+            return removed
 
     def __len__(self):
         with self._lock:
