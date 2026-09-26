@@ -158,15 +158,19 @@ def _known_secret_values() -> list[str]:
 
 class _Redactor:
     def __init__(self):
+        from .log_catalogue import CatalogueRedactionFilter
         from .security.log_redaction import SecretRedactionFilter
 
         self._scan = SecretRedactionFilter().redact_text
+        # H410: and the catalogue the handlers now run (named credentials, CNP/IBAN),
+        # for lines written before it or by a process it did not cover.
+        self._catalogue = CatalogueRedactionFilter().redact_text
         self._known = _known_secret_values()
 
     def __call__(self, text: str) -> str:
         if not text:
             return text
-        text = self._scan(text)
+        text = self._catalogue(self._scan(text))
         text = _ASSIGNMENT.sub(lambda m: m.group(1) + _REDACTED, text)
         for value in self._known:
             if value in text:

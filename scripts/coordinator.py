@@ -142,9 +142,18 @@ async def run() -> None:
         await orch.aclose()
 
 
+def configure_logging() -> None:
+    """stderr logging, through both log redactors (H410): this process runs the
+    orchestrator, its channels and its jobs, and wrote every record unredacted."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from agents.core.log import install_redaction
+
+    install_redaction()
+
+
 def main() -> None:
     apply_safe_mode_switch()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    configure_logging()
     asyncio.run(run())
 
 

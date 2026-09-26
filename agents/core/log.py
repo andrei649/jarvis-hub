@@ -87,6 +87,22 @@ def _install_redaction() -> None:
             "Log secret-redaction filter unavailable; logs are NOT redacted",
             exc_info=True,
         )
+    # H410: then the catalogue — credentials named by a query parameter, a body key
+    # or a header, and a checksum-confirmed CNP/IBAN — after the H495 filter.
+    try:
+        from .log_catalogue import install_catalogue_redaction_everywhere
+        install_catalogue_redaction_everywhere()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Log catalogue redaction unavailable; named credentials and CNP/IBAN are NOT masked",
+            exc_info=True,
+        )
+
+
+def install_redaction() -> None:
+    """Both log redactors on every handler this process owns, for a process that
+    configures its own logging instead of calling ``setup_logging`` (H410)."""
+    _install_redaction()
 
 
 def setup_logging(level: Optional[int] = None) -> None:

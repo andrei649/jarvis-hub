@@ -266,6 +266,10 @@ def _isolate_log_redaction():
         return (
             cls.__name__ == "SecretRedactionFilter"
             and cls.__module__.endswith("security.log_redaction")
+        ) or (
+            # H410's catalogue filter, installed right after it by the same call.
+            cls.__name__ == "CatalogueRedactionFilter"
+            and cls.__module__.endswith("log_catalogue")
         )
 
     def strip() -> None:
