@@ -41,6 +41,7 @@ Apply = Callable[[Any, Any], Awaitable[dict]]
 #: The shipped kinds: kind → (module, apply function), imported on first use.
 BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "settings.retention": ("agents.core.retention", "apply_approved"),   # H262
+    "settings.voice_command": ("agents.core.voice.command_settings", "apply_approved"),   # H613
 }
 _APPLY: dict[str, Apply] = {}
 

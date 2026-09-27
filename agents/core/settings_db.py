@@ -6,6 +6,7 @@ Seeds defaults from agents.yaml on first init.
 import json
 import logging
 import math
+import os
 import re
 import sqlite3
 import threading
@@ -218,6 +219,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="sentence_streaming", value=False,               label="Sentence-level TTS streaming (H5.16) — speak the reply sentence-by-sentence so audio starts sooner", kind="toggle"),
     dict(category="voice",   key="dictation_cleanup", value=False,                label="Dictation cleanup (0.24) — strip fillers/stutters + spoken punctuation from STT transcripts", kind="toggle"),
     dict(category="voice",   key="stt_echo_transcripts", value=False,             label="Echo voice-note transcripts on chat channels (H071) — say back what was heard before answering it", kind="toggle"),
+    # H613 — local voices. Piper models live in piper_model_dir (a directory of data files a fixed
+    # program loads; empty = <data>/voice/piper). local_only keeps speech on this machine (Piper, then
+    # Kokoro; never edge, ElevenLabs or Fish). The command providers make the hub run a program, so
+    # only their own route writes them (ROUTE_ONLY) and a set waits for a human's approval.
+    dict(category="voice",   key="local_only",       value=False,                 label="Keep speech on this machine: Piper, then Kokoro; never a cloud voice (H613)", kind="toggle"),
+    dict(category="voice",   key="piper_model_dir",  value="",                    label="Piper voice models directory (absolute path holding <name>.onnx + <name>.onnx.json; empty = <data>/voice/piper)", kind="text"),
+    dict(category="voice",   key="stt_engine",       value="auto",                label="Speech-to-text engine (auto: faster-whisper, else the approved STT command)", kind="select", opts=["auto", "whisper", "command"]),
+    dict(category="voice",   key="tts_command",      value={},                    label="TTS command provider (an approved program; Console → Voice → Command providers)", kind="json"),
+    dict(category="voice",   key="stt_command",      value={},                    label="STT command provider (an approved program; Console → Voice → Command providers)", kind="json"),
     # security
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
@@ -780,6 +790,9 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         problem = choice_problem(value)
         if problem:
             return f"{key}: {problem}"
+    if key == "piper_model_dir" and isinstance(value, str) and value.strip() and (
+            not os.path.isabs(value.strip()) or not os.path.isdir(value.strip())):
+        return f"{key}: an absolute path to an existing directory, or empty for <data>/voice/piper"
     if key == "sandbox_temp_max_age_hours" and (
             isinstance(value, bool) or not isinstance(value, (int, float))
             or not (isinstance(value, int) or math.isfinite(value)) or not 1 <= value <= 8760):
@@ -832,6 +845,10 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
 ROUTE_ONLY: dict[tuple[str, str], str] = {
     ("skills", "disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
     ("skills", "channel_disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
+    # H613 — a command provider makes the hub run a program: set only through its route, which
+    # sends the request to the approval queue's irreversible tier (voice/command_settings.py).
+    ("voice", "tts_command"): "Console → Voice → Command providers (POST /api/admin/voice/commands)",
+    ("voice", "stt_command"): "Console → Voice → Command providers (POST /api/admin/voice/commands)",
 }
 
 
@@ -870,6 +887,8 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
                 err = f"{key}: expected a whole number between {low} and {high}"
         if err is None and (cat, key) == ("llm", "cost_confirm_usd_per_mtok") and value < 0:
             err = "cost_confirm_usd_per_mtok: a price in USD per million tokens, 0 or more"
+        if err is None and (cat, key) in (("voice", "tts_command"), ("voice", "stt_command")):
+            err = _voice_command_shape_problem(key, value)
         if err is None and (cat, key) == ("voice", "mic_surfaces"):
             odd = [v for v in value if v not in spec.get("opts", [])]
             if odd:
@@ -877,6 +896,23 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
         if err:
             errors.append(err)
     return errors
+
+
+def _voice_command_shape_problem(key: str, value: Any) -> str | None:
+    """H613 — the stored shape of an approved command provider (``{}`` = none). Defence in
+    depth: its only writer is ``voice/command_settings.py``, and every spawn re-validates."""
+    if value == {}:
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("argv"), list) \
+            or not all(isinstance(v, str) for v in value["argv"]):
+        return f"{key}: expected {{}} or {{\"argv\": [strings], \"exe\": {{...}}, \"fingerprint\": ...}}"
+    exe = value.get("exe")
+    if not isinstance(exe, dict) or not isinstance(exe.get("path"), str) or not all(
+            type(exe.get(k)) is int for k in ("dev", "ino", "size", "mtime_ns")):
+        return f"{key}: the approved program's identity (exe) is missing or malformed"
+    if not isinstance(value.get("fingerprint"), str):
+        return f"{key}: the approved argv fingerprint is missing"
+    return None
 
 
 def _mcp_servers_problem(value: Any) -> str | None:
@@ -1303,6 +1339,8 @@ def undo_last_reset(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | Non
                     name = f"{cat}.{key}"
                     if (cat, key) not in _SPEC:
                         skipped.append({"setting": name, "reason": "no longer declared"})
+                    elif (cat, key) in ROUTE_ONLY:        # only its own route writes it (H613)
+                        skipped.append({"setting": name, "reason": f"changed only in {ROUTE_ONLY[(cat, key)]}"})
                     elif not _same_value(stored.get((cat, key)), after.get(cat, {}).get(key)):
                         skipped.append({"setting": name, "reason": "changed since the reset"})
                     elif errors := validate_category(cat, {key: before[cat][key]}):

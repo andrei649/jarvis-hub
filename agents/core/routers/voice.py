@@ -7,6 +7,8 @@ Covers the browser-facing voice loop's server side:
 - `POST /api/voice/stt` — transcribe a raw browser MediaRecorder blob via local Whisper.
 - `GET /api/voice/capabilities` — honest report of what the host's voice engines can do.
 - `GET /api/voice/listening` + `/stream` — H222: whether a mic path is open, read-only.
+- `GET|POST /api/admin/voice/commands` — H613: the TTS/STT command providers (admin-only;
+  a set waits for a human in the Decision Inbox, a clear applies at once).
 
 The `_STT_ENGINE` singleton + `_stt_engine()` accessor and the `TTSRequest` model /
 `_tts_stream_enabled()` helper are voice-only (no external use, no test rebinds them),
@@ -25,7 +27,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from agents.core.routers._deps import user_guard
+from agents.core.app_state import get_orch
+from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.web")
@@ -38,11 +41,20 @@ router = APIRouter(tags=["voice"])
 class TTSRequest(BaseModel):
     text: str = Field(..., max_length=4096)
     lang: str = "ro"
-    voice: Optional[str] = None   # "xtts" (cloned), "elevenlabs", or an edge voice; None = default chain
+    # "xtts" (cloned), "elevenlabs", "piper:<model>", "command", or an edge voice; None = default chain
+    voice: Optional[str] = None
 
 
 #: The ``X-Nerva-Speech`` value of a 204 from ``/tts``: the text normalised to nothing.
 NOTHING_TO_SAY = "nothing_to_say"
+#: What ``/tts`` answers when no server-side TTS path exists at all.
+NO_TTS = "no TTS engine: edge-tts not installed. Run: pip install edge-tts (or pip install piper-tts)"
+_MEDIA_TYPES = {".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac", ".mp3": "audio/mpeg"}
+
+
+def _media_type(path: str) -> str:
+    """The audio type of a synthesized file, by its suffix (Piper and commands write wav)."""
+    return _MEDIA_TYPES.get(Path(str(path)).suffix.lower(), "audio/mpeg")
 
 
 @router.post("/tts", dependencies=[Depends(user_guard)])
@@ -52,12 +64,9 @@ async def tts_endpoint(req: TTSRequest):
         # Warm the optional voice stack off the event loop first (see
         # `_voice_engines`). After it, this import is a sys.modules hit.
         await _voice_engines()
-        from core.voice.tts import HAS_EDGE, TTSEngine
-        if not HAS_EDGE:
-            return JSONResponse(
-                {"error": "edge-tts not installed. Run: pip install edge-tts"},
-                status_code=503,
-            )
+        from core.voice.tts import TTSEngine, tts_available
+        if not await asyncio.to_thread(tts_available):
+            return JSONResponse({"error": NO_TTS}, status_code=503)
         from core.settings_db import get_value
         engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
         # H526: a reply with nothing worth saying (all code, emoji or reasoning) is an
@@ -70,7 +79,7 @@ async def tts_endpoint(req: TTSRequest):
             return JSONResponse({"error": "TTS synthesis failed"}, status_code=500)
         return FileResponse(
             audio_path,
-            media_type="audio/mpeg",
+            media_type=_media_type(audio_path),
             headers={"Cache-Control": "no-cache"},
         )
     except Exception:
@@ -105,7 +114,7 @@ async def tts_stream_endpoint(req: TTSRequest):
     import json as _json
 
     await _voice_engines()  # heavy import off the loop; see `_voice_engines`
-    from core.voice.tts import HAS_EDGE, TTSEngine
+    from core.voice.tts import TTSEngine, tts_available
 
     if not _tts_stream_enabled():
         return JSONResponse(
@@ -113,11 +122,8 @@ async def tts_stream_endpoint(req: TTSRequest):
              "enabled": False},
             status_code=409,
         )
-    if not HAS_EDGE:
-        return JSONResponse(
-            {"error": "edge-tts not installed. Run: pip install edge-tts"},
-            status_code=503,
-        )
+    if not await asyncio.to_thread(tts_available):
+        return JSONResponse({"error": NO_TTS}, status_code=503)
     from core.settings_db import get_value
     engine = TTSEngine(default_voice=get_value("voice", "tts_voice", "en-GB-RyanNeural"))
 
@@ -207,7 +213,11 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
 
     await _voice_engines()  # heavy import off the loop; see `_voice_engines`
     from core.voice.stt import HAS_WHISPER
-    if not HAS_WHISPER:
+
+    from agents.core.voice import local_providers
+    # H613: the approved STT command transcribes when Whisper is absent.
+    command = await asyncio.to_thread(local_providers.command_ready, "stt")
+    if not HAS_WHISPER and not command.ok:
         return JSONResponse(
             {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
             status_code=503,
@@ -219,12 +229,16 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
         data = await request.body()
         if not data:
             return JSONResponse({"error": "empty audio"}, status_code=400)
-        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-            f.write(data)
-            tmp = f.name
         # Off the loop: the first call here loads Whisper onto the GPU.
         engine = await asyncio.to_thread(_stt_engine)
-        text = await engine.transcribe_async(tmp, language=lang)
+        if await asyncio.to_thread(engine._use_command):
+            # The command path copies the bytes into its own private run directory.
+            text = await engine.transcribe_async(data, language=lang)
+        else:
+            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+                f.write(data)
+                tmp = f.name
+            text = await engine.transcribe_async(tmp, language=lang)
         # 0.24 — opt-in dictation cleanup: strip fillers/stutters + apply spoken
         # punctuation. Sentinel transcripts ([silence], [STT unavailable]) pass
         # through untouched, and the removal counts stay inspectable.
@@ -309,21 +323,87 @@ async def voice_capabilities():
     xtts = bool(os.getenv("XTTS_SERVER_URL"))
     eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
     fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
+    local = await asyncio.to_thread(_local_providers_state)     # H613: read per request
+    piper, command = local["piper"], local["command"]
+    tts_command, stt_command = command["tts"]["ready"], command["stt"]["ready"]
     return nocache_json({
-        "stt": has_whisper,                             # local Whisper available
-        "tts": bool(has_edge or has_kokoro or xtts or eleven or fish),
-        "tts_local": bool(xtts or has_kokoro),          # an on-device TTS path exists
+        "stt": bool(has_whisper or stt_command),       # local Whisper or the approved STT command
+        "tts": bool(has_edge or has_kokoro or xtts or eleven or fish or piper["available"] or tts_command),
+        # an on-device TTS path exists
+        "tts_local": bool(xtts or has_kokoro or piper["available"] or tts_command),
         "persona_voice": (
             consent_fn()
             if consent_fn else
             {"required": True, "granted": False, "allowed": False, "message": "voice consent status unavailable"}
         ),
         "providers": {
-            "stt": "faster-whisper" if has_whisper else None,
+            "stt": "faster-whisper" if has_whisper else ("command" if stt_command else None),
             "xtts": xtts, "elevenlabs": eleven, "fish_audio": fish,
             "edge_tts": has_edge, "kokoro": has_kokoro,
+            "piper": piper, "command": command,
         },
+        # the voice picker: the Piper models, and the command provider when it is ready
+        "voices": piper["voices"] + (["command"] if tts_command else []),
     })
+
+
+def _local_providers_state() -> dict:
+    """H613 — Piper (package or binary, and its models) and the command providers, now."""
+    from agents.core.voice import local_providers
+
+    return {"piper": local_providers.piper_status(),
+            "command": {side: local_providers.command_status(side) for side in local_providers.SIDES}}
+
+
+# ── H613: the TTS / STT command providers (admin-only) ───────────
+
+#: A command is at most 64 elements of at most 4000 characters: a body past this is not one.
+VOICE_COMMAND_MAX_BODY = 300_000
+
+
+class VoiceCommandBody(BaseModel):
+    side: str = Field(..., max_length=8)                   # "tts" or "stt"
+    argv: Optional[list[str]] = Field(None, max_length=64)  # null or [] clears the command
+    dry_run: bool = False
+
+
+@router.get("/api/admin/voice/commands", dependencies=[Depends(admin_guard)])
+async def voice_commands_status():
+    """Per side: configured, armed (``JARVIS_VOICE_COMMANDS``), safe mode, ready (and why
+    not), the approved program and fingerprint, and the request waiting for a decision."""
+    from agents.core.voice import command_settings
+
+    return nocache_json(await asyncio.to_thread(command_settings.status, get_orch()))
+
+
+@router.post("/api/admin/voice/commands", dependencies=[Depends(admin_guard)])
+async def voice_commands_write(request: Request):
+    """Ask for a TTS or STT command provider, or clear one. A set or a change is never
+    written here: it goes to the Decision Inbox as an irreversible-tier card naming the
+    program and its argv (202), and a human's accept writes it. A clear applies at once
+    and is audited. Same-origin JSON only (the admin guard trusts loopback)."""
+    from agents.core.routers.admin import _bounded_body, _refuse_cross_site_write
+    from agents.core.voice import command_settings
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    raw = await _bounded_body(request, VOICE_COMMAND_MAX_BODY)
+    if raw is None:
+        return nocache_json({"error": "request body too large"}, status_code=413)
+    try:
+        body = VoiceCommandBody.model_validate(json.loads(raw or b"null"))
+    except Exception:  # noqa: BLE001 — malformed JSON or a body that is not this shape
+        return nocache_json({"error": "expected {side: tts|stt, argv: [strings] | null, dry_run?}"},
+                            status_code=422)
+    if body.side not in command_settings.KEYS:
+        return nocache_json({"error": "side: tts or stt"}, status_code=422)
+    orch = get_orch()
+    if not body.argv:
+        status, answer = await command_settings.clear(orch, body.side)
+    else:
+        status, answer = await command_settings.request(orch, body.side, list(body.argv), dry_run=body.dry_run)
+    return nocache_json(answer, status_code=status)
 
 
 # ── H222: listening state (read-only) ────────────────────────────

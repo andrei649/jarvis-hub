@@ -406,7 +406,7 @@ const ADMIN = {
     { name:'gemma-4-26b-a4b', type:'local', backend:'llama.cpp', ctx:'128k', status:'loaded', use:'default · 11 agents' },
     { name:'claude-haiku', type:'cloud', backend:'api.anthropic.com', ctx:'200k', status:'ready', use:'fallback · 5 agents' },
     { name:'whisper-lg-v3', type:'local', backend:'whisper.cpp', ctx:'—', status:'loaded', use:'voice in' },
-    { name:'piper-tts', type:'local', backend:'piper', ctx:'—', status:'loaded', use:'voice out' },
+    { name:'piper-tts', type:'local', backend:'piper', ctx:'—', status:'loaded', use:'voice out · piper:ro_RO-mihai-medium' },
   ],
   plugins:[
     { name:'Gmail API', scope:'gmail.googleapis.com', net:'restricted', on:true },

@@ -124,7 +124,14 @@ class InboundVoiceReader:
             from agents.core.voice.stt import HAS_WHISPER
         except Exception:  # pragma: no cover - import guard, not a code path
             return False
-        return bool(HAS_WHISPER)
+        if HAS_WHISPER:
+            return True
+        try:                                # H613: or the owner's approved STT command
+            from agents.core.voice import local_providers
+
+            return local_providers.command_ready("stt").ok
+        except Exception:  # noqa: BLE001 — a probe that fails reports no engine
+            return False
 
     def refusal(self) -> Transcript | None:
         """Why nothing can be transcribed right now, or ``None`` to proceed.

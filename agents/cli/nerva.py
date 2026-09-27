@@ -895,9 +895,10 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name} is not a declared setting (see `nerva config list`)\n")
             return EXIT_FAILED
         if (category, key) in settings.ROUTE_ONLY:
-            # review-H329 F1: the skill switches have one writer, which records a switch-on.
-            ctx.err.write(f"{ns.name} is changed only through the skill switch route: "
-                          "use `nerva skills on|off`\n")
+            # review-H329 F1: a route-only row has one writer (the skill switches, which record a
+            # switch-on; H613 the voice command providers, which ask for approval).
+            hint = " — use `nerva skills on|off`" if category == "skills" else ""
+            ctx.err.write(f"{ns.name} is changed only in {settings.ROUTE_ONLY[(category, key)]}{hint}\n")
             return EXIT_FAILED
         try:
             value = _coerce(ns.value, str(spec.get("kind", "text")))

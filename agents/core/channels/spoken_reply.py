@@ -148,23 +148,51 @@ class SpokenReply:
             return False, False
         return bool(HAS_EDGE), bool(HAS_KOKORO)
 
+    @staticmethod
+    def _local_engine() -> tuple[str | None, bool]:
+        """H613 — ``(the local program that would speak: "piper", "command" or None,
+        whether voice.local_only keeps speech on this machine)``."""
+        try:
+            from agents.core.voice import local_providers
+        except Exception:  # pragma: no cover - import guard, not a code path
+            return None, False
+        try:
+            local_only = local_providers.local_only()
+            if local_providers.piper_status()["available"]:
+                return "piper", local_only
+            if local_providers.command_ready("tts").ok:
+                return "command", local_only
+            return None, local_only
+        except Exception:  # noqa: BLE001 — a probe that fails reports no local engine
+            return None, False
+
     @property
     def is_available(self) -> bool:
         """True only when this host has a text-to-speech backend to call."""
         if self._available is not None:
             return bool(self._available)
         has_edge, has_kokoro = self._engines()
-        return has_edge or has_kokoro
+        local, local_only = self._local_engine()
+        if local_only:                      # edge is never called then
+            return bool(local or has_kokoro)
+        return has_edge or has_kokoro or local is not None
 
     def backend_label(self) -> str:
         """Which engine would speak, named honestly — cloud is called cloud."""
         if self._backend is not None:
             return self._backend
         has_edge, has_kokoro = self._engines()
-        if has_edge:
+        local, local_only = self._local_engine()
+        if has_edge and not local_only:
             return "edge-tts (Microsoft, cloud)"
+        if local_only and local:            # voice.local_only: Piper, then Kokoro
+            return "piper (local)" if local == "piper" else "your TTS command (local)"
         if has_kokoro:
             return "kokoro (local)"
+        if local == "piper":
+            return "piper (local)"
+        if local == "command":
+            return "your TTS command (local)"
         return "none"
 
     def refusal(self) -> Audio | None:

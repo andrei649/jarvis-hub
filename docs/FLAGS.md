@@ -197,6 +197,27 @@ mandatory — without it the backend refuses `kernel_unavailable`.
 — shell effects are not automatically reversible, and the contract says so.
 **Revert:** unset + restart.
 
+### `JARVIS_VOICE_COMMANDS` · `JARVIS_VOICE_COMMAND_TIMEOUT_S`
+
+**Defaults: OFF · `30`s for TTS, `120`s for STT (an override is clamped to 1–600).**
+
+**OFF:** the owner's TTS/STT command providers (`voice.tts_command`,
+`voice.stt_command`, H613) never run, and `POST /api/admin/voice/commands` refuses to
+ask for one (`409 not_armed`); clearing one still works.
+**ON:** an approved command runs: argv-only (never a shell), in a private 0700 run
+directory, scrubbed environment, one deadline, capped stdout/stderr; only audio (or a
+transcript) it writes inside that directory is read back.
+**What stays gated anyway:** the two settings are ROUTE_ONLY — a generic settings write,
+an import, a reset, an undo and `nerva config set` cannot touch them — and setting one
+waits for a human in the Decision Inbox (irreversible tier, kind
+`settings.voice_command`). Every spawn re-validates the argv (absolute program that
+exists, not a shell or a launcher, no inline-code interpreter, hardline denylist, no
+credential in the line) and checks the program file's identity (device, inode, size,
+mtime) against the approval: a replaced or upgraded program needs approving again. Off
+in safe mode.
+**Cost:** an approved program runs as the hub's user, with that user's permissions.
+**Revert:** unset + restart, or clear the command in Console → Voice → Command providers.
+
 ### `JARVIS_BROWSER_ALLOW_PRIVATE_URLS`
 
 **Default: OFF.** Read by `PlaywrightBrowserDriver.from_env` and
@@ -618,6 +639,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+| `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
 | `JARVIS_MODEL_PULL` | off (`routers/model_setup.py`) | `POST /api/onboarding/model-pull` may reach `action:model.pull` | Bandwidth + disk; needs both posture flags, loopback Ollama, and stays under `llm.model_pull_max_gb`; rollback is a manual `ollama rm` | Unset: the route refuses `model_pull_disabled` |

@@ -7761,6 +7761,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/voice/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Commands Status
+         * @description Per side: configured, armed (``JARVIS_VOICE_COMMANDS``), safe mode, ready (and why
+         *     not), the approved program and fingerprint, and the request waiting for a decision.
+         */
+        get: operations["voice_commands_status_api_admin_voice_commands_get"];
+        put?: never;
+        /**
+         * Voice Commands Write
+         * @description Ask for a TTS or STT command provider, or clear one. A set or a change is never
+         *     written here: it goes to the Decision Inbox as an irreversible-tier card naming the
+         *     program and its argv (202), and a human's accept writes it. A clear applies at once
+         *     and is audited. Same-origin JSON only (the admin guard trusts loopback).
+         */
+        post: operations["voice_commands_write_api_admin_voice_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/voice/listening": {
         parameters: {
             query?: never;
@@ -9909,6 +9937,12 @@ export interface paths {
          * @description Stop waiting: clear a parked run's barrier (H464). Idempotent — with no
          *     barrier it answers ``cleared: false`` rather than an error. Same guard as stop:
          *     clearing restores an already-approved, budget-bounded cadence and grants nothing.
+         *
+         *     ``cleared`` is what this call did. When it cleared nothing because a newer
+         *     barrier was set in the meantime, ``waiting_on`` says what the run waits on now,
+         *     so a surface never reports "was not waiting on anything" over a parked run. An
+         *     owner's clear also sticks: neither the planner nor the judge may park the run on
+         *     that same wait again.
          */
         post: operations["company_run_barrier_clear_api_company_runs__run_id__barrier_clear_post"];
         delete?: never;
@@ -23161,6 +23195,46 @@ export interface operations {
         };
     };
     voice_capabilities_api_voice_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_commands_status_api_admin_voice_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_commands_write_api_admin_voice_commands_post: {
         parameters: {
             query?: never;
             header?: never;

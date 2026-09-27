@@ -196,14 +196,26 @@ def tts_installed() -> bool:
     """
     engine = sys.modules.get("agents.core.voice.tts")
     if engine is not None:
-        return bool(getattr(engine, "HAS_EDGE", False) or getattr(engine, "HAS_KOKORO", False))
-    for name in _TTS_MODULES:
-        try:
-            if importlib.util.find_spec(name) is not None:
-                return True
-        except (ImportError, ValueError):
-            continue
-    return False
+        if getattr(engine, "HAS_EDGE", False) or getattr(engine, "HAS_KOKORO", False):
+            return True
+    else:
+        for name in _TTS_MODULES:
+            try:
+                if importlib.util.find_spec(name) is not None:
+                    return True
+            except (ImportError, ValueError):
+                continue
+    return _local_tts_ready()
+
+
+def _local_tts_ready() -> bool:
+    """H613 — Piper (the package or the binary, with a model) or a ready TTS command."""
+    try:
+        from agents.core.voice import local_providers
+
+        return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok)
+    except Exception:  # noqa: BLE001 — a probe that fails reports no engine
+        return False
 
 
 def _refuse(reason: str, **extra: Any) -> dict[str, Any]:

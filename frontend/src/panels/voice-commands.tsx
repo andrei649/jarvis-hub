@@ -1,0 +1,96 @@
+/* H613 — the owner's TTS / STT command providers, in Settings → Voice.
+
+   A command provider makes the hub run a program, so the two settings (voice.tts_command,
+   voice.stt_command) are never edited in the settings list: they render read-only there,
+   and this block is their one editor. It asks the hub (POST /api/admin/voice/commands);
+   the hub validates the argv, and a set or a change goes to the Decision Inbox as a card
+   naming the program — "Waiting for your approval in the Decision Inbox (task N)". Nothing
+   runs until a person accepts it, the hub is started with JARVIS_VOICE_COMMANDS=1 and the
+   program file is still the one approved. Clear applies at once.
+
+   The argv is a JSON list of strings. Placeholders are whole elements: {text_file},
+   {output} and {lang} for TTS, {audio} and {lang} for STT. */
+import React, { useState } from 'react';
+import { apiPost } from '../api/client';
+import { mono, useApi } from '../panel-kit';
+
+export const VOICE_COMMANDS_PATH = '/api/admin/voice/commands';
+const SIDES = ['tts', 'stt'] as const;
+const EXAMPLE: Record<string, string> = {
+  tts: '["/usr/local/bin/my-tts", "--lang", "{lang}", "--in", "{text_file}", "--out", "{output}"]',
+  stt: '["/usr/local/bin/my-stt", "--lang", "{lang}", "{audio}"]',
+};
+
+/** The typed argv as a list of strings, or why it is not one. */
+export function parseArgv(text: string): { argv?: string[]; error?: string } {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return { error: 'not JSON: a list like ' + EXAMPLE.tts }; }
+  if (!Array.isArray(value) || !value.length || !value.every((v) => typeof v === 'string')) {
+    return { error: 'a JSON list of strings, the program first (an absolute path)' };
+  }
+  return { argv: value as string[] };
+}
+
+/** What the hub answered, as the owner reads it. */
+export function commandNote(r: any): string {
+  if (r && r.pending != null) return `Waiting for your approval in the Decision Inbox (task ${r.pending})`;
+  if (r && r.cleared) return 'Cleared';
+  if (r && r.dry_run) return `Valid · runs ${r.exe}`;
+  return 'Done';
+}
+
+/** A refusal: the hub's problems, else its detail or error. */
+export function commandRefusal(err: any): string {
+  const body = err?.body || {};
+  if (Array.isArray(body.problems) && body.problems.length) return body.problems.join(' · ');
+  for (const key of ['detail', 'error']) {
+    if (typeof body[key] === 'string' && body[key].trim()) return body[key].trim();
+  }
+  return err?.message || 'refused';
+}
+
+function SideRow({ side, state, onDone }: { side: string; state: any; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const send = (argv: string[] | null) =>
+    apiPost(VOICE_COMMANDS_PATH, { side, argv }, { admin: true })
+      .then((r: any) => { setNote({ ok: true, text: commandNote(r) }); onDone(); })
+      .catch((err: any) => setNote({ ok: false, text: commandRefusal(err) }));
+  const request = () => {
+    const parsed = parseArgv(text);
+    if (parsed.error) { setNote({ ok: false, text: parsed.error }); return; }
+    send(parsed.argv!);
+  };
+  const s = state || {};
+  const status = s.ready ? 'ready' : s.configured ? `not running: ${s.reason}` : 'not set';
+  return <div data-testid={`voice-command-${side}`} style={{ margin: '4px 0 8px' }}>
+    <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+      {side.toUpperCase()} command · {status}
+      {s.exe && <span style={{ color: 'var(--ink-3)' }}> · {s.exe}</span>}
+      {s.pending_task != null && <span style={{ color: 'var(--amber)' }}> · waiting in the Decision Inbox (task {s.pending_task})</span>}
+    </div>
+    <textarea aria-label={`${side} command argv`} value={text} placeholder={EXAMPLE[side]} rows={2}
+      onChange={(e) => setText(e.target.value)}
+      style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 10.5 }} />
+    <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
+      <button className="tool-btn" onClick={request}>Request</button>
+      {s.configured && <button className="tool-btn" onClick={() => send(null)}>Clear</button>}
+    </div>
+    {note && <div role={note.ok ? 'status' : 'alert'} style={{ ...mono, fontSize: 10, marginTop: 3, color: note.ok ? 'var(--amber)' : 'var(--red)' }}>{note.text}</div>}
+  </div>;
+}
+
+export function VoiceCommands() {
+  const { d, reload } = useApi(VOICE_COMMANDS_PATH, true, true);
+  const sides = (d && (d as any).sides) || {};
+  const armed = SIDES.some((side) => sides[side]?.armed);
+  return <div data-testid="voice-commands" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, margin: '2px 0 6px' }}>
+    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-3)' }}>COMMAND PROVIDERS</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '2px 0 4px' }}>
+      A program the hub runs to speak or to transcribe. Setting one asks you in the Decision Inbox first;
+      it runs only with JARVIS_VOICE_COMMANDS=1{d && !armed ? ' (not set on this hub)' : ''}, never in safe mode,
+      and needs approving again if the program file changes.
+    </div>
+    {SIDES.map((side) => <SideRow key={side} side={side} state={sides[side]} onDone={reload} />)}
+  </div>;
+}

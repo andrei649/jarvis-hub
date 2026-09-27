@@ -13,14 +13,22 @@ matters more than squeezing out the last fraction of accuracy:
 Both are overridable per instance or via env (JARVIS_STT_BEAM_SIZE,
 JARVIS_STT_COMPUTE_TYPE) so a transcription-quality job can opt back into
 beam search without a code change.
+
+H613 — the owner's approved STT command provider (``voice.stt_command``, see
+``local_providers``) transcribes instead when ``voice.stt_engine`` is ``command``, or is
+``auto`` and faster-whisper is absent or failed to load. ``whisper`` never uses it.
 """
 
+import asyncio
 import io
 import logging
 import os
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from agents.core.env_config import env_int
+from agents.core.voice import local_providers
 from agents.core.voice.hallucination import is_hallucination
 
 logger = logging.getLogger("jarvis.voice.stt")
@@ -33,6 +41,8 @@ except ImportError:
 
 # Greedy decode by default for the live loop; override with JARVIS_STT_BEAM_SIZE.
 DEFAULT_BEAM_SIZE = 1
+#: Where an STT command's private run directories live (the TTS temp dir, H613).
+TEMP_DIR = Path(tempfile.gettempdir()) / "cabinet_tts"
 
 
 def _resolve_beam_size(override: Optional[int]) -> int:
@@ -97,6 +107,12 @@ class STTEngine:
         (`routers/voice.py` skips dictation cleanup on it, `frontend/src/voice.ts`
         drops it), so the filter needs no new contract to be honoured.
         """
+        if self._use_command():
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(self._transcribe_command(audio, language))
+            return "[STT error: command STT needs an async caller]"
         if not self._model:
             return "[STT unavailable]"
 
@@ -130,6 +146,23 @@ class STTEngine:
             return io.BytesIO(bytes(audio))
         return audio
 
+    def _use_command(self) -> bool:
+        """Whether the approved STT command transcribes (H613): ``voice.stt_engine`` is
+        ``command``, or ``auto`` with no Whisper model — and the command is ready now."""
+        mode = local_providers.stt_mode()
+        if mode == "whisper" or (mode == "auto" and self._model is not None):
+            return False
+        return local_providers.command_ready("stt").ok
+
+    async def _transcribe_command(self, audio, language) -> str:
+        from agents.core.settings_db import get_value
+
+        default = get_value("voice", "stt_language", "en")
+        return await local_providers.transcribe_command(audio, language, temp_dir=TEMP_DIR,
+                                                        default_lang=default if isinstance(default, str) else "en")
+
     async def transcribe_async(self, audio, language: str = "ro") -> str:
-        loop = __import__("asyncio").get_event_loop()
+        if self._use_command():
+            return await self._transcribe_command(audio, language)
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.transcribe, audio, language)

@@ -28,6 +28,7 @@ import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
+import { VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2740,8 +2741,17 @@ export function OAuthPanel() {
       </span></Row>)}
   </Card>;
 }
-function settingsField(it, val, on) {
+function settingsField(it, val, on, suggest?: string[]) {
   const ip = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '3px 6px', ...mono, fontSize: 11 };
+  // H613: a text setting with known choices (voice.tts_voice: the Piper voices, the command
+  // provider) offers them, and still takes any value typed.
+  if (suggest && suggest.length && (it.kind === 'text' || !it.kind)) {
+    const id = 'suggest-' + it.key;
+    return <>
+      <input list={id} aria-label={'value of ' + it.key} value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />
+      <datalist id={id} data-testid={id}>{suggest.map((o) => <option key={o} value={o} />)}</datalist>
+    </>;
+  }
   switch (it.kind) {
     case 'toggle': return <input type="checkbox" checked={!!val} onChange={(e) => on(e.target.checked)} />;
     case 'select': return <select value={val} onChange={(e) => on(e.target.value)} style={ip}>{(it.opts || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>;
@@ -2758,6 +2768,9 @@ export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
   // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
   const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
+  // H613 — the voices this hub can speak with (Piper models, the command provider).
+  const voiceCaps: any = useApi('/api/voice/capabilities').d;
+  const voiceChoices: string[] = Array.isArray(voiceCaps?.voices) ? voiceCaps.voices.filter((v) => typeof v === 'string') : [];
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
   const [refused, setRefused] = useState<string[]>([]);
@@ -2840,6 +2853,7 @@ export function SettingsPanel() {
             )}
           </div>
           {cat === 'retention' && <RetentionBanner refresh={retentionTick} />}
+          {cat === 'voice' && <VoiceCommands />}
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
@@ -2861,7 +2875,8 @@ export function SettingsPanel() {
                     <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
                     <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-3)' }}>change it in {it.written_by}</span>
                   </span>
-                : <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>}
+                : <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v),
+                    cat === 'voice' && it.key === 'tts_voice' ? voiceChoices : undefined)}</span>}
             </Row>
           ))}
         </div>

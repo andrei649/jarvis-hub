@@ -690,5 +690,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/skills/loader.py",
         # H156: an edit is refused in safe mode, where overlays are not read.
         "agents/core/soul_edit.py",
+        # H613: the Piper binary and the voice command providers do not run in safe mode.
+        "agents/core/voice/command_settings.py",
+        "agents/core/voice/local_providers.py",
         "agents/web.py",
     ])

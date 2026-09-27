@@ -100,6 +100,7 @@ LOCK_SOURCES = ("requirements.txt", "requirements-beta.txt", "requirements-dev.t
 LOCK_HEADER = "# source-sha256: "
 READYZ_PATH = "/readyz"
 COMMAND_CENTER_PATH = "/api/onboarding/command-center"
+VOICE_CAPABILITIES_PATH = "/api/voice/capabilities"
 # Mirrors ``agents.cli.client.WILDCARD_HOSTS`` (a bind address is dialled over loopback).
 WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared against, never bound
 
@@ -108,7 +109,7 @@ WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared
 LOOPBACK_HOSTS = frozenset({"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 REQUIRED = ("python", "venv", "locks_in_sync", "bind_is_loopback", "data_root_writable")
-ADVISORY = ("runtimes", "readyz", "runtime_resolves", "config_sources", "smoke",
+ADVISORY = ("runtimes", "readyz", "runtime_resolves", "voice", "config_sources", "smoke",
             "host_not_root", "sshd_no_passwords", "container_storage")
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
@@ -488,6 +489,59 @@ def check_runtime_resolves(opener=None, *, readyz: Check | None = None,
     return _result(name, False, reason, detail)
 
 
+def check_voice(opener=None, *, readyz: Check | None = None, env=None, url: str | None = None,
+                timeout: float = 10.0) -> Check:
+    """H613 — which voice engines the running hub has, in one row: ``tts edge, piper(binary,
+    3 voices), command(ready); stt faster-whisper``. An absent optional engine is
+    information, not a problem; the row warns only when a TTS/STT command provider is
+    configured but will not run (``changed_since_approval``, ``not_armed``, ``exe_missing``,
+    ``safe_mode``), naming why. Skipped while the hub is down, like ``runtime_resolves``."""
+    name = "voice"
+    if readyz is not None and readyz.status != OK:
+        return Check(name, SKIP, "skipped:hub_not_ready", "read from the running hub — start it, then re-run")
+    env = os.environ if env is None else env
+    url = url or hub_url(env) + VOICE_CAPABILITIES_PATH
+    opener = opener or hub_open
+    try:
+        resp = opener(urllib.request.Request(url, headers=_hub_headers(env, url), method="GET"), timeout=timeout)
+        try:
+            payload = json.loads(resp.read())
+        finally:
+            close = getattr(resp, "close", None)
+            if close:
+                close()
+    except urllib.error.HTTPError as exc:
+        return _result(name, False, f"capabilities_status:{exc.code}")
+    except (ValueError, TypeError):
+        return _result(name, False, "malformed_reply", "the hub's voice capabilities are not JSON")
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
+        return _result(name, False, "hub_unreachable", f"{url}: {type(exc).__name__}")
+    providers = payload.get("providers") if isinstance(payload, dict) else None
+    if not isinstance(providers, dict):
+        return _result(name, False, "malformed_reply", "no providers block in the hub's reply")
+    tts = [label for label, key in (("edge", "edge_tts"), ("kokoro", "kokoro"), ("xtts", "xtts"),
+                                    ("elevenlabs", "elevenlabs"), ("fish", "fish_audio")) if providers.get(key)]
+    piper = providers.get("piper") if isinstance(providers.get("piper"), dict) else {}
+    if piper.get("via"):
+        voices = piper.get("voices") if isinstance(piper.get("voices"), list) else []
+        tts.append(f"piper({piper['via']}, {len(voices)} voice{'s' if len(voices) != 1 else ''})")
+    commands = providers.get("command") if isinstance(providers.get("command"), dict) else {}
+    broken = []
+    for side in ("tts", "stt"):
+        state = commands.get(side) if isinstance(commands.get(side), dict) else {}
+        if not state.get("configured"):
+            continue
+        if state.get("ready"):
+            (tts if side == "tts" else []).append("command(ready)")
+        else:
+            broken.append(f"{side} command: {_text(state.get('reason')) or 'not ready'}")
+    stt = _text(providers.get("stt")) or "none"
+    detail = f"tts {', '.join(tts) or 'none (the browser speaks)'}; stt {stt}"
+    if broken:
+        return _result(name, False, "voice_command_not_ready", f"{detail} — {'; '.join(broken)}")
+    return _result(name, True, "voice_ok", detail)
+
+
 # Configuration keys worth naming: every key a .env file sets, and the process
 # environment's keys the hub's own code reads (found by reading agents/ and serve.py)
 # or that carry Nerva's prefixes. The rest of a shell's environment (PATH, HOME, other
@@ -794,6 +848,7 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=None,
         check_runtimes(opener or urllib.request.urlopen),
         readyz,
         check_runtime_resolves(to_hub, readyz=readyz, env=env),
+        check_voice(to_hub, readyz=readyz, env=env),
         check_config_sources(root, env, opener=to_hub, readyz=readyz),
         check_smoke(root, enabled=smoke, run=run),
         *check_host_posture(root, env),   # H501: advisory, never a FAIL

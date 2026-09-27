@@ -307,7 +307,8 @@ def _voice(ctx: CommandContext) -> str:
         f"Replies would be spoken by {speaker.backend_label()}."
         if speaker.is_available
         else "No text-to-speech engine is installed on this host yet, so replies stay text "
-        "until one is (pip install edge-tts)."
+        "until one is (pip install edge-tts, or pip install piper-tts for a fully local voice "
+        "with its .onnx models in <data>/voice/piper)."
     )
     usage = "Usage: /voice off | voice | always."
     store = voice_mode.default_store()

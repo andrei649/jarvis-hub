@@ -55,8 +55,9 @@ def _body(resp):
 
 def test_the_new_layers_come_after_the_owners_in_boot_order():
     assert safe_mode.LAYERS[7:11] == ("plugins", "outbound_webhooks", "memory_injection", "settings_overrides")
-    assert safe_mode.LAYERS[11:] == ("project_context",)                    # H594
-    assert len(set(safe_mode.LAYERS)) == len(safe_mode.LAYERS) == 12
+    assert safe_mode.LAYERS[11:12] == ("project_context",)                  # H594
+    assert safe_mode.LAYERS[12:] == ("voice_piper_binary", "voice_commands")  # H613
+    assert len(set(safe_mode.LAYERS)) == len(safe_mode.LAYERS) == 14
 
 
 # ── settings: the stricter of the owner's value and the shipped default ──────────
