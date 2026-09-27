@@ -50,7 +50,9 @@ KEYS = {"tts": "tts_command", "stt": "stt_command"}
 NOTE = ("Runs on this machine as the hub's user, with that user's permissions; what it does cannot be "
         "undone by the hub. Nerva reads back only the audio (or the transcript) it produces in a private "
         "run directory. Approving binds these exact files (the program and, for an interpreter, its "
-        "script): changing, replacing or upgrading any of them needs approving again.")
+        "script): changing, replacing or upgrading any of them needs approving again. What they load "
+        "is not bound: libraries, and the modules a script imports (a Python script never imports from "
+        "its own folder or the user's site-packages).")
 #: The decisions that apply a card: a plain accept. An edit replaces the payload, so it
 #: never applies one (the owner asks again from the settings block).
 PLAIN_ACCEPT = frozenset({"accept", "approve"})
@@ -242,6 +244,10 @@ async def request(orch: Any, side: str, argv: list[str], *, dry_run: bool = Fals
                      "files": [lp.shown_file(b) for b in bound], "timeout_s": timeout}
     for task in await asyncio.to_thread(_pending_for, orch, side):
         if task.payload.get("fingerprint") == fingerprint:
+            if task.payload.get("bound") != bound:     # verify round, N2: that card cannot apply
+                return 409, {"error": "request_stale", "pending": int(task.id),
+                             "detail": "the waiting request was made before the program or its script "
+                                       "changed: decline it in the Decision Inbox, then ask again"}
             return 202, {"pending": int(task.id), "existing": True, "side": side}
         return 409, {"error": "request_waiting", "pending": int(task.id),
                      "detail": "another request for this command is waiting in the Decision Inbox: "

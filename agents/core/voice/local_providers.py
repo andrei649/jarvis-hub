@@ -301,6 +301,16 @@ async def _kill(proc: Any) -> None:
 CHANGED_BEFORE_SPAWN = "changed_before_spawn"
 
 
+#: Set in every provider's environment (verify round, N1): a Python script never imports from
+#: its own folder or the user's site-packages, which the approval does not bind. (Python
+#: 3.11+; the scrub already drops PYTHONPATH and every other PYTHON* variable.)
+_PYTHON_CHILD_ENV = {"PYTHONSAFEPATH": "1", "PYTHONNOUSERSITE": "1"}
+
+
+def _child_env(scrubbed: dict[str, str]) -> dict[str, str]:
+    return {**scrubbed, **_PYTHON_CHILD_ENV}
+
+
 async def run_bounded(argv: list[str], *, cwd: Path, stdin_bytes: bytes | None, timeout: float,
                       prepare: Any = None) -> dict[str, Any]:
     """Run *argv* (no shell) in *cwd* under one deadline; never raises for a process failure.
@@ -334,7 +344,7 @@ async def run_bounded(argv: list[str], *, cwd: Path, stdin_bytes: bytes | None, 
                 *argv,
                 stdin=asyncio.subprocess.PIPE if stdin_bytes is not None else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                cwd=str(cwd), env=scrub_child_env(os.environ), **extra,
+                cwd=str(cwd), env=_child_env(scrub_child_env(os.environ)), **extra,
             )
         except (FileNotFoundError, PermissionError):
             return {**result, "reason": "executable_not_runnable"}

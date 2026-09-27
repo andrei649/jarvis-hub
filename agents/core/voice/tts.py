@@ -20,6 +20,7 @@ ElevenLabs, Fish and the TTS command are never called then (the hub cannot check
 a command sends the text), and availability reports say so.
 """
 
+import asyncio
 import logging
 import re
 import tempfile
@@ -233,6 +234,7 @@ class TTSEngine:
 
         # H613 — read now: the owner can flip it at any time.
         local_only = local_providers.local_only()
+        tried_piper = None
         # H613 — Piper and command voices, after the consent gate and before Fish.
         kind = local_voice_kind(v)
         if kind == "command" and local_only:
@@ -246,6 +248,7 @@ class TTSEngine:
             res = await (self._speak_piper(spoken, v, lang) if kind == "piper" else self._speak_command(spoken, lang))
             if res:
                 return res
+            tried_piper = v if kind == "piper" else None
             v = self._safe_default_voice(lang)
 
         # Fish Audio (cloned voice + inline [emotion] tags) runs first so the
@@ -274,7 +277,9 @@ class TTSEngine:
             v = self._safe_default_voice(lang)
 
         if local_only:                  # H613: Piper, then Kokoro; never a cloud voice
-            res = await self._speak_piper(text, "piper", lang)
+            # The Piper model that already failed above is not run again (verify round, N3).
+            again = tried_piper is None or not await asyncio.to_thread(self._same_piper_pick, tried_piper, lang)
+            res = await self._speak_piper(text, "piper", lang) if again else None
             if res:
                 return res
             if HAS_KOKORO:
@@ -315,6 +320,14 @@ class TTSEngine:
                 logger.warning(f"sentence {idx} TTS failed ({e}); continuing")
                 path = None
             yield idx, sentence, path
+
+    def _same_piper_pick(self, tried: str, lang: str = None) -> bool:
+        """Whether bare ``piper`` would pick the model the voice *tried* named (verify round, N3)."""
+        if ":" not in tried:
+            return True
+        allow = voice_persona_consent_granted(self._consent_getter)
+        pick_lang = lang or local_providers.model_lang(self.default_voice) or self.default_lang
+        return local_providers.pick_piper_model(pick_lang, allow_persona=allow) == tried.split(":", 1)[1]
 
     async def _speak_piper(self, text: str, voice: str, lang: str = None) -> Optional[str]:
         """Piper (H613): ``piper:<model>``, or bare ``piper`` (a model picked by language:

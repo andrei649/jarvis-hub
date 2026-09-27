@@ -1673,3 +1673,65 @@ def test_f20_the_tts_503_hint_names_the_piper_model():
 
     assert "piper-tts" in voice_router.NO_TTS and ".onnx.json" in voice_router.NO_TTS
     assert "<data>/voice/piper" in voice_router.NO_TTS and "voice.piper_model_dir" in voice_router.NO_TTS
+
+
+# ── verify round (N1–N3) ──────────────────────────────────────────────────────────────
+
+PY_SIBLING = ("import site, sys\n"
+              "try:\n    import n1_sidekick\nexcept ImportError:\n    pass\n"
+              "open(sys.argv[1], 'wb').write({wav!r})\n"
+              "open({marker!r}, 'a').write('user_site=%s\\n' % site.ENABLE_USER_SITE)\n")
+
+
+@pytest.mark.asyncio
+async def test_n1_a_python_script_never_imports_from_its_own_folder_or_user_site(armed):
+    env = armed
+    marker = env.tmp / "marker"
+    script = _script(env, PY_SIBLING.format(wav=WAV, marker=str(marker)))
+    assert (await _approve(env, "tts", [sys.executable, str(script), "{output}"]))["status"] == "ok"
+    (script.parent / "n1_sidekick.py").write_text(
+        f"open({str(marker)!r}, 'a').write('UNAPPROVED\\n')\n", encoding="utf-8")
+    assert lp.command_ready("tts").ok                         # no bound file changed
+    assert await lp.speak_command("hi", "en", temp_dir=env.temp)
+    text = marker.read_text()
+    assert "UNAPPROVED" not in text and "user_site=False" in text, text
+
+
+def test_n1_the_card_note_says_what_approving_does_not_bind():
+    note = command_settings.NOTE
+    assert "not bound" in note and "Python" in note
+
+
+def test_n2_a_waiting_card_for_a_program_that_changed_is_not_handed_back(armed, client, orch):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    argv = _tts_argv(exe)
+    first = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "argv": argv})
+    assert first.status_code == 202, first.text
+    exe.write_bytes(exe.read_bytes() + b"\n# upgraded\n")
+    again = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "argv": argv})
+    assert again.status_code == 409, again.text
+    body = again.json()
+    assert body["error"] == "request_stale" and body["pending"] == first.json()["pending"]
+    assert "changed" in body["detail"] and len(_pending(orch)) == 1
+
+
+@pytest.mark.asyncio
+async def test_n3_local_only_tries_a_failing_piper_voice_once(env, monkeypatch):
+    _piper(env, "ro_RO-x-medium")
+    _mode(env.tmp, "fail")
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    settings_db.put_category("voice", {"local_only": True})
+    assert await _engine().speak("Salut", voice="piper:ro_RO-x-medium", lang="ro") is None
+    assert len(_records(env.tmp)) == 1
+
+
+@pytest.mark.asyncio
+async def test_n3_local_only_still_tries_another_piper_model_after_a_missing_one(env, monkeypatch):
+    _piper(env, "ro_RO-y-medium")
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    settings_db.put_category("voice", {"local_only": True})
+    path = await _engine().speak("Salut", voice="piper:ro_RO-missing-low", lang="ro")
+    assert path and path.endswith(".wav")
+    [rec] = _records(env.tmp)
+    assert any("ro_RO-y-medium" in arg for arg in rec["argv"])
