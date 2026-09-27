@@ -1,0 +1,514 @@
+[
+ {
+  "label": "roles_pick_legacy_wins_over_role_name",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "    if new:\n        return new, new_name,",
+  "b": "    if new and not legacy:\n        return new, new_name,",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_llm_model_config.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_pick_shadowed_legacy_not_reported",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "([legacy_name] if legacy and legacy.lower() != new.lower() else [])",
+  "b": "[]",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_doctor.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_pick_legacy_fallback_dropped",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "    if legacy:\n        return legacy, legacy_name, []",
+  "b": "    if False:\n        return legacy, legacy_name, []",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_llm_model_config.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_vision_view_legacy_url_wins",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "url = read(spec.env_name(\"base_url\")).strip() or read(\"JARVIS_VLM_URL\")",
+  "b": "url = read(\"JARVIS_VLM_URL\") or read(spec.env_name(\"base_url\")).strip()",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_vlm_h13_1.py",
+   "tests/test_composer_vision.py",
+   "tests/test_screen_reflex_route.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_vision_view_provider_not_validated",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider",
+  "b": "_VISION_BACKEND_OF.get(role_provider.lower(), \"\") if role_provider",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_vlm_h13_1.py",
+   "tests/test_composer_vision.py",
+   "tests/test_screen_reflex_route.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_validate_supported_set_check_dropped",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "if spec.providers is None or value not in spec.providers:",
+  "b": "if spec.providers is None:",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_main_becomes_env_selectable",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "    if role == \"main\":",
+  "b": "    if role == \"__main__\":",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_doctor.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_env_role_default_provider_ollama",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "provider = _validate(spec, raw_provider) if raw_provider else \"lm-studio\"",
+  "b": "provider = _validate(spec, raw_provider) if raw_provider else \"ollama\"",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_env_role_unset_model_guard_dropped",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "    if not model:\n        return ResolvedRole(spec.name, False,",
+  "b": "    if False:\n        return ResolvedRole(spec.name, False,",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_locality_or_instead_of_and",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "(policy == \"local\" and _is_loopback_base(base_url))",
+  "b": "(policy == \"local\" or _is_loopback_base(base_url))",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_vision_lmstudio_default_url_dropped",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "        url = url or LMSTUDIO_VLM_BASE",
+  "b": "        url = url",
+  "tests": [
+   "tests/test_h277_model_roles.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "roles_describe_catches_wrong_error",
+  "file": "agents/core/llm/model_roles.py",
+  "a": "        except RoleConfigError as exc:\n            row.update(",
+  "b": "        except KeyError as exc:\n            row.update(",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_doctor.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "vlm_role_error_reason_masked",
+  "file": "agents/core/llm/vlm.py",
+  "a": "raise VLMNotConfigured(exc.reason) from exc",
+  "b": "raise VLMNotConfigured(\"vlm_disabled\") from exc",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_vlm_h13_1.py",
+   "tests/test_composer_vision.py",
+   "tests/test_screen_reflex_route.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "model_config_override_flag_inverted",
+  "file": "agents/core/llm/model_config.py",
+  "a": ".source[\"model\"] != \"default\"",
+  "b": ".source[\"model\"] == \"default\"",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_llm_model_config.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_safe_mode_check_dropped",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    if safe_mode.enabled():\n        return _off(\"safe_mode\", **ident)",
+  "b": "    if False:\n        return _off(\"safe_mode\", **ident)",
+  "tests": [
+   "tests/test_h277_approval_judge.py",
+   "tests/test_h275_safe_mode.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_protocol_refusal_dropped",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    if host_protocol.protocol_refusal(provider, base_url):",
+  "b": "    if False:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_h378_findings_ignored",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    if findings:\n",
+  "b": "    if False:\n",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_remote_gate_applies_to_local",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    if not local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+  "b": "    if local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_allow_remote_inverted",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if not env_flag(ENV_ALLOW_REMOTE):",
+  "b": "        if env_flag(ENV_ALLOW_REMOTE):",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_strict_local_ignored",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if env_flag(\"JARVIS_STRICT_LOCAL\"):",
+  "b": "        if False:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_cloud_fallback_never_ignored",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if fallback == \"never\":",
+  "b": "        if fallback == \"off\":",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_timeout_floor_dropped",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT, minimum=MIN_TIMEOUT)",
+  "b": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT)",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_public_leaks_remote_base_url",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if self.configured and self.local:",
+  "b": "        if self.configured:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_prompt_not_fenced",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "fenced, flags = quarantine.fence_tool_result(encoded, source=FENCE_SOURCE)",
+  "b": "fenced, flags = encoded, []",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_parse_extra_keys_allowed",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "set(data) != {\"risk\", \"why\"}",
+  "b": "not {\"risk\", \"why\"} <= set(data)",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_parse_fractional_risk_allowed",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "(risk != risk or not risk.is_integer())",
+  "b": "(risk != risk)",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_parse_empty_why_allowed",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    if not why:\n        return None",
+  "b": "    if False:\n        return None",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_parse_code_fence_unanchored",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "\\n?```\\Z\"",
+  "b": "\\n?```\"",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_clamp_upper_bound_raised",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "max(0, min(100, int(risk)))",
+  "b": "max(0, min(1000, int(risk)))",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_rationale_fence_markers_kept",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "    out = _MARKER_RE.sub(\" \", out)\n",
+  "b": "",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_wants_unconfigured_guard_dropped",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if not status.configured:\n            return False",
+  "b": "        if False:\n            return False",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_wants_skill_card_judged",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if snapshot.get(\"tool\") == CARD_TOOL:",
+  "b": "        if False:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_wants_local_agent_sent_remote",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "            if self._agent_is_local(str(snapshot.get(\"agent\") or \"\")):",
+  "b": "            if False:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_wants_tainted_sent_remote",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "            if taint.is_tainted(dict(snapshot)) or taint.is_tainted(args):",
+  "b": "            if False:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "judge_selection_pin_check_inverted",
+  "file": "agents/core/autonomy/approval_judge.py",
+  "a": "        if current_selection() is not None:",
+  "b": "        if current_selection() is None:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_annotate_after_decision",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+  "b": "if item is None or \"judge\" in item:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_annotate_second_answer_overwrites",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+  "b": "if item is None or item.get(\"status\") != \"pending\":",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_annotate_low_score_auto_approves",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "            item[\"judge\"] = dict(annotation)\n",
+  "b": "            item[\"judge\"] = dict(annotation)\n            if int(annotation.get(\"score\", 100)) < 30:\n                item[\"status\"] = \"approved\"\n",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_snapshot_is_stored_item",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "snapshot = json.loads(json.dumps(item, default=str))",
+  "b": "snapshot = item",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_judge_inherits_caller_context",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "            self._spawn(running, snapshot, status, fresh)\n",
+  "b": "            self._spawn(running, snapshot, status, contextvars.copy_context())\n",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_short_lived_loop_not_judged_on_hub",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "if running is not None and (running is loop or not hub_up):",
+  "b": "if running is not None:",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_decided_audit_drops_judge_identity",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "\"judge\": (decided.get(\"judge\") or {}).get(\"judge\")})",
+  "b": "\"judge\": None})",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "queue_judged_audit_drops_judge_identity",
+  "file": "agents/core/autonomy/action_approvals.py",
+  "a": "\"judge\": stored.get(\"judge\"), \"rationale_sha256\"",
+  "b": "\"judge\": None, \"rationale_sha256\"",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "route_pending_drops_judge_key",
+  "file": "agents/core/routers/actions.py",
+  "a": "nocache_json({\"actions\": q.list(\"pending\"), \"judge\": _judge_status(q)})",
+  "b": "nocache_json({\"actions\": q.list(\"pending\")})",
+  "tests": [
+   "tests/test_h277_approval_judge.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "doctor_model_roles_attention_ignored",
+  "file": "scripts/doctor.py",
+  "a": "    if attention:\n        return _result(\"model_roles\", False,",
+  "b": "    if False:\n        return _result(\"model_roles\", False,",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_doctor.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "doctor_model_roles_ignored_not_flagged",
+  "file": "scripts/doctor.py",
+  "a": "            attention.append(f\"{name}:ignored\")\n",
+  "b": "",
+  "tests": [
+   "tests/test_h277_model_roles.py",
+   "tests/test_doctor.py"
+  ],
+  "run": "py"
+ },
+ {
+  "label": "hud_opinion_shown_on_skill_card",
+  "file": "agents/web/static/tools.js",
+  "a": "if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;",
+  "b": "if (!status || !status.configured) return null;",
+  "tests": [
+   "tests/frontend/tools.test.js"
+  ],
+  "run": "js"
+ },
+ {
+  "label": "hud_repoll_never_stops",
+  "file": "agents/web/static/tools.js",
+  "a": "if (polls.current.n >= polls.current.max) return undefined;",
+  "b": "if (false) return undefined;",
+  "tests": [
+   "tests/frontend/tools.test.js"
+  ],
+  "run": "js"
+ },
+ {
+  "label": "hud_opinion_advisory_label_dropped",
+  "file": "agents/web/static/tools.js",
+  "a": "'\" · advisory only, it decides nothing'",
+  "b": "'\"'",
+  "tests": [
+   "tests/frontend/tools.test.js"
+  ],
+  "run": "js"
+ }
+]
